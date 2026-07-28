@@ -5,15 +5,12 @@ import {
   Award,
   Package,
   BarChart3,
-  Calendar,
   ChevronDown,
   ChevronUp,
   Trophy,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
 
 interface MarcaData {
   nombre: string;
@@ -49,41 +46,15 @@ export default function SpiffPage() {
   const [viewMode, setViewMode] = useState<"marcas" | "productos">("marcas");
   const [productMode, setProductMode] = useState<"porProducto" | "acumulado">("porProducto");
 
-  const now = new Date();
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    new Date(now.getFullYear(), now.getMonth(), 1),
-    now,
-  ]);
-  const [startDate, endDate] = dateRange;
-
   const fetchData = useCallback(() => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (startDate) params.append("fechaInicio", startDate.toISOString().split("T")[0]);
-    if (endDate) params.append("fechaFin", endDate.toISOString().split("T")[0]);
-
-    fetch(`/api/vendedores/spiff?${params.toString()}`, { credentials: "include" })
+    fetch("/api/vendedores/spiff", { credentials: "include" })
       .then((res) => res.json())
       .then((json) => setData(json))
       .finally(() => setLoading(false));
-  }, [startDate, endDate]);
+  }, []);
 
-  useEffect(() => {
-    const ok = !startDate || (startDate && endDate);
-    if (ok) fetchData();
-  }, [fetchData, startDate, endDate]);
-
-  const handleQuickRange = (days: number) => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - days);
-    setDateRange([start, end]);
-  };
-
-  const handleMonthStart = () => {
-    const now = new Date();
-    setDateRange([new Date(now.getFullYear(), now.getMonth(), 1), now]);
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const marcas: MarcaData[] = data?.marcas || [];
   const totalGeneral = data?.totalGeneral || 0;
@@ -102,11 +73,6 @@ export default function SpiffPage() {
     return colors[index % colors.length];
   };
 
-  const formatShortDate = (d: string | null) => {
-    if (!d) return null;
-    return new Date(d).toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
-  };
-
   if (loading && !data)
     return <div className="p-10 text-center font-bold text-slate-400">Cargando Spiff...</div>;
 
@@ -121,26 +87,6 @@ export default function SpiffPage() {
           <div>
             <h1 className="text-3xl font-black text-slate-900">Spiff</h1>
             <p className="text-sm text-slate-400 font-medium">Facturación total por marca y producto</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-sm">
-            <Calendar size={16} className="text-slate-400" />
-            <DatePicker
-              selectsRange
-              startDate={startDate}
-              endDate={endDate}
-              onChange={(update) => setDateRange(update)}
-              placeholderText="Seleccionar periodo..."
-              className="text-xs font-bold w-56 cursor-pointer outline-none bg-transparent"
-              dateFormat="dd MMM yyyy"
-            />
-          </div>
-          <div className="flex gap-1">
-            <button onClick={() => handleQuickRange(0)} className="px-3 py-2 text-[10px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">Hoy</button>
-            <button onClick={handleMonthStart} className="px-3 py-2 text-[10px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">Este Mes</button>
-            <button onClick={() => handleQuickRange(30)} className="px-3 py-2 text-[10px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">30 días</button>
-            <button onClick={() => handleQuickRange(90)} className="px-3 py-2 text-[10px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">90 días</button>
           </div>
         </div>
       </div>
@@ -190,7 +136,7 @@ export default function SpiffPage() {
             marcas.length === 0 ? (
               <div className="py-12 text-center">
                 <Award size={40} className="mx-auto text-slate-200 mb-3" />
-                <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff activas para este período</p>
+                <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff activas</p>
               </div>
             ) : (
               <div className="flex flex-col">
@@ -229,14 +175,7 @@ export default function SpiffPage() {
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <div className="flex items-center gap-3 mt-1">
-                            <p className="text-[10px] text-slate-400">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
-                            {marca.fechaInicio && (
-                              <p className="text-[9px] text-slate-300 font-medium">
-                                {formatShortDate(marca.fechaInicio)} →     {formatShortDate(marca.fechaFin) || "hoy"}
-                              </p>
-                            )}
-                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
                           {marca.tieneRegla && (
                             <div className="flex items-center gap-3 mt-1.5">
                               <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
@@ -294,7 +233,7 @@ export default function SpiffPage() {
             allProducts.length === 0 ? (
               <div className="py-12 text-center">
                 <Package size={40} className="mx-auto text-slate-200 mb-3" />
-                <p className="text-sm text-slate-400 font-medium">No hay productos con spiff activo para este período</p>
+                <p className="text-sm text-slate-400 font-medium">No hay productos con spiff activo</p>
               </div>
             ) : (
               <>
@@ -434,7 +373,7 @@ export default function SpiffPage() {
           {rankingVendedores.length === 0 ? (
             <div className="py-12 text-center">
               <Trophy size={40} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400 font-medium">No hay spiffs calculados para este período</p>
+              <p className="text-sm text-slate-400 font-medium">No hay spiffs calculados</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">

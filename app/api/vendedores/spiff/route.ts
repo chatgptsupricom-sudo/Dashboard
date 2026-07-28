@@ -22,15 +22,7 @@ interface SpiffRuleRow {
   active: number;
 }
 
-function dateRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart <= bEnd && aEnd >= bStart;
-}
-
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const fechaInicio = searchParams.get("fechaInicio") || "";
-  const fechaFin = searchParams.get("fechaFin") || "";
-
   const token = request.headers
     .get("cookie")
     ?.split(";")
@@ -58,8 +50,6 @@ export async function GET(request: Request) {
       ["state", "=", "posted"],
       ["company_id", "=", userCompanyId],
     ];
-    if (fechaInicio) domain.push(["invoice_date", ">=", fechaInicio]);
-    if (fechaFin) domain.push(["invoice_date", "<=", fechaFin]);
 
     const facturas = await callOdooRPC<any[]>(
       "account.move",
@@ -127,15 +117,7 @@ export async function GET(request: Request) {
     );
     const allRules: SpiffRuleRow[] = rulesResult.rows;
 
-    const userDateStart = fechaInicio || "2000-01-01";
-    const userDateEnd = fechaFin || "2099-12-31";
-
-    const rules = allRules.filter((r) => {
-      if (!r.fecha_inicio && !r.fecha_fin) return true;
-      const ruleStart = r.fecha_inicio || "2000-01-01";
-      const ruleEnd = r.fecha_fin || "2099-12-31";
-      return dateRangesOverlap(userDateStart, userDateEnd, ruleStart, ruleEnd);
-    });
+    const rules = allRules;
 
     const marcaRules = rules.filter((r) => r.tipo === "marca");
     const productoRules = rules.filter((r) => r.tipo === "producto");
