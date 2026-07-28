@@ -49,6 +49,7 @@ export async function GET() {
     const grouped: Record<number, { cids: number; sucursal: string; sellers: any[] }> = {};
 
     for (const seller of sellers) {
+      if (seller.name?.toUpperCase().trim() === "MARIA AUXILIADORA TOVAR CARO") continue;
       const cid = seller.cids || 0;
       if (!grouped[cid]) {
         grouped[cid] = {

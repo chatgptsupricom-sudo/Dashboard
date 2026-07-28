@@ -236,7 +236,7 @@ export default function SpiffManager({
 
       const rows = Object.entries(sellerBrandData)
         .map(([nombre, sbd]: [string, any]) => {
-          if (nombre === "Asistente de Ventas") return null;
+          if (nombre === "Asistente de Ventas" || nombre.toUpperCase().trim() === "MARIA AUXILIADORA TOVAR CARO") return null;
           const brandKey = Object.keys(sbd.marcas || {}).find(
             (k) => k.toLowerCase() === rule.brand_name.toLowerCase()
           );

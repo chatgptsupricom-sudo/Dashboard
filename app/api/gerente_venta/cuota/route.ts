@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       "SELECT id, name, user_id FROM sellers WHERE cids = ?",
       [userCids],
     );
-    const sellers = resultSellers || [];
+    const sellers = (resultSellers || []).filter((s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO");
 
     // 2. Obtener cuotas actuales (último registro por seller)
     const [resultCuotas]: any = await db.query(`
