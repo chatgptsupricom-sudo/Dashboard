@@ -102,46 +102,52 @@ export async function POST(req: Request) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const { seller_id, cuota } = await req.json();
 
-    const connection = await (db as any).getConnection();
-    await connection.beginTransaction();
+    const firstDayOfMonth = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1,
+    )
+      .toISOString()
+      .split("T")[0];
 
-    try {
-      const [seller]: any = await connection.query(
-        "SELECT user_id FROM sellers WHERE id = ?",
-        [seller_id],
+    const [existing]: any = await db.query(
+      "SELECT id FROM cuota WHERE seller_id = ? AND created_at >= ?",
+      [seller_id, firstDayOfMonth],
+    );
+    if (existing && existing.length > 0) {
+      return NextResponse.json(
+        { error: "Ya se modificó la cuota de este vendedor este mes" },
+        { status: 403 },
       );
-      const targetUserId = seller[0]?.user_id || 0;
-
-      // 1. Insertar cuota usando el user_id (Odoo) real
-      await connection.query(
-        "INSERT INTO cuota (user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, NOW())",
-        [targetUserId, seller_id, cuota],
-      );
-
-      // 2. Registrar en auditoría
-      const uniqueId = Math.floor(Date.now() / 1000);
-
-      await connection.query(
-        `INSERT INTO audit_logs (id, user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          uniqueId, // Nuevo: ID único generado
-          payload.uid || "0",
-          payload.name || "Sistema",
-          payload.role || "Gerencia",
-          "EDIT_CUOTA",
-          JSON.stringify({ seller_id, nueva_cuota: cuota }),
-        ],
-      );
-
-      await connection.commit();
-      return NextResponse.json({ success: true });
-    } catch (err) {
-      await connection.rollback();
-      throw err;
-    } finally {
-      connection.release();
     }
+
+    const [seller]: any = await db.query(
+      "SELECT user_id FROM sellers WHERE id = ?",
+      [seller_id],
+    );
+    const targetUserId = seller[0]?.user_id || 0;
+
+    await db.query(
+      "INSERT INTO cuota (user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, NOW())",
+      [targetUserId, seller_id, cuota],
+    );
+
+    const uniqueId = Math.floor(Date.now() / 1000);
+    await db.query(
+      `INSERT INTO audit_logs (id, user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        uniqueId,
+        payload.uid || "0",
+        payload.name || "Sistema",
+        payload.role || "Gerencia",
+        "EDIT_CUOTA",
+        JSON.stringify({ seller_id, nueva_cuota: cuota }),
+      ],
+    );
+
+    return NextResponse.json({ success: true });
   } catch (error) {
+    console.error("Error en POST cuota gerente operaciones:", error);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }

@@ -155,7 +155,7 @@ function EditQuotaDialog({ seller, onClose, onSave }: any) {
 
       if (!res.ok) {
         const err = await res.json();
-        console.error("Error de servidor:", err);
+        alert(err.error || "Error al guardar la cuota");
         return;
       }
       onSave();

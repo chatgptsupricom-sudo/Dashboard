@@ -106,42 +106,31 @@ export async function POST(req: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const { seller_id, cuota } = await req.json();
 
-    const connection = await (db as any).getConnection();
-    await connection.beginTransaction();
+    const [seller]: any = await db.query(
+      "SELECT user_id FROM sellers WHERE id = ?",
+      [seller_id],
+    );
+    const targetUserId = seller[0]?.user_id || 0;
 
-    try {
-      const [seller]: any = await connection.query(
-        "SELECT user_id FROM sellers WHERE id = ?",
-        [seller_id],
-      );
-      const targetUserId = seller[0]?.user_id || 0;
+    await db.query(
+      "INSERT INTO cuota (user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, NOW())",
+      [targetUserId, seller_id, cuota],
+    );
 
-      await connection.query(
-        "INSERT INTO cuota (user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, NOW())",
-        [targetUserId, seller_id, cuota],
-      );
+    const uniqueId = Math.floor(Date.now() / 1000);
+    await db.query(
+      `INSERT INTO audit_logs (id, user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        uniqueId,
+        payload.uid || "0",
+        payload.name || "Sistema",
+        payload.role || "SuperAdmin",
+        "EDIT_CUOTA",
+        JSON.stringify({ seller_id, nueva_cuota: cuota }),
+      ],
+    );
 
-      const uniqueId = Math.floor(Date.now() / 1000);
-      await connection.query(
-        `INSERT INTO audit_logs (id, user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          uniqueId,
-          payload.uid || "0",
-          payload.name || "Sistema",
-          payload.role || "SuperAdmin",
-          "EDIT_CUOTA",
-          JSON.stringify({ seller_id, nueva_cuota: cuota }),
-        ],
-      );
-
-      await connection.commit();
-      return NextResponse.json({ success: true });
-    } catch (err) {
-      await connection.rollback();
-      throw err;
-    } finally {
-      connection.release();
-    }
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error en POST cuota superadmin:", error);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
