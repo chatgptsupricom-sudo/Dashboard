@@ -78,84 +78,34 @@ export function Sidebar({
   // Extraemos las secciones permitidas de forma segura
   const allowedSections = permissions.sections || [];
 
-  // Definición del menú base (Se removieron los items individuales de leads para agruparlos en el dropdown)
+  // Definición del menú base
   const menuItems = [
-    { id: "adminleads", label: "Dashboard", icon: Target, slug: "" },
-    { id: "actividad", label: "Actividades", icon: Calendar, slug: "/actividad" },
-    { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo" },
-    { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads" },
-    { id: "cierres_adminleads", label: "Cierres", icon: FileText, slug: "/cierres" },
-    { id: "configuracion_leads", label: "Configuración", icon: Settings2, slug: "/configuracion" },
-    { id: "alert", label: "Alertas", icon: Bell, slug: "/alert" },
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "" },
-    {
-      id: "stoplight_reports",
-      label: "Stoplight Report",
-      icon: BarChart3,
-      slug: "/StoplightReport",
-    },
+    { id: "actividad", label: "Actividades", icon: Calendar, slug: "/actividad" },
+    { id: "alert", label: "Alertas", icon: Bell, slug: "/alert" },
+    { id: "stoplight_reports", label: "Stoplight Report", icon: BarChart3, slug: "/StoplightReport" },
     { id: "users", label: "Usuarios", icon: Users, slug: "/usuarios" },
-    {
-      id: "seller_map",
-      label: "Mapa Clientes",
-      icon: Map,
-      slug: "/vendedores",
-    },
+    { id: "seller_map", label: "Mapa Clientes", icon: Map, slug: "/vendedores" },
     { id: "cuota", label: "Cuota", icon: FileText, slug: "/cuota" },
     { id: "inventory", label: "Inventario", icon: Package, slug: "/inventory" },
-    {
-      id: "agenteia",
-      label: "Agente IA",
-      icon: BrainCircuit,
-      slug: "/agenteia",
-    },
-    {
-      id: "integraciondepago",
-      label: "Integración De Pago",
-      icon: CreditCard,
-      slug: "/integraciondepago",
-    },
+    { id: "agenteia", label: "Agente IA", icon: BrainCircuit, slug: "/agenteia" },
+    { id: "integraciondepago", label: "Integración De Pago", icon: CreditCard, slug: "/integraciondepago" },
     { id: "clientes", label: "Clientes", icon: UserCheck, slug: "/clientes" },
     { id: "catalogo", label: "Catálogo", icon: Boxes, slug: "/catalogo" },
     { id: "leads", label: "Leads", icon: UserCheck, slug: "/leads" },
-    {
-      id: "MapaClientes",
-      label: "Mapa de Clientes",
-      icon: Map,
-      slug: "/mapa_clientes",
-    },
+    { id: "MapaClientes", label: "Mapa de Clientes", icon: Map, slug: "/mapa_clientes" },
     { id: "cierres", label: "Cierres", icon: FileText, slug: "/Cierres" },
-    {
-      id: "top_clientes",
-      label: "Top Clientes",
-      icon: Trophy,
-      slug: "/top-clientes",
-    },
-    {
-      id: "spiff",
-      label: "Spiff",
-      icon: Award,
-      slug: "/spiff",
-    },
-    {
-      id: "sugeridos",
-      label: "Sugerencia de compras",
-      icon: Package,
-      slug: "/sugeridos",
-    },
-    {
-      id: "menor_rotacion",
-      label: "Menor Rotación",
-      icon: TrendingDown,
-      slug: "/menor_rotacion",
-    },
-    {
-      id: "mayor_rotacion",
-      label: "Mayor Rotación",
-      icon: TrendingUp,
-      slug: "/mayor_rotacion",
-    },
+    { id: "top_clientes", label: "Top Clientes", icon: Trophy, slug: "/top-clientes" },
+    { id: "spiff", label: "Spiff", icon: Award, slug: "/spiff" },
+    { id: "sugeridos", label: "Sugerencia de compras", icon: Package, slug: "/sugeridos" },
+    { id: "menor_rotacion", label: "Menor Rotación", icon: TrendingDown, slug: "/menor_rotacion" },
+    { id: "mayor_rotacion", label: "Mayor Rotación", icon: TrendingUp, slug: "/mayor_rotacion" },
     { id: "moq", label: "MOQ", icon: Settings2, slug: "/moq" },
+    { id: "adminleads", label: "Dashboard Leads", icon: Target, slug: "", adminLeadsOnly: true },
+    { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
+    { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
+    { id: "cierres_adminleads", label: "Cierres", icon: FileText, slug: "/cierres", adminLeadsOnly: true },
+    { id: "configuracion_leads", label: "Configuración", icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
   ];
 
   const getBasePath = () => {
@@ -205,6 +155,7 @@ export function Sidebar({
     .filter(
       (item) =>
         allowedSections.includes(item.id) &&
+        ((item as any).adminLeadsOnly ? userRole === "adminLeads" : true) &&
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
