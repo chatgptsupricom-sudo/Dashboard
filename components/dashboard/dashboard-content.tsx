@@ -27,7 +27,7 @@ export function SuperAdminView() {
         const sanitizedData = {
           ...json,
           topClients: (json.topClients || []).filter(
-            (c: any) => c.name !== "SUPRICOM, LLC"
+            (c: any) => !c.name?.toLowerCase().includes("supricom")
           ),
           topProducts: json.topProducts || [],
           monthlyGrowth: json.monthlyGrowth || [],

@@ -404,7 +404,7 @@ export function SuperAdminView() {
       .then((json) => {
         const sanitizedData = {
           ...json,
-          topClients: json.topClients?.slice(0, 5) || [],
+          topClients: (json.topClients || []).filter((c: any) => !c.name?.toLowerCase().includes("supricom")).slice(0, 5),
           topProducts: json.topProducts || [],
           bottomProducts: json.bottomProducts || [],
           salesByUser: json.salesByUser || [],

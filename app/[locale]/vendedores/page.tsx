@@ -59,7 +59,7 @@ export default function VendedoresPage() {
         setData({
           ...json,
           chartData: json.chartData || [],
-          topClients: json.topClients || [],
+          topClients: (json.topClients || []).filter((c: any) => !c.name?.toLowerCase().includes("supricom")),
           topProducts: json.topProducts || [],
           crecimiento: json.crecimiento || 0,
         });
