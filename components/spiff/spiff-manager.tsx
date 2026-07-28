@@ -231,19 +231,25 @@ export default function SpiffManager({
       const json = await res.json();
       const sellerBrandData = json.sellerBrandData || {};
       const ruleMeta = rule.target_amount;
+      const ruleTarget = rule.target_amount;
       const ruleSpiff = rule.spiff_amount;
 
       const rows = Object.entries(sellerBrandData)
         .map(([nombre, sbd]: [string, any]) => {
-          const brandInfo = sbd.marcas?.[rule.brand_name] || { monto: 0, cantidad: 0, spiff: 0 };
+          const brandKey = Object.keys(sbd.marcas || {}).find(
+            (k) => k.toLowerCase() === rule.brand_name.toLowerCase()
+          );
+          const brandInfo = brandKey ? sbd.marcas[brandKey] : { monto: 0, cantidad: 0, spiff: 0 };
+          const metaAlcanzadas = rule.modo === "monto"
+            ? Math.floor(brandInfo.monto / ruleTarget)
+            : Math.floor(brandInfo.cantidad / ruleTarget);
+          const spiffGanado = metaAlcanzadas * ruleSpiff;
           return {
             nombre,
             unidades: brandInfo.cantidad,
             monto: brandInfo.monto,
-            metaAlcanzadas: rule.modo === "monto"
-              ? Math.floor(brandInfo.monto / ruleMeta)
-              : Math.floor(brandInfo.cantidad / ruleMeta),
-            spiff: brandInfo.spiff,
+            metaAlcanzadas,
+            spiff: spiffGanado,
           };
         })
         .filter((r) => r.monto > 0 || r.unidades > 0)

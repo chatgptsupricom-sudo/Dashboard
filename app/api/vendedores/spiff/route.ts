@@ -135,16 +135,37 @@ export async function GET(request: Request) {
       moveDateMap[f.id] = (f.invoice_date || "").split("T")[0];
     });
 
-    const allProductIds = [
-      ...new Set(lineData.map((l) => l.product_id?.[0]).filter(Boolean)),
+    const allFacturaIds = facturas.map(f => f.id);
+    let allSellerLines: any[] = [];
+    if (allFacturaIds.length > 0) {
+      try {
+        allSellerLines = await callOdooRPC<any[]>(
+          "account.move.line",
+          "search_read",
+          [
+            [
+              ["move_id", "in", allFacturaIds],
+              ["display_type", "=", "product"],
+              ["product_id", "!=", false],
+            ],
+          ],
+          {
+            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
+          },
+        );
+      } catch (_) {}
+    }
+
+    const allSellerProductIds = [
+      ...new Set([...lineData, ...allSellerLines].map((l) => l.product_id?.[0]).filter(Boolean)),
     ];
     let productMap: Record<number, any> = {};
-    if (allProductIds.length > 0) {
+    if (allSellerProductIds.length > 0) {
       try {
         const prods = await callOdooRPC<any[]>(
           "product.product",
           "read",
-          [allProductIds],
+          [allSellerProductIds],
           { fields: ["id", "name", "x_studio_marca"] },
         );
         prods.forEach((p) => {
@@ -261,24 +282,8 @@ export async function GET(request: Request) {
     });
 
     const allSellerNames = Object.keys(sellerMap);
-    if (allSellerNames.length > 0) {
+    if (allSellerNames.length > 0 && allSellerLines.length > 0) {
       try {
-        const allFacturaIds = facturas.map(f => f.id);
-        const allSellerLines = await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [
-            [
-              ["move_id", "in", allFacturaIds],
-              ["display_type", "=", "product"],
-              ["product_id", "!=", false],
-            ],
-          ],
-          {
-            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-          },
-        );
-
         const sellerInvoiceMap: Record<number, { name: string; date: string }> = {};
         facturas.forEach(f => {
           if (f.invoice_user_id?.[1]) {
