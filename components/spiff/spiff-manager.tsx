@@ -624,7 +624,6 @@ export default function SpiffManager({
                     </tbody>
                   </table>
                 </div>
-                </div>
               )}
             </div>
           </div>
