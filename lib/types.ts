@@ -216,6 +216,7 @@ export interface AuthUser {
   lastLogin?: string;
   name: string;
   cids?: number;
+  activo?: number; // 1 = recibe leads, 0 = pausado
 }
 
 // Token JWT

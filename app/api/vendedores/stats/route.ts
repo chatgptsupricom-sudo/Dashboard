@@ -390,6 +390,10 @@ export async function GET(request: Request) {
         .split("T")[0];
     } else if (periodo === "dia") {
       fechaInicio = ahora.toISOString().split("T")[0];
+    } else if (/^\d{4}-\d{2}$/.test(periodo)) {
+      const [anio, mesNum] = periodo.split("-").map(Number);
+      fechaInicio = new Date(anio, mesNum - 1, 1).toISOString().split("T")[0];
+      fechaFin = new Date(anio, mesNum, 0).toISOString().split("T")[0];
     }
 
     // 3. Consulta a Facturación
@@ -454,40 +458,52 @@ export async function GET(request: Request) {
       topProductos = raw.map((p) => p.product_id[1]);
     }
 
-    // 6. Gráfico de Evolución (Últimos 12 meses)
-    const meses = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
+    // 6. Gráfico de Evolución
+    let chartData: { month: string; total: number }[] = [];
 
-    const statsPorMes: Record<string, number> = {};
-
-    misFacturas.forEach((f) => {
-      if (f.invoice_date) {
-        // Formato: "YYYY-MM"
-        const mesKey = f.invoice_date.substring(0, 7);
-        statsPorMes[mesKey] =
-          (statsPorMes[mesKey] || 0) + f.amount_total_signed;
+    if (/^\d{4}-\d{2}$/.test(periodo)) {
+      const [anio, mesNum] = periodo.split("-").map(Number);
+      const hoy = new Date();
+      const esMesActual = anio === hoy.getFullYear() && mesNum === hoy.getMonth() + 1;
+      const diasEnMes = esMesActual ? hoy.getDate() : new Date(anio, mesNum, 0).getDate();
+      const statsPorDia: Record<string, number> = {};
+      for (let d = 1; d <= diasEnMes; d++) {
+        const dia = `${anio}-${String(mesNum).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        statsPorDia[dia] = 0;
       }
-    });
-
-    // Ordenar cronológicamente y transformar a array
-    const chartData = Object.entries(statsPorMes)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([mes, total]) => ({
-        month: mes, // Muestra "2026-05"
-        total: total,
-      }));
+      misFacturas.forEach((f) => {
+        if (f.invoice_date) {
+          const dia = f.invoice_date.substring(0, 10);
+          if (statsPorDia[dia] !== undefined) {
+            statsPorDia[dia] += f.amount_total_signed;
+          }
+        }
+      });
+      chartData = Object.entries(statsPorDia)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([dia, total]) => ({
+          month: dia.substring(8, 10),
+          total,
+        }));
+    } else {
+      const statsPorMes: Record<string, number> = {};
+      misFacturas.forEach((f) => {
+        if (f.invoice_date) {
+          const mesKey = f.invoice_date.substring(0, 7);
+          statsPorMes[mesKey] = (statsPorMes[mesKey] || 0) + f.amount_total_signed;
+        }
+      });
+      chartData = Object.entries(statsPorMes)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([mes, total]) => {
+          const [y, m] = mes.split("-");
+          const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+          return {
+            month: `${monthNames[parseInt(m) - 1]} ${y.substring(2)}`,
+            total,
+          };
+        });
+    }
 
     // 7. Top Clientes
     const clientesMap: Record<string, number> = {};
@@ -552,6 +568,26 @@ export async function GET(request: Request) {
           (f) =>
             f.invoice_date >= mesAntepasadoInicio.toISOString().split("T")[0] &&
             f.invoice_date < mesPasadoInicio.toISOString().split("T")[0],
+        )
+        .reduce((a, b) => a + b.amount_total_signed, 0);
+    } else if (/^\d{4}-\d{2}$/.test(periodo)) {
+      const [anio, mesNum] = periodo.split("-").map(Number);
+      const selInicio = new Date(anio, mesNum - 1, 1);
+      const selFin = new Date(anio, mesNum, 0);
+      const mesAntInicio = new Date(anio, mesNum - 2, 1);
+      const mesAntFin = new Date(anio, mesNum - 1, 0);
+      vActual = misFacturasC
+        .filter(
+          (f) =>
+            f.invoice_date >= selInicio.toISOString().split("T")[0] &&
+            f.invoice_date <= selFin.toISOString().split("T")[0],
+        )
+        .reduce((a, b) => a + b.amount_total_signed, 0);
+      vAnterior = misFacturasC
+        .filter(
+          (f) =>
+            f.invoice_date >= mesAntInicio.toISOString().split("T")[0] &&
+            f.invoice_date <= mesAntFin.toISOString().split("T")[0],
         )
         .reduce((a, b) => a + b.amount_total_signed, 0);
     } else {

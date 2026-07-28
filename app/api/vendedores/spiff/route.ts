@@ -22,6 +22,14 @@ interface SpiffRuleRow {
   active: number;
 }
 
+function isInvoiceInRuleDateRange(invoiceDate: string | null, rule: SpiffRuleRow): boolean {
+  if (!invoiceDate) return true;
+  const d = invoiceDate.split("T")[0];
+  if (rule.fecha_inicio && d < rule.fecha_inicio) return false;
+  if (rule.fecha_fin && d > rule.fecha_fin) return false;
+  return true;
+}
+
 export async function GET(request: Request) {
   const token = request.headers
     .get("cookie")
@@ -45,11 +53,47 @@ export async function GET(request: Request) {
     const userName = user.name;
     const userCompanyId = user.company_id[0];
 
+    let rulesCompanyId = userCids;
+    if (!rulesCompanyId || rulesCompanyId === 0) {
+      rulesCompanyId = userCompanyId;
+    }
+
+    const rulesResult = await query(
+      "SELECT * FROM spiff_rules WHERE company_id = ? AND active = 1",
+      [rulesCompanyId]
+    );
+    const allRules: SpiffRuleRow[] = rulesResult.rows;
+    const rules = allRules;
+
+    const marcaRules = rules.filter((r) => r.tipo === "marca");
+    const productoRules = rules.filter((r) => r.tipo === "producto");
+
+    let fechaInicioGlobal: string | null = null;
+    let fechaFinGlobal: string | null = null;
+    rules.forEach((r) => {
+      if (r.fecha_inicio) {
+        if (!fechaInicioGlobal || r.fecha_inicio < fechaInicioGlobal) {
+          fechaInicioGlobal = r.fecha_inicio;
+        }
+      }
+      if (r.fecha_fin) {
+        if (!fechaFinGlobal || r.fecha_fin > fechaFinGlobal) {
+          fechaFinGlobal = r.fecha_fin;
+        }
+      }
+    });
+
     const domain: any[] = [
       ["move_type", "=", "out_invoice"],
       ["state", "=", "posted"],
       ["company_id", "=", userCompanyId],
     ];
+    if (fechaInicioGlobal) {
+      domain.push(["invoice_date", ">=", fechaInicioGlobal]);
+    }
+    if (fechaFinGlobal) {
+      domain.push(["invoice_date", "<=", fechaFinGlobal]);
+    }
 
     const facturas = await callOdooRPC<any[]>(
       "account.move",
@@ -86,6 +130,11 @@ export async function GET(request: Request) {
       } catch (_) {}
     }
 
+    const moveDateMap: Record<number, string> = {};
+    misFacturas.forEach((f) => {
+      moveDateMap[f.id] = (f.invoice_date || "").split("T")[0];
+    });
+
     const allProductIds = [
       ...new Set(lineData.map((l) => l.product_id?.[0]).filter(Boolean)),
     ];
@@ -105,22 +154,6 @@ export async function GET(request: Request) {
         });
       } catch (_) {}
     }
-
-    let rulesCompanyId = userCids;
-    if (!rulesCompanyId || rulesCompanyId === 0) {
-      rulesCompanyId = userCompanyId;
-    }
-
-    const rulesResult = await query(
-      "SELECT * FROM spiff_rules WHERE company_id = ? AND active = 1",
-      [rulesCompanyId]
-    );
-    const allRules: SpiffRuleRow[] = rulesResult.rows;
-
-    const rules = allRules;
-
-    const marcaRules = rules.filter((r) => r.tipo === "marca");
-    const productoRules = rules.filter((r) => r.tipo === "producto");
 
     const brandMap: Record<string, { monto: number; cantidad: number; productos: Record<string, { cantidad: number; monto: number }> }> = {};
     lineData.forEach((line) => {
@@ -192,8 +225,6 @@ export async function GET(request: Request) {
       if (!rule) return;
 
       Object.entries(data.productos).forEach(([prodName, v]) => {
-        const matchesProduct = !rule.product_name || prodName.toLowerCase().includes(rule.product_name.toLowerCase());
-
         let spiffGanado = 0;
         if (rule.modo === "cantidad") {
           spiffGanado = Math.floor(v.cantidad / rule.target_amount) * rule.spiff_amount;
@@ -232,12 +263,13 @@ export async function GET(request: Request) {
     const allSellerNames = Object.keys(sellerMap);
     if (allSellerNames.length > 0) {
       try {
+        const allFacturaIds = facturas.map(f => f.id);
         const allSellerLines = await callOdooRPC<any[]>(
           "account.move.line",
           "search_read",
           [
             [
-              ["move_id", "in", facturas.map(f => f.id)],
+              ["move_id", "in", allFacturaIds],
               ["display_type", "=", "product"],
               ["product_id", "!=", false],
             ],
@@ -284,6 +316,7 @@ export async function GET(request: Request) {
     }
 
     const rankingVendedores = Object.values(sellerMap)
+      .filter((s) => s.totalFacturado > 0)
       .sort((a, b) => b.totalSpiff - a.totalSpiff)
       .map((s, i) => ({
         posicion: i + 1,
@@ -306,6 +339,8 @@ export async function GET(request: Request) {
       totalSpiffProductos,
       rankingVendedores,
       miPosicion: miPosicion || { posicion: 0, nombre: userName, totalSpiff: 0, totalFacturado: 0 },
+      fechaInicioGlobal,
+      fechaFinGlobal,
     });
   } catch (e: any) {
     console.error("Error API spiff:", e);

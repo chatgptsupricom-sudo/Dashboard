@@ -34,6 +34,17 @@ export async function POST(req: Request) {
 
     const dbUser = localUserData.rows[0];
 
+    let sellerActivo = 1;
+    if (dbUser.role_name === "seller" || dbUser.role_name === "vendedor") {
+      const sellerResult = await query(
+        "SELECT activo FROM sellers WHERE user_id = ? LIMIT 1",
+        [dbUser.id]
+      );
+      if (sellerResult.rows.length > 0) {
+        sellerActivo = sellerResult.rows[0].activo ?? 1;
+      }
+    }
+
     // 3. Obtención del nombre (Prioridad: DB Local -> Odoo)
     let userName = dbUser.name;
     if (!userName) {
@@ -58,6 +69,7 @@ export async function POST(req: Request) {
       role_id: dbUser.role_id,
       odoo_uid: odooUid,
       cids: dbUser.cids,
+      activo: sellerActivo,
     };
 
     // 5. Generación del token con el nombre

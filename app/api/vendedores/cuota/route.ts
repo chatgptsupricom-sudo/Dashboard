@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const userCids = payload.cids as number;
 
     const [resultSellers]: any = await db.query(
-      "SELECT id, name, user_id FROM sellers WHERE cids = ? AND user_id = ? AND activo = 1",
+      "SELECT id, name, user_id FROM sellers WHERE cids = ? AND user_id = ?",
       [userCids, uid],
     );
     const seller = resultSellers?.[0];

@@ -150,6 +150,10 @@ export function Sidebar({
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 
+  const isSellerPausado =
+    (userRole === "seller" || userRole === "vendedor") &&
+    (user as any).activo === 0;
+
   // Filtramos los items base
   const availableItems = menuItems
     .filter(
@@ -160,7 +164,8 @@ export function Sidebar({
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
         (!isSuperAdminRole || !ventasDropdownIds.includes(item.id)) &&
-        (item.id !== "catalogo_adminleads" || userCids === 9)
+        (item.id !== "catalogo_adminleads" || userCids === 9) &&
+        !(isSellerPausado && (item.id === "leads" || item.id === "cierres"))
     )
     .map((item) => {
       if (item.id === "actividad") {

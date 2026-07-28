@@ -63,6 +63,14 @@ export default function SpiffPage() {
   const rankingVendedores = data?.rankingVendedores || [];
   const miPosicion = data?.miPosicion || { posicion: 0, nombre: "", totalSpiff: 0, totalFacturado: 0 };
   const allProducts: ProductData[] = data?.allProducts || [];
+  const fechaInicioGlobal = data?.fechaInicioGlobal || null;
+  const fechaFinGlobal = data?.fechaFinGlobal || null;
+
+  const formatDate = (d: string | null) => {
+    if (!d) return null;
+    const [y, m, day] = d.split("-");
+    return `${day}/${m}/${y}`;
+  };
 
   const getBarColor = (index: number) => {
     const colors = [
@@ -87,6 +95,11 @@ export default function SpiffPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900">Spiff</h1>
             <p className="text-xs sm:text-sm text-slate-400 font-medium">Facturación total por marca y producto</p>
+            {fechaInicioGlobal && (
+              <p className="text-[10px] sm:text-xs text-amber-500 font-bold mt-0.5">
+                Periodo: {formatDate(fechaInicioGlobal)} — {fechaFinGlobal ? formatDate(fechaFinGlobal) : "Sin fecha fin"}
+              </p>
+            )}
           </div>
         </div>
       </div>
