@@ -209,8 +209,9 @@ export default function SpiffManager({
 
   const formatDate = (d: string | null) => {
     if (!d) return "Sin fin";
-    const parts = d.split("-");
-    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return d;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
     return date.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   };
 
