@@ -579,19 +579,19 @@ export default function SpiffManager({
               ) : (
                 <div className="flex flex-col">
                   <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                    <span className="w-8 text-center">#</span>
-                    <span className="flex-1">Vendedor</span>
-                    <span className="w-16 text-center">Unidad</span>
-                    <span className="w-20 text-center">Monto</span>
-                    <span className="w-16 text-center">Metas</span>
-                    <span className="w-20 text-center">Spiff</span>
+                    <span className="w-8 text-center flex-shrink-0">#</span>
+                    <span className="w-44 flex-shrink-0">Vendedor</span>
+                    <span className="w-20 text-center flex-shrink-0">Unidad</span>
+                    <span className="w-24 text-center flex-shrink-0">Monto</span>
+                    <span className="w-16 text-center flex-shrink-0">Metas</span>
+                    <span className="w-20 text-center flex-shrink-0">Spiff</span>
                   </div>
                   {rankingModal.data
                     .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
                     .map((seller, i) => (
                       <div
                         key={seller.nombre}
-                        className="flex items-center gap-2 px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
+                        className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
                       >
                         <div className="w-8 flex justify-center flex-shrink-0">
                           {i === 0 ? <Trophy size={16} className="text-yellow-500" /> :
@@ -599,21 +599,21 @@ export default function SpiffManager({
                            i === 2 ? <Trophy size={16} className="text-amber-600" /> :
                            <span className="text-xs font-black text-slate-300">{i + 1}</span>}
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="w-44 flex-shrink-0">
                           <p className="text-xs font-bold text-slate-700 truncate">{seller.nombre}</p>
                         </div>
-                        <div className="w-16 text-center">
+                        <div className="w-20 text-center flex-shrink-0">
                           <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
                         </div>
-                        <div className="w-20 text-center">
+                        <div className="w-24 text-center flex-shrink-0">
                           <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
                         </div>
-                        <div className="w-16 text-center">
+                        <div className="w-16 text-center flex-shrink-0">
                           <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
                             {seller.metaAlcanzadas}x
                           </span>
                         </div>
-                        <div className="w-20 text-center">
+                        <div className="w-20 text-center flex-shrink-0">
                           <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
                             ${seller.spiff.toLocaleString()}
                           </span>
