@@ -548,7 +548,7 @@ export default function SpiffManager({
           onClick={() => setRankingModal(null)}
         >
           <div
-            className="bg-white rounded-2xl w-full max-w-xl max-h-[80vh] overflow-hidden shadow-2xl"
+            className="bg-white rounded-2xl max-h-[80vh] overflow-hidden shadow-2xl w-fit"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -578,13 +578,13 @@ export default function SpiffManager({
                 </div>
               ) : (
                 <div className="flex flex-col max-h-[50vh] overflow-y-auto">
-                  <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 whitespace-nowrap">
                     <span className="w-8 text-center flex-shrink-0">#</span>
-                    <span className="w-36 flex-shrink-0">Vendedor</span>
-                    <span className="w-16 text-center flex-shrink-0">Unidad</span>
-                    <span className="w-20 text-center flex-shrink-0">Monto</span>
-                    <span className="w-14 text-center flex-shrink-0">Metas</span>
-                    <span className="w-16 text-center flex-shrink-0">Spiff</span>
+                    <span className="flex-shrink-0">Vendedor</span>
+                    <span className="w-20 text-center flex-shrink-0">Unidad</span>
+                    <span className="w-24 text-center flex-shrink-0">Monto</span>
+                    <span className="w-16 text-center flex-shrink-0">Metas</span>
+                    <span className="w-20 text-center flex-shrink-0">Spiff</span>
                   </div>
                   {rankingModal.data
                     .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
@@ -599,21 +599,21 @@ export default function SpiffManager({
                            i === 2 ? <Trophy size={16} className="text-amber-600" /> :
                            <span className="text-xs font-black text-slate-300">{i + 1}</span>}
                         </div>
-                        <div className="w-36 flex-shrink-0">
-                          <p className="text-xs font-bold text-slate-700 truncate">{seller.nombre}</p>
-                        </div>
-                        <div className="w-16 text-center flex-shrink-0">
-                          <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
+                        <div className="flex-shrink-0">
+                          <p className="text-xs font-bold text-slate-700 whitespace-nowrap">{seller.nombre}</p>
                         </div>
                         <div className="w-20 text-center flex-shrink-0">
+                          <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
+                        </div>
+                        <div className="w-24 text-center flex-shrink-0">
                           <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
                         </div>
-                        <div className="w-14 text-center flex-shrink-0">
+                        <div className="w-16 text-center flex-shrink-0">
                           <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
                             {seller.metaAlcanzadas}x
                           </span>
                         </div>
-                        <div className="w-16 text-center flex-shrink-0">
+                        <div className="w-20 text-center flex-shrink-0">
                           <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
                             ${seller.spiff.toLocaleString()}
                           </span>
