@@ -116,9 +116,14 @@ export async function GET(request: Request) {
       } catch (_) {}
     }
 
+    let rulesCompanyId = userCids;
+    if (!rulesCompanyId || rulesCompanyId === 0) {
+      rulesCompanyId = userCompanyId;
+    }
+
     const rulesResult = await query(
       "SELECT * FROM spiff_rules WHERE company_id = ? AND active = 1",
-      [userCids]
+      [rulesCompanyId]
     );
     const allRules: SpiffRuleRow[] = rulesResult.rows;
 

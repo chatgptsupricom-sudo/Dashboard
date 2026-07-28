@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 
@@ -74,7 +75,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
-    const effectiveCompanyId = role === "superAdmin" ? (company_id || payload.cids) : payload.cids;
+    let effectiveCompanyId = role === "superAdmin"
+      ? (company_id ? parseInt(company_id) : null)
+      : Number(payload.cids);
+
+    if (!effectiveCompanyId || effectiveCompanyId === 0) {
+      const uid = parseInt(payload.uid as string);
+      try {
+        const [user] = await callOdooRPC<any[]>("res.users", "read", [[uid]], { fields: ["company_id"] });
+        if (user?.company_id) effectiveCompanyId = user.company_id[0];
+      } catch (_) {}
+    }
+
+    if (!effectiveCompanyId || effectiveCompanyId === 0) {
+      return NextResponse.json({ error: "Se requiere company_id válido" }, { status: 400 });
+    }
     const userId = parseInt(payload.uid as string);
 
     const result = await query(
