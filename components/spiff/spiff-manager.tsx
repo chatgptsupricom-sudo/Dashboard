@@ -10,6 +10,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Package,
+  Building2,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
@@ -35,6 +36,11 @@ interface OdooProduct {
   marca: string;
 }
 
+interface Company {
+  cid: string;
+  name: string;
+}
+
 interface SpiffManagerProps {
   companyId?: number;
   showCompanyFilter?: boolean;
@@ -43,6 +49,7 @@ interface SpiffManagerProps {
 }
 
 const emptyForm = {
+  company_id: "",
   brand_name: "",
   target_amount: "",
   spiff_amount: "",
@@ -69,23 +76,23 @@ export default function SpiffManager({
   const [brands, setBrands] = useState<string[]>([]);
   const [products, setProducts] = useState<OdooProduct[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
+  const [companies, setCompanies] = useState<Company[]>([]);
+
+  useEffect(() => {
+    if (showCompanyFilter) {
+      fetch("/api/superadmin/empresas", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setCompanies(Array.isArray(data) ? data : []))
+        .catch(() => setCompanies([]));
+    }
+  }, [showCompanyFilter]);
 
   useEffect(() => {
     setBrandsLoading(true);
-    console.log("[SpiffManager] Fetching brands...");
     fetch("/api/spiff/brands", { credentials: "include" })
-      .then((res) => {
-        console.log("[SpiffManager] Brands response status:", res.status);
-        return res.json();
-      })
-      .then((data) => {
-        console.log("[SpiffManager] Brands data:", data);
-        setBrands(Array.isArray(data) ? data : []);
-      })
-      .catch((e) => {
-        console.error("[SpiffManager] Error loading brands:", e);
-        setBrands([]);
-      })
+      .then((res) => res.json())
+      .then((data) => setBrands(Array.isArray(data) ? data : []))
+      .catch(() => setBrands([]))
       .finally(() => setBrandsLoading(false));
   }, []);
 
@@ -93,20 +100,10 @@ export default function SpiffManager({
     if (form.tipo === "producto") {
       const params = new URLSearchParams();
       if (form.brand_name) params.append("brand", form.brand_name);
-      console.log("[SpiffManager] Fetching products...", params.toString());
       fetch(`/api/spiff/products?${params.toString()}`, { credentials: "include" })
-        .then((res) => {
-          console.log("[SpiffManager] Products response status:", res.status);
-          return res.json();
-        })
-        .then((data) => {
-          console.log("[SpiffManager] Products data:", data?.length, data?.slice(0, 3));
-          setProducts(Array.isArray(data) ? data : []);
-        })
-        .catch((e) => {
-          console.error("[SpiffManager] Error loading products:", e);
-          setProducts([]);
-        });
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setProducts(Array.isArray(data) ? data : []))
+        .catch(() => setProducts([]));
     }
   }, [form.tipo, form.brand_name]);
 
@@ -130,8 +127,16 @@ export default function SpiffManager({
 
   const handleSave = async () => {
     if (!form.brand_name || !form.target_amount || !form.spiff_amount) return;
+
+    let selectedCompanyId: number | undefined;
+    if (showCompanyFilter) {
+      selectedCompanyId = form.company_id ? parseInt(form.company_id) : undefined;
+    } else {
+      selectedCompanyId = companyId;
+    }
+
     const body: any = {
-      company_id: companyId || (filterCompany ? parseInt(filterCompany) : undefined),
+      company_id: selectedCompanyId,
       brand_name: form.brand_name,
       target_amount: parseFloat(form.target_amount),
       spiff_amount: parseFloat(form.spiff_amount),
@@ -188,6 +193,7 @@ export default function SpiffManager({
   const startEdit = (rule: SpiffRule) => {
     setEditingRule(rule);
     setForm({
+      company_id: rule.company_id?.toString() || "",
       brand_name: rule.brand_name,
       target_amount: rule.target_amount.toString(),
       spiff_amount: rule.spiff_amount.toString(),
@@ -206,7 +212,21 @@ export default function SpiffManager({
     return new Date(d).toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   };
 
+  const getCompanyName = (companyId: number) => {
+    const company = companies.find((c) => parseInt(c.cid) === companyId);
+    return company?.name || `CID ${companyId}`;
+  };
+
   const isMontoMode = form.modo === "monto";
+
+  const groupedRules = showCompanyFilter
+    ? rules.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
+        const cid = rule.company_id;
+        if (!acc[cid]) acc[cid] = [];
+        acc[cid].push(rule);
+        return acc;
+      }, {})
+    : null;
 
   return (
     <div className="space-y-6">
@@ -220,12 +240,26 @@ export default function SpiffManager({
             <p className="text-sm text-slate-400 font-medium">{subtitle}</p>
           </div>
         </div>
-        <button
-          onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
-        >
-          <Plus size={16} /> Nueva Regla
-        </button>
+        <div className="flex items-center gap-3">
+          {showCompanyFilter && (
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map((c) => (
+                <option key={c.cid} value={c.cid}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
+          >
+            <Plus size={16} /> Nueva Regla
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -235,6 +269,23 @@ export default function SpiffManager({
               <h3 className="text-sm font-black text-slate-700">{editingRule ? "Editar Regla" : "Nueva Regla de Spiff"}</h3>
               <button onClick={() => setShowForm(false)} className="p-1 hover:bg-slate-200 rounded-lg"><X size={16} /></button>
             </div>
+
+            {/* Row 0: Empresa (superAdmin only) */}
+            {showCompanyFilter && (
+              <div className="mb-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Empresa</label>
+                <select
+                  value={form.company_id}
+                  onChange={(e) => setForm({ ...form, company_id: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                >
+                  <option value="">Seleccionar empresa...</option>
+                  {companies.map((c) => (
+                    <option key={c.cid} value={c.cid}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Row 1: Tipo + Modo */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -274,7 +325,7 @@ export default function SpiffManager({
               </div>
             </div>
 
-            {/* Row 2: Marca + Producto (si tipo=producto) + Meta */}
+            {/* Row 2: Marca + Producto + Meta */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
@@ -327,12 +378,10 @@ export default function SpiffManager({
               </div>
             </div>
 
-            {/* Row 3: Spiff por meta + Fechas */}
+            {/* Row 3: Spiff + Fechas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
-                  Spiff por Meta ($)
-                </label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Spiff por Meta ($)</label>
                 <input
                   type="number"
                   value={form.spiff_amount}
@@ -396,6 +445,30 @@ export default function SpiffManager({
               <Award size={40} className="mx-auto text-slate-200 mb-3" />
               <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff configuradas</p>
             </div>
+          ) : showCompanyFilter && groupedRules ? (
+            <div className="flex flex-col">
+              {Object.entries(groupedRules)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([companyIdStr, groupRules]) => (
+                  <div key={companyIdStr} className="border-b last:border-none">
+                    <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <Building2 size={14} className="text-slate-400" />
+                      <span className="text-xs font-black text-slate-600 uppercase">{getCompanyName(parseInt(companyIdStr))}</span>
+                      <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md">{groupRules.length} reglas</span>
+                    </div>
+                    {groupRules.map((rule) => (
+                      <RuleRow
+                        key={rule.id}
+                        rule={rule}
+                        onEdit={startEdit}
+                        onDelete={handleDelete}
+                        onToggle={handleToggle}
+                        formatDate={formatDate}
+                      />
+                    ))}
+                  </div>
+                ))}
+            </div>
           ) : (
             <div className="flex flex-col">
               <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
@@ -408,57 +481,82 @@ export default function SpiffManager({
                 <span className="w-20 text-center">Acciones</span>
               </div>
               {rules.map((rule) => (
-                <div key={rule.id} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {rule.tipo === "producto" ? (
-                        <Package size={12} className="text-blue-500 flex-shrink-0" />
-                      ) : (
-                        <Award size={12} className="text-amber-500 flex-shrink-0" />
-                      )}
-                      <p className="text-xs font-bold text-slate-700 uppercase truncate">{rule.brand_name}</p>
-                    </div>
-                    {rule.tipo === "producto" && rule.product_name && (
-                      <p className="text-[10px] text-slate-400 truncate pl-5">{rule.product_name}</p>
-                    )}
-                  </div>
-                  <div className="w-16 text-center">
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                      {rule.modo === "monto" ? "Monto" : "Cant."}
-                    </span>
-                  </div>
-                  <div className="w-24 text-center">
-                    <span className="text-xs font-black text-slate-600 tabular-nums">
-                      {rule.modo === "monto" ? `$${rule.target_amount.toLocaleString()}` : `${rule.target_amount} uds`}
-                    </span>
-                  </div>
-                  <div className="w-20 text-center">
-                    <span className="text-xs font-black text-amber-600 tabular-nums">${rule.spiff_amount.toLocaleString()}</span>
-                  </div>
-                  <div className="w-24 text-center">
-                    <span className="text-[9px] font-bold text-slate-500">
-                      {rule.fecha_inicio || rule.fecha_fin ? `${formatDate(rule.fecha_inicio)} → ${formatDate(rule.fecha_fin)}` : "Siempre"}
-                    </span>
-                  </div>
-                  <div className="w-16 text-center">
-                    <button onClick={() => handleToggle(rule)} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
-                      {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                    </button>
-                  </div>
-                  <div className="w-20 flex gap-1 justify-center">
-                    <button onClick={() => startEdit(rule)} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
-                      <Pencil size={14} />
-                    </button>
-                    <button onClick={() => handleDelete(rule.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
+                <RuleRow
+                  key={rule.id}
+                  rule={rule}
+                  onEdit={startEdit}
+                  onDelete={handleDelete}
+                  onToggle={handleToggle}
+                  formatDate={formatDate}
+                />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function RuleRow({
+  rule,
+  onEdit,
+  onDelete,
+  onToggle,
+  formatDate,
+}: {
+  rule: SpiffRule;
+  onEdit: (rule: SpiffRule) => void;
+  onDelete: (id: number) => void;
+  onToggle: (rule: SpiffRule) => void;
+  formatDate: (d: string | null) => string;
+}) {
+  return (
+    <div className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          {rule.tipo === "producto" ? (
+            <Package size={12} className="text-blue-500 flex-shrink-0" />
+          ) : (
+            <Award size={12} className="text-amber-500 flex-shrink-0" />
+          )}
+          <p className="text-xs font-bold text-slate-700 uppercase truncate">{rule.brand_name}</p>
+        </div>
+        {rule.tipo === "producto" && rule.product_name && (
+          <p className="text-[10px] text-slate-400 truncate pl-5">{rule.product_name}</p>
+        )}
+      </div>
+      <div className="w-16 text-center">
+        <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+          {rule.modo === "monto" ? "Monto" : "Cant."}
+        </span>
+      </div>
+      <div className="w-24 text-center">
+        <span className="text-xs font-black text-slate-600 tabular-nums">
+          {rule.modo === "monto" ? `$${rule.target_amount.toLocaleString()}` : `${rule.target_amount} uds`}
+        </span>
+      </div>
+      <div className="w-20 text-center">
+        <span className="text-xs font-black text-amber-600 tabular-nums">${rule.spiff_amount.toLocaleString()}</span>
+      </div>
+      <div className="w-24 text-center">
+        <span className="text-[9px] font-bold text-slate-500">
+          {rule.fecha_inicio || rule.fecha_fin ? `${formatDate(rule.fecha_inicio)} → ${formatDate(rule.fecha_fin)}` : "Siempre"}
+        </span>
+      </div>
+      <div className="w-16 text-center">
+        <button onClick={() => onToggle(rule)} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
+          {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+        </button>
+      </div>
+      <div className="w-20 flex gap-1 justify-center">
+        <button onClick={() => onEdit(rule)} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
+          <Pencil size={14} />
+        </button>
+        <button onClick={() => onDelete(rule.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+          <Trash2 size={14} />
+        </button>
+      </div>
     </div>
   );
 }
