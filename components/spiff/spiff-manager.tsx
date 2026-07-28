@@ -236,6 +236,7 @@ export default function SpiffManager({
 
       const rows = Object.entries(sellerBrandData)
         .map(([nombre, sbd]: [string, any]) => {
+          if (nombre === "Asistente de Ventas") return null;
           const brandKey = Object.keys(sbd.marcas || {}).find(
             (k) => k.toLowerCase() === rule.brand_name.toLowerCase()
           );
@@ -252,7 +253,8 @@ export default function SpiffManager({
             spiff: spiffGanado,
           };
         })
-        .filter((r) => r.monto > 0 || r.unidades > 0)
+        .filter(Boolean)
+        .filter((r: any) => r.monto > 0 || r.unidades > 0)
         .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto);
 
       setRankingModal({ rule, data: rows, loading: false });
