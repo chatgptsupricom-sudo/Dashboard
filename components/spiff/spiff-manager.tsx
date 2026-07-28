@@ -209,7 +209,9 @@ export default function SpiffManager({
 
   const formatDate = (d: string | null) => {
     if (!d) return "Sin fin";
-    return new Date(d).toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
+    const parts = d.split("-");
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   };
 
   const getCompanyName = (companyId: number) => {
