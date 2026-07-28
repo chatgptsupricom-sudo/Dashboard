@@ -266,8 +266,7 @@ export async function GET(request: NextRequest) {
       month: s["invoice_date:month"],
       total: s.amount_total || 0,
     }));
-    const currentMonthTotal =
-      monthlyGrowth[monthlyGrowth.length - 1]?.total || 0;
+    const currentMonthTotal = processedItems.reduce((acc, p) => acc + (p.revenue || 0), 0);
     const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
     const growthPercent = (
       ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
@@ -288,10 +287,15 @@ export async function GET(request: NextRequest) {
           .reverse()
           .slice(0, 5),
       },
-      salesByUser: (sellersData || []).map((s: any) => ({
-        name: s.invoice_user_id?.[1] || "Sin Vendedor",
-        total: s.amount_total || 0,
-      })),
+      salesByUser: (sellersData || [])
+        .filter((s: any) => {
+          const name = (s.invoice_user_id?.[1] || "").toLowerCase();
+          return !name.includes("asistente");
+        })
+        .map((s: any) => ({
+          name: s.invoice_user_id?.[1] || "Sin Vendedor",
+          total: s.amount_total || 0,
+        })),
       topClients: (clientsRanking || []).slice(0, 5).map((c: any) => ({
         name: c.partner_id?.[1] || "Desconocido",
         total: c.amount_total || 0,
