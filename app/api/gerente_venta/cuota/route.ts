@@ -128,8 +128,8 @@ export async function POST(req: Request) {
     const targetUserId = seller[0]?.user_id || 0;
 
     await db.query(
-      "INSERT INTO cuota (user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, NOW())",
-      [targetUserId, seller_id, cuota],
+      "INSERT INTO cuota (id, user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, ?, NOW())",
+      [Date.now(), targetUserId, seller_id, cuota],
     );
 
     try {
