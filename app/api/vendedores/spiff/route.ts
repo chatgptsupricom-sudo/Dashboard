@@ -159,6 +159,28 @@ export async function GET(request: Request) {
         };
       });
 
+    const allProducts: { nombre: string; marca: string; monto: number; cantidad: number; spiffGanado: number; spiffMeta: number; spiffPorMeta: number }[] = [];
+    let totalSpiffProductos = 0;
+    Object.entries(brandMap).forEach(([marca, data]) => {
+      const rule = rules.find((r: any) => r.brand_name.toLowerCase() === marca.toLowerCase());
+      if (!rule) return;
+      Object.entries(data.productos).forEach(([prodName, v]) => {
+        const veces = Math.floor(v.monto / rule.target_amount);
+        const spiffGanado = veces * rule.spiff_amount;
+        totalSpiffProductos += spiffGanado;
+        allProducts.push({
+          nombre: prodName,
+          marca,
+          monto: v.monto,
+          cantidad: v.cantidad,
+          spiffGanado,
+          spiffMeta: rule.target_amount,
+          spiffPorMeta: rule.spiff_amount,
+        });
+      });
+    });
+    allProducts.sort((a, b) => b.spiffGanado - a.spiffGanado || b.monto - a.monto);
+
     const marcasPorSpiff = [...marcas].sort((a, b) => b.spiffGanado - a.spiffGanado);
 
     const sellerMap: Record<string, { nombre: string; totalSpiff: number; totalFacturado: number; marcas: Record<string, number> }> = {};
@@ -237,6 +259,8 @@ export async function GET(request: Request) {
       totalProductos: lineData.length,
       reglasActivas: rules.length,
       marcasPorSpiff,
+      allProducts,
+      totalSpiffProductos,
       rankingVendedores,
       miPosicion: miPosicion || { posicion: 0, nombre: userName, totalSpiff: 0, totalFacturado: 0 },
     });

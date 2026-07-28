@@ -35,6 +35,8 @@ export default function SpiffPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [expandedMarca, setExpandedMarca] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"marcas" | "productos">("marcas");
+  const [productMode, setProductMode] = useState<"porProducto" | "acumulado">("porProducto");
 
   const now = new Date();
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
@@ -78,6 +80,7 @@ export default function SpiffPage() {
   const totalSpiff = data?.totalSpiff || 0;
   const rankingVendedores = data?.rankingVendedores || [];
   const miPosicion = data?.miPosicion || { posicion: 0, nombre: "", totalSpiff: 0, totalFacturado: 0 };
+  const allProducts = data?.allProducts || [];
 
   const getBarColor = (index: number) => {
     const colors = [
@@ -149,109 +152,246 @@ export default function SpiffPage() {
         </Card>
       </div>
 
-      {/* Tabla de marcas */}
+      {/* Tabla de marcas/productos */}
       <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
         <CardHeader className="pb-2">
-          <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <BarChart3 size={16} className="text-amber-500" /> Facturación por Marca
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
+              <BarChart3 size={16} className="text-amber-500" />
+              {viewMode === "marcas" ? "Facturación por Marca" : "Facturación por Producto"}
+            </CardTitle>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode("marcas")}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${viewMode === "marcas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Por Marca
+              </button>
+              <button
+                onClick={() => setViewMode("productos")}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${viewMode === "productos" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Por Producto
+              </button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
-          {marcas.length === 0 ? (
-            <div className="py-12 text-center">
-              <Award size={40} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff activas para este período</p>
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              {marcas.map((marca, i) => {
-                const isExpanded = expandedMarca === marca.nombre;
-                const barWidth = marcas[0]?.monto > 0 ? (marca.monto / marcas[0].monto) * 100 : 0;
-                return (
-                  <div key={marca.nombre} className="border-b last:border-none">
-                    <div
-                      onClick={() => setExpandedMarca(isExpanded ? null : marca.nombre)}
-                      className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50 cursor-pointer transition-all"
-                    >
-                      <div className="flex-shrink-0 w-8 flex justify-center">
-                        {i === 0 ? (
-                          <Award size={18} className="text-yellow-500" />
-                        ) : i === 1 ? (
-                          <Award size={18} className="text-slate-400" />
-                        ) : i === 2 ? (
-                          <Award size={18} className="text-amber-600" />
-                        ) : (
-                          <span className="text-xs font-black text-slate-300">{i + 1}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-black text-slate-400">{marca.porcentaje}%</span>
-                            <span className="text-xs font-black text-slate-700 tabular-nums">${isPresentationMode ? "X,XXX" : marca.monto.toLocaleString()}</span>
-                            {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-                          </div>
+          {viewMode === "marcas" ? (
+            marcas.length === 0 ? (
+              <div className="py-12 text-center">
+                <Award size={40} className="mx-auto text-slate-200 mb-3" />
+                <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff activas para este período</p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {marcas.map((marca, i) => {
+                  const isExpanded = expandedMarca === marca.nombre;
+                  const barWidth = marcas[0]?.monto > 0 ? (marca.monto / marcas[0].monto) * 100 : 0;
+                  return (
+                    <div key={marca.nombre} className="border-b last:border-none">
+                      <div
+                        onClick={() => setExpandedMarca(isExpanded ? null : marca.nombre)}
+                        className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50 cursor-pointer transition-all"
+                      >
+                        <div className="flex-shrink-0 w-8 flex justify-center">
+                          {i === 0 ? (
+                            <Award size={18} className="text-yellow-500" />
+                          ) : i === 1 ? (
+                            <Award size={18} className="text-slate-400" />
+                          ) : i === 2 ? (
+                            <Award size={18} className="text-amber-600" />
+                          ) : (
+                            <span className="text-xs font-black text-slate-300">{i + 1}</span>
+                          )}
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-500 ${getBarColor(i)}`}
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
-                        {marca.tieneRegla && (
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
-                              Meta: ${marca.spiffMeta.toLocaleString()}
-                            </span>
-                            <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                              Spiff: ${marca.spiffPorMeta.toLocaleString()}/meta
-                            </span>
-                            {marca.spiffGanado > 0 && (
-                              <span className="text-[9px] font-black text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-md">
-                                Ganado: ${marca.spiffGanado.toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <AnimatePresence>
-                      {isExpanded && marca.productos.length > 0 && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="px-5 pb-4 pl-16">
-                            <div className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50">
-                              <div className="bg-slate-100/50 px-4 py-2 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                                <span>Producto</span>
-                                <span className="text-right">Monto / %</span>
-                              </div>
-                              <div className="divide-y divide-slate-100">
-                                {marca.productos.map((p, j) => (
-                                  <div key={j} className="px-4 py-2 flex justify-between items-center text-xs">
-                                    <span className="font-bold text-slate-600 truncate max-w-[65%]">{isPresentationMode ? `Producto #${j + 1}` : p.nombre}</span>
-                                    <div className="text-right">
-                                      <span className="font-black text-slate-700">${isPresentationMode ? "X,XXX" : p.monto.toLocaleString()}</span>
-                                      <span className="text-[10px] text-slate-400 ml-1.5">{p.porcentaje}%</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-black text-slate-400">{marca.porcentaje}%</span>
+                              <span className="text-xs font-black text-slate-700 tabular-nums">${isPresentationMode ? "X,XXX" : marca.monto.toLocaleString()}</span>
+                              {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                             </div>
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                          <div className="w-full bg-slate-100 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-500 ${getBarColor(i)}`}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
+                          {marca.tieneRegla && (
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
+                                Meta: ${marca.spiffMeta.toLocaleString()}
+                              </span>
+                              <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                                Spiff: ${marca.spiffPorMeta.toLocaleString()}/meta
+                              </span>
+                              {marca.spiffGanado > 0 && (
+                                <span className="text-[9px] font-black text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-md">
+                                  Ganado: ${marca.spiffGanado.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <AnimatePresence>
+                        {isExpanded && marca.productos.length > 0 && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-4 pl-16">
+                              <div className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50">
+                                <div className="bg-slate-100/50 px-4 py-2 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                  <span>Producto</span>
+                                  <span className="text-right">Monto / %</span>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                  {marca.productos.map((p, j) => (
+                                    <div key={j} className="px-4 py-2 flex justify-between items-center text-xs">
+                                      <span className="font-bold text-slate-600 truncate max-w-[65%]">{isPresentationMode ? `Producto #${j + 1}` : p.nombre}</span>
+                                      <div className="text-right">
+                                        <span className="font-black text-slate-700">${isPresentationMode ? "X,XXX" : p.monto.toLocaleString()}</span>
+                                        <span className="text-[10px] text-slate-400 ml-1.5">{p.porcentaje}%</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            allProducts.length === 0 ? (
+              <div className="py-12 text-center">
+                <Package size={40} className="mx-auto text-slate-200 mb-3" />
+                <p className="text-sm text-slate-400 font-medium">No hay productos con spiff activo para este período</p>
+              </div>
+            ) : (
+              <>
+                <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Modo:</span>
+                  <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+                    <button
+                      onClick={() => setProductMode("porProducto")}
+                      className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition-all ${productMode === "porProducto" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    >
+                      Por Producto
+                    </button>
+                    <button
+                      onClick={() => setProductMode("acumulado")}
+                      className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition-all ${productMode === "acumulado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    >
+                      Acumulado en Ventas
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+                {productMode === "porProducto" ? (
+                  <div className="flex flex-col">
+                    <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <span className="w-8 text-center">#</span>
+                      <span className="flex-1">Producto</span>
+                      <span className="w-24 text-center">Marca</span>
+                      <span className="w-20 text-center">Unidades</span>
+                      <span className="w-28 text-center">Monto</span>
+                      <span className="w-24 text-center">Spiff</span>
+                    </div>
+                    {allProducts.slice(0, 50).map((p, i) => (
+                      <div key={i} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+                        <div className="w-8 flex justify-center">
+                          {i === 0 ? <Award size={16} className="text-yellow-500" /> :
+                           i === 1 ? <Award size={16} className="text-slate-400" /> :
+                           i === 2 ? <Award size={16} className="text-amber-600" /> :
+                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Producto #${i + 1}` : p.nombre}</p>
+                        </div>
+                        <div className="w-24 text-center">
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{p.marca}</span>
+                        </div>
+                        <div className="w-20 text-center">
+                          <span className="text-xs font-bold text-slate-600">{p.cantidad}</span>
+                        </div>
+                        <div className="w-28 text-center">
+                          <span className="text-xs font-black text-slate-700 tabular-nums">${p.monto.toLocaleString()}</span>
+                        </div>
+                        <div className="w-24 text-center">
+                          <span className={`text-xs font-black tabular-nums ${p.spiffGanado > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            ${p.spiffGanado.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <span className="w-8 text-center">#</span>
+                      <span className="flex-1">Marca</span>
+                      <span className="w-20 text-center">Productos</span>
+                      <span className="w-20 text-center">Unidades</span>
+                      <span className="w-28 text-center">Monto Total</span>
+                      <span className="w-24 text-center">Spiff</span>
+                    </div>
+                    {(() => {
+                      const brandMap = new Map<string, { productos: number; unidades: number; monto: number; spiff: number }>();
+                      allProducts.forEach((p) => {
+                        const existing = brandMap.get(p.marca) || { productos: 0, unidades: 0, monto: 0, spiff: 0 };
+                        existing.productos += 1;
+                        existing.unidades += p.cantidad;
+                        existing.monto += p.monto;
+                        existing.spiff += p.spiffGanado;
+                        brandMap.set(p.marca, existing);
+                      });
+                      const brands = Array.from(brandMap.entries())
+                        .map(([marca, data]) => ({ marca, ...data }))
+                        .sort((a, b) => b.spiff - a.spiff);
+                      return brands.map((b, i) => (
+                        <div key={b.marca} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+                          <div className="w-8 flex justify-center">
+                            {i === 0 ? <Award size={16} className="text-yellow-500" /> :
+                             i === 1 ? <Award size={16} className="text-slate-400" /> :
+                             i === 2 ? <Award size={16} className="text-amber-600" /> :
+                             <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Marca #${i + 1}` : b.marca}</p>
+                          </div>
+                          <div className="w-20 text-center">
+                            <span className="text-xs font-bold text-slate-600">{b.productos}</span>
+                          </div>
+                          <div className="w-20 text-center">
+                            <span className="text-xs font-bold text-slate-600">{b.unidades.toLocaleString()}</span>
+                          </div>
+                          <div className="w-28 text-center">
+                            <span className="text-xs font-black text-slate-700 tabular-nums">${b.monto.toLocaleString()}</span>
+                          </div>
+                          <div className="w-24 text-center">
+                            <span className={`text-xs font-black tabular-nums ${b.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                              ${b.spiff.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </>
+            )
           )}
         </CardContent>
       </Card>

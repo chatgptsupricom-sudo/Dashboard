@@ -219,22 +219,22 @@ export default function SpiffManager({
             </div>
           ) : (
             <div className="flex flex-col">
-              <div className="bg-slate-50 px-5 py-2.5 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                <span>Marca</span>
-                <span>Meta</span>
-                <span>Spiff/Meta</span>
-                <span>Estado</span>
-                <span className="text-right">Acciones</span>
+              <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                <span className="flex-1">Marca</span>
+                <span className="w-28 text-center">Meta</span>
+                <span className="w-28 text-center">Spiff/Meta</span>
+                <span className="w-20 text-center">Estado</span>
+                <span className="w-20 text-center">Acciones</span>
               </div>
               {rules.map((rule) => (
-                <div key={rule.id} className="flex items-center gap-4 px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+                <div key={rule.id} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
                   <div className="flex-1">
                     <p className="text-xs font-bold text-slate-700 uppercase">{rule.brand_name}</p>
                   </div>
-                  <div className="w-28 text-right">
+                  <div className="w-28 text-center">
                     <span className="text-xs font-black text-slate-600 tabular-nums">${rule.target_amount.toLocaleString()}</span>
                   </div>
-                  <div className="w-28 text-right">
+                  <div className="w-28 text-center">
                     <span className="text-xs font-black text-amber-600 tabular-nums">${rule.spiff_amount.toLocaleString()}</span>
                   </div>
                   <div className="w-20 text-center">
@@ -242,7 +242,7 @@ export default function SpiffManager({
                       {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
                     </button>
                   </div>
-                  <div className="flex gap-1 w-20 justify-end">
+                  <div className="w-20 flex gap-1 justify-center">
                     <button onClick={() => startEdit(rule)} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
                       <Pencil size={14} />
                     </button>
