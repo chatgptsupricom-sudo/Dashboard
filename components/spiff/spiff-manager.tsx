@@ -227,7 +227,7 @@ export default function SpiffManager({
   const handleViewRanking = async (rule: SpiffRule) => {
     setRankingModal({ rule, data: [], loading: true });
     try {
-      const res = await fetch("/api/vendedores/spiff", { credentials: "include" });
+      const res = await fetch(`/api/vendedores/spiff?company_id=${rule.company_id}`, { credentials: "include" });
       const json = await res.json();
       const sellerBrandData = json.sellerBrandData || {};
       const ruleMeta = rule.target_amount;

@@ -53,9 +53,15 @@ export async function GET(request: Request) {
     const userName = user.name;
     const userCompanyId = user.company_id[0];
 
+    const url = new URL(request.url);
+    const queryCompanyId = url.searchParams.get("company_id");
+
     let rulesCompanyId = userCids;
     if (!rulesCompanyId || rulesCompanyId === 0) {
       rulesCompanyId = userCompanyId;
+    }
+    if (queryCompanyId) {
+      rulesCompanyId = parseInt(queryCompanyId);
     }
 
     const rulesResult = await query(
@@ -86,7 +92,7 @@ export async function GET(request: Request) {
     const domain: any[] = [
       ["move_type", "=", "out_invoice"],
       ["state", "=", "posted"],
-      ["company_id", "=", userCompanyId],
+      ["company_id", "=", rulesCompanyId],
     ];
     if (fechaInicioGlobal) {
       domain.push(["invoice_date", ">=", fechaInicioGlobal]);
