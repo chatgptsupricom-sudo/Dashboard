@@ -16,7 +16,7 @@ const COMPANY_MAP: Record<number, string> = {
 export async function GET() {
   try {
     const [resultSellers]: any = await db.query(
-      "SELECT id, name, user_id, cids FROM sellers WHERE activo = 1",
+      "SELECT id, name, user_id, cids FROM sellers",
     );
     const sellers = resultSellers || [];
 

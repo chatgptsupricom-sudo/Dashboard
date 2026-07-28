@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
     // 1. Obtener vendedores de la DB local
     const [resultSellers]: any = await db.query(
-      "SELECT id, name, user_id FROM sellers WHERE cids = ? AND activo = 1",
+      "SELECT id, name, user_id FROM sellers WHERE cids = ?",
       [userCids],
     );
     const sellers = resultSellers || [];
