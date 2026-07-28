@@ -578,48 +578,52 @@ export default function SpiffManager({
                 </div>
               ) : (
                 <div className="flex flex-col max-h-[50vh] overflow-y-auto">
-                  <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 whitespace-nowrap">
-                    <span className="w-8 text-center flex-shrink-0">#</span>
-                    <span className="flex-shrink-0">Vendedor</span>
-                    <span className="w-20 text-center flex-shrink-0">Unidad</span>
-                    <span className="w-24 text-center flex-shrink-0">Monto</span>
-                    <span className="w-16 text-center flex-shrink-0">Metas</span>
-                    <span className="w-20 text-center flex-shrink-0">Spiff</span>
-                  </div>
-                  {rankingModal.data
-                    .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
-                    .map((seller, i) => (
-                      <div
-                        key={seller.nombre}
-                        className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
-                      >
-                        <div className="w-8 flex justify-center flex-shrink-0">
-                          {i === 0 ? <Trophy size={16} className="text-yellow-500" /> :
-                           i === 1 ? <Trophy size={16} className="text-slate-400" /> :
-                           i === 2 ? <Trophy size={16} className="text-amber-600" /> :
-                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
-                        </div>
-                        <div className="flex-shrink-0">
-                          <p className="text-xs font-bold text-slate-700 whitespace-nowrap">{seller.nombre}</p>
-                        </div>
-                        <div className="w-20 text-center flex-shrink-0">
-                          <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
-                        </div>
-                        <div className="w-24 text-center flex-shrink-0">
-                          <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
-                        </div>
-                        <div className="w-16 text-center flex-shrink-0">
-                          <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
-                            {seller.metaAlcanzadas}x
-                          </span>
-                        </div>
-                        <div className="w-20 text-center flex-shrink-0">
-                          <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
-                            ${seller.spiff.toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                  <table className="w-full border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 z-10">
+                      <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                        <th className="w-10 py-2 text-center">#</th>
+                        <th className="py-2 text-left px-3">Vendedor</th>
+                        <th className="w-16 py-2 text-center">Unidad</th>
+                        <th className="w-24 py-2 text-center">Monto</th>
+                        <th className="w-16 py-2 text-center">Metas</th>
+                        <th className="w-20 py-2 text-center">Spiff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rankingModal.data
+                        .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
+                        .map((seller, i) => (
+                          <tr key={seller.nombre} className="border-b last:border-none hover:bg-slate-50/50 transition-all">
+                            <td className="py-3 text-center">
+                              {i === 0 ? <Trophy size={16} className="text-yellow-500 inline" /> :
+                               i === 1 ? <Trophy size={16} className="text-slate-400 inline" /> :
+                               i === 2 ? <Trophy size={16} className="text-amber-600 inline" /> :
+                               <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="text-xs font-bold text-slate-700">{seller.nombre}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
+                                {seller.metaAlcanzadas}x
+                              </span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                                ${seller.spiff.toLocaleString()}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
                 </div>
               )}
             </div>
