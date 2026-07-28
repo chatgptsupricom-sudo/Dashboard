@@ -77,56 +77,56 @@ export default function SpiffPage() {
     return <div className="p-10 text-center font-bold text-slate-400">Cargando Spiff...</div>;
 
   return (
-    <div className="space-y-6 bg-slate-50/50 p-8 min-h-screen">
+    <div className="space-y-4 sm:space-y-6 bg-slate-50/50 p-4 sm:p-8 min-h-screen">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 sm:mb-6">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-amber-50 rounded-2xl">
             <Award size={28} className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900">Spiff</h1>
-            <p className="text-sm text-slate-400 font-medium">Facturación total por marca y producto</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900">Spiff</h1>
+            <p className="text-xs sm:text-sm text-slate-400 font-medium">Facturación total por marca y producto</p>
           </div>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card className="rounded-3xl border-none shadow-sm p-5 bg-white">
-          <p className="text-[10px] font-black uppercase tracking-wider text-amber-500">Total Spiff</p>
-          <h4 className="text-xl font-black text-amber-600 mt-1">{isPresentationMode ? "$ X,XXX" : `$${totalSpiff.toLocaleString()}`}</h4>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <Card className="rounded-2xl sm:rounded-3xl border-none shadow-sm p-3 sm:p-5 bg-white">
+          <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-wider text-amber-500">Total Spiff</p>
+          <h4 className="text-base sm:text-xl font-black text-amber-600 mt-1">{isPresentationMode ? "$X,XXX" : `$${totalSpiff.toLocaleString()}`}</h4>
         </Card>
-        <Card className="rounded-3xl border-none shadow-sm p-5 bg-white">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Marcas con Spiff</p>
-          <h4 className="text-xl font-black text-slate-900 mt-1">{isPresentationMode ? "XX" : marcas.length}</h4>
+        <Card className="rounded-2xl sm:rounded-3xl border-none shadow-sm p-3 sm:p-5 bg-white">
+          <p className="text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Marcas</p>
+          <h4 className="text-base sm:text-xl font-black text-slate-900 mt-1">{isPresentationMode ? "XX" : marcas.length}</h4>
         </Card>
-        <Card className="rounded-3xl border-none shadow-sm p-5 bg-white">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Facturas</p>
-          <h4 className="text-xl font-black text-blue-600 mt-1">{isPresentationMode ? "XX" : totalFacturas}</h4>
+        <Card className="rounded-2xl sm:rounded-3xl border-none shadow-sm p-3 sm:p-5 bg-white">
+          <p className="text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Facturas</p>
+          <h4 className="text-base sm:text-xl font-black text-blue-600 mt-1">{isPresentationMode ? "XX" : totalFacturas}</h4>
         </Card>
       </div>
 
       {/* Tabla de marcas/productos */}
-      <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
+      <Card className="rounded-2xl sm:rounded-3xl border-none shadow-sm bg-white overflow-hidden">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
+            <CardTitle className="text-slate-900 text-xs sm:text-sm font-black uppercase tracking-wider flex items-center gap-2">
               <BarChart3 size={16} className="text-amber-500" />
-              {viewMode === "marcas" ? "Facturación por Marca" : "Facturación por Producto"}
+              {viewMode === "marcas" ? "Por Marca" : "Por Producto"}
             </CardTitle>
             <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode("marcas")}
-                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${viewMode === "marcas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-bold transition-all ${viewMode === "marcas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
               >
-                Por Marca
+                Marca
               </button>
               <button
                 onClick={() => setViewMode("productos")}
-                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${viewMode === "productos" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-bold transition-all ${viewMode === "productos" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
               >
-                Por Producto
+                Producto
               </button>
             </div>
           </div>
@@ -134,9 +134,9 @@ export default function SpiffPage() {
         <CardContent className="p-0">
           {viewMode === "marcas" ? (
             marcas.length === 0 ? (
-              <div className="py-12 text-center">
+              <div className="py-8 sm:py-12 text-center">
                 <Award size={40} className="mx-auto text-slate-200 mb-3" />
-                <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff activas</p>
+                <p className="text-xs sm:text-sm text-slate-400 font-medium">No hay reglas de spiff activas</p>
               </div>
             ) : (
               <div className="flex flex-col">
@@ -147,45 +147,45 @@ export default function SpiffPage() {
                     <div key={marca.nombre} className="border-b last:border-none">
                       <div
                         onClick={() => setExpandedMarca(isExpanded ? null : marca.nombre)}
-                        className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50 cursor-pointer transition-all"
+                        className="flex items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 hover:bg-slate-50/50 cursor-pointer transition-all"
                       >
-                        <div className="flex-shrink-0 w-8 flex justify-center">
-                          {i === 0 ? <Award size={18} className="text-yellow-500" /> :
-                           i === 1 ? <Award size={18} className="text-slate-400" /> :
-                           i === 2 ? <Award size={18} className="text-amber-600" /> :
-                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                        <div className="flex-shrink-0 w-6 sm:w-8 flex justify-center">
+                          {i === 0 ? <Award size={16} className="text-yellow-500" /> :
+                           i === 1 ? <Award size={16} className="text-slate-400" /> :
+                           i === 2 ? <Award size={16} className="text-amber-600" /> :
+                           <span className="text-[10px] sm:text-xs font-black text-slate-300">{i + 1}</span>}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${marca.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                          <div className="flex items-center justify-between mb-1 sm:mb-1.5">
+                            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                              <p className="text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-tight truncate">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
+                              <span className={`text-[7px] sm:text-[8px] font-black px-1 sm:px-1.5 py-0.5 rounded-md flex-shrink-0 ${marca.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
                                 {marca.modo === "monto" ? "$" : "UDS"}
                               </span>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-[10px] font-black text-slate-400">{marca.porcentaje}%</span>
-                              <span className="text-xs font-black text-slate-700 tabular-nums">${isPresentationMode ? "X,XXX" : marca.monto.toLocaleString()}</span>
-                              {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 ml-2">
+                              <span className="text-[9px] sm:text-[10px] font-black text-slate-400">{marca.porcentaje}%</span>
+                              <span className="text-[10px] sm:text-xs font-black text-slate-700 tabular-nums">${isPresentationMode ? "X,XXX" : marca.monto.toLocaleString()}</span>
+                              {isExpanded ? <ChevronUp size={12} className="text-slate-400" /> : <ChevronDown size={12} className="text-slate-400" />}
                             </div>
                           </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 sm:h-2">
                             <div
-                              className={`h-2 rounded-full transition-all duration-500 ${getBarColor(i)}`}
+                              className={`h-1.5 sm:h-2 rounded-full transition-all duration-500 ${getBarColor(i)}`}
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
+                          <p className="text-[8px] sm:text-[10px] text-slate-400 mt-0.5 sm:mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} uds`}</p>
                           {marca.tieneRegla && (
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
+                            <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">
+                              <span className="text-[7px] sm:text-[9px] font-black text-amber-500 bg-amber-50 px-1.5 sm:px-2 py-0.5 rounded-md">
                                 Meta: {marca.modo === "cantidad" ? `${marca.spiffMeta.toLocaleString()} uds` : `$${marca.spiffMeta.toLocaleString()}`}
                               </span>
-                              <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                              <span className="text-[7px] sm:text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 sm:px-2 py-0.5 rounded-md">
                                 Spiff: ${marca.spiffPorMeta.toLocaleString()}/meta
                               </span>
                               {marca.spiffGanado > 0 && (
-                                <span className="text-[9px] font-black text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-md">
+                                <span className="text-[7px] sm:text-[9px] font-black text-yellow-600 bg-yellow-50 px-1.5 sm:px-2 py-0.5 rounded-md">
                                   Ganado: ${marca.spiffGanado.toLocaleString()}
                                 </span>
                               )}
@@ -202,19 +202,19 @@ export default function SpiffPage() {
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden"
                           >
-                            <div className="px-5 pb-4 pl-16">
+                            <div className="px-3 sm:px-5 pb-3 sm:pb-4 pl-10 sm:pl-16">
                               <div className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50">
-                                <div className="bg-slate-100/50 px-4 py-2 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                <div className="bg-slate-100/50 px-3 sm:px-4 py-1.5 sm:py-2 flex justify-between text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
                                   <span>Producto</span>
                                   <span className="text-right">Monto / %</span>
                                 </div>
                                 <div className="divide-y divide-slate-100">
                                   {marca.productos.map((p, j) => (
-                                    <div key={j} className="px-4 py-2 flex justify-between items-center text-xs">
-                                      <span className="font-bold text-slate-600 truncate max-w-[65%]">{isPresentationMode ? `Producto #${j + 1}` : p.nombre}</span>
-                                      <div className="text-right">
+                                    <div key={j} className="px-3 sm:px-4 py-1.5 sm:py-2 flex justify-between items-center text-[10px] sm:text-xs">
+                                      <span className="font-bold text-slate-600 truncate max-w-[65%]">{isPresentationMode ? `Prod #${j + 1}` : p.nombre}</span>
+                                      <div className="text-right flex-shrink-0 ml-2">
                                         <span className="font-black text-slate-700">${isPresentationMode ? "X,XXX" : p.monto.toLocaleString()}</span>
-                                        <span className="text-[10px] text-slate-400 ml-1.5">{p.porcentaje}%</span>
+                                        <span className="text-[8px] sm:text-[10px] text-slate-400 ml-1">{p.porcentaje}%</span>
                                       </div>
                                     </div>
                                   ))}
@@ -231,67 +231,70 @@ export default function SpiffPage() {
             )
           ) : (
             allProducts.length === 0 ? (
-              <div className="py-12 text-center">
+              <div className="py-8 sm:py-12 text-center">
                 <Package size={40} className="mx-auto text-slate-200 mb-3" />
-                <p className="text-sm text-slate-400 font-medium">No hay productos con spiff activo</p>
+                <p className="text-xs sm:text-sm text-slate-400 font-medium">No hay productos con spiff activo</p>
               </div>
             ) : (
               <>
-                <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-2">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Modo:</span>
+                <div className="px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-wider">Modo:</span>
                   <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
                     <button
                       onClick={() => setProductMode("porProducto")}
-                      className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition-all ${productMode === "porProducto" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                      className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold transition-all ${productMode === "porProducto" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                     >
                       Por Producto
                     </button>
                     <button
                       onClick={() => setProductMode("acumulado")}
-                      className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition-all ${productMode === "acumulado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                      className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold transition-all ${productMode === "acumulado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                     >
-                      Acumulado en Ventas
+                      Acumulado
                     </button>
                   </div>
                 </div>
                 {productMode === "porProducto" ? (
                   <div className="flex flex-col">
-                    <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <span className="w-8 text-center">#</span>
+                    <div className="bg-slate-50 px-3 sm:px-5 py-1.5 sm:py-2.5 flex items-center text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <span className="w-6 sm:w-8 text-center">#</span>
                       <span className="flex-1">Producto</span>
-                      <span className="w-20 text-center">Modo</span>
-                      <span className="w-24 text-center">Marca</span>
-                      <span className="w-20 text-center">Unidades</span>
-                      <span className="w-28 text-center">Monto</span>
-                      <span className="w-24 text-center">Spiff</span>
+                      <span className="hidden sm:block w-20 text-center">Modo</span>
+                      <span className="w-14 sm:w-24 text-center">Marca</span>
+                      <span className="w-12 sm:w-20 text-center">Uds</span>
+                      <span className="w-16 sm:w-28 text-center">Monto</span>
+                      <span className="w-14 sm:w-24 text-center">Spiff</span>
                     </div>
                     {allProducts.slice(0, 50).map((p, i) => (
-                      <div key={i} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
-                        <div className="w-8 flex justify-center">
-                          {i === 0 ? <Award size={16} className="text-yellow-500" /> :
-                           i === 1 ? <Award size={16} className="text-slate-400" /> :
-                           i === 2 ? <Award size={16} className="text-amber-600" /> :
-                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                      <div key={i} className="flex items-center px-3 sm:px-5 py-2 sm:py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+                        <div className="w-6 sm:w-8 flex justify-center">
+                          {i === 0 ? <Award size={14} className="text-yellow-500" /> :
+                           i === 1 ? <Award size={14} className="text-slate-400" /> :
+                           i === 2 ? <Award size={14} className="text-amber-600" /> :
+                           <span className="text-[10px] sm:text-xs font-black text-slate-300">{i + 1}</span>}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Producto #${i + 1}` : p.nombre}</p>
+                          <p className="text-[10px] sm:text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Prod #${i + 1}` : p.nombre}</p>
+                          <span className={`sm:hidden text-[7px] font-black px-1 py-0.5 rounded-md ${p.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                            {p.modo === "monto" ? "$" : "UDS"}
+                          </span>
                         </div>
-                        <div className="w-20 text-center">
+                        <div className="hidden sm:block w-20 text-center">
                           <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${p.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
                             {p.modo === "monto" ? "$" : "UDS"}
                           </span>
                         </div>
-                        <div className="w-24 text-center">
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{p.marca}</span>
+                        <div className="w-14 sm:w-24 text-center">
+                          <span className="text-[8px] sm:text-[10px] font-bold text-slate-500 bg-slate-100 px-1 sm:px-2 py-0.5 rounded-md truncate block">{p.marca}</span>
                         </div>
-                        <div className="w-20 text-center">
-                          <span className="text-xs font-bold text-slate-600">{p.cantidad}</span>
+                        <div className="w-12 sm:w-20 text-center">
+                          <span className="text-[10px] sm:text-xs font-bold text-slate-600">{p.cantidad}</span>
                         </div>
-                        <div className="w-28 text-center">
-                          <span className="text-xs font-black text-slate-700 tabular-nums">${p.monto.toLocaleString()}</span>
+                        <div className="w-16 sm:w-28 text-center">
+                          <span className="text-[10px] sm:text-xs font-black text-slate-700 tabular-nums">${p.monto.toLocaleString()}</span>
                         </div>
-                        <div className="w-24 text-center">
-                          <span className={`text-xs font-black tabular-nums ${p.spiffGanado > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                        <div className="w-14 sm:w-24 text-center">
+                          <span className={`text-[10px] sm:text-xs font-black tabular-nums ${p.spiffGanado > 0 ? "text-amber-600" : "text-slate-400"}`}>
                             ${p.spiffGanado.toLocaleString()}
                           </span>
                         </div>
@@ -300,13 +303,13 @@ export default function SpiffPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col">
-                    <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <span className="w-8 text-center">#</span>
+                    <div className="bg-slate-50 px-3 sm:px-5 py-1.5 sm:py-2.5 flex items-center text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <span className="w-6 sm:w-8 text-center">#</span>
                       <span className="flex-1">Marca</span>
-                      <span className="w-20 text-center">Productos</span>
-                      <span className="w-20 text-center">Unidades</span>
-                      <span className="w-28 text-center">Monto Total</span>
-                      <span className="w-24 text-center">Spiff</span>
+                      <span className="w-12 sm:w-20 text-center">Prods</span>
+                      <span className="w-12 sm:w-20 text-center">Uds</span>
+                      <span className="w-16 sm:w-28 text-center">Monto</span>
+                      <span className="w-14 sm:w-24 text-center">Spiff</span>
                     </div>
                     {(() => {
                       const brandMapAcc = new Map<string, { productos: number; unidades: number; monto: number; spiff: number }>();
@@ -322,27 +325,27 @@ export default function SpiffPage() {
                         .map(([marca, d]) => ({ marca, ...d }))
                         .sort((a, b) => b.spiff - a.spiff);
                       return brands.map((b, i) => (
-                        <div key={b.marca} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
-                          <div className="w-8 flex justify-center">
-                            {i === 0 ? <Award size={16} className="text-yellow-500" /> :
-                             i === 1 ? <Award size={16} className="text-slate-400" /> :
-                             i === 2 ? <Award size={16} className="text-amber-600" /> :
-                             <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                        <div key={b.marca} className="flex items-center px-3 sm:px-5 py-2 sm:py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+                          <div className="w-6 sm:w-8 flex justify-center">
+                            {i === 0 ? <Award size={14} className="text-yellow-500" /> :
+                             i === 1 ? <Award size={14} className="text-slate-400" /> :
+                             i === 2 ? <Award size={14} className="text-amber-600" /> :
+                             <span className="text-[10px] sm:text-xs font-black text-slate-300">{i + 1}</span>}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Marca #${i + 1}` : b.marca}</p>
+                            <p className="text-[10px] sm:text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Marca #${i + 1}` : b.marca}</p>
                           </div>
-                          <div className="w-20 text-center">
-                            <span className="text-xs font-bold text-slate-600">{b.productos}</span>
+                          <div className="w-12 sm:w-20 text-center">
+                            <span className="text-[10px] sm:text-xs font-bold text-slate-600">{b.productos}</span>
                           </div>
-                          <div className="w-20 text-center">
-                            <span className="text-xs font-bold text-slate-600">{b.unidades.toLocaleString()}</span>
+                          <div className="w-12 sm:w-20 text-center">
+                            <span className="text-[10px] sm:text-xs font-bold text-slate-600">{b.unidades.toLocaleString()}</span>
                           </div>
-                          <div className="w-28 text-center">
-                            <span className="text-xs font-black text-slate-700 tabular-nums">${b.monto.toLocaleString()}</span>
+                          <div className="w-16 sm:w-28 text-center">
+                            <span className="text-[10px] sm:text-xs font-black text-slate-700 tabular-nums">${b.monto.toLocaleString()}</span>
                           </div>
-                          <div className="w-24 text-center">
-                            <span className={`text-xs font-black tabular-nums ${b.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                          <div className="w-14 sm:w-24 text-center">
+                            <span className={`text-[10px] sm:text-xs font-black tabular-nums ${b.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
                               ${b.spiff.toLocaleString()}
                             </span>
                           </div>
@@ -357,38 +360,38 @@ export default function SpiffPage() {
         </CardContent>
       </Card>
 
-      {/* Ranking de Spiffs */}
-      <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
+      {/* Mi Spiff */}
+      <Card className="rounded-2xl sm:rounded-3xl border-none shadow-sm bg-white overflow-hidden">
         <CardHeader className="pb-2">
-          <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
+          <CardTitle className="text-slate-900 text-xs sm:text-sm font-black uppercase tracking-wider flex items-center gap-2">
             <Trophy size={16} className="text-amber-500" /> Mi Spiff
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {miPosicion.posicion === 0 && totalSpiff === 0 ? (
-            <div className="py-12 text-center">
+            <div className="py-8 sm:py-12 text-center">
               <Trophy size={40} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400 font-medium">Aún no tienes spiffs acumulados</p>
+              <p className="text-xs sm:text-sm text-slate-400 font-medium">Aún no tienes spiffs acumulados</p>
             </div>
           ) : (
-            <div className="px-5 py-5 flex items-center gap-4 bg-amber-50/50">
-              <div className="flex-shrink-0 w-10 flex justify-center">
-                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                  <Trophy size={20} className="text-amber-600" />
+            <div className="px-4 sm:px-5 py-4 sm:py-5 flex items-center gap-3 sm:gap-4 bg-amber-50/50">
+              <div className="flex-shrink-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <Trophy size={18} className="text-amber-600 sm:w-5 sm:h-5" />
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tu spiff acumulado</p>
-                <p className="text-2xl font-black text-amber-600 tabular-nums mt-0.5">
+                <p className="text-[9px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Tu spiff acumulado</p>
+                <p className="text-xl sm:text-2xl font-black text-amber-600 tabular-nums mt-0.5">
                   ${isPresentationMode ? "X,XXX" : totalSpiff.toLocaleString()}
                 </p>
               </div>
               {miPosicion.posicion > 0 && (
                 <div className="text-right flex-shrink-0">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Posición</p>
-                  <p className="text-2xl font-black text-slate-700">
+                  <p className="text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Posición</p>
+                  <p className="text-xl sm:text-2xl font-black text-slate-700">
                     #{miPosicion.posicion}
-                    <span className="text-sm font-bold text-slate-400 ml-1">/ {rankingVendedores.length}</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-400 ml-1">/ {rankingVendedores.length}</span>
                   </p>
                 </div>
               )}
