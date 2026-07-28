@@ -129,7 +129,7 @@ export async function POST(req: Request) {
 
     await db.query(
       "INSERT INTO cuota (id, user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, ?, NOW())",
-      [Date.now(), targetUserId, seller_id, cuota],
+      [Math.floor(Date.now() / 1000), targetUserId, seller_id, cuota],
     );
 
     try {
