@@ -20,27 +20,31 @@ export async function GET(request: Request) {
       algorithms: ["HS256"],
     });
     const uid = parseInt(payload.uid as string);
-    const userCids = payload.cids as number;
+    const userCids = Number(payload.cids);
+
+    console.log("[brands] uid:", uid, "userCids:", userCids);
 
     const products = await callOdooRPC<any[]>(
       "product.product",
       "search_read",
-      [
-        ["sale_ok", "=", true],
-      ],
+      [[["sale_ok", "=", true]]],
       {
-        fields: ["x_studio_marca"],
+        fields: ["id", "name", "x_studio_marca"],
         limit: 5000,
-        context: {
-          allowed_company_ids: [userCids],
-          lang: "es_VE",
-        },
       },
     );
 
+    console.log("[brands] products count:", products?.length ?? "null");
+
+    if (!products) {
+      console.error("[brands] RPC returned null");
+      return NextResponse.json([]);
+    }
+
     const brandSet = new Set<string>();
-    (products || []).forEach((p: any) => {
+    products.forEach((p: any) => {
       const m = p.x_studio_marca;
+      if (!m) return;
       const name = Array.isArray(m) ? m[1] : m;
       if (name && typeof name === "string" && name.trim()) {
         brandSet.add(name.trim());
@@ -48,9 +52,10 @@ export async function GET(request: Request) {
     });
 
     const brands = Array.from(brandSet).sort();
+    console.log("[brands] found:", brands.length, brands.slice(0, 5));
     return NextResponse.json(brands);
-  } catch (error) {
-    console.error("GET /api/spiff/brands error:", error);
+  } catch (error: any) {
+    console.error("GET /api/spiff/brands error:", error.message, error.stack);
     return NextResponse.json([]);
   }
 }

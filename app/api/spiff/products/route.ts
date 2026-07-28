@@ -19,14 +19,15 @@ export async function GET(request: Request) {
     const { payload } = await jwtVerify(token, JWT_SECRET, {
       algorithms: ["HS256"],
     });
-    const userCids = payload.cids as number;
+    const uid = parseInt(payload.uid as string);
+    const userCids = Number(payload.cids);
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";
     const brand = searchParams.get("brand") || "";
 
-    const domain: any[] = [
-      ["sale_ok", "=", true],
-    ];
+    console.log("[products] uid:", uid, "userCids:", userCids, "brand:", brand, "search:", search);
+
+    const domain: any[] = [["sale_ok", "=", true]];
     if (brand) domain.push(["x_studio_marca", "=", brand]);
     if (search) domain.push(["name", "ilike", search]);
 
@@ -36,15 +37,18 @@ export async function GET(request: Request) {
       [domain],
       {
         fields: ["id", "name", "x_studio_marca"],
-        limit: 100,
-        context: {
-          allowed_company_ids: [userCids],
-          lang: "es_VE",
-        },
+        limit: 200,
       },
     );
 
-    const result = (products || []).map((p: any) => {
+    console.log("[products] products count:", products?.length ?? "null");
+
+    if (!products) {
+      console.error("[products] RPC returned null");
+      return NextResponse.json([]);
+    }
+
+    const result = products.map((p: any) => {
       const m = p.x_studio_marca;
       return {
         id: p.id,
@@ -53,9 +57,10 @@ export async function GET(request: Request) {
       };
     });
 
+    console.log("[products] found:", result.length);
     return NextResponse.json(result);
-  } catch (error) {
-    console.error("GET /api/spiff/products error:", error);
+  } catch (error: any) {
+    console.error("GET /api/spiff/products error:", error.message, error.stack);
     return NextResponse.json([]);
   }
 }

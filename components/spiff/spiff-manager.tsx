@@ -72,16 +72,18 @@ export default function SpiffManager({
 
   useEffect(() => {
     setBrandsLoading(true);
+    console.log("[SpiffManager] Fetching brands...");
     fetch("/api/spiff/brands", { credentials: "include" })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        console.log("[SpiffManager] Brands response status:", res.status);
         return res.json();
       })
       .then((data) => {
+        console.log("[SpiffManager] Brands data:", data);
         setBrands(Array.isArray(data) ? data : []);
       })
       .catch((e) => {
-        console.error("Error loading brands:", e);
+        console.error("[SpiffManager] Error loading brands:", e);
         setBrands([]);
       })
       .finally(() => setBrandsLoading(false));
@@ -91,10 +93,20 @@ export default function SpiffManager({
     if (form.tipo === "producto") {
       const params = new URLSearchParams();
       if (form.brand_name) params.append("brand", form.brand_name);
+      console.log("[SpiffManager] Fetching products...", params.toString());
       fetch(`/api/spiff/products?${params.toString()}`, { credentials: "include" })
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data) => setProducts(Array.isArray(data) ? data : []))
-        .catch(() => setProducts([]));
+        .then((res) => {
+          console.log("[SpiffManager] Products response status:", res.status);
+          return res.json();
+        })
+        .then((data) => {
+          console.log("[SpiffManager] Products data:", data?.length, data?.slice(0, 3));
+          setProducts(Array.isArray(data) ? data : []);
+        })
+        .catch((e) => {
+          console.error("[SpiffManager] Error loading products:", e);
+          setProducts([]);
+        });
     }
   }, [form.tipo, form.brand_name]);
 
