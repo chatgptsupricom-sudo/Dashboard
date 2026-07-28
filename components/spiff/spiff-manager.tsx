@@ -548,7 +548,7 @@ export default function SpiffManager({
           onClick={() => setRankingModal(null)}
         >
           <div
-            className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden shadow-2xl"
+            className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -577,7 +577,7 @@ export default function SpiffManager({
                   <p className="text-sm text-slate-400">No hay datos de ranking</p>
                 </div>
               ) : (
-                <div className="flex flex-col">
+                <div className="flex flex-col max-h-[50vh] overflow-y-auto">
                   <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
                     <span className="w-8 text-center flex-shrink-0">#</span>
                     <span className="w-44 flex-shrink-0">Vendedor</span>
