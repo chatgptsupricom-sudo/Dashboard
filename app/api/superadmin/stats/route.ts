@@ -434,7 +434,7 @@ export async function GET(request: NextRequest) {
       salesByUser: (sellersData || [])
         .filter((s) => {
           const name = (s.invoice_user_id?.[1] || "").toLowerCase();
-          return !name.includes("asistente");
+          return !name.includes("asistente") && !name.includes("hercilio");
         })
         .map((s) => ({
           name: s.invoice_user_id ? s.invoice_user_id[1] : "Sin Vendedor",
