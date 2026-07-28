@@ -2,6 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Award,
+  Eye,
   Plus,
   Pencil,
   Trash2,
@@ -11,6 +12,7 @@ import {
   ToggleRight,
   Package,
   Building2,
+  Trophy,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
@@ -77,6 +79,7 @@ export default function SpiffManager({
   const [products, setProducts] = useState<OdooProduct[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; data: any[]; loading: boolean } | null>(null);
 
   useEffect(() => {
     if (showCompanyFilter) {
@@ -221,6 +224,35 @@ export default function SpiffManager({
   };
 
   const isMontoMode = form.modo === "monto";
+
+  const handleViewRanking = async (rule: SpiffRule) => {
+    setRankingModal({ rule, data: [], loading: true });
+    try {
+      const res = await fetch("/api/vendedores/spiff", { credentials: "include" });
+      const json = await res.json();
+      const allSellers: any[] = json.rankingVendedores || [];
+      const brandData = (json.marcas || []).find(
+        (m: any) => m.nombre.toLowerCase() === rule.brand_name.toLowerCase()
+      );
+      setRankingModal({
+        rule,
+        data: allSellers.map((s: any) => {
+          const sellerBrandMonto = brandData
+            ? (json.rankingVendedores || []).find((r: any) => r.nombre === s.nombre)
+            : null;
+          return {
+            posicion: s.posicion,
+            nombre: s.nombre,
+            totalSpiff: s.totalSpiff,
+            totalFacturado: s.totalFacturado,
+          };
+        }),
+        loading: false,
+      });
+    } catch {
+      setRankingModal((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  };
 
   const groupedRules = showCompanyFilter
     ? rules.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
@@ -466,6 +498,7 @@ export default function SpiffManager({
                         onEdit={startEdit}
                         onDelete={handleDelete}
                         onToggle={handleToggle}
+                        onViewRanking={handleViewRanking}
                         formatDate={formatDate}
                       />
                     ))}
@@ -481,7 +514,7 @@ export default function SpiffManager({
                 <span className="w-20 text-center">Spiff</span>
                 <span className="w-24 text-center">Vigencia</span>
                 <span className="w-16 text-center">Estado</span>
-                <span className="w-20 text-center">Acciones</span>
+                <span className="w-24 text-center">Acciones</span>
               </div>
               {rules.map((rule) => (
                 <RuleRow
@@ -490,6 +523,7 @@ export default function SpiffManager({
                   onEdit={startEdit}
                   onDelete={handleDelete}
                   onToggle={handleToggle}
+                  onViewRanking={handleViewRanking}
                   formatDate={formatDate}
                 />
               ))}
@@ -497,6 +531,76 @@ export default function SpiffManager({
           )}
         </CardContent>
       </Card>
+
+      {/* Ranking Modal */}
+      {rankingModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setRankingModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <Trophy size={20} className="text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-800">Ranking de Spiff</h2>
+                  <p className="text-[11px] text-slate-400 font-medium">{rankingModal.rule.brand_name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRankingModal(null)}
+                className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(80vh-80px)]">
+              {rankingModal.loading ? (
+                <div className="py-12 text-center text-slate-400 font-medium">Cargando ranking...</div>
+              ) : rankingModal.data.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Trophy size={36} className="mx-auto text-slate-200 mb-3" />
+                  <p className="text-sm text-slate-400">No hay datos de ranking</p>
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  {rankingModal.data
+                    .filter((s) => s.totalSpiff > 0 || s.totalFacturado > 0)
+                    .sort((a, b) => b.totalSpiff - a.totalSpiff)
+                    .map((seller, i) => (
+                      <div
+                        key={seller.nombre}
+                        className="flex items-center gap-3 px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
+                      >
+                        <div className="w-8 flex justify-center flex-shrink-0">
+                          {i === 0 ? <Trophy size={16} className="text-yellow-500" /> :
+                           i === 1 ? <Trophy size={16} className="text-slate-400" /> :
+                           i === 2 ? <Trophy size={16} className="text-amber-600" /> :
+                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-700 truncate">{seller.nombre}</p>
+                          <p className="text-[10px] text-slate-400">${seller.totalFacturado.toLocaleString()} facturado</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`text-sm font-black ${seller.totalSpiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            ${seller.totalSpiff.toLocaleString()}
+                          </p>
+                          <p className="text-[9px] text-slate-400">spiff</p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -506,12 +610,14 @@ function RuleRow({
   onEdit,
   onDelete,
   onToggle,
+  onViewRanking,
   formatDate,
 }: {
   rule: SpiffRule;
   onEdit: (rule: SpiffRule) => void;
   onDelete: (id: number) => void;
   onToggle: (rule: SpiffRule) => void;
+  onViewRanking: (rule: SpiffRule) => void;
   formatDate: (d: string | null) => string;
 }) {
   return (
@@ -552,7 +658,10 @@ function RuleRow({
           {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
         </button>
       </div>
-      <div className="w-20 flex gap-1 justify-center">
+      <div className="w-24 flex gap-1 justify-center">
+        <button onClick={() => onViewRanking(rule)} title="Ver ranking" className="p-1.5 hover:bg-amber-50 rounded-lg text-slate-400 hover:text-amber-600 transition-colors">
+          <Eye size={14} />
+        </button>
         <button onClick={() => onEdit(rule)} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
           <Pencil size={14} />
         </button>
