@@ -581,10 +581,10 @@ export default function SpiffManager({
                   <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
                     <span className="w-8 text-center">#</span>
                     <span className="flex-1">Vendedor</span>
-                    <span className="w-16 text-center">Uds</span>
+                    <span className="w-16 text-center">Unidad</span>
                     <span className="w-20 text-center">Monto</span>
                     <span className="w-16 text-center">Metas</span>
-                    <span className="w-20 text-right">Spiff</span>
+                    <span className="w-20 text-center">Spiff</span>
                   </div>
                   {rankingModal.data
                     .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
@@ -613,7 +613,7 @@ export default function SpiffManager({
                             {seller.metaAlcanzadas}x
                           </span>
                         </div>
-                        <div className="w-20 text-right">
+                        <div className="w-20 text-center">
                           <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
                             ${seller.spiff.toLocaleString()}
                           </span>
