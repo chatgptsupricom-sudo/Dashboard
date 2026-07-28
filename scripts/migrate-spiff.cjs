@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 
-// manually parse .env
 const envFile = fs.readFileSync(path.join(__dirname, "..", ".env"), "utf-8");
 envFile.split("\n").forEach((line) => {
   const match = line.match(/^\s*([\w]+)\s*=\s*(.*?)\s*$/);
@@ -24,7 +23,7 @@ const mysql = require("mysql2/promise");
     "ALTER TABLE spiff_rules ADD COLUMN tipo VARCHAR(20) DEFAULT 'marca' AFTER brand_name",
     "ALTER TABLE spiff_rules ADD COLUMN product_name VARCHAR(255) NULL AFTER tipo",
     "ALTER TABLE spiff_rules ADD COLUMN product_id INT NULL AFTER product_name",
-    "ALTER TABLE spiff_rules ADD COLUMN modo VARCHAR(20) DEFAULT 'acumulado' AFTER spiff_amount",
+    "ALTER TABLE spiff_rules ADD COLUMN modo VARCHAR(20) DEFAULT 'monto' AFTER spiff_amount",
     "ALTER TABLE spiff_rules ADD COLUMN fecha_inicio DATE NULL AFTER modo",
     "ALTER TABLE spiff_rules ADD COLUMN fecha_fin DATE NULL AFTER fecha_inicio",
   ];
@@ -40,6 +39,20 @@ const mysql = require("mysql2/promise");
         console.error("ERROR:", sql.substring(0, 60), e.message);
       }
     }
+  }
+
+  try {
+    await conn.execute("UPDATE spiff_rules SET modo = 'monto' WHERE modo = 'acumulado'");
+    console.log("OK: Converted 'acumulado' -> 'monto'");
+  } catch (e) {
+    console.log("SKIP: mode conversion", e.message);
+  }
+
+  try {
+    await conn.execute("UPDATE spiff_rules SET modo = 'cantidad' WHERE modo = 'individual'");
+    console.log("OK: Converted 'individual' -> 'cantidad'");
+  } catch (e) {
+    console.log("SKIP: mode conversion", e.message);
   }
 
   const [rows] = await conn.execute("DESCRIBE spiff_rules");

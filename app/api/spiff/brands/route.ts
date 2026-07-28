@@ -26,10 +26,7 @@ export async function GET(request: Request) {
       "product.product",
       "search_read",
       [
-        [
-          ["sale_ok", "=", true],
-          ["type", "=", "product"],
-        ],
+        ["sale_ok", "=", true],
       ],
       {
         fields: ["x_studio_marca"],

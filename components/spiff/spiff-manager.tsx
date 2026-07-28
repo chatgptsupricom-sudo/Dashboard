@@ -49,7 +49,7 @@ const emptyForm = {
   tipo: "marca",
   product_name: "",
   product_id: null as number | null,
-  modo: "acumulado",
+  modo: "monto",
   fecha_inicio: "",
   fecha_fin: "",
 };
@@ -68,31 +68,35 @@ export default function SpiffManager({
   const [filterCompany, setFilterCompany] = useState<string>(companyId?.toString() || "");
   const [brands, setBrands] = useState<string[]>([]);
   const [products, setProducts] = useState<OdooProduct[]>([]);
-  const [productSearch, setProductSearch] = useState("");
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [brandsLoading, setBrandsLoading] = useState(true);
 
   useEffect(() => {
+    setBrandsLoading(true);
     fetch("/api/spiff/brands", { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setBrands(Array.isArray(data) ? data : []))
-      .catch(() => setBrands([]));
-  }, []);
-
-  const fetchProducts = useCallback((q: string, brand?: string) => {
-    const params = new URLSearchParams();
-    if (q) params.append("q", q);
-    if (brand) params.append("brand", brand);
-    fetch(`/api/spiff/products?${params.toString()}`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setProducts(Array.isArray(data) ? data : []))
-      .catch(() => setProducts([]));
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setBrands(Array.isArray(data) ? data : []);
+      })
+      .catch((e) => {
+        console.error("Error loading brands:", e);
+        setBrands([]);
+      })
+      .finally(() => setBrandsLoading(false));
   }, []);
 
   useEffect(() => {
     if (form.tipo === "producto") {
-      fetchProducts(productSearch, form.brand_name || undefined);
+      const params = new URLSearchParams();
+      if (form.brand_name) params.append("brand", form.brand_name);
+      fetch(`/api/spiff/products?${params.toString()}`, { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setProducts(Array.isArray(data) ? data : []))
+        .catch(() => setProducts([]));
     }
-  }, [productSearch, form.tipo, form.brand_name, fetchProducts]);
+  }, [form.tipo, form.brand_name]);
 
   const fetchRules = useCallback(() => {
     setLoading(true);
@@ -145,7 +149,6 @@ export default function SpiffManager({
     setForm(emptyForm);
     setEditingRule(null);
     setShowForm(false);
-    setProductSearch("");
     fetchRules();
   };
 
@@ -179,11 +182,10 @@ export default function SpiffManager({
       tipo: rule.tipo || "marca",
       product_name: rule.product_name || "",
       product_id: rule.product_id || null,
-      modo: rule.modo || "acumulado",
+      modo: rule.modo || "monto",
       fecha_inicio: rule.fecha_inicio ? rule.fecha_inicio.split("T")[0] : "",
       fecha_fin: rule.fecha_fin ? rule.fecha_fin.split("T")[0] : "",
     });
-    setProductSearch(rule.product_name || "");
     setShowForm(true);
   };
 
@@ -191,6 +193,8 @@ export default function SpiffManager({
     if (!d) return "Sin fin";
     return new Date(d).toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   };
+
+  const isMontoMode = form.modo === "monto";
 
   return (
     <div className="space-y-6">
@@ -205,7 +209,7 @@ export default function SpiffManager({
           </div>
         </div>
         <button
-          onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); setProductSearch(""); }}
+          onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
         >
           <Plus size={16} /> Nueva Regla
@@ -243,22 +247,22 @@ export default function SpiffManager({
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Modo de Cálculo</label>
                 <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-0.5">
                   <button
-                    onClick={() => setForm({ ...form, modo: "acumulado" })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "acumulado" ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    onClick={() => setForm({ ...form, modo: "monto" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "monto" ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Acumulado
+                    Monto
                   </button>
                   <button
-                    onClick={() => setForm({ ...form, modo: "individual" })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "individual" ? "bg-blue-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    onClick={() => setForm({ ...form, modo: "cantidad" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "cantidad" ? "bg-blue-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Individual
+                    Cantidad
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Row 2: Marca + Producto (si tipo=producto) + Montos */}
+            {/* Row 2: Marca + Producto (si tipo=producto) + Meta */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
@@ -269,46 +273,43 @@ export default function SpiffManager({
                   onChange={(e) => setForm({ ...form, brand_name: e.target.value, product_name: "", product_id: null })}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
                 >
-                  <option value="">Seleccionar marca...</option>
+                  <option value="">{brandsLoading ? "Cargando marcas..." : "Seleccionar marca..."}</option>
                   {brands.map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
               </div>
               {form.tipo === "producto" && (
-                <div className="relative">
+                <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Producto</label>
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={(e) => { setProductSearch(e.target.value); setShowProductDropdown(true); setForm({ ...form, product_name: e.target.value, product_id: null }); }}
-                    onFocus={() => setShowProductDropdown(true)}
-                    placeholder="Buscar producto..."
+                  <select
+                    value={form.product_id || ""}
+                    onChange={(e) => {
+                      const selected = products.find((p) => p.id === parseInt(e.target.value));
+                      setForm({
+                        ...form,
+                        product_id: selected ? selected.id : null,
+                        product_name: selected ? selected.name : "",
+                      });
+                    }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
-                  />
-                  {showProductDropdown && products.length > 0 && (
-                    <div className="absolute z-50 top-full mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                      {products.slice(0, 20).map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => { setForm({ ...form, product_name: p.name, product_id: p.id }); setProductSearch(p.name); setShowProductDropdown(false); }}
-                          className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-amber-50 transition-colors border-b last:border-none"
-                        >
-                          <span className="text-slate-700">{p.name}</span>
-                          <span className="text-slate-400 ml-2">({p.marca})</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  >
+                    <option value="">{!form.brand_name ? "Primero selecciona marca..." : products.length === 0 ? "Cargando productos..." : "Seleccionar producto..."}</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Meta de Venta ($)</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                  {isMontoMode ? "Meta de Venta ($)" : "Meta de Unidades"}
+                </label>
                 <input
                   type="number"
                   value={form.target_amount}
                   onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
-                  placeholder="5000"
+                  placeholder={isMontoMode ? "5000" : "100"}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
                 />
               </div>
@@ -317,7 +318,9 @@ export default function SpiffManager({
             {/* Row 3: Spiff por meta + Fechas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Spiff por Meta ($)</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                  Spiff por Meta ($)
+                </label>
                 <input
                   type="number"
                   value={form.spiff_amount}
@@ -346,12 +349,11 @@ export default function SpiffManager({
               </div>
             </div>
 
-            {/* Mode info */}
             <div className="mt-3 p-2.5 bg-white rounded-xl border border-slate-100">
               <p className="text-[10px] text-slate-400 font-medium">
-                {form.modo === "acumulado"
-                  ? "Acumulado: Se suman todas las ventas de la marca/producto y se calcula el spiff sobre el total acumulado."
-                  : "Individual: Se calcula el spiff por cada venta/factura individual que alcance la meta."}
+                {isMontoMode
+                  ? "Monto: Se suman las ventas ($) de la marca/producto y se calcula el spiff cuando el total supera la meta."
+                  : "Cantidad: Se suman las unidades vendidas y se calcula el spiff cuando se alcanza la meta de unidades."}
                 {form.fecha_inicio || form.fecha_fin ? ` | Vigencia: ${form.fecha_inicio || "Sin inicio"} → ${form.fecha_fin || "Sin fin"}` : " | Sin rango de fechas (siempre activo)"}
               </p>
             </div>
@@ -409,12 +411,14 @@ export default function SpiffManager({
                     )}
                   </div>
                   <div className="w-16 text-center">
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "acumulado" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                      {rule.modo === "acumulado" ? "Acum." : "Indiv."}
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                      {rule.modo === "monto" ? "Monto" : "Cant."}
                     </span>
                   </div>
                   <div className="w-24 text-center">
-                    <span className="text-xs font-black text-slate-600 tabular-nums">${rule.target_amount.toLocaleString()}</span>
+                    <span className="text-xs font-black text-slate-600 tabular-nums">
+                      {rule.modo === "monto" ? `$${rule.target_amount.toLocaleString()}` : `${rule.target_amount} uds`}
+                    </span>
                   </div>
                   <div className="w-20 text-center">
                     <span className="text-xs font-black text-amber-600 tabular-nums">${rule.spiff_amount.toLocaleString()}</span>

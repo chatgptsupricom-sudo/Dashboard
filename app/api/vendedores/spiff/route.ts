@@ -26,13 +26,6 @@ function dateRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: s
   return aStart <= bEnd && aEnd >= bStart;
 }
 
-function isDateInRange(dateStr: string, start: string | null, end: string | null): boolean {
-  if (!start && !end) return true;
-  if (start && dateStr < start) return false;
-  if (end && dateStr > end) return false;
-  return true;
-}
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const fechaInicio = searchParams.get("fechaInicio") || "";
@@ -171,30 +164,9 @@ export async function GET(request: Request) {
         const rule = marcaRules.find((r) => r.brand_name.toLowerCase() === nombre.toLowerCase());
         if (!rule) return null;
 
-        const ruleStart = rule.fecha_inicio || "2000-01-01";
-        const ruleEnd = rule.fecha_fin || "2099-12-31";
-
         let spiffGanado = 0;
-        if (rule.modo === "individual") {
-          const facturaLinesByDate = misFacturas
-            .filter((f) => {
-              const invoiceDate = (f.invoice_date || "").split("T")[0];
-              return isDateInRange(invoiceDate, rule.fecha_inicio, rule.fecha_fin);
-            });
-
-          facturaLinesByDate.forEach((f) => {
-            const fLines = lineData.filter((l) => l.move_id?.[0] === f.id);
-            const fMonto = fLines.reduce((acc, l) => acc + (l.price_subtotal || 0), 0);
-            const fMarcaLines = fLines.filter((l) => {
-              const prodId = l.product_id?.[0];
-              const prod = productMap[prodId];
-              return prod && (prod.marca || "Sin marca").toLowerCase() === nombre.toLowerCase();
-            });
-            const fMarcaMonto = fMarcaLines.reduce((acc, l) => acc + (l.price_subtotal || 0), 0);
-            if (fMarcaMonto >= rule.target_amount) {
-              spiffGanado += Math.floor(fMarcaMonto / rule.target_amount) * rule.spiff_amount;
-            }
-          });
+        if (rule.modo === "cantidad") {
+          spiffGanado = Math.floor(data.cantidad / rule.target_amount) * rule.spiff_amount;
         } else {
           spiffGanado = Math.floor(data.monto / rule.target_amount) * rule.spiff_amount;
         }
@@ -236,25 +208,8 @@ export async function GET(request: Request) {
         const matchesProduct = !rule.product_name || prodName.toLowerCase().includes(rule.product_name.toLowerCase());
 
         let spiffGanado = 0;
-        if (rule.modo === "individual") {
-          misFacturas.forEach((f) => {
-            const invoiceDate = (f.invoice_date || "").split("T")[0];
-            if (!isDateInRange(invoiceDate, rule.fecha_inicio, rule.fecha_fin)) return;
-            const fLines = lineData.filter((l) => l.move_id?.[0] === f.id);
-            fLines.forEach((l) => {
-              const prodId = l.product_id?.[0];
-              const prod = productMap[prodId];
-              if (!prod) return;
-              const pMarca = (prod.marca || "Sin marca").toLowerCase();
-              const pName = prod.name || "";
-              if (pMarca === marca.toLowerCase() && (!rule.product_name || pName.toLowerCase().includes(rule.product_name.toLowerCase()))) {
-                const lineMonto = l.price_subtotal || 0;
-                if (lineMonto >= rule.target_amount) {
-                  spiffGanado += Math.floor(lineMonto / rule.target_amount) * rule.spiff_amount;
-                }
-              }
-            });
-          });
+        if (rule.modo === "cantidad") {
+          spiffGanado = Math.floor(v.cantidad / rule.target_amount) * rule.spiff_amount;
         } else {
           spiffGanado = Math.floor(v.monto / rule.target_amount) * rule.spiff_amount;
         }
@@ -276,11 +231,11 @@ export async function GET(request: Request) {
 
     const marcasPorSpiff = [...marcas].sort((a: any, b: any) => b.spiffGanado - a.spiffGanado);
 
-    const sellerMap: Record<string, { nombre: string; totalSpiff: number; totalFacturado: number; marcas: Record<string, number> }> = {};
+    const sellerMap: Record<string, { nombre: string; totalSpiff: number; totalFacturado: number; marcas: Record<string, number>; cantidades: Record<string, number> }> = {};
     facturas.forEach((f) => {
       const sellerName = f.invoice_user_id?.[1];
       if (sellerName && !sellerMap[sellerName]) {
-        sellerMap[sellerName] = { nombre: sellerName, totalSpiff: 0, totalFacturado: 0, marcas: {} };
+        sellerMap[sellerName] = { nombre: sellerName, totalSpiff: 0, totalFacturado: 0, marcas: {}, cantidades: {} };
       }
       if (sellerName) {
         sellerMap[sellerName].totalFacturado += f.amount_total_signed || 0;
@@ -320,6 +275,7 @@ export async function GET(request: Request) {
           if (!prod) return;
           const marca = prod.marca || "Sin marca";
           sellerMap[invoiceInfo.name].marcas[marca] = (sellerMap[invoiceInfo.name].marcas[marca] || 0) + (line.price_subtotal || 0);
+          sellerMap[invoiceInfo.name].cantidades[marca] = (sellerMap[invoiceInfo.name].cantidades[marca] || 0) + (line.quantity || 0);
         });
 
         Object.values(sellerMap).forEach((seller) => {
@@ -327,7 +283,12 @@ export async function GET(request: Request) {
           Object.entries(seller.marcas).forEach(([marca, monto]) => {
             const rule = marcaRules.find((r) => r.brand_name.toLowerCase() === marca.toLowerCase());
             if (rule) {
-              spiffTotal += Math.floor(monto / rule.target_amount) * rule.spiff_amount;
+              if (rule.modo === "cantidad") {
+                const cant = seller.cantidades[marca] || 0;
+                spiffTotal += Math.floor(cant / rule.target_amount) * rule.spiff_amount;
+              } else {
+                spiffTotal += Math.floor(monto / rule.target_amount) * rule.spiff_amount;
+              }
             }
           });
           seller.totalSpiff = spiffTotal;

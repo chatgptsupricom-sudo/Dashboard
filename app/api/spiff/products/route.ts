@@ -26,7 +26,6 @@ export async function GET(request: Request) {
 
     const domain: any[] = [
       ["sale_ok", "=", true],
-      ["type", "=", "product"],
     ];
     if (brand) domain.push(["x_studio_marca", "=", brand]);
     if (search) domain.push(["name", "ilike", search]);

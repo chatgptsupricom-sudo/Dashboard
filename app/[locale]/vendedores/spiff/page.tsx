@@ -213,8 +213,8 @@ export default function SpiffPage() {
                           <div className="flex items-center justify-between mb-1.5">
                             <div className="flex items-center gap-2">
                               <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${marca.modo === "acumulado" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                                {marca.modo === "acumulado" ? "ACUM" : "INDIV"}
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${marca.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                                {marca.modo === "monto" ? "$" : "UDS"}
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
@@ -240,7 +240,7 @@ export default function SpiffPage() {
                           {marca.tieneRegla && (
                             <div className="flex items-center gap-3 mt-1.5">
                               <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
-                                Meta: ${marca.spiffMeta.toLocaleString()}
+                                Meta: {marca.modo === "cantidad" ? `${marca.spiffMeta.toLocaleString()} uds` : `$${marca.spiffMeta.toLocaleString()}`}
                               </span>
                               <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
                                 Spiff: ${marca.spiffPorMeta.toLocaleString()}/meta
@@ -338,8 +338,8 @@ export default function SpiffPage() {
                           <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Producto #${i + 1}` : p.nombre}</p>
                         </div>
                         <div className="w-20 text-center">
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${p.modo === "acumulado" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                            {p.modo === "acumulado" ? "ACUM" : "INDIV"}
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${p.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                            {p.modo === "monto" ? "$" : "UDS"}
                           </span>
                         </div>
                         <div className="w-24 text-center">
