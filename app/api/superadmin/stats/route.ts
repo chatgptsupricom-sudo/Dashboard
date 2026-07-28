@@ -441,12 +441,7 @@ export async function GET(request: NextRequest) {
           total: s.amount_total || 0,
         })),
       topClients: (clientsRanking || [])
-        .filter(
-          (c) =>
-            c.partner_id?.[1] !== "SUPRICOM, LLC" &&
-            c.partner_id?.[1] !== "Supricom CCS"
-        )
-        .slice(0, 5)
+        .slice(0, 10)
         .map((c) => ({
           name: c.partner_id ? c.partner_id[1] : "Desconocido",
           total: c.amount_total || 0,

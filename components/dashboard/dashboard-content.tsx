@@ -28,7 +28,7 @@ export function SuperAdminView() {
           ...json,
           topClients: (json.topClients || []).filter(
             (c: any) => !c.name?.toLowerCase().includes("supricom")
-          ),
+          ).slice(0, 5),
           topProducts: json.topProducts || [],
           monthlyGrowth: json.monthlyGrowth || [],
           brands: {

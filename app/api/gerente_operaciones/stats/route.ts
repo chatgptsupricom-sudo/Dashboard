@@ -296,7 +296,7 @@ export async function GET(request: NextRequest) {
           name: s.invoice_user_id?.[1] || "Sin Vendedor",
           total: s.amount_total || 0,
         })),
-      topClients: (clientsRanking || []).slice(0, 5).map((c: any) => ({
+      topClients: (clientsRanking || []).slice(0, 10).map((c: any) => ({
         name: c.partner_id?.[1] || "Desconocido",
         total: c.amount_total || 0,
       })),
