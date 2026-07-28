@@ -361,49 +361,37 @@ export default function SpiffPage() {
       <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <Trophy size={16} className="text-amber-500" /> Ranking de Spiffs
+            <Trophy size={16} className="text-amber-500" /> Mi Spiff
           </CardTitle>
-          {miPosicion.posicion > 0 && (
-            <p className="text-xs text-slate-400 font-medium mt-1">
-              Tu posición: <span className="font-black text-amber-600">#{miPosicion.posicion}</span> de <span className="font-black text-slate-700">{rankingVendedores.length}</span> vendedores
-            </p>
-          )}
         </CardHeader>
         <CardContent className="p-0">
-          {rankingVendedores.length === 0 ? (
+          {miPosicion.posicion === 0 && totalSpiff === 0 ? (
             <div className="py-12 text-center">
               <Trophy size={40} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400 font-medium">No hay spiffs calculados</p>
+              <p className="text-sm text-slate-400 font-medium">Aún no tienes spiffs acumulados</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {rankingVendedores.map((vendedor: any) => {
-                const isMe = vendedor.nombre === miPosicion.nombre;
-                return (
-                  <div
-                    key={vendedor.nombre}
-                    className={`flex items-center gap-4 px-5 py-4 transition-all ${isMe ? "bg-amber-50/70" : "hover:bg-slate-50/50"}`}
-                  >
-                    <div className="flex-shrink-0 w-8 flex justify-center">
-                      {vendedor.posicion === 1 ? <Award size={18} className="text-yellow-500" /> :
-                       vendedor.posicion === 2 ? <Award size={18} className="text-slate-400" /> :
-                       vendedor.posicion === 3 ? <Award size={18} className="text-amber-600" /> :
-                       <span className="text-xs font-black text-slate-300">{vendedor.posicion}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-bold uppercase tracking-tight ${isMe ? "text-amber-700" : "text-slate-700"}`}>
-                        {isPresentationMode ? `Vendedor #${vendedor.posicion}` : vendedor.nombre}
-                        {isMe && <span className="ml-2 text-[9px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-md">TÚ</span>}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className={`text-lg font-black ${isMe ? "text-amber-600" : "text-slate-700"}`}>
-                        ${isPresentationMode ? "X,XXX" : vendedor.totalSpiff.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="px-5 py-5 flex items-center gap-4 bg-amber-50/50">
+              <div className="flex-shrink-0 w-10 flex justify-center">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <Trophy size={20} className="text-amber-600" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tu spiff acumulado</p>
+                <p className="text-2xl font-black text-amber-600 tabular-nums mt-0.5">
+                  ${isPresentationMode ? "X,XXX" : totalSpiff.toLocaleString()}
+                </p>
+              </div>
+              {miPosicion.posicion > 0 && (
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Posición</p>
+                  <p className="text-2xl font-black text-slate-700">
+                    #{miPosicion.posicion}
+                    <span className="text-sm font-bold text-slate-400 ml-1">/ {rankingVendedores.length}</span>
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
