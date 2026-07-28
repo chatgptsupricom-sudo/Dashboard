@@ -327,6 +327,24 @@ export async function GET(request: Request) {
 
     const miPosicion = rankingVendedores.find(r => r.nombre === userName);
 
+    const sellerBrandData: Record<string, { marcas: Record<string, { monto: number; cantidad: number; spiff: number }> }> = {};
+    Object.values(sellerMap).forEach((seller) => {
+      sellerBrandData[seller.nombre] = { marcas: {} };
+      Object.entries(seller.marcas).forEach(([marca, monto]) => {
+        const cant = seller.cantidades[marca] || 0;
+        let spiff = 0;
+        const rule = marcaRules.find((r) => r.brand_name.toLowerCase() === marca.toLowerCase());
+        if (rule) {
+          if (rule.modo === "cantidad") {
+            spiff = Math.floor(cant / rule.target_amount) * rule.spiff_amount;
+          } else {
+            spiff = Math.floor(monto / rule.target_amount) * rule.spiff_amount;
+          }
+        }
+        sellerBrandData[seller.nombre].marcas[marca] = { monto, cantidad: cant, spiff };
+      });
+    });
+
     return NextResponse.json({
       marcas,
       totalGeneral,
@@ -341,6 +359,7 @@ export async function GET(request: Request) {
       miPosicion: miPosicion || { posicion: 0, nombre: userName, totalSpiff: 0, totalFacturado: 0 },
       fechaInicioGlobal,
       fechaFinGlobal,
+      sellerBrandData,
     });
   } catch (e: any) {
     console.error("Error API spiff:", e);

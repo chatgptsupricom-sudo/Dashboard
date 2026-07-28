@@ -2,7 +2,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Award,
-  Eye,
   Plus,
   Pencil,
   Trash2,
@@ -230,25 +229,27 @@ export default function SpiffManager({
     try {
       const res = await fetch("/api/vendedores/spiff", { credentials: "include" });
       const json = await res.json();
-      const allSellers: any[] = json.rankingVendedores || [];
-      const brandData = (json.marcas || []).find(
-        (m: any) => m.nombre.toLowerCase() === rule.brand_name.toLowerCase()
-      );
-      setRankingModal({
-        rule,
-        data: allSellers.map((s: any) => {
-          const sellerBrandMonto = brandData
-            ? (json.rankingVendedores || []).find((r: any) => r.nombre === s.nombre)
-            : null;
+      const sellerBrandData = json.sellerBrandData || {};
+      const ruleMeta = rule.target_amount;
+      const ruleSpiff = rule.spiff_amount;
+
+      const rows = Object.entries(sellerBrandData)
+        .map(([nombre, sbd]: [string, any]) => {
+          const brandInfo = sbd.marcas?.[rule.brand_name] || { monto: 0, cantidad: 0, spiff: 0 };
           return {
-            posicion: s.posicion,
-            nombre: s.nombre,
-            totalSpiff: s.totalSpiff,
-            totalFacturado: s.totalFacturado,
+            nombre,
+            unidades: brandInfo.cantidad,
+            monto: brandInfo.monto,
+            metaAlcanzadas: rule.modo === "monto"
+              ? Math.floor(brandInfo.monto / ruleMeta)
+              : Math.floor(brandInfo.cantidad / ruleMeta),
+            spiff: brandInfo.spiff,
           };
-        }),
-        loading: false,
-      });
+        })
+        .filter((r) => r.monto > 0 || r.unidades > 0)
+        .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto);
+
+      setRankingModal({ rule, data: rows, loading: false });
     } catch {
       setRankingModal((prev) => prev ? { ...prev, loading: false } : null);
     }
@@ -514,7 +515,7 @@ export default function SpiffManager({
                 <span className="w-20 text-center">Spiff</span>
                 <span className="w-24 text-center">Vigencia</span>
                 <span className="w-16 text-center">Estado</span>
-                <span className="w-24 text-center">Acciones</span>
+                <span className="w-20 text-center">Acciones</span>
               </div>
               {rules.map((rule) => (
                 <RuleRow
@@ -569,13 +570,20 @@ export default function SpiffManager({
                 </div>
               ) : (
                 <div className="flex flex-col">
+                  <div className="px-5 py-2 bg-slate-50 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                    <span className="w-8 text-center">#</span>
+                    <span className="flex-1">Vendedor</span>
+                    <span className="w-16 text-center">Uds</span>
+                    <span className="w-20 text-center">Monto</span>
+                    <span className="w-16 text-center">Metas</span>
+                    <span className="w-20 text-right">Spiff</span>
+                  </div>
                   {rankingModal.data
-                    .filter((s) => s.totalSpiff > 0 || s.totalFacturado > 0)
-                    .sort((a, b) => b.totalSpiff - a.totalSpiff)
+                    .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
                     .map((seller, i) => (
                       <div
                         key={seller.nombre}
-                        className="flex items-center gap-3 px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
+                        className="flex items-center gap-2 px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all"
                       >
                         <div className="w-8 flex justify-center flex-shrink-0">
                           {i === 0 ? <Trophy size={16} className="text-yellow-500" /> :
@@ -585,13 +593,22 @@ export default function SpiffManager({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-slate-700 truncate">{seller.nombre}</p>
-                          <p className="text-[10px] text-slate-400">${seller.totalFacturado.toLocaleString()} facturado</p>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className={`text-sm font-black ${seller.totalSpiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
-                            ${seller.totalSpiff.toLocaleString()}
-                          </p>
-                          <p className="text-[9px] text-slate-400">spiff</p>
+                        <div className="w-16 text-center">
+                          <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
+                        </div>
+                        <div className="w-20 text-center">
+                          <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
+                        </div>
+                        <div className="w-16 text-center">
+                          <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
+                            {seller.metaAlcanzadas}x
+                          </span>
+                        </div>
+                        <div className="w-20 text-right">
+                          <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            ${seller.spiff.toLocaleString()}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -621,7 +638,10 @@ function RuleRow({
   formatDate: (d: string | null) => string;
 }) {
   return (
-    <div className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
+    <div
+      className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 cursor-pointer transition-all"
+      onClick={() => onViewRanking(rule)}
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {rule.tipo === "producto" ? (
@@ -654,18 +674,15 @@ function RuleRow({
         </span>
       </div>
       <div className="w-16 text-center">
-        <button onClick={() => onToggle(rule)} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
+        <button onClick={(e) => { e.stopPropagation(); onToggle(rule); }} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
           {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
         </button>
       </div>
-      <div className="w-24 flex gap-1 justify-center">
-        <button onClick={() => onViewRanking(rule)} title="Ver ranking" className="p-1.5 hover:bg-amber-50 rounded-lg text-slate-400 hover:text-amber-600 transition-colors">
-          <Eye size={14} />
-        </button>
-        <button onClick={() => onEdit(rule)} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
+      <div className="w-20 flex gap-1 justify-center">
+        <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
           <Pencil size={14} />
         </button>
-        <button onClick={() => onDelete(rule.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+        <button onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
           <Trash2 size={14} />
         </button>
       </div>
