@@ -399,7 +399,7 @@ export async function GET(request: NextRequest) {
           ["amount_total", "invoice_user_id"],
           ["invoice_user_id"],
           0,
-          5,
+          10,
           "amount_total desc",
         ]),
       ]);
@@ -436,6 +436,7 @@ export async function GET(request: NextRequest) {
           const name = (s.invoice_user_id?.[1] || "").toLowerCase();
           return !name.includes("asistente") && !name.includes("hercilio");
         })
+        .slice(0, 5)
         .map((s) => ({
           name: s.invoice_user_id ? s.invoice_user_id[1] : "Sin Vendedor",
           total: s.amount_total || 0,
