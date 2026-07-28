@@ -65,7 +65,10 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { company_id, brand_name, target_amount, spiff_amount } = body;
+    const {
+      company_id, brand_name, target_amount, spiff_amount,
+      tipo, product_name, product_id, modo, fecha_inicio, fecha_fin,
+    } = body;
 
     if (!brand_name || !target_amount || !spiff_amount) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
@@ -75,8 +78,22 @@ export async function POST(request: Request) {
     const userId = parseInt(payload.uid as string);
 
     const result = await query(
-      "INSERT INTO spiff_rules (company_id, brand_name, target_amount, spiff_amount, created_by) VALUES (?, ?, ?, ?, ?)",
-      [effectiveCompanyId, brand_name.trim(), target_amount, spiff_amount, userId]
+      `INSERT INTO spiff_rules
+        (company_id, brand_name, tipo, product_name, product_id, target_amount, spiff_amount, modo, fecha_inicio, fecha_fin, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        effectiveCompanyId,
+        brand_name.trim(),
+        tipo || "marca",
+        product_name || null,
+        product_id || null,
+        target_amount,
+        spiff_amount,
+        modo || "acumulado",
+        fecha_inicio || null,
+        fecha_fin || null,
+        userId,
+      ]
     );
 
     return NextResponse.json({ ok: true, id: result.rows.insertId });
@@ -98,7 +115,7 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
-    const { id, brand_name, target_amount, spiff_amount, active } = body;
+    const { id, brand_name, target_amount, spiff_amount, active, tipo, product_name, product_id, modo, fecha_inicio, fecha_fin } = body;
 
     if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
 
@@ -109,6 +126,12 @@ export async function PATCH(request: Request) {
     if (target_amount !== undefined) { updates.push("target_amount = ?"); params.push(target_amount); }
     if (spiff_amount !== undefined) { updates.push("spiff_amount = ?"); params.push(spiff_amount); }
     if (active !== undefined) { updates.push("active = ?"); params.push(active ? 1 : 0); }
+    if (tipo !== undefined) { updates.push("tipo = ?"); params.push(tipo); }
+    if (product_name !== undefined) { updates.push("product_name = ?"); params.push(product_name || null); }
+    if (product_id !== undefined) { updates.push("product_id = ?"); params.push(product_id || null); }
+    if (modo !== undefined) { updates.push("modo = ?"); params.push(modo); }
+    if (fecha_inicio !== undefined) { updates.push("fecha_inicio = ?"); params.push(fecha_inicio || null); }
+    if (fecha_fin !== undefined) { updates.push("fecha_fin = ?"); params.push(fecha_fin || null); }
 
     if (updates.length === 0) return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
 

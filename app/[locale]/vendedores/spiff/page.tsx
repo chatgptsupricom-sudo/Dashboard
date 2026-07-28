@@ -3,12 +3,9 @@ import { usePresentationMode } from "@/components/presentacion/presentation-mode
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Award,
-  TrendingUp,
   Package,
   BarChart3,
   Calendar,
-  Filter,
-  X,
   ChevronDown,
   ChevronUp,
   Trophy,
@@ -27,7 +24,21 @@ interface MarcaData {
   spiffPorMeta: number;
   spiffGanado: number;
   tieneRegla: boolean;
+  modo: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
   productos: { nombre: string; cantidad: number; monto: number; porcentaje: number }[];
+}
+
+interface ProductData {
+  nombre: string;
+  marca: string;
+  monto: number;
+  cantidad: number;
+  spiffGanado: number;
+  spiffMeta: number;
+  spiffPorMeta: number;
+  modo: string;
 }
 
 export default function SpiffPage() {
@@ -80,22 +91,20 @@ export default function SpiffPage() {
   const totalSpiff = data?.totalSpiff || 0;
   const rankingVendedores = data?.rankingVendedores || [];
   const miPosicion = data?.miPosicion || { posicion: 0, nombre: "", totalSpiff: 0, totalFacturado: 0 };
-  const allProducts = data?.allProducts || [];
+  const allProducts: ProductData[] = data?.allProducts || [];
 
   const getBarColor = (index: number) => {
     const colors = [
-      "bg-yellow-400",
-      "bg-slate-400",
-      "bg-amber-600",
-      "bg-blue-500",
-      "bg-emerald-500",
-      "bg-purple-500",
-      "bg-red-400",
-      "bg-cyan-500",
-      "bg-orange-400",
-      "bg-indigo-500",
+      "bg-yellow-400", "bg-slate-400", "bg-amber-600", "bg-blue-500",
+      "bg-emerald-500", "bg-purple-500", "bg-red-400", "bg-cyan-500",
+      "bg-orange-400", "bg-indigo-500",
     ];
     return colors[index % colors.length];
+  };
+
+  const formatShortDate = (d: string | null) => {
+    if (!d) return null;
+    return new Date(d).toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   };
 
   if (loading && !data)
@@ -111,7 +120,7 @@ export default function SpiffPage() {
           </div>
           <div>
             <h1 className="text-3xl font-black text-slate-900">Spiff</h1>
-            <p className="text-sm text-slate-400 font-medium">Facturación total por marca</p>
+            <p className="text-sm text-slate-400 font-medium">Facturación total por marca y producto</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
@@ -195,19 +204,19 @@ export default function SpiffPage() {
                         className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50 cursor-pointer transition-all"
                       >
                         <div className="flex-shrink-0 w-8 flex justify-center">
-                          {i === 0 ? (
-                            <Award size={18} className="text-yellow-500" />
-                          ) : i === 1 ? (
-                            <Award size={18} className="text-slate-400" />
-                          ) : i === 2 ? (
-                            <Award size={18} className="text-amber-600" />
-                          ) : (
-                            <span className="text-xs font-black text-slate-300">{i + 1}</span>
-                          )}
+                          {i === 0 ? <Award size={18} className="text-yellow-500" /> :
+                           i === 1 ? <Award size={18} className="text-slate-400" /> :
+                           i === 2 ? <Award size={18} className="text-amber-600" /> :
+                           <span className="text-xs font-black text-slate-300">{i + 1}</span>}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1.5">
-                            <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{isPresentationMode ? `Marca #${i + 1}` : marca.nombre}</p>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${marca.modo === "acumulado" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                                {marca.modo === "acumulado" ? "ACUM" : "INDIV"}
+                              </span>
+                            </div>
                             <div className="flex items-center gap-3">
                               <span className="text-[10px] font-black text-slate-400">{marca.porcentaje}%</span>
                               <span className="text-xs font-black text-slate-700 tabular-nums">${isPresentationMode ? "X,XXX" : marca.monto.toLocaleString()}</span>
@@ -220,7 +229,14 @@ export default function SpiffPage() {
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <p className="text-[10px] text-slate-400">{isPresentationMode ? "XX uds" : `${marca.cantidad.toLocaleString()} unidades`}</p>
+                            {marca.fechaInicio && (
+                              <p className="text-[9px] text-slate-300 font-medium">
+                                {formatShortDate(marca.fechaInicio)} →     {formatShortDate(marca.fechaFin) || "hoy"}
+                              </p>
+                            )}
+                          </div>
                           {marca.tieneRegla && (
                             <div className="flex items-center gap-3 mt-1.5">
                               <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
@@ -304,6 +320,7 @@ export default function SpiffPage() {
                     <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
                       <span className="w-8 text-center">#</span>
                       <span className="flex-1">Producto</span>
+                      <span className="w-20 text-center">Modo</span>
                       <span className="w-24 text-center">Marca</span>
                       <span className="w-20 text-center">Unidades</span>
                       <span className="w-28 text-center">Monto</span>
@@ -319,6 +336,11 @@ export default function SpiffPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-slate-700 truncate">{isPresentationMode ? `Producto #${i + 1}` : p.nombre}</p>
+                        </div>
+                        <div className="w-20 text-center">
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${p.modo === "acumulado" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                            {p.modo === "acumulado" ? "ACUM" : "INDIV"}
+                          </span>
                         </div>
                         <div className="w-24 text-center">
                           <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{p.marca}</span>
@@ -348,17 +370,17 @@ export default function SpiffPage() {
                       <span className="w-24 text-center">Spiff</span>
                     </div>
                     {(() => {
-                      const brandMap = new Map<string, { productos: number; unidades: number; monto: number; spiff: number }>();
+                      const brandMapAcc = new Map<string, { productos: number; unidades: number; monto: number; spiff: number }>();
                       allProducts.forEach((p) => {
-                        const existing = brandMap.get(p.marca) || { productos: 0, unidades: 0, monto: 0, spiff: 0 };
+                        const existing = brandMapAcc.get(p.marca) || { productos: 0, unidades: 0, monto: 0, spiff: 0 };
                         existing.productos += 1;
                         existing.unidades += p.cantidad;
                         existing.monto += p.monto;
                         existing.spiff += p.spiffGanado;
-                        brandMap.set(p.marca, existing);
+                        brandMapAcc.set(p.marca, existing);
                       });
-                      const brands = Array.from(brandMap.entries())
-                        .map(([marca, data]) => ({ marca, ...data }))
+                      const brands = Array.from(brandMapAcc.entries())
+                        .map(([marca, d]) => ({ marca, ...d }))
                         .sort((a, b) => b.spiff - a.spiff);
                       return brands.map((b, i) => (
                         <div key={b.marca} className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 transition-all">
@@ -424,15 +446,10 @@ export default function SpiffPage() {
                     className={`flex items-center gap-4 px-5 py-4 transition-all ${isMe ? "bg-amber-50/70" : "hover:bg-slate-50/50"}`}
                   >
                     <div className="flex-shrink-0 w-8 flex justify-center">
-                      {vendedor.posicion === 1 ? (
-                        <Award size={18} className="text-yellow-500" />
-                      ) : vendedor.posicion === 2 ? (
-                        <Award size={18} className="text-slate-400" />
-                      ) : vendedor.posicion === 3 ? (
-                        <Award size={18} className="text-amber-600" />
-                      ) : (
-                        <span className="text-xs font-black text-slate-300">{vendedor.posicion}</span>
-                      )}
+                      {vendedor.posicion === 1 ? <Award size={18} className="text-yellow-500" /> :
+                       vendedor.posicion === 2 ? <Award size={18} className="text-slate-400" /> :
+                       vendedor.posicion === 3 ? <Award size={18} className="text-amber-600" /> :
+                       <span className="text-xs font-black text-slate-300">{vendedor.posicion}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs font-bold uppercase tracking-tight ${isMe ? "text-amber-700" : "text-slate-700"}`}>
