@@ -117,18 +117,18 @@ export async function POST(req: NextRequest) {
       [targetUserId, seller_id, cuota],
     );
 
-    const uniqueId = Math.floor(Date.now() / 1000);
-    await db.query(
-      `INSERT INTO audit_logs (id, user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        uniqueId,
-        payload.uid || "0",
-        payload.name || "Sistema",
-        payload.role || "SuperAdmin",
-        "EDIT_CUOTA",
-        JSON.stringify({ seller_id, nueva_cuota: cuota }),
-      ],
-    );
+    try {
+      await db.query(
+        `INSERT INTO audit_logs (user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?)`,
+        [
+          payload.uid || "0",
+          payload.name || "Sistema",
+          payload.role || "SuperAdmin",
+          "EDIT_CUOTA",
+          JSON.stringify({ seller_id, nueva_cuota: cuota }),
+        ],
+      );
+    } catch (_) {}
 
     return NextResponse.json({ success: true });
   } catch (error) {
