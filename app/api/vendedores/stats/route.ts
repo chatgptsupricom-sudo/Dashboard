@@ -407,19 +407,35 @@ export async function GET(request: Request) {
       if (fechaFin) domain.push(["invoice_date", "<=", fechaFin]);
     }
 
-    const [facturas] = await Promise.all([
+    const reportDomain: any[] = [
+      ["move_id.move_type", "=", "out_invoice"],
+      ["move_id.state", "=", "posted"],
+      ["move_id.company_id", "=", userCompanyId],
+      ["product_id", "!=", false],
+    ];
+    if (periodo !== "total") {
+      reportDomain.push(["move_id.invoice_date", ">=", fechaInicio]);
+      if (fechaFin) reportDomain.push(["move_id.invoice_date", "<=", fechaFin]);
+    }
+
+    const [facturas, invoiceLines] = await Promise.all([
       callOdooRPC<any[]>("account.move", "search_read", [domain], {
         fields: ["amount_total_signed", "invoice_user_id", "partner_id", "id", "invoice_date"],
       }),
+      callOdooRPC<any[]>("account.move.line", "read_group", [
+        reportDomain,
+        ["price_subtotal", "move_id.invoice_user_id"],
+        ["move_id.invoice_user_id"],
+      ]),
     ]);
 
-    // 4. Rankings
+    // 4. Rankings (price_subtotal from move.line)
     const stats: Record<string, { total: number; count: number }> = {};
-    (facturas || []).forEach((f: any) => {
-      const name = f.invoice_user_id ? f.invoice_user_id[1] : "Sin Vendedor";
+    (invoiceLines || []).forEach((r: any) => {
+      const name = r["move_id.invoice_user_id"] ? r["move_id.invoice_user_id"][1] : "Sin Vendedor";
       if (!stats[name]) stats[name] = { total: 0, count: 0 };
-      stats[name].total += f.amount_total_signed || 0;
-      stats[name].count += 1;
+      stats[name].total += r.price_subtotal || 0;
+      stats[name].count += r.__count || 0;
     });
 
     const rankVentas = Object.entries(stats).sort(
@@ -780,10 +796,9 @@ export async function GET(request: Request) {
     return NextResponse.json({
       rankingVentas: rankVentas.findIndex((v) => v[0] === userName) + 1,
       rankingLeads: miRankingLeads > 0 ? miRankingLeads : "-",
-      totalFacturado: misFacturas.reduce(
-        (acc, f) => acc + f.amount_total_signed,
-        0,
-      ),
+      totalFacturado: (invoiceLines || [])
+        .filter((r: any) => r["move_id.invoice_user_id"] && r["move_id.invoice_user_id"][1] === userName)
+        .reduce((acc: number, r: any) => acc + (r.price_subtotal || 0), 0),
       closedLeads: misFacturas.length,
       topClients: top5Clientes,
       topProducts: topProductos,
