@@ -132,24 +132,6 @@ export async function GET(request: NextRequest) {
     if (productIds.length === 0)
       return NextResponse.json({ success: true, data: [] });
 
-    // Obtener lot_stock_id de los almacenes principales conocidos.
-    const warehouseIds = sedeId
-      ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
-      : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
-    const warehouseData = await callOdooRPC<any[]>(
-      "stock.warehouse",
-      "search_read",
-      [[["id", "in", warehouseIds]]],
-      { fields: ["id", "name", "lot_stock_id"], limit: 0 },
-    );
-    const locationIds = warehouseData
-      ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
-      : [];
-
-    const stockQuantDomain = locationIds.length > 0
-      ? [["location_id", "child_of", locationIds], ["product_id", "in", productIds]]
-      : [["location_id.usage", "=", "internal"], ["product_id", "in", productIds], ...(sedeId ? [["company_id", "=", sedeId]] : [])];
-
     const [productos, stockData] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
@@ -161,28 +143,19 @@ export async function GET(request: NextRequest) {
           ],
         ],
         {
-          fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
+          fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id", "qty_available"],
           limit: 0,
         },
       ),
-      callOdooRPC<any[]>(
-        "stock.quant",
-        "search_read",
-        [stockQuantDomain],
-        { fields: ["product_id", "quantity"], limit: 0 },
-      ),
+      null,
     ]);
 
     if (!productos) throw new Error("Error obteniendo productos");
 
     const stockMap: Record<number, number> = {};
-    if (stockData) {
-      stockData.forEach((s: any) => {
-        if (!s.product_id) return;
-        const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] || 0) + Math.max(0, s.quantity);
-      });
-    }
+    (productos || []).forEach((p: any) => {
+      stockMap[p.id] = Math.max(0, p.qty_available || 0);
+    });
 
     const tmplIds = [
       ...new Set(
