@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Edit3, TrendingUp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Building2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function CuotasPage() {
   const [data, setData] = useState([]);
@@ -34,13 +35,45 @@ export default function CuotasPage() {
     fetchData();
   }, []);
 
+  const totalMeta = useMemo(
+    () => data.reduce((sum: number, s: any) => sum + (s.meta || 0), 0),
+    [data]
+  );
+  const totalFacturado = useMemo(
+    () => data.reduce((sum: number, s: any) => sum + (s.facturado || 0), 0),
+    [data]
+  );
+  const porcentajeTotal = totalMeta > 0 ? (totalFacturado / totalMeta) * 100 : 0;
+
   return (
     <div className="p-8 space-y-8 bg-zinc-50/30 min-h-screen">
-      <div>
-        <h1 className="text-2xl font-black text-zinc-900">Metas de Ventas</h1>
-        <p className="text-sm text-zinc-500">
-          Monitoreo y actualización de cuotas mensuales
-        </p>
+      <div className="flex items-center gap-3">
+        <div className="p-2.5 bg-white rounded-xl shadow-sm border border-zinc-100">
+          <Building2 size={20} className="text-zinc-600" />
+        </div>
+        <div className="flex-1">
+          <h1 className="text-2xl font-black text-zinc-900">Metas de Ventas</h1>
+          <p className="text-sm text-zinc-500">
+            {data.length} vendedores
+          </p>
+        </div>
+        {!loading && data.length > 0 && (
+          <div className="flex-1 max-w-md">
+            <div className="flex justify-between text-xs font-bold text-zinc-500 mb-1">
+              <span>Total</span>
+              <span>{porcentajeTotal.toFixed(0)}%</span>
+            </div>
+            <Progress value={Math.min(porcentajeTotal, 100)} className="h-2.5" />
+            <div className="flex justify-between mt-1.5">
+              <span className="text-xs text-zinc-500">
+                Meta: <span className="font-bold text-zinc-700">${totalMeta.toLocaleString()}</span>
+              </span>
+              <span className="text-xs text-emerald-600 font-bold">
+                Facturado: ${totalFacturado.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? (
