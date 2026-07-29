@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
       .split("T")[0];
     const today = now.toISOString().split("T")[0];
 
-    const [clientsRanking, allClientsCount, salesByMonth] = await Promise.all([
+    const [clientsRanking, allClientsCount] = await Promise.all([
       callOdooRPC<any[]>("account.move", "read_group", [
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
@@ -144,17 +144,6 @@ export async function GET(request: NextRequest) {
         ["partner_id"],
         ["partner_id"],
       ]),
-      callOdooRPC<any[]>("account.move", "read_group", [
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["invoice_date", ">=", twelveMonthsAgo],
-          ["invoice_date", "<=", today],
-          companyFilter,
-        ],
-        ["amount_untaxed", "invoice_date"],
-        ["invoice_date:month"],
-      ]),
     ]);
 
     const sellerExclusions: Record<number, string[]> = {
@@ -166,8 +155,8 @@ export async function GET(request: NextRequest) {
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", start],
-      ["invoice_date", "<=", end],
+      ["invoice_date", ">=", twelveMonthsAgo],
+      ["invoice_date", "<=", today],
       companyFilter,
     ];
 
@@ -202,10 +191,32 @@ export async function GET(request: NextRequest) {
       .slice(0, 10)
       .map((s) => ({ name: s.name, total: s.total }));
 
-    const monthlyGrowth = (salesByMonth || []).map((s) => ({
-      month: s["invoice_date:month"],
-      total: s.amount_untaxed || 0,
-    }));
+    const excludedIds = new Set(
+      Object.values(sellerStats)
+        .filter((s) => {
+          const name = s.name.toLowerCase();
+          const rules = sellerExclusions[s.companyId] || [];
+          return rules.some((rule) => name.includes(rule));
+        })
+        .map((s) => s.id)
+    );
+
+    const monthlyGrowthMap: Record<string, number> = {};
+    (sellersInvoices || []).forEach((inv: any) => {
+      const id = inv.invoice_user_id?.[0] || 0;
+      if (excludedIds.has(id)) return;
+      const invDate = inv.invoice_date || "";
+      const monthKey = invDate.substring(0, 7);
+      if (monthKey) {
+        const amount = inv.amount_untaxed || 0;
+        const signed = inv.move_type === "out_refund" ? -amount : amount;
+        monthlyGrowthMap[monthKey] = (monthlyGrowthMap[monthKey] || 0) + signed;
+      }
+    });
+
+    const monthlyGrowth = Object.entries(monthlyGrowthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, total]) => ({ month, total }));
     const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
     const growthPercent = (
       ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *

@@ -359,8 +359,8 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.revenue - a.revenue);
 
-    // 6. DATOS DE CLIENTES, VENTAS Y VENDEDORES
-    const [clientsRanking, allClientsCount, salesByMonth] = await Promise.all([
+    // 6. DATOS DE CLIENTES Y VENDEDORES
+    const [clientsRanking, allClientsCount] = await Promise.all([
       callOdooRPC<any[]>("account.move", "read_group", [
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
@@ -383,17 +383,6 @@ export async function GET(request: NextRequest) {
         ["partner_id"],
         ["partner_id"],
       ]),
-      callOdooRPC<any[]>("account.move", "read_group", [
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["invoice_date", ">=", twelveMonthsAgo],
-          ["invoice_date", "<=", today],
-          companyFilter,
-        ],
-        ["amount_untaxed", "invoice_date"],
-        ["invoice_date:month"],
-      ]),
     ]);
 
     const sellerExclusions: Record<number, string[]> = {
@@ -405,7 +394,8 @@ export async function GET(request: NextRequest) {
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDayOfMonth],
+      ["invoice_date", ">=", twelveMonthsAgo],
+      ["invoice_date", "<=", today],
       companyFilter,
     ];
 
@@ -417,13 +407,21 @@ export async function GET(request: NextRequest) {
     );
 
     const sellerStats: Record<string, { total: number; id: number; companyId: number; name: string }> = {};
+    const monthlyFiltered: Record<string, number> = {};
     (sellersInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       const name = inv.invoice_user_id?.[1] || "Sin Vendedor";
       const cid = inv.company_id?.[0] || 0;
       if (!sellerStats[id]) sellerStats[id] = { total: 0, id, companyId: cid, name };
       const amount = inv.amount_untaxed || 0;
-      sellerStats[id].total += inv.move_type === "out_refund" ? -amount : amount;
+      const signed = inv.move_type === "out_refund" ? -amount : amount;
+      sellerStats[id].total += signed;
+
+      const invDate = inv.invoice_date || "";
+      const monthKey = invDate.substring(0, 7);
+      if (monthKey) {
+        monthlyFiltered[monthKey] = (monthlyFiltered[monthKey] || 0) + signed;
+      }
     });
 
     const sellersDataFiltered = Object.values(sellerStats)
@@ -433,6 +431,29 @@ export async function GET(request: NextRequest) {
         return !rules.some((rule) => name.includes(rule));
       });
 
+    const excludedIds = new Set(
+      Object.values(sellerStats)
+        .filter((s) => {
+          const name = s.name.toLowerCase();
+          const rules = sellerExclusions[s.companyId] || [];
+          return rules.some((rule) => name.includes(rule));
+        })
+        .map((s) => s.id)
+    );
+
+    const monthlyGrowthMap: Record<string, number> = {};
+    (sellersInvoices || []).forEach((inv: any) => {
+      const id = inv.invoice_user_id?.[0] || 0;
+      if (excludedIds.has(id)) return;
+      const invDate = inv.invoice_date || "";
+      const monthKey = invDate.substring(0, 7);
+      if (monthKey) {
+        const amount = inv.amount_untaxed || 0;
+        const signed = inv.move_type === "out_refund" ? -amount : amount;
+        monthlyGrowthMap[monthKey] = (monthlyGrowthMap[monthKey] || 0) + signed;
+      }
+    });
+
     const currentMonthTotal = sellersDataFiltered.reduce((acc, s) => acc + (s.total || 0), 0);
 
     const sellersData = sellersDataFiltered
@@ -441,10 +462,9 @@ export async function GET(request: NextRequest) {
       .map((s) => ({ name: s.name, total: s.total }));
 
     // 7. CÁLCULOS FINALES
-    const monthlyGrowth = (salesByMonth || []).map((s) => ({
-      month: s["invoice_date:month"],
-      total: s.amount_untaxed || 0,
-    }));
+    const monthlyGrowth = Object.entries(monthlyGrowthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, total]) => ({ month, total }));
     const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
     const growthPercent = (
       ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
