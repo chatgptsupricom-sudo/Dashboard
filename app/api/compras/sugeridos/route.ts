@@ -132,7 +132,11 @@ export async function GET(request: NextRequest) {
     if (productIds.length === 0)
       return NextResponse.json({ success: true, data: [] });
 
-    const [productos, stockData] = await Promise.all([
+    const productCompanyFilter: any[] = sedeId
+      ? [["company_id", "in", [sedeId, false]]]
+      : [["company_id", "in", [9, 10, 7, false]]];
+
+    const [productos] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
@@ -140,6 +144,7 @@ export async function GET(request: NextRequest) {
           [
             ["id", "in", productIds],
             ["active", "=", true],
+            ...productCompanyFilter,
           ],
         ],
         {
@@ -147,10 +152,11 @@ export async function GET(request: NextRequest) {
           limit: 0,
         },
       ),
-      null,
     ]);
 
     if (!productos) throw new Error("Error obteniendo productos");
+
+    const validProductIds = new Set((productos || []).map((p: any) => p.id));
 
     const stockMap: Record<number, number> = {};
     (productos || []).forEach((p: any) => {
