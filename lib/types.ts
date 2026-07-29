@@ -197,7 +197,6 @@ export const rolePermissions: RolePermissions = {
       "menor_rotacion",
       "mayor_rotacion",
       "moq",
-      "alertas_compras",
       "cobertura",
       "quiebres_historicos",
       "rotacion_categoria",
