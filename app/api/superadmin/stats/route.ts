@@ -356,60 +356,89 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.revenue - a.revenue);
 
     // 6. DATOS DE CLIENTES, VENTAS Y VENDEDORES
-    const [clientsRanking, allClientsCount, salesByMonth, sellersData] =
-      await Promise.all([
-        callOdooRPC<any[]>("account.move", "read_group", [
-          [
-            ["move_type", "=", "out_invoice"],
-            ["state", "=", "posted"],
-            ["invoice_date", ">=", firstDayOfMonth],
-            companyFilter,
-          ],
-          ["amount_total", "partner_id"],
-          ["partner_id"],
-          0,
-          0,
-          "amount_total desc",
-        ]),
-        callOdooRPC<any[]>("account.move", "read_group", [
-          [
-            ["move_type", "=", "out_invoice"],
-            ["state", "=", "posted"],
-            companyFilter,
-          ],
-          ["partner_id"],
-          ["partner_id"],
-        ]),
-        callOdooRPC<any[]>("account.move", "read_group", [
-          [
-            ["move_type", "=", "out_invoice"],
-            ["state", "=", "posted"],
-            companyFilter,
-          ],
-          ["amount_total", "invoice_date"],
-          ["invoice_date:month"],
-        ]),
-        callOdooRPC<any[]>("account.move.line", "read_group", [
-          [
-            ["move_id.move_type", "=", "out_invoice"],
-            ["move_id.state", "=", "posted"],
-            ["move_id.invoice_date", ">=", firstDayOfMonth],
-            ["product_id", "!=", false],
-          ],
-          ["price_subtotal", "move_id.invoice_user_id"],
-          ["move_id.invoice_user_id"],
-          0,
-          10,
-          "price_subtotal desc",
-        ]),
-      ]);
+    const [clientsRanking, allClientsCount, salesByMonth] = await Promise.all([
+      callOdooRPC<any[]>("account.move", "read_group", [
+        [
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["state", "=", "posted"],
+          ["invoice_date", ">=", firstDayOfMonth],
+          companyFilter,
+        ],
+        ["amount_untaxed", "partner_id"],
+        ["partner_id"],
+        0,
+        0,
+        "amount_untaxed desc",
+      ]),
+      callOdooRPC<any[]>("account.move", "read_group", [
+        [
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["state", "=", "posted"],
+          companyFilter,
+        ],
+        ["partner_id"],
+        ["partner_id"],
+      ]),
+      callOdooRPC<any[]>("account.move", "read_group", [
+        [
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["state", "=", "posted"],
+          companyFilter,
+        ],
+        ["amount_untaxed", "invoice_date"],
+        ["invoice_date:month"],
+      ]),
+    ]);
+
+    const sellerExclusions: Record<number, string[]> = {
+      9: ["asistente", "yusne"],
+      10: ["asistente ccs"],
+      7: ["hercilio"],
+    };
+
+    const sellersDomain: any[] = [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["invoice_date", ">=", firstDayOfMonth],
+      companyFilter,
+    ];
+
+    const sellersInvoices = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [sellersDomain],
+      { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"] },
+    );
+
+    const sellerStats: Record<string, { total: number; id: number; companyId: number; name: string }> = {};
+    (sellersInvoices || []).forEach((inv: any) => {
+      const id = inv.invoice_user_id?.[0] || 0;
+      const name = inv.invoice_user_id?.[1] || "Sin Vendedor";
+      const cid = inv.company_id?.[0] || 0;
+      if (!sellerStats[id]) sellerStats[id] = { total: 0, id, companyId: cid, name };
+      const amount = inv.amount_untaxed || 0;
+      sellerStats[id].total += inv.move_type === "out_refund" ? -amount : amount;
+    });
+
+    const sellersDataFiltered = Object.values(sellerStats)
+      .filter((s) => {
+        const name = s.name.toLowerCase();
+        const rules = sellerExclusions[s.companyId] || [];
+        return !rules.some((rule) => name.includes(rule));
+      });
+
+    const currentMonthTotal = sellersDataFiltered.reduce((acc, s) => acc + (s.total || 0), 0);
+
+    const sellersData = sellersDataFiltered
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+      .map((s) => ({ name: s.name, total: s.total }));
 
     // 7. CÁLCULOS FINALES
     const monthlyGrowth = (salesByMonth || []).map((s) => ({
       month: s["invoice_date:month"],
-      total: s.amount_total || 0,
+      total: s.amount_untaxed || 0,
     }));
-    const currentMonthTotal = processedItems.reduce((acc, p) => acc + (p.revenue || 0), 0);
     const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
     const growthPercent = (
       ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
@@ -431,21 +460,16 @@ export async function GET(request: NextRequest) {
           .reverse()
           .slice(0, 5),
       },
-      salesByUser: (sellersData || [])
-        .filter((s) => {
-          const name = (s["move_id.invoice_user_id"]?.[1] || "").toLowerCase();
-          return !name.includes("asistente") && !name.includes("hercilio");
+      salesByUser: sellersData,
+      topClients: (clientsRanking || [])
+        .filter((c: any) => {
+          const name = (c.partner_id?.[1] || "").toLowerCase();
+          return !name.includes("supricom");
         })
         .slice(0, 5)
-        .map((s) => ({
-          name: s["move_id.invoice_user_id"] ? s["move_id.invoice_user_id"][1] : "Sin Vendedor",
-          total: s.price_subtotal || 0,
-        })),
-      topClients: (clientsRanking || [])
-        .slice(0, 10)
         .map((c) => ({
           name: c.partner_id ? c.partner_id[1] : "Desconocido",
-          total: c.amount_total || 0,
+          total: c.amount_untaxed || 0,
         })),
       monthlyGrowth,
       summary: {

@@ -398,7 +398,7 @@ export async function GET(request: Request) {
 
     // 3. Consulta a Facturación
     const domain: any[] = [
-      ["move_type", "=", "out_invoice"],
+      ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
       ["company_id", "=", userCompanyId],
     ];
@@ -407,44 +407,41 @@ export async function GET(request: Request) {
       if (fechaFin) domain.push(["invoice_date", "<=", fechaFin]);
     }
 
-    const reportDomain: any[] = [
-      ["move_id.move_type", "=", "out_invoice"],
-      ["move_id.state", "=", "posted"],
-      ["move_id.company_id", "=", userCompanyId],
-      ["product_id", "!=", false],
-    ];
-    if (periodo !== "total") {
-      reportDomain.push(["move_id.invoice_date", ">=", fechaInicio]);
-      if (fechaFin) reportDomain.push(["move_id.invoice_date", "<=", fechaFin]);
-    }
+    const facturas = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [domain],
+      {
+        fields: ["amount_untaxed", "amount_total_signed", "invoice_user_id", "partner_id", "id", "invoice_date", "move_type"],
+      },
+    );
 
-    const [facturas, invoiceLines] = await Promise.all([
-      callOdooRPC<any[]>("account.move", "search_read", [domain], {
-        fields: ["amount_total_signed", "invoice_user_id", "partner_id", "id", "invoice_date"],
-      }),
-      callOdooRPC<any[]>("account.move.line", "read_group", [
-        reportDomain,
-        ["price_subtotal", "move_id.invoice_user_id"],
-        ["move_id.invoice_user_id"],
-      ]),
-    ]);
+    const totalFacturadoExact = (facturas || [])
+      .filter((f: any) => f.invoice_user_id && Number(f.invoice_user_id[0]) === uid)
+      .reduce((acc: number, f: any) => {
+        const amount = f.amount_untaxed || 0;
+        return acc + (f.move_type === "out_refund" ? -amount : amount);
+      }, 0);
 
-    // 4. Rankings (price_subtotal from move.line)
-    const stats: Record<string, { total: number; count: number }> = {};
-    (invoiceLines || []).forEach((r: any) => {
-      const name = r["move_id.invoice_user_id"] ? r["move_id.invoice_user_id"][1] : "Sin Vendedor";
-      if (!stats[name]) stats[name] = { total: 0, count: 0 };
-      stats[name].total += r.price_subtotal || 0;
-      stats[name].count += r.__count || 0;
+    // 4. Rankings (amount_untaxed from account.move, negating credit notes)
+    const stats: Record<string, { total: number; count: number; id: number }> = {};
+    (facturas || []).forEach((f: any) => {
+      const id = f.invoice_user_id ? f.invoice_user_id[0] : 0;
+      const name = f.invoice_user_id ? f.invoice_user_id[1] : "Sin Vendedor";
+      if (!stats[name]) stats[name] = { total: 0, count: 0, id };
+      const amount = f.amount_untaxed || 0;
+      stats[name].total += f.move_type === "out_refund" ? -amount : amount;
+      stats[name].count += 1;
     });
 
-    const rankVentas = Object.entries(stats).sort(
-      (a, b) => b[1].total - a[1].total,
-    );
+    const excludedSellers = ["asis", "yusne"];
+    const rankVentas = Object.entries(stats)
+      .filter(([name]) => !excludedSellers.some((ex) => name.toLowerCase().includes(ex)))
+      .sort((a, b) => b[1].total - a[1].total);
 
     // 5. Top Productos
     const misFacturas = facturas.filter(
-      (f) => f.invoice_user_id && f.invoice_user_id[1] === userName,
+      (f) => f.invoice_user_id && Number(f.invoice_user_id[0]) === uid,
     );
     const misFacturasIds = misFacturas.map((f) => f.id);
 
@@ -481,7 +478,7 @@ export async function GET(request: Request) {
         if (f.invoice_date) {
           const dia = f.invoice_date.substring(0, 10);
           if (statsPorDia[dia] !== undefined) {
-            statsPorDia[dia] += f.amount_total_signed;
+            statsPorDia[dia] += f.move_type === "out_refund" ? -(f.amount_untaxed || 0) : (f.amount_untaxed || 0);
           }
         }
       });
@@ -496,7 +493,7 @@ export async function GET(request: Request) {
       misFacturas.forEach((f) => {
         if (f.invoice_date) {
           const mesKey = f.invoice_date.substring(0, 7);
-          statsPorMes[mesKey] = (statsPorMes[mesKey] || 0) + f.amount_total_signed;
+          statsPorMes[mesKey] = (statsPorMes[mesKey] || 0) + (f.move_type === "out_refund" ? -(f.amount_untaxed || 0) : (f.amount_untaxed || 0));
         }
       });
       chartData = Object.entries(statsPorMes)
@@ -515,7 +512,7 @@ export async function GET(request: Request) {
     const clientesMap: Record<string, number> = {};
     misFacturas.forEach((f) => {
       const nombre = f.partner_id ? f.partner_id[1] : "Sin Cliente";
-      clientesMap[nombre] = (clientesMap[nombre] || 0) + f.amount_total_signed;
+      clientesMap[nombre] = (clientesMap[nombre] || 0) + (f.move_type === "out_refund" ? -(f.amount_untaxed || 0) : (f.amount_untaxed || 0));
     });
     const top5Clientes = Object.entries(clientesMap)
       .sort((a, b) => b[1] - a[1])
@@ -538,7 +535,7 @@ export async function GET(request: Request) {
     // --- 2. Consulta para obtener datos de los últimos 3 meses ---
     // Esto garantiza que siempre tengamos datos de Mayo y Abril para comparar
     const domainCrecimiento = [
-      ["move_type", "=", "out_invoice"],
+      ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
       ["company_id", "=", userCompanyId],
       ["invoice_date", ">=", mesAntepasadoInicio.toISOString().split("T")[0]],
@@ -549,33 +546,33 @@ export async function GET(request: Request) {
       "search_read",
       [domainCrecimiento],
       {
-        fields: ["amount_total_signed", "invoice_date", "invoice_user_id"],
+        fields: ["amount_untaxed", "invoice_date", "invoice_user_id", "move_type"],
       },
     );
     const misFacturasC = facturasCrecimiento.filter(
-      (f) => f.invoice_user_id?.[1] === userName,
+      (f) => f.invoice_user_id && Number(f.invoice_user_id[0]) === uid,
     );
 
     // --- 3. Calcular según el filtro del usuario ---
+    const signedAmount = (f: any) => f.move_type === "out_refund" ? -(f.amount_untaxed || 0) : (f.amount_untaxed || 0);
     let vActual = 0;
     let vAnterior = 0;
 
     if (periodo === "mes_pasado") {
-      // Si el usuario eligió "Mes Pasado" (Mayo), comparamos Mayo (vActual) vs Abril (vAnterior)
       vActual = misFacturasC
         .filter(
           (f) =>
             f.invoice_date >= mesPasadoInicio.toISOString().split("T")[0] &&
             f.invoice_date < mesActualInicio.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
       vAnterior = misFacturasC
         .filter(
           (f) =>
             f.invoice_date >= mesAntepasadoInicio.toISOString().split("T")[0] &&
             f.invoice_date < mesPasadoInicio.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
     } else if (/^\d{4}-\d{2}$/.test(periodo)) {
       const [anio, mesNum] = periodo.split("-").map(Number);
       const selInicio = new Date(anio, mesNum - 1, 1);
@@ -588,28 +585,27 @@ export async function GET(request: Request) {
             f.invoice_date >= selInicio.toISOString().split("T")[0] &&
             f.invoice_date <= selFin.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
       vAnterior = misFacturasC
         .filter(
           (f) =>
             f.invoice_date >= mesAntInicio.toISOString().split("T")[0] &&
             f.invoice_date <= mesAntFin.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
     } else {
-      // Por defecto (Este mes o Total), comparamos el mes actual vs el mes pasado
       vActual = misFacturasC
         .filter(
           (f) => f.invoice_date >= mesActualInicio.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
       vAnterior = misFacturasC
         .filter(
           (f) =>
             f.invoice_date >= mesPasadoInicio.toISOString().split("T")[0] &&
             f.invoice_date < mesActualInicio.toISOString().split("T")[0],
         )
-        .reduce((a, b) => a + b.amount_total_signed, 0);
+        .reduce((a, b) => a + signedAmount(b), 0);
     }
 
     const crecimiento =
@@ -794,11 +790,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      rankingVentas: rankVentas.findIndex((v) => v[0] === userName) + 1,
+      rankingVentas: rankVentas.findIndex((v) => v[1].id === uid) + 1,
       rankingLeads: miRankingLeads > 0 ? miRankingLeads : "-",
-      totalFacturado: (invoiceLines || [])
-        .filter((r: any) => r["move_id.invoice_user_id"] && r["move_id.invoice_user_id"][1] === userName)
-        .reduce((acc: number, r: any) => acc + (r.price_subtotal || 0), 0),
+      totalFacturado: totalFacturadoExact,
       closedLeads: misFacturas.length,
       topClients: top5Clientes,
       topProducts: topProductos,

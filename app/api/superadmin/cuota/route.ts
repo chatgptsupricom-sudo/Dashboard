@@ -35,17 +35,40 @@ export async function GET() {
       .toISOString()
       .split("T")[0];
 
-    const odooTotals =
-      (await callOdooRPC<any[]>("account.move.line", "read_group", [
-        [
-          ["move_id.move_type", "=", "out_invoice"],
-          ["move_id.state", "=", "posted"],
-          ["move_id.invoice_date", ">=", firstDayOfMonth],
-          ["product_id", "!=", false],
-        ],
-        ["price_subtotal", "move_id.invoice_user_id"],
-        ["move_id.invoice_user_id"],
-      ])) || [];
+    const sellersDomain: any[] = [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["invoice_date", ">=", firstDayOfMonth],
+    ];
+
+    const allInvoices =
+      (await callOdooRPC<any[]>("account.move", "search_read", [
+        sellersDomain,
+      ], {
+        fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"],
+      })) || [];
+
+    const normalize = (s: string) =>
+      (s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/\./g, "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+    const odooNameMap: Record<string, number> = {};
+    const odooUserIdMap: Record<number, number> = {};
+    allInvoices.forEach((inv: any) => {
+      const userId = inv.invoice_user_id?.[0] || 0;
+      const odooName = inv.invoice_user_id?.[1] || "";
+      const amount = inv.move_type === "out_refund" ? -(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
+      if (userId) odooUserIdMap[userId] = (odooUserIdMap[userId] || 0) + amount;
+      if (odooName) {
+        const key = normalize(odooName);
+        odooNameMap[key] = (odooNameMap[key] || 0) + amount;
+      }
+    });
 
     const grouped: Record<number, { cids: number; sucursal: string; sellers: any[] }> = {};
 
@@ -61,22 +84,17 @@ export async function GET() {
       }
 
       const meta = cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
-      const facturado = odooTotals.reduce((sum: number, item: any) => {
-        const odooId = item["move_id.invoice_user_id"]?.[0];
-        const odooName = item["move_id.invoice_user_id"]?.[1]?.toUpperCase().trim();
-        const sellerName = seller.name.toUpperCase().trim();
-        if (Number(odooId) === Number(seller.user_id) || odooName === sellerName) {
-          return sum + (item.price_subtotal || 0);
-        }
-        return sum;
-      }, 0);
+      const sellerKey = normalize(seller.name);
+      const facturado = parseFloat(
+        ((odooNameMap[sellerKey] ?? odooUserIdMap[seller.user_id] ?? 0)).toFixed(2)
+      );
 
       grouped[cid].sellers.push({
         id: seller.id,
         name: seller.name,
         user_id: seller.user_id,
         meta: parseFloat(meta.toString()),
-        facturado: parseFloat(facturado.toFixed(2)),
+        facturado,
         porcentaje: meta > 0 ? parseFloat(((facturado / meta) * 100).toFixed(2)) : 0,
         falta: parseFloat(Math.max(0, meta - facturado).toFixed(2)),
       });
@@ -85,10 +103,18 @@ export async function GET() {
     const ordenSucursales = [9, 10, 7];
     const result = ordenSucursales
       .filter((cid) => grouped[cid])
-      .map((cid) => ({
-        ...grouped[cid],
-        sellers: grouped[cid].sellers.sort((a, b) => b.facturado - a.facturado),
-      }));
+      .map((cid) => {
+        const g = grouped[cid];
+        const totalMeta = g.sellers.reduce((s, v) => s + v.meta, 0);
+        const totalFacturado = g.sellers.reduce((s, v) => s + v.facturado, 0);
+        return {
+          ...g,
+          totalMeta: parseFloat(totalMeta.toFixed(2)),
+          totalFacturado: parseFloat(totalFacturado.toFixed(2)),
+          porcentaje: totalMeta > 0 ? parseFloat(((totalFacturado / totalMeta) * 100).toFixed(2)) : 0,
+          sellers: g.sellers.sort((a, b) => b.facturado - a.facturado),
+        };
+      });
 
     return NextResponse.json(result);
   } catch (error) {

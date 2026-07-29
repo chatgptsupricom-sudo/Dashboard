@@ -59,13 +59,28 @@ export default function SuperAdminCuotaPage() {
                 <div className="p-2.5 bg-white rounded-xl shadow-sm border border-zinc-100">
                   <Building2 size={20} className="text-zinc-600" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h2 className="text-xl font-bold text-zinc-800">
                     {sucursal.sucursal}
                   </h2>
                   <p className="text-xs text-zinc-400">
                     {sucursal.sellers.length} vendedor{sucursal.sellers.length !== 1 ? "es" : ""}
                   </p>
+                </div>
+                <div className="flex-1 max-w-md">
+                  <div className="flex justify-between text-xs font-bold text-zinc-500 mb-1">
+                    <span>{sucursal.sucursal}</span>
+                    <span>{sucursal.porcentaje?.toFixed(0)}%</span>
+                  </div>
+                  <Progress value={Math.min(sucursal.porcentaje || 0, 100)} className="h-2.5" />
+                  <div className="flex justify-between mt-1.5">
+                    <span className="text-xs text-zinc-500">
+                      Meta: <span className="font-bold text-zinc-700">${sucursal.totalMeta?.toLocaleString()}</span>
+                    </span>
+                    <span className="text-xs text-emerald-600 font-bold">
+                      Facturado: ${sucursal.totalFacturado?.toLocaleString()}
+                    </span>
+                  </div>
                 </div>
               </div>
 

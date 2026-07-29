@@ -43,25 +43,21 @@ export async function GET(req: Request) {
       .split("T")[0];
 
     const odooTotals =
-      (await callOdooRPC<any[]>("account.move", "read_group", [
+      (await callOdooRPC<any[]>("account.move", "search_read", [
         [
           ["invoice_date", ">=", firstDayOfMonth],
           ["state", "=", "posted"],
-          ["move_type", "=", "out_invoice"],
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["company_id", "=", userCids],
+          ["invoice_user_id", "=", seller.user_id],
         ],
-        ["amount_total", "invoice_user_id"],
-        ["invoice_user_id"],
+        ["amount_untaxed", "move_type"],
       ])) || [];
 
     let facturado = 0;
     odooTotals.forEach((item: any) => {
-      const odooId = item.invoice_user_id?.[0];
-      const odooName = item.invoice_user_id?.[1]?.toUpperCase().trim();
-      const sellerName = seller.name.toUpperCase().trim();
-
-      if (Number(odooId) === Number(seller.user_id) || odooName === sellerName) {
-        facturado += item.amount_total || 0;
-      }
+      const amount = item.amount_untaxed || 0;
+      facturado += item.move_type === "out_refund" ? -amount : amount;
     });
 
     facturado = parseFloat(facturado.toFixed(2));
