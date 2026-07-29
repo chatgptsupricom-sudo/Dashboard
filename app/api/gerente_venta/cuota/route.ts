@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
@@ -17,14 +17,14 @@ export async function GET(req: Request) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userCids = payload.cids as number;
 
-    // 1. Obtener vendedores de la DB local
     const [resultSellers]: any = await db.query(
       "SELECT id, name, user_id FROM sellers WHERE cids = ?",
       [userCids],
     );
-    const sellers = (resultSellers || []).filter((s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO");
+    const sellers = (resultSellers || []).filter(
+      (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
+    );
 
-    // 2. Obtener cuotas actuales (último registro por seller)
     const [resultCuotas]: any = await db.query(`
       SELECT c.seller_id, c.cuota FROM cuota c
       INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota GROUP BY seller_id) latest
@@ -32,7 +32,6 @@ export async function GET(req: Request) {
     `);
     const cuotas = resultCuotas || [];
 
-    // 3. Obtener facturación usando READ_GROUP (Lógica a prueba de errores)
     const firstDayOfMonth = new Date(
       new Date().getFullYear(),
       new Date().getMonth(),
@@ -41,54 +40,80 @@ export async function GET(req: Request) {
       .toISOString()
       .split("T")[0];
 
-    const odooTotals =
-      (await callOdooRPC<any[]>("account.move.line", "read_group", [
+    const allInvoices =
+      (await callOdooRPC<any[]>(
+        "account.move",
+        "search_read",
         [
-          ["move_id.move_type", "=", "out_invoice"],
-          ["move_id.state", "=", "posted"],
-          ["move_id.invoice_date", ">=", firstDayOfMonth],
-          ["product_id", "!=", false],
+          [
+            ["move_type", "in", ["out_invoice", "out_refund"]],
+            ["state", "=", "posted"],
+            ["invoice_date", ">=", firstDayOfMonth],
+            ["company_id", "=", userCids],
+          ],
         ],
-        ["price_subtotal", "move_id.invoice_user_id"],
-        ["move_id.invoice_user_id"],
-      ])) || [];
+        {
+          fields: [
+            "amount_untaxed",
+            "invoice_user_id",
+            "company_id",
+            "move_type",
+          ],
+        },
+      )) || [];
 
-    const mapaFacturacion = odooTotals.reduce((acc: any, item: any) => {
-      const odooUserId = item["move_id.invoice_user_id"] ? item["move_id.invoice_user_id"][0] : null;
-      if (odooUserId) acc[odooUserId] = item.price_subtotal;
-      return acc;
-    }, {});
+    const normalize = (s: string) =>
+      (s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/\./g, "")
+        .trim()
+        .replace(/\s+/g, " ");
 
-    // 5. Cruzar datos
+    const odooNameMap: Record<string, number> = {};
+    const odooUserIdMap: Record<number, number> = {};
+    allInvoices.forEach((inv: any) => {
+      const userId = inv.invoice_user_id?.[0] || 0;
+      const odooName = inv.invoice_user_id?.[1] || "";
+      const amount =
+        inv.move_type === "out_refund"
+          ? -(inv.amount_untaxed || 0)
+          : inv.amount_untaxed || 0;
+      if (userId) odooUserIdMap[userId] = (odooUserIdMap[userId] || 0) + amount;
+      if (odooName) {
+        const key = normalize(odooName);
+        odooNameMap[key] = (odooNameMap[key] || 0) + amount;
+      }
+    });
+
     const data = sellers.map((seller: any) => {
       const meta =
         cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
-      const facturado = odooTotals.reduce((sum: number, item: any) => {
-        const odooId = item["move_id.invoice_user_id"]?.[0];
-        const odooName = item["move_id.invoice_user_id"]?.[1]?.toUpperCase().trim();
-        const sellerName = seller.name.toUpperCase().trim();
-
-        const coincidePorId = Number(odooId) === Number(seller.user_id);
-        const coincidePorNombre = odooName === sellerName;
-
-        if (coincidePorId || coincidePorNombre) {
-          return sum + (item.price_subtotal || 0);
-        }
-        return sum;
-      }, 0);
+      const sellerKey = normalize(seller.name);
+      const facturado = parseFloat(
+        (
+          odooNameMap[sellerKey] ??
+          odooUserIdMap[seller.user_id] ??
+          0
+        ).toFixed(2),
+      );
 
       return {
         ...seller,
         meta: parseFloat(meta.toString()),
-        facturado: parseFloat(facturado.toFixed(2)),
+        facturado,
         porcentaje:
-          meta > 0 ? parseFloat(((facturado / meta) * 100).toFixed(2)) : 0,
+          meta > 0
+            ? parseFloat(((facturado / meta) * 100).toFixed(2))
+            : 0,
         falta: parseFloat(Math.max(0, meta - facturado).toFixed(2)),
       };
     });
 
     return NextResponse.json(data);
   } catch (error) {
+    console.error("Error en cuota gerente_venta:", error);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
