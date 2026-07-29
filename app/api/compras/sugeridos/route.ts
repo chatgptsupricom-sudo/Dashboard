@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
         "stock.quant",
         "search_read",
         [stockQuantDomain],
-        { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
+        { fields: ["product_id", "quantity"], limit: 0 },
       ),
     ]);
 
@@ -180,8 +180,7 @@ export async function GET(request: NextRequest) {
       stockData.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] =
-          (stockMap[id] || 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] = (stockMap[id] || 0) + Math.max(0, s.quantity);
       });
     }
 
