@@ -420,18 +420,20 @@ export async function GET(request: Request) {
       callOdooRPC<any[]>("account.move", "search_read", [domain], {
         fields: ["amount_total_signed", "invoice_user_id", "partner_id", "id", "invoice_date"],
       }),
-      callOdooRPC<any[]>("account.invoice.report", "search_read", [reportDomain], {
-        fields: ["price_subtotal", "user_id", "invoice_date", "product_id"],
-      }),
+      callOdooRPC<any[]>("account.invoice.report", "read_group", [
+        reportDomain,
+        ["price_subtotal", "user_id"],
+        ["user_id"],
+      ]),
     ]);
 
     // 4. Rankings (from invoice report - price_subtotal)
     const stats: Record<string, { total: number; count: number }> = {};
-    invoiceReport.forEach((r: any) => {
+    (invoiceReport || []).forEach((r: any) => {
       const name = r.user_id ? r.user_id[1] : "Sin Vendedor";
       if (!stats[name]) stats[name] = { total: 0, count: 0 };
       stats[name].total += r.price_subtotal || 0;
-      stats[name].count += 1;
+      stats[name].count += r.__count || 0;
     });
 
     const rankVentas = Object.entries(stats).sort(
@@ -792,7 +794,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       rankingVentas: rankVentas.findIndex((v) => v[0] === userName) + 1,
       rankingLeads: miRankingLeads > 0 ? miRankingLeads : "-",
-      totalFacturado: invoiceReport
+      totalFacturado: (invoiceReport || [])
         .filter((r: any) => r.user_id && r.user_id[1] === userName)
         .reduce((acc: number, r: any) => acc + (r.price_subtotal || 0), 0),
       closedLeads: misFacturas.length,
