@@ -251,16 +251,13 @@ export async function GET(request: NextRequest) {
           ["amount_total", "invoice_date"],
           ["invoice_date:month"],
         ]),
-        callOdooRPC<any[]>("account.invoice.report", "read_group", [
-          [
-            ["invoice_date", ">=", firstDayOfMonth],
-            ["state", "=", "posted"],
-          ],
-          ["price_subtotal", "user_id"],
-          ["user_id"],
+        callOdooRPC<any[]>("account.move", "read_group", [
+          invoiceFilters,
+          ["amount_total", "invoice_user_id"],
+          ["invoice_user_id"],
           0,
           10,
-          "price_subtotal desc",
+          "amount_total desc",
         ]),
       ]);
 
@@ -292,13 +289,13 @@ export async function GET(request: NextRequest) {
       },
       salesByUser: (sellersData || [])
         .filter((s: any) => {
-          const name = (s.user_id?.[1] || "").toLowerCase();
+          const name = (s.invoice_user_id?.[1] || "").toLowerCase();
           return !name.includes("asistente") && !name.includes("hercilio");
         })
         .slice(0, 5)
         .map((s: any) => ({
-          name: s.user_id?.[1] || "Sin Vendedor",
-          total: s.price_subtotal || 0,
+          name: s.invoice_user_id?.[1] || "Sin Vendedor",
+          total: s.amount_total || 0,
         })),
       topClients: (clientsRanking || []).slice(0, 10).map((c: any) => ({
         name: c.partner_id?.[1] || "Desconocido",

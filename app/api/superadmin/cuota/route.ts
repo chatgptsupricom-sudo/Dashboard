@@ -36,13 +36,14 @@ export async function GET() {
       .split("T")[0];
 
     const odooTotals =
-      (await callOdooRPC<any[]>("account.invoice.report", "read_group", [
+      (await callOdooRPC<any[]>("account.move", "read_group", [
         [
           ["invoice_date", ">=", firstDayOfMonth],
           ["state", "=", "posted"],
+          ["move_type", "=", "out_invoice"],
         ],
-        ["price_subtotal", "user_id"],
-        ["user_id"],
+        ["amount_total", "invoice_user_id"],
+        ["invoice_user_id"],
       ])) || [];
 
     const grouped: Record<number, { cids: number; sucursal: string; sellers: any[] }> = {};
@@ -60,11 +61,11 @@ export async function GET() {
 
       const meta = cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
       const facturado = odooTotals.reduce((sum: number, item: any) => {
-        const odooId = item.user_id?.[0];
-        const odooName = item.user_id?.[1]?.toUpperCase().trim();
+        const odooId = item.invoice_user_id?.[0];
+        const odooName = item.invoice_user_id?.[1]?.toUpperCase().trim();
         const sellerName = seller.name.toUpperCase().trim();
         if (Number(odooId) === Number(seller.user_id) || odooName === sellerName) {
-          return sum + (item.price_subtotal || 0);
+          return sum + (item.amount_total || 0);
         }
         return sum;
       }, 0);
