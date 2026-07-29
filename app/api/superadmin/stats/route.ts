@@ -247,6 +247,9 @@ export async function GET(request: NextRequest) {
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
       .toISOString()
       .split("T")[0];
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+      .toISOString()
+      .split("T")[0];
 
     // FILTROS BASE
     const baseFilters = [
@@ -383,6 +386,7 @@ export async function GET(request: NextRequest) {
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
+          ["invoice_date", ">=", twelveMonthsAgo],
           companyFilter,
         ],
         ["amount_untaxed", "invoice_date"],

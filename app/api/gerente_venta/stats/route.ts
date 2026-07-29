@@ -114,6 +114,11 @@ export async function GET(request: NextRequest) {
       .map(([name, data]) => ({ name, revenue: data.revenue, cantidad: data.cantidad }))
       .sort((a, b) => b.revenue - a.revenue);
 
+    const now = new Date();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+      .toISOString()
+      .split("T")[0];
+
     const [clientsRanking, allClientsCount, salesByMonth] = await Promise.all([
       callOdooRPC<any[]>("account.move", "read_group", [
         [
@@ -142,6 +147,7 @@ export async function GET(request: NextRequest) {
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
+          ["invoice_date", ">=", twelveMonthsAgo],
           companyFilter,
         ],
         ["amount_untaxed", "invoice_date"],
