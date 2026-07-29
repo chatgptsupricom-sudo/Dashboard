@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
 
     const sellerExclusions: Record<number, string[]> = {
       9: ["asistente", "yusne"],
-      10: ["asistente ccs"],
+      10: ["asistente"],
       7: ["hercilio"],
     };
 
