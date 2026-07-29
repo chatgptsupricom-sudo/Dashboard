@@ -394,34 +394,33 @@ export async function GET(request: NextRequest) {
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
+      ["invoice_date", ">=", firstDayOfMonth],
+      companyFilter,
+    ];
+
+    const historyDomain: any[] = [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
       ["invoice_date", ">=", twelveMonthsAgo],
       ["invoice_date", "<=", today],
       companyFilter,
     ];
 
-    const sellersInvoices = await callOdooRPC<any[]>(
-      "account.move",
-      "search_read",
-      [sellersDomain],
-      { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"] },
-    );
+    const [sellersInvoices, historyInvoices] = await Promise.all([
+      callOdooRPC<any[]>("account.move", "search_read", [sellersDomain],
+        { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"] }),
+      callOdooRPC<any[]>("account.move", "search_read", [historyDomain],
+        { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type", "invoice_date"] }),
+    ]);
 
     const sellerStats: Record<string, { total: number; id: number; companyId: number; name: string }> = {};
-    const monthlyFiltered: Record<string, number> = {};
     (sellersInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       const name = inv.invoice_user_id?.[1] || "Sin Vendedor";
       const cid = inv.company_id?.[0] || 0;
       if (!sellerStats[id]) sellerStats[id] = { total: 0, id, companyId: cid, name };
       const amount = inv.amount_untaxed || 0;
-      const signed = inv.move_type === "out_refund" ? -amount : amount;
-      sellerStats[id].total += signed;
-
-      const invDate = inv.invoice_date || "";
-      const monthKey = invDate.substring(0, 7);
-      if (monthKey) {
-        monthlyFiltered[monthKey] = (monthlyFiltered[monthKey] || 0) + signed;
-      }
+      sellerStats[id].total += inv.move_type === "out_refund" ? -amount : amount;
     });
 
     const sellersDataFiltered = Object.values(sellerStats)
@@ -442,7 +441,7 @@ export async function GET(request: NextRequest) {
     );
 
     const monthlyGrowthMap: Record<string, number> = {};
-    (sellersInvoices || []).forEach((inv: any) => {
+    (historyInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       if (excludedIds.has(id)) return;
       const invDate = inv.invoice_date || "";

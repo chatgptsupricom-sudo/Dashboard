@@ -155,17 +155,25 @@ export async function GET(request: NextRequest) {
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
+      ["invoice_date", ">=", start],
+      ["invoice_date", "<=", end],
+      companyFilter,
+    ];
+
+    const historyDomain: any[] = [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
       ["invoice_date", ">=", twelveMonthsAgo],
       ["invoice_date", "<=", today],
       companyFilter,
     ];
 
-    const sellersInvoices = await callOdooRPC<any[]>(
-      "account.move",
-      "search_read",
-      [sellersDomain],
-      { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"] },
-    );
+    const [sellersInvoices, historyInvoices] = await Promise.all([
+      callOdooRPC<any[]>("account.move", "search_read", [sellersDomain],
+        { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type"] }),
+      callOdooRPC<any[]>("account.move", "search_read", [historyDomain],
+        { fields: ["amount_untaxed", "invoice_user_id", "company_id", "move_type", "invoice_date"] }),
+    ]);
 
     const sellerStats: Record<string, { total: number; id: number; companyId: number; name: string }> = {};
     (sellersInvoices || []).forEach((inv: any) => {
@@ -202,7 +210,7 @@ export async function GET(request: NextRequest) {
     );
 
     const monthlyGrowthMap: Record<string, number> = {};
-    (sellersInvoices || []).forEach((inv: any) => {
+    (historyInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       if (excludedIds.has(id)) return;
       const invDate = inv.invoice_date || "";
