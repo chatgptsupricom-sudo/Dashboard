@@ -192,14 +192,17 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
-      "dashboard", // KPIs de compras, alertas de quiebre de stock
-      "sugeridos", // Productos con baja rotación o bajo stock
-      "proveedores", // Gestión y registro de proveedores
-      "ordenes",
-      "moq",
+      "dashboard",
+      "sugeridos",
       "menor_rotacion",
       "mayor_rotacion",
-      // Historial y aprobación de órdenes de compra
+      "moq",
+      "alertas_compras",
+      "cobertura",
+      "quiebres_historicos",
+      "rotacion_categoria",
+      "sin_costo",
+      "tendencia",
     ],
   },
 };

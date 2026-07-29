@@ -6,11 +6,7 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
 
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9,
-  10: 10,
-  7: 11,
-};
+const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = { 9: 9, 10: 10, 7: 11 };
 const prodsCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 15 * 60 * 1000;
 
@@ -23,10 +19,7 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json(
-        { error: "Permisos insuficientes" },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -46,49 +39,23 @@ export async function GET(request: NextRequest) {
     const warehouseIds = companiesToFetch
       .map((cid) => MAIN_WAREHOUSE_BY_COMPANY[cid])
       .filter(Boolean);
-    const warehouseData = await callOdooRPC<any[]>(
-      "stock.warehouse",
-      "search_read",
+    const warehouseData = await callOdooRPC<any[]>("stock.warehouse", "search_read",
       [[["id", "in", warehouseIds]]],
       { fields: ["id", "lot_stock_id", "company_id"], limit: 0 },
     );
-    const locationIds =
-      warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
+    const locationIds = warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
 
-    const productos = await callOdooRPC<any[]>(
-      "product.product",
-      "search_read",
-      [
-        [
-          ["active", "=", true],
-          ["type", "=", "product"],
-        ],
-      ],
-      {
-        fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
-        limit: 0,
-      },
+    const productos = await callOdooRPC<any[]>("product.product", "search_read",
+      [[["active", "=", true], ["type", "=", "product"]]],
+      { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"], limit: 0 },
     );
     if (!productos) throw new Error("Sin productos");
 
-    const stockDomain: any[] =
-      locationIds.length > 0
-        ? [
-            ["location_id", "child_of", locationIds],
-            ["product_id", "!=", false],
-          ]
-        : [
-            ["location_id.usage", "=", "internal"],
-            ["product_id", "!=", false],
-          ];
-    const stockData = await callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      {
-        fields: ["product_id", "quantity", "reserved_quantity", "company_id"],
-        limit: 0,
-      },
+    const stockDomain: any[] = locationIds.length > 0
+      ? [["location_id", "child_of", locationIds], ["product_id", "!=", false]]
+      : [["location_id.usage", "=", "internal"], ["product_id", "!=", false]];
+    const stockData = await callOdooRPC<any[]>("stock.quant", "search_read", [stockDomain],
+      { fields: ["product_id", "quantity", "reserved_quantity", "company_id"], limit: 0 },
     );
     const stockPorProdYComp: Record<number, Record<number, number>> = {};
     stockData?.forEach((s: any) => {
@@ -96,14 +63,11 @@ export async function GET(request: NextRequest) {
       const pid = s.product_id[0];
       const compId = s.company_id?.[0] ?? (sedeId || 9);
       stockPorProdYComp[pid] ??= {};
-      stockPorProdYComp[pid][compId] =
-        (stockPorProdYComp[pid][compId] ?? 0) +
-        Math.max(0, s.quantity - s.reserved_quantity);
+      stockPorProdYComp[pid][compId] = (stockPorProdYComp[pid][compId] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
     });
 
     const today = new Date();
-    const date45Ago = new Date();
-    date45Ago.setDate(today.getDate() - 45);
+    const date45Ago = new Date(); date45Ago.setDate(today.getDate() - 45);
     const date45Str = date45Ago.toISOString().split("T")[0];
     const invoiceDomain: any[] = [
       ["move_id.move_type", "in", ["out_invoice", "out_receipt"]],
@@ -117,17 +81,10 @@ export async function GET(request: NextRequest) {
     let saleLines: any[] = [];
     let offset = 0;
     while (true) {
-      const page = await callOdooRPC<any[]>(
-        "account.move.line",
-        "search_read",
-        [invoiceDomain],
-        {
-          fields: ["product_id", "quantity", "move_id.company_id"],
-          order: "id asc",
-          limit: 5000,
-          offset,
-        },
-      );
+      const page = await callOdooRPC<any[]>("account.move.line", "search_read", [invoiceDomain], {
+        fields: ["product_id", "quantity", "move_id.company_id"],
+        order: "id asc", limit: 5000, offset,
+      });
       if (!page || page.length === 0) break;
       saleLines = saleLines.concat(page);
       if (page.length < 5000) break;
@@ -146,25 +103,16 @@ export async function GET(request: NextRequest) {
         return;
       }
       ventasPorProdYComp[pid] ??= {};
-      ventasPorProdYComp[pid][compId] =
-        (ventasPorProdYComp[pid][compId] ?? 0) + (l.quantity || 0);
+      ventasPorProdYComp[pid][compId] = (ventasPorProdYComp[pid][compId] ?? 0) + (l.quantity || 0);
     });
 
-    const tmplIds = [
-      ...new Set(
-        productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
-      ),
-    ];
-    const tmplPrices = await callOdooRPC<any[]>(
-      "product.template",
-      "search_read",
+    const tmplIds = [...new Set(productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean))];
+    const tmplPrices = await callOdooRPC<any[]>("product.template", "search_read",
       [[["id", "in", tmplIds]]],
       { fields: ["id", "standard_price"], limit: 0 },
     );
     const tmplPriceMap: Record<number, number> = {};
-    tmplPrices?.forEach((t: any) => {
-      tmplPriceMap[t.id] = Number(t.standard_price) || 0;
-    });
+    tmplPrices?.forEach((t: any) => { tmplPriceMap[t.id] = Number(t.standard_price) || 0; });
     const priceMap: Record<number, number> = {};
     productos.forEach((p: any) => {
       const tmplId = p.product_tmpl_id?.[0];
@@ -175,15 +123,9 @@ export async function GET(request: NextRequest) {
     // Ventas totales globales para ABC
     const ventasTotalesGlobal: Record<number, number> = {};
     for (const [pid, comps] of Object.entries(ventasPorProdYComp)) {
-      ventasTotalesGlobal[+pid] = Object.values(comps).reduce(
-        (a, b) => a + b,
-        0,
-      );
+      ventasTotalesGlobal[+pid] = Object.values(comps).reduce((a, b) => a + b, 0);
     }
-    const totalVentasGlobal = Object.values(ventasTotalesGlobal).reduce(
-      (a, b) => a + b,
-      0,
-    );
+    const totalVentasGlobal = Object.values(ventasTotalesGlobal).reduce((a, b) => a + b, 0);
     const productosOrdenados = productos
       .map((p: any) => ({ id: p.id, ventas: ventasTotalesGlobal[p.id] ?? 0 }))
       .sort((a, b) => b.ventas - a.ventas);
@@ -224,9 +166,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (categoria) {
-      result = result.filter(
-        (p) => p.categoria.toLowerCase() === categoria.toLowerCase(),
-      );
+      result = result.filter((p) => p.categoria.toLowerCase() === categoria.toLowerCase());
     }
     if (tipo === "estancado") {
       result = result.filter((p) => p.capitalEstancado > 0);

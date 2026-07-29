@@ -79,11 +79,7 @@ export async function GET(request: NextRequest) {
       let offset = 0;
       while (true) {
         const domain: any[] = [
-          [
-            "move_id.move_type",
-            "in",
-            ["out_invoice", "out_refund", "out_receipt"],
-          ],
+          ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
           ["move_id.state", "=", "posted"],
           ["move_id.invoice_date", ">=", fechaDesde],
           ["product_id", "!=", false],
@@ -150,17 +146,9 @@ export async function GET(request: NextRequest) {
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
       : [];
 
-    const stockQuantDomain =
-      locationIds.length > 0
-        ? [
-            ["location_id", "child_of", locationIds],
-            ["product_id", "in", productIds],
-          ]
-        : [
-            ["location_id.usage", "=", "internal"],
-            ["product_id", "in", productIds],
-            ...(sedeId ? [["company_id", "=", sedeId]] : []),
-          ];
+    const stockQuantDomain = locationIds.length > 0
+      ? [["location_id", "child_of", locationIds], ["product_id", "in", productIds]]
+      : [["location_id.usage", "=", "internal"], ["product_id", "in", productIds], ...(sedeId ? [["company_id", "=", sedeId]] : [])];
 
     const [productos, stockData] = await Promise.all([
       callOdooRPC<any[]>(
@@ -177,10 +165,12 @@ export async function GET(request: NextRequest) {
           limit: 0,
         },
       ),
-      callOdooRPC<any[]>("stock.quant", "search_read", [stockQuantDomain], {
-        fields: ["product_id", "quantity", "reserved_quantity"],
-        limit: 0,
-      }),
+      callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [stockQuantDomain],
+        { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
+      ),
     ]);
 
     if (!productos) throw new Error("Error obteniendo productos");

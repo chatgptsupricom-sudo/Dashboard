@@ -11,7 +11,7 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
 
 // IDs de los almacenes principales de venta por empresa (company_id → warehouse_id)
 const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9, // Valencia
+  9: 9,  // Valencia
   10: 10, // Caracas
   7: 11, // Panamá
 };
@@ -104,8 +104,7 @@ export async function GET(request: NextRequest) {
       stockData.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] =
-          (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
     // Redondear a 2 decimales para evitar diferencias por float de Odoo

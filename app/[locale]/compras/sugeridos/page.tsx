@@ -257,21 +257,13 @@ export default function SugeridosPage() {
       {/* Filtros */}
       <Card className="bg-white shadow-sm border-gray-200">
         <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 items-center">
-          <Select
-            value={sede}
-            onValueChange={(v) => {
-              setSede(v);
-              setCurrentPage(1);
-            }}
-          >
+          <Select value={sede} onValueChange={(v) => { setSede(v); setCurrentPage(1); }}>
             <SelectTrigger>
               <SelectValue placeholder="Sede" />
             </SelectTrigger>
             <SelectContent>
               {SEDES.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.label}
-                </SelectItem>
+                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -348,45 +340,29 @@ export default function SugeridosPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Valor Total a Comprar
-            </p>
-            <p className="text-2xl font-bold text-blue-700 mt-1">
-              ${fmt(kpis.totalValor)}
-            </p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Valor Total a Comprar</p>
+            <p className="text-2xl font-bold text-blue-700 mt-1">${fmt(kpis.totalValor)}</p>
             <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
           </CardContent>
         </Card>
         <Card className="border-red-200 bg-red-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              En Quiebre Total
-            </p>
-            <p className="text-2xl font-bold text-red-700 mt-1">
-              {kpis.enQuiebre}
-            </p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">En Quiebre Total</p>
+            <p className="text-2xl font-bold text-red-700 mt-1">{kpis.enQuiebre}</p>
             <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              En Riesgo Inminente
-            </p>
-            <p className="text-2xl font-bold text-orange-600 mt-1">
-              {kpis.enRiesgo}
-            </p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">En Riesgo Inminente</p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">{kpis.enRiesgo}</p>
             <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
           </CardContent>
         </Card>
         <Card className="border-green-200 bg-green-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Total Sugeridos
-            </p>
-            <p className="text-2xl font-bold text-green-700 mt-1">
-              {todos.length}
-            </p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sugeridos</p>
+            <p className="text-2xl font-bold text-green-700 mt-1">{todos.length}</p>
             <p className="text-xs text-gray-400 mt-1">Con MOQ configurado</p>
           </CardContent>
         </Card>
@@ -472,9 +448,7 @@ export default function SugeridosPage() {
                       </TableCell>
                       <TableCell className="text-center text-sm">
                         {item.diasInvActual >= 999 ? (
-                          <span className="text-gray-400 text-xs">
-                            Sin ventas
-                          </span>
+                          <span className="text-gray-400 text-xs">Sin ventas</span>
                         ) : (
                           <span
                             className={
@@ -513,13 +487,9 @@ export default function SugeridosPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 text-sm">
-                        {item.costo > 0 ? (
-                          `$${item.costo.toFixed(2)}`
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
-                            Sin costo
-                          </span>
-                        )}
+                        {item.costo > 0
+                          ? `$${item.costo.toFixed(2)}`
+                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo</span>}
                       </TableCell>
                       <TableCell className="text-center font-bold text-gray-800">
                         {item.valorAComprar > 0
@@ -527,9 +497,7 @@ export default function SugeridosPage() {
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right pr-6">
-                        <Badge
-                          className={`text-xs ${accionBadgeClass(item.accion)}`}
-                        >
+                        <Badge className={`text-xs ${accionBadgeClass(item.accion)}`}>
                           {accionLabel(item.accion)}
                         </Badge>
                         {!item.accion.includes("OK") && (
@@ -565,9 +533,7 @@ export default function SugeridosPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(p + 1, totalPages))
-                  }
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                   disabled={currentPage === totalPages}
                 >
                   Siguiente

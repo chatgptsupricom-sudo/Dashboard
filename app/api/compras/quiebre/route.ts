@@ -75,13 +75,9 @@ export async function GET(request: NextRequest) {
       ],
       { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"] },
     );
-    const stockDomain: any[] =
-      locationIds.length > 0
-        ? [["location_id", "child_of", locationIds]]
-        : [
-            ["location_id.usage", "=", "internal"],
-            ...(sedeId ? [["company_id", "=", sedeId]] : []),
-          ];
+    const stockDomain: any[] = locationIds.length > 0
+      ? [["location_id", "child_of", locationIds]]
+      : [["location_id.usage", "=", "internal"], ...(sedeId ? [["company_id", "=", sedeId]] : [])];
     const stockPromise = callOdooRPC<any[]>(
       "stock.quant",
       "search_read",
@@ -179,8 +175,7 @@ export async function GET(request: NextRequest) {
       (stockData as any[]).forEach((s) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] =
-          (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
     // Redondear a 2 decimales para evitar diferencias por float de Odoo

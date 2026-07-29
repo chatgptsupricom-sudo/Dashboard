@@ -101,6 +101,12 @@ export function Sidebar({
     { id: "menor_rotacion", label: "Menor Rotación", icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: "Mayor Rotación", icon: TrendingUp, slug: "/mayor_rotacion" },
     { id: "moq", label: "MOQ", icon: Settings2, slug: "/moq" },
+    { id: "alertas_compras", label: "Alertas", icon: Bell, slug: "/alertas" },
+    { id: "cobertura", label: "Cobertura", icon: Boxes, slug: "/cobertura" },
+    { id: "quiebres_historicos", label: "Quiebres Históricos", icon: TrendingDown, slug: "/quiebres-historicos" },
+    { id: "rotacion_categoria", label: "Rotación por Categoría", icon: BarChart3, slug: "/rotacion-categoria" },
+    { id: "sin_costo", label: "Sin Costo", icon: FileText, slug: "/sin-costo" },
+    { id: "tendencia", label: "Tendencia", icon: TrendingUp, slug: "/tendencia" },
     { id: "adminleads", label: "Dashboard Leads", icon: Target, slug: "", adminLeadsOnly: true },
     { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
     { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
@@ -146,7 +152,7 @@ export function Sidebar({
     allowedSections.includes("menor_rotacion") ||
     allowedSections.includes("mayor_rotacion");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "moq", "alertas_compras", "cobertura", "quiebres_historicos", "rotacion_categoria", "sin_costo", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 
@@ -453,6 +459,41 @@ export function Sidebar({
                           label: "Mayor Rotacion",
                           href: `${basePath}/mayor_rotacion`,
                           permission: "mayor_rotacion",
+                        },
+                        {
+                          label: "MOQ",
+                          href: `${basePath}/moq`,
+                          permission: "moq",
+                        },
+                        {
+                          label: "Alertas",
+                          href: `${basePath}/alertas`,
+                          permission: "alertas_compras",
+                        },
+                        {
+                          label: "Cobertura",
+                          href: `${basePath}/cobertura`,
+                          permission: "cobertura",
+                        },
+                        {
+                          label: "Quiebres Históricos",
+                          href: `${basePath}/quiebres-historicos`,
+                          permission: "quiebres_historicos",
+                        },
+                        {
+                          label: "Rotación por Categoría",
+                          href: `${basePath}/rotacion-categoria`,
+                          permission: "rotacion_categoria",
+                        },
+                        {
+                          label: "Sin Costo",
+                          href: `${basePath}/sin-costo`,
+                          permission: "sin_costo",
+                        },
+                        {
+                          label: "Tendencia",
+                          href: `${basePath}/tendencia`,
+                          permission: "tendencia",
                         },
                       ].map((subItem, index) => {
                         if (
