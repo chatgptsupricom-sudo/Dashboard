@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       ? [["company_id", "in", [sedeId, false]]]
       : [["company_id", "in", [9, 10, 7, false]]];
 
-    const [productos] = await Promise.all([
+    const [productos, stockData] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
@@ -148,9 +148,21 @@ export async function GET(request: NextRequest) {
           ],
         ],
         {
-          fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id", "qty_available"],
+          fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
           limit: 0,
         },
+      ),
+      callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [
+          [
+            ["location_id.usage", "=", "internal"],
+            ["product_id", "in", productIds],
+            ...productCompanyFilter,
+          ],
+        ],
+        { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
       ),
     ]);
 
@@ -159,9 +171,14 @@ export async function GET(request: NextRequest) {
     const validProductIds = new Set((productos || []).map((p: any) => p.id));
 
     const stockMap: Record<number, number> = {};
-    (productos || []).forEach((p: any) => {
-      stockMap[p.id] = Math.max(0, p.qty_available || 0);
-    });
+    if (stockData) {
+      stockData.forEach((s: any) => {
+        if (!s.product_id) return;
+        const id = s.product_id[0];
+        const disponible = Math.max(0, (s.quantity || 0) - (s.reserved_quantity || 0));
+        stockMap[id] = (stockMap[id] || 0) + disponible;
+      });
+    }
 
     const tmplIds = [
       ...new Set(
