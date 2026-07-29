@@ -42,19 +42,18 @@ export async function GET(req: Request) {
       .split("T")[0];
 
     const odooTotals =
-      (await callOdooRPC<any[]>("account.move", "read_group", [
+      (await callOdooRPC<any[]>("account.invoice.report", "read_group", [
         [
           ["invoice_date", ">=", firstDayOfMonth],
           ["state", "=", "posted"],
-          ["move_type", "=", "out_invoice"],
         ],
-        ["amount_total", "invoice_user_id"],
-        ["invoice_user_id"],
+        ["price_subtotal", "user_id"],
+        ["user_id"],
       ])) || [];
 
     const mapaFacturacion = odooTotals.reduce((acc: any, item: any) => {
-      const odooUserId = item.invoice_user_id ? item.invoice_user_id[0] : null;
-      if (odooUserId) acc[odooUserId] = item.amount_total;
+      const odooUserId = item.user_id ? item.user_id[0] : null;
+      if (odooUserId) acc[odooUserId] = item.price_subtotal;
       return acc;
     }, {});
 
@@ -63,15 +62,15 @@ export async function GET(req: Request) {
       const meta =
         cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
       const facturado = odooTotals.reduce((sum: number, item: any) => {
-        const odooId = item.invoice_user_id?.[0];
-        const odooName = item.invoice_user_id?.[1]?.toUpperCase().trim();
+        const odooId = item.user_id?.[0];
+        const odooName = item.user_id?.[1]?.toUpperCase().trim();
         const sellerName = seller.name.toUpperCase().trim();
 
         const coincidePorId = Number(odooId) === Number(seller.user_id);
         const coincidePorNombre = odooName === sellerName;
 
         if (coincidePorId || coincidePorNombre) {
-          return sum + (item.amount_total || 0);
+          return sum + (item.price_subtotal || 0);
         }
         return sum;
       }, 0);

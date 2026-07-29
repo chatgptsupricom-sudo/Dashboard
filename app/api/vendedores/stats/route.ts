@@ -407,28 +407,30 @@ export async function GET(request: Request) {
       if (fechaFin) domain.push(["invoice_date", "<=", fechaFin]);
     }
 
-    // AGREGAMOS 'invoice_date' A LOS FIELDS OBLIGATORIAMENTE
-    const facturas = await callOdooRPC<any[]>(
-      "account.move",
-      "search_read",
-      [domain],
-      {
-        fields: [
-          "amount_total_signed",
-          "invoice_user_id",
-          "partner_id",
-          "id",
-          "invoice_date",
-        ],
-      },
-    );
+    const reportDomain: any[] = [
+      ["state", "=", "posted"],
+      ["company_id", "=", userCompanyId],
+    ];
+    if (periodo !== "total") {
+      reportDomain.push(["invoice_date", ">=", fechaInicio]);
+      if (fechaFin) reportDomain.push(["invoice_date", "<=", fechaFin]);
+    }
 
-    // 4. Rankings
+    const [facturas, invoiceReport] = await Promise.all([
+      callOdooRPC<any[]>("account.move", "search_read", [domain], {
+        fields: ["amount_total_signed", "invoice_user_id", "partner_id", "id", "invoice_date"],
+      }),
+      callOdooRPC<any[]>("account.invoice.report", "search_read", [reportDomain], {
+        fields: ["price_subtotal", "user_id", "invoice_date", "product_id"],
+      }),
+    ]);
+
+    // 4. Rankings (from invoice report - price_subtotal)
     const stats: Record<string, { total: number; count: number }> = {};
-    facturas.forEach((f) => {
-      const name = f.invoice_user_id ? f.invoice_user_id[1] : "Sin Vendedor";
+    invoiceReport.forEach((r: any) => {
+      const name = r.user_id ? r.user_id[1] : "Sin Vendedor";
       if (!stats[name]) stats[name] = { total: 0, count: 0 };
-      stats[name].total += f.amount_total_signed;
+      stats[name].total += r.price_subtotal || 0;
       stats[name].count += 1;
     });
 
@@ -790,10 +792,9 @@ export async function GET(request: Request) {
     return NextResponse.json({
       rankingVentas: rankVentas.findIndex((v) => v[0] === userName) + 1,
       rankingLeads: miRankingLeads > 0 ? miRankingLeads : "-",
-      totalFacturado: misFacturas.reduce(
-        (acc, f) => acc + f.amount_total_signed,
-        0,
-      ),
+      totalFacturado: invoiceReport
+        .filter((r: any) => r.user_id && r.user_id[1] === userName)
+        .reduce((acc: number, r: any) => acc + (r.price_subtotal || 0), 0),
       closedLeads: misFacturas.length,
       topClients: top5Clientes,
       topProducts: topProductos,
