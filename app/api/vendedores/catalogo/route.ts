@@ -137,7 +137,7 @@ export async function GET(request: Request) {
           "qty_available",
           "categ_id",
           "barcode",
-          "image_128",
+          "image_1024",
           "uom_id",
           "x_studio_marca",
         ],

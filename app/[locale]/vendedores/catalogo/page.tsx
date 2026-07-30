@@ -619,8 +619,8 @@ export default function CatalogoPage() {
 }
 
 function ProductoCard({ producto, index }: { producto: any; index: number }) {
-  const imagen = producto.image_128
-    ? `data:image/png;base64,${producto.image_128}`
+  const imagen = producto.image_1024
+    ? `data:image/png;base64,${producto.image_1024}`
     : null;
   const categoria = Array.isArray(producto.categ_id)
     ? producto.categ_id[1]
@@ -650,6 +650,8 @@ function ProductoCard({ producto, index }: { producto: any; index: number }) {
               <img
                 src={imagen}
                 alt={nombreLimpio}
+                loading="lazy"
+                style={{ imageRendering: "high-quality" }}
                 className="w-full h-full object-contain p-2"
               />
             ) : (
