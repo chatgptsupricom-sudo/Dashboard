@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     const rules = allRules;
 
     const sellersResult = await query(
-      "SELECT name FROM sellers WHERE cids = ? AND activo = 1",
+      "SELECT name FROM sellers WHERE cids = ?",
       [rulesCompanyId]
     );
     const validSellerNames = new Set(
