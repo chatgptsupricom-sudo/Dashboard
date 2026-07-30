@@ -609,6 +609,15 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
+                        ...(isSuperAdminRole
+                          ? [
+                              {
+                                label: "Reporte Diario",
+                                href: `${basePath}/reporte-diario`,
+                                permission: "reporte_diario",
+                              },
+                            ]
+                          : []),
                         {
                           label: "Cuota",
                           href: `${basePath}/cuota`,
@@ -624,11 +633,15 @@ export function Sidebar({
                           href: `${basePath}/spiff`,
                           permission: "spiff",
                         },
-                        {
-                          label: "Reporte Diario",
-                          href: `${basePath}/reporte-diario`,
-                          permission: "reporte_diario",
-                        },
+                        ...(!isSuperAdminRole
+                          ? [
+                              {
+                                label: "Reporte Diario",
+                                href: `${basePath}/reporte-diario`,
+                                permission: "reporte_diario",
+                              },
+                            ]
+                          : []),
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
 
