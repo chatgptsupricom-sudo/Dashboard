@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
           "search_read",
           [domain],
           {
-            fields: ["product_id", "quantity", "price_subtotal"],
+            fields: ["product_id", "quantity", "price_subtotal", "move_id"],
             order: "id asc",
             limit: 5000,
             offset,
@@ -99,6 +99,38 @@ export async function GET(request: NextRequest) {
         offset += 5000;
       }
       return result;
+    }
+
+    async function fetchLastInvoiceDate(allLines365: any[]): Promise<Record<number, Date>> {
+      if (allLines365.length === 0) return {};
+
+      const moveIds = [...new Set(allLines365.map((l: any) => l.move_id?.[0]).filter(Boolean))];
+      if (moveIds.length === 0) return {};
+
+      const moves = await callOdooRPC<any[]>(
+        "account.move",
+        "read",
+        [moveIds, ["invoice_date"]],
+      );
+      const moveDateMap: Record<number, Date> = {};
+      (moves || []).forEach((m: any) => {
+        if (m.invoice_date) {
+          moveDateMap[m.id] = new Date(m.invoice_date);
+        }
+      });
+
+      const lastDateByProduct: Record<number, Date> = {};
+      allLines365.forEach((l: any) => {
+        if (!l.product_id || !l.move_id) return;
+        const vid = l.product_id[0];
+        const moveId = l.move_id[0];
+        const d = moveDateMap[moveId];
+        if (!d) return;
+        if (!lastDateByProduct[vid] || d > lastDateByProduct[vid]) {
+          lastDateByProduct[vid] = d;
+        }
+      });
+      return lastDateByProduct;
     }
 
     async function fetchAllTemplates(): Promise<any[]> {
@@ -139,6 +171,8 @@ export async function GET(request: NextRequest) {
       fetchInvoiceLines(str365),
       query("SELECT sku, cantidad FROM moqs"),
     ]);
+
+    const lastDateByProduct = await fetchLastInvoiceDate(lines365);
 
     const allTmplIds = (templates || []).map((t: any) => t.id);
 
@@ -202,6 +236,17 @@ export async function GET(request: NextRequest) {
       const tid = variantIdToTmpl[vid];
       if (tid) {
         stockByTmpl[tid] = (stockByTmpl[tid] || 0) + qty;
+      }
+    }
+
+    const lastDateByTmpl: Record<number, Date> = {};
+    for (const [vidStr, d] of Object.entries(lastDateByProduct)) {
+      const vid = Number(vidStr);
+      const tid = variantIdToTmpl[vid];
+      if (tid) {
+        if (!lastDateByTmpl[tid] || d > lastDateByTmpl[tid]) {
+          lastDateByTmpl[tid] = d;
+        }
       }
     }
 
@@ -271,7 +316,11 @@ export async function GET(request: NextRequest) {
       const demandaDiaria = ventas45d / 45;
       const puntoReorden = demandaDiaria * ETA_DIAS + stockSeguridad;
       const stockObjetivo = demandaDiaria * diasInvDeseado;
-      const diasInvActual = demandaDiaria > 0 ? stock / demandaDiaria : 999;
+
+      const lastSaleDate = lastDateByTmpl[tmplId];
+      const diasDesdeUltimaVenta = lastSaleDate
+        ? Math.floor((today.getTime() - lastSaleDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
 
       if (stock > puntoReorden) continue;
 
@@ -318,7 +367,7 @@ export async function GET(request: NextRequest) {
         puntoReorden: Number(puntoReorden.toFixed(1)),
         stockObjetivo: Number(stockObjetivo.toFixed(1)),
         diasInvActual:
-          diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
+            diasDesdeUltimaVenta >= 999 ? 999 : Number(diasDesdeUltimaVenta.toFixed(0)),
         cantidadAComprar,
         valorAComprar: Number(valorAComprar.toFixed(2)),
         accion,
