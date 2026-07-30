@@ -71,6 +71,14 @@ export async function GET(request: Request) {
     const allRules: SpiffRuleRow[] = rulesResult.rows;
     const rules = allRules;
 
+    const sellersResult = await query(
+      "SELECT name FROM sellers WHERE cids = ? AND activo = 1",
+      [rulesCompanyId]
+    );
+    const validSellerNames = new Set(
+      (sellersResult.rows as any[]).map((s) => s.name.toLowerCase().trim())
+    );
+
     const marcaRules = rules.filter((r) => r.tipo === "marca");
     const productoRules = rules.filter((r) => r.tipo === "producto");
 
@@ -279,12 +287,12 @@ export async function GET(request: Request) {
     const sellerMap: Record<string, { nombre: string; totalSpiff: number; totalFacturado: number; marcas: Record<string, number>; cantidades: Record<string, number> }> = {};
     facturas.forEach((f) => {
       const sellerName = f.invoice_user_id?.[1];
-      if (sellerName && !sellerMap[sellerName]) {
+      if (!sellerName) return;
+      if (validSellerNames.size > 0 && !validSellerNames.has(sellerName.toLowerCase().trim())) return;
+      if (!sellerMap[sellerName]) {
         sellerMap[sellerName] = { nombre: sellerName, totalSpiff: 0, totalFacturado: 0, marcas: {}, cantidades: {} };
       }
-      if (sellerName) {
-        sellerMap[sellerName].totalFacturado += f.amount_total_signed || 0;
-      }
+      sellerMap[sellerName].totalFacturado += f.amount_total_signed || 0;
     });
 
     const allSellerNames = Object.keys(sellerMap);
