@@ -123,7 +123,7 @@ export default function SugeridosPage() {
   );
 
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(tras_abc.map((p) => p.marca))).sort(),
+    () => Array.from(new Set(tras_abc.map((p) => p.marca).filter(Boolean))).sort(),
     [tras_abc],
   );
 
@@ -136,7 +136,7 @@ export default function SugeridosPage() {
   );
 
   const categoriasUnicas = useMemo(
-    () => Array.from(new Set(tras_marca.map((p) => p.categoria))).sort(),
+    () => Array.from(new Set(tras_marca.map((p) => p.categoria).filter(Boolean))).sort(),
     [tras_marca],
   );
 
@@ -149,7 +149,7 @@ export default function SugeridosPage() {
   );
 
   const accionesUnicas = useMemo(
-    () => Array.from(new Set(tras_cat.map((p) => p.accion))).sort(),
+    () => Array.from(new Set(tras_cat.map((p) => p.accion).filter(Boolean))).sort(),
     [tras_cat],
   );
 
