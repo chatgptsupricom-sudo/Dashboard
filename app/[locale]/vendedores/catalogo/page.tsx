@@ -674,7 +674,7 @@ function ProductoCard({ producto, index }: { producto: any; index: number }) {
                 <Tag size={10} /> {producto.default_code}
               </span>
             )}
-            <h3 className="font-bold text-zinc-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem]">
+            <h3 title={nombreLimpio} className="font-bold text-zinc-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem] cursor-default">
               {nombreLimpio}
             </h3>
             {categoria && (
