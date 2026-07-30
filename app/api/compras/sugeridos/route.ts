@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_sugeridos_v8_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_sugeridos_v9_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
     const cached = sugeridosCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
@@ -116,7 +116,10 @@ export async function GET(request: NextRequest) {
             ],
           ],
           {
-            fields: ["id", "name", "default_code", "categ_id", "company_id"],
+            fields: [
+              "id", "name", "default_code", "categ_id", "company_id",
+              "standard_price", "product_variant_ids",
+            ],
             order: "id asc",
             limit: 5000,
             offset,
@@ -137,31 +140,33 @@ export async function GET(request: NextRequest) {
       query("SELECT sku, cantidad FROM moqs"),
     ]);
 
-    const tmplIds = (templates || []).map((t: any) => t.id);
+    const allTmplIds = (templates || []).map((t: any) => t.id);
 
-    const variants = tmplIds.length > 0
+    const variants = allTmplIds.length > 0
       ? await callOdooRPC<any[]>(
           "product.product",
           "search_read",
           [
             [
-              ["product_tmpl_id", "in", tmplIds],
+              ["product_tmpl_id", "in", allTmplIds],
               ["active", "=", true],
             ],
           ],
           {
-            fields: ["id", "default_code", "name", "product_tmpl_id", "qty_available"],
+            fields: ["id", "default_code", "product_tmpl_id"],
             limit: 0,
           },
         )
       : [];
 
-    const variantByTmpl: Record<number, any[]> = {};
+    const variantIdsByTmpl: Record<number, number[]> = {};
+    const variantIdToTmpl: Record<number, number> = {};
     (variants || []).forEach((v: any) => {
       const tid = v.product_tmpl_id?.[0];
       if (!tid) return;
-      if (!variantByTmpl[tid]) variantByTmpl[tid] = [];
-      variantByTmpl[tid].push(v);
+      if (!variantIdsByTmpl[tid]) variantIdsByTmpl[tid] = [];
+      variantIdsByTmpl[tid].push(v.id);
+      variantIdToTmpl[v.id] = tid;
     });
 
     const allVariantIds = (variants || []).map((v: any) => v.id);
@@ -181,134 +186,144 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
-    const stockMap: Record<number, number> = {};
+    const stockByVariant: Record<number, number> = {};
     if (stockData) {
       (stockData as any[]).forEach((s: any) => {
         if (!s.product_id) return;
-        const id = s.product_id[0];
+        const vid = s.product_id[0];
         const disponible = Math.max(0, (s.quantity || 0) - (s.reserved_quantity || 0));
-        stockMap[id] = (stockMap[id] || 0) + disponible;
+        stockByVariant[vid] = (stockByVariant[vid] || 0) + disponible;
       });
     }
 
-    const tmplPriceMap: Record<number, number> = {};
-    if (tmplIds.length > 0) {
-      const prices = await callOdooRPC<any[]>(
-        "product.template",
-        "search_read",
-        [[["id", "in", tmplIds]]],
-        { fields: ["id", "standard_price"], limit: 0 },
-      );
-      (prices || []).forEach((t: any) => {
-        tmplPriceMap[t.id] = Number(t.standard_price) || 0;
-      });
+    const stockByTmpl: Record<number, number> = {};
+    for (const [vidStr, qty] of Object.entries(stockByVariant)) {
+      const vid = Number(vidStr);
+      const tid = variantIdToTmpl[vid];
+      if (tid) {
+        stockByTmpl[tid] = (stockByTmpl[tid] || 0) + qty;
+      }
     }
 
-    const stats45: Record<number, { unidades: number; ingresos: number }> = {};
+    const stats45ByVariant: Record<number, { unidades: number; ingresos: number }> = {};
     lines45.forEach((l: any) => {
       if (!l.product_id) return;
-      const id = l.product_id[0];
-      if (!stats45[id]) stats45[id] = { unidades: 0, ingresos: 0 };
-      stats45[id].unidades += l.quantity || 0;
-      stats45[id].ingresos += l.price_subtotal || 0;
+      const vid = l.product_id[0];
+      if (!stats45ByVariant[vid]) stats45ByVariant[vid] = { unidades: 0, ingresos: 0 };
+      stats45ByVariant[vid].unidades += l.quantity || 0;
+      stats45ByVariant[vid].ingresos += l.price_subtotal || 0;
     });
 
-    const stats365: Record<number, number> = {};
+    const stats365ByVariant: Record<number, number> = {};
     lines365.forEach((l: any) => {
       if (!l.product_id) return;
-      const id = l.product_id[0];
-      stats365[id] = (stats365[id] || 0) + (l.quantity || 0);
+      const vid = l.product_id[0];
+      stats365ByVariant[vid] = (stats365ByVariant[vid] || 0) + (l.quantity || 0);
     });
+
+    const stats45ByTmpl: Record<number, { unidades: number; ingresos: number }> = {};
+    const stats365ByTmpl: Record<number, number> = {};
+    for (const [vidStr, stats] of Object.entries(stats45ByVariant)) {
+      const vid = Number(vidStr);
+      const tid = variantIdToTmpl[vid];
+      if (tid) {
+        if (!stats45ByTmpl[tid]) stats45ByTmpl[tid] = { unidades: 0, ingresos: 0 };
+        stats45ByTmpl[tid].unidades += stats.unidades;
+        stats45ByTmpl[tid].ingresos += stats.ingresos;
+      }
+    }
+    for (const [vidStr, qty] of Object.entries(stats365ByVariant)) {
+      const vid = Number(vidStr);
+      const tid = variantIdToTmpl[vid];
+      if (tid) {
+        stats365ByTmpl[tid] = (stats365ByTmpl[tid] || 0) + qty;
+      }
+    }
 
     const moqMap = new Map(
       (moqResult as any).rows.map((m: any) => [m.sku, Number(m.cantidad)]),
     );
 
-    const abcInput = Object.keys(stats365)
+    const abcInput = Object.keys(stats365ByTmpl)
       .map(Number)
-      .map((id) => ({ id, ventas365d: stats365[id] || 0 }));
+      .map((id) => ({ id, ventas365d: stats365ByTmpl[id] || 0 }));
     const abcMap = clasificarABC(abcInput);
 
     const result: any[] = [];
 
     for (const tmpl of templates || []) {
-      const variantsForTmpl = variantByTmpl[tmpl.id] || [];
-      if (variantsForTmpl.length === 0) continue;
+      const tmplId = tmpl.id;
+      const stock = stockByTmpl[tmplId] || 0;
+      const ventas45d = Math.round(stats45ByTmpl[tmplId]?.unidades || 0);
+      const ventas365d = Math.round(stats365ByTmpl[tmplId] || 0);
+      const costo = Number(tmpl.standard_price) || 0;
 
-      for (const prod of variantsForTmpl) {
-        const pId = prod.id;
-        const codigo = prod.default_code
-          ? String(prod.default_code).trim()
-          : `PROD-${pId}`;
+      const codigo = tmpl.default_code
+        ? String(tmpl.default_code).trim()
+        : `TMPL-${tmplId}`;
+      const moqRaw = moqMap.get(codigo);
+      const tieneMoq = moqRaw !== undefined && moqRaw > 0;
+      const moq = tieneMoq ? moqRaw! : 0;
+      const abc = abcMap[tmplId] || "C";
 
-        const ventas45d = Math.round(stats45[pId]?.unidades || 0);
-        const ventas365d = Math.round(stats365[pId] || 0);
-        const stock = stockMap[pId] || 0;
-        const costo = tmplPriceMap[tmpl.id] ?? 0;
-        const moqRaw = moqMap.get(codigo);
-        const tieneMoq = moqRaw !== undefined && moqRaw > 0;
-        const moq = tieneMoq ? moqRaw! : 0;
-        const abc = abcMap[pId] || "C";
+      const diasInvDeseado = abc === "A" ? 60 : abc === "B" ? 45 : 30;
+      const stockSeguridad = abc === "A" ? 2 : abc === "B" ? 1 : 0;
+      const demandaDiaria = ventas45d / 45;
+      const puntoReorden = demandaDiaria * ETA_DIAS + stockSeguridad;
+      const stockObjetivo = demandaDiaria * diasInvDeseado;
+      const diasInvActual = demandaDiaria > 0 ? stock / demandaDiaria : 999;
 
-        const diasInvDeseado = abc === "A" ? 60 : abc === "B" ? 45 : 30;
-        const stockSeguridad = abc === "A" ? 2 : abc === "B" ? 1 : 0;
-        const demandaDiaria = ventas45d / 45;
-        const puntoReorden = demandaDiaria * ETA_DIAS + stockSeguridad;
-        const stockObjetivo = demandaDiaria * diasInvDeseado;
-        const diasInvActual = demandaDiaria > 0 ? stock / demandaDiaria : 999;
+      if (stock > puntoReorden) continue;
 
-        if (stock > puntoReorden) continue;
-
-        let cantidadAComprar = 0;
-        if (tieneMoq) {
-          const gap = stockObjetivo - stock;
-          if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
-        }
-
-        const valorAComprar = cantidadAComprar * costo;
-
-        let accion = "Stock OK";
-        if (stock <= 0) accion = "QUIEBRE TOTAL";
-        else if (stock <= puntoReorden) accion = "RIESGO: Quiebre Inminente";
-
-        const diasHastaQuiebre =
-          demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
-        const fechaQuiebre = new Date(today);
-        fechaQuiebre.setDate(fechaQuiebre.getDate() + diasHastaQuiebre);
-        const fechaQuiebreEstimada =
-          diasHastaQuiebre >= 999
-            ? "Sin riesgo"
-            : fechaQuiebre.toLocaleDateString("es-VE", {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-              });
-
-        result.push({
-          id: pId,
-          codigo,
-          name: prod.name || tmpl.name,
-          marca: (prod.name || tmpl.name)
-            ? (prod.name || tmpl.name).split(" ")[0].toUpperCase()
-            : "SIN MARCA",
-          categoria: tmpl.categ_id ? tmpl.categ_id[1] : "Sin Categoría",
-          ventas45d,
-          ventas365d,
-          demandaDiaria: Number(demandaDiaria.toFixed(2)),
-          abc,
-          stockDisponible: stock,
-          costo,
-          moq,
-          puntoReorden: Number(puntoReorden.toFixed(1)),
-          stockObjetivo: Number(stockObjetivo.toFixed(1)),
-          diasInvActual:
-            diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
-          cantidadAComprar,
-          valorAComprar: Number(valorAComprar.toFixed(2)),
-          accion,
-          fechaQuiebreEstimada,
-        });
+      let cantidadAComprar = 0;
+      if (tieneMoq) {
+        const gap = stockObjetivo - stock;
+        if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
       }
+
+      const valorAComprar = cantidadAComprar * costo;
+
+      let accion = "Stock OK";
+      if (stock <= 0) accion = "QUIEBRE TOTAL";
+      else if (stock <= puntoReorden) accion = "RIESGO: Quiebre Inminente";
+
+      const diasHastaQuiebre =
+        demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
+      const fechaQuiebre = new Date(today);
+      fechaQuiebre.setDate(fechaQuiebre.getDate() + diasHastaQuiebre);
+      const fechaQuiebreEstimada =
+        diasHastaQuiebre >= 999
+          ? "Sin riesgo"
+          : fechaQuiebre.toLocaleDateString("es-VE", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            });
+
+      result.push({
+        id: tmplId,
+        codigo,
+        name: tmpl.name || codigo,
+        marca: tmpl.name
+          ? tmpl.name.split(" ")[0].toUpperCase()
+          : "SIN MARCA",
+        categoria: tmpl.categ_id ? tmpl.categ_id[1] : "Sin Categoría",
+        ventas45d,
+        ventas365d,
+        demandaDiaria: Number(demandaDiaria.toFixed(2)),
+        abc,
+        stockDisponible: stock,
+        costo,
+        moq,
+        puntoReorden: Number(puntoReorden.toFixed(1)),
+        stockObjetivo: Number(stockObjetivo.toFixed(1)),
+        diasInvActual:
+          diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
+        cantidadAComprar,
+        valorAComprar: Number(valorAComprar.toFixed(2)),
+        accion,
+        fechaQuiebreEstimada,
+      });
     }
 
     result.sort((a: any, b: any) => {
