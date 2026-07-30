@@ -56,6 +56,7 @@ export const rolePermissions: RolePermissions = {
       "cuota", // Gestión de cuotas de vendedores
       "MapaClientes", // Mapa de Clientes
       "spiff", // Gestión de spiffs por marca
+      "reporte_diario", // Reporte Diario de Ventas
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -143,7 +144,15 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff"],
+    sections: [
+      "dashboard",
+      "cuota",
+      "MapaClientes",
+      "inventory",
+      "actividad",
+      "spiff",
+      "reporte_diario",
+    ],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
@@ -192,16 +201,14 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
-      "dashboard",
-      "sugeridos",
+      "dashboard", // KPIs de compras, alertas de quiebre de stock
+      "sugeridos", // Productos con baja rotación o bajo stock
+      "proveedores", // Gestión y registro de proveedores
+      "ordenes",
+      "moq",
       "menor_rotacion",
       "mayor_rotacion",
-      "moq",
-      "cobertura",
-      "quiebres_historicos",
-      "rotacion_categoria",
-      "sin_costo",
-      "tendencia",
+      // Historial y aprobación de órdenes de compra
     ],
   },
 };
