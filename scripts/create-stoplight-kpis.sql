@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS stoplight_kpis (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  company_id INT NOT NULL,
+  year INT NOT NULL,
+  month INT NOT NULL,
+  kpi_name VARCHAR(100) NOT NULL,
+  meta_value DECIMAL(12,2) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_kpi (company_id, year, month, kpi_name)
+);
