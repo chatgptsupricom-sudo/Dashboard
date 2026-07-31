@@ -143,70 +143,81 @@ export default function StoplightReportSuperadmin() {
   const numWeeks = kpiData?.numSemanas || 5;
   const defaultWeeks = Array(numWeeks).fill(null);
 
+  const [goalValues, setGoalValues] = useState<Record<string, string>>({});
+
+  const getGoal = (id: string, defaultVal: string) => goalValues[id] ?? defaultVal;
+
   const ventasKpis = [
     {
       id: "cumplimiento_cuota",
       trend: kpiData ? (kpiData.trend === "green" ? "help" : "alert") : "help",
       title: "Cumplimiento de cuota de ventas",
-      goal: ">= 100%",
+      peso: "30%",
       average: kpiData ? `${kpiData.porcentajeCumplimiento}%` : "0%",
-      total: kpiData ? `${kpiData.totalFacturadoMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}` : "-",
       weeks: kpiData?.semanaGlobal || defaultWeeks,
       isClickable: true,
+      goalDefault: "100",
+      goalSuffix: "%",
     },
     {
       id: "margen_bruto",
       trend: "help",
       title: "Margen bruto",
-      goal: ">= 15%",
+      peso: "15%",
       average: "0%",
-      total: "-",
       weeks: defaultWeeks,
+      goalDefault: "15",
+      goalSuffix: "%",
     },
     {
       id: "visitas_semanales",
       trend: "help",
       title: "Cantidad de visitas semanales",
-      goal: ">= 10",
+      peso: "10%",
       average: "0",
-      total: "0",
       weeks: defaultWeeks,
+      goalDefault: "10",
+      goalSuffix: "",
     },
     {
       id: "efectividad_cierre",
       trend: "help",
       title: "Tasa de efectividad de cierre",
-      goal: ">= 15%",
+      peso: "15%",
       average: "0%",
-      total: "-",
       weeks: defaultWeeks,
+      goalDefault: "15",
+      goalSuffix: "%",
     },
     {
       id: "activacion_cartera",
       trend: "help",
       title: "Porcentaje de activación de cartera",
-      goal: ">= 15%",
+      peso: "15%",
       average: "0%",
-      total: "-",
       weeks: defaultWeeks,
+      goalDefault: "15",
+      goalSuffix: "%",
     },
     {
       id: "clientes_nuevos",
       trend: "help",
       title: "Clientes nuevos captados",
-      goal: ">= 5",
+      peso: "5%",
       average: "0",
-      total: "0",
       weeks: defaultWeeks,
+      goalDefault: "5",
+      goalSuffix: "",
     },
     {
       id: "cobertura_marcas",
       trend: "help",
       title: "Cobertura de marcas",
-      goal: ">= 10%",
+      peso: "10%",
       average: "0%",
-      total: "-",
       weeks: defaultWeeks,
+      goalDefault: "10",
+      goalSuffix: "%",
     },
   ];
 
@@ -215,37 +226,41 @@ export default function StoplightReportSuperadmin() {
       id: "envio_reporte_inv",
       trend: "help",
       title: "Cumplimiento de Envío de Reporte de Antigüedad de Inventario",
-      goal: ">= 75%",
+      peso: "25%",
       average: "0%",
-      total: "-",
       weeks: [null, null, null, null, null],
+      goalDefault: "75",
+      goalSuffix: "%",
     },
     {
       id: "nuevos_productos",
       trend: "help",
       title: "Identificación de Nuevos Productos y Oportunidades de Mercado",
-      goal: ">= 75%",
+      peso: "25%",
       average: "0%",
-      total: "-",
       weeks: [null, null, null, null, null],
+      goalDefault: "75",
+      goalSuffix: "%",
     },
     {
       id: "antiguedad_inv",
       trend: "help",
       title: "Antigüedad de inventario (Costo)",
-      goal: "< 25%",
+      peso: "25%",
       average: "0%",
-      total: "-",
       weeks: [null, null, null, null, null],
+      goalDefault: "25",
+      goalSuffix: "%",
     },
     {
       id: "activacion_sku",
       trend: "alert",
       title: "Tasa de Activación de Portafolio de productos (SKU Activos)",
-      goal: ">= 61%",
+      peso: "25%",
       average: "60%",
-      total: "-",
       weeks: ["50%", "70%", null, null, null],
+      goalDefault: "61",
+      goalSuffix: "%",
     },
   ];
 
@@ -378,7 +393,7 @@ export default function StoplightReportSuperadmin() {
                       <th className="p-3 w-16 text-center border-r font-medium">Owner</th>
                       <th className="p-3 w-24 text-center border-r font-medium">Goal</th>
                       <th className="p-3 w-24 text-center border-r font-medium">Average</th>
-                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">Total</th>
+                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">Peso</th>
                       {weekHeaders.map((week, idx) => (
                         <th key={idx} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-400">
                           <div className="flex flex-col">
@@ -417,9 +432,20 @@ export default function StoplightReportSuperadmin() {
                             <User size={14} />
                           </div>
                         </td>
-                        <td className="p-3 border-r text-center text-slate-600 bg-white">{kpi.goal}</td>
+                        <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-xs text-slate-400">&gt;=</span>
+                            <input
+                              type="text"
+                              value={getGoal(kpi.id, kpi.goalDefault)}
+                              onChange={(e) => setGoalValues((prev) => ({ ...prev, [kpi.id]: e.target.value }))}
+                              className="w-14 text-center text-sm font-medium text-slate-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                            <span className="text-xs text-slate-400">{kpi.goalSuffix}</span>
+                          </div>
+                        </td>
                         <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
-                        <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50">{kpi.total}</td>
+                        <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50 font-bold">{kpi.peso}</td>
                         {kpi.weeks.map((val: string | null, idx: number) => (
                           <td
                             key={idx}
