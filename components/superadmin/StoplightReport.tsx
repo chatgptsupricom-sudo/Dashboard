@@ -155,8 +155,8 @@ export default function StoplightReportSuperadmin() {
       average: kpiData ? `${kpiData.porcentajeCumplimiento}%` : "0%",
       weeks: kpiData?.semanaGlobal || defaultWeeks,
       isClickable: true,
-      goalDefault: "100",
-      goalSuffix: "%",
+      goalDefault: kpiData ? String(kpiData.totalCuotaMensual) : "0",
+      goalSuffix: "",
     },
     {
       id: "margen_bruto",
