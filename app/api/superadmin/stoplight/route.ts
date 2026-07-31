@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       );
       const metaResult = await query(
         "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = 'cumplimiento_cuota_ventas' AND company_id = ? AND mes = ?",
-        ["cumplimiento_cuota_ventas", companyId, mes]
+        [companyId, mes]
       );
       metaMensual = metaResult.rows.length > 0 ? Number(metaResult.rows[0].meta_mensual) : 0;
     } catch (_) {
