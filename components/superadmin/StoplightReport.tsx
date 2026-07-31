@@ -74,14 +74,23 @@ export default function StoplightReportSuperadmin() {
   const [selectedSeller, setSelectedSeller] = useState<SellerDetail | null>(null);
   const [modalTab, setModalTab] = useState<"resumen" | "diario" | "semanal">("resumen");
   const [goalValues, setGoalValues] = useState<Record<string, string>>({});
+  const [selectedCompanyId, setSelectedCompanyId] = useState(10);
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
 
   const now = new Date();
   const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+  const empresas = [
+    { id: 9, label: "Valencia" },
+    { id: 10, label: "Caracas" },
+    { id: 7, label: "Panama" },
+  ];
+  const empresaLabel = empresas.find((e) => e.id === selectedCompanyId)?.label || "Caracas";
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/superadmin/stoplight?mes=${currentMes}`);
+      const res = await fetch(`/api/superadmin/stoplight?mes=${currentMes}&company_id=${selectedCompanyId}`);
       const json = await res.json();
       if (json.success) {
         setKpiData(json.data);
@@ -91,7 +100,7 @@ export default function StoplightReportSuperadmin() {
       console.error("Error fetching stoplight data:", e);
     }
     setLoading(false);
-  }, [currentMes]);
+  }, [currentMes, selectedCompanyId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -102,7 +111,7 @@ export default function StoplightReportSuperadmin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kpi_key: "cumplimiento_cuota_ventas",
-          company_id: 10,
+          company_id: selectedCompanyId,
           meta_mensual: parseFloat(metaInput) || 0,
           mes: currentMes,
         }),
@@ -120,7 +129,7 @@ export default function StoplightReportSuperadmin() {
     setSelectedSeller(null);
     setModalTab("resumen");
     try {
-      const res = await fetch(`/api/superadmin/stoplight/cuota-detail?mes=${currentMes}`);
+      const res = await fetch(`/api/superadmin/stoplight/cuota-detail?mes=${currentMes}&company_id=${selectedCompanyId}`);
       const json = await res.json();
       if (json.success) setModalData(json.data);
     } catch (e) {
@@ -310,8 +319,28 @@ export default function StoplightReportSuperadmin() {
       {/* Toolbar */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors">
-            Team: Caracas <ChevronDown size={14} />
+          <button
+            onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
+            className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative"
+          >
+            Team: {empresaLabel} <ChevronDown size={14} />
+            {teamDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-50 min-w-[160px]">
+                {empresas.map((emp) => (
+                  <button
+                    key={emp.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCompanyId(emp.id);
+                      setTeamDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${selectedCompanyId === emp.id ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
+                  >
+                    {emp.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </button>
           <button className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors">
             View by: Week <ChevronDown size={14} />
