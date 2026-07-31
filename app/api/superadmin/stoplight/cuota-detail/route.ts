@@ -1,83 +1,12 @@
-import { db } from "@/lib/db";
+import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { esDiaUtil, contarDiasUtiles, esFeriado } from "@/lib/feriados";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
-
-function getMonthRange(year: number, month: number) {
-  const first = new Date(year, month - 1, 1);
-  const last = new Date(year, month, 0);
-  return {
-    firstDay: first.toISOString().split("T")[0],
-    lastDay: last.toISOString().split("T")[0],
-    totalDays: last.getDate(),
-  };
-}
-
-function getEasterDate(year: number): Date {
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const monthNum = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return new Date(year, monthNum - 1, day);
-}
-
-function isVenezuelanHoliday(dateStr: string): boolean {
-  const d = new Date(dateStr + "T00:00:00");
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  const fixedHolidays: Record<string, boolean> = {
-    "01-01": true, "01-06": true, "05-01": true, "06-24": true,
-    "07-05": true, "07-24": true, "10-12": true, "12-24": true,
-    "12-25": true, "12-31": true,
-  };
-  const key = `${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  if (fixedHolidays[key]) return true;
-  const year = d.getFullYear();
-  const easter = getEasterDate(year);
-  const movingDates = [
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() - 2),
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() - 48),
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() - 47),
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 39),
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 60),
-  ];
-  return movingDates.some(
-    (mh) => mh.getFullYear() === year && mh.getMonth() + 1 === m && mh.getDate() === day,
-  );
-}
-
-function getDaysInMonth(year: number, month: number) {
-  const days: { date: string; esHabil: boolean; dow: number }[] = [];
-  const { totalDays } = getMonthRange(year, month);
-  for (let d = 1; d <= totalDays; d++) {
-    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const dow = new Date(dateStr + "T00:00:00").getDay();
-    const esHabil = dow !== 0 && dow !== 6 && !isVenezuelanHoliday(dateStr);
-    days.push({ date: dateStr, esHabil, dow });
-  }
-  return days;
-}
-
-function getWeekNumber(dateStr: string, firstDay: string): number {
-  const d = new Date(dateStr + "T00:00:00");
-  const first = new Date(firstDay + "T00:00:00");
-  const diffDays = Math.floor((d.getTime() - first.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.floor(diffDays / 7) + 1;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -86,124 +15,165 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
 
-    const { searchParams } = new URL(request.url);
-    const companyId = parseInt(searchParams.get("company_id") || "9");
-    const year = parseInt(searchParams.get("year") || String(new Date().getFullYear()));
-    const month = parseInt(searchParams.get("month") || String(new Date().getMonth() + 1));
+    const url = new URL(request.url);
+    const companyIdParam = url.searchParams.get("company_id");
+    const mesParam = url.searchParams.get("mes");
+    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
-    const { firstDay, lastDay } = getMonthRange(year, month);
-    const daysInMonth = getDaysInMonth(year, month);
-    const businessDays = daysInMonth.filter((d) => d.esHabil).length;
+    const now = new Date();
+    const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [anioStr, mesStr] = mes.split("-");
+    const anio = parseInt(anioStr, 10);
+    const mesNum = parseInt(mesStr, 10);
 
-    const [sellerResult]: any = await db.query(
-      "SELECT id, name, user_id FROM sellers WHERE cids = ?",
+    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+    const ultimoDia = new Date(anio, mesNum, 0).getDate();
+    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
+
+    // 1. Fetch sellers and cuotas
+    const cuotaResult = await query(
+      `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
+       FROM sellers s 
+       INNER JOIN cuota c ON s.id = c.seller_id 
+       WHERE s.cids = ?`,
       [companyId]
     );
-    const sellers = sellerResult || [];
+    const sellers = cuotaResult.rows as any[];
 
-    const [cuotaResult]: any = await db.query(
-      "SELECT c.seller_id, c.cuota FROM cuota c INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota GROUP BY seller_id) latest ON c.seller_id = latest.seller_id AND c.created_at = latest.max_date"
-    );
-    const cuotaMap: Record<number, number> = {};
-    (cuotaResult || []).forEach((c: any) => {
-      cuotaMap[c.seller_id] = Number(c.cuota);
-    });
-
-    const invoicesDomain: any[] = [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDay],
-      ["invoice_date", "<=", lastDay],
-      ["company_id", "=", companyId],
-    ];
-    const allInvoices = (await callOdooRPC<any[]>("account.move", "search_read", [invoicesDomain], {
-      fields: ["amount_untaxed", "invoice_user_id", "invoice_date", "move_type"],
-      limit: 5000,
-    })) || [];
-
-    const normalize = (s: string) =>
-      (s || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toUpperCase()
-        .replace(/\./g, "")
-        .trim()
-        .replace(/\s+/g, " ");
-
-    const facturadoByUser: Record<number, number> = {};
-    const facturadoByDate: Record<number, Record<string, number>> = {};
-    allInvoices.forEach((inv: any) => {
-      const userId = inv.invoice_user_id?.[0];
-      const amount = inv.move_type === "out_refund" ? -(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
-      const dateStr = (inv.invoice_date || "").split("T")[0];
-      if (userId) {
-        facturadoByUser[userId] = (facturadoByUser[userId] || 0) + amount;
-        if (!facturadoByDate[userId]) facturadoByDate[userId] = {};
-        facturadoByDate[userId][dateStr] = (facturadoByDate[userId][dateStr] || 0) + amount;
+    // 2. Fetch invoices
+    const invoices = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [
+        [
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["company_id", "=", companyId],
+          ["invoice_date", ">=", fechaInicio],
+          ["invoice_date", "<=", fechaFin],
+          ["invoice_user_id", "!=", false],
+        ],
+      ],
+      {
+        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date"],
+        limit: 10000,
       }
-    });
+    );
 
-    const result = sellers
-      .filter((s: any) => {
-        const cuotaVal = cuotaMap[s.id] || 0;
-        return cuotaVal > 0;
-      })
-      .map((seller: any) => {
-        const cuotaMensual = cuotaMap[seller.id] || 0;
-        const cuotaDiaria = businessDays > 0 ? cuotaMensual / businessDays : 0;
-        const totalWeeks = Math.ceil(daysInMonth.length / 7);
-        const cuotaSemanal = totalWeeks > 0 ? cuotaMensual / totalWeeks : 0;
-        const facturadoMes = facturadoByUser[seller.user_id] || 0;
-        const facturadoByDate = facturadoByDate[seller.user_id] || {};
+    // 3. Business days calculation
+    const totalDiasUtiles = contarDiasUtiles(
+      new Date(anio, mesNum - 1, 1),
+      new Date(anio, mesNum, 0)
+    );
 
-        const diasDetalle = daysInMonth.map((day) => ({
-          date: day.date,
-          esHabil: day.esHabil,
-          facturado: day.esHabil ? (facturadoByDate[day.date] || 0) : 0,
-          cuotaDiaria: day.esHabil ? cuotaDiaria : 0,
-          cumple: day.esHabil ? (facturadoByDate[day.date] || 0) >= cuotaDiaria : true,
-        }));
+    // 4. Build per-seller detail with daily breakdown
+    const result = sellers.map((seller) => {
+      const cuotaNum = Number(seller.cuota || 0);
+      const cuotaDiaria = totalDiasUtiles > 0 ? cuotaNum / totalDiasUtiles : 0;
 
-        const semanas: Record<number, { facturado: number; cuotaSemanal: number }> = {};
-        daysInMonth.forEach((day) => {
-          if (!day.esHabil) return;
-          const weekNum = getWeekNumber(day.date, firstDay);
-          if (!semanas[weekNum]) semanas[weekNum] = { facturado: 0, cuotaSemanal };
-          semanas[weekNum].facturado += facturadoByDate[day.date] || 0;
-        });
-        const semanasDetalle = Object.entries(semanas).map(([num, data]) => ({
-          semana: `Sem ${num}`,
-          facturado: data.facturado,
-          cuotaSemanal: data.cuotaSemanal,
-          cumple: data.facturado >= data.cuotaSemanal,
-        }));
+      // Invoices for this seller
+      const sellerInvoices = (invoices || []).filter(
+        (inv: any) => inv.invoice_user_id?.[1] === seller.name
+      );
 
-        return {
-          seller_id: seller.id,
-          name: seller.name,
-          cuota_mensual: cuotaMensual,
-          facturado_mes: facturadoMes,
-          dias_habiles: businessDays,
-          cuota_diaria: Math.round(cuotaDiaria * 100) / 100,
-          cuota_semanal: Math.round(cuotaSemanal * 100) / 100,
-          dias_detalle: diasDetalle,
-          semanas_detalle: semanasDetalle,
-        };
-      })
-      .sort((a: any, b: any) => {
-        const pctA = a.cuota_mensual > 0 ? a.facturado_mes / a.cuota_mensual : 0;
-        const pctB = b.cuota_mensual > 0 ? b.facturado_mes / b.cuota_mensual : 0;
-        return pctB - pctA;
+      const totalFacturado = sellerInvoices.reduce(
+        (sum: number, inv: any) => sum + (Number(inv.amount_untaxed) || 0), 0
+      );
+
+      // Daily map: date -> facturado
+      const dailyMap: Record<string, number> = {};
+      sellerInvoices.forEach((inv: any) => {
+        const dateStr = inv.invoice_date.split("T")[0];
+        dailyMap[dateStr] = (dailyMap[dateStr] || 0) + (Number(inv.amount_untaxed) || 0);
       });
 
-    return NextResponse.json({ sellers: result });
+      // Build calendar days
+      const dias: { fecha: string; diaSemana: string; esFeriado: boolean; esDiaUtil: boolean; facturado: number; cuotaDiaria: number; cumple: boolean }[] = [];
+      for (let d = 1; d <= ultimoDia; d++) {
+        const date = new Date(anio, mesNum - 1, d);
+        const dateStr = `${anio}-${String(mesNum).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const dayOfWeek = date.getDay();
+        const diaSemana = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"][dayOfWeek];
+        const esFeriadoDia = esFeriado(date);
+        const esDiaUtilDia = esDiaUtil(date);
+        const facturado = dailyMap[dateStr] || 0;
+
+        dias.push({
+          fecha: dateStr,
+          diaSemana,
+          esFeriado: esFeriadoDia,
+          esDiaUtil: esDiaUtilDia,
+          facturado,
+          cuotaDiaria: esDiaUtilDia ? cuotaDiaria : 0,
+          cumple: esDiaUtilDia ? facturado >= cuotaDiaria : true,
+        });
+      }
+
+      // Weekly summary
+      const semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[] = [];
+      const primerDiaMes = new Date(anio, mesNum - 1, 1);
+      let semanaInicio = new Date(primerDiaMes);
+
+      let numSemana = 1;
+      while (semanaInicio <= new Date(anio, mesNum, 0)) {
+        let semanaFin = new Date(semanaInicio);
+        semanaFin.setDate(semanaFin.getDate() + 6);
+        if (semanaFin > new Date(anio, mesNum, 0)) {
+          semanaFin = new Date(anio, mesNum, 0);
+        }
+
+        const diasUtilesSemana = contarDiasUtiles(semanaInicio, semanaFin);
+        const cuotaSemanal = cuotaNum * (diasUtilesSemana / totalDiasUtiles);
+
+        let facturadoSemana = 0;
+        for (let d = new Date(semanaInicio); d <= semanaFin; d.setDate(d.getDate() + 1)) {
+          const dateStr = d.toISOString().split("T")[0];
+          facturadoSemana += dailyMap[dateStr] || 0;
+        }
+
+        const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+        semanas.push({
+          numero: numSemana,
+          inicio: semanaInicio.toLocaleDateString("es-VE", opts),
+          fin: semanaFin.toLocaleDateString("es-VE", opts),
+          facturado: Math.round(facturadoSemana * 100) / 100,
+          cuotaSemanal: Math.round(cuotaSemanal * 100) / 100,
+          diasUtiles: diasUtilesSemana,
+          porcentaje: cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0,
+        });
+
+        semanaInicio = new Date(semanaFin);
+        semanaInicio.setDate(semanaInicio.getDate() + 1);
+        numSemana++;
+      }
+
+      return {
+        sellerId: seller.seller_id,
+        nombre: seller.name,
+        cuotaMensual: cuotaNum,
+        cuotaDiaria: Math.round(cuotaDiaria * 100) / 100,
+        totalFacturado: Math.round(totalFacturado * 100) / 100,
+        porcentajeMensual: cuotaNum > 0 ? Math.round((totalFacturado / cuotaNum) * 100) : 0,
+        cumple: totalFacturado >= cuotaNum,
+        dias,
+        semanas,
+      };
+    });
+
+    // Sort: who met quota first
+    result.sort((a, b) => b.porcentajeMensual - a.porcentajeMensual);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        mes,
+        totalDiasUtiles,
+        sellers: result,
+      },
+    });
   } catch (error: any) {
-    console.error("Error en cuota-detail:", error.message);
+    console.error("Error en API cuota-detalle:", error.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
