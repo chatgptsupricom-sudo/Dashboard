@@ -601,7 +601,7 @@ export default function StoplightReportSuperadmin() {
                                 </td>
                                 <td className="p-3 text-center">
                                   <button
-                                    onClick={() => setSelectedSeller(seller)}
+                                    onClick={() => { setSelectedSeller(seller); setModalTab("diario"); }}
                                     className="text-xs text-blue-600 hover:text-blue-800 underline"
                                   >
                                     Ver detalle
