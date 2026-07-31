@@ -73,6 +73,7 @@ export default function StoplightReportSuperadmin() {
   const [modalData, setModalData] = useState<{ mes: string; totalDiasUtiles: number; sellers: SellerDetail[] } | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<SellerDetail | null>(null);
   const [modalTab, setModalTab] = useState<"resumen" | "diario" | "semanal">("resumen");
+  const [goalValues, setGoalValues] = useState<Record<string, string>>({});
 
   const now = new Date();
   const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -142,8 +143,6 @@ export default function StoplightReportSuperadmin() {
 
   const numWeeks = kpiData?.numSemanas || 5;
   const defaultWeeks = Array(numWeeks).fill(null);
-
-  const [goalValues, setGoalValues] = useState<Record<string, string>>({});
 
   const getGoal = (id: string, defaultVal: string) => goalValues[id] ?? defaultVal;
 
