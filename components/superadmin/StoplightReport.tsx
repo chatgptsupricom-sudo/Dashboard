@@ -23,10 +23,9 @@ const getCellColor = (value: string) => {
   if (!value) return "";
   const numValue = parseInt(value);
   if (isNaN(numValue)) return "";
-  if (numValue < 60) return "bg-red-100 text-red-800 font-medium border-red-200";
-  if (numValue >= 100) return "bg-green-100 text-green-800 font-medium border-green-200";
-  if (numValue >= 75) return "bg-yellow-100 text-yellow-800 font-medium border-yellow-200";
-  return "hover:bg-slate-50";
+  if (numValue < 60) return "bg-red-100 text-red-800 font-medium";
+  if (numValue >= 100) return "bg-green-100 text-green-800 font-medium";
+  return "bg-yellow-100 text-yellow-800 font-medium";
 };
 
 interface SellerData {
@@ -461,16 +460,12 @@ export default function StoplightReportSuperadmin() {
                           </div>
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1">
-                            <span className="text-xs text-slate-400">&gt;=</span>
-                            <input
-                              type="text"
-                              value={getGoal(kpi.id, kpi.goalDefault)}
-                              onChange={(e) => setGoalValues((prev) => ({ ...prev, [kpi.id]: e.target.value }))}
-                              className="w-14 text-center text-sm font-medium text-slate-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                            />
-                            <span className="text-xs text-slate-400">{kpi.goalSuffix}</span>
-                          </div>
+                          <input
+                            type="text"
+                            value={getGoal(kpi.id, kpi.goalDefault)}
+                            onChange={(e) => setGoalValues((prev) => ({ ...prev, [kpi.id]: e.target.value }))}
+                            className="w-20 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                          />
                         </td>
                         <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
                         <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50 font-bold">{kpi.peso}</td>
