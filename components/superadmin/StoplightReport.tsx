@@ -319,9 +319,9 @@ export default function StoplightReportSuperadmin() {
       {/* Toolbar */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
-          <button
+          <div
             onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative"
+            className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
           >
             Team: {empresaLabel} <ChevronDown size={14} />
             {teamDropdownOpen && (
@@ -341,7 +341,7 @@ export default function StoplightReportSuperadmin() {
                 ))}
               </div>
             )}
-          </button>
+          </div>
           <button className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors">
             View by: Week <ChevronDown size={14} />
           </button>

@@ -35,9 +35,21 @@ export async function GET(request: NextRequest) {
     const semanas = obtenerSemanasDelMes(anio, mesNum);
     const numSemanas = semanas.length;
 
-    // 1. Fetch meta from kpi_targets (try-catch en caso de que la tabla no exista)
+    // 1. Fetch meta from kpi_targets (auto-create table if needed)
     let metaMensual = 0;
     try {
+      await query(
+        `CREATE TABLE IF NOT EXISTS kpi_targets (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          kpi_key VARCHAR(100) NOT NULL,
+          company_id INT NOT NULL,
+          meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
+          mes VARCHAR(7) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_kpi (kpi_key, company_id, mes)
+        )`
+      );
       const metaResult = await query(
         "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = 'cumplimiento_cuota_ventas' AND company_id = ? AND mes = ?",
         ["cumplimiento_cuota_ventas", companyId, mes]
@@ -55,9 +67,9 @@ export async function GET(request: NextRequest) {
         `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
          FROM sellers s 
          INNER JOIN (
-           SELECT seller_id, cuota, ROW_NUMBER() OVER (PARTITION BY seller_id ORDER BY created_at DESC) as rn
-           FROM cuota
-         ) c ON s.id = c.seller_id AND c.rn = 1
+           SELECT seller_id, cuota FROM cuota 
+           WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
+         ) c ON s.id = c.seller_id
          WHERE s.cids = ?`,
         [companyId]
       );

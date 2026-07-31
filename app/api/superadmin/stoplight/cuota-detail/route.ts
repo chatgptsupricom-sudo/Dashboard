@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
       `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
        FROM sellers s 
        INNER JOIN (
-         SELECT seller_id, cuota, ROW_NUMBER() OVER (PARTITION BY seller_id ORDER BY created_at DESC) as rn
-         FROM cuota
-       ) c ON s.id = c.seller_id AND c.rn = 1
+         SELECT seller_id, cuota FROM cuota 
+         WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
+       ) c ON s.id = c.seller_id
        WHERE s.cids = ?`,
       [companyId]
     );
