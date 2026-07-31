@@ -16,6 +16,7 @@ import {
   Check,
   Calendar,
   TrendingUp,
+  ArrowLeft,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
@@ -73,8 +74,20 @@ export default function StoplightReportSuperadmin() {
   const [selectedSeller, setSelectedSeller] = useState<SellerDetail | null>(null);
   const [modalTab, setModalTab] = useState<"resumen" | "diario" | "semanal">("resumen");
   const [goalValues, setGoalValues] = useState<Record<string, string>>({});
-  const [selectedCompanyId, setSelectedCompanyId] = useState(10);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(9);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
+
+  const [clientesModalOpen, setClientesModalOpen] = useState(false);
+  const [clientesModalLoading, setClientesModalLoading] = useState(false);
+  const [clientesModalData, setClientesModalData] = useState<any>(null);
+  const [clientesModalTab, setClientesModalTab] = useState<"resumen" | "semanal">("resumen");
+  const [selectedClientesSeller, setSelectedClientesSeller] = useState<any>(null);
+  const [selectedClientesClient, setSelectedClientesClient] = useState<any>(null);
+  const [clientesSellerDetail, setClientesSellerDetail] = useState<any>(null);
+  const [clientesSellerLoading, setClientesSellerLoading] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
 
   const now = new Date();
   const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -103,23 +116,41 @@ export default function StoplightReportSuperadmin() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const saveMeta = async () => {
+  useEffect(() => {
+    if (clientesModalOpen || modalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [clientesModalOpen, modalOpen]);
+
+  const saveMeta = async (kpiKey: string, value: number) => {
     try {
       await fetch("/api/superadmin/stoplight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kpi_key: "cumplimiento_cuota_ventas",
+          type: "save_meta",
+          kpi_key: kpiKey,
           company_id: selectedCompanyId,
-          meta_mensual: parseFloat(metaInput) || 0,
+          meta_mensual: value,
           mes: currentMes,
         }),
       });
-      setEditingMeta(false);
       fetchData();
     } catch (e) {
       console.error("Error saving meta:", e);
     }
+  };
+
+  const handleGoalChange = (kpiId: string, value: string) => {
+    setGoalValues((prev) => ({ ...prev, [kpiId]: value }));
+  };
+
+  const handleGoalBlur = (kpiId: string, value: string) => {
+    const numVal = parseFloat(value) || 0;
+    saveMeta(kpiId, numVal);
   };
 
   const openCuotaModal = async () => {
@@ -135,6 +166,52 @@ export default function StoplightReportSuperadmin() {
       console.error("Error fetching cuota detail:", e);
     }
     setModalLoading(false);
+  };
+
+  const openClientesModal = async () => {
+    setClientesModalOpen(true);
+    setClientesModalLoading(true);
+    setClientesModalTab("resumen");
+    setSelectedClientesSeller(null);
+    setSelectedClientesClient(null);
+    setClientesSellerDetail(null);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/clientes-nuevos-detail?mes=${currentMes}&company_id=${selectedCompanyId}`);
+      const json = await res.json();
+      if (json.success) setClientesModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching clientes nuevos detail:", e);
+    }
+    setClientesModalLoading(false);
+  };
+
+  const openClientesSellerDetail = async (seller: any) => {
+    setSelectedClientesSeller(seller);
+    setSelectedClientesClient(null);
+    setClientesSellerLoading(true);
+    setClientesSellerDetail(null);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/clientes-nuevos-seller-detail?mes=${currentMes}&company_id=${selectedCompanyId}&seller_name=${encodeURIComponent(seller.nombre)}`);
+      const json = await res.json();
+      if (json.success) setClientesSellerDetail(json.data);
+    } catch (e) {
+      console.error("Error fetching seller detail:", e);
+    }
+    setClientesSellerLoading(false);
+  };
+
+  const openInvoiceDetail = async (invoice: any) => {
+    setSelectedInvoice(invoice);
+    setInvoiceLoading(true);
+    setInvoiceDetail(null);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/invoice-detail?invoice_id=${invoice.id}&company_id=${selectedCompanyId}`);
+      const json = await res.json();
+      if (json.success) setInvoiceDetail(json.data);
+    } catch (e) {
+      console.error("Error fetching invoice detail:", e);
+    }
+    setInvoiceLoading(false);
   };
 
   const toggleGroup = (groupId: string) => {
@@ -157,13 +234,13 @@ export default function StoplightReportSuperadmin() {
   const ventasKpis = [
     {
       id: "cumplimiento_cuota",
-      trend: kpiData ? (kpiData.trend === "green" ? "help" : "alert") : "help",
+      trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "alert" : "alert") : "help",
       title: "Cumplimiento de cuota de ventas",
       peso: "30%",
-      average: kpiData ? `${kpiData.porcentajeCumplimiento}%` : "0%",
+      average: kpiData ? `${kpiData.avgCumplimiento}%` : "0%",
       weeks: kpiData?.semanaGlobal || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData ? String(kpiData.totalCuotaMensual) : "0",
+      goalDefault: kpiData ? String(Math.round(kpiData.metaMensual)) : "0",
       goalSuffix: "",
     },
     {
@@ -171,9 +248,9 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Margen bruto",
       peso: "15%",
-      average: "0%",
-      weeks: defaultWeeks,
-      goalDefault: "15",
+      average: kpiData ? `${kpiData.avgMargen}%` : "0%",
+      weeks: kpiData?.semanaMargen || defaultWeeks,
+      goalDefault: kpiData?.metas?.["margen_bruto"] ? String(kpiData.metas["margen_bruto"]) : "15",
       goalSuffix: "%",
     },
     {
@@ -181,9 +258,9 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Cantidad de visitas semanales",
       peso: "10%",
-      average: "0",
-      weeks: defaultWeeks,
-      goalDefault: "10",
+      average: kpiData ? String(kpiData.avgVisitas) : "0",
+      weeks: kpiData?.semanaVisitas || defaultWeeks,
+      goalDefault: kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "10",
       goalSuffix: "",
     },
     {
@@ -191,9 +268,9 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Tasa de efectividad de cierre",
       peso: "15%",
-      average: "0%",
-      weeks: defaultWeeks,
-      goalDefault: "15",
+      average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
+      weeks: kpiData?.semanaEfectividad || defaultWeeks,
+      goalDefault: kpiData?.metas?.["efectividad_cierre"] ? String(kpiData.metas["efectividad_cierre"]) : "15",
       goalSuffix: "%",
     },
     {
@@ -201,9 +278,9 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Porcentaje de activación de cartera",
       peso: "15%",
-      average: "0%",
-      weeks: defaultWeeks,
-      goalDefault: "15",
+      average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
+      weeks: kpiData?.semanaActivacion || defaultWeeks,
+      goalDefault: kpiData?.metas?.["activacion_cartera"] ? String(kpiData.metas["activacion_cartera"]) : "15",
       goalSuffix: "%",
     },
     {
@@ -211,9 +288,10 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Clientes nuevos captados",
       peso: "5%",
-      average: "0",
-      weeks: defaultWeeks,
-      goalDefault: "5",
+      average: kpiData ? `${kpiData.avgClientes}%` : "0%",
+      weeks: kpiData?.semanaClientes || defaultWeeks,
+      isClickable: true,
+      goalDefault: kpiData?.metas?.["clientes_nuevos"] ? String(kpiData.metas["clientes_nuevos"]) : "5",
       goalSuffix: "",
     },
     {
@@ -221,9 +299,9 @@ export default function StoplightReportSuperadmin() {
       trend: "help",
       title: "Cobertura de marcas",
       peso: "10%",
-      average: "0%",
-      weeks: defaultWeeks,
-      goalDefault: "10",
+      average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
+      weeks: kpiData?.semanaCobertura || defaultWeeks,
+      goalDefault: kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "10",
       goalSuffix: "%",
     },
   ];
@@ -388,9 +466,6 @@ export default function StoplightReportSuperadmin() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1 px-3 py-1 border rounded text-xs text-amber-600 bg-white hover:bg-amber-50 transition-colors">
-                  New KPI <ChevronDown size={12} />
-                </button>
                 <button className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
                   <MoreHorizontal size={16} />
                 </button>
@@ -436,7 +511,7 @@ export default function StoplightReportSuperadmin() {
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? openCuotaModal : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" className="rounded border-slate-300" />
@@ -461,10 +536,11 @@ export default function StoplightReportSuperadmin() {
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
                           <input
-                            type="text"
+                            type="number"
                             value={getGoal(kpi.id, kpi.goalDefault)}
-                            onChange={(e) => setGoalValues((prev) => ({ ...prev, [kpi.id]: e.target.value }))}
-                            className="w-20 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                            onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
+                            onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
+                            className="w-28 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
                           />
                         </td>
                         <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
@@ -493,11 +569,21 @@ export default function StoplightReportSuperadmin() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Cumplimiento de Cuota de Ventas</h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  Detalle por vendedor - {modalData?.mes || currentMes} | Dias utiles: {modalData?.totalDiasUtiles || 0}
-                </p>
+              <div className="flex items-center gap-3">
+                {selectedSeller && (
+                  <button
+                    onClick={() => setSelectedSeller(null)}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    <ArrowLeft size={16} /> Volver
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Cumplimiento de Cuota de Ventas</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Detalle por vendedor - {modalData?.mes || currentMes} | Dias utiles: {modalData?.totalDiasUtiles || 0}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => { setModalOpen(false); setSelectedSeller(null); }}
@@ -574,7 +660,7 @@ export default function StoplightReportSuperadmin() {
                           </thead>
                           <tbody>
                             {modalData.sellers.map((seller) => (
-                              <tr key={seller.sellerId} className="border-b hover:bg-slate-50/50 transition-colors">
+                              <tr key={seller.sellerId} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => { setSelectedSeller(seller); setModalTab("diario"); }}>
                                 <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
                                 <td className="p-3 text-center">${seller.cuotaMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                 <td className="p-3 text-center">${seller.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
@@ -595,12 +681,9 @@ export default function StoplightReportSuperadmin() {
                                   )}
                                 </td>
                                 <td className="p-3 text-center">
-                                  <button
-                                    onClick={() => { setSelectedSeller(seller); setModalTab("diario"); }}
-                                    className="text-xs text-blue-600 hover:text-blue-800 underline"
-                                  >
+                                  <span className="text-xs text-blue-600 hover:text-blue-800 underline">
                                     Ver detalle
-                                  </button>
+                                  </span>
                                 </td>
                               </tr>
                             ))}
@@ -784,6 +867,415 @@ export default function StoplightReportSuperadmin() {
                             </table>
                           </div>
                         </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CLIENTES NUEVOS */}
+      {clientesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-emerald-50 to-white">
+              <div className="flex items-center gap-3">
+                {(selectedInvoice || selectedClientesClient || selectedClientesSeller) && (
+                  <button
+                    onClick={() => {
+                      if (selectedInvoice) {
+                        setSelectedInvoice(null);
+                        setInvoiceDetail(null);
+                      } else if (selectedClientesClient) {
+                        setSelectedClientesClient(null);
+                      } else if (selectedClientesSeller) {
+                        setSelectedClientesSeller(null);
+                        setClientesSellerDetail(null);
+                      }
+                    }}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    <ArrowLeft size={16} /> Volver
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {selectedInvoice
+                      ? `${selectedInvoice.type === "Nota de credito" ? "Nota de Credito" : "Factura"} ${selectedInvoice.reference}`
+                      : selectedClientesSeller
+                        ? selectedClientesClient
+                          ? `Facturas de ${selectedClientesClient.partnerName}`
+                          : `Clientes Nuevos - ${selectedClientesSeller.nombre}`
+                        : "Clientes Nuevos Captados"}
+                  </h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {selectedInvoice
+                      ? `${selectedInvoice.date} | Total: $${Math.abs(selectedInvoice.amount || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
+                      : selectedClientesSeller
+                        ? selectedClientesClient
+                          ? `${currentMes} | Total: $${(selectedClientesClient.totalFacturado || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
+                          : `${currentMes} | Nuevos: ${clientesSellerDetail?.totalNuevos || 0}`
+                        : `Detalle por vendedor - ${clientesModalData?.mes || currentMes} | Meta por vendedor: ${clientesModalData?.metaPerSeller || 0}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setClientesModalOpen(false);
+                  setClientesModalData(null);
+                  setSelectedClientesSeller(null);
+                  setSelectedClientesClient(null);
+                  setSelectedInvoice(null);
+                  setInvoiceDetail(null);
+                  setClientesSellerDetail(null);
+                }}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Tabs - only show when not in drill-down */}
+            {!selectedClientesSeller && (
+              <div className="flex gap-4 px-5 pt-4 border-b">
+                {(["resumen", "semanal"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setClientesModalTab(tab)}
+                    className={`pb-3 text-sm font-medium capitalize transition-colors ${
+                      clientesModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {tab === "resumen" ? "Resumen Vendedores" : "Detalle Semanal por Vendedor"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Breadcrumb when drill-down */}
+            {selectedClientesSeller && (
+              <div className="flex gap-2 px-5 pt-3 text-xs text-slate-500">
+                <button onClick={() => { setSelectedClientesSeller(null); setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); setClientesSellerDetail(null); }} className="hover:text-amber-600 transition-colors">
+                  Resumen
+                </button>
+                <span>/</span>
+                <button onClick={() => { setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-amber-600 transition-colors">
+                  {selectedClientesSeller.nombre}
+                </button>
+                {selectedClientesClient && (
+                  <>
+                    <span>/</span>
+                    <button onClick={() => { setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-amber-600 transition-colors">
+                      {selectedClientesClient.partnerName}
+                    </button>
+                  </>
+                )}
+                {selectedInvoice && (
+                  <>
+                    <span>/</span>
+                    <span className="text-slate-800 font-medium">{selectedInvoice.reference}</span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {clientesModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos...</div>
+              ) : !clientesModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+              ) : (
+                <>
+                  {/* RESUMEN TAB */}
+                  {clientesModalTab === "resumen" && !selectedClientesSeller && (
+                    <div className="space-y-4">
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-4 gap-4 mb-6">
+                        <div className="bg-emerald-50 rounded-xl p-4">
+                          <p className="text-xs text-emerald-600 font-medium">Total Clientes Nuevos</p>
+                          <p className="text-2xl font-bold text-emerald-700">{clientesModalData.totalNuevos}</p>
+                        </div>
+                        <div className="bg-blue-50 rounded-xl p-4">
+                          <p className="text-xs text-blue-600 font-medium">Vendedores</p>
+                          <p className="text-2xl font-bold text-blue-700">{clientesModalData.numSellers}</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4">
+                          <p className="text-xs text-amber-600 font-medium">Meta por Vendedor</p>
+                          <p className="text-2xl font-bold text-amber-700">{clientesModalData.metaPerSeller}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-600 font-medium">Promedio por Vendedor</p>
+                          <p className="text-2xl font-bold text-slate-700">
+                            {clientesModalData.numSellers > 0
+                              ? Math.round((clientesModalData.totalNuevos / clientesModalData.numSellers) * 10) / 10
+                              : 0}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Seller table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Clientes Nuevos</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Meta</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Porcentaje</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clientesModalData.sellers.map((seller: any) => {
+                              const meta = clientesModalData.metaPerSeller || 0;
+                              const pct = meta > 0 ? Math.round((seller.nuevosMes / meta) * 100) : 0;
+                              const cumple = pct >= 100;
+                              return (
+                                <tr
+                                  key={seller.sellerId}
+                                  className="border-b hover:bg-blue-50/40 transition-colors cursor-pointer"
+                                  onClick={() => openClientesSellerDetail(seller)}
+                                >
+                                  <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                                  <td className="p-3 text-center font-bold text-lg">{seller.nuevosMes}</td>
+                                  <td className="p-3 text-center text-slate-600">{meta}</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`font-bold ${pct >= 100 ? "text-green-600" : pct >= 75 ? "text-yellow-600" : "text-red-600"}`}>
+                                      {meta > 0 ? `${pct}%` : "-"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {meta > 0 ? (
+                                      cumple ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                          <Check size={12} /> Cumple
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                          <X size={12} /> No cumple
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-xs text-slate-400">Sin meta</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SEMANAL TAB */}
+                  {clientesModalTab === "semanal" && !selectedClientesSeller && (
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 border-b">
+                            <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                            <th className="p-3 text-center font-medium text-slate-600">Total</th>
+                            {clientesModalData.weekHeaders?.map((_: string, i: number) => (
+                              <th key={i} className="p-3 text-center font-medium text-slate-600">Sem {i + 1}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clientesModalData.sellers.map((seller: any) => (
+                            <tr key={seller.sellerId} className="border-b hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                              <td className="p-3 text-center font-bold">{seller.nuevosMes}</td>
+                              {seller.semanas.map((sem: any, i: number) => (
+                                <td key={i} className="p-3 text-center">
+                                  <div className="flex flex-col items-center">
+                                    <span className={`font-medium ${sem.porcentaje >= 100 ? "text-green-600" : sem.porcentaje >= 75 ? "text-yellow-600" : "text-red-600"}`}>
+                                      {sem.nuevos} / {sem.meta}
+                                    </span>
+                                    <span className={`text-xs ${sem.porcentaje >= 100 ? "text-green-500" : "text-red-500"}`}>
+                                      {sem.meta > 0 ? `${sem.porcentaje}%` : "-"}
+                                    </span>
+                                  </div>
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* SELLER DRILL-DOWN: List of new clients */}
+                  {selectedClientesSeller && !selectedClientesClient && (
+                    <div className="space-y-4">
+                      {clientesSellerLoading ? (
+                        <div className="flex items-center justify-center py-20 text-slate-400">Cargando clientes...</div>
+                      ) : !clientesSellerDetail || clientesSellerDetail.clients.length === 0 ? (
+                        <div className="flex items-center justify-center py-20 text-slate-400">No hay clientes nuevos para este vendedor</div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-sm font-medium text-slate-600">Clientes nuevos de {selectedClientesSeller.nombre}:</span>
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">{clientesSellerDetail.totalNuevos}</span>
+                          </div>
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Facturado</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Facturas</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Accion</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {clientesSellerDetail.clients.map((client: any) => (
+                                  <tr key={client.partnerId} className="border-b hover:bg-blue-50/40 transition-colors cursor-pointer" onClick={() => setSelectedClientesClient(client)}>
+                                    <td className="p-3 font-medium text-slate-800">{client.partnerName}</td>
+                                    <td className="p-3 text-center font-bold">${client.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-center text-slate-600">{client.invoices.length}</td>
+                                    <td className="p-3 text-center">
+                                      <span className="text-xs text-blue-600 underline">Ver facturas</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CLIENT DRILL-DOWN: Invoice list */}
+                  {selectedClientesClient && !selectedInvoice && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-sm font-medium text-slate-600">Facturas de {selectedClientesClient.partnerName}:</span>
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                          Total: ${selectedClientesClient.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Referencia</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Fecha</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Tipo</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedClientesClient.invoices.map((inv: any) => (
+                              <tr
+                                key={inv.id}
+                                className={`border-b hover:bg-blue-50/40 transition-colors cursor-pointer ${inv.type === "Nota de credito" ? "bg-red-50/30" : ""}`}
+                                onClick={() => openInvoiceDetail(inv)}
+                              >
+                                <td className="p-3 font-medium text-slate-800">{inv.reference}</td>
+                                <td className="p-3 text-center text-slate-600">{inv.date}</td>
+                                <td className="p-3 text-center">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    inv.type === "Nota de credito" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                                  }`}>
+                                    {inv.type === "Nota de credito" ? <X size={10} /> : <Check size={10} />}
+                                    {inv.type}
+                                  </span>
+                                </td>
+                                <td className={`p-3 text-center font-bold ${inv.amount >= 0 ? "text-slate-800" : "text-red-600"}`}>
+                                  ${Math.abs(inv.amount).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* INVOICE DETAIL: Products */}
+                  {selectedInvoice && (
+                    <div className="space-y-4">
+                      {invoiceLoading ? (
+                        <div className="flex items-center justify-center py-20 text-slate-400">Cargando detalle...</div>
+                      ) : !invoiceDetail ? (
+                        <div className="flex items-center justify-center py-20 text-slate-400">No se pudo cargar el detalle</div>
+                      ) : (
+                        <>
+                          {/* Invoice summary */}
+                          <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div className="bg-slate-50 rounded-xl p-4">
+                              <p className="text-xs text-slate-500 font-medium">Subtotal</p>
+                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-xl p-4">
+                              <p className="text-xs text-slate-500 font-medium">Impuestos</p>
+                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className={`rounded-xl p-4 ${invoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
+                              <p className={`text-xs font-medium ${invoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>Total</p>
+                              <p className={`text-lg font-bold ${invoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
+                                ${Math.abs(invoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Products table */}
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Cantidad</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Precio Unitario</th>
+                                  <th className="p-3 text-right font-medium text-slate-600">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {invoiceDetail.lines.map((line: any, idx: number) => (
+                                  <tr key={idx} className="border-b hover:bg-slate-50/50 transition-colors">
+                                    <td className="p-3">
+                                      <div className="font-medium text-slate-800">{line.productName}</div>
+                                      {line.description && line.description !== line.productName && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{line.description}</div>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">{line.quantity}</td>
+                                    <td className="p-3 text-center">${line.priceUnit.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-right font-bold">${line.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  </tr>
+                                ))}
+                                {invoiceDetail.lines.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="p-6 text-center text-slate-400">Sin lineas de producto</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                              <tfoot>
+                                <tr className="bg-slate-50 border-t-2">
+                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Subtotal</td>
+                                  <td className="p-3 text-right font-bold">${invoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                                <tr className="bg-slate-50">
+                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Impuestos</td>
+                                  <td className="p-3 text-right font-bold">${invoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                                <tr className={`border-t-2 ${invoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
+                                  <td colSpan={3} className="p-3 text-right font-bold text-slate-700">Total</td>
+                                  <td className={`p-3 text-right font-bold text-lg ${invoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
+                                    ${Math.abs(invoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </>
                       )}
                     </div>
                   )}

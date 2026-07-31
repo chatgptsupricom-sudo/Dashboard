@@ -44,13 +44,13 @@ export async function GET(request: NextRequest) {
     );
     const sellers = cuotaResult.rows as any[];
 
-    // 2. Fetch invoices
+    // 2. Fetch invoices (including credit notes)
     const invoices = await callOdooRPC<any[]>(
       "account.move",
       "search_read",
       [
         [
-          ["move_type", "=", "out_invoice"],
+          ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
           ["company_id", "=", companyId],
           ["invoice_date", ">=", fechaInicio],
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
         ],
       ],
       {
-        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date"],
+        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date", "move_type"],
         limit: 10000,
       }
     );
@@ -99,14 +99,18 @@ export async function GET(request: NextRequest) {
       const sellerInvoices = invoiceNameMap[sellerNorm] || [];
 
       const totalFacturado = sellerInvoices.reduce(
-        (sum: number, inv: any) => sum + (Number(inv.amount_untaxed) || 0), 0
+        (sum: number, inv: any) => {
+          const amount = Number(inv.amount_untaxed) || 0;
+          return sum + (inv.move_type === "out_refund" ? -amount : amount);
+        }, 0
       );
 
       // Daily map: date -> facturado
       const dailyMap: Record<string, number> = {};
       sellerInvoices.forEach((inv: any) => {
         const dateStr = inv.invoice_date.split("T")[0];
-        dailyMap[dateStr] = (dailyMap[dateStr] || 0) + (Number(inv.amount_untaxed) || 0);
+        const amount = Number(inv.amount_untaxed) || 0;
+        dailyMap[dateStr] = (dailyMap[dateStr] || 0) + (inv.move_type === "out_refund" ? -amount : amount);
       });
 
       // Build calendar days
