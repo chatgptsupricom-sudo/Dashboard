@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
     const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
+    console.log("Stoplight companyId:", companyId, "type:", typeof companyId);
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -46,16 +47,26 @@ export async function GET(request: NextRequest) {
       // Tabla kpi_targets no existe aun, usar meta 0
     }
 
-    // 2. Fetch cuota data from sellers + cuota tables
-    const cuotaResult = await query(
-      `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
-       FROM sellers s 
-       INNER JOIN cuota c ON s.id = c.seller_id 
-       WHERE s.cids = ?`,
-      [companyId]
-    );
-    const sellers = cuotaResult.rows as any[];
-    const totalCuotaMensual = sellers.reduce((sum, s) => sum + Number(s.cuota || 0), 0);
+    // 2. Fetch cuota data from sellers + cuota tables (get latest cuota per seller)
+    let sellers: any[] = [];
+    let totalCuotaMensual = 0;
+    try {
+      const cuotaResult = await query(
+        `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
+         FROM sellers s 
+         INNER JOIN (
+           SELECT seller_id, cuota, ROW_NUMBER() OVER (PARTITION BY seller_id ORDER BY created_at DESC) as rn
+           FROM cuota
+         ) c ON s.id = c.seller_id AND c.rn = 1
+         WHERE s.cids = ?`,
+        [companyId]
+      );
+      sellers = cuotaResult.rows as any[];
+      totalCuotaMensual = sellers.reduce((sum, s) => sum + Number(s.cuota || 0), 0);
+      console.log("Stoplight cuota sellers:", sellers.length, "total:", totalCuotaMensual);
+    } catch (e: any) {
+      console.error("Error en query cuota stoplight:", e.message);
+    }
 
     // 3. Fetch actual invoices from Odoo for this month
     const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;

@@ -35,7 +35,10 @@ export async function GET(request: NextRequest) {
     const cuotaResult = await query(
       `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
        FROM sellers s 
-       INNER JOIN cuota c ON s.id = c.seller_id 
+       INNER JOIN (
+         SELECT seller_id, cuota, ROW_NUMBER() OVER (PARTITION BY seller_id ORDER BY created_at DESC) as rn
+         FROM cuota
+       ) c ON s.id = c.seller_id AND c.rn = 1
        WHERE s.cids = ?`,
       [companyId]
     );
