@@ -70,15 +70,33 @@ export async function GET(request: NextRequest) {
       new Date(anio, mesNum, 0)
     );
 
+    // Helper to normalize names for matching
+    function normalize(str: string): string {
+      return str
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\./g, "")
+        .toUpperCase()
+        .trim()
+        .replace(/\s+/g, " ");
+    }
+
+    // Build normalized name map from invoices
+    const invoiceNameMap: Record<string, any[]> = {};
+    (invoices || []).forEach((inv: any) => {
+      const rawName = inv.invoice_user_id?.[1] || "";
+      const norm = normalize(rawName);
+      if (!invoiceNameMap[norm]) invoiceNameMap[norm] = [];
+      invoiceNameMap[norm].push(inv);
+    });
+
     // 4. Build per-seller detail with daily breakdown
     const result = sellers.map((seller) => {
       const cuotaNum = Number(seller.cuota || 0);
       const cuotaDiaria = totalDiasUtiles > 0 ? cuotaNum / totalDiasUtiles : 0;
 
-      // Invoices for this seller
-      const sellerInvoices = (invoices || []).filter(
-        (inv: any) => inv.invoice_user_id?.[1] === seller.name
-      );
+      const sellerNorm = normalize(seller.name);
+      const sellerInvoices = invoiceNameMap[sellerNorm] || [];
 
       const totalFacturado = sellerInvoices.reduce(
         (sum: number, inv: any) => sum + (Number(inv.amount_untaxed) || 0), 0

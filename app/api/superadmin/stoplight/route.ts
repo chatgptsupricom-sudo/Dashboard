@@ -104,10 +104,23 @@ export async function GET(request: NextRequest) {
     );
 
     // 4. Build weekly data per seller
+    function normalize(str: string): string {
+      return str
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\./g, "")
+        .toUpperCase()
+        .trim()
+        .replace(/\s+/g, " ");
+    }
+
+    const normalizedSellerMap: Record<string, string> = {};
     const sellerMap: Record<string, { nombre: string; cuotaMensual: number; facturadoMensual: number; semanas: { facturado: number; cuotaSemanal: number }[] }> = {};
 
     sellers.forEach((s) => {
       const cuotaNum = Number(s.cuota || 0);
+      const norm = normalize(s.name);
+      normalizedSellerMap[norm] = s.name;
       sellerMap[s.name] = {
         nombre: s.name,
         cuotaMensual: cuotaNum,
@@ -118,14 +131,17 @@ export async function GET(request: NextRequest) {
 
     (invoices || []).forEach((inv: any) => {
       const sellerName = inv.invoice_user_id?.[1];
-      if (!sellerName || !sellerMap[sellerName]) return;
+      if (!sellerName) return;
+      const invNorm = normalize(sellerName);
+      const matchedName = normalizedSellerMap[invNorm];
+      if (!matchedName || !sellerMap[matchedName]) return;
       const amount = Number(inv.amount_untaxed) || 0;
-      sellerMap[sellerName].facturadoMensual += amount;
+      sellerMap[matchedName].facturadoMensual += amount;
 
       const invDate = new Date(inv.invoice_date);
       for (let i = 0; i < semanas.length; i++) {
         if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-          sellerMap[sellerName].semanas[i].facturado += amount;
+          sellerMap[matchedName].semanas[i].facturado += amount;
           break;
         }
       }
