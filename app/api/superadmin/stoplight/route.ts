@@ -34,12 +34,17 @@ export async function GET(request: NextRequest) {
     const semanas = obtenerSemanasDelMes(anio, mesNum);
     const numSemanas = semanas.length;
 
-    // 1. Fetch meta from kpi_targets
-    const metaResult = await query(
-      "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = 'cumplimiento_cuota_ventas' AND company_id = ? AND mes = ?",
-      ["cumplimiento_cuota_ventas", companyId, mes]
-    );
-    const metaMensual = metaResult.rows.length > 0 ? Number(metaResult.rows[0].meta_mensual) : 0;
+    // 1. Fetch meta from kpi_targets (try-catch en caso de que la tabla no exista)
+    let metaMensual = 0;
+    try {
+      const metaResult = await query(
+        "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = 'cumplimiento_cuota_ventas' AND company_id = ? AND mes = ?",
+        ["cumplimiento_cuota_ventas", companyId, mes]
+      );
+      metaMensual = metaResult.rows.length > 0 ? Number(metaResult.rows[0].meta_mensual) : 0;
+    } catch (_) {
+      // Tabla kpi_targets no existe aun, usar meta 0
+    }
 
     // 2. Fetch cuota data from sellers + cuota tables
     const cuotaResult = await query(
@@ -176,6 +181,19 @@ export async function POST(request: NextRequest) {
     if (!kpi_key || !company_id || !mes) {
       return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
     }
+
+    await query(
+      `CREATE TABLE IF NOT EXISTS kpi_targets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kpi_key VARCHAR(100) NOT NULL,
+        company_id INT NOT NULL,
+        meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
+        mes VARCHAR(7) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_kpi (kpi_key, company_id, mes)
+      )`
+    );
 
     await query(
       `INSERT INTO kpi_targets (kpi_key, company_id, meta_mensual, mes) 

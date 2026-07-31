@@ -140,74 +140,75 @@ export default function StoplightReportSuperadmin() {
     );
   }
 
-  const ventasKpis = kpiData
-    ? [
-        {
-          id: "cumplimiento_cuota",
-          trend: kpiData.trend === "green" ? "help" : "alert",
-          title: "Cumplimiento de cuota de ventas",
-          goal: `>= 100%`,
-          average: `${kpiData.porcentajeCumplimiento}%`,
-          total: `${kpiData.totalFacturadoMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}`,
-          weeks: kpiData.semanaGlobal,
-          isClickable: true,
-        },
-        {
-          id: "margen_bruto",
-          trend: "help",
-          title: "Margen bruto",
-          goal: ">= 15%",
-          average: "0%",
-          total: "-",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-        {
-          id: "visitas_semanales",
-          trend: "help",
-          title: "Cantidad de visitas semanales",
-          goal: ">= 10",
-          average: "0",
-          total: "0",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-        {
-          id: "efectividad_cierre",
-          trend: "help",
-          title: "Tasa de efectividad de cierre",
-          goal: ">= 15%",
-          average: "0%",
-          total: "-",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-        {
-          id: "activacion_cartera",
-          trend: "help",
-          title: "Porcentaje de activación de cartera",
-          goal: ">= 15%",
-          average: "0%",
-          total: "-",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-        {
-          id: "clientes_nuevos",
-          trend: "help",
-          title: "Clientes nuevos captados",
-          goal: ">= 5",
-          average: "0",
-          total: "0",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-        {
-          id: "cobertura_marcas",
-          trend: "help",
-          title: "Cobertura de marcas",
-          goal: ">= 10%",
-          average: "0%",
-          total: "-",
-          weeks: Array(kpiData.numSemanas).fill(null),
-        },
-      ]
-    : [];
+  const numWeeks = kpiData?.numSemanas || 5;
+  const defaultWeeks = Array(numWeeks).fill(null);
+
+  const ventasKpis = [
+    {
+      id: "cumplimiento_cuota",
+      trend: kpiData ? (kpiData.trend === "green" ? "help" : "alert") : "help",
+      title: "Cumplimiento de cuota de ventas",
+      goal: ">= 100%",
+      average: kpiData ? `${kpiData.porcentajeCumplimiento}%` : "0%",
+      total: kpiData ? `${kpiData.totalFacturadoMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}` : "-",
+      weeks: kpiData?.semanaGlobal || defaultWeeks,
+      isClickable: true,
+    },
+    {
+      id: "margen_bruto",
+      trend: "help",
+      title: "Margen bruto",
+      goal: ">= 15%",
+      average: "0%",
+      total: "-",
+      weeks: defaultWeeks,
+    },
+    {
+      id: "visitas_semanales",
+      trend: "help",
+      title: "Cantidad de visitas semanales",
+      goal: ">= 10",
+      average: "0",
+      total: "0",
+      weeks: defaultWeeks,
+    },
+    {
+      id: "efectividad_cierre",
+      trend: "help",
+      title: "Tasa de efectividad de cierre",
+      goal: ">= 15%",
+      average: "0%",
+      total: "-",
+      weeks: defaultWeeks,
+    },
+    {
+      id: "activacion_cartera",
+      trend: "help",
+      title: "Porcentaje de activación de cartera",
+      goal: ">= 15%",
+      average: "0%",
+      total: "-",
+      weeks: defaultWeeks,
+    },
+    {
+      id: "clientes_nuevos",
+      trend: "help",
+      title: "Clientes nuevos captados",
+      goal: ">= 5",
+      average: "0",
+      total: "0",
+      weeks: defaultWeeks,
+    },
+    {
+      id: "cobertura_marcas",
+      trend: "help",
+      title: "Cobertura de marcas",
+      goal: ">= 10%",
+      average: "0%",
+      total: "-",
+      weeks: defaultWeeks,
+    },
+  ];
 
   const logisticaKpis = [
     {
