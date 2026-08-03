@@ -46,6 +46,19 @@ interface KpiData {
   sellers: SellerData[];
   semanaGlobal: string[];
   trend: string;
+  metas: Record<string, number>;
+  semanaVarCosto: (string | null)[];
+  semanaRotacion: (string | null)[];
+  semanaQuiebre: (string | null)[];
+  semanaInv90: (string | null)[];
+  semanaForecast: (string | null)[];
+  semanaPropuestas: (string | null)[];
+  avgVarCosto: number;
+  avgRotacion: number;
+  avgQuiebre: number;
+  avgInv90: number;
+  avgForecast: number;
+  avgPropuestas: number;
 }
 
 interface SellerDetail {
@@ -349,9 +362,73 @@ export default function StoplightReportSuperadmin() {
     },
   ];
 
+  const comprasKpis = [
+    {
+      id: "variacion_costo_compra",
+      trend: "help",
+      title: "Variación del costo de compra",
+      peso: "15%",
+      average: kpiData ? `${kpiData.avgVarCosto}%` : "0%",
+      weeks: kpiData?.semanaVarCosto || defaultWeeks,
+      goalDefault: kpiData?.metas?.["variacion_costo_compra"] ? String(kpiData.metas["variacion_costo_compra"]) : "10",
+      goalSuffix: "%",
+    },
+    {
+      id: "rotacion_saludable",
+      trend: "help",
+      title: "Rotación saludable de compras",
+      peso: "17%",
+      average: kpiData ? `${kpiData.avgRotacion}%` : "0%",
+      weeks: kpiData?.semanaRotacion || defaultWeeks,
+      goalDefault: kpiData?.metas?.["rotacion_saludable"] ? String(kpiData.metas["rotacion_saludable"]) : "75",
+      goalSuffix: "%",
+    },
+    {
+      id: "quiebre_inventario",
+      trend: "help",
+      title: "Porcentaje de quiebre de inventario",
+      peso: "25%",
+      average: kpiData ? `${kpiData.avgQuiebre}%` : "0%",
+      weeks: kpiData?.semanaQuiebre || defaultWeeks,
+      goalDefault: kpiData?.metas?.["quiebre_inventario"] ? String(kpiData.metas["quiebre_inventario"]) : "5",
+      goalSuffix: "%",
+    },
+    {
+      id: "inventario_90_dias",
+      trend: "help",
+      title: "Inventario con más de 90 días",
+      peso: "20%",
+      average: kpiData ? `${kpiData.avgInv90}%` : "0%",
+      weeks: kpiData?.semanaInv90 || defaultWeeks,
+      goalDefault: kpiData?.metas?.["inventario_90_dias"] ? String(kpiData.metas["inventario_90_dias"]) : "10",
+      goalSuffix: "%",
+    },
+    {
+      id: "forecast_semanal",
+      trend: "help",
+      title: "Revisión semanal de forecast Compras–Ventas",
+      peso: "11%",
+      average: kpiData ? `${kpiData.avgForecast}%` : "0%",
+      weeks: kpiData?.semanaForecast || defaultWeeks,
+      goalDefault: kpiData?.metas?.["forecast_semanal"] ? String(kpiData.metas["forecast_semanal"]) : "75",
+      goalSuffix: "%",
+    },
+    {
+      id: "propuestas_calificadas",
+      trend: "help",
+      title: "Propuestas calificadas de nuevos productos y tendencias",
+      peso: "12%",
+      average: kpiData ? String(kpiData.avgPropuestas) : "0",
+      weeks: kpiData?.semanaPropuestas || defaultWeeks,
+      goalDefault: kpiData?.metas?.["propuestas_calificadas"] ? String(kpiData.metas["propuestas_calificadas"]) : "3",
+      goalSuffix: "",
+    },
+  ];
+
   const groups = [
-    { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis },
     { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis },
+    { id: "group-compras", title: "Departamento de Compras", count: comprasKpis.length, kpis: comprasKpis },
+    { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis },
   ];
 
   const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];

@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles, obtenerSemanasDelMes } from "@/lib/feriados";
+import { computeComprasKpis } from "@/lib/compras/kpis";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
@@ -319,7 +320,7 @@ export async function GET(request: NextRequest) {
     const numSellers = sellers.length || 1;
 
     // Load metas first (need clientes_nuevos goal)
-    const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas"];
+    const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
     const metasResult = await query(
       "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ?",
       [companyId, mes]
@@ -365,6 +366,24 @@ export async function GET(request: NextRequest) {
       return saved ? `${saved.valor}%` : null;
     });
 
+    // 10.5. KPIs del Departamento de Compras (semanal)
+    const comprasRaw = await computeComprasKpis(companyId, semanas);
+    const fmtPct = (v: number | null) => (v === null || v === undefined ? null : `${v}%`);
+    const fromSavedOrComputed = (key: string, computed: (number | null)[]) =>
+      semanas.map((_, i) => {
+        const saved = savedMap[key]?.[i];
+        return saved ? `${saved.valor}%` : fmtPct(computed[i]);
+      });
+    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto);
+    const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion);
+    const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre);
+    const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90);
+    const semanaForecast = fromSavedOrComputed("forecast_semanal", Array(semanas.length).fill(null));
+    const semanaPropuestas = semanas.map((_, i) => {
+      const saved = savedMap["propuestas_calificadas"]?.[i];
+      return saved ? `${saved.valor}` : null;
+    });
+
     // Average for each KPI
     const avgFromWeeks = (weeks: (string | null)[]) => {
       const vals = weeks.filter(Boolean).map((w) => parseInt(w!)).filter((n) => !isNaN(n));
@@ -404,6 +423,18 @@ export async function GET(request: NextRequest) {
         avgActivacion: avgFromWeeks(semanaActivacion),
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
+        semanaVarCosto,
+        semanaRotacion,
+        semanaQuiebre,
+        semanaInv90,
+        semanaForecast,
+        semanaPropuestas,
+        avgVarCosto: avgFromWeeks(semanaVarCosto),
+        avgRotacion: avgFromWeeks(semanaRotacion),
+        avgQuiebre: avgFromWeeks(semanaQuiebre),
+        avgInv90: avgFromWeeks(semanaInv90),
+        avgForecast: avgFromWeeks(semanaForecast),
+        avgPropuestas: avgFromWeeks(semanaPropuestas),
         metas: metasMap,
         sellersVisitas: visitasPorSeller,
         sellersClientes: clientesNuevosPorSeller,
