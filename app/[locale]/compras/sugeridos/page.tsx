@@ -22,6 +22,7 @@ import {
 import { Download, Loader2, Package, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { SEDES } from "@/lib/compras/constants";
 
 interface ProductoSugerido {
   id: number;
@@ -38,8 +39,6 @@ interface ProductoSugerido {
   cantidadAComprar: number;
   costo: number;
   valorAComprar: number;
-  accion: string;
-  fechaQuiebreEstimada: string;
 }
 
 function abcColor(abc: string) {
@@ -50,24 +49,6 @@ function abcColor(abc: string) {
       : "bg-gray-400";
 }
 
-function accionBadgeClass(accion: string) {
-  if (accion.includes("QUIEBRE")) return "bg-red-600 text-white";
-  if (accion.includes("RIESGO")) return "bg-orange-500 text-white";
-  return "bg-green-600 text-white";
-}
-
-function accionLabel(accion: string) {
-  if (accion.includes("QUIEBRE")) return "QUIEBRE";
-  if (accion.includes("RIESGO")) return "RIESGO";
-  return "OK";
-}
-
-function rowBg(accion: string) {
-  if (accion.includes("QUIEBRE")) return "bg-red-50/40 hover:bg-red-50/70";
-  if (accion.includes("RIESGO")) return "bg-orange-50/40 hover:bg-orange-50/70";
-  return "hover:bg-blue-50/20";
-}
-
 function fmt(n: number) {
   return n.toLocaleString("en-US", {
     minimumFractionDigits: 0,
@@ -75,23 +56,16 @@ function fmt(n: number) {
   });
 }
 
-const SEDES = [
-  { id: "todas", label: "Todas las sedes" },
-  { id: "9", label: "Valencia" },
-  { id: "10", label: "Caracas" },
-  { id: "7", label: "Panamá" },
-];
-
 export default function SugeridosPage() {
   const [todos, setTodos] = useState<ProductoSugerido[]>([]);
   const [loading, setLoading] = useState(true);
+  const [warning, setWarning] = useState<string | null>(null);
 
-  const [sede, setSede] = useState("todas");
+  const [sede, setSede] = useState("9");
   const [busqueda, setBusqueda] = useState("");
   const [filtroABC, setFiltroABC] = useState("TODAS");
   const [filtroMarca, setFiltroMarca] = useState("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState("TODAS");
-  const [filtroAccion, setFiltroAccion] = useState("TODAS");
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -99,12 +73,14 @@ export default function SugeridosPage() {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setWarning(null);
       try {
-        const params = sede !== "todas" ? `?sede=${sede}` : "";
+        const params = `?sede=${sede}`;
         const response = await fetch(`/api/compras/sugeridos${params}`);
         const result = await response.json();
         if (result.success) {
           setTodos(result.data);
+          setWarning(result.warning || null);
         }
       } catch (error) {
         console.error("[Sugeridos] Error:", error);
@@ -123,7 +99,7 @@ export default function SugeridosPage() {
   );
 
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(tras_abc.map((p) => p.marca).filter(Boolean))).sort(),
+    () => Array.from(new Set(tras_abc.map((p) => p.marca))).sort(),
     [tras_abc],
   );
 
@@ -136,7 +112,7 @@ export default function SugeridosPage() {
   );
 
   const categoriasUnicas = useMemo(
-    () => Array.from(new Set(tras_marca.map((p) => p.categoria).filter(Boolean))).sort(),
+    () => Array.from(new Set(tras_marca.map((p) => p.categoria))).sort(),
     [tras_marca],
   );
 
@@ -148,47 +124,34 @@ export default function SugeridosPage() {
     [tras_marca, filtroCategoria],
   );
 
-  const accionesUnicas = useMemo(
-    () => Array.from(new Set(tras_cat.map((p) => p.accion).filter(Boolean))).sort(),
-    [tras_cat],
-  );
-
   const productosFiltrados = useMemo(() => {
     const termino = busqueda.toLowerCase();
     return tras_cat.filter((p) => {
-      const busq =
+      return (
         termino === "" ||
         p.codigo.toLowerCase().includes(termino) ||
-        p.name.toLowerCase().includes(termino);
-      const acc = filtroAccion === "TODAS" || p.accion === filtroAccion;
-      return busq && acc;
+        p.name.toLowerCase().includes(termino)
+      );
     });
-  }, [tras_cat, busqueda, filtroAccion]);
+  }, [tras_cat, busqueda]);
 
   useEffect(() => {
     setFiltroMarca("TODAS");
     setFiltroCategoria("TODAS");
-    setFiltroAccion("TODAS");
   }, [filtroABC]);
   useEffect(() => {
     setFiltroCategoria("TODAS");
-    setFiltroAccion("TODAS");
   }, [filtroMarca]);
   useEffect(() => {
-    setFiltroAccion("TODAS");
-  }, [filtroCategoria]);
-  useEffect(() => {
     setCurrentPage(1);
-  }, [busqueda, filtroABC, filtroMarca, filtroCategoria, filtroAccion]);
+  }, [busqueda, filtroABC, filtroMarca, filtroCategoria]);
 
   // KPIs
   const kpis = useMemo(
     () => ({
       totalValor: productosFiltrados.reduce((s, p) => s + p.valorAComprar, 0),
       totalSkus: productosFiltrados.length,
-      enQuiebre: productosFiltrados.filter((p) => p.accion.includes("QUIEBRE"))
-        .length,
-      enRiesgo: productosFiltrados.filter((p) => p.accion.includes("RIESGO"))
+      urgentes: productosFiltrados.filter((p) => p.diasInvActual <= 7)
         .length,
     }),
     [productosFiltrados],
@@ -199,7 +162,6 @@ export default function SugeridosPage() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
   );
-
   const exportarExcel = () => {
     const data = productosFiltrados.map((item, i) => ({
       "#": i + 1,
@@ -212,12 +174,11 @@ export default function SugeridosPage() {
       "Demanda/día": item.demandaDiaria,
       MOQ: item.moq,
       "Pto. Reorden": item.puntoReorden,
-      "Días Inv.": item.diasInvActual >= 999 ? "∞" : item.diasInvActual,
+      "Días Inv.":
+        item.diasInvActual >= 999 ? "∞" : item.diasInvActual,
       "Cant. a Comprar": item.cantidadAComprar,
       "Costo Unit. ($)": item.costo,
       "Valor a Comprar ($)": item.valorAComprar,
-      Acción: item.accion,
-      "Fecha Quiebre Est.": item.fechaQuiebreEstimada,
     }));
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
@@ -236,7 +197,7 @@ export default function SugeridosPage() {
           Calculando sugeridos de compra...
         </h2>
         <p className="text-gray-500 text-sm mt-2">
-          Analizando ventas, stock y MOQ desde Odoo
+          Analizando ventas, stock, MOQ y punto de reorden desde Odoo
         </p>
       </div>
     );
@@ -249,21 +210,35 @@ export default function SugeridosPage() {
           Sugeridos de Compra
         </h1>
         <p className="text-gray-500">
-          Productos que requieren reposición según MOQ, stock objetivo y punto
-          de reorden.
+          Lista de compra: productos con MOQ configurado que requieren
+          reposición urgente.
         </p>
       </div>
 
+      {warning && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-amber-800 text-sm">
+          <strong>Advertencia:</strong> {warning}
+        </div>
+      )}
+
       {/* Filtros */}
       <Card className="bg-white shadow-sm border-gray-200">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 items-center">
-          <Select value={sede} onValueChange={(v) => { setSede(v); setCurrentPage(1); }}>
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
+          <Select
+            value={sede}
+            onValueChange={(v) => {
+              setSede(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Sede" />
             </SelectTrigger>
             <SelectContent>
               {SEDES.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -313,19 +288,6 @@ export default function SugeridosPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={filtroAccion} onValueChange={setFiltroAccion}>
-            <SelectTrigger>
-              <SelectValue placeholder="Acción" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="TODAS">Todas las acciones</SelectItem>
-              {accionesUnicas.map((a) => (
-                <SelectItem key={a} value={a}>
-                  {a}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Button
             onClick={exportarExcel}
             variant="outline"
@@ -337,32 +299,37 @@ export default function SugeridosPage() {
       </Card>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Valor Total a Comprar</p>
-            <p className="text-2xl font-bold text-blue-700 mt-1">${fmt(kpis.totalValor)}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Valor Total a Comprar
+            </p>
+            <p className="text-2xl font-bold text-blue-700 mt-1">
+              ${fmt(kpis.totalValor)}
+            </p>
             <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
-          </CardContent>
-        </Card>
-        <Card className="border-red-200 bg-red-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Quiebre Total</p>
-            <p className="text-2xl font-bold text-red-700 mt-1">{kpis.enQuiebre}</p>
-            <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Riesgo Inminente</p>
-            <p className="text-2xl font-bold text-orange-600 mt-1">{kpis.enRiesgo}</p>
-            <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Urgentes (≤7 días)
+            </p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">
+              {kpis.urgentes}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Quiebre inminente</p>
           </CardContent>
         </Card>
         <Card className="border-green-200 bg-green-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sugeridos</p>
-            <p className="text-2xl font-bold text-green-700 mt-1">{todos.length}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Total Sugeridos
+            </p>
+            <p className="text-2xl font-bold text-green-700 mt-1">
+              {todos.length}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Con MOQ configurado</p>
           </CardContent>
         </Card>
@@ -393,14 +360,13 @@ export default function SugeridosPage() {
                   <TableHead className="text-center font-bold">
                     Valor ($)
                   </TableHead>
-                  <TableHead className="text-right pr-6">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {currentItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="text-center py-8 text-gray-500"
                     >
                       No hay productos sugeridos con estos filtros.
@@ -408,7 +374,14 @@ export default function SugeridosPage() {
                   </TableRow>
                 ) : (
                   currentItems.map((item) => (
-                    <TableRow key={item.codigo} className={rowBg(item.accion)}>
+                    <TableRow
+                      key={item.codigo}
+                      className={
+                        item.diasInvActual <= 7
+                          ? "bg-orange-50/40 hover:bg-orange-50/70"
+                          : "hover:bg-blue-50/20"
+                      }
+                    >
                       <TableCell className="px-4">
                         <div className="font-semibold text-sm">
                           {item.codigo}
@@ -431,31 +404,20 @@ export default function SugeridosPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge
-                          variant={
-                            item.stockDisponible <= 0
-                              ? "destructive"
-                              : "outline"
-                          }
-                          className={
-                            item.stockDisponible <= 0
-                              ? "bg-red-600 text-white"
-                              : "bg-white font-bold"
-                          }
-                        >
+                        <span className="font-bold text-sm">
                           {item.stockDisponible}
-                        </Badge>
+                        </span>
                       </TableCell>
                       <TableCell className="text-center text-sm">
                         {item.diasInvActual >= 999 ? (
-                          <span className="text-gray-400 text-xs">Sin ventas</span>
+                          <span className="text-gray-400 text-xs">∞</span>
                         ) : (
                           <span
                             className={
-                              item.diasInvActual <= 7
+                              item.diasInvActual <= 3
                                 ? "text-red-600 font-bold"
-                                : item.diasInvActual <= 20
-                                  ? "text-orange-500 font-medium"
+                                : item.diasInvActual <= 7
+                                  ? "text-orange-500 font-semibold"
                                   : "text-gray-600"
                             }
                           >
@@ -487,24 +449,18 @@ export default function SugeridosPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 text-sm">
-                        {item.costo > 0
-                          ? `$${item.costo.toFixed(2)}`
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo</span>}
+                        {item.costo > 0 ? (
+                          `$${item.costo.toFixed(2)}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-bold text-gray-800">
                         {item.valorAComprar > 0
                           ? `$${fmt(item.valorAComprar)}`
                           : "—"}
-                      </TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Badge className={`text-xs ${accionBadgeClass(item.accion)}`}>
-                          {accionLabel(item.accion)}
-                        </Badge>
-                        {!item.accion.includes("OK") && (
-                          <div className="text-[10px] text-gray-400 mt-1 text-right">
-                            {item.fechaQuiebreEstimada}
-                          </div>
-                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -533,7 +489,9 @@ export default function SugeridosPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(p + 1, totalPages))
+                  }
                   disabled={currentPage === totalPages}
                 >
                   Siguiente

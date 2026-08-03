@@ -4,6 +4,7 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { rolePermissions, UserRole } from "@/lib/types";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   Award,
   BarChart3,
   Bell,
@@ -13,12 +14,16 @@ import {
   ChevronDown,
   ClipboardList,
   CreditCard,
+  DollarSign,
   FileText,
+  History,
   LayoutDashboard,
   LogOut,
   Map,
   Package,
+  PieChart,
   Settings2,
+  Shield,
   Target,
   TrendingDown,
   TrendingUp,
@@ -82,117 +87,37 @@ export function Sidebar({
   // Definición del menú base
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "" },
-    {
-      id: "actividad",
-      label: "Actividades",
-      icon: Calendar,
-      slug: "/actividad",
-    },
+    { id: "actividad", label: "Actividades", icon: Calendar, slug: "/actividad" },
     { id: "alert", label: "Alertas", icon: Bell, slug: "/alert" },
-    {
-      id: "stoplight_reports",
-      label: "Stoplight Report",
-      icon: BarChart3,
-      slug: "/StoplightReport",
-    },
+    { id: "stoplight_reports", label: "Stoplight Report", icon: BarChart3, slug: "/StoplightReport" },
     { id: "users", label: "Usuarios", icon: Users, slug: "/usuarios" },
-    {
-      id: "seller_map",
-      label: "Mapa Clientes",
-      icon: Map,
-      slug: "/vendedores",
-    },
+    { id: "seller_map", label: "Mapa Clientes", icon: Map, slug: "/vendedores" },
     { id: "cuota", label: "Cuota", icon: FileText, slug: "/cuota" },
     { id: "inventory", label: "Inventario", icon: Package, slug: "/inventory" },
-    {
-      id: "agenteia",
-      label: "Agente IA",
-      icon: BrainCircuit,
-      slug: "/agenteia",
-    },
-    {
-      id: "integraciondepago",
-      label: "Integración De Pago",
-      icon: CreditCard,
-      slug: "/integraciondepago",
-    },
+    { id: "agenteia", label: "Agente IA", icon: BrainCircuit, slug: "/agenteia" },
+    { id: "integraciondepago", label: "Integración De Pago", icon: CreditCard, slug: "/integraciondepago" },
     { id: "clientes", label: "Clientes", icon: UserCheck, slug: "/clientes" },
     { id: "catalogo", label: "Catálogo", icon: Boxes, slug: "/catalogo" },
     { id: "leads", label: "Leads", icon: UserCheck, slug: "/leads" },
-    {
-      id: "MapaClientes",
-      label: "Mapa de Clientes",
-      icon: Map,
-      slug: "/mapa_clientes",
-    },
+    { id: "MapaClientes", label: "Mapa de Clientes", icon: Map, slug: "/mapa_clientes" },
     { id: "cierres", label: "Cierres", icon: FileText, slug: "/Cierres" },
-    {
-      id: "top_clientes",
-      label: "Top Clientes",
-      icon: Trophy,
-      slug: "/top-clientes",
-    },
+    { id: "top_clientes", label: "Top Clientes", icon: Trophy, slug: "/top-clientes" },
     { id: "spiff", label: "Spiff", icon: Award, slug: "/spiff" },
-    {
-      id: "reporte_diario",
-      label: "Reporte Diario",
-      icon: ClipboardList,
-      slug: "/reporte-diario",
-    },
-    {
-      id: "sugeridos",
-      label: "Sugerencia de compras",
-      icon: Package,
-      slug: "/sugeridos",
-    },
-    {
-      id: "menor_rotacion",
-      label: "Menor Rotación",
-      icon: TrendingDown,
-      slug: "/menor_rotacion",
-    },
-    {
-      id: "mayor_rotacion",
-      label: "Mayor Rotación",
-      icon: TrendingUp,
-      slug: "/mayor_rotacion",
-    },
+    { id: "reporte_diario", label: "Reporte Diario", icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "sugeridos", label: "Sugerencia de compras", icon: Package, slug: "/sugeridos" },
+    { id: "menor_rotacion", label: "Menor Rotación", icon: TrendingDown, slug: "/menor_rotacion" },
+    { id: "mayor_rotacion", label: "Mayor Rotación", icon: TrendingUp, slug: "/mayor_rotacion" },
     { id: "moq", label: "MOQ", icon: Settings2, slug: "/moq" },
-    {
-      id: "adminleads",
-      label: "Dashboard Leads",
-      icon: Target,
-      slug: "",
-      adminLeadsOnly: true,
-    },
-    {
-      id: "catalogo_adminleads",
-      label: "Catálogo",
-      icon: Boxes,
-      slug: "/catalogo",
-      adminLeadsOnly: true,
-    },
-    {
-      id: "monitoreo_leads",
-      label: "Monitoreo de leads",
-      icon: Target,
-      slug: "/monitoreo_leads",
-      adminLeadsOnly: true,
-    },
-    {
-      id: "cierres_adminleads",
-      label: "Cierres",
-      icon: FileText,
-      slug: "/cierres",
-      adminLeadsOnly: true,
-    },
-    {
-      id: "configuracion_leads",
-      label: "Configuración",
-      icon: Settings2,
-      slug: "/configuracion",
-      adminLeadsOnly: true,
-    },
+    { id: "cobertura", label: "Cobertura de Stock", icon: Shield, slug: "/cobertura" },
+    { id: "quiebres_historicos", label: "Quiebres Históricos", icon: History, slug: "/quiebres-historicos" },
+    { id: "rotacion_categoria", label: "Rotación por Categoría", icon: PieChart, slug: "/rotacion-categoria" },
+    { id: "sin_costo", label: "Sin Costo", icon: DollarSign, slug: "/sin-costo" },
+    { id: "tendencia", label: "Tendencia de Ventas", icon: BarChart3, slug: "/tendencia" },
+    { id: "adminleads", label: "Dashboard Leads", icon: Target, slug: "", adminLeadsOnly: true },
+    { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
+    { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
+    { id: "cierres_adminleads", label: "Cierres", icon: FileText, slug: "/cierres", adminLeadsOnly: true },
+    { id: "configuracion_leads", label: "Configuración", icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
   ];
 
   const getBasePath = () => {
@@ -233,9 +158,9 @@ export function Sidebar({
     allowedSections.includes("menor_rotacion") ||
     allowedSections.includes("mayor_rotacion");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "quiebres_historicos", "rotacion_categoria", "sin_costo", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 
   const isSellerPausado =
     (userRole === "seller" || userRole === "vendedor") &&
@@ -252,7 +177,7 @@ export function Sidebar({
           !comprasDropdownIds.includes(item.id)) &&
         (!isSuperAdminRole || !ventasDropdownIds.includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || userCids === 9) &&
-        !(isSellerPausado && (item.id === "leads" || item.id === "cierres")),
+        !(isSellerPausado && (item.id === "leads" || item.id === "cierres"))
     )
     .map((item) => {
       if (item.id === "actividad") {
@@ -266,14 +191,6 @@ export function Sidebar({
         href: item.slug ? `${basePath}${item.slug}` : basePath,
       };
     });
-
-  const sortedItems = isSuperAdminRole
-    ? [...availableItems].sort((a, b) => {
-        if (a.id === "alert") return -1;
-        if (b.id === "alert") return 1;
-        return 0;
-      })
-    : availableItems;
 
   const roleAccentColors = {
     superAdmin: "text-blue-400 border-blue-500 bg-blue-500",
@@ -328,7 +245,7 @@ export function Sidebar({
           {/* Menú de Navegación */}
           <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
             {/* Renderizado de Opciones Simples */}
-            {sortedItems.map((item) => {
+            {availableItems.map((item) => {
               const Icon = item.icon;
               const isActive = item.slug
                 ? pathname.includes(item.slug)
@@ -536,18 +453,43 @@ export function Sidebar({
                       {[
                         {
                           label: "Sugerencia de compras",
-                          href: `${basePath}/sugeridos`,
+                          href: `/${locale}/compras/sugeridos`,
                           permission: "sugeridos",
                         },
                         {
                           label: "Menor Rotacion",
-                          href: `${basePath}/menor_rotacion`,
+                          href: `/${locale}/compras/menor_rotacion`,
                           permission: "menor_rotacion",
                         },
                         {
                           label: "Mayor Rotacion",
-                          href: `${basePath}/mayor_rotacion`,
+                          href: `/${locale}/compras/mayor_rotacion`,
                           permission: "mayor_rotacion",
+                        },
+                        {
+                          label: "Cobertura de Stock",
+                          href: `/${locale}/compras/cobertura`,
+                          permission: "cobertura",
+                        },
+                        {
+                          label: "Quiebres Históricos",
+                          href: `/${locale}/compras/quiebres-historicos`,
+                          permission: "quiebres_historicos",
+                        },
+                        {
+                          label: "Rotación por Categoría",
+                          href: `/${locale}/compras/rotacion-categoria`,
+                          permission: "rotacion_categoria",
+                        },
+                        {
+                          label: "Sin Costo",
+                          href: `/${locale}/compras/sin-costo`,
+                          permission: "sin_costo",
+                        },
+                        {
+                          label: "Tendencia de Ventas",
+                          href: `/${locale}/compras/tendencia`,
+                          permission: "tendencia",
                         },
                       ].map((subItem, index) => {
                         if (
@@ -609,15 +551,6 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        ...(isSuperAdminRole
-                          ? [
-                              {
-                                label: "Reporte Diario",
-                                href: `${basePath}/reporte-diario`,
-                                permission: "reporte_diario",
-                              },
-                            ]
-                          : []),
                         {
                           label: "Cuota",
                           href: `${basePath}/cuota`,
@@ -628,20 +561,6 @@ export function Sidebar({
                           href: `${basePath}/vendedores`,
                           permission: "seller_map",
                         },
-                        {
-                          label: "Spiff",
-                          href: `${basePath}/spiff`,
-                          permission: "spiff",
-                        },
-                        ...(!isSuperAdminRole
-                          ? [
-                              {
-                                label: "Reporte Diario",
-                                href: `${basePath}/reporte-diario`,
-                                permission: "reporte_diario",
-                              },
-                            ]
-                          : []),
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
 

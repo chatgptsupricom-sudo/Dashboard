@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,12 +10,6 @@ const JWT_SECRET = new TextEncoder().encode(
 
 const quiebreCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
-
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9,
-  10: 10,
-  7: 11,
-};
 
 export async function GET(request: NextRequest) {
   try {
@@ -75,9 +70,13 @@ export async function GET(request: NextRequest) {
       ],
       { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"] },
     );
-    const stockDomain: any[] = locationIds.length > 0
-      ? [["location_id", "child_of", locationIds]]
-      : [["location_id.usage", "=", "internal"], ...(sedeId ? [["company_id", "=", sedeId]] : [])];
+    const stockDomain: any[] =
+      locationIds.length > 0
+        ? [["location_id", "child_of", locationIds]]
+        : [
+            ["location_id.usage", "=", "internal"],
+            ...(sedeId ? [["company_id", "=", sedeId]] : []),
+          ];
     const stockPromise = callOdooRPC<any[]>(
       "stock.quant",
       "search_read",
@@ -93,25 +92,26 @@ export async function GET(request: NextRequest) {
     ]);
     if (!productsData) throw new Error("Error obteniendo productos");
 
-    // Paso 2: traer standard_price desde product.template SIN contexto de empresa.
-    // El usuario de servicio (uid=388) tiene acceso a los costos de su empresa por defecto.
-    // Pasar allowed_company_ids del usuario del dashboard puede hacer que Odoo devuelva 0
-    // si el costo está registrado en otra empresa.
+    // Paso 2: traer standard_price con allowed_company_ids para obtener
+    // el costo correcto por empresa.
     const tmplIds = [
       ...new Set(
         productsData.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
       ),
     ];
-    const tmplPrices = await callOdooRPC<any[]>(
-      "product.template",
-      "search_read",
-      [[["id", "in", tmplIds]]],
-      { fields: ["id", "standard_price"], limit: 0 },
-    );
     const tmplPriceMap: Record<number, number> = {};
-    if (tmplPrices) {
-      tmplPrices.forEach((t: any) => {
-        tmplPriceMap[t.id] = Number(t.standard_price) || 0;
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+    for (const cid of companies) {
+      const prices = await callOdooRPC<any[]>(
+        "product.template",
+        "search_read",
+        [[["id", "in", tmplIds]]],
+        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+      );
+      if (!prices) continue;
+      prices.forEach((t: any) => {
+        const val = Number(t.standard_price) || 0;
+        if (val > 0) tmplPriceMap[t.id] = val;
       });
     }
     const priceMap: Record<number, number> = {};
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
     const date45Str = date45DaysAgo.toISOString().split("T")[0];
 
     const invoiceLineDomain: any[] = [
-      ["move_id.move_type", "in", ["out_invoice", "out_receipt"]],
+      ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
       ["move_id.invoice_date", ">=", date45Str],
       ["move_id.partner_id.name", "not ilike", "supricom"],
@@ -175,7 +175,8 @@ export async function GET(request: NextRequest) {
       (stockData as any[]).forEach((s) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] =
+          (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
     // Redondear a 2 decimales para evitar diferencias por float de Odoo

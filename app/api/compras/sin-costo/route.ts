@@ -8,9 +8,9 @@ const JWT_SECRET = new TextEncoder().encode(
 
 // Empresa (company_id) → { warehouseId, nombre }
 const SEDES = [
-  { companyId: 9,  warehouseId: 9,  nombre: "Valencia" },
+  { companyId: 9, warehouseId: 9, nombre: "Valencia" },
   { companyId: 10, warehouseId: 10, nombre: "Caracas" },
-  { companyId: 7,  warehouseId: 11, nombre: "Panamá" },
+  { companyId: 7, warehouseId: 11, nombre: "Panamá" },
 ];
 
 const sinCostoCache = new Map<string, { data: any; ts: number }>();
@@ -25,7 +25,10 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Permisos insuficientes" },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -35,7 +38,11 @@ export async function GET(request: NextRequest) {
     const cacheKey = `compras_sin_costo_v2_sede${sedeId ?? "todas"}`;
     const cached = sinCostoCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      return NextResponse.json({ success: true, total: cached.data.length, data: cached.data });
+      return NextResponse.json({
+        success: true,
+        total: cached.data.length,
+        data: cached.data,
+      });
     }
 
     // Paso 1: obtener lot_stock_id de cada almacén principal
@@ -67,7 +74,12 @@ export async function GET(request: NextRequest) {
       const quants = await callOdooRPC<any[]>(
         "stock.quant",
         "search_read",
-        [[["location_id", "child_of", locId], ["product_id", "!=", false]]],
+        [
+          [
+            ["location_id", "child_of", locId],
+            ["product_id", "!=", false],
+          ],
+        ],
         { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
       );
 
@@ -78,7 +90,8 @@ export async function GET(request: NextRequest) {
         const qty = Math.max(0, q.quantity - q.reserved_quantity);
         if (qty <= 0) return;
         if (!stockBySede[pId]) stockBySede[pId] = {};
-        stockBySede[pId][sede.nombre] = (stockBySede[pId][sede.nombre] ?? 0) + qty;
+        stockBySede[pId][sede.nombre] =
+          (stockBySede[pId][sede.nombre] ?? 0) + qty;
       });
     }
 
@@ -91,12 +104,25 @@ export async function GET(request: NextRequest) {
     const productos = await callOdooRPC<any[]>(
       "product.product",
       "search_read",
-      [[["id", "in", productIdsConStock], ["active", "=", true], ["type", "=", "product"]]],
-      { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"], limit: 0 },
+      [
+        [
+          ["id", "in", productIdsConStock],
+          ["active", "=", true],
+          ["type", "=", "product"],
+        ],
+      ],
+      {
+        fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
+        limit: 0,
+      },
     );
     if (!productos) throw new Error("Error obteniendo productos");
 
-    const tmplIds = [...new Set(productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean))];
+    const tmplIds = [
+      ...new Set(
+        productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
+      ),
+    ];
 
     // productId → product_tmpl_id
     const prodToTmpl: Record<number, number> = {};
@@ -145,7 +171,9 @@ export async function GET(request: NextRequest) {
 
       // Sedes donde tiene stock Y no tiene costo
       const sinCostoEn = Object.entries(stockSedes)
-        .filter(([sedeName, qty]) => qty > 0 && (costoSedes[sedeName] ?? 0) === 0)
+        .filter(
+          ([sedeName, qty]) => qty > 0 && (costoSedes[sedeName] ?? 0) === 0,
+        )
         .map(([sedeName]) => sedeName);
 
       if (sinCostoEn.length === 0) continue;
@@ -155,11 +183,16 @@ export async function GET(request: NextRequest) {
       sinCostoEn.forEach((sedeName) => {
         stockSinCosto[sedeName] = stockSedes[sedeName] ?? 0;
       });
-      const stockTotal = Object.values(stockSinCosto).reduce((a, b) => a + b, 0);
+      const stockTotal = Object.values(stockSinCosto).reduce(
+        (a, b) => a + b,
+        0,
+      );
 
       resultado.push({
         id: prod.id,
-        codigo: prod.default_code ? String(prod.default_code).trim() : `PROD-${prod.id}`,
+        codigo: prod.default_code
+          ? String(prod.default_code).trim()
+          : `PROD-${prod.id}`,
         name: prod.name,
         categoria: prod.categ_id?.[1] ?? "Sin categoría",
         stockTotal,
@@ -180,7 +213,11 @@ export async function GET(request: NextRequest) {
     }
 
     sinCostoCache.set(cacheKey, { data: final, ts: Date.now() });
-    return NextResponse.json({ success: true, total: final.length, data: final });
+    return NextResponse.json({
+      success: true,
+      total: final.length,
+      data: final,
+    });
   } catch (error: any) {
     console.error("❌ Error en API sin-costo:", error.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });

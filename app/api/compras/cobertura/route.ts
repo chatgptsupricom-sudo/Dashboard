@@ -8,10 +8,8 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
 
-const sugeridosCache = new Map<string, { data: any; ts: number }>();
+const coberturaCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
-
-const ETA_DIAS = 25;
 
 function clasificarABC(
   productos: { id: number; ventas365d: number }[],
@@ -26,13 +24,6 @@ function clasificarABC(
     map[p.id] = pct <= 0.8 ? "A" : pct <= 0.95 ? "B" : "C";
   }
   return map;
-}
-
-// Prioridad ABC: A primero, luego B, luego C
-function prioridadABC(abc: string): number {
-  if (abc === "A") return 0;
-  if (abc === "B") return 1;
-  return 2;
 }
 
 export async function GET(request: NextRequest) {
@@ -55,8 +46,8 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_sugeridos_v8_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
-    const cached = sugeridosCache.get(cacheKey);
+    const cacheKey = `compras_cobertura_v1_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cached = coberturaCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
     }
@@ -90,7 +81,7 @@ export async function GET(request: NextRequest) {
           "search_read",
           [domain],
           {
-            fields: ["product_id", "quantity", "price_subtotal"],
+            fields: ["product_id", "quantity"],
             order: "id asc",
             limit: 5000,
             offset,
@@ -104,21 +95,16 @@ export async function GET(request: NextRequest) {
       return result;
     }
 
-    const [lines45, lines365, moqResult] = await Promise.all([
+    const [lines45, lines365] = await Promise.all([
       fetchInvoiceLines(str45),
       fetchInvoiceLines(str365),
-      query("SELECT sku, cantidad FROM moqs"),
     ]);
 
-    console.log(`[Sugeridos] sede=${sedeId} lines45=${lines45.length} lines365=${lines365.length}`);
-
-    const stats45: Record<number, { unidades: number; ingresos: number }> = {};
+    const stats45: Record<number, number> = {};
     lines45.forEach((l) => {
       if (!l.product_id) return;
       const id = l.product_id[0];
-      if (!stats45[id]) stats45[id] = { unidades: 0, ingresos: 0 };
-      stats45[id].unidades += l.quantity || 0;
-      stats45[id].ingresos += l.price_subtotal || 0;
+      stats45[id] = (stats45[id] || 0) + (l.quantity || 0);
     });
 
     const stats365: Record<number, number> = {};
@@ -130,12 +116,10 @@ export async function GET(request: NextRequest) {
 
     const productIds = Object.keys(stats45)
       .map(Number)
-      .filter((id) => stats45[id].unidades > 0);
-    console.log(`[Sugeridos] sede=${sedeId} productIds=${productIds.length}`);
+      .filter((id) => stats45[id] > 0);
     if (productIds.length === 0)
       return NextResponse.json({ success: true, data: [] });
 
-    // Obtener lot_stock_id de los almacenes principales conocidos.
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
@@ -148,7 +132,6 @@ export async function GET(request: NextRequest) {
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
       : [];
-    console.log(`[Sugeridos] sede=${sedeId} warehouseIds=${JSON.stringify(warehouseIds)} locationIds=${JSON.stringify(locationIds)}`);
 
     const stockQuantDomain: any[] = [
       ["product_id", "in", productIds],
@@ -164,12 +147,7 @@ export async function GET(request: NextRequest) {
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
-        [
-          [
-            ["id", "in", productIds],
-            ["active", "=", true],
-          ],
-        ],
+        [[["id", "in", productIds], ["active", "=", true]]],
         {
           fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
           limit: 0,
@@ -181,13 +159,7 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Si hay warehouse configurado pero no retorna stock, reportar el problema
-    if (sedeId && warehouseIds.length > 0 && locationIds.length > 0 && (!stockData || stockData.length === 0)) {
-      console.log(`[Sugeridos] sede=${sedeId} WARNING: warehouse configurado (id=${warehouseIds[0]}, ubicación=${locationIds[0]}) pero sin stock. Verificar configuración del almacén en Odoo.`);
-    }
-
     if (!productos) throw new Error("Error obteniendo productos");
-    console.log(`[Sugeridos] sede=${sedeId} productos=${productos.length} stockData=${stockData?.length ?? 0}`);
 
     const stockMap: Record<number, number> = {};
     if (stockData) {
@@ -199,20 +171,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Costos por empresa con allowed_company_ids
     const tmplIds = [
       ...new Set(
         productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
       ),
     ];
     const tmplPriceMap: Record<number, number> = {};
-    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+    const companies = sedeId
+      ? [sedeId]
+      : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     for (const cid of companies) {
       const prices = await callOdooRPC<any[]>(
         "product.template",
         "search_read",
         [[["id", "in", tmplIds]]],
-        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+        {
+          fields: ["id", "standard_price"],
+          limit: 0,
+          context: { allowed_company_ids: [cid] },
+        },
       );
       if (!prices) continue;
       prices.forEach((t: any) => {
@@ -221,9 +198,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const moqMap = new Map(
-      (moqResult as any).rows.map((m: any) => [m.sku, Number(m.cantidad)]),
-    );
     const abcInput = productIds.map((id) => ({
       id,
       ventas365d: stats365[id] || 0,
@@ -238,32 +212,28 @@ export async function GET(request: NextRequest) {
           ? String(prod.default_code).trim()
           : `PROD-${pId}`;
 
-        const ventas45d = Math.round(stats45[pId]?.unidades || 0);
-        const ventas365d = Math.round(stats365[pId] || 0);
+        const ventas45d = Math.round(stats45[pId] || 0);
         const stock = stockMap[pId] || 0;
         const costo = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
-        const moqRaw = moqMap.get(codigo);
-        const tieneMoq = moqRaw !== undefined && moqRaw > 0;
-        const moq = tieneMoq ? moqRaw! : 0;
         const abc = abcMap[pId] || "C";
 
         const diasInvDeseado = abc === "A" ? 60 : abc === "B" ? 45 : 30;
-        const stockSeguridad = abc === "A" ? 2 : abc === "B" ? 1 : 0;
         const demandaDiaria = ventas45d / 45;
-        const puntoReorden = demandaDiaria * ETA_DIAS + stockSeguridad;
-        const stockObjetivo = demandaDiaria * diasInvDeseado;
-        const diasInvActual = demandaDiaria > 0 ? stock / demandaDiaria : 999;
+        const diasCobertura =
+          demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
 
-        // Excluir quiebre total (stock=0) y productos con suficiente stock
-        if (stock <= 0 || stock > puntoReorden) return null;
-
-        // Calcular cantidad solo si tiene MOQ
-        let cantidadAComprar = 0;
-        if (tieneMoq) {
-          const gap = stockObjetivo - stock;
-          if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
-        }
-        const valorAComprar = cantidadAComprar * costo;
+        const fechaQuiebre = new Date(today);
+        fechaQuiebre.setDate(
+          fechaQuiebre.getDate() + (diasCobertura >= 999 ? 999 : diasCobertura),
+        );
+        const fechaQuiebreEstimada =
+          diasCobertura >= 999
+            ? "Sin riesgo"
+            : fechaQuiebre.toLocaleDateString("es-VE", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              });
 
         return {
           id: pId,
@@ -273,43 +243,23 @@ export async function GET(request: NextRequest) {
             ? prod.name.split(" ")[0].toUpperCase()
             : "SIN MARCA",
           categoria: prod.categ_id ? prod.categ_id[1] : "Sin Categoría",
-          ventas45d,
-          ventas365d,
-          demandaDiaria: Number(demandaDiaria.toFixed(2)),
           abc,
           stockDisponible: stock,
+          ventas45d,
+          demandaDiaria: Number(demandaDiaria.toFixed(2)),
+          diasCobertura: diasCobertura >= 999 ? 999 : diasCobertura,
+          diasInvDeseado,
           costo,
-          moq,
-          puntoReorden: Number(puntoReorden.toFixed(1)),
-          stockObjetivo: Number(stockObjetivo.toFixed(1)),
-          diasInvActual:
-            diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
-          cantidadAComprar,
-          valorAComprar: Number(valorAComprar.toFixed(2)),
+          fechaQuiebreEstimada,
         };
       })
-      .filter(Boolean)
-      // Ordenar: días de inventario (más bajo = más urgente primero) → ABC → ventas45d desc
-      .sort((a: any, b: any) => {
-        if (a.diasInvActual !== b.diasInvActual)
-          return a.diasInvActual - b.diasInvActual;
-        const aa = prioridadABC(a.abc);
-        const ab = prioridadABC(b.abc);
-        if (aa !== ab) return aa - ab;
-        return b.ventas45d - a.ventas45d;
-      });
+      .filter((p) => p.ventas45d > 0)
+      .sort((a, b) => a.diasCobertura - b.diasCobertura);
 
-    sugeridosCache.set(cacheKey, { data: result, ts: Date.now() });
-
-    // Warning si el almacén configurado no tiene stock
-    const warehouseWarning =
-      sedeId && warehouseIds.length > 0 && locationIds.length > 0 && (!stockData || stockData.length === 0)
-        ? `El almacén de esta sede no tiene stock registrado. Verificar ubicación principal (lot_stock_id) en Odoo.`
-        : undefined;
-
-    return NextResponse.json({ success: true, data: result, warning: warehouseWarning });
+    coberturaCache.set(cacheKey, { data: result, ts: Date.now() });
+    return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
-    console.error("❌ Error en API Sugeridos:", error.message);
+    console.error("❌ Error en API Cobertura:", error.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }

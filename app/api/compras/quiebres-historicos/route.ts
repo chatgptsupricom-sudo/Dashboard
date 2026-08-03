@@ -1,3 +1,4 @@
+import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,8 +10,6 @@ const JWT_SECRET = new TextEncoder().encode(
 const qhCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 20 * 60 * 1000;
 
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = { 9: 9, 10: 10, 7: 11 };
-
 export async function GET(request: NextRequest) {
   try {
     const token = request.cookies.get("token")?.value;
@@ -20,7 +19,10 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Permisos insuficientes" },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -37,31 +39,52 @@ export async function GET(request: NextRequest) {
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
-    const warehouseData = await callOdooRPC<any[]>("stock.warehouse", "search_read",
+    const warehouseData = await callOdooRPC<any[]>(
+      "stock.warehouse",
+      "search_read",
       [[["id", "in", warehouseIds]]],
       { fields: ["id", "lot_stock_id"], limit: 0 },
     );
-    const locationIds = warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
+    const locationIds =
+      warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
 
     // Productos activos
-    const productos = await callOdooRPC<any[]>("product.product", "search_read",
-      [[["active", "=", true], ["type", "=", "product"]]],
+    const productos = await callOdooRPC<any[]>(
+      "product.product",
+      "search_read",
+      [
+        [
+          ["active", "=", true],
+          ["type", "=", "product"],
+        ],
+      ],
       { fields: ["id", "default_code", "name", "categ_id"], limit: 0 },
     );
     if (!productos) throw new Error("Sin productos");
 
     // Stock actual
-    const stockDomain: any[] = locationIds.length > 0
-      ? [["location_id", "child_of", locationIds], ["product_id", "!=", false]]
-      : [["location_id.usage", "=", "internal"], ["product_id", "!=", false]];
-    const stockData = await callOdooRPC<any[]>("stock.quant", "search_read", [stockDomain],
+    const stockDomain: any[] =
+      locationIds.length > 0
+        ? [
+            ["location_id", "child_of", locationIds],
+            ["product_id", "!=", false],
+          ]
+        : [
+            ["location_id.usage", "=", "internal"],
+            ["product_id", "!=", false],
+          ];
+    const stockData = await callOdooRPC<any[]>(
+      "stock.quant",
+      "search_read",
+      [stockDomain],
       { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
     );
     const stockMap: Record<number, number> = {};
     stockData?.forEach((s: any) => {
       if (!s.product_id) return;
       const id = s.product_id[0];
-      stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+      stockMap[id] =
+        (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
     });
     Object.keys(stockMap).forEach((k) => {
       stockMap[+k] = Math.round(stockMap[+k] * 100) / 100;
@@ -71,7 +94,8 @@ export async function GET(request: NextRequest) {
     // MOVIMIENTOS: salidas a cliente (ventas)
     // ============================================================
     const today = new Date();
-    const date180 = new Date(); date180.setDate(today.getDate() - 180);
+    const date180 = new Date();
+    date180.setDate(today.getDate() - 180);
     const date180Str = date180.toISOString().split("T")[0] + " 00:00:00";
 
     const outDomain: any[] = [
@@ -80,15 +104,23 @@ export async function GET(request: NextRequest) {
       ["location_dest_id.usage", "=", "customer"],
       ["product_id", "!=", false],
     ];
-    if (locationIds.length > 0) outDomain.push(["location_id", "child_of", locationIds]);
+    if (locationIds.length > 0)
+      outDomain.push(["location_id", "child_of", locationIds]);
 
     let outMoves: any[] = [];
     let offset = 0;
     while (true) {
-      const page = await callOdooRPC<any[]>("stock.move", "search_read", [outDomain], {
-        fields: ["product_id", "product_uom_qty", "date"],
-        order: "id asc", limit: 5000, offset,
-      });
+      const page = await callOdooRPC<any[]>(
+        "stock.move",
+        "search_read",
+        [outDomain],
+        {
+          fields: ["product_id", "product_uom_qty", "date"],
+          order: "id asc",
+          limit: 5000,
+          offset,
+        },
+      );
       if (!page || page.length === 0) break;
       outMoves = outMoves.concat(page);
       if (page.length < 5000) break;
@@ -105,15 +137,23 @@ export async function GET(request: NextRequest) {
       ["location_id.usage", "!=", "internal"], // viene de proveedor, no de otro almacén interno
       ["product_id", "!=", false],
     ];
-    if (locationIds.length > 0) inDomain.push(["location_dest_id", "child_of", locationIds]);
+    if (locationIds.length > 0)
+      inDomain.push(["location_dest_id", "child_of", locationIds]);
 
     let inMoves: any[] = [];
     offset = 0;
     while (true) {
-      const page = await callOdooRPC<any[]>("stock.move", "search_read", [inDomain], {
-        fields: ["product_id", "product_uom_qty", "date"],
-        order: "id asc", limit: 5000, offset,
-      });
+      const page = await callOdooRPC<any[]>(
+        "stock.move",
+        "search_read",
+        [inDomain],
+        {
+          fields: ["product_id", "product_uom_qty", "date"],
+          order: "id asc",
+          limit: 5000,
+          offset,
+        },
+      );
       if (!page || page.length === 0) break;
       inMoves = inMoves.concat(page);
       if (page.length < 5000) break;
@@ -147,7 +187,8 @@ export async function GET(request: NextRequest) {
       const date = new Date(m.date);
       for (let wi = 0; wi < WEEKS; wi++) {
         if (enSemana(date, wi)) {
-          if (!productWeeklySales[pId]) productWeeklySales[pId] = Array(WEEKS).fill(false);
+          if (!productWeeklySales[pId])
+            productWeeklySales[pId] = Array(WEEKS).fill(false);
           productWeeklySales[pId][wi] = true;
           break;
         }
@@ -162,7 +203,8 @@ export async function GET(request: NextRequest) {
       const date = new Date(m.date);
       for (let wi = 0; wi < WEEKS; wi++) {
         if (enSemana(date, wi)) {
-          if (!productWeeklyIn[pId]) productWeeklyIn[pId] = Array(WEEKS).fill(false);
+          if (!productWeeklyIn[pId])
+            productWeeklyIn[pId] = Array(WEEKS).fill(false);
           productWeeklyIn[pId][wi] = true;
           break;
         }
@@ -178,10 +220,14 @@ export async function GET(request: NextRequest) {
     // ============================================================
     const resultado = productos
       .map((p: any) => {
-        const weeklySales = productWeeklySales[p.id] ?? Array(WEEKS).fill(false);
+        const weeklySales =
+          productWeeklySales[p.id] ?? Array(WEEKS).fill(false);
         const weeklyIn = productWeeklyIn[p.id] ?? Array(WEEKS).fill(false);
         const firstSale = weeklySales.findIndex((v) => v);
-        const lastSale = weeklySales.reduceRight((acc, v, i) => acc === -1 && v ? i : acc, -1);
+        const lastSale = weeklySales.reduceRight(
+          (acc, v, i) => (acc === -1 && v ? i : acc),
+          -1,
+        );
 
         let quiebresContados = 0;
         if (firstSale !== -1 && lastSale !== -1 && lastSale > firstSale) {
@@ -189,7 +235,8 @@ export async function GET(request: NextRequest) {
             // Si esta semana no tuvo ventas pero tuvo ventas antes y después
             if (!weeklySales[wi] && wi > firstSale && wi < lastSale) {
               // Verificar si hubo recepción en esta semana o la siguiente
-              const huboRecepcion = weeklyIn[wi] || (wi + 1 < WEEKS && weeklyIn[wi + 1]);
+              const huboRecepcion =
+                weeklyIn[wi] || (wi + 1 < WEEKS && weeklyIn[wi + 1]);
               if (huboRecepcion) {
                 quiebresContados++;
               }
@@ -206,14 +253,17 @@ export async function GET(request: NextRequest) {
 
         return {
           id: p.id,
-          codigo: p.default_code ? String(p.default_code).trim() : `PROD-${p.id}`,
+          codigo: p.default_code
+            ? String(p.default_code).trim()
+            : `PROD-${p.id}`,
           name: p.name,
           categoria: p.categ_id?.[1] ?? "Sin categoría",
           stockActual,
           totalSalidas180d: Math.round(totalSalidas),
           semanasConVenta,
           quiebresContados,
-          frecuenciaQuiebre: WEEKS > 0 ? Math.round((quiebresContados / WEEKS) * 100) : 0,
+          frecuenciaQuiebre:
+            WEEKS > 0 ? Math.round((quiebresContados / WEEKS) * 100) : 0,
         };
       })
       .filter((p) => p.quiebresContados > 0)

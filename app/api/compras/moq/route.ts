@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -130,6 +131,65 @@ export async function POST(request: NextRequest) {
     console.error("Error guardando MOQ/Costo:", error.message);
     return NextResponse.json(
       { error: "Error interno procesando el archivo." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.cookies.get("token")?.value;
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+
+    if (userRole !== "compras" && userRole !== "superadmin") {
+      return NextResponse.json(
+        { error: "Permisos insuficientes" },
+        { status: 403 },
+      );
+    }
+
+    const moqsResult = await query("SELECT sku, cantidad, costo FROM moqs ORDER BY sku ASC");
+    const moqs = moqsResult.rows as any[];
+
+    if (moqs.length === 0) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
+    const skus = moqs.map((m: any) => m.sku);
+    const productsData = await callOdooRPC<any[]>(
+      "product.product",
+      "search_read",
+      [[["default_code", "in", skus], ["active", "=", true]]],
+      { fields: ["default_code", "name", "categ_id"], limit: 0 },
+    );
+
+    const productMap = new Map<string, any>();
+    if (productsData) {
+      productsData.forEach((p: any) => {
+        if (p.default_code) productMap.set(p.default_code.trim(), p);
+      });
+    }
+
+    const result = moqs.map((m: any) => {
+      const prod = productMap.get(m.sku);
+      return {
+        sku: m.sku,
+        nombre: prod?.name || "Sin nombre en Odoo",
+        categoria: prod?.categ_id ? prod.categ_id[1] : "Sin categoría",
+        cantidad: Number(m.cantidad) || 0,
+        costo: Number(m.costo) || 0,
+      };
+    });
+
+    return NextResponse.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error("Error obteniendo MOQs:", error.message);
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
       { status: 500 },
     );
   }

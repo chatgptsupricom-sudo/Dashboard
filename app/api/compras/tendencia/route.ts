@@ -10,8 +10,18 @@ const tendenciaCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 15 * 60 * 1000;
 
 const MESES_ES = [
-  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
 ];
 
 function buildWeeksForMonth(year: number, month: number) {
@@ -40,12 +50,17 @@ async function fetchLines(domain: any[], fields: string[]): Promise<any[]> {
   let result: any[] = [];
   let offset = 0;
   while (true) {
-    const page = await callOdooRPC<any[]>("account.move.line", "search_read", [domain], {
-      fields,
-      order: "id asc",
-      limit: 5000,
-      offset,
-    });
+    const page = await callOdooRPC<any[]>(
+      "account.move.line",
+      "search_read",
+      [domain],
+      {
+        fields,
+        order: "id asc",
+        limit: 5000,
+        offset,
+      },
+    );
     if (!page || page.length === 0) break;
     result = result.concat(page);
     if (page.length < 5000) break;
@@ -63,7 +78,10 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Permisos insuficientes" },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -85,12 +103,13 @@ export async function GET(request: NextRequest) {
 
     // Base domain — igual para histórico y mensual
     const baseDomain: any[] = [
-      ["move_id.move_type", "in", ["out_invoice", "out_receipt"]],
+      ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
       ["move_id.partner_id.name", "not ilike", "supricom"],
       ["product_id", "!=", false],
     ];
-    if (sedeParam) baseDomain.push(["move_id.company_id", "=", parseInt(sedeParam, 10)]);
+    if (sedeParam)
+      baseDomain.push(["move_id.company_id", "=", parseInt(sedeParam, 10)]);
 
     // ── MODO HISTÓRICO ──────────────────────────────────────────────────────
     if (historico) {
@@ -99,7 +118,11 @@ export async function GET(request: NextRequest) {
       const sinceStr = since.toISOString().split("T")[0];
       const domain = [...baseDomain, ["move_id.invoice_date", ">=", sinceStr]];
 
-      const lines = await fetchLines(domain, ["product_id", "quantity", "date"]);
+      const lines = await fetchLines(domain, [
+        "product_id",
+        "quantity",
+        "date",
+      ]);
 
       // Acumular por mes y por producto
       const monthTotals: Record<string, number> = {};
@@ -118,12 +141,18 @@ export async function GET(request: NextRequest) {
         productTotals[pId].qty += qty;
       });
 
-      const totalHistorico = Object.values(monthTotals).reduce((s, v) => s + v, 0);
+      const totalHistorico = Object.values(monthTotals).reduce(
+        (s, v) => s + v,
+        0,
+      );
       const mesesConVenta = Object.keys(monthTotals).length || 1;
       const promedioMensual = Math.round(totalHistorico / mesesConVenta);
 
-      const mejorMesKey = Object.entries(monthTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-      const mejorMesTotal = mejorMesKey ? Math.round(monthTotals[mejorMesKey]) : 0;
+      const mejorMesKey =
+        Object.entries(monthTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      const mejorMesTotal = mejorMesKey
+        ? Math.round(monthTotals[mejorMesKey])
+        : 0;
       const mejorMesLabel = mejorMesKey
         ? (() => {
             const [y, m] = mejorMesKey.split("-");
@@ -155,7 +184,10 @@ export async function GET(request: NextRequest) {
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
     if (!year || !month || month < 1 || month > 12) {
-      return NextResponse.json({ error: "Parámetro mes inválido" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Parámetro mes inválido" },
+        { status: 400 },
+      );
     }
 
     const weeks = buildWeeksForMonth(year, month);
@@ -168,14 +200,25 @@ export async function GET(request: NextRequest) {
       ["move_id.invoice_date", "<=", endStr],
     ];
 
-    const invoiceLines = await fetchLines(domain, ["product_id", "quantity", "date"]);
+    const invoiceLines = await fetchLines(domain, [
+      "product_id",
+      "quantity",
+      "date",
+    ]);
 
     const weeklyTotals: Record<string, number> = {};
-    weeks.forEach((w) => { weeklyTotals[w.label] = 0; });
+    weeks.forEach((w) => {
+      weeklyTotals[w.label] = 0;
+    });
 
     const productTotals: Record<number, { name: string; qty: number }> = {};
-    const weekProductMap: Record<string, Record<number, { nombre: string; qty: number }>> = {};
-    weeks.forEach((w) => { weekProductMap[w.label] = {}; });
+    const weekProductMap: Record<
+      string,
+      Record<number, { nombre: string; qty: number }>
+    > = {};
+    weeks.forEach((w) => {
+      weekProductMap[w.label] = {};
+    });
 
     invoiceLines.forEach((line: any) => {
       if (!line.product_id || !line.date) return;
@@ -190,7 +233,8 @@ export async function GET(request: NextRequest) {
       for (const w of weeks) {
         if (date >= w.start && date <= w.end) {
           weeklyTotals[w.label] = (weeklyTotals[w.label] ?? 0) + qty;
-          if (!weekProductMap[w.label][pId]) weekProductMap[w.label][pId] = { nombre: pName, qty: 0 };
+          if (!weekProductMap[w.label][pId])
+            weekProductMap[w.label][pId] = { nombre: pName, qty: 0 };
           weekProductMap[w.label][pId].qty += qty;
           break;
         }
@@ -200,12 +244,18 @@ export async function GET(request: NextRequest) {
     const topProductos = Object.entries(productTotals)
       .sort((a, b) => b[1].qty - a[1].qty)
       .slice(0, 10)
-      .map(([id, v]) => ({ id: Number(id), nombre: v.name, totalVentas: Math.round(v.qty) }));
+      .map(([id, v]) => ({
+        id: Number(id),
+        nombre: v.name,
+        totalVentas: Math.round(v.qty),
+      }));
 
     const ventasPorProducto: Record<number, Record<string, number>> = {};
     topProductos.forEach((p) => {
       ventasPorProducto[p.id] = {};
-      weeks.forEach((w) => { ventasPorProducto[p.id][w.label] = 0; });
+      weeks.forEach((w) => {
+        ventasPorProducto[p.id][w.label] = 0;
+      });
     });
     invoiceLines.forEach((line: any) => {
       if (!line.product_id || !line.date) return;
@@ -214,13 +264,17 @@ export async function GET(request: NextRequest) {
       const date = new Date(line.date);
       for (const w of weeks) {
         if (date >= w.start && date <= w.end) {
-          ventasPorProducto[pId][w.label] = (ventasPorProducto[pId][w.label] ?? 0) + (line.quantity || 0);
+          ventasPorProducto[pId][w.label] =
+            (ventasPorProducto[pId][w.label] ?? 0) + (line.quantity || 0);
           break;
         }
       }
     });
 
-    const productosPorSemana: Record<string, { nombre: string; qty: number }[]> = {};
+    const productosPorSemana: Record<
+      string,
+      { nombre: string; qty: number }[]
+    > = {};
     weeks.forEach((w) => {
       productosPorSemana[w.label] = Object.values(weekProductMap[w.label])
         .map((v) => ({ nombre: v.nombre, qty: Math.round(v.qty) }))
@@ -237,10 +291,15 @@ export async function GET(request: NextRequest) {
       historico: false,
       mes: mesParam,
       semanas: weeks.map((w) => w.label),
-      totalPorSemana: weeks.map((w) => ({ semana: w.label, total: Math.round(weeklyTotals[w.label] ?? 0) })),
+      totalPorSemana: weeks.map((w) => ({
+        semana: w.label,
+        total: Math.round(weeklyTotals[w.label] ?? 0),
+      })),
       topProductos: topProductos.map((p) => ({
         ...p,
-        semanal: weeks.map((w) => Math.round(ventasPorProducto[p.id][w.label] ?? 0)),
+        semanal: weeks.map((w) =>
+          Math.round(ventasPorProducto[p.id][w.label] ?? 0),
+        ),
       })),
       productosPorSemana,
       productosTotal,
