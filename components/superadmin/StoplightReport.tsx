@@ -151,7 +151,9 @@ export default function StoplightReportSuperadmin() {
           mes: currentMes,
         }),
       });
-      fetchData();
+      if (kpiData) {
+        setKpiData({ ...kpiData, metas: { ...kpiData.metas, [kpiKey]: value } });
+      }
     } catch (e) {
       console.error("Error saving meta:", e);
     }
@@ -163,7 +165,10 @@ export default function StoplightReportSuperadmin() {
 
   const handleGoalBlur = (kpiId: string, value: string) => {
     const numVal = parseFloat(value) || 0;
-    saveMeta(kpiId, numVal);
+    const currentMeta = kpiData?.metas?.[kpiId];
+    if (numVal !== (currentMeta ?? 0)) {
+      saveMeta(kpiId, numVal);
+    }
   };
 
   const openCuotaModal = async () => {
