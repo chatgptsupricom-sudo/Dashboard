@@ -367,7 +367,7 @@ export default function SugeridosPage() {
               Total Sugeridos
             </p>
             <p className="text-2xl font-bold text-green-700 mt-1">
-              {todos.length}
+              {kpis.totalSkus}
             </p>
             <p className="text-xs text-gray-400 mt-1">Con MOQ configurado</p>
           </CardContent>
