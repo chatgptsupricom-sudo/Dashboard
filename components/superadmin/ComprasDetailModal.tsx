@@ -22,19 +22,22 @@ export default function ComprasDetailModal({
 }: ComprasDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
   useEffect(() => {
     if (!isOpen || !kpiType) return;
     setLoading(true);
     setData(null);
+    setError(null);
     setSelectedItem(null);
     fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setData(json.data);
+        else setError(json.error || "Error al cargar datos");
       })
-      .catch(() => {})
+      .catch(() => setError("Error de conexion"))
       .finally(() => setLoading(false));
   }, [isOpen, kpiType, companyId, mes]);
 
@@ -46,7 +49,7 @@ export default function ComprasDetailModal({
 
   if (!isOpen) return null;
 
-  const fmt = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -78,6 +81,11 @@ export default function ComprasDetailModal({
         <div className="flex-1 overflow-auto p-5">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos...</div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <AlertTriangle size={40} className="text-amber-400 mb-3" />
+              <p className="text-sm">{error}</p>
+            </div>
           ) : !data ? (
             <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
           ) : selectedItem ? (
@@ -92,21 +100,26 @@ export default function ComprasDetailModal({
 }
 
 function getResumenText(kpi: string, r: any): string {
-  switch (kpi) {
-    case "variacion_costo":
-      return `${r.totalProductos} productos con costo base | Variación promedio: ${r.promedioVariacion}% | Ahorro estimado: $${r.ahorroTotalEstimado.toLocaleString("es-VE")}`;
-    case "rotacion":
-      return `${r.totalConStock} con stock | ${r.saludables} rotan bien (${r.porcentaje}%) | ${r.noSaludables} no rotan`;
-    case "quiebre":
-      return `${r.totalConDemanda} con demanda activa | ${r.enQuiebre} en quiebre | ${r.enRiesgo} en riesgo (${r.porcentaje}%)`;
-    case "inventario_90":
-      return `${r.productosEstancados} de ${r.totalProductos} productos estancados | ${r.porcentaje}% del valor ($${r.valorEstancado.toLocaleString("es-VE")})`;
-    default:
-      return "";
+  if (!r) return "";
+  try {
+    switch (kpi) {
+      case "variacion_costo":
+        return `${r.totalProductos ?? 0} productos con costo base | Variación promedio: ${r.promedioVariacion ?? 0}% | Ahorro estimado: $${(r.ahorroTotalEstimado ?? 0).toLocaleString("es-VE")}`;
+      case "rotacion":
+        return `${r.totalConStock ?? 0} con stock | ${r.saludables ?? 0} rotan bien (${r.porcentaje ?? 0}%) | ${r.noSaludables ?? 0} no rotan`;
+      case "quiebre":
+        return `${r.totalConDemanda ?? 0} con demanda activa | ${r.enQuiebre ?? 0} en quiebre | ${r.enRiesgo ?? 0} en riesgo (${r.porcentaje ?? 0}%)`;
+      case "inventario_90":
+        return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} productos estancados | ${r.porcentaje ?? 0}% del valor ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
+      default:
+        return "";
+    }
+  } catch {
+    return "";
   }
 }
 
-function renderList(kpi: string, items: any[], onSelect: (item: any) => void, fmt: (n: number) => string) {
+function renderList(kpi: string, items: any[], onSelect: (item: any) => void, fmt: (n: number | undefined | null) => string) {
   if (!items || items.length === 0) {
     return <div className="flex items-center justify-center py-20 text-slate-400">Sin datos para este KPI</div>;
   }
@@ -316,7 +329,7 @@ function renderList(kpi: string, items: any[], onSelect: (item: any) => void, fm
   return null;
 }
 
-function renderDetail(kpi: string, item: any, fmt: (n: number) => string) {
+function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null) => string) {
   if (kpi === "variacion_costo") {
     return (
       <div className="space-y-4">
