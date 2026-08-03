@@ -10,12 +10,12 @@ const JWT_SECRET = new TextEncoder().encode(
 const detailCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
 
-async function fetchPaginated(domain: any[], fields: string[]): Promise<any[]> {
+async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
   let result: any[] = [];
   let offset = 0;
   while (true) {
     const page = await callOdooRPC<any[]>(
-      "account.move.line",
+      model,
       "search_read",
       [domain],
       { fields, order: "id asc", limit: 5000, offset },
@@ -113,12 +113,13 @@ export async function GET(request: NextRequest) {
     });
 
     const purchaseLines = await fetchPaginated(
+      "purchase.order.line",
       [
         ["company_id", "=", companyId],
         ["state", "in", ["purchase", "done"]],
         ["product_id", "!=", false],
       ],
-      ["product_id", "price_unit", "date_order"],
+      ["product_id", "price_unit", "create_date"],
     );
     const lastPurchaseByProduct: Record<number, { price: number; date: Date }> = {};
     (purchaseLines || []).forEach((line: any) => {
@@ -126,7 +127,7 @@ export async function GET(request: NextRequest) {
       if (!pId) return;
       const price = Number(line.price_unit) || 0;
       if (price <= 0) return;
-      const d = new Date(line.date_order);
+      const d = new Date(line.create_date);
       if (!lastPurchaseByProduct[pId] || d > lastPurchaseByProduct[pId].date) {
         lastPurchaseByProduct[pId] = { price, date: d };
       }
@@ -149,7 +150,7 @@ export async function GET(request: NextRequest) {
       ["move_id.invoice_date", ">=", windowStart.toISOString().split("T")[0]],
       ["product_id", "!=", false],
     ];
-    const lines = await fetchPaginated(salesDomain, ["product_id", "quantity", "date"]);
+    const lines = await fetchPaginated("account.move.line", salesDomain, ["product_id", "quantity", "date"]);
 
     const lastSaleByProduct: Record<number, Date> = {};
     const totalSalesByProduct: Record<number, number> = {};

@@ -20,12 +20,12 @@ function emptyResult(numSemanas: number): ComprasKpisRaw {
   };
 }
 
-async function fetchSaleLines(domain: any[], fields: string[]): Promise<any[]> {
+async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
   let result: any[] = [];
   let offset = 0;
   while (true) {
     const page = await callOdooRPC<any[]>(
-      "account.move.line",
+      model,
       "search_read",
       [domain],
       { fields, order: "id asc", limit: 5000, offset },
@@ -145,10 +145,10 @@ export async function computeComprasKpis(
       ["state", "in", ["purchase", "done"]],
       ["product_id", "!=", false],
     ];
-    const purchaseLines = await fetchSaleLines(purchaseDomain, [
+    const purchaseLines = await fetchPaginated("purchase.order.line", purchaseDomain, [
       "product_id",
       "price_unit",
-      "date_order",
+      "create_date",
     ]);
     const lastPurchaseByProduct: Record<number, { price: number; date: Date }> = {};
     (purchaseLines || []).forEach((line: any) => {
@@ -156,7 +156,7 @@ export async function computeComprasKpis(
       if (!pId) return;
       const price = Number(line.price_unit) || 0;
       if (price <= 0) return;
-      const d = new Date(line.date_order);
+      const d = new Date(line.create_date);
       if (!lastPurchaseByProduct[pId] || d > lastPurchaseByProduct[pId].date) {
         lastPurchaseByProduct[pId] = { price, date: d };
       }
@@ -186,7 +186,7 @@ export async function computeComprasKpis(
       ["move_id.invoice_date", ">=", windowStartStr],
       ["product_id", "!=", false],
     ];
-    const lines = await fetchSaleLines(salesDomain, [
+    const lines = await fetchPaginated("account.move.line", salesDomain, [
       "product_id",
       "quantity",
       "date",
