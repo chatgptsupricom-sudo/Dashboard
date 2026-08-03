@@ -1,4 +1,3 @@
-import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { jwtVerify } from "jose";
@@ -113,13 +112,31 @@ export async function GET(request: NextRequest) {
       priceMap[p.id] = p.product_tmpl_id?.[0] ? (tmplPriceMap[p.product_tmpl_id[0]] ?? 0) : 0;
     });
 
-    const moqResult = await query("SELECT sku, cantidad, costo FROM moqs");
-    const moqMap = new Map((moqResult.rows as any[]).map((m: any) => [String(m.sku).trim(), m]));
+    const purchaseLines = await fetchPaginated(
+      [
+        ["company_id", "=", companyId],
+        ["state", "in", ["purchase", "done"]],
+        ["product_id", "!=", false],
+      ],
+      ["product_id", "price_unit", "date_order"],
+    );
+    const lastPurchaseByProduct: Record<number, { price: number; date: Date }> = {};
+    (purchaseLines || []).forEach((line: any) => {
+      const pId = line.product_id?.[0];
+      if (!pId) return;
+      const price = Number(line.price_unit) || 0;
+      if (price <= 0) return;
+      const d = new Date(line.date_order);
+      if (!lastPurchaseByProduct[pId] || d > lastPurchaseByProduct[pId].date) {
+        lastPurchaseByProduct[pId] = { price, date: d };
+      }
+    });
     const baseCostMap: Record<number, number> = {};
-    productsData.forEach((p: any) => {
-      const sku = p.default_code ? String(p.default_code).trim() : "";
-      const m = moqMap.get(sku);
-      if (m && Number(m.costo) > 0) baseCostMap[p.id] = Number(m.costo);
+    Object.keys(lastPurchaseByProduct).forEach((k) => {
+      const pId = +k;
+      if (lastPurchaseByProduct[pId].price > 0) {
+        baseCostMap[pId] = lastPurchaseByProduct[pId].price;
+      }
     });
 
     const today = new Date();
@@ -246,7 +263,7 @@ export async function GET(request: NextRequest) {
           const diasHastaQuiebre = stock > 0 && demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
           const enQuiebre = stock <= 0;
           const enRiesgo = !enQuiebre && diasHastaQuiebre <= 25;
-          const moq = moqMap.get(p.default_code?.trim())?.cantidad || 1;
+          const moq = 1;
           const puntoReorden = demandaDiaria * 25 + 1;
           const stockObjetivo = demandaDiaria * 45;
           const cantidadAComprar = (enQuiebre || enRiesgo) && demandaDiaria > 0

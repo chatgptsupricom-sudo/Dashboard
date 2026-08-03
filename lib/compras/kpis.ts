@@ -1,4 +1,3 @@
-import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 
@@ -140,17 +139,34 @@ export async function computeComprasKpis(
       priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
     });
 
-    // 5. Costo base comparable desde la tabla moqs (MySQL)
-    const moqResult = await query("SELECT sku, cantidad, costo FROM moqs");
-    const baseCostBySku: Record<string, number> = {};
-    (moqResult.rows as any[]).forEach((m: any) => {
-      const cost = Number(m.costo) || 0;
-      if (cost > 0) baseCostBySku[String(m.sku).trim()] = cost;
+    // 5. Costo base: último precio de compra desde Odoo (purchase.order.line)
+    const purchaseDomain: any[] = [
+      ["company_id", "=", companyId],
+      ["state", "in", ["purchase", "done"]],
+      ["product_id", "!=", false],
+    ];
+    const purchaseLines = await fetchSaleLines(purchaseDomain, [
+      "product_id",
+      "price_unit",
+      "date_order",
+    ]);
+    const lastPurchaseByProduct: Record<number, { price: number; date: Date }> = {};
+    (purchaseLines || []).forEach((line: any) => {
+      const pId = line.product_id?.[0];
+      if (!pId) return;
+      const price = Number(line.price_unit) || 0;
+      if (price <= 0) return;
+      const d = new Date(line.date_order);
+      if (!lastPurchaseByProduct[pId] || d > lastPurchaseByProduct[pId].date) {
+        lastPurchaseByProduct[pId] = { price, date: d };
+      }
     });
     const baseCostMap: Record<number, number> = {};
-    productsData.forEach((p: any) => {
-      const sku = p.default_code ? String(p.default_code).trim() : "";
-      if (sku && baseCostBySku[sku]) baseCostMap[p.id] = baseCostBySku[sku];
+    Object.keys(lastPurchaseByProduct).forEach((k) => {
+      const pId = +k;
+      if (lastPurchaseByProduct[pId].price > 0) {
+        baseCostMap[pId] = lastPurchaseByProduct[pId].price;
+      }
     });
 
     // 6. Ventas (facturas) de los últimos 150 días para detectar demanda,
