@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ArrowLeft, Check, AlertTriangle } from "lucide-react";
+import { X, ArrowLeft, Check, AlertTriangle, BarChart3 } from "lucide-react";
 
 interface ComprasDetailModalProps {
   isOpen: boolean;
@@ -91,7 +91,7 @@ export default function ComprasDetailModal({
           ) : selectedItem ? (
             renderDetail(kpiType, selectedItem, fmt)
           ) : (
-            renderList(kpiType, data.items, setSelectedItem, fmt)
+            renderList(kpiType, data, setSelectedItem, fmt)
           )}
         </div>
       </div>
@@ -104,13 +104,13 @@ function getResumenText(kpi: string, r: any): string {
   try {
     switch (kpi) {
       case "variacion_costo":
-        return `${r.totalProductos ?? 0} productos con costo base | Variación promedio: ${r.promedioVariacion ?? 0}% | Ahorro estimado: $${(r.ahorroTotalEstimado ?? 0).toLocaleString("es-VE")}`;
+        return `${r.totalProductos ?? 0} productos | Var. promedio: ${r.promedioVariacion ?? 0}% | Ahorro: $${(r.ahorroTotalEstimado ?? 0).toLocaleString("es-VE")}`;
       case "rotacion":
-        return `${r.totalConStock ?? 0} con stock | ${r.saludables ?? 0} rotan bien (${r.porcentaje ?? 0}%) | ${r.noSaludables ?? 0} no rotan`;
+        return `${r.totalConStock ?? 0} con stock | Sell-through: ${r.sellThroughGeneral ?? 0}% | ${r.saludables ?? 0} saludables`;
       case "quiebre":
-        return `${r.totalConDemanda ?? 0} con demanda activa | ${r.enQuiebre ?? 0} en quiebre | ${r.enRiesgo ?? 0} en riesgo (${r.porcentaje ?? 0}%)`;
+        return `${r.totalConDemanda ?? 0} elegibles | ${r.enQuiebre ?? 0} quiebre | ${r.enRiesgo ?? 0} riesgo | ${r.porcentaje ?? 0}% SKU-días`;
       case "inventario_90":
-        return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} productos estancados | ${r.porcentaje ?? 0}% del valor ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
+        return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} +90d | ${r.porcentaje ?? 0}% valor ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
       default:
         return "";
     }
@@ -119,209 +119,246 @@ function getResumenText(kpi: string, r: any): string {
   }
 }
 
-function renderList(kpi: string, items: any[], onSelect: (item: any) => void, fmt: (n: number | undefined | null) => string) {
+function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: (n: number | undefined | null) => string) {
+  const items = data?.items;
   if (!items || items.length === 0) {
     return <div className="flex items-center justify-center py-20 text-slate-400">Sin datos para este KPI</div>;
   }
 
   if (kpi === "variacion_costo") {
     return (
-      <div className="border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b">
-              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-              <th className="p-3 text-center font-medium text-slate-600">Costo Base</th>
-              <th className="p-3 text-center font-medium text-slate-600">Costo Actual</th>
-              <th className="p-3 text-center font-medium text-slate-600">Variación</th>
-              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-              <th className="p-3 text-center font-medium text-slate-600">Ahorro Unit.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item: any) => (
-              <tr key={item.id} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => onSelect(item)}>
-                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
-                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
-                <td className="p-3 text-center">${fmt(item.costoBase)}</td>
-                <td className="p-3 text-center">${fmt(item.costoActual)}</td>
-                <td className="p-3 text-center">
-                  <span className={`font-bold ${item.variacion > 0 ? "text-green-600" : item.variacion < 0 ? "text-red-600" : "text-slate-600"}`}>
-                    {item.variacion > 0 ? "+" : ""}{item.variacion}%
-                  </span>
-                </td>
-                <td className="p-3 text-center">{item.stock}</td>
-                <td className="p-3 text-center">
-                  <span className={item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}>
-                    {item.ahorroUnitario > 0 ? "+" : ""}${fmt(item.ahorroUnitario)}
-                  </span>
-                </td>
+      <div className="space-y-4">
+        <div className="border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b">
+                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+                <th className="p-3 text-center font-medium text-slate-600">Costo Base (3m)</th>
+                <th className="p-3 text-center font-medium text-slate-600">Costo Actual</th>
+                <th className="p-3 text-center font-medium text-slate-600">Variación</th>
+                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Ahorro Unit.</th>
+                <th className="p-3 text-center font-medium text-slate-600">Última Compra</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => onSelect(item)}>
+                  <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                  <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                  <td className="p-3 text-center">${fmt(item.costoBase)}</td>
+                  <td className="p-3 text-center">${fmt(item.costoActual)}</td>
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${item.variacion > 0 ? "text-green-600" : item.variacion < 0 ? "text-red-600" : "text-slate-600"}`}>
+                      {item.variacion > 0 ? "+" : ""}{item.variacion}%
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">{item.stock}</td>
+                  <td className="p-3 text-center">
+                    <span className={item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}>
+                      {item.ahorroUnitario > 0 ? "+" : ""}${fmt(item.ahorroUnitario)}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center text-slate-500 text-xs">{item.ultimaCompra}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
 
   if (kpi === "rotacion") {
     return (
-      <div className="border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b">
-              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-              <th className="p-3 text-center font-medium text-slate-600">Valor Stock</th>
-              <th className="p-3 text-center font-medium text-slate-600">Ventas 45d</th>
-              <th className="p-3 text-center font-medium text-slate-600">Último movimiento</th>
-              <th className="p-3 text-center font-medium text-slate-600">Días sin venta</th>
-              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item: any) => (
-              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${!item.rotaSaludablemente ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
-                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
-                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
-                <td className="p-3 text-center">{item.stock}</td>
-                <td className="p-3 text-center">${fmt(item.valorStock)}</td>
-                <td className="p-3 text-center font-bold">{item.ventasTotales}</td>
-                <td className="p-3 text-center text-slate-600">{item.ultimoMovimiento}</td>
-                <td className="p-3 text-center">
-                  <span className={`font-bold ${item.diasSinVenta <= 45 ? "text-green-600" : item.diasSinVenta <= 90 ? "text-yellow-600" : "text-red-600"}`}>
-                    {item.diasSinVenta >= 999 ? "Nunca" : item.diasSinVenta}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  {item.rotaSaludablemente ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                      <Check size={12} /> Saludable
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                      <AlertTriangle size={12} /> No rota
-                    </span>
-                  )}
-                </td>
-              </tr>
+      <div className="space-y-4">
+        {/* Sell-through summary */}
+        {data.resumen?.sellThroughPorPlazo && (
+          <div className="grid grid-cols-4 gap-3">
+            {[30, 60, 90, 120].map((days) => (
+              <div key={days} className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-xs text-slate-500 font-medium">Sell-through {days}d</p>
+                <p className="text-xl font-bold text-slate-800">{data.resumen.sellThroughPorPlazo[days] ?? 0}%</p>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
+        <div className="border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b">
+                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Valor Stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Ventas</th>
+                <th className="p-3 text-center font-medium text-slate-600">Sell-through</th>
+                <th className="p-3 text-center font-medium text-slate-600">Últ. Recepción</th>
+                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${!item.rotaSaludablemente ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
+                  <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                  <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                  <td className="p-3 text-center">{item.stock}</td>
+                  <td className="p-3 text-center">${fmt(item.valorStock)}</td>
+                  <td className="p-3 text-center font-bold">{item.ventasTotales}</td>
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${item.sellThrough >= 70 ? "text-green-600" : item.sellThrough >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                      {item.sellThrough}%
+                    </span>
+                  </td>
+                  <td className="p-3 text-center text-slate-500 text-xs">{item.ultimaRecepcion}</td>
+                  <td className="p-3 text-center">
+                    {item.rotaSaludablemente ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                        <Check size={12} /> Saludable
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                        <AlertTriangle size={12} /> Baja rotación
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
 
   if (kpi === "quiebre") {
     return (
-      <div className="border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b">
-              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-              <th className="p-3 text-center font-medium text-slate-600">Demanda 45d</th>
-              <th className="p-3 text-center font-medium text-slate-600">Demanda/día</th>
-              <th className="p-3 text-center font-medium text-slate-600">Pto. Reorden</th>
-              <th className="p-3 text-center font-medium text-slate-600">Días p/quiebre</th>
-              <th className="p-3 text-center font-medium text-slate-600">MOQ</th>
-              <th className="p-3 text-center font-medium text-slate-600">A Comprar</th>
-              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item: any) => (
-              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${
-                item.estado === "QUIEBRE TOTAL" ? "bg-red-50" : item.estado === "RIESGO ALTO" ? "bg-yellow-50/50" : ""
-              }`} onClick={() => onSelect(item)}>
-                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
-                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
-                <td className="p-3 text-center font-bold">{item.stock}</td>
-                <td className="p-3 text-center">{item.demanda45d}</td>
-                <td className="p-3 text-center">{item.demandaDiaria}</td>
-                <td className="p-3 text-center">{item.puntoReorden}</td>
-                <td className="p-3 text-center">
-                  <span className={`font-bold ${
-                    item.diasHastaQuiebre === "Sin riesgo" ? "text-green-600" :
-                    item.diasHastaQuiebre <= 7 ? "text-red-600" :
-                    item.diasHastaQuiebre <= 25 ? "text-yellow-600" : "text-green-600"
-                  }`}>
-                    {item.diasHastaQuiebre}
-                  </span>
-                </td>
-                <td className="p-3 text-center">{item.moq}</td>
-                <td className="p-3 text-center font-bold text-blue-600">{item.cantidadAComprar > 0 ? item.cantidadAComprar : "-"}</td>
-                <td className="p-3 text-center">
-                  {item.estado === "QUIEBRE TOTAL" ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                      <AlertTriangle size={12} /> Quiebre
-                    </span>
-                  ) : item.estado === "RIESGO ALTO" ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                      <AlertTriangle size={12} /> Riesgo
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                      <Check size={12} /> OK
-                    </span>
-                  )}
-                </td>
+      <div className="space-y-4">
+        <div className="border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b">
+                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Demanda/mes</th>
+                <th className="p-3 text-center font-medium text-slate-600">Demanda/día</th>
+                <th className="p-3 text-center font-medium text-slate-600">Días p/quiebre</th>
+                <th className="p-3 text-center font-medium text-slate-600">Días sin stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${
+                  item.estado === "QUIEBRE TOTAL" ? "bg-red-50" : item.estado === "RIESGO ALTO" ? "bg-yellow-50/50" : ""
+                }`} onClick={() => onSelect(item)}>
+                  <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                  <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                  <td className="p-3 text-center font-bold">{item.stock}</td>
+                  <td className="p-3 text-center">{item.demandaMensual}</td>
+                  <td className="p-3 text-center">{item.demandaDiaria}</td>
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${
+                      item.diasHastaQuiebre === "Sin riesgo" ? "text-green-600" :
+                      item.diasHastaQuiebre <= 7 ? "text-red-600" :
+                      item.diasHastaQuiebre <= 15 ? "text-yellow-600" : "text-green-600"
+                    }`}>
+                      {item.diasHastaQuiebre}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${item.diasSinStockEstimado > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {item.diasSinStockEstimado}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.estado === "QUIEBRE TOTAL" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                        <AlertTriangle size={12} /> Quiebre
+                      </span>
+                    ) : item.estado === "RIESGO ALTO" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                        <AlertTriangle size={12} /> Riesgo
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                        <Check size={12} /> OK
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
 
   if (kpi === "inventario_90") {
     return (
-      <div className="border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b">
-              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
-              <th className="p-3 text-center font-medium text-slate-600">Valor Inventario</th>
-              <th className="p-3 text-center font-medium text-slate-600">Último movimiento</th>
-              <th className="p-3 text-center font-medium text-slate-600">Días inactivo</th>
-              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item: any) => (
-              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${item.esEstancado ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
-                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
-                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
-                <td className="p-3 text-center">{item.stock}</td>
-                <td className="p-3 text-center">${fmt(item.costo)}</td>
-                <td className="p-3 text-center font-bold">${fmt(item.valorInventario)}</td>
-                <td className="p-3 text-center text-slate-600">{item.ultimoMovimiento}</td>
-                <td className="p-3 text-center">
-                  <span className={`font-bold ${item.diasInactivo <= 90 ? "text-green-600" : item.diasInactivo <= 180 ? "text-yellow-600" : "text-red-600"}`}>
-                    {item.diasInactivo >= 999 ? "Nunca" : item.diasInactivo}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  {item.esEstancado ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                      <AlertTriangle size={12} /> +90 días
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                      <Check size={12} /> Activo
-                    </span>
-                  )}
-                </td>
-              </tr>
+      <div className="space-y-4">
+        {/* Bandas de envejecimiento */}
+        {data.resumen?.bandas && (
+          <div className="grid grid-cols-6 gap-2">
+            {data.resumen.bandas.map((b: any, i: number) => (
+              <div key={i} className={`rounded-xl p-3 text-center ${b.min >= 91 ? "bg-red-50 border border-red-200" : "bg-slate-50"}`}>
+                <p className="text-xs text-slate-500 font-medium">{b.label}</p>
+                <p className={`text-lg font-bold ${b.min >= 91 ? "text-red-700" : "text-slate-800"}`}>{b.cantidad}</p>
+                <p className="text-xs text-slate-500">${fmt(b.valor)}</p>
+                <p className="text-xs text-slate-400">{b.porcentaje}%</p>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
+        <div className="border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b">
+                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+                <th className="p-3 text-center font-medium text-slate-600">Costo</th>
+                <th className="p-3 text-center font-medium text-slate-600">Valor Inventario</th>
+                <th className="p-3 text-center font-medium text-slate-600">Banda</th>
+                <th className="p-3 text-center font-medium text-slate-600">Últ. Recepción</th>
+                <th className="p-3 text-center font-medium text-slate-600">Días</th>
+                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${item.esEstancado ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
+                  <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                  <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                  <td className="p-3 text-center">{item.stock}</td>
+                  <td className="p-3 text-center">${fmt(item.costo)}</td>
+                  <td className="p-3 text-center font-bold">${fmt(item.valorInventario)}</td>
+                  <td className="p-3 text-center text-xs font-medium text-slate-600">{item.banda}</td>
+                  <td className="p-3 text-center text-slate-500 text-xs">{item.ultimoMovimiento}</td>
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${item.diasInactivo <= 90 ? "text-green-600" : item.diasInactivo <= 180 ? "text-yellow-600" : "text-red-600"}`}>
+                      {item.diasInactivo >= 999 ? "N/A" : item.diasInactivo}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.esEstancado ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                        <AlertTriangle size={12} /> +90d
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                        <Check size={12} /> OK
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -351,7 +388,7 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
         </div>
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Costo Base</p>
+            <p className="text-xs text-blue-600 font-medium">Costo Base (3m)</p>
             <p className="text-xl font-bold text-blue-700">${fmt(item.costoBase)}</p>
           </div>
           <div className="bg-amber-50 rounded-xl p-4">
@@ -369,6 +406,12 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
             </p>
           </div>
         </div>
+        {item.totalComprado3m && (
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Unidades compradas últimos 3 meses</p>
+            <p className="text-xl font-bold text-slate-700">{item.totalComprado3m}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -399,15 +442,15 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
             <p className="text-xs text-green-600 font-medium">Ventas totales</p>
             <p className="text-xl font-bold text-green-700">{item.ventasTotales}</p>
           </div>
-          <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Último movimiento</p>
-            <p className="text-xl font-bold text-amber-700">{item.ultimoMovimiento}</p>
-          </div>
-          <div className={`rounded-xl p-4 ${item.rotaSaludablemente ? "bg-green-50" : "bg-red-50"}`}>
-            <p className={`text-xs font-medium ${item.rotaSaludablemente ? "text-green-600" : "text-red-600"}`}>Días sin venta</p>
-            <p className={`text-xl font-bold ${item.rotaSaludablemente ? "text-green-700" : "text-red-700"}`}>
-              {item.diasSinVenta >= 999 ? "Nunca vendido" : item.diasSinVenta}
+          <div className={`rounded-xl p-4 ${item.sellThrough >= 70 ? "bg-green-50" : item.sellThrough >= 40 ? "bg-yellow-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium ${item.sellThrough >= 70 ? "text-green-600" : item.sellThrough >= 40 ? "text-yellow-600" : "text-red-600"}`}>Sell-through</p>
+            <p className={`text-xl font-bold ${item.sellThrough >= 70 ? "text-green-700" : item.sellThrough >= 40 ? "text-yellow-700" : "text-red-700"}`}>
+              {item.sellThrough}%
             </p>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Última recepción</p>
+            <p className="text-xl font-bold text-amber-700">{item.ultimaRecepcion}</p>
           </div>
         </div>
       </div>
@@ -435,26 +478,22 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
             <p className="text-xl font-bold text-blue-700">{item.stock}</p>
           </div>
         </div>
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Demanda 45d</p>
-            <p className="text-lg font-bold text-slate-700">{item.demanda45d}</p>
+            <p className="text-xs text-slate-500 font-medium">Demanda mensual</p>
+            <p className="text-lg font-bold text-slate-700">{item.demandaMensual}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
             <p className="text-xs text-slate-500 font-medium">Demanda/día</p>
             <p className="text-lg font-bold text-slate-700">{item.demandaDiaria}</p>
           </div>
-          <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Pto. Reorden</p>
-            <p className="text-lg font-bold text-amber-700">{item.puntoReorden}</p>
-          </div>
           <div className="bg-red-50 rounded-xl p-4">
             <p className="text-xs text-red-600 font-medium">Días p/quiebre</p>
             <p className="text-xl font-bold text-red-700">{item.diasHastaQuiebre}</p>
           </div>
-          <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">A comprar (MOQ: {item.moq})</p>
-            <p className="text-xl font-bold text-blue-700">{item.cantidadAComprar > 0 ? item.cantidadAComprar : "No requiere"}</p>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Días sin stock (estimado)</p>
+            <p className="text-xl font-bold text-amber-700">{item.diasSinStockEstimado}</p>
           </div>
         </div>
       </div>
@@ -478,10 +517,8 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
             <p className="text-xl font-bold text-blue-700">{item.stock}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.esEstancado ? "bg-red-50" : "bg-green-50"}`}>
-            <p className={`text-xs font-medium ${item.esEstancado ? "text-red-600" : "text-green-600"}`}>Días inactivo</p>
-            <p className={`text-xl font-bold ${item.esEstancado ? "text-red-700" : "text-green-700"}`}>
-              {item.diasInactivo >= 999 ? "Nunca vendido" : item.diasInactivo}
-            </p>
+            <p className={`text-xs font-medium ${item.esEstancado ? "text-red-600" : "text-green-600"}`}>Banda</p>
+            <p className={`text-lg font-bold ${item.esEstancado ? "text-red-700" : "text-green-700"}`}>{item.banda}</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -494,7 +531,7 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
             <p className="text-xl font-bold text-red-700">${fmt(item.valorInventario)}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Último movimiento</p>
+            <p className="text-xs text-slate-500 font-medium">Última recepción</p>
             <p className="text-xl font-bold text-slate-700">{item.ultimoMovimiento}</p>
           </div>
         </div>

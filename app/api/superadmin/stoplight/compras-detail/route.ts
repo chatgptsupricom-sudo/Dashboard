@@ -15,9 +15,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   let offset = 0;
   while (true) {
     const page = await callOdooRPC<any[]>(
-      model,
-      "search_read",
-      [domain],
+      model, "search_read", [domain],
       { fields, order: "id asc", limit: 5000, offset },
     );
     if (!page || page.length === 0) break;
@@ -59,18 +57,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: cached.data });
     }
 
-    // Shared data fetches
+    // ── Shared data fetches ──
+    const msPerDay = 86400000;
+
+    // 1. Almacén principal
     const warehouseId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
     let locationIds: number[] = [];
     if (warehouseId) {
-      const warehouseData = await callOdooRPC<any[]>(
+      const wd = await callOdooRPC<any[]>(
         "stock.warehouse", "search_read",
         [[["id", "=", warehouseId]]],
         { fields: ["id", "lot_stock_id"], limit: 0 },
       );
-      locationIds = warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
+      locationIds = wd?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
     }
 
+    // 2. Productos activos storable
     const productsData = await callOdooRPC<any[]>(
       "product.product", "search_read",
       [[["active", "=", true], ["type", "=", "product"]]],
@@ -78,12 +80,12 @@ export async function GET(request: NextRequest) {
     );
     if (!productsData) throw new Error("Sin productos");
 
+    // 3. Stock actual
     const stockDomain: any[] = locationIds.length > 0
       ? [["location_id", "child_of", locationIds]]
       : [["location_id.usage", "=", "internal"], ["company_id", "=", companyId]];
     const stockData = await callOdooRPC<any[]>(
-      "stock.quant", "search_read",
-      [stockDomain],
+      "stock.quant", "search_read", [stockDomain],
       { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
     );
     const stockMap: Record<number, number> = {};
@@ -94,6 +96,7 @@ export async function GET(request: NextRequest) {
     });
     Object.keys(stockMap).forEach((k) => { stockMap[+k] = Math.round(stockMap[+k] * 100) / 100; });
 
+    // 4. standard_price
     const tmplIds = [...new Set(productsData.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean))];
     const tmplPriceMap: Record<number, number> = {};
     if (tmplIds.length > 0) {
@@ -112,70 +115,108 @@ export async function GET(request: NextRequest) {
       priceMap[p.id] = p.product_tmpl_id?.[0] ? (tmplPriceMap[p.product_tmpl_id[0]] ?? 0) : 0;
     });
 
+    // 5. Purchase order lines últimos 3 meses (para variación de costo)
+    const purchase3mStart = new Date(now.getTime() - 90 * msPerDay).toISOString().split("T")[0];
     const purchaseLines = await fetchPaginated(
       "purchase.order.line",
       [
         ["company_id", "=", companyId],
         ["state", "in", ["purchase", "done"]],
         ["product_id", "!=", false],
+        ["date_order", ">=", purchase3mStart],
       ],
-      ["product_id", "price_unit", "create_date"],
+      ["product_id", "price_unit", "date_order", "product_uom_qty"],
     );
-    const lastPurchaseByProduct: Record<number, { price: number; date: Date }> = {};
+    // Promedio ponderado de compras últimos 3 meses por producto
+    const purchaseAvgByProduct: Record<number, { totalCost: number; totalQty: number; lastDate: Date; lastPrice: number }> = {};
     (purchaseLines || []).forEach((line: any) => {
       const pId = line.product_id?.[0];
       if (!pId) return;
       const price = Number(line.price_unit) || 0;
-      if (price <= 0) return;
-      const d = new Date(line.create_date);
-      if (!lastPurchaseByProduct[pId] || d > lastPurchaseByProduct[pId].date) {
-        lastPurchaseByProduct[pId] = { price, date: d };
-      }
-    });
-    const baseCostMap: Record<number, number> = {};
-    Object.keys(lastPurchaseByProduct).forEach((k) => {
-      const pId = +k;
-      if (lastPurchaseByProduct[pId].price > 0) {
-        baseCostMap[pId] = lastPurchaseByProduct[pId].price;
+      const qty = Number(line.product_uom_qty) || 0;
+      if (price <= 0 || qty <= 0) return;
+      const d = new Date(line.date_order);
+      if (!purchaseAvgByProduct[pId]) purchaseAvgByProduct[pId] = { totalCost: 0, totalQty: 0, lastDate: d, lastPrice: price };
+      purchaseAvgByProduct[pId].totalCost += price * qty;
+      purchaseAvgByProduct[pId].totalQty += qty;
+      if (d > purchaseAvgByProduct[pId].lastDate) {
+        purchaseAvgByProduct[pId].lastDate = d;
+        purchaseAvgByProduct[pId].lastPrice = price;
       }
     });
 
-    const today = new Date();
-    const windowStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 150);
+    // 6. Ventas últimos 150 días
+    const windowStart = new Date(now.getTime() - 150 * msPerDay).toISOString().split("T")[0];
     const salesDomain: any[] = [
       ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
       ["move_id.partner_id.name", "not ilike", "supricom"],
       ["move_id.company_id", "=", companyId],
-      ["move_id.invoice_date", ">=", windowStart.toISOString().split("T")[0]],
+      ["move_id.invoice_date", ">=", windowStart],
       ["product_id", "!=", false],
     ];
-    const lines = await fetchPaginated("account.move.line", salesDomain, ["product_id", "quantity", "date"]);
+    const salesLines = await fetchPaginated("account.move.line", salesDomain, ["product_id", "quantity", "date"]);
 
+    // 7. Recepciones (stock.move) últimos 150 días (para rotación e inventario >90)
+    const receptionDomain: any[] = [
+      ["company_id", "=", companyId],
+      ["state", "=", "done"],
+      ["location_dest_id.usage", "=", "internal"],
+      ["product_id", "!=", false],
+      ["date", ">=", windowStart],
+    ];
+    const receptions = await fetchPaginated("stock.move", receptionDomain, [
+      "product_id", "product_uom_qty", "date",
+    ]);
+
+    // Mapas auxiliares
     const lastSaleByProduct: Record<number, Date> = {};
     const totalSalesByProduct: Record<number, number> = {};
-    lines.forEach((line: any) => {
+    const salesByProduct: Record<number, { date: Date; qty: number }[]> = {};
+    (salesLines || []).forEach((line: any) => {
       const pId = line.product_id?.[0];
       if (!pId || !line.date) return;
       const d = new Date(line.date);
+      const qty = Math.abs(Number(line.quantity) || 0);
       if (!lastSaleByProduct[pId] || d > lastSaleByProduct[pId]) lastSaleByProduct[pId] = d;
-      totalSalesByProduct[pId] = (totalSalesByProduct[pId] ?? 0) + (line.quantity || 0);
+      totalSalesByProduct[pId] = (totalSalesByProduct[pId] ?? 0) + qty;
+      if (!salesByProduct[pId]) salesByProduct[pId] = [];
+      salesByProduct[pId].push({ date: d, qty });
     });
 
-    const msPerDay = 86400000;
-    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
-    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+    const lastReceptionByProduct: Record<number, Date> = {};
+    const receptionsByProduct: Record<number, { date: Date; qty: number }[]> = {};
+    (receptions || []).forEach((move: any) => {
+      const pId = move.product_id?.[0];
+      if (!pId || !move.date) return;
+      const qty = Number(move.product_uom_qty) || 0;
+      const d = new Date(move.date);
+      if (!lastReceptionByProduct[pId] || d > lastReceptionByProduct[pId]) lastReceptionByProduct[pId] = d;
+      if (!receptionsByProduct[pId]) receptionsByProduct[pId] = [];
+      receptionsByProduct[pId].push({ date: d, qty });
+    });
+
+    // Productos elegibles (con demanda)
+    const eligibleProducts = productsData.filter((p: any) => (totalSalesByProduct[p.id] ?? 0) > 0);
 
     let result: any = {};
 
+    // ══════════════════════════════════════════════════════════════
+    // KPI 1: Variación del costo de compra
+    // Base = promedio ponderado últimos 3 meses
+    // Actual = standard_price
+    // Variación = (base - actual) / base × 100
+    // ══════════════════════════════════════════════════════════════
     if (kpiParam === "variacion_costo") {
       const items = productsData
         .map((p: any) => {
-          const base = baseCostMap[p.id];
+          const avg = purchaseAvgByProduct[p.id];
+          if (!avg || avg.totalQty <= 0) return null;
+          const base = avg.totalCost / avg.totalQty;
           const current = priceMap[p.id];
-          const stock = stockMap[p.id] ?? 0;
-          if (!base || !current || base <= 0 || current <= 0) return null;
+          if (base <= 0 || current <= 0) return null;
           const variacion = Math.round(((base - current) / base) * 100 * 100) / 100;
+          const stock = stockMap[p.id] ?? 0;
           return {
             id: p.id,
             sku: p.default_code || `PROD-${p.id}`,
@@ -186,6 +227,8 @@ export async function GET(request: NextRequest) {
             variacion,
             stock,
             ahorroUnitario: Math.round((base - current) * 100) / 100,
+            totalComprado3m: Math.round(avg.totalQty),
+            ultimaCompra: avg.lastDate.toISOString().split("T")[0],
           };
         })
         .filter(Boolean)
@@ -199,22 +242,89 @@ export async function GET(request: NextRequest) {
       result = {
         kpi: "variacion_costo",
         titulo: "Variación del costo de compra",
-        resumen: { totalProductos: items.length, promedioVariacion, ahorroTotalEstimado: Math.round(totalAhorro * 100) / 100 },
+        resumen: {
+          totalProductos: items.length,
+          promedioVariacion,
+          ahorroTotalEstimado: Math.round(totalAhorro * 100) / 100,
+          metodo: "Promedio ponderado últimos 3 meses vs standard_price",
+        },
         items,
       };
 
+    // ══════════════════════════════════════════════════════════════
+    // KPI 2: Rotación saludable de compras
+    // Sell-through de cohortes: unidades vendidas / unidades recibidas × 100
+    // Cohorte = productos recibidos en un período → vendidos en 30/60/90/120 días
+    // ══════════════════════════════════════════════════════════════
     } else if (kpiParam === "rotacion") {
-      const cutoff45 = new Date(today.getTime() - 45 * msPerDay);
+      const TARGET_DAYS = [30, 60, 90, 120];
+
+      // Calcular sell-through por cohortes recientes (últimos 120 días)
+      const cohortStart = new Date(now.getTime() - 120 * msPerDay);
+      const cohortReceptions = (receptions || []).filter((m: any) => new Date(m.date) >= cohortStart);
+
+      // Agrupar recepciones por producto y fecha (cohorte semanal)
+      const cohortMap: Record<number, { received: number; sold: number; receivedDate: Date }> = {};
+      (cohortReceptions || []).forEach((move: any) => {
+        const pId = move.product_id?.[0];
+        if (!pId) return;
+        const qty = Number(move.product_uom_qty) || 0;
+        if (qty <= 0) return;
+        const d = new Date(move.date);
+        if (!cohortMap[pId]) cohortMap[pId] = { received: 0, sold: 0, receivedDate: d };
+        cohortMap[pId].received += qty;
+        if (d > cohortMap[pId].receivedDate) cohortMap[pId].receivedDate = d;
+      });
+
+      // Para cada cohorte, calcular cuánto se vendió después
+      Object.keys(cohortMap).forEach((k) => {
+        const pId = +k;
+        const cohort = cohortMap[pId];
+        const productSales = salesByProduct[pId] || [];
+        let soldAfterReception = 0;
+        productSales.forEach((s) => {
+          if (s.date >= cohort.receivedDate) soldAfterReception += s.qty;
+        });
+        cohort.sold = Math.min(soldAfterReception, cohort.received);
+      });
+
+      // Calcular sell-through a diferentes plazos
+      const sellThroughByDays: Record<number, number> = {};
+      TARGET_DAYS.forEach((days) => {
+        const cutoff = new Date(now.getTime() - days * msPerDay);
+        let totalReceived = 0;
+        let totalSold = 0;
+        Object.values(cohortMap).forEach((c) => {
+          if (c.receivedDate >= cutoff) {
+            totalReceived += c.received;
+            totalSold += c.sold;
+          }
+        });
+        sellThroughByDays[days] = totalReceived > 0
+          ? Math.round((totalSold / totalReceived) * 100)
+          : 0;
+      });
+
+      // Items para el detalle: productos con stock, clasificados por rotación
       const items = productsData
         .map((p: any) => {
           const stock = stockMap[p.id] ?? 0;
           if (stock <= 0) return null;
-          const lastSale = lastSaleByProduct[p.id];
           const ventas = totalSalesByProduct[p.id] ?? 0;
+          const lastSale = lastSaleByProduct[p.id];
+          const lastReception = lastReceptionByProduct[p.id];
           const diasSinVenta = lastSale
-            ? Math.floor((today.getTime() - lastSale.getTime()) / msPerDay)
+            ? Math.floor((now.getTime() - lastSale.getTime()) / msPerDay)
             : 999;
-          const vendeEn45 = lastSale ? lastSale >= cutoff45 : false;
+          const diasSinRecepcion = lastReception
+            ? Math.floor((now.getTime() - lastReception.getTime()) / msPerDay)
+            : 999;
+
+          // Sell-through individual: ventas / (ventas + stock) × 100
+          const sellThrough = (ventas + stock) > 0
+            ? Math.round((ventas / (ventas + stock)) * 100)
+            : 0;
+
           return {
             id: p.id,
             sku: p.default_code || `PROD-${p.id}`,
@@ -224,52 +334,55 @@ export async function GET(request: NextRequest) {
             costo: priceMap[p.id] ?? 0,
             valorStock: Math.round(stock * (priceMap[p.id] ?? 0) * 100) / 100,
             ventasTotales: Math.round(ventas),
+            sellThrough,
             diasSinVenta,
+            diasSinRecepcion,
             ultimoMovimiento: lastSale ? lastSale.toISOString().split("T")[0] : "Sin movimiento",
-            rotaSaludablemente: vendeEn45,
+            ultimaRecepcion: lastReception ? lastReception.toISOString().split("T")[0] : "Sin recepción",
+            rotaSaludablemente: sellThrough >= 70,
           };
         })
         .filter(Boolean)
-        .sort((a: any, b: any) => b.diasSinVenta - a.diasSinVenta);
+        .sort((a: any, b: any) => a.sellThrough - b.sellThrough);
 
       const conStock = items.length;
       const saludables = items.filter((i: any) => i.rotaSaludablemente).length;
-      const noSaludables = conStock - saludables;
 
       result = {
         kpi: "rotacion",
         titulo: "Rotación saludable de compras",
-        resumen: { totalConStock: conStock, saludables, noSaludables, porcentaje: conStock > 0 ? Math.round((saludables / conStock) * 100) : 0 },
+        resumen: {
+          totalConStock: conStock,
+          saludables,
+          noSaludables: conStock - saludables,
+          sellThroughGeneral: conStock > 0
+            ? Math.round(items.reduce((s: number, i: any) => s + i.sellThrough, 0) / conStock)
+            : 0,
+          sellThroughPorPlazo: sellThroughByDays,
+          metodo: "Sell-through de cohortes de recepción",
+        },
         items,
       };
 
+    // ══════════════════════════════════════════════════════════════
+    // KPI 3: Porcentaje de quiebre de inventario
+    // SKU-días sin inventario / SKU-días elegibles × 100
+    // Elegibles: activos, con demanda, reabastecibles
+    // ══════════════════════════════════════════════════════════════
     } else if (kpiParam === "quiebre") {
-      const invoiceLines45 = lines; // already fetched 150 days
-      const demandByProduct: Record<number, number> = {};
-      invoiceLines45.forEach((line: any) => {
-        const pId = line.product_id?.[0];
-        if (!pId) return;
-        const d = new Date(line.date);
-        if (d >= new Date(today.getTime() - 45 * msPerDay)) {
-          demandByProduct[pId] = (demandByProduct[pId] ?? 0) + (line.quantity || 0);
-        }
-      });
+      const semanaDias = new Date(anio, mesNum, 0).getDate();
 
-      const items = productsData
+      // Para cada producto elegible, calcular días sin stock
+      const items = eligibleProducts
         .map((p: any) => {
-          const demanda = demandByProduct[p.id] ?? 0;
-          if (demanda <= 0) return null;
           const stock = stockMap[p.id] ?? 0;
-          const demandaDiaria = demanda / 45;
-          const diasHastaQuiebre = stock > 0 && demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
+          const demanda = totalSalesByProduct[p.id] ?? 0;
+          const demandaDiaria = demanda / semanaDias;
+          const diasHastaQuiebre = stock > 0 && demandaDiaria > 0
+            ? Math.floor(stock / demandaDiaria)
+            : 999;
           const enQuiebre = stock <= 0;
-          const enRiesgo = !enQuiebre && diasHastaQuiebre <= 25;
-          const moq = 1;
-          const puntoReorden = demandaDiaria * 25 + 1;
-          const stockObjetivo = demandaDiaria * 45;
-          const cantidadAComprar = (enQuiebre || enRiesgo) && demandaDiaria > 0
-            ? Math.ceil(Math.max(0, stockObjetivo - stock) / moq) * moq
-            : 0;
+          const enRiesgo = !enQuiebre && diasHastaQuiebre <= 7;
 
           return {
             id: p.id,
@@ -277,17 +390,14 @@ export async function GET(request: NextRequest) {
             nombre: p.name,
             categoria: p.categ_id?.[1] || "Sin categoría",
             stock,
-            demanda45d: Math.round(demanda),
+            demandaMensual: Math.round(demanda),
             demandaDiaria: Math.round(demandaDiaria * 100) / 100,
-            puntoReorden: Math.round(puntoReorden * 100) / 100,
             diasHastaQuiebre: diasHastaQuiebre >= 999 ? "Sin riesgo" : diasHastaQuiebre,
-            moq,
+            diasSinStockEstimado: enQuiebre ? semanaDias : (diasHastaQuiebre <= 7 ? semanaDias - diasHastaQuiebre : 0),
             costo: priceMap[p.id] ?? 0,
-            cantidadAComprar,
             estado: enQuiebre ? "QUIEBRE TOTAL" : enRiesgo ? "RIESGO ALTO" : "OK",
           };
         })
-        .filter(Boolean)
         .sort((a: any, b: any) => {
           const order = { "QUIEBRE TOTAL": 0, "RIESGO ALTO": 1, "OK": 2 };
           return (order[a.estado as keyof typeof order] ?? 3) - (order[b.estado as keyof typeof order] ?? 3);
@@ -296,16 +406,44 @@ export async function GET(request: NextRequest) {
       const totalConDemanda = items.length;
       const enQuiebre = items.filter((i: any) => i.estado === "QUIEBRE TOTAL").length;
       const enRiesgo = items.filter((i: any) => i.estado === "RIESGO ALTO").length;
+      const totalDiasSinStock = items.reduce((s: number, i: any) => s + i.diasSinStockEstimado, 0);
+      const totalDiasElegibles = totalConDemanda * semanaDias;
+      const porcentajeQuiebre = totalDiasElegibles > 0
+        ? Math.round((totalDiasSinStock / totalDiasElegibles) * 100)
+        : 0;
 
       result = {
         kpi: "quiebre",
         titulo: "Porcentaje de quiebre de inventario",
-        resumen: { totalConDemanda, enQuiebre, enRiesgo, porcentaje: totalConDemanda > 0 ? Math.round((enQuiebre / totalConDemanda) * 100) : 0 },
+        resumen: {
+          totalConDemanda,
+          enQuiebre,
+          enRiesgo,
+          porcentaje: porcentajeQuiebre,
+          totalDiasSinStock,
+          totalDiasElegibles,
+          metodo: "SKU-días sin inventario / SKU-días elegibles",
+        },
         items,
       };
 
+    // ══════════════════════════════════════════════════════════════
+    // KPI 4: Inventario con más de 90 días
+    // Bandas: 0-30, 31-60, 61-90, 91-120, 121-180, >180 días
+    // Basado en última recepción de compra
+    // ══════════════════════════════════════════════════════════════
     } else if (kpiParam === "inventario_90") {
-      const cutoff90 = new Date(today.getTime() - 90 * msPerDay);
+      const bands = [
+        { label: "0-30 días", min: 0, max: 30 },
+        { label: "31-60 días", min: 31, max: 60 },
+        { label: "61-90 días", min: 61, max: 90 },
+        { label: "91-120 días", min: 91, max: 120 },
+        { label: "121-180 días", min: 121, max: 180 },
+        { label: ">180 días", min: 181, max: Infinity },
+      ];
+
+      const bandAccumulator = bands.map((b) => ({ ...b, valor: 0, cantidad: 0 }));
+
       let totalInventarioValor = 0;
       const items = productsData
         .map((p: any) => {
@@ -314,11 +452,22 @@ export async function GET(request: NextRequest) {
           const costo = priceMap[p.id] ?? 0;
           const valor = stock * costo;
           totalInventarioValor += valor;
-          const lastSale = lastSaleByProduct[p.id];
-          const diasInactivo = lastSale
-            ? Math.floor((today.getTime() - lastSale.getTime()) / msPerDay)
+          const lastReception = lastReceptionByProduct[p.id];
+          const diasInactivo = lastReception
+            ? Math.floor((now.getTime() - lastReception.getTime()) / msPerDay)
             : 999;
-          const esEstancado = !lastSale || lastSale < cutoff90;
+
+          // Clasificar en banda
+          let bandaIdx = 0;
+          for (let i = 0; i < bands.length; i++) {
+            if (diasInactivo >= bands[i].min && diasInactivo <= bands[i].max) {
+              bandaIdx = i;
+              break;
+            }
+          }
+          bandAccumulator[bandaIdx].valor += valor;
+          bandAccumulator[bandaIdx].cantidad += 1;
+
           return {
             id: p.id,
             sku: p.default_code || `PROD-${p.id}`,
@@ -328,14 +477,17 @@ export async function GET(request: NextRequest) {
             costo,
             valorInventario: Math.round(valor * 100) / 100,
             diasInactivo,
-            ultimoMovimiento: lastSale ? lastSale.toISOString().split("T")[0] : "Sin movimiento",
-            esEstancado,
+            banda: bands[bandaIdx].label,
+            ultimoMovimiento: lastReception ? lastReception.toISOString().split("T")[0] : "Sin recepción",
+            esEstancado: diasInactivo > 90,
           };
         })
         .filter(Boolean)
         .sort((a: any, b: any) => b.diasInactivo - a.diasInactivo);
 
-      const valorEstancado = items.filter((i: any) => i.esEstancado).reduce((s: number, i: any) => s + i.valorInventario, 0);
+      const valorEstancado = bandAccumulator
+        .filter((b) => b.min >= 91)
+        .reduce((s, b) => s + b.valor, 0);
       const porcentaje = totalInventarioValor > 0
         ? Math.round((valorEstancado / totalInventarioValor) * 100)
         : 0;
@@ -343,7 +495,22 @@ export async function GET(request: NextRequest) {
       result = {
         kpi: "inventario_90",
         titulo: "Inventario con más de 90 días",
-        resumen: { totalProductos: items.length, productosEstancados: items.filter((i: any) => i.esEstancado).length, valorTotalInventario: Math.round(totalInventarioValor * 100) / 100, valorEstancado: Math.round(valorEstancado * 100) / 100, porcentaje },
+        resumen: {
+          totalProductos: items.length,
+          productosEstancados: items.filter((i: any) => i.esEstancado).length,
+          valorTotalInventario: Math.round(totalInventarioValor * 100) / 100,
+          valorEstancado: Math.round(valorEstancado * 100) / 100,
+          porcentaje,
+          bandas: bandAccumulator.map((b) => ({
+            label: b.label,
+            valor: Math.round(b.valor * 100) / 100,
+            cantidad: b.cantidad,
+            porcentaje: totalInventarioValor > 0
+              ? Math.round((b.valor / totalInventarioValor) * 100)
+              : 0,
+          })),
+          metodo: "Envejecimiento por última recepción de compra",
+        },
         items,
       };
 
