@@ -368,16 +368,25 @@ export async function GET(request: NextRequest) {
 
     // 10.5. KPIs del Departamento de Compras (semanal)
     const comprasRaw = await computeComprasKpis(companyId, semanas);
-    const fmtPct = (v: number | null) => (v === null || v === undefined ? null : `${v}%`);
-    const fromSavedOrComputed = (key: string, computed: (number | null)[]) =>
+    const fromSavedOrComputed = (key: string, computed: (number | null)[], lowerIsBetter: boolean = false) =>
       semanas.map((_, i) => {
         const saved = savedMap[key]?.[i];
-        return saved ? `${saved.valor}%` : fmtPct(computed[i]);
+        const raw = saved ? saved.valor : computed[i];
+        if (raw === null || raw === undefined) return null;
+        const goal = metasMap[key] || 0;
+        if (goal <= 0) return `${Math.round(raw)}%`;
+        let pct: number;
+        if (lowerIsBetter) {
+          pct = raw > 0 ? Math.round((goal / Math.abs(raw)) * 100) : 100;
+        } else {
+          pct = Math.round((Math.abs(raw) / goal) * 100);
+        }
+        return `${pct}%`;
       });
-    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto);
-    const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion);
-    const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre);
-    const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90);
+    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, true);
+    const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
+    const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
+    const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90, true);
     const semanaForecast = fromSavedOrComputed("forecast_semanal", Array(semanas.length).fill(null));
     const semanaPropuestas = semanas.map((_, i) => {
       const saved = savedMap["propuestas_calificadas"]?.[i];
