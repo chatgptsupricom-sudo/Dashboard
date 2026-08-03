@@ -146,7 +146,7 @@ export default function SugeridosPage() {
   );
 
   const enRiesgo = useMemo(
-    () => productosFiltrados.filter((p) => p.tipo === "riesgo"),
+    () => productosFiltrados.filter((p) => p.tipo === "riesgo" && p.abc !== "C"),
     [productosFiltrados],
   );
 
@@ -347,7 +347,7 @@ export default function SugeridosPage() {
             <p className="text-2xl font-bold text-orange-600 mt-1">
               {kpis.totalRiesgo}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
+            <p className="text-xs text-gray-400 mt-1">Bajo punto reorden (sin C)</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
