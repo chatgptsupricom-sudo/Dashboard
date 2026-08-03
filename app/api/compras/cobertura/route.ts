@@ -114,20 +114,21 @@ export async function GET(request: NextRequest) {
       stats365[id] = (stats365[id] || 0) + (l.quantity || 0);
     });
 
-    const productIds = Object.keys(stats45)
+    const productIds = Object.keys(stats365)
       .map(Number)
-      .filter((id) => stats45[id] > 0);
+      .filter((id) => stats365[id] > 0);
     if (productIds.length === 0)
       return NextResponse.json({ success: true, data: [] });
 
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     const warehouseData = await callOdooRPC<any[]>(
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "name", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "name", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
@@ -151,11 +152,13 @@ export async function GET(request: NextRequest) {
         {
           fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
           limit: 0,
+          context: { allowed_company_ids: companies },
         },
       ),
       callOdooRPC<any[]>("stock.quant", "search_read", [stockQuantDomain], {
         fields: ["product_id", "quantity", "reserved_quantity"],
         limit: 0,
+        context: { allowed_company_ids: companies },
       }),
     ]);
 
@@ -253,7 +256,7 @@ export async function GET(request: NextRequest) {
           fechaQuiebreEstimada,
         };
       })
-      .filter((p) => p.ventas45d > 0)
+      .filter((p) => p.ventas45d > 0 && p.stockDisponible > 0)
       .sort((a, b) => a.diasCobertura - b.diasCobertura);
 
     coberturaCache.set(cacheKey, { data: result, ts: Date.now() });

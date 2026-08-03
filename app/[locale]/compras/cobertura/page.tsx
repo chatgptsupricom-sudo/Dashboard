@@ -122,7 +122,6 @@ export default function CoberturaPage() {
       const okABC = filtroABC === "TODAS" || p.abc === filtroABC;
       const okCrit =
         filtroCritico === "TODOS" ||
-        (filtroCritico === "QUIEBRE" && p.diasCobertura <= 0) ||
         (filtroCritico === "CRITICO" &&
           p.diasCobertura > 0 &&
           p.diasCobertura <= 7) ||
@@ -149,7 +148,6 @@ export default function CoberturaPage() {
   const kpis = useMemo(
     () => ({
       total: filtrados.length,
-      quiebre: filtrados.filter((p) => p.diasCobertura <= 0).length,
       critico: filtrados.filter(
         (p) => p.diasCobertura > 0 && p.diasCobertura <= 7,
       ).length,
@@ -219,23 +217,7 @@ export default function CoberturaPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card
-          className="border-red-200 bg-red-50/40 shadow-sm cursor-pointer"
-          onClick={() =>
-            setFiltroCritico(filtroCritico === "QUIEBRE" ? "TODOS" : "QUIEBRE")
-          }
-        >
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              En quiebre
-            </p>
-            <p className="text-3xl font-bold text-red-700 mt-1">
-              {kpis.quiebre}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card
           className="border-red-200 bg-red-50/20 shadow-sm cursor-pointer"
           onClick={() =>
