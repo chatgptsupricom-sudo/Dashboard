@@ -180,9 +180,6 @@ export async function GET(request: NextRequest) {
       ),
     ];
     const tmplPriceMap: Record<number, number> = {};
-    const companies = sedeId
-      ? [sedeId]
-      : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     for (const cid of companies) {
       const prices = await callOdooRPC<any[]>(
         "product.template",
