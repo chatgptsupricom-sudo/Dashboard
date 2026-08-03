@@ -19,6 +19,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import ComprasDetailModal from "./ComprasDetailModal";
 
 const getCellColor = (value: string) => {
   if (!value) return "";
@@ -101,6 +102,10 @@ export default function StoplightReportSuperadmin() {
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+
+  const [comprasModalOpen, setComprasModalOpen] = useState(false);
+  const [comprasKpiType, setComprasKpiType] = useState<string>("");
+  const [comprasKpiTitle, setComprasKpiTitle] = useState<string>("");
 
   const now = new Date();
   const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -377,6 +382,7 @@ export default function StoplightReportSuperadmin() {
       weeks: kpiData?.semanaVarCosto || defaultWeeks,
       goalDefault: kpiData?.metas?.["variacion_costo_compra"] ? String(kpiData.metas["variacion_costo_compra"]) : "10",
       goalSuffix: "%",
+      isClickable: true,
     },
     {
       id: "rotacion_saludable",
@@ -387,6 +393,7 @@ export default function StoplightReportSuperadmin() {
       weeks: kpiData?.semanaRotacion || defaultWeeks,
       goalDefault: kpiData?.metas?.["rotacion_saludable"] ? String(kpiData.metas["rotacion_saludable"]) : "75",
       goalSuffix: "%",
+      isClickable: true,
     },
     {
       id: "quiebre_inventario",
@@ -397,6 +404,7 @@ export default function StoplightReportSuperadmin() {
       weeks: kpiData?.semanaQuiebre || defaultWeeks,
       goalDefault: kpiData?.metas?.["quiebre_inventario"] ? String(kpiData.metas["quiebre_inventario"]) : "5",
       goalSuffix: "%",
+      isClickable: true,
     },
     {
       id: "inventario_90_dias",
@@ -407,6 +415,7 @@ export default function StoplightReportSuperadmin() {
       weeks: kpiData?.semanaInv90 || defaultWeeks,
       goalDefault: kpiData?.metas?.["inventario_90_dias"] ? String(kpiData.metas["inventario_90_dias"]) : "10",
       goalSuffix: "%",
+      isClickable: true,
     },
     {
       id: "forecast_semanal",
@@ -593,7 +602,7 @@ export default function StoplightReportSuperadmin() {
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" className="rounded border-slate-300" />
@@ -1367,6 +1376,16 @@ export default function StoplightReportSuperadmin() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE COMPRAS KPIs */}
+      <ComprasDetailModal
+        isOpen={comprasModalOpen}
+        onClose={() => setComprasModalOpen(false)}
+        kpiType={comprasKpiType}
+        kpiTitle={comprasKpiTitle}
+        companyId={selectedCompanyId}
+        mes={currentMes}
+      />
     </div>
   );
 }

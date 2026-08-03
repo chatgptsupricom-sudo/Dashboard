@@ -1,0 +1,493 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { X, ArrowLeft, Check, AlertTriangle } from "lucide-react";
+
+interface ComprasDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  kpiType: string;
+  kpiTitle: string;
+  companyId: number;
+  mes: string;
+}
+
+export default function ComprasDetailModal({
+  isOpen,
+  onClose,
+  kpiType,
+  kpiTitle,
+  companyId,
+  mes,
+}: ComprasDetailModalProps) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  useEffect(() => {
+    if (!isOpen || !kpiType) return;
+    setLoading(true);
+    setData(null);
+    setSelectedItem(null);
+    fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setData(json.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [isOpen, kpiType, companyId, mes]);
+
+  useEffect(() => {
+    if (isOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const fmt = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center gap-3">
+            {selectedItem && (
+              <button
+                onClick={() => setSelectedItem(null)}
+                className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                <ArrowLeft size={16} /> Volver
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">{kpiTitle}</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                {data?.resumen ? getResumenText(kpiType, data.resumen) : "Cargando..."}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+            <X size={20} className="text-slate-500" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-5">
+          {loading ? (
+            <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos...</div>
+          ) : !data ? (
+            <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+          ) : selectedItem ? (
+            renderDetail(kpiType, selectedItem, fmt)
+          ) : (
+            renderList(kpiType, data.items, setSelectedItem, fmt)
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getResumenText(kpi: string, r: any): string {
+  switch (kpi) {
+    case "variacion_costo":
+      return `${r.totalProductos} productos con costo base | Variación promedio: ${r.promedioVariacion}% | Ahorro estimado: $${r.ahorroTotalEstimado.toLocaleString("es-VE")}`;
+    case "rotacion":
+      return `${r.totalConStock} con stock | ${r.saludables} rotan bien (${r.porcentaje}%) | ${r.noSaludables} no rotan`;
+    case "quiebre":
+      return `${r.totalConDemanda} con demanda activa | ${r.enQuiebre} en quiebre | ${r.enRiesgo} en riesgo (${r.porcentaje}%)`;
+    case "inventario_90":
+      return `${r.productosEstancados} de ${r.totalProductos} productos estancados | ${r.porcentaje}% del valor ($${r.valorEstancado.toLocaleString("es-VE")})`;
+    default:
+      return "";
+  }
+}
+
+function renderList(kpi: string, items: any[], onSelect: (item: any) => void, fmt: (n: number) => string) {
+  if (!items || items.length === 0) {
+    return <div className="flex items-center justify-center py-20 text-slate-400">Sin datos para este KPI</div>;
+  }
+
+  if (kpi === "variacion_costo") {
+    return (
+      <div className="border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b">
+              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+              <th className="p-3 text-center font-medium text-slate-600">Costo Base</th>
+              <th className="p-3 text-center font-medium text-slate-600">Costo Actual</th>
+              <th className="p-3 text-center font-medium text-slate-600">Variación</th>
+              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+              <th className="p-3 text-center font-medium text-slate-600">Ahorro Unit.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => onSelect(item)}>
+                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                <td className="p-3 text-center">${fmt(item.costoBase)}</td>
+                <td className="p-3 text-center">${fmt(item.costoActual)}</td>
+                <td className="p-3 text-center">
+                  <span className={`font-bold ${item.variacion > 0 ? "text-green-600" : item.variacion < 0 ? "text-red-600" : "text-slate-600"}`}>
+                    {item.variacion > 0 ? "+" : ""}{item.variacion}%
+                  </span>
+                </td>
+                <td className="p-3 text-center">{item.stock}</td>
+                <td className="p-3 text-center">
+                  <span className={item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}>
+                    {item.ahorroUnitario > 0 ? "+" : ""}${fmt(item.ahorroUnitario)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (kpi === "rotacion") {
+    return (
+      <div className="border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b">
+              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+              <th className="p-3 text-center font-medium text-slate-600">Valor Stock</th>
+              <th className="p-3 text-center font-medium text-slate-600">Ventas 45d</th>
+              <th className="p-3 text-center font-medium text-slate-600">Último movimiento</th>
+              <th className="p-3 text-center font-medium text-slate-600">Días sin venta</th>
+              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${!item.rotaSaludablemente ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
+                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                <td className="p-3 text-center">{item.stock}</td>
+                <td className="p-3 text-center">${fmt(item.valorStock)}</td>
+                <td className="p-3 text-center font-bold">{item.ventasTotales}</td>
+                <td className="p-3 text-center text-slate-600">{item.ultimoMovimiento}</td>
+                <td className="p-3 text-center">
+                  <span className={`font-bold ${item.diasSinVenta <= 45 ? "text-green-600" : item.diasSinVenta <= 90 ? "text-yellow-600" : "text-red-600"}`}>
+                    {item.diasSinVenta >= 999 ? "Nunca" : item.diasSinVenta}
+                  </span>
+                </td>
+                <td className="p-3 text-center">
+                  {item.rotaSaludablemente ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                      <Check size={12} /> Saludable
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                      <AlertTriangle size={12} /> No rota
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (kpi === "quiebre") {
+    return (
+      <div className="border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b">
+              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+              <th className="p-3 text-center font-medium text-slate-600">Demanda 45d</th>
+              <th className="p-3 text-center font-medium text-slate-600">Demanda/día</th>
+              <th className="p-3 text-center font-medium text-slate-600">Pto. Reorden</th>
+              <th className="p-3 text-center font-medium text-slate-600">Días p/quiebre</th>
+              <th className="p-3 text-center font-medium text-slate-600">MOQ</th>
+              <th className="p-3 text-center font-medium text-slate-600">A Comprar</th>
+              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${
+                item.estado === "QUIEBRE TOTAL" ? "bg-red-50" : item.estado === "RIESGO ALTO" ? "bg-yellow-50/50" : ""
+              }`} onClick={() => onSelect(item)}>
+                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                <td className="p-3 text-center font-bold">{item.stock}</td>
+                <td className="p-3 text-center">{item.demanda45d}</td>
+                <td className="p-3 text-center">{item.demandaDiaria}</td>
+                <td className="p-3 text-center">{item.puntoReorden}</td>
+                <td className="p-3 text-center">
+                  <span className={`font-bold ${
+                    item.diasHastaQuiebre === "Sin riesgo" ? "text-green-600" :
+                    item.diasHastaQuiebre <= 7 ? "text-red-600" :
+                    item.diasHastaQuiebre <= 25 ? "text-yellow-600" : "text-green-600"
+                  }`}>
+                    {item.diasHastaQuiebre}
+                  </span>
+                </td>
+                <td className="p-3 text-center">{item.moq}</td>
+                <td className="p-3 text-center font-bold text-blue-600">{item.cantidadAComprar > 0 ? item.cantidadAComprar : "-"}</td>
+                <td className="p-3 text-center">
+                  {item.estado === "QUIEBRE TOTAL" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                      <AlertTriangle size={12} /> Quiebre
+                    </span>
+                  ) : item.estado === "RIESGO ALTO" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                      <AlertTriangle size={12} /> Riesgo
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                      <Check size={12} /> OK
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (kpi === "inventario_90") {
+    return (
+      <div className="border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b">
+              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+              <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
+              <th className="p-3 text-center font-medium text-slate-600">Stock</th>
+              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
+              <th className="p-3 text-center font-medium text-slate-600">Valor Inventario</th>
+              <th className="p-3 text-center font-medium text-slate-600">Último movimiento</th>
+              <th className="p-3 text-center font-medium text-slate-600">Días inactivo</th>
+              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className={`border-b hover:bg-slate-50/50 transition-colors cursor-pointer ${item.esEstancado ? "bg-red-50/30" : ""}`} onClick={() => onSelect(item)}>
+                <td className="p-3 font-medium text-slate-800">{item.nombre}</td>
+                <td className="p-3 text-center text-slate-600">{item.categoria}</td>
+                <td className="p-3 text-center">{item.stock}</td>
+                <td className="p-3 text-center">${fmt(item.costo)}</td>
+                <td className="p-3 text-center font-bold">${fmt(item.valorInventario)}</td>
+                <td className="p-3 text-center text-slate-600">{item.ultimoMovimiento}</td>
+                <td className="p-3 text-center">
+                  <span className={`font-bold ${item.diasInactivo <= 90 ? "text-green-600" : item.diasInactivo <= 180 ? "text-yellow-600" : "text-red-600"}`}>
+                    {item.diasInactivo >= 999 ? "Nunca" : item.diasInactivo}
+                  </span>
+                </td>
+                <td className="p-3 text-center">
+                  {item.esEstancado ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                      <AlertTriangle size={12} /> +90 días
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                      <Check size={12} /> Activo
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function renderDetail(kpi: string, item: any, fmt: (n: number) => string) {
+  if (kpi === "variacion_costo") {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-lg font-bold text-slate-800">{item.sku}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
+          </div>
+          <div className={`rounded-xl p-4 ${item.variacion > 0 ? "bg-green-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium ${item.variacion > 0 ? "text-green-600" : "text-red-600"}`}>Variación</p>
+            <p className={`text-lg font-bold ${item.variacion > 0 ? "text-green-700" : "text-red-700"}`}>
+              {item.variacion > 0 ? "+" : ""}{item.variacion}%
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">Costo Base</p>
+            <p className="text-xl font-bold text-blue-700">${fmt(item.costoBase)}</p>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Costo Actual</p>
+            <p className="text-xl font-bold text-amber-700">${fmt(item.costoActual)}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Stock</p>
+            <p className="text-xl font-bold text-slate-700">{item.stock}</p>
+          </div>
+          <div className={`rounded-xl p-4 ${item.ahorroUnitario > 0 ? "bg-green-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium ${item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}`}>Ahorro/Sobrecosto Unit.</p>
+            <p className={`text-xl font-bold ${item.ahorroUnitario > 0 ? "text-green-700" : "text-red-700"}`}>
+              {item.ahorroUnitario > 0 ? "+" : ""}${fmt(item.ahorroUnitario)}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (kpi === "rotacion") {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-lg font-bold text-slate-800">{item.sku}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">Stock</p>
+            <p className="text-xl font-bold text-blue-700">{item.stock}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">Valor Stock</p>
+            <p className="text-xl font-bold text-blue-700">${fmt(item.valorStock)}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-green-50 rounded-xl p-4">
+            <p className="text-xs text-green-600 font-medium">Ventas totales</p>
+            <p className="text-xl font-bold text-green-700">{item.ventasTotales}</p>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Último movimiento</p>
+            <p className="text-xl font-bold text-amber-700">{item.ultimoMovimiento}</p>
+          </div>
+          <div className={`rounded-xl p-4 ${item.rotaSaludablemente ? "bg-green-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium ${item.rotaSaludablemente ? "text-green-600" : "text-red-600"}`}>Días sin venta</p>
+            <p className={`text-xl font-bold ${item.rotaSaludablemente ? "text-green-700" : "text-red-700"}`}>
+              {item.diasSinVenta >= 999 ? "Nunca vendido" : item.diasSinVenta}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (kpi === "quiebre") {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-lg font-bold text-slate-800">{item.sku}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
+          </div>
+          <div className={`rounded-xl p-4 ${item.estado === "OK" ? "bg-green-50" : item.estado === "RIESGO ALTO" ? "bg-yellow-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium ${item.estado === "OK" ? "text-green-600" : item.estado === "RIESGO ALTO" ? "text-yellow-600" : "text-red-600"}`}>Estado</p>
+            <p className={`text-lg font-bold ${item.estado === "OK" ? "text-green-700" : item.estado === "RIESGO ALTO" ? "text-yellow-700" : "text-red-700"}`}>{item.estado}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">Stock actual</p>
+            <p className="text-xl font-bold text-blue-700">{item.stock}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-5 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Demanda 45d</p>
+            <p className="text-lg font-bold text-slate-700">{item.demanda45d}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Demanda/día</p>
+            <p className="text-lg font-bold text-slate-700">{item.demandaDiaria}</p>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Pto. Reorden</p>
+            <p className="text-lg font-bold text-amber-700">{item.puntoReorden}</p>
+          </div>
+          <div className="bg-red-50 rounded-xl p-4">
+            <p className="text-xs text-red-600 font-medium">Días p/quiebre</p>
+            <p className="text-xl font-bold text-red-700">{item.diasHastaQuiebre}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">A comprar (MOQ: {item.moq})</p>
+            <p className="text-xl font-bold text-blue-700">{item.cantidadAComprar > 0 ? item.cantidadAComprar : "No requiere"}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (kpi === "inventario_90") {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-lg font-bold text-slate-800">{item.sku}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium">Stock</p>
+            <p className="text-xl font-bold text-blue-700">{item.stock}</p>
+          </div>
+          <div className={`rounded-xl p-4 ${item.esEstancado ? "bg-red-50" : "bg-green-50"}`}>
+            <p className={`text-xs font-medium ${item.esEstancado ? "text-red-600" : "text-green-600"}`}>Días inactivo</p>
+            <p className={`text-xl font-bold ${item.esEstancado ? "text-red-700" : "text-green-700"}`}>
+              {item.diasInactivo >= 999 ? "Nunca vendido" : item.diasInactivo}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-amber-50 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium">Costo unitario</p>
+            <p className="text-xl font-bold text-amber-700">${fmt(item.costo)}</p>
+          </div>
+          <div className="bg-red-50 rounded-xl p-4">
+            <p className="text-xs text-red-600 font-medium">Valor inmovilizado</p>
+            <p className="text-xl font-bold text-red-700">${fmt(item.valorInventario)}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs text-slate-500 font-medium">Último movimiento</p>
+            <p className="text-xl font-bold text-slate-700">{item.ultimoMovimiento}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
