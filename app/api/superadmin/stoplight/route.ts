@@ -358,7 +358,7 @@ export async function GET(request: NextRequest) {
         if (lowerIsBetter) {
           pct = raw > 0 ? Math.round((goal / Math.abs(raw)) * 100) : 100;
         } else {
-          pct = Math.round((Math.abs(raw) / goal) * 100);
+          pct = raw > 0 ? Math.round((raw / goal) * 100) : 0;
         }
         return `${pct}%`;
       });
@@ -371,7 +371,7 @@ export async function GET(request: NextRequest) {
 
     // 10.5. KPIs del Departamento de Compras (semanal)
     const comprasRaw = await computeComprasKpis(companyId, semanas);
-    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, true);
+    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
     const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
     const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
     const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90, true);
