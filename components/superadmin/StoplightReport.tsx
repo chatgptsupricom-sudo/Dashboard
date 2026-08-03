@@ -117,8 +117,8 @@ export default function StoplightReportSuperadmin() {
   ];
   const empresaLabel = empresas.find((e) => e.id === selectedCompanyId)?.label || "Caracas";
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/superadmin/stoplight?mes=${currentMes}&company_id=${selectedCompanyId}`);
       const json = await res.json();
@@ -156,7 +156,7 @@ export default function StoplightReportSuperadmin() {
           mes: currentMes,
         }),
       });
-      fetchData();
+      fetchData(true);
     } catch (e) {
       console.error("Error saving meta:", e);
     }
