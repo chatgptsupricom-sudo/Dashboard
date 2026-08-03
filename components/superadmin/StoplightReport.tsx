@@ -156,9 +156,7 @@ export default function StoplightReportSuperadmin() {
           mes: currentMes,
         }),
       });
-      if (kpiData) {
-        setKpiData({ ...kpiData, metas: { ...kpiData.metas, [kpiKey]: value } });
-      }
+      fetchData();
     } catch (e) {
       console.error("Error saving meta:", e);
     }

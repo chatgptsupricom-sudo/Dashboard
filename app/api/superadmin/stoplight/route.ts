@@ -301,25 +301,8 @@ export async function GET(request: NextRequest) {
 
     // 10. Build KPI data
     const totalFacturadoMensual = Object.values(sellerMap).reduce((sum, s) => sum + s.facturadoMensual, 0);
-    const porcentajeCumplimiento = totalCuotaMensual > 0 ? Math.round((totalFacturadoMensual / totalCuotaMensual) * 100) : 0;
 
-    const semanaCuota = semanas.map((_, i) => {
-      const facturadoSemana = Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].facturado, 0);
-      const cuotaSemana = Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].cuotaSemanal, 0);
-      const pct = cuotaSemana > 0 ? Math.round((facturadoSemana / cuotaSemana) * 100) : 0;
-      return `${pct}%`;
-    });
-
-    const totalVisitasMes = Object.values(visitasPorSeller).reduce((sum, v) => sum + v, 0);
-    const semanaVisitas = semanas.map((_, i) => {
-      const saved = savedMap["visitas_semanales"]?.[i];
-      return saved ? String(saved.valor) : null;
-    });
-
-    const totalClientesNuevos = Object.values(clientesNuevosPorSeller).reduce((sum, v) => sum + v, 0);
-    const numSellers = sellers.length || 1;
-
-    // Load metas first (need clientes_nuevos goal)
+    // Load metas first (needed for weekly calculations)
     const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
     const metasResult = await query(
       "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ?",
@@ -327,6 +310,24 @@ export async function GET(request: NextRequest) {
     );
     const metasMap: Record<string, number> = {};
     (metasResult.rows as any[]).forEach((r) => { metasMap[r.kpi_key] = Number(r.meta_mensual); });
+
+    const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
+    const effectiveCuotaMensual = metaCuota > 0 ? metaCuota : totalCuotaMensual;
+    const porcentajeCumplimiento = effectiveCuotaMensual > 0 ? Math.round((totalFacturadoMensual / effectiveCuotaMensual) * 100) : 0;
+
+    const semanaCuota = semanas.map((semana, i) => {
+      const facturadoSemana = Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].facturado, 0);
+      const cuotaSemana = metaCuota > 0
+        ? (metaCuota * semana.diasUtiles) / totalDiasUtilesMes
+        : Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].cuotaSemanal, 0);
+      const pct = cuotaSemana > 0 ? Math.round((facturadoSemana / cuotaSemana) * 100) : 0;
+      return `${pct}%`;
+    });
+
+    const totalVisitasMes = Object.values(visitasPorSeller).reduce((sum, v) => sum + v, 0);
+
+    const totalClientesNuevos = Object.values(clientesNuevosPorSeller).reduce((sum, v) => sum + v, 0);
+    const numSellers = sellers.length || 1;
 
     const metaClientesNuevos = metasMap["clientes_nuevos"] || 0; // goal per seller
 
@@ -346,28 +347,6 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    const semanaMargen = semanas.map((_, i) => {
-      const saved = savedMap["margen_bruto"]?.[i];
-      return saved ? `${saved.valor}%` : null;
-    });
-
-    const semanaEfectividad = semanas.map((_, i) => {
-      const saved = savedMap["efectividad_cierre"]?.[i];
-      return saved ? `${saved.valor}%` : null;
-    });
-
-    const semanaActivacion = semanas.map((_, i) => {
-      const saved = savedMap["activacion_cartera"]?.[i];
-      return saved ? `${saved.valor}%` : null;
-    });
-
-    const semanaCobertura = semanas.map((_, i) => {
-      const saved = savedMap["cobertura_marcas"]?.[i];
-      return saved ? `${saved.valor}%` : null;
-    });
-
-    // 10.5. KPIs del Departamento de Compras (semanal)
-    const comprasRaw = await computeComprasKpis(companyId, semanas);
     const fromSavedOrComputed = (key: string, computed: (number | null)[], lowerIsBetter: boolean = false) =>
       semanas.map((_, i) => {
         const saved = savedMap[key]?.[i];
@@ -383,6 +362,15 @@ export async function GET(request: NextRequest) {
         }
         return `${pct}%`;
       });
+
+    const semanaMargen = fromSavedOrComputed("margen_bruto", Array(semanas.length).fill(null));
+    const semanaEfectividad = fromSavedOrComputed("efectividad_cierre", Array(semanas.length).fill(null));
+    const semanaActivacion = fromSavedOrComputed("activacion_cartera", Array(semanas.length).fill(null));
+    const semanaCobertura = fromSavedOrComputed("cobertura_marcas", Array(semanas.length).fill(null));
+    const semanaVisitas = fromSavedOrComputed("visitas_semanales", Array(semanas.length).fill(null));
+
+    // 10.5. KPIs del Departamento de Compras (semanal)
+    const comprasRaw = await computeComprasKpis(companyId, semanas);
     const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, true);
     const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
     const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
@@ -408,7 +396,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        metaMensual: metasMap["cumplimiento_cuota_ventas"] || totalCuotaMensual,
+        metaMensual: effectiveCuotaMensual,
         totalCuotaMensual,
         totalFacturadoMensual,
         porcentajeCumplimiento,
