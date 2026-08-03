@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Loader2, Package, Search } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Package, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
@@ -39,6 +39,7 @@ interface ProductoSugerido {
   cantidadAComprar: number;
   costo: number;
   valorAComprar: number;
+  tipo: "quiebre" | "riesgo";
 }
 
 function abcColor(abc: string) {
@@ -67,7 +68,8 @@ export default function SugeridosPage() {
   const [filtroMarca, setFiltroMarca] = useState("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState("TODAS");
 
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageQuiebre, setCurrentPageQuiebre] = useState(1);
+  const [currentPageRiesgo, setCurrentPageRiesgo] = useState(1);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -135,6 +137,19 @@ export default function SugeridosPage() {
     });
   }, [tras_cat, busqueda]);
 
+  const enQuiebre = useMemo(
+    () =>
+      productosFiltrados.filter(
+        (p) => p.tipo === "quiebre" && p.abc !== "C",
+      ),
+    [productosFiltrados],
+  );
+
+  const enRiesgo = useMemo(
+    () => productosFiltrados.filter((p) => p.tipo === "riesgo"),
+    [productosFiltrados],
+  );
+
   useEffect(() => {
     setFiltroMarca("TODAS");
     setFiltroCategoria("TODAS");
@@ -143,27 +158,37 @@ export default function SugeridosPage() {
     setFiltroCategoria("TODAS");
   }, [filtroMarca]);
   useEffect(() => {
-    setCurrentPage(1);
+    setCurrentPageQuiebre(1);
+    setCurrentPageRiesgo(1);
   }, [busqueda, filtroABC, filtroMarca, filtroCategoria]);
 
   // KPIs
   const kpis = useMemo(
     () => ({
+      totalQuiebre: enQuiebre.length,
+      totalRiesgo: enRiesgo.length,
       totalValor: productosFiltrados.reduce((s, p) => s + p.valorAComprar, 0),
       totalSkus: productosFiltrados.length,
-      urgentes: productosFiltrados.filter((p) => p.diasInvActual <= 7)
-        .length,
     }),
-    [productosFiltrados],
+    [enQuiebre, enRiesgo, productosFiltrados],
   );
 
-  const totalPages = Math.ceil(productosFiltrados.length / itemsPerPage);
-  const currentItems = productosFiltrados.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+  // Paginación quiebre
+  const totalPagesQuiebre = Math.ceil(enQuiebre.length / itemsPerPage);
+  const currentItemsQuiebre = enQuiebre.slice(
+    (currentPageQuiebre - 1) * itemsPerPage,
+    currentPageQuiebre * itemsPerPage,
   );
+
+  // Paginación riesgo
+  const totalPagesRiesgo = Math.ceil(enRiesgo.length / itemsPerPage);
+  const currentItemsRiesgo = enRiesgo.slice(
+    (currentPageRiesgo - 1) * itemsPerPage,
+    currentPageRiesgo * itemsPerPage,
+  );
+
   const exportarExcel = () => {
-    const data = productosFiltrados.map((item, i) => ({
+    const mapItem = (item: ProductoSugerido, i: number) => ({
       "#": i + 1,
       Código: item.codigo,
       Descripción: item.name,
@@ -179,10 +204,12 @@ export default function SugeridosPage() {
       "Cant. a Comprar": item.cantidadAComprar,
       "Costo Unit. ($)": item.costo,
       "Valor a Comprar ($)": item.valorAComprar,
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    });
+    const wsQuiebre = XLSX.utils.json_to_sheet(enQuiebre.map(mapItem));
+    const wsRiesgo = XLSX.utils.json_to_sheet(enRiesgo.map(mapItem));
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sugeridos_Compra");
+    XLSX.utils.book_append_sheet(workbook, wsQuiebre, "Quiebre");
+    XLSX.utils.book_append_sheet(workbook, wsRiesgo, "Riesgo");
     XLSX.writeFile(
       workbook,
       `Sugeridos_Compra_${new Date().toISOString().split("T")[0]}.xlsx`,
@@ -228,7 +255,8 @@ export default function SugeridosPage() {
             value={sede}
             onValueChange={(v) => {
               setSede(v);
-              setCurrentPage(1);
+              setCurrentPageQuiebre(1);
+              setCurrentPageRiesgo(1);
             }}
           >
             <SelectTrigger>
@@ -299,7 +327,29 @@ export default function SugeridosPage() {
       </Card>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-red-200 bg-red-50/40 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Quiebre
+            </p>
+            <p className="text-2xl font-bold text-red-700 mt-1">
+              {kpis.totalQuiebre}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Stock = 0 (sin C)</p>
+          </CardContent>
+        </Card>
+        <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Riesgo
+            </p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">
+              {kpis.totalRiesgo}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
+          </CardContent>
+        </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">
@@ -309,17 +359,6 @@ export default function SugeridosPage() {
               ${fmt(kpis.totalValor)}
             </p>
             <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Urgentes (≤7 días)
-            </p>
-            <p className="text-2xl font-bold text-orange-600 mt-1">
-              {kpis.urgentes}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">Quiebre inminente</p>
           </CardContent>
         </Card>
         <Card className="border-green-200 bg-green-50/40 shadow-sm">
@@ -335,17 +374,17 @@ export default function SugeridosPage() {
         </Card>
       </div>
 
-      {/* Tabla */}
-      <Card className="shadow-md border-blue-200">
-        <CardHeader className="bg-blue-50/50 pb-4">
-          <CardTitle className="text-lg flex items-center text-blue-700">
-            <Package className="h-5 w-5 mr-2" /> Órdenes de Compra Sugeridas
+      {/* Tabla Quiebre */}
+      <Card className="shadow-md border-red-200">
+        <CardHeader className="bg-red-50/50 pb-4">
+          <CardTitle className="text-lg flex items-center text-red-700">
+            <AlertTriangle className="h-5 w-5 mr-2" /> Productos en Quiebre (Stock = 0)
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader className="bg-blue-50/30">
+              <TableHeader className="bg-red-50/30">
                 <TableRow>
                   <TableHead className="px-4 w-[280px]">Producto</TableHead>
                   <TableHead className="text-center">ABC</TableHead>
@@ -363,24 +402,20 @@ export default function SugeridosPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.length === 0 ? (
+                {currentItemsQuiebre.length === 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={9}
                       className="text-center py-8 text-gray-500"
                     >
-                      No hay productos sugeridos con estos filtros.
+                      No hay productos en quiebre con estos filtros.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  currentItems.map((item) => (
+                  currentItemsQuiebre.map((item) => (
                     <TableRow
                       key={item.codigo}
-                      className={
-                        item.diasInvActual <= 7
-                          ? "bg-orange-50/40 hover:bg-orange-50/70"
-                          : "hover:bg-blue-50/20"
-                      }
+                      className="bg-red-50/30 hover:bg-red-50/60"
                     >
                       <TableCell className="px-4">
                         <div className="font-semibold text-sm">
@@ -404,9 +439,158 @@ export default function SugeridosPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-bold text-sm">
+                        <Badge variant="destructive" className="bg-red-600">
                           {item.stockDisponible}
-                        </span>
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        <span className="text-red-600 font-bold">0d</span>
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600 text-sm">
+                        {item.puntoReorden}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {item.moq > 0 ? (
+                          <span className="text-gray-600">{item.moq}</span>
+                        ) : (
+                          <span className="text-amber-600 font-semibold text-xs">
+                            Sin MOQ
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center font-bold text-base">
+                        {item.cantidadAComprar > 0 ? (
+                          <span className="text-blue-700">
+                            +{item.cantidadAComprar}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 text-xs font-semibold">
+                            Sin MOQ
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600 text-sm">
+                        {item.costo > 0 ? (
+                          `$${item.costo.toFixed(2)}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center font-bold text-gray-800">
+                        {item.valorAComprar > 0
+                          ? `$${fmt(item.valorAComprar)}`
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between p-4 border-t">
+            <p className="text-sm text-gray-500">
+              {enQuiebre.length === 0
+                ? "0 productos"
+                : totalPagesQuiebre > 1
+                  ? `${(currentPageQuiebre - 1) * itemsPerPage + 1}–${Math.min(currentPageQuiebre * itemsPerPage, enQuiebre.length)} de ${enQuiebre.length} productos`
+                  : `${enQuiebre.length} producto${enQuiebre.length !== 1 ? "s" : ""}`}
+            </p>
+            {totalPagesQuiebre > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPageQuiebre((p) => Math.max(p - 1, 1))}
+                  disabled={currentPageQuiebre === 1}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPageQuiebre((p) => Math.min(p + 1, totalPagesQuiebre))
+                  }
+                  disabled={currentPageQuiebre === totalPagesQuiebre}
+                >
+                  Siguiente
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla Riesgo */}
+      <Card className="shadow-md border-orange-200">
+        <CardHeader className="bg-orange-50/50 pb-4">
+          <CardTitle className="text-lg flex items-center text-orange-700">
+            <Package className="h-5 w-5 mr-2" /> Productos en Riesgo de Quiebre
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-orange-50/30">
+                <TableRow>
+                  <TableHead className="px-4 w-[280px]">Producto</TableHead>
+                  <TableHead className="text-center">ABC</TableHead>
+                  <TableHead className="text-center">Stock</TableHead>
+                  <TableHead className="text-center">Días Inv.</TableHead>
+                  <TableHead className="text-center">Pto. Reorden</TableHead>
+                  <TableHead className="text-center">MOQ</TableHead>
+                  <TableHead className="text-center font-bold text-blue-700">
+                    Cant. Comprar
+                  </TableHead>
+                  <TableHead className="text-center">Costo Unit.</TableHead>
+                  <TableHead className="text-center font-bold">
+                    Valor ($)
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentItemsRiesgo.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={9}
+                      className="text-center py-8 text-gray-500"
+                    >
+                      No hay productos en riesgo con estos filtros.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  currentItemsRiesgo.map((item) => (
+                    <TableRow
+                      key={item.codigo}
+                      className="bg-orange-50/30 hover:bg-orange-50/60"
+                    >
+                      <TableCell className="px-4">
+                        <div className="font-semibold text-sm">
+                          {item.codigo}
+                        </div>
+                        <div
+                          className="text-xs text-gray-500 truncate w-[240px]"
+                          title={item.name}
+                        >
+                          {item.name}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          {item.categoria}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          className={`${abcColor(item.abc)} text-white font-bold`}
+                        >
+                          {item.abc}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="destructive" className="bg-orange-500">
+                          {item.stockDisponible}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-center text-sm">
                         {item.diasInvActual >= 999 ? (
@@ -470,19 +654,19 @@ export default function SugeridosPage() {
           </div>
           <div className="flex items-center justify-between p-4 border-t">
             <p className="text-sm text-gray-500">
-              {productosFiltrados.length === 0
+              {enRiesgo.length === 0
                 ? "0 productos"
-                : totalPages > 1
-                  ? `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, productosFiltrados.length)} de ${productosFiltrados.length} productos`
-                  : `${productosFiltrados.length} producto${productosFiltrados.length !== 1 ? "s" : ""}`}
+                : totalPagesRiesgo > 1
+                  ? `${(currentPageRiesgo - 1) * itemsPerPage + 1}–${Math.min(currentPageRiesgo * itemsPerPage, enRiesgo.length)} de ${enRiesgo.length} productos`
+                  : `${enRiesgo.length} producto${enRiesgo.length !== 1 ? "s" : ""}`}
             </p>
-            {totalPages > 1 && (
+            {totalPagesRiesgo > 1 && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPageRiesgo((p) => Math.max(p - 1, 1))}
+                  disabled={currentPageRiesgo === 1}
                 >
                   Anterior
                 </Button>
@@ -490,9 +674,9 @@ export default function SugeridosPage() {
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    setCurrentPage((p) => Math.min(p + 1, totalPages))
+                    setCurrentPageRiesgo((p) => Math.min(p + 1, totalPagesRiesgo))
                   }
-                  disabled={currentPage === totalPages}
+                  disabled={currentPageRiesgo === totalPagesRiesgo}
                 >
                   Siguiente
                 </Button>

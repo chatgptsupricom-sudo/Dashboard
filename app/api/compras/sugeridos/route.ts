@@ -139,11 +139,12 @@ export async function GET(request: NextRequest) {
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     const warehouseData = await callOdooRPC<any[]>(
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "name", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "name", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
@@ -173,11 +174,13 @@ export async function GET(request: NextRequest) {
         {
           fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
           limit: 0,
+          context: { allowed_company_ids: companies },
         },
       ),
       callOdooRPC<any[]>("stock.quant", "search_read", [stockQuantDomain], {
         fields: ["product_id", "quantity", "reserved_quantity"],
         limit: 0,
+        context: { allowed_company_ids: companies },
       }),
     ]);
 
@@ -206,7 +209,6 @@ export async function GET(request: NextRequest) {
       ),
     ];
     const tmplPriceMap: Record<number, number> = {};
-    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     for (const cid of companies) {
       const prices = await callOdooRPC<any[]>(
         "product.template",
@@ -254,8 +256,8 @@ export async function GET(request: NextRequest) {
         const stockObjetivo = demandaDiaria * diasInvDeseado;
         const diasInvActual = demandaDiaria > 0 ? stock / demandaDiaria : 999;
 
-        // Excluir quiebre total (stock=0) y productos con suficiente stock
-        if (stock <= 0 || stock > puntoReorden) return null;
+        // Excluir productos con stock por encima del punto de reorden
+        if (stock > puntoReorden) return null;
 
         // Calcular cantidad solo si tiene MOQ
         let cantidadAComprar = 0;
@@ -286,6 +288,7 @@ export async function GET(request: NextRequest) {
             diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
           cantidadAComprar,
           valorAComprar: Number(valorAComprar.toFixed(2)),
+          tipo: stock <= 0 ? "quiebre" : "riesgo" as const,
         };
       })
       .filter(Boolean)
