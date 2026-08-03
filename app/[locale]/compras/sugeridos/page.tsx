@@ -336,7 +336,7 @@ export default function SugeridosPage() {
             <p className="text-2xl font-bold text-red-700 mt-1">
               {kpis.totalQuiebre}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Stock = 0 (sin C)</p>
+            <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
@@ -347,7 +347,7 @@ export default function SugeridosPage() {
             <p className="text-2xl font-bold text-orange-600 mt-1">
               {kpis.totalRiesgo}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Bajo punto reorden (sin C)</p>
+            <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
