@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const sedeParam = searchParams.get("sede");
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
-    const cacheKey = `compras_rotcat_v3_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_rotcat_v4_sede${sedeId ?? "todas"}`;
     const cached = rotCatCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companiesToFetch } },
     );
     const locationIds =
       warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
@@ -81,17 +81,40 @@ export async function GET(request: NextRequest) {
     );
     if (!productos) throw new Error("Sin productos");
 
-    // Stock por producto y por compañía
-    const stockDomain: any[] =
-      locationIds.length > 0
-        ? [["location_id", "child_of", locationIds], ["product_id", "!=", false]]
-        : [["location_id.usage", "=", "internal"], ["product_id", "!=", false]];
-    const stockData = await callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity", "company_id"], limit: 0 },
-    );
+    // Stock por producto y por compañía — query por cada empresa
+    const stockPorProdYComp: Record<number, Record<number, number>> = {};
+    for (const cid of companiesToFetch) {
+      const whId = MAIN_WAREHOUSE_BY_COMPANY[cid];
+      const wh = warehouseData?.find((w: any) => w.id === whId);
+      const whLoc = wh?.lot_stock_id?.[0];
+
+      const stockDomain: any[] = [["product_id", "!=", false]];
+      if (whLoc) {
+        stockDomain.push(["location_id", "child_of", [whLoc]]);
+      } else {
+        stockDomain.push(["location_id.usage", "=", "internal"]);
+      }
+      stockDomain.push(["company_id", "=", cid]);
+
+      const stockData = await callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [stockDomain],
+        {
+          fields: ["product_id", "quantity", "reserved_quantity"],
+          limit: 0,
+          context: { allowed_company_ids: [cid] },
+        },
+      );
+      stockData?.forEach((s: any) => {
+        if (!s.product_id) return;
+        const pid = s.product_id[0];
+        stockPorProdYComp[pid] ??= {};
+        stockPorProdYComp[pid][cid] =
+          (stockPorProdYComp[pid][cid] ?? 0) +
+          Math.max(0, s.quantity - s.reserved_quantity);
+      });
+    }
     const stockPorProdYComp: Record<number, Record<number, number>> = {};
     stockData?.forEach((s: any) => {
       if (!s.product_id) return;
