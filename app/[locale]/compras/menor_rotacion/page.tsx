@@ -44,7 +44,7 @@ export default function MenorRotacionPage() {
   const [busqueda, setBusqueda] = useState<string>("");
   const [filtroMarca, setFiltroMarca] = useState<string>("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("TODAS");
-  const [filtroDias, setFiltroDias] = useState<string>("30");
+  const [filtroDias, setFiltroDias] = useState<string>("TODOS");
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -95,7 +95,8 @@ export default function MenorRotacionPage() {
 
         // Filtro Días Inactivos (rangos excluyentes)
         let cumpleDias = false;
-        if (filtroDias === "30") cumpleDias = p.days_inactive >= 30 && p.days_inactive < 60;
+        if (filtroDias === "TODOS") cumpleDias = p.days_inactive >= 30;
+        else if (filtroDias === "30") cumpleDias = p.days_inactive >= 30 && p.days_inactive < 60;
         else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60 && p.days_inactive < 90;
         else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90 && p.days_inactive !== 999;
         else if (filtroDias === "NUNCA") cumpleDias = p.days_inactive === 999;
@@ -217,6 +218,7 @@ export default function MenorRotacionPage() {
               <SelectValue placeholder="Inactividad" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="TODOS">Todos (30+ días)</SelectItem>
               <SelectItem value="30">30 – 59 días sin vender</SelectItem>
               <SelectItem value="60">60 – 89 días sin vender</SelectItem>
               <SelectItem value="90">90+ días sin vender</SelectItem>
