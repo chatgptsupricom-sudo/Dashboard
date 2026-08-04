@@ -7,11 +7,13 @@ import {
   HelpCircle,
   Maximize2,
   MoreHorizontal,
+  Package,
   Plus,
   RotateCcw,
   Search,
   Settings,
   User,
+  UserCheck,
   X,
   Check,
   Calendar,
@@ -99,7 +101,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin() {
+export default function StoplightReportSuperadmin({ vendorMode = false }: { vendorMode?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -140,6 +142,58 @@ export default function StoplightReportSuperadmin() {
   const [cxcInvoiceLoading, setCxcInvoiceLoading] = useState(false);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
+  const [margenModalOpen, setMargenModalOpen] = useState(false);
+  const [margenModalLoading, setMargenModalLoading] = useState(false);
+  const [margenModalData, setMargenModalData] = useState<any>(null);
+  const [selectedMargenSeller, setSelectedMargenSeller] = useState<any>(null);
+  const [margenModalTab, setMargenModalTab] = useState<"vendedor" | "producto" | "semanal">("vendedor");
+
+  const [efectividadModalOpen, setEfectividadModalOpen] = useState(false);
+  const [efectividadModalLoading, setEfectividadModalLoading] = useState(false);
+  const [efectividadModalData, setEfectividadModalData] = useState<any>(null);
+  const [selectedEfectividadSeller, setSelectedEfectividadSeller] = useState<any>(null);
+  const [efectividadModalTab, setEfectividadModalTab] = useState<"vendedor" | "semanal">("vendedor");
+  const [efectividadPeriodo, setEfectividadPeriodo] = useState<"mes" | "trimestre" | "anio" | "todo">("mes");
+
+  const [coberturaModalOpen, setCoberturaModalOpen] = useState(false);
+  const [coberturaModalLoading, setCoberturaModalLoading] = useState(false);
+  const [coberturaModalData, setCoberturaModalData] = useState<any>(null);
+  const [selectedCoberturaSeller, setSelectedCoberturaSeller] = useState<any>(null);
+  const [coberturaModalTab, setCoberturaModalTab] = useState<"vendedor" | "semanal">("vendedor");
+  const [coberturaPeriodo, setCoberturaPeriodo] = useState<"mes" | "trimestre" | "anio" | "todo">("mes");
+
+  const [activacionModalOpen, setActivacionModalOpen] = useState(false);
+  const [activacionModalLoading, setActivacionModalLoading] = useState(false);
+  const [activacionModalData, setActivacionModalData] = useState<any>(null);
+  const [selectedActivacionSeller, setSelectedActivacionSeller] = useState<any>(null);
+  const [activacionModalTab, setActivacionModalTab] = useState<"vendedor" | "semanal">("vendedor");
+  const [activacionPeriodo, setActivacionPeriodo] = useState<"mes" | "trimestre" | "anio" | "todo">("mes");
+
+  const [visitasModalOpen, setVisitasModalOpen] = useState(false);
+  const [visitasModalLoading, setVisitasModalLoading] = useState(false);
+  const [visitasData, setVisitasData] = useState<any[]>([]);
+  const [visitasVendedores, setVisitasVendedores] = useState<any[]>([]);
+  const [visitasClientes, setVisitasClientes] = useState<any[]>([]);
+  const [visitasClientesLoading, setVisitasClientesLoading] = useState(false);
+  const [visitaClientSearch, setVisitaClientSearch] = useState("");
+  const [visitaClientDropdownOpen, setVisitaClientDropdownOpen] = useState(false);
+  const [visitaForm, setVisitaForm] = useState({
+    seller_name: "",
+    seller_user_id: "",
+    client_name: "",
+    is_prospect: false,
+    visit_date: new Date().toISOString().split("T")[0],
+  });
+  const [visitaFormPhoto, setVisitaFormPhoto] = useState<File | null>(null);
+  const [visitaFormPhotoPreview, setVisitaFormPhotoPreview] = useState<string>("");
+  const [visitaFormLoading, setVisitaFormLoading] = useState(false);
+
+  const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
+  const q = (extras: Record<string, string> = {}) => {
+    const base: Record<string, string> = { mes: currentMes, ...extras };
+    if (!vendorMode) base.company_id = String(selectedCompanyId);
+    return new URLSearchParams(base).toString();
+  };
   const [comprasModalOpen, setComprasModalOpen] = useState(false);
   const [comprasKpiType, setComprasKpiType] = useState<string>("");
   const [comprasKpiTitle, setComprasKpiTitle] = useState<string>("");
@@ -157,7 +211,8 @@ export default function StoplightReportSuperadmin() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/superadmin/stoplight?mes=${currentMes}&company_id=${selectedCompanyId}`);
+      const params = vendorMode ? `mes=${currentMes}` : `mes=${currentMes}&company_id=${selectedCompanyId}`;
+      const res = await fetch(`${apiPrefix}?${params}`);
       const json = await res.json();
       if (json.success) {
         setKpiData(json.data);
@@ -167,7 +222,7 @@ export default function StoplightReportSuperadmin() {
       console.error("Error fetching stoplight data:", e);
     }
     setLoading(false);
-  }, [currentMes, selectedCompanyId]);
+  }, [currentMes, selectedCompanyId, vendorMode]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -200,6 +255,119 @@ export default function StoplightReportSuperadmin() {
   }, [selectedCompanyId]);
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
+
+  useEffect(() => {
+    if (clientesModalOpen || modalOpen || cxcModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [clientesModalOpen, modalOpen, cxcModalOpen]);
+
+  useEffect(() => {
+    if (!visitaClientDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-client-dropdown]")) {
+        setVisitaClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [visitaClientDropdownOpen]);
+
+  const saveMeta = async (kpiKey: string, value: number) => {
+    try {
+      await fetch(`${apiPrefix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "save_meta",
+          kpi_key: kpiKey,
+          company_id: selectedCompanyId,
+          meta_mensual: value,
+          mes: currentMes,
+        }),
+      });
+      fetchData(true);
+    } catch (e) {
+      console.error("Error saving meta:", e);
+    }
+  };
+
+  const handleGoalChange = (kpiId: string, value: string) => {
+    setGoalValues((prev) => ({ ...prev, [kpiId]: value }));
+  };
+
+  const handleGoalBlur = (kpiId: string, value: string) => {
+    const numVal = parseFloat(value) || 0;
+    const currentMeta = kpiData?.metas?.[kpiId];
+    if (numVal !== (currentMeta ?? 0)) {
+      saveMeta(kpiId, numVal);
+    }
+  };
+
+  const openCuotaModal = async () => {
+    setModalOpen(true);
+    setModalLoading(true);
+    setSelectedSeller(null);
+    setModalTab("resumen");
+    try {
+      const res = await fetch(`${apiPrefix}/cuota-detail?${q()}`);
+      const json = await res.json();
+      if (json.success) setModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching cuota detail:", e);
+    }
+    setModalLoading(false);
+  };
+
+  const openClientesModal = async () => {
+    setClientesModalOpen(true);
+    setClientesModalLoading(true);
+    setClientesModalTab("resumen");
+    setSelectedClientesSeller(null);
+    setSelectedClientesClient(null);
+    setClientesSellerDetail(null);
+    try {
+      const res = await fetch(`${apiPrefix}/clientes-nuevos-detail?${q()}`);
+      const json = await res.json();
+      if (json.success) setClientesModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching clientes nuevos detail:", e);
+    }
+    setClientesModalLoading(false);
+  };
+
+  const openClientesSellerDetail = async (seller: any) => {
+    setSelectedClientesSeller(seller);
+    setSelectedClientesClient(null);
+    setClientesSellerLoading(true);
+    setClientesSellerDetail(null);
+    try {
+      const res = await fetch(`${apiPrefix}/clientes-nuevos-seller-detail?${q({ seller_name: encodeURIComponent(seller.nombre) })}`);
+      const json = await res.json();
+      if (json.success) setClientesSellerDetail(json.data);
+    } catch (e) {
+      console.error("Error fetching seller detail:", e);
+    }
+    setClientesSellerLoading(false);
+  };
+
+  const openInvoiceDetail = async (invoice: any) => {
+    setSelectedInvoice(invoice);
+    setInvoiceLoading(true);
+    setInvoiceDetail(null);
+    try {
+      const res = await fetch(`${apiPrefix}/invoice-detail?${q({ invoice_id: String(invoice.id) })}`);
+      const json = await res.json();
+      if (json.success) setInvoiceDetail(json.data);
+    } catch (e) {
+      console.error("Error fetching invoice detail:", e);
+    }
+    setInvoiceLoading(false);
+  };
 
   const openCxcModal = async (kpiId: string) => {
     setCxcModalKpi(kpiId);
@@ -237,105 +405,161 @@ export default function StoplightReportSuperadmin() {
     setCxcInvoiceLoading(false);
   };
 
-  useEffect(() => {
-    if (clientesModalOpen || modalOpen || cxcModalOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => { document.body.style.overflow = ""; };
-  }, [clientesModalOpen, modalOpen, cxcModalOpen]);
-
-  const saveMeta = async (kpiKey: string, value: number) => {
+  const openMargenModal = async () => {
+    setMargenModalOpen(true);
+    setMargenModalLoading(true);
+    setSelectedMargenSeller(null);
+    setMargenModalTab("vendedor");
     try {
-      await fetch("/api/superadmin/stoplight", {
+      const res = await fetch(`${apiPrefix}/margen-detail?${q()}`);
+      const json = await res.json();
+      if (json.success) setMargenModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching margen detail:", e);
+    }
+    setMargenModalLoading(false);
+  };
+
+  const openEfectividadModal = async (periodo: string = "mes") => {
+    setEfectividadModalOpen(true);
+    setEfectividadModalLoading(true);
+    setSelectedEfectividadSeller(null);
+    setEfectividadModalTab("vendedor");
+    setEfectividadPeriodo(periodo as any);
+    try {
+      const res = await fetch(`${apiPrefix}/efectividad-detail?${q({ periodo })}`);
+      const json = await res.json();
+      if (json.success) setEfectividadModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching efectividad detail:", e);
+    }
+    setEfectividadModalLoading(false);
+  };
+
+  const openCoberturaModal = async (periodo: string = "mes") => {
+    setCoberturaModalOpen(true);
+    setCoberturaModalLoading(true);
+    setSelectedCoberturaSeller(null);
+    setCoberturaModalTab("vendedor");
+    setCoberturaPeriodo(periodo as any);
+    try {
+      const res = await fetch(`${apiPrefix}/cobertura-detail?${q({ periodo })}`);
+      const json = await res.json();
+      if (json.success) setCoberturaModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching cobertura detail:", e);
+    }
+    setCoberturaModalLoading(false);
+  };
+
+  const openActivacionModal = async (periodo: string = "mes") => {
+    setActivacionModalOpen(true);
+    setActivacionModalLoading(true);
+    setSelectedActivacionSeller(null);
+    setActivacionModalTab("vendedor");
+    setActivacionPeriodo(periodo as any);
+    try {
+      const res = await fetch(`${apiPrefix}/activacion-detail?${q({ periodo })}`);
+      const json = await res.json();
+      if (json.success) setActivacionModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching activacion detail:", e);
+    }
+    setActivacionModalLoading(false);
+  };
+
+  const openVisitasModal = async () => {
+    setVisitasModalOpen(true);
+    setVisitasModalLoading(true);
+    setVisitaForm({
+      seller_name: "",
+      client_name: "",
+      is_prospect: false,
+      visit_date: new Date().toISOString().split("T")[0],
+    });
+    try {
+      // Fetch existing visits
+      const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q()}`);
+      const jsonVisits = await resVisits.json();
+      if (jsonVisits.success) setVisitasData(jsonVisits.data);
+
+      // Fetch sellers from stoplight data
+      if (kpiData?.sellers) {
+        setVisitasVendedores(kpiData.sellers);
+      }
+    } catch (e) {
+      console.error("Error fetching visitas:", e);
+    }
+    setVisitasModalLoading(false);
+  };
+
+  const fetchVisitasClientes = async (sellerName: string) => {
+    try {
+      setVisitasClientesLoading(true);
+      const seller = visitasVendedores.find((s: any) => s.nombre === sellerName);
+      if (!seller) { setVisitasClientes([]); return; }
+      const res = await fetch(
+        `${apiPrefix}/seller-clients?${q({ seller_user_id: String(seller.user_id) })}`
+      );
+      const data = await res.json();
+      if (data.success) setVisitasClientes(data.data);
+    } catch (e) {
+      console.error("Error fetching clients:", e);
+    } finally {
+      setVisitasClientesLoading(false);
+    }
+  };
+
+  const submitVisita = async () => {
+    if (!visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date) {
+      alert("Completa todos los campos obligatorios");
+      return;
+    }
+    setVisitaFormLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("seller_name", visitaForm.seller_name);
+      fd.append("client_name", visitaForm.client_name);
+      fd.append("is_prospect", String(visitaForm.is_prospect));
+      fd.append("visit_date", visitaForm.visit_date);
+      if (!vendorMode) fd.append("company_id", String(selectedCompanyId));
+      if (visitaFormPhoto) fd.append("photo", visitaFormPhoto);
+
+      const res = await fetch(`${apiPrefix}/weekly-visits`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "save_meta",
-          kpi_key: kpiKey,
-          company_id: selectedCompanyId,
-          meta_mensual: value,
-          mes: currentMes,
-        }),
+        body: fd,
       });
-      fetchData(true);
-    } catch (e) {
-      console.error("Error saving meta:", e);
-    }
-  };
-
-  const handleGoalChange = (kpiId: string, value: string) => {
-    setGoalValues((prev) => ({ ...prev, [kpiId]: value }));
-  };
-
-  const handleGoalBlur = (kpiId: string, value: string) => {
-    const numVal = parseFloat(value) || 0;
-    const currentMeta = kpiData?.metas?.[kpiId];
-    if (numVal !== (currentMeta ?? 0)) {
-      saveMeta(kpiId, numVal);
-    }
-  };
-
-  const openCuotaModal = async () => {
-    setModalOpen(true);
-    setModalLoading(true);
-    setSelectedSeller(null);
-    setModalTab("resumen");
-    try {
-      const res = await fetch(`/api/superadmin/stoplight/cuota-detail?mes=${currentMes}&company_id=${selectedCompanyId}`);
       const json = await res.json();
-      if (json.success) setModalData(json.data);
+      if (json.success) {
+        const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q()}`);
+        const jsonVisits = await resVisits.json();
+        if (jsonVisits.success) setVisitasData(jsonVisits.data);
+        setVisitaForm({
+          seller_name: "",
+          seller_user_id: "",
+          client_name: "",
+          is_prospect: false,
+          visit_date: new Date().toISOString().split("T")[0],
+        });
+        setVisitaFormPhoto(null);
+        setVisitaFormPhotoPreview("");
+      }
     } catch (e) {
-      console.error("Error fetching cuota detail:", e);
+      console.error("Error saving visit:", e);
     }
-    setModalLoading(false);
+    setVisitaFormLoading(false);
   };
 
-  const openClientesModal = async () => {
-    setClientesModalOpen(true);
-    setClientesModalLoading(true);
-    setClientesModalTab("resumen");
-    setSelectedClientesSeller(null);
-    setSelectedClientesClient(null);
-    setClientesSellerDetail(null);
+  const deleteVisita = async (id: number) => {
     try {
-      const res = await fetch(`/api/superadmin/stoplight/clientes-nuevos-detail?mes=${currentMes}&company_id=${selectedCompanyId}`);
+      const res = await fetch(`${apiPrefix}/weekly-visits?id=${id}`, { method: "DELETE" });
       const json = await res.json();
-      if (json.success) setClientesModalData(json.data);
+      if (json.success) {
+        setVisitasData((prev) => prev.filter((v) => v.id !== id));
+      }
     } catch (e) {
-      console.error("Error fetching clientes nuevos detail:", e);
+      console.error("Error deleting visit:", e);
     }
-    setClientesModalLoading(false);
-  };
-
-  const openClientesSellerDetail = async (seller: any) => {
-    setSelectedClientesSeller(seller);
-    setSelectedClientesClient(null);
-    setClientesSellerLoading(true);
-    setClientesSellerDetail(null);
-    try {
-      const res = await fetch(`/api/superadmin/stoplight/clientes-nuevos-seller-detail?mes=${currentMes}&company_id=${selectedCompanyId}&seller_name=${encodeURIComponent(seller.nombre)}`);
-      const json = await res.json();
-      if (json.success) setClientesSellerDetail(json.data);
-    } catch (e) {
-      console.error("Error fetching seller detail:", e);
-    }
-    setClientesSellerLoading(false);
-  };
-
-  const openInvoiceDetail = async (invoice: any) => {
-    setSelectedInvoice(invoice);
-    setInvoiceLoading(true);
-    setInvoiceDetail(null);
-    try {
-      const res = await fetch(`/api/superadmin/stoplight/invoice-detail?invoice_id=${invoice.id}&company_id=${selectedCompanyId}`);
-      const json = await res.json();
-      if (json.success) setInvoiceDetail(json.data);
-    } catch (e) {
-      console.error("Error fetching invoice detail:", e);
-    }
-    setInvoiceLoading(false);
   };
 
   const toggleGroup = (groupId: string) => {
@@ -366,6 +590,7 @@ export default function StoplightReportSuperadmin() {
       isClickable: true,
       goalDefault: kpiData ? String(Math.round(kpiData.metaMensual)) : "0",
       goalSuffix: "",
+      cumple: kpiData ? kpiData.avgCumplimiento >= 100 : false,
     },
     {
       id: "margen_bruto",
@@ -374,8 +599,10 @@ export default function StoplightReportSuperadmin() {
       peso: "15%",
       average: kpiData ? `${kpiData.avgMargen}%` : "0%",
       weeks: kpiData?.semanaMargen || defaultWeeks,
+      isClickable: true,
       goalDefault: kpiData?.metas?.["margen_bruto"] ? String(kpiData.metas["margen_bruto"]) : "15",
       goalSuffix: "%",
+      cumple: kpiData ? kpiData.avgMargen >= 100 : false,
     },
     {
       id: "visitas_semanales",
@@ -384,8 +611,10 @@ export default function StoplightReportSuperadmin() {
       peso: "10%",
       average: kpiData ? String(kpiData.avgVisitas) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
+      isClickable: true,
       goalDefault: kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "10",
       goalSuffix: "",
+      cumple: kpiData ? kpiData.avgVisitas >= 100 : false,
     },
     {
       id: "efectividad_cierre",
@@ -394,8 +623,10 @@ export default function StoplightReportSuperadmin() {
       peso: "15%",
       average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
       weeks: kpiData?.semanaEfectividad || defaultWeeks,
+      isClickable: true,
       goalDefault: kpiData?.metas?.["efectividad_cierre"] ? String(kpiData.metas["efectividad_cierre"]) : "15",
       goalSuffix: "%",
+      cumple: kpiData ? kpiData.avgEfectividad >= 100 : false,
     },
     {
       id: "activacion_cartera",
@@ -404,8 +635,10 @@ export default function StoplightReportSuperadmin() {
       peso: "15%",
       average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
       weeks: kpiData?.semanaActivacion || defaultWeeks,
+      isClickable: true,
       goalDefault: kpiData?.metas?.["activacion_cartera"] ? String(kpiData.metas["activacion_cartera"]) : "15",
       goalSuffix: "%",
+      cumple: kpiData ? kpiData.avgActivacion >= 100 : false,
     },
     {
       id: "clientes_nuevos",
@@ -417,6 +650,7 @@ export default function StoplightReportSuperadmin() {
       isClickable: true,
       goalDefault: kpiData?.metas?.["clientes_nuevos"] ? String(kpiData.metas["clientes_nuevos"]) : "5",
       goalSuffix: "",
+      cumple: kpiData ? kpiData.avgClientes >= 100 : false,
     },
     {
       id: "cobertura_marcas",
@@ -425,8 +659,10 @@ export default function StoplightReportSuperadmin() {
       peso: "10%",
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
+      isClickable: true,
       goalDefault: kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "10",
       goalSuffix: "%",
+      cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
     },
   ];
 
@@ -434,7 +670,7 @@ export default function StoplightReportSuperadmin() {
     {
       id: "envio_reporte_inv",
       trend: "help",
-      title: "Cumplimiento de Envío de Reporte de Antigüedad de Inventario",
+      title: "Cumplimiento de Envío de Reporte de Antig├╝edad de Inventario",
       peso: "25%",
       average: "0%",
       weeks: [null, null, null, null, null],
@@ -454,7 +690,7 @@ export default function StoplightReportSuperadmin() {
     {
       id: "antiguedad_inv",
       trend: "help",
-      title: "Antigüedad de inventario (Costo)",
+      title: "Antig├╝edad de inventario (Costo)",
       peso: "25%",
       average: "0%",
       weeks: [null, null, null, null, null],
@@ -704,13 +940,14 @@ export default function StoplightReportSuperadmin() {
 
   const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];
 
-  const groups = [
+  const allGroups = [
     { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
     { id: "group-compras", title: "Departamento de Compras", count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
     { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
     ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: "Cuentas por Cobrar", count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
+  const groups = vendorMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -745,6 +982,9 @@ export default function StoplightReportSuperadmin() {
           <button className="p-2 border rounded-md hover:bg-slate-50 transition-colors">
             <Settings size={16} />
           </button>
+          <button className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-md hover:bg-amber-600 transition-colors shadow-sm">
+            Create
+          </button>
         </div>
       </div>
 
@@ -762,6 +1002,7 @@ export default function StoplightReportSuperadmin() {
       </div>
 
       {/* Toolbar */}
+      {!vendorMode && (
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
           <div
@@ -817,6 +1058,7 @@ export default function StoplightReportSuperadmin() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Marketing Not Connected Banner */}
       {marketingData && !marketingData.connected && (
@@ -900,10 +1142,16 @@ export default function StoplightReportSuperadmin() {
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" className="rounded border-slate-300" />
+                          {kpi.cumple ? (
+                            <div className="w-5 h-5 bg-blue-600 rounded flex items-center justify-center mx-auto">
+                              <Check size={14} className="text-white" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 border-2 border-slate-300 rounded mx-auto" />
+                          )}
                         </td>
                         <td className="p-3 text-center border-r bg-white">
                           {kpi.trend === "alert" ? (
@@ -932,13 +1180,17 @@ export default function StoplightReportSuperadmin() {
                           </div>
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            value={getGoal(kpi.id, kpi.goalDefault)}
-                            onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
-                            onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                            className="w-28 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
-                          />
+                          {vendorMode ? (
+                            <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
+                          ) : (
+                            <input
+                              type="number"
+                              value={getGoal(kpi.id, kpi.goalDefault)}
+                              onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
+                              onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
+                              className="w-28 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                            />
+                          )}
                         </td>
                         <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
                         <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50 font-bold">{kpi.peso}</td>
@@ -1240,26 +1492,34 @@ export default function StoplightReportSuperadmin() {
                               </thead>
                               <tbody>
                                 {selectedSeller.semanas.map((sem) => (
-                                  <tr key={sem.numero} className={`border-b ${sem.porcentaje >= 100 ? "bg-green-50/30" : ""}`}>
+                                  <tr key={sem.numero} className={`border-b ${sem.porcentaje != null && sem.porcentaje >= 100 ? "bg-green-50/30" : ""}`}>
                                     <td className="p-3 font-medium">Semana {sem.numero}</td>
                                     <td className="p-3 text-center text-slate-600">{sem.inicio} - {sem.fin}</td>
                                     <td className="p-3 text-center">{sem.diasUtiles}</td>
                                     <td className="p-3 text-center">${sem.cuotaSemanal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                     <td className="p-3 text-center font-medium">${sem.facturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                     <td className="p-3 text-center">
-                                      <span className={`font-bold ${sem.porcentaje >= 100 ? "text-green-600" : sem.porcentaje >= 75 ? "text-yellow-600" : "text-red-600"}`}>
-                                        {sem.porcentaje}%
-                                      </span>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {sem.porcentaje >= 100 ? (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                          <Check size={12} /> Cumple
+                                      {sem.porcentaje != null ? (
+                                        <span className={`font-bold ${sem.porcentaje >= 100 ? "text-green-600" : sem.porcentaje >= 75 ? "text-yellow-600" : "text-red-600"}`}>
+                                          {sem.porcentaje}%
                                         </span>
                                       ) : (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                          <X size={12} /> No cumple
-                                        </span>
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {sem.porcentaje != null ? (
+                                        sem.porcentaje >= 100 ? (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
+                                            <Check size={12} /> Cumple
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
+                                            <X size={12} /> No cumple
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
                                       )}
                                     </td>
                                   </tr>
@@ -1687,6 +1947,1304 @@ export default function StoplightReportSuperadmin() {
         </div>
       )}
 
+      {/* MODAL DE MARGEN BRUTO */}
+      {margenModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-purple-50 to-white">
+              <div className="flex items-center gap-3">
+                {selectedMargenSeller && (
+                  <button
+                    onClick={() => setSelectedMargenSeller(null)}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    <ArrowLeft size={16} /> Volver
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Margen Bruto</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Detalle por vendedor y producto - {margenModalData?.mes || currentMes}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setMargenModalOpen(false); setSelectedMargenSeller(null); setMargenModalData(null); }}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex gap-4 px-5 pt-4 border-b">
+              {(["vendedor", "producto", "semanal"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setMargenModalTab(tab as any); setSelectedMargenSeller(null); }}
+                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
+                    margenModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {tab === "vendedor" ? "Por Vendedor" : tab === "producto" ? "Por Producto" : "Detalle Semanal"}
+                </button>
+              ))}
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {margenModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  Cargando datos...
+                </div>
+              ) : !margenModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  No hay datos disponibles
+                </div>
+              ) : (
+                <>
+                  {/* POR VENDEDOR Tab */}
+                  {margenModalTab === "vendedor" && (
+                    <div className="space-y-4">
+                      {/* Summary cards */}
+                      {(() => {
+                        const totalRevenue = margenModalData.sellers.reduce((sum: number, s: any) => sum + s.revenue, 0);
+                        const totalCosto = margenModalData.sellers.reduce((sum: number, s: any) => sum + s.costo, 0);
+                        const totalGanancia = totalRevenue - totalCosto;
+                        const margenPromedio = margenModalData.sellers.length > 0
+                          ? Math.round(margenModalData.sellers.reduce((sum: number, s: any) => sum + s.margenMensual, 0) / margenModalData.sellers.length)
+                          : 0;
+                        return (
+                          <div className="grid grid-cols-4 gap-4 mb-6">
+                            <div className="bg-purple-50 rounded-xl p-4">
+                              <p className="text-xs text-purple-600 font-medium">Revenue Total</p>
+                              <p className="text-2xl font-bold text-purple-700">
+                                ${totalRevenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-red-50 rounded-xl p-4">
+                              <p className="text-xs text-red-600 font-medium">Costo Total</p>
+                              <p className="text-2xl font-bold text-red-700">
+                                ${totalCosto.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <p className="text-xs text-green-600 font-medium">Ganancia Total</p>
+                              <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
+                                ${totalGanancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-amber-50 rounded-xl p-4">
+                              <p className="text-xs text-amber-600 font-medium">Margen Promedio</p>
+                              <p className="text-2xl font-bold text-amber-700">{margenPromedio}%</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Seller table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {margenModalData.sellers.map((seller: any) => {
+                              const ganancia = seller.revenue - seller.costo;
+                              const cumple = seller.margenMensual >= 15;
+                              return (
+                                <tr
+                                  key={seller.nombre}
+                                  className="border-b hover:bg-purple-50/40 transition-colors cursor-pointer"
+                                  onClick={() => setSelectedMargenSeller(seller)}
+                                >
+                                  <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                                  <td className="p-3 text-center">${seller.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-3 text-center text-red-600">${seller.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  <td className={`p-3 text-center font-bold ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                    ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span className={`font-bold ${seller.margenMensual >= 15 ? "text-green-600" : seller.margenMensual >= 0 ? "text-yellow-600" : "text-red-600"}`}>
+                                      {seller.margenMensual}%
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {cumple ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                        <Check size={12} /> Cumple
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                        <X size={12} /> No cumple
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* POR PRODUCTO Tab */}
+                  {margenModalTab === "producto" && (
+                    <div className="space-y-4">
+                      {/* Summary cards */}
+                      {(() => {
+                        const totalRevenue = margenModalData.products.reduce((sum: number, p: any) => sum + p.revenue, 0);
+                        const totalCosto = margenModalData.products.reduce((sum: number, p: any) => sum + p.costo, 0);
+                        const totalGanancia = totalRevenue - totalCosto;
+                        const totalProductos = margenModalData.products.length;
+                        return (
+                          <div className="grid grid-cols-4 gap-4 mb-6">
+                            <div className="bg-purple-50 rounded-xl p-4">
+                              <p className="text-xs text-purple-600 font-medium">Revenue Total</p>
+                              <p className="text-2xl font-bold text-purple-700">
+                                ${totalRevenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-red-50 rounded-xl p-4">
+                              <p className="text-xs text-red-600 font-medium">Costo Total</p>
+                              <p className="text-2xl font-bold text-red-700">
+                                ${totalCosto.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <p className="text-xs text-green-600 font-medium">Ganancia Total</p>
+                              <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
+                                ${totalGanancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div className="bg-slate-50 rounded-xl p-4">
+                              <p className="text-xs text-slate-600 font-medium">Total Productos</p>
+                              <p className="text-2xl font-bold text-slate-700">{totalProductos}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Product table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Cant. Vendida</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {margenModalData.products.map((product: any) => (
+                              <tr key={product.productId} className="border-b hover:bg-purple-50/40 transition-colors">
+                                <td className="p-3 font-medium text-slate-800 max-w-[300px] truncate" title={product.nombre}>
+                                  {product.nombre}
+                                </td>
+                                <td className="p-3 text-center">{product.cantidadVendida}</td>
+                                <td className="p-3 text-center">${product.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                <td className="p-3 text-center text-red-600">${product.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                <td className={`p-3 text-center font-bold ${product.ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                  ${product.ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`font-bold ${product.margen >= 15 ? "text-green-600" : product.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
+                                    {product.margen}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DETALLE SEMANAL Tab */}
+                  {margenModalTab === "semanal" && (
+                    <div>
+                      {!selectedMargenSeller ? (
+                        <div className="space-y-3">
+                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {margenModalData.sellers.map((seller: any) => (
+                              <button
+                                key={seller.nombre}
+                                onClick={() => setSelectedMargenSeller(seller)}
+                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
+                              >
+                                <span className="font-medium text-slate-800">{seller.nombre}</span>
+                                <span className={`text-sm font-bold ${seller.margenMensual >= 15 ? "text-green-600" : "text-red-600"}`}>
+                                  {seller.margenMensual}%
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-3 mb-4">
+                            <button onClick={() => setSelectedMargenSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
+                              Volver
+                            </button>
+                            <h3 className="font-bold text-slate-800">{selectedMargenSeller.nombre}</h3>
+                            <span className={`text-sm font-bold ${selectedMargenSeller.margenMensual >= 15 ? "text-green-600" : "text-red-600"}`}>
+                              {selectedMargenSeller.margenMensual}%
+                            </span>
+                          </div>
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Costo</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedMargenSeller.semanas.map((sem: any) => {
+                                  const ganancia = sem.revenue - sem.costo;
+                                  return (
+                                    <tr key={sem.numero} className={`border-b ${sem.margen != null && sem.margen >= 15 ? "bg-green-50/30" : ""}`}>
+                                      <td className="p-3 font-medium">Semana {sem.numero}</td>
+                                      <td className="p-3 text-center">${sem.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-center text-red-600">${sem.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                      <td className={`p-3 text-center font-medium ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                        ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        {sem.margen != null ? (
+                                          <span className={`font-bold ${sem.margen >= 15 ? "text-green-600" : sem.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
+                                            {sem.margen}%
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">-</span>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        {sem.margen != null ? (
+                                          sem.margen >= 15 ? (
+                                            <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
+                                              <Check size={12} /> OK
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
+                                              <X size={12} /> Bajo
+                                            </span>
+                                          )
+                                        ) : (
+                                          <span className="text-slate-400">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EFECTIVIDAD DE CIERRE */}
+      {efectividadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-blue-50 to-white">
+              <div className="flex items-center gap-3">
+                {selectedEfectividadSeller && (
+                  <button
+                    onClick={() => setSelectedEfectividadSeller(null)}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    <ArrowLeft size={16} /> Volver
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Tasa de Efectividad de Cierre</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {efectividadModalData?.periodoLabel || "Detalle por vendedor"}
+                  </p>
+                </div>
+              </div>
+              {/* Period Selector */}
+              <div className="flex items-center gap-2">
+                {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => openEfectividadModal(p)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      efectividadPeriodo === p
+                        ? "bg-amber-500 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => { setEfectividadModalOpen(false); setSelectedEfectividadSeller(null); setEfectividadModalData(null); }}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex gap-4 px-5 pt-4 border-b">
+              {(["vendedor", "semanal"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setEfectividadModalTab(tab); setSelectedEfectividadSeller(null); }}
+                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
+                    efectividadModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {tab === "vendedor" ? "Por Vendedor" : "Detalle Semanal"}
+                </button>
+              ))}
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {efectividadModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  Cargando datos...
+                </div>
+              ) : !efectividadModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  No hay datos disponibles
+                </div>
+              ) : (
+                <>
+                  {/* POR VENDEDOR Tab */}
+                  {efectividadModalTab === "vendedor" && (
+                    <div className="space-y-6">
+                       {/* Global Funnel */}
+                      {efectividadModalData.global && (
+                        <div className="bg-gradient-to-r from-slate-50 to-white rounded-xl p-6 border">
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Embbudo Global - {efectividadModalData?.periodoLabel || "Mes"}</h3>
+                          <div className="flex items-center justify-between gap-4">
+                            {/* Ordenes */}
+                            <div className="flex-1 text-center">
+                              <div className="bg-amber-100 rounded-xl p-4 mb-2">
+                                <p className="text-3xl font-bold text-amber-700">{efectividadModalData.global.ordenes}</p>
+                              </div>
+                              <p className="text-xs font-medium text-amber-600">├ôrdenes</p>
+                              <p className="text-[10px] text-slate-400">sale+done (confirmadas)</p>
+                            </div>
+                            {/* Arrow */}
+                            <div className="flex flex-col items-center">
+                              <span className="text-2xl text-slate-300">→</span>
+                            </div>
+                            {/* Facturacion */}
+                            <div className="flex-1 text-center">
+                              <div className="bg-green-100 rounded-xl p-4 mb-2">
+                                <p className="text-3xl font-bold text-green-700">{efectividadModalData.global.facturadas}</p>
+                              </div>
+                              <p className="text-xs font-medium text-green-600">Facturadas por completo</p>
+                              <p className="text-[10px] text-slate-400">invoice_status = invoiced</p>
+                            </div>
+                            {/* Efectividad */}
+                            <div className="flex flex-col items-center ml-4">
+                              <div className="bg-purple-100 rounded-xl px-6 py-4 mb-2">
+                                <p className="text-3xl font-bold text-purple-700">{efectividadModalData.global.efectividad}%</p>
+                              </div>
+                              <p className="text-xs font-medium text-purple-600">Efectividad</p>
+                              <p className="text-[10px] text-slate-400">facturadas / ordenes</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seller table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                              <th className="p-3 text-center font-medium text-amber-600">├ôrdenes</th>
+                              <th className="p-3 text-center font-medium text-green-600">Facturadas</th>
+                              <th className="p-3 text-center font-medium text-purple-600">Efectividad %</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {efectividadModalData.sellers.map((seller: any) => {
+                              const cumple = seller.efectividad >= 60;
+                              return (
+                                <tr
+                                  key={seller.nombre}
+                                  className="border-b hover:bg-blue-50/40 transition-colors"
+                                >
+                                  <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                                  <td className="p-3 text-center text-amber-600 font-bold">{seller.ordenes}</td>
+                                  <td className="p-3 text-center text-green-600 font-bold">{seller.facturadas}</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`font-bold ${seller.efectividad >= 60 ? "text-green-600" : seller.efectividad >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                                      {seller.efectividad}%
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {cumple ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                        <Check size={12} /> Cumple
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                        <X size={12} /> No cumple
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DETALLE SEMANAL Tab */}
+                  {efectividadModalTab === "semanal" && (
+                    <div>
+                      {!selectedEfectividadSeller ? (
+                        <div className="space-y-3">
+                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {efectividadModalData.sellers.map((seller: any) => (
+                              <button
+                                key={seller.nombre}
+                                onClick={() => setSelectedEfectividadSeller(seller)}
+                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
+                              >
+                                <span className="font-medium text-slate-800">{seller.nombre}</span>
+                                <span className={`text-sm font-bold ${seller.efectividad >= 60 ? "text-green-600" : "text-red-600"}`}>
+                                  {seller.efectividad}%
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-3 mb-4">
+                            <button onClick={() => setSelectedEfectividadSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
+                              Volver
+                            </button>
+                            <h3 className="font-bold text-slate-800">{selectedEfectividadSeller.nombre}</h3>
+                            <span className={`text-sm font-bold ${selectedEfectividadSeller.efectividad >= 60 ? "text-green-600" : "text-red-600"}`}>
+                              {selectedEfectividadSeller.efectividad}%
+                            </span>
+                          </div>
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
+                                  <th className="p-3 text-center font-medium text-amber-600">├ôrdenes</th>
+                                  <th className="p-3 text-center font-medium text-green-600">Facturadas</th>
+                                  <th className="p-3 text-center font-medium text-purple-600">Efectividad %</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedEfectividadSeller.semanas.map((sem: any) => (
+                                  <tr key={sem.numero} className={`border-b ${sem.efectividad != null && sem.efectividad >= 60 ? "bg-green-50/30" : ""}`}>
+                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 text-center text-amber-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
+                                    <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.facturadas : "-"}</td>
+                                    <td className="p-3 text-center">
+                                      {sem.efectividad != null ? (
+                                        <span className={`font-bold ${sem.efectividad >= 60 ? "text-green-600" : sem.efectividad >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                                          {sem.efectividad}%
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {sem.efectividad != null ? (
+                                        sem.efectividad >= 60 ? (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
+                                            <Check size={12} /> OK
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
+                                            <X size={12} /> Bajo
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cobertura Marcas Modal */}
+      {coberturaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-100 rounded-lg">
+                  <Package size={20} className="text-cyan-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Desempeño por Marca</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {coberturaModalData?.periodoLabel || "Detalle de marcas"}
+                  </p>
+                </div>
+              </div>
+              {/* Period Selector */}
+              <div className="flex items-center gap-2">
+                {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => openCoberturaModal(p)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      coberturaPeriodo === p
+                        ? "bg-cyan-500 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex gap-4 px-5 pt-4 border-b">
+              {(["vendedor", "semanal"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setCoberturaModalTab(tab); setSelectedCoberturaSeller(null); }}
+                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
+                    coberturaModalTab === tab ? "text-cyan-500 border-b-2 border-cyan-500" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {tab === "vendedor" ? "Por Marca" : "Detalle Semanal"}
+                </button>
+              ))}
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {coberturaModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  Cargando datos...
+                </div>
+              ) : !coberturaModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  No hay datos disponibles
+                </div>
+              ) : (
+                <>
+                  {/* POR MARCA Tab */}
+                  {coberturaModalTab === "vendedor" && (
+                    <div className="space-y-6">
+                      {/* Global Summary */}
+                      {coberturaModalData.global && (
+                        <div className="bg-gradient-to-r from-cyan-50 to-white rounded-xl p-6 border">
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Resumen Global - {coberturaModalData.periodoLabel}</h3>
+                          <div className="grid grid-cols-5 gap-4">
+                            <div className="text-center">
+                              <div className="bg-cyan-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-cyan-700">{coberturaModalData.global.totalMarcas}</p>
+                              </div>
+                              <p className="text-xs font-medium text-cyan-600">Marcas</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-green-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-green-700">${coberturaModalData.global.revenue?.toLocaleString()}</p>
+                              </div>
+                              <p className="text-xs font-medium text-green-600">Revenue Total</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-red-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-red-700">${coberturaModalData.global.costo?.toLocaleString()}</p>
+                              </div>
+                              <p className="text-xs font-medium text-red-600">Costo Total</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-purple-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-purple-700">{coberturaModalData.global.margen}%</p>
+                              </div>
+                              <p className="text-xs font-medium text-purple-600">Margen Promedio</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-amber-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-amber-700">{coberturaModalData.global.totalVendedores}</p>
+                              </div>
+                              <p className="text-xs font-medium text-amber-600">Vendedores</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Brands table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Marca</th>
+                              <th className="p-3 text-right font-medium text-green-600">Revenue</th>
+                              <th className="p-3 text-right font-medium text-red-600">Costo</th>
+                              <th className="p-3 text-right font-medium text-emerald-600">Ganancia</th>
+                              <th className="p-3 text-right font-medium text-amber-600">Cantidad</th>
+                              <th className="p-3 text-right font-medium text-cyan-600">P. Vendidos</th>
+                              <th className="p-3 text-right font-medium text-slate-600">Vendedores</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {coberturaModalData.marcas.map((marca: any) => (
+                              <tr
+                                key={marca.marca}
+                                className="border-b hover:bg-cyan-50/40 transition-colors cursor-pointer"
+                                onClick={() => setSelectedCoberturaSeller(marca)}
+                              >
+                                <td className="p-3 font-medium text-slate-800">{marca.marca}</td>
+                                <td className="p-3 text-right text-green-600 font-bold">${marca.revenue?.toLocaleString()}</td>
+                                <td className="p-3 text-right text-red-600">${marca.costo?.toLocaleString()}</td>
+                                <td className={`p-3 text-right font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                  ${marca.ganancia?.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right text-amber-600">{marca.cantidad}</td>
+                                <td className="p-3 text-right text-cyan-600">{marca.productosVendidos}</td>
+                                <td className="p-3 text-right text-slate-600">{marca.vendedores}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DETALLE SEMANAL Tab */}
+                  {coberturaModalTab === "semanal" && (
+                    <div>
+                      {!selectedCoberturaSeller ? (
+                        <div className="space-y-3">
+                          <p className="text-sm text-slate-500 mb-3">Selecciona una marca para ver su detalle semanal:</p>
+                          <div className="grid grid-cols-3 gap-3">
+                            {coberturaModalData.marcas.map((marca: any) => (
+                              <button
+                                key={marca.marca}
+                                onClick={() => setSelectedCoberturaSeller(marca)}
+                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
+                              >
+                                <div>
+                                  <span className="font-medium text-slate-800">{marca.marca}</span>
+                                  <p className="text-xs text-slate-500">${marca.revenue?.toLocaleString()} revenue</p>
+                                </div>
+                                <span className={`text-sm font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                  ${marca.ganancia?.toLocaleString()}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-3 mb-4">
+                            <button onClick={() => setSelectedCoberturaSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
+                              Volver
+                            </button>
+                            <h3 className="font-bold text-slate-800">{selectedCoberturaSeller.marca}</h3>
+                            <span className={`text-sm font-bold ${selectedCoberturaSeller.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              ${selectedCoberturaSeller.ganancia?.toLocaleString()} ganancia
+                            </span>
+                          </div>
+                          {/* Vendedores que venden esta marca */}
+                          {selectedCoberturaSeller.vendedoresLista && selectedCoberturaSeller.vendedoresLista.length > 0 && (
+                            <div className="mb-4 p-4 bg-cyan-50 rounded-xl border">
+                              <p className="text-xs font-medium text-cyan-700 mb-2">Vendedores ({selectedCoberturaSeller.vendedores}):</p>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedCoberturaSeller.vendedoresLista.map((v: string) => (
+                                  <span key={v} className="px-2 py-1 bg-white text-cyan-700 rounded text-xs font-medium border border-cyan-200">
+                                    {v}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
+                                  <th className="p-3 text-right font-medium text-green-600">Revenue</th>
+                                  <th className="p-3 text-right font-medium text-red-600">Costo</th>
+                                  <th className="p-3 text-right font-medium text-emerald-600">Ganancia</th>
+                                  <th className="p-3 text-right font-medium text-amber-600">Cantidad</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedCoberturaSeller.semanas.map((sem: any) => (
+                                  <tr key={sem.numero} className={`border-b ${sem.cantidadPct != null && sem.cantidadPct >= 100 ? "bg-green-50/30" : ""}`}>
+                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 text-right text-green-600 font-bold">${sem.revenue?.toLocaleString()}</td>
+                                    <td className="p-3 text-right text-red-600">${sem.costo?.toLocaleString()}</td>
+                                    <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                      ${sem.ganancia?.toLocaleString()}
+                                    </td>
+                                    <td className="p-3 text-right text-amber-600 font-bold">{sem.cantidad}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activacion Cartera Modal */}
+      {activacionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <UserCheck size={20} className="text-orange-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Activación de Cartera</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {activacionModalData?.periodoLabel || "Detalle por vendedor"}
+                  </p>
+                </div>
+              </div>
+              {/* Period Selector */}
+              <div className="flex items-center gap-2">
+                {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => openActivacionModal(p)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      activacionPeriodo === p
+                        ? "bg-orange-500 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex gap-4 px-5 pt-4 border-b">
+              {(["vendedor", "semanal"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActivacionModalTab(tab); setSelectedActivacionSeller(null); }}
+                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
+                    activacionModalTab === tab ? "text-orange-500 border-b-2 border-orange-500" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {tab === "vendedor" ? "Por Vendedor" : "Detalle Semanal"}
+                </button>
+              ))}
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {activacionModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  Cargando datos...
+                </div>
+              ) : !activacionModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  No hay datos disponibles
+                </div>
+              ) : (
+                <>
+                  {/* POR VENDEDOR Tab */}
+                  {activacionModalTab === "vendedor" && (
+                    <div className="space-y-6">
+                      {/* Global Summary */}
+                      {activacionModalData.global && (
+                        <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl p-6 border">
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Resumen Global - {activacionModalData.periodoLabel}</h3>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="text-center">
+                              <div className="bg-orange-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-orange-700">{activacionModalData.global.totalClientes}</p>
+                              </div>
+                              <p className="text-xs font-medium text-orange-600">Total Clientes</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-green-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-green-700">{activacionModalData.global.clientesActivos}</p>
+                              </div>
+                              <p className="text-xs font-medium text-green-600">Clientes Activos</p>
+                            </div>
+                            <div className="text-center">
+                              <div className="bg-purple-100 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-purple-700">{activacionModalData.global.activacion}%</p>
+                              </div>
+                              <p className="text-xs font-medium text-purple-600">Activación Global</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seller table */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                              <th className="p-3 text-center font-medium text-orange-600">Total Clientes</th>
+                              <th className="p-3 text-center font-medium text-green-600">Clientes Activos</th>
+                              <th className="p-3 text-center font-medium text-purple-600">Activación %</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activacionModalData.sellers.map((seller: any) => {
+                              const cumple = seller.activacion >= 60;
+                              return (
+                                <tr
+                                  key={seller.nombre}
+                                  className="border-b hover:bg-orange-50/40 transition-colors"
+                                >
+                                  <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                                  <td className="p-3 text-center text-orange-600 font-bold">{seller.totalClientes}</td>
+                                  <td className="p-3 text-center text-green-600 font-bold">{seller.clientesActivos}</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`font-bold ${seller.activacion >= 60 ? "text-green-600" : seller.activacion >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                                      {seller.activacion}%
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {cumple ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                        <Check size={12} /> Cumple
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                        <X size={12} /> No cumple
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DETALLE SEMANAL Tab */}
+                  {activacionModalTab === "semanal" && (
+                    <div>
+                      {!selectedActivacionSeller ? (
+                        <div className="space-y-3">
+                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {activacionModalData.sellers.map((seller: any) => (
+                              <button
+                                key={seller.nombre}
+                                onClick={() => setSelectedActivacionSeller(seller)}
+                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
+                              >
+                                <div>
+                                  <span className="font-medium text-slate-800">{seller.nombre}</span>
+                                  <p className="text-xs text-slate-500">{seller.clientesActivos}/{seller.totalClientes} clientes activos</p>
+                                </div>
+                                <span className={`text-sm font-bold ${seller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
+                                  {seller.activacion}%
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-3 mb-4">
+                            <button onClick={() => setSelectedActivacionSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
+                              Volver
+                            </button>
+                            <h3 className="font-bold text-slate-800">{selectedActivacionSeller.nombre}</h3>
+                            <span className={`text-sm font-bold ${selectedActivacionSeller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
+                              {selectedActivacionSeller.activacion}% activación
+                            </span>
+                          </div>
+                          <div className="border rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 border-b">
+                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
+                                  <th className="p-3 text-center font-medium text-green-600">Clientes Activos</th>
+                                  <th className="p-3 text-center font-medium text-orange-600">Total Clientes</th>
+                                  <th className="p-3 text-center font-medium text-purple-600">Activación %</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedActivacionSeller.semanas.map((sem: any) => (
+                                  <tr key={sem.numero} className={`border-b ${sem.activacion != null && sem.activacion >= 60 ? "bg-green-50/30" : ""}`}>
+                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 text-center text-green-600 font-bold">{sem.activos}</td>
+                                    <td className="p-3 text-center text-orange-600 font-bold">{sem.total}</td>
+                                    <td className="p-3 text-center">
+                                      {sem.activacion != null ? (
+                                        <span className={`font-bold ${sem.activacion >= 60 ? "text-green-600" : sem.activacion >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                                          {sem.activacion}%
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {sem.activacion != null ? (
+                                        sem.activacion >= 60 ? (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
+                                            <Check size={12} /> OK
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
+                                            <X size={12} /> Bajo
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Visitas Semanales Modal */}
+      {visitasModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setVisitasModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <Calendar size={20} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Visitas Semanales</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {kpiData?.sellers?.length || 0} vendedores - {currentMes}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setVisitasModalOpen(false)}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-5">
+              {visitasModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  Cargando datos...
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Formulario Nueva Visita */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-white rounded-xl p-6 border">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-4">Registrar Nueva Visita</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Selector de Vendedor */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Vendedor *</label>
+                        <select
+                          value={visitaForm.seller_name}
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            const seller = visitasVendedores.find((s: any) => s.nombre === name);
+                            setVisitaForm({ ...visitaForm, seller_name: name, seller_user_id: seller?.user_id || "", client_name: "" });
+                            setVisitaClientSearch("");
+                            setVisitaClientDropdownOpen(false);
+                            if (name) fetchVisitasClientes(name);
+                            else setVisitasClientes([]);
+                          }}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                          <option value="">Seleccionar vendedor...</option>
+                          {visitasVendedores.map((s: any, i: number) => (
+                            <option key={`${s.id}-${i}`} value={s.nombre}>{s.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Selector de Cliente / Prospecto */}
+                      <div className="relative" data-client-dropdown>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Cliente *</label>
+                        {visitaForm.is_prospect ? (
+                          <input
+                            type="text"
+                            value={visitaForm.client_name}
+                            onChange={(e) => setVisitaForm({ ...visitaForm, client_name: e.target.value })}
+                            placeholder="Nombre del prospecto..."
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        ) : (
+                          <>
+                            <input
+                              type="text"
+                              value={visitaClientSearch || visitaForm.client_name}
+                              onChange={(e) => {
+                                setVisitaClientSearch(e.target.value);
+                                setVisitaForm({ ...visitaForm, client_name: "" });
+                                setVisitaClientDropdownOpen(true);
+                              }}
+                              onFocus={() => { if (visitaForm.seller_name) setVisitaClientDropdownOpen(true); }}
+                              placeholder={
+                                !visitaForm.seller_name
+                                  ? "Selecciona un vendedor primero"
+                                  : visitasClientesLoading
+                                    ? "Cargando clientes..."
+                                    : "Buscar cliente..."
+                              }
+                              disabled={!visitaForm.seller_name || visitasClientesLoading}
+                              className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            />
+                            {visitaClientDropdownOpen && visitaForm.seller_name && !visitasClientesLoading && (
+                              <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                {visitasClientes.filter((c: any) =>
+                                  c.name.toLowerCase().includes(visitaClientSearch.toLowerCase())
+                                ).length === 0 ? (
+                                  <div className="px-3 py-2 text-xs text-slate-400">No se encontraron clientes</div>
+                                ) : (
+                                  visitasClientes
+                                    .filter((c: any) => c.name.toLowerCase().includes(visitaClientSearch.toLowerCase()))
+                                    .map((c: any, i: number) => (
+                                      <button
+                                        key={`${c.id}-${i}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setVisitaForm({ ...visitaForm, client_name: c.name });
+                                          setVisitaClientSearch("");
+                                          setVisitaClientDropdownOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors truncate"
+                                      >
+                                        {c.name}
+                                      </button>
+                                    ))
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <label className="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={visitaForm.is_prospect}
+                            onChange={(e) => {
+                              setVisitaForm({ ...visitaForm, is_prospect: e.target.checked, client_name: "" });
+                              setVisitaClientSearch("");
+                              setVisitaClientDropdownOpen(false);
+                            }}
+                            className="rounded border-slate-300"
+                          />
+                          Prospecto de cliente (no existe en sistema)
+                        </label>
+                      </div>
+
+                      {/* Fecha de Visita */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Fecha de Visita *</label>
+                        <input
+                          type="date"
+                          value={visitaForm.visit_date}
+                          onChange={(e) => setVisitaForm({ ...visitaForm, visit_date: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+
+                      {/* Foto (opcional) */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Foto (opcional)</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            setVisitaFormPhoto(file);
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setVisitaFormPhotoPreview(ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                            } else {
+                              setVisitaFormPhotoPreview("");
+                            }
+                          }}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                        />
+                        {visitaFormPhotoPreview && (
+                          <div className="mt-2 relative inline-block">
+                            <img src={visitaFormPhotoPreview} alt="Preview" className="h-20 rounded-lg border object-cover" />
+                            <button
+                              onClick={() => { setVisitaFormPhoto(null); setVisitaFormPhotoPreview(""); }}
+                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                            >├ù</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={submitVisita}
+                        disabled={visitaFormLoading || !visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {visitaFormLoading ? "Guardando..." : "Guardar Visita"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de Visitas */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700 mb-4">Visitas Registradas ({visitasData.length})</h3>
+                    {visitasData.length === 0 ? (
+                      <div className="text-center py-10 text-slate-400 text-sm">
+                        No hay visitas registradas este mes
+                      </div>
+                    ) : (
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Fecha</th>
+                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
+                              <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Tipo</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Foto</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visitasData.map((visita: any) => (
+                              <tr key={visita.id} className="border-b hover:bg-indigo-50/40 transition-colors">
+                                <td className="p-3 text-slate-800">
+                                  {new Date(visita.visit_date).toLocaleDateString("es-VE")}
+                                </td>
+                                <td className="p-3 font-medium text-slate-800">{visita.seller_name}</td>
+                                <td className="p-3 text-slate-800">{visita.client_name}</td>
+                                <td className="p-3 text-center">
+                                  {visita.is_prospect ? (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                                      Prospecto
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                      Cliente
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  {visita.photo_url ? (
+                                    <a href={visita.photo_url} target="_blank" rel="noopener noreferrer">
+                                      <img src={visita.photo_url} alt="Foto" className="h-10 w-10 rounded-lg border object-cover mx-auto hover:scale-150 transition-transform" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-slate-400 text-xs">-</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <button
+                                    onClick={() => deleteVisita(visita.id)}
+                                    className="text-red-500 hover:text-red-700 text-xs"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* MODAL DE COMPRAS KPIs */}
       <ComprasDetailModal
         isOpen={comprasModalOpen}
@@ -1696,7 +3254,6 @@ export default function StoplightReportSuperadmin() {
         companyId={selectedCompanyId}
         mes={currentMes}
       />
-
       {cxcModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
