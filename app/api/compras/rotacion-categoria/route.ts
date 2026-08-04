@@ -115,16 +115,6 @@ export async function GET(request: NextRequest) {
           Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
-    const stockPorProdYComp: Record<number, Record<number, number>> = {};
-    stockData?.forEach((s: any) => {
-      if (!s.product_id) return;
-      const pid = s.product_id[0];
-      const compId = s.company_id?.[0] ?? (sedeId || 9);
-      stockPorProdYComp[pid] ??= {};
-      stockPorProdYComp[pid][compId] =
-        (stockPorProdYComp[pid][compId] ?? 0) +
-        Math.max(0, s.quantity - s.reserved_quantity);
-    });
 
     // ============================================================
     // VENTAS 45d — mismo patrón que tendencia (que sí funciona)
