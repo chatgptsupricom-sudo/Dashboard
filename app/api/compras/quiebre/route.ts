@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,12 +10,6 @@ const JWT_SECRET = new TextEncoder().encode(
 
 const quiebreCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
-
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9,
-  10: 10,
-  7: 11,
-};
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,7 +36,7 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_quiebre_v11_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_quiebre_v12_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
     const cached = quiebreCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json(
@@ -51,6 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Paso 1: obtener lot_stock_id de los almacenes principales conocidos.
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
@@ -58,7 +54,7 @@ export async function GET(request: NextRequest) {
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "name", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "name", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
@@ -75,49 +71,119 @@ export async function GET(request: NextRequest) {
       ],
       { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"] },
     );
-    const stockDomain: any[] = locationIds.length > 0
-      ? [["location_id", "child_of", locationIds]]
-      : [["location_id.usage", "=", "internal"], ...(sedeId ? [["company_id", "=", sedeId]] : [])];
-    const stockPromise = callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
-    );
+
+    // Stock por producto y por compañía — query por cada empresa
+    const stockMap: Record<number, number> = {};
+    for (const cid of companies) {
+      const whId = MAIN_WAREHOUSE_BY_COMPANY[cid];
+      const wh = warehouseData?.find((w: any) => w.id === whId);
+      const whLoc = wh?.lot_stock_id?.[0];
+
+      const stockDomain: any[] = [];
+      if (whLoc) {
+        stockDomain.push(["location_id", "child_of", [whLoc]]);
+      } else {
+        stockDomain.push(["location_id.usage", "=", "internal"]);
+      }
+      stockDomain.push(["company_id", "=", cid]);
+
+      const stockData = await callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [stockDomain],
+        {
+          fields: ["product_id", "quantity", "reserved_quantity"],
+          limit: 0,
+          context: { allowed_company_ids: [cid] },
+        },
+      );
+      stockData?.forEach((s: any) => {
+        if (!s.product_id) return;
+        const id = s.product_id[0];
+        stockMap[id] =
+          (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+      });
+    }
+
     const moqPromise = query("SELECT sku, cantidad FROM moqs");
 
-    const [productsData, stockData, moqResult] = await Promise.all([
+    const [productsData, moqResult] = await Promise.all([
       productPromise,
-      stockPromise,
       moqPromise,
     ]);
     if (!productsData) throw new Error("Error obteniendo productos");
 
-    // Paso 2: traer standard_price desde product.template SIN contexto de empresa.
-    // El usuario de servicio (uid=388) tiene acceso a los costos de su empresa por defecto.
-    // Pasar allowed_company_ids del usuario del dashboard puede hacer que Odoo devuelva 0
-    // si el costo está registrado en otra empresa.
+    // Paso 2: traer standard_price con allowed_company_ids para obtener
+    // el costo correcto por empresa.
     const tmplIds = [
       ...new Set(
         productsData.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
       ),
     ];
-    const tmplPrices = await callOdooRPC<any[]>(
-      "product.template",
-      "search_read",
-      [[["id", "in", tmplIds]]],
-      { fields: ["id", "standard_price"], limit: 0 },
-    );
     const tmplPriceMap: Record<number, number> = {};
-    if (tmplPrices) {
-      tmplPrices.forEach((t: any) => {
-        tmplPriceMap[t.id] = Number(t.standard_price) || 0;
+    for (const cid of companies) {
+      const prices = await callOdooRPC<any[]>(
+        "product.template",
+        "search_read",
+        [[["id", "in", tmplIds]]],
+        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+      );
+      if (!prices) continue;
+      prices.forEach((t: any) => {
+        const val = Number(t.standard_price) || 0;
+        if (val > 0) tmplPriceMap[t.id] = val;
       });
+    }
+    // Fallback 2: standard_price a nivel product.product
+    const tmplIdsSinCosto = tmplIds.filter((tid) => !tmplPriceMap[tid] || tmplPriceMap[tid] === 0);
+    const productPriceFallback: Record<number, number> = {};
+    if (tmplIdsSinCosto.length > 0) {
+      const prodIdsFallback = productsData
+        .filter((p: any) => tmplIdsSinCosto.includes(p.product_tmpl_id?.[0]))
+        .map((p: any) => p.id);
+      if (prodIdsFallback.length > 0) {
+        for (const cid of companies) {
+          const prodPrices = await callOdooRPC<any[]>(
+            "product.product",
+            "search_read",
+            [[["id", "in", prodIdsFallback]]],
+            { fields: ["id", "product_tmpl_id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+          );
+          if (!prodPrices) continue;
+          prodPrices.forEach((p: any) => {
+            const val = Number(p.standard_price) || 0;
+            if (val > 0) productPriceFallback[p.id] = val;
+          });
+        }
+      }
+    }
+    // Fallback 3: precio de compra desde product.supplierinfo
+    const tmplIdsAunSinCosto = tmplIdsSinCosto.filter((tid) => {
+      const prod = productsData.find((p: any) => p.product_tmpl_id?.[0] === tid);
+      return prod && !(productPriceFallback[prod.id] > 0);
+    });
+    const supplierPriceFallback: Record<number, number> = {};
+    if (tmplIdsAunSinCosto.length > 0) {
+      const supplierData = await callOdooRPC<any[]>(
+        "product.supplierinfo",
+        "search_read",
+        [[["product_tmpl_id", "in", tmplIdsAunSinCosto]]],
+        { fields: ["product_tmpl_id", "price"], limit: 0 },
+      );
+      if (supplierData) {
+        supplierData.forEach((s: any) => {
+          const tmplId = s.product_tmpl_id?.[0];
+          const val = Number(s.price) || 0;
+          if (tmplId && val > 0 && !supplierPriceFallback[tmplId]) {
+            supplierPriceFallback[tmplId] = val;
+          }
+        });
+      }
     }
     const priceMap: Record<number, number> = {};
     productsData.forEach((p: any) => {
       const tmplId = p.product_tmpl_id?.[0];
-      priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
+      priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[p.id] || supplierPriceFallback[tmplId] || 0) : 0;
     });
 
     // Velocidad reciente: últimos 45 días basada en facturas confirmadas
@@ -128,10 +194,11 @@ export async function GET(request: NextRequest) {
     const date45Str = date45DaysAgo.toISOString().split("T")[0];
 
     const invoiceLineDomain: any[] = [
-      ["move_id.move_type", "in", ["out_invoice", "out_receipt"]],
+      ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
       ["move_id.invoice_date", ">=", date45Str],
       ["move_id.partner_id.name", "not ilike", "supricom"],
+      ["move_id.partner_id.name", "not ilike", "office solution"],
       ["product_id", "!=", false],
     ];
     if (sedeId) invoiceLineDomain.push(["move_id.company_id", "=", sedeId]);
@@ -169,15 +236,6 @@ export async function GET(request: NextRequest) {
       productSalesStats[pId] = (productSalesStats[pId] || 0) + qty;
     });
 
-    // Construir stockMap una sola vez (evita O(n²) y asegura precisión)
-    const stockMap: Record<number, number> = {};
-    if (stockData) {
-      (stockData as any[]).forEach((s) => {
-        if (!s.product_id) return;
-        const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
-      });
-    }
     // Redondear a 2 decimales para evitar diferencias por float de Odoo
     Object.keys(stockMap).forEach((k) => {
       stockMap[+k] = Math.round(stockMap[+k] * 100) / 100;
