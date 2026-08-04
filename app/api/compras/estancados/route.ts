@@ -1,3 +1,4 @@
+import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -8,13 +9,6 @@ const JWT_SECRET = new TextEncoder().encode(
 
 const estancadosCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
-
-// IDs de los almacenes principales de venta por empresa (company_id → warehouse_id)
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9,  // Valencia
-  10: 10, // Caracas
-  7: 11, // Panamá
-};
 
 export async function GET(request: NextRequest) {
   try {
@@ -104,7 +98,8 @@ export async function GET(request: NextRequest) {
       stockData.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] =
+          (stockMap[id] ?? 0) + Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
     // Redondear a 2 decimales para evitar diferencias por float de Odoo
@@ -112,33 +107,79 @@ export async function GET(request: NextRequest) {
       stockMap[+k] = Math.round(stockMap[+k] * 100) / 100;
     });
 
-    // Paso 2: traer standard_price desde product.template SIN contexto de empresa.
-    // El usuario de servicio (uid=388) tiene acceso a los costos de su empresa por defecto.
-    // Pasar allowed_company_ids del usuario del dashboard causa que Odoo filtre por esa
-    // empresa y devuelva 0 si el costo está registrado en otra empresa.
+    // Paso 2: traer standard_price con allowed_company_ids para obtener
+    // el costo correcto por empresa.
     const tmplIds = [
       ...new Set(
         productsData.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
       ),
     ];
-    const tmplPrices = await callOdooRPC<any[]>(
-      "product.template",
-      "search_read",
-      [[["id", "in", tmplIds]]],
-      { fields: ["id", "standard_price"], limit: 0 },
-    );
-    // Mapa tmplId → costo
     const tmplPriceMap: Record<number, number> = {};
-    if (tmplPrices) {
-      tmplPrices.forEach((t: any) => {
-        tmplPriceMap[t.id] = Number(t.standard_price) || 0;
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+    for (const cid of companies) {
+      const prices = await callOdooRPC<any[]>(
+        "product.template",
+        "search_read",
+        [[["id", "in", tmplIds]]],
+        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+      );
+      if (!prices) continue;
+      prices.forEach((t: any) => {
+        const val = Number(t.standard_price) || 0;
+        if (val > 0) tmplPriceMap[t.id] = val;
       });
+    }
+    // Fallback 2: standard_price a nivel product.product
+    const tmplIdsSinCosto = tmplIds.filter((tid) => !tmplPriceMap[tid] || tmplPriceMap[tid] === 0);
+    const productPriceFallback: Record<number, number> = {};
+    if (tmplIdsSinCosto.length > 0) {
+      const prodIdsFallback = productsData
+        .filter((p: any) => tmplIdsSinCosto.includes(p.product_tmpl_id?.[0]))
+        .map((p: any) => p.id);
+      if (prodIdsFallback.length > 0) {
+        for (const cid of companies) {
+          const prodPrices = await callOdooRPC<any[]>(
+            "product.product",
+            "search_read",
+            [[["id", "in", prodIdsFallback]]],
+            { fields: ["id", "product_tmpl_id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+          );
+          if (!prodPrices) continue;
+          prodPrices.forEach((p: any) => {
+            const val = Number(p.standard_price) || 0;
+            if (val > 0) productPriceFallback[p.id] = val;
+          });
+        }
+      }
+    }
+    // Fallback 3: precio de compra desde product.supplierinfo
+    const tmplIdsAunSinCosto = tmplIdsSinCosto.filter((tid) => {
+      const prod = productsData.find((p: any) => p.product_tmpl_id?.[0] === tid);
+      return prod && !(productPriceFallback[prod.id] > 0);
+    });
+    const supplierPriceFallback: Record<number, number> = {};
+    if (tmplIdsAunSinCosto.length > 0) {
+      const supplierData = await callOdooRPC<any[]>(
+        "product.supplierinfo",
+        "search_read",
+        [[["product_tmpl_id", "in", tmplIdsAunSinCosto]]],
+        { fields: ["product_tmpl_id", "price"], limit: 0 },
+      );
+      if (supplierData) {
+        supplierData.forEach((s: any) => {
+          const tmplId = s.product_tmpl_id?.[0];
+          const val = Number(s.price) || 0;
+          if (tmplId && val > 0 && !supplierPriceFallback[tmplId]) {
+            supplierPriceFallback[tmplId] = val;
+          }
+        });
+      }
     }
     // Mapa productId → costo (via product_tmpl_id)
     const priceMap: Record<number, number> = {};
     productsData.forEach((p: any) => {
       const tmplId = p.product_tmpl_id?.[0];
-      priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
+      priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[p.id] || supplierPriceFallback[tmplId] || 0) : 0;
     });
     // Paso 3: obtener facturas de cliente confirmadas (account.move)
     // Sin contexto de empresa — el usuario RPC usa su empresa por defecto.
@@ -148,9 +189,10 @@ export async function GET(request: NextRequest) {
       let offset = 0;
       while (true) {
         const domain: any[] = [
-          ["move_type", "in", ["out_invoice", "out_receipt"]],
+          ["move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
           ["state", "=", "posted"],
           ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.name", "not ilike", "office solution"],
         ];
         if (sedeId) domain.push(["company_id", "=", sedeId]);
         const page = await callOdooRPC<any[]>(

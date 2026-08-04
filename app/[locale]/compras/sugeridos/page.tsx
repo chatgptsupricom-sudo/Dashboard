@@ -19,9 +19,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Loader2, Package, Search } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Package, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoSugerido {
   id: number;
@@ -38,8 +41,7 @@ interface ProductoSugerido {
   cantidadAComprar: number;
   costo: number;
   valorAComprar: number;
-  accion: string;
-  fechaQuiebreEstimada: string;
+  tipo: "quiebre" | "riesgo";
 }
 
 function abcColor(abc: string) {
@@ -50,24 +52,6 @@ function abcColor(abc: string) {
       : "bg-gray-400";
 }
 
-function accionBadgeClass(accion: string) {
-  if (accion.includes("QUIEBRE")) return "bg-red-600 text-white";
-  if (accion.includes("RIESGO")) return "bg-orange-500 text-white";
-  return "bg-green-600 text-white";
-}
-
-function accionLabel(accion: string) {
-  if (accion.includes("QUIEBRE")) return "QUIEBRE";
-  if (accion.includes("RIESGO")) return "RIESGO";
-  return "OK";
-}
-
-function rowBg(accion: string) {
-  if (accion.includes("QUIEBRE")) return "bg-red-50/40 hover:bg-red-50/70";
-  if (accion.includes("RIESGO")) return "bg-orange-50/40 hover:bg-orange-50/70";
-  return "hover:bg-blue-50/20";
-}
-
 function fmt(n: number) {
   return n.toLocaleString("en-US", {
     minimumFractionDigits: 0,
@@ -75,36 +59,32 @@ function fmt(n: number) {
   });
 }
 
-const SEDES = [
-  { id: "todas", label: "Todas las sedes" },
-  { id: "9", label: "Valencia" },
-  { id: "10", label: "Caracas" },
-  { id: "7", label: "Panamá" },
-];
-
 export default function SugeridosPage() {
   const [todos, setTodos] = useState<ProductoSugerido[]>([]);
   const [loading, setLoading] = useState(true);
+  const [warning, setWarning] = useState<string | null>(null);
 
-  const [sede, setSede] = useState("todas");
+  const [sede, setSede] = useState("9");
   const [busqueda, setBusqueda] = useState("");
   const [filtroABC, setFiltroABC] = useState("TODAS");
   const [filtroMarca, setFiltroMarca] = useState("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState("TODAS");
-  const [filtroAccion, setFiltroAccion] = useState("TODAS");
 
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageQuiebre, setCurrentPageQuiebre] = useState(1);
+  const [currentPageRiesgo, setCurrentPageRiesgo] = useState(1);
   const itemsPerPage = 10;
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setWarning(null);
       try {
-        const params = sede !== "todas" ? `?sede=${sede}` : "";
+        const params = `?sede=${sede}`;
         const response = await fetch(`/api/compras/sugeridos${params}`);
         const result = await response.json();
         if (result.success) {
           setTodos(result.data);
+          setWarning(result.warning || null);
         }
       } catch (error) {
         console.error("[Sugeridos] Error:", error);
@@ -123,7 +103,7 @@ export default function SugeridosPage() {
   );
 
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(tras_abc.map((p) => p.marca).filter(Boolean))).sort(),
+    () => Array.from(new Set(tras_abc.map((p) => p.marca))).sort(),
     [tras_abc],
   );
 
@@ -136,7 +116,7 @@ export default function SugeridosPage() {
   );
 
   const categoriasUnicas = useMemo(
-    () => Array.from(new Set(tras_marca.map((p) => p.categoria).filter(Boolean))).sort(),
+    () => Array.from(new Set(tras_marca.map((p) => p.categoria))).sort(),
     [tras_marca],
   );
 
@@ -148,60 +128,69 @@ export default function SugeridosPage() {
     [tras_marca, filtroCategoria],
   );
 
-  const accionesUnicas = useMemo(
-    () => Array.from(new Set(tras_cat.map((p) => p.accion).filter(Boolean))).sort(),
-    [tras_cat],
-  );
-
   const productosFiltrados = useMemo(() => {
     const termino = busqueda.toLowerCase();
     return tras_cat.filter((p) => {
-      const busq =
+      return (
         termino === "" ||
         p.codigo.toLowerCase().includes(termino) ||
-        p.name.toLowerCase().includes(termino);
-      const acc = filtroAccion === "TODAS" || p.accion === filtroAccion;
-      return busq && acc;
+        p.name.toLowerCase().includes(termino)
+      );
     });
-  }, [tras_cat, busqueda, filtroAccion]);
+  }, [tras_cat, busqueda]);
+
+  const enQuiebre = useMemo(
+    () =>
+      productosFiltrados.filter(
+        (p) => p.tipo === "quiebre" && p.abc !== "C",
+      ),
+    [productosFiltrados],
+  );
+
+  const enRiesgo = useMemo(
+    () => productosFiltrados.filter((p) => p.tipo === "riesgo" && p.abc !== "C"),
+    [productosFiltrados],
+  );
 
   useEffect(() => {
     setFiltroMarca("TODAS");
     setFiltroCategoria("TODAS");
-    setFiltroAccion("TODAS");
   }, [filtroABC]);
   useEffect(() => {
     setFiltroCategoria("TODAS");
-    setFiltroAccion("TODAS");
   }, [filtroMarca]);
   useEffect(() => {
-    setFiltroAccion("TODAS");
-  }, [filtroCategoria]);
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [busqueda, filtroABC, filtroMarca, filtroCategoria, filtroAccion]);
+    setCurrentPageQuiebre(1);
+    setCurrentPageRiesgo(1);
+  }, [busqueda, filtroABC, filtroMarca, filtroCategoria]);
 
   // KPIs
   const kpis = useMemo(
     () => ({
+      totalQuiebre: enQuiebre.length,
+      totalRiesgo: enRiesgo.length,
       totalValor: productosFiltrados.reduce((s, p) => s + p.valorAComprar, 0),
       totalSkus: productosFiltrados.length,
-      enQuiebre: productosFiltrados.filter((p) => p.accion.includes("QUIEBRE"))
-        .length,
-      enRiesgo: productosFiltrados.filter((p) => p.accion.includes("RIESGO"))
-        .length,
     }),
-    [productosFiltrados],
+    [enQuiebre, enRiesgo, productosFiltrados],
   );
 
-  const totalPages = Math.ceil(productosFiltrados.length / itemsPerPage);
-  const currentItems = productosFiltrados.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+  // Paginación quiebre
+  const totalPagesQuiebre = Math.ceil(enQuiebre.length / itemsPerPage);
+  const currentItemsQuiebre = enQuiebre.slice(
+    (currentPageQuiebre - 1) * itemsPerPage,
+    currentPageQuiebre * itemsPerPage,
+  );
+
+  // Paginación riesgo
+  const totalPagesRiesgo = Math.ceil(enRiesgo.length / itemsPerPage);
+  const currentItemsRiesgo = enRiesgo.slice(
+    (currentPageRiesgo - 1) * itemsPerPage,
+    currentPageRiesgo * itemsPerPage,
   );
 
   const exportarExcel = () => {
-    const data = productosFiltrados.map((item, i) => ({
+    const mapItem = (item: ProductoSugerido, i: number) => ({
       "#": i + 1,
       Código: item.codigo,
       Descripción: item.name,
@@ -212,16 +201,17 @@ export default function SugeridosPage() {
       "Demanda/día": item.demandaDiaria,
       MOQ: item.moq,
       "Pto. Reorden": item.puntoReorden,
-      "Días Inv.": item.diasInvActual >= 999 ? "∞" : item.diasInvActual,
+      "Días Inv.":
+        item.diasInvActual >= 999 ? "∞" : item.diasInvActual,
       "Cant. a Comprar": item.cantidadAComprar,
       "Costo Unit. ($)": item.costo,
       "Valor a Comprar ($)": item.valorAComprar,
-      Acción: item.accion,
-      "Fecha Quiebre Est.": item.fechaQuiebreEstimada,
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    });
+    const wsQuiebre = XLSX.utils.json_to_sheet(enQuiebre.map(mapItem));
+    const wsRiesgo = XLSX.utils.json_to_sheet(enRiesgo.map(mapItem));
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sugeridos_Compra");
+    XLSX.utils.book_append_sheet(workbook, wsQuiebre, "Quiebre");
+    XLSX.utils.book_append_sheet(workbook, wsRiesgo, "Riesgo");
     XLSX.writeFile(
       workbook,
       `Sugeridos_Compra_${new Date().toISOString().split("T")[0]}.xlsx`,
@@ -236,7 +226,7 @@ export default function SugeridosPage() {
           Calculando sugeridos de compra...
         </h2>
         <p className="text-gray-500 text-sm mt-2">
-          Analizando ventas, stock y MOQ desde Odoo
+          Analizando ventas, stock, MOQ y punto de reorden desde Odoo
         </p>
       </div>
     );
@@ -249,21 +239,36 @@ export default function SugeridosPage() {
           Sugeridos de Compra
         </h1>
         <p className="text-gray-500">
-          Productos que requieren reposición según MOQ, stock objetivo y punto
-          de reorden.
+          Lista de compra: productos con MOQ configurado que requieren
+          reposición urgente.
         </p>
       </div>
 
+      {warning && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-amber-800 text-sm">
+          <strong>Advertencia:</strong> {warning}
+        </div>
+      )}
+
       {/* Filtros */}
       <Card className="bg-white shadow-sm border-gray-200">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 items-center">
-          <Select value={sede} onValueChange={(v) => { setSede(v); setCurrentPage(1); }}>
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
+          <Select
+            value={sede}
+            onValueChange={(v) => {
+              setSede(v);
+              setCurrentPageQuiebre(1);
+              setCurrentPageRiesgo(1);
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Sede" />
             </SelectTrigger>
             <SelectContent>
               {SEDES.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -313,19 +318,6 @@ export default function SugeridosPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={filtroAccion} onValueChange={setFiltroAccion}>
-            <SelectTrigger>
-              <SelectValue placeholder="Acción" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="TODAS">Todas las acciones</SelectItem>
-              {accionesUnicas.map((a) => (
-                <SelectItem key={a} value={a}>
-                  {a}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Button
             onClick={exportarExcel}
             variant="outline"
@@ -338,77 +330,109 @@ export default function SugeridosPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Valor Total a Comprar</p>
-            <p className="text-2xl font-bold text-blue-700 mt-1">${fmt(kpis.totalValor)}</p>
-            <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
-          </CardContent>
-        </Card>
         <Card className="border-red-200 bg-red-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Quiebre Total</p>
-            <p className="text-2xl font-bold text-red-700 mt-1">{kpis.enQuiebre}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Quiebre
+            </p>
+            <p className="text-2xl font-bold text-red-700 mt-1">
+              {kpis.totalQuiebre}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Riesgo Inminente</p>
-            <p className="text-2xl font-bold text-orange-600 mt-1">{kpis.enRiesgo}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Riesgo
+            </p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">
+              {kpis.totalRiesgo}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Valor Total a Comprar
+            </p>
+            <p className="text-2xl font-bold text-blue-700 mt-1">
+              ${fmt(kpis.totalValor)}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
           </CardContent>
         </Card>
         <Card className="border-green-200 bg-green-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sugeridos</p>
-            <p className="text-2xl font-bold text-green-700 mt-1">{todos.length}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Total Sugeridos
+            </p>
+            <p className="text-2xl font-bold text-green-700 mt-1">
+              {kpis.totalSkus}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Con MOQ configurado</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabla */}
-      <Card className="shadow-md border-blue-200">
-        <CardHeader className="bg-blue-50/50 pb-4">
-          <CardTitle className="text-lg flex items-center text-blue-700">
-            <Package className="h-5 w-5 mr-2" /> Órdenes de Compra Sugeridas
+      {/* Tabla Quiebre */}
+      <Card className="shadow-md border-red-200">
+        <CardHeader className="bg-red-50/50 pb-4">
+          <CardTitle className="text-lg flex items-center text-red-700">
+            <AlertTriangle className="h-5 w-5 mr-2" /> Productos en Quiebre (Stock = 0)
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader className="bg-blue-50/30">
+              <TableHeader className="bg-red-50/30">
                 <TableRow>
-                  <TableHead className="px-4 w-[280px]">Producto</TableHead>
-                  <TableHead className="text-center">ABC</TableHead>
-                  <TableHead className="text-center">Stock</TableHead>
-                  <TableHead className="text-center">Días Inv.</TableHead>
-                  <TableHead className="text-center">Pto. Reorden</TableHead>
-                  <TableHead className="text-center">MOQ</TableHead>
+                  <TableHead className="px-4 w-[280px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Días Inv." tooltip={COLUMN_TOOLTIPS["Días Inv."]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="MOQ" tooltip={COLUMN_TOOLTIPS.MOQ} />
+                  </TableHead>
                   <TableHead className="text-center font-bold text-blue-700">
-                    Cant. Comprar
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
                   </TableHead>
-                  <TableHead className="text-center">Costo Unit.</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unit." tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold">
-                    Valor ($)
+                    <ColumnHeader label="Valor ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
                   </TableHead>
-                  <TableHead className="text-right pr-6">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.length === 0 ? (
+                {currentItemsQuiebre.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="text-center py-8 text-gray-500"
                     >
-                      No hay productos sugeridos con estos filtros.
+                      No hay productos en quiebre con estos filtros.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  currentItems.map((item) => (
-                    <TableRow key={item.codigo} className={rowBg(item.accion)}>
+                  currentItemsQuiebre.map((item) => (
+                    <TableRow
+                      key={item.codigo}
+                      className="bg-red-50/30 hover:bg-red-50/60"
+                    >
                       <TableCell className="px-4">
                         <div className="font-semibold text-sm">
                           {item.codigo}
@@ -431,31 +455,183 @@ export default function SugeridosPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge
-                          variant={
-                            item.stockDisponible <= 0
-                              ? "destructive"
-                              : "outline"
-                          }
-                          className={
-                            item.stockDisponible <= 0
-                              ? "bg-red-600 text-white"
-                              : "bg-white font-bold"
-                          }
+                        <Badge variant="destructive" className="bg-red-600">
+                          {item.stockDisponible}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        <span className="text-red-600 font-bold">0d</span>
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600 text-sm">
+                        {item.puntoReorden}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {item.moq > 0 ? (
+                          <span className="text-gray-600">{item.moq}</span>
+                        ) : (
+                          <span className="text-amber-600 font-semibold text-xs">
+                            Sin MOQ
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center font-bold text-base">
+                        {item.cantidadAComprar > 0 ? (
+                          <span className="text-blue-700">
+                            +{item.cantidadAComprar}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 text-xs font-semibold">
+                            Sin MOQ
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600 text-sm">
+                        {item.costo > 0 ? (
+                          `$${item.costo.toFixed(2)}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center font-bold text-gray-800">
+                        {item.valorAComprar > 0
+                          ? `$${fmt(item.valorAComprar)}`
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between p-4 border-t">
+            <p className="text-sm text-gray-500">
+              {enQuiebre.length === 0
+                ? "0 productos"
+                : totalPagesQuiebre > 1
+                  ? `${(currentPageQuiebre - 1) * itemsPerPage + 1}–${Math.min(currentPageQuiebre * itemsPerPage, enQuiebre.length)} de ${enQuiebre.length} productos`
+                  : `${enQuiebre.length} producto${enQuiebre.length !== 1 ? "s" : ""}`}
+            </p>
+            {totalPagesQuiebre > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPageQuiebre((p) => Math.max(p - 1, 1))}
+                  disabled={currentPageQuiebre === 1}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPageQuiebre((p) => Math.min(p + 1, totalPagesQuiebre))
+                  }
+                  disabled={currentPageQuiebre === totalPagesQuiebre}
+                >
+                  Siguiente
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla Riesgo */}
+      <Card className="shadow-md border-orange-200">
+        <CardHeader className="bg-orange-50/50 pb-4">
+          <CardTitle className="text-lg flex items-center text-orange-700">
+            <Package className="h-5 w-5 mr-2" /> Productos en Riesgo de Quiebre
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-orange-50/30">
+                <TableRow>
+                  <TableHead className="px-4 w-[280px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Días Inv." tooltip={COLUMN_TOOLTIPS["Días Inv."]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="MOQ" tooltip={COLUMN_TOOLTIPS.MOQ} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-blue-700">
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unit." tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold">
+                    <ColumnHeader label="Valor ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentItemsRiesgo.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={9}
+                      className="text-center py-8 text-gray-500"
+                    >
+                      No hay productos en riesgo con estos filtros.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  currentItemsRiesgo.map((item) => (
+                    <TableRow
+                      key={item.codigo}
+                      className="bg-orange-50/30 hover:bg-orange-50/60"
+                    >
+                      <TableCell className="px-4">
+                        <div className="font-semibold text-sm">
+                          {item.codigo}
+                        </div>
+                        <div
+                          className="text-xs text-gray-500 truncate w-[240px]"
+                          title={item.name}
                         >
+                          {item.name}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          {item.categoria}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          className={`${abcColor(item.abc)} text-white font-bold`}
+                        >
+                          {item.abc}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="destructive" className="bg-orange-500">
                           {item.stockDisponible}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center text-sm">
                         {item.diasInvActual >= 999 ? (
-                          <span className="text-gray-400 text-xs">Sin ventas</span>
+                          <span className="text-gray-400 text-xs">∞</span>
                         ) : (
                           <span
                             className={
-                              item.diasInvActual <= 7
+                              item.diasInvActual <= 3
                                 ? "text-red-600 font-bold"
-                                : item.diasInvActual <= 20
-                                  ? "text-orange-500 font-medium"
+                                : item.diasInvActual <= 7
+                                  ? "text-orange-500 font-semibold"
                                   : "text-gray-600"
                             }
                           >
@@ -487,24 +663,18 @@ export default function SugeridosPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 text-sm">
-                        {item.costo > 0
-                          ? `$${item.costo.toFixed(2)}`
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo</span>}
+                        {item.costo > 0 ? (
+                          `$${item.costo.toFixed(2)}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-bold text-gray-800">
                         {item.valorAComprar > 0
                           ? `$${fmt(item.valorAComprar)}`
                           : "—"}
-                      </TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Badge className={`text-xs ${accionBadgeClass(item.accion)}`}>
-                          {accionLabel(item.accion)}
-                        </Badge>
-                        {!item.accion.includes("OK") && (
-                          <div className="text-[10px] text-gray-400 mt-1 text-right">
-                            {item.fechaQuiebreEstimada}
-                          </div>
-                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -514,27 +684,29 @@ export default function SugeridosPage() {
           </div>
           <div className="flex items-center justify-between p-4 border-t">
             <p className="text-sm text-gray-500">
-              {productosFiltrados.length === 0
+              {enRiesgo.length === 0
                 ? "0 productos"
-                : totalPages > 1
-                  ? `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, productosFiltrados.length)} de ${productosFiltrados.length} productos`
-                  : `${productosFiltrados.length} producto${productosFiltrados.length !== 1 ? "s" : ""}`}
+                : totalPagesRiesgo > 1
+                  ? `${(currentPageRiesgo - 1) * itemsPerPage + 1}–${Math.min(currentPageRiesgo * itemsPerPage, enRiesgo.length)} de ${enRiesgo.length} productos`
+                  : `${enRiesgo.length} producto${enRiesgo.length !== 1 ? "s" : ""}`}
             </p>
-            {totalPages > 1 && (
+            {totalPagesRiesgo > 1 && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPageRiesgo((p) => Math.max(p - 1, 1))}
+                  disabled={currentPageRiesgo === 1}
                 >
                   Anterior
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
+                  onClick={() =>
+                    setCurrentPageRiesgo((p) => Math.min(p + 1, totalPagesRiesgo))
+                  }
+                  disabled={currentPageRiesgo === totalPagesRiesgo}
                 >
                   Siguiente
                 </Button>

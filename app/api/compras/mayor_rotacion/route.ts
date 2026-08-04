@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -12,13 +13,9 @@ const CACHE_TTL = 10 * 60 * 1000;
 
 const ETA_DIAS = 25;
 
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9,   // Valencia
-  10: 10, // Caracas
-  7: 11,  // Panamá
-};
-
-function clasificarABC(productos: { id: number; ventas365d: number }[]): Record<number, string> {
+function clasificarABC(
+  productos: { id: number; ventas365d: number }[],
+): Record<number, string> {
   const total = productos.reduce((s, p) => s + p.ventas365d, 0);
   const sorted = [...productos].sort((a, b) => b.ventas365d - a.ventas365d);
   const map: Record<number, string> = {};
@@ -40,7 +37,10 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Permisos insuficientes" },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -72,8 +72,10 @@ export async function GET(request: NextRequest) {
       : [];
 
     // Fechas para 45d y 365d
-    const fecha45 = new Date(); fecha45.setDate(today.getDate() - 45);
-    const fecha365 = new Date(); fecha365.setDate(today.getDate() - 365);
+    const fecha45 = new Date();
+    fecha45.setDate(today.getDate() - 45);
+    const fecha365 = new Date();
+    fecha365.setDate(today.getDate() - 365);
     const str45 = fecha45.toISOString().split("T")[0];
     const str365 = fecha365.toISOString().split("T")[0];
 
@@ -83,9 +85,15 @@ export async function GET(request: NextRequest) {
       let offset = 0;
       while (true) {
         const domain: any[] = [
-          ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
+          [
+            "move_id.move_type",
+            "in",
+            ["out_invoice", "out_refund", "out_receipt"],
+          ],
           ["move_id.state", "=", "posted"],
           ["move_id.invoice_date", ">=", fechaDesde],
+          ["move_id.partner_id.name", "not ilike", "supricom"],
+          ["move_id.partner_id.name", "not ilike", "office solution"],
           ["product_id", "!=", false],
         ];
         if (sedeId) domain.push(["move_id.company_id", "=", sedeId]);
@@ -93,7 +101,12 @@ export async function GET(request: NextRequest) {
           "account.move.line",
           "search_read",
           [domain],
-          { fields: ["product_id", "quantity", "price_subtotal"], order: "id asc", limit: 5000, offset },
+          {
+            fields: ["product_id", "quantity", "price_subtotal"],
+            order: "id asc",
+            limit: 5000,
+            offset,
+          },
         );
         if (!page || page.length === 0) break;
         result = result.concat(page);
@@ -127,26 +140,39 @@ export async function GET(request: NextRequest) {
     });
 
     // Solo productos con ventas en 45d
-    const productIds = Object.keys(stats45).map(Number).filter((id) => stats45[id].unidades > 0);
-    if (productIds.length === 0) return NextResponse.json({ success: true, data: [] });
+    const productIds = Object.keys(stats45)
+      .map(Number)
+      .filter((id) => stats45[id].unidades > 0);
+    if (productIds.length === 0)
+      return NextResponse.json({ success: true, data: [] });
 
     // Paso 2: datos de productos, stock y costos en paralelo
     const [productos, stockData, tmplPricesRaw] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
-        [[["id", "in", productIds], ["active", "=", true]]],
-        { fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"], limit: 0 },
+        [
+          [
+            ["id", "in", productIds],
+            ["active", "=", true],
+          ],
+        ],
+        {
+          fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
+          limit: 0,
+        },
       ),
       callOdooRPC<any[]>(
         "stock.quant",
         "search_read",
-        [[
-          ...(locationIds.length > 0
-            ? [["location_id", "child_of", locationIds]]
-            : [["location_id.usage", "=", "internal"]]),
-          ["product_id", "in", productIds],
-        ]],
+        [
+          [
+            ...(locationIds.length > 0
+              ? [["location_id", "child_of", locationIds]]
+              : [["location_id.usage", "=", "internal"]]),
+            ["product_id", "in", productIds],
+          ],
+        ],
         { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
       ),
       // placeholder — costos se obtienen después de tener tmplIds
@@ -161,28 +187,89 @@ export async function GET(request: NextRequest) {
       stockData.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] || 0) + Math.max(0, s.quantity - s.reserved_quantity);
+        stockMap[id] =
+          (stockMap[id] || 0) + Math.max(0, s.quantity - s.reserved_quantity);
       });
     }
 
-    // Costos
-    const tmplIds = [...new Set(productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean))];
-    const tmplPrices = await callOdooRPC<any[]>(
-      "product.template",
-      "search_read",
-      [[["id", "in", tmplIds]]],
-      { fields: ["id", "standard_price"], limit: 0 },
-    );
+    // Costos por empresa con allowed_company_ids
+    const tmplIds = [
+      ...new Set(
+        productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
+      ),
+    ];
     const tmplPriceMap: Record<number, number> = {};
-    if (tmplPrices) {
-      tmplPrices.forEach((t: any) => { tmplPriceMap[t.id] = Number(t.standard_price) || 0; });
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+    for (const cid of companies) {
+      const prices = await callOdooRPC<any[]>(
+        "product.template",
+        "search_read",
+        [[["id", "in", tmplIds]]],
+        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+      );
+      if (!prices) continue;
+      prices.forEach((t: any) => {
+        const val = Number(t.standard_price) || 0;
+        if (val > 0) tmplPriceMap[t.id] = val;
+      });
+    }
+    // Fallback 2: standard_price a nivel product.product
+    const tmplIdsSinCosto = tmplIds.filter((tid) => !tmplPriceMap[tid] || tmplPriceMap[tid] === 0);
+    const productPriceFallback: Record<number, number> = {};
+    if (tmplIdsSinCosto.length > 0) {
+      const prodIdsFallback = productos
+        .filter((p: any) => tmplIdsSinCosto.includes(p.product_tmpl_id?.[0]))
+        .map((p: any) => p.id);
+      if (prodIdsFallback.length > 0) {
+        for (const cid of companies) {
+          const prodPrices = await callOdooRPC<any[]>(
+            "product.product",
+            "search_read",
+            [[["id", "in", prodIdsFallback]]],
+            { fields: ["id", "product_tmpl_id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+          );
+          if (!prodPrices) continue;
+          prodPrices.forEach((p: any) => {
+            const val = Number(p.standard_price) || 0;
+            if (val > 0) productPriceFallback[p.id] = val;
+          });
+        }
+      }
+    }
+    // Fallback 3: precio de compra desde product.supplierinfo
+    const tmplIdsAunSinCosto = tmplIdsSinCosto.filter((tid) => {
+      const prod = productos.find((p: any) => p.product_tmpl_id?.[0] === tid);
+      return prod && !(productPriceFallback[prod.id] > 0);
+    });
+    const supplierPriceFallback: Record<number, number> = {};
+    if (tmplIdsAunSinCosto.length > 0) {
+      const supplierData = await callOdooRPC<any[]>(
+        "product.supplierinfo",
+        "search_read",
+        [[["product_tmpl_id", "in", tmplIdsAunSinCosto]]],
+        { fields: ["product_tmpl_id", "price"], limit: 0 },
+      );
+      if (supplierData) {
+        supplierData.forEach((s: any) => {
+          const tmplId = s.product_tmpl_id?.[0];
+          const val = Number(s.price) || 0;
+          if (tmplId && val > 0 && !supplierPriceFallback[tmplId]) {
+            supplierPriceFallback[tmplId] = val;
+          }
+        });
+      }
     }
 
     // MOQ desde MySQL
-    const moqMap = new Map((moqResult as any).rows.map((m: any) => [m.sku, Number(m.cantidad)]));
+    const moqMap = new Map(
+      (moqResult as any).rows.map((m: any) => [m.sku, Number(m.cantidad)]),
+    );
 
     // Clasificación ABC basada en ventas 365d
-    const abcInput = productIds.map((id) => ({ id, ventas365d: stats365[id] || 0 }));
+    const abcInput = productIds.map((id) => ({
+      id,
+      ventas365d: stats365[id] || 0,
+    }));
     const abcMap = clasificarABC(abcInput);
 
     // Construir resultado final con todos los cálculos del Excel
@@ -190,13 +277,15 @@ export async function GET(request: NextRequest) {
       .map((prod: any) => {
         const pId = prod.id;
         const tmplId = prod.product_tmpl_id?.[0];
-        const codigo = prod.default_code ? String(prod.default_code).trim() : `PROD-${pId}`;
+        const codigo = prod.default_code
+          ? String(prod.default_code).trim()
+          : `PROD-${pId}`;
 
         const ventas45d = Math.round(stats45[pId]?.unidades || 0);
         const ventas365d = Math.round(stats365[pId] || 0);
         const ingresos = Number((stats45[pId]?.ingresos || 0).toFixed(2));
         const stock = stockMap[pId] || 0;
-        const costo = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
+        const costo = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[pId] || supplierPriceFallback[tmplId] || 0) : 0;
         const moqRaw = moqMap.get(codigo);
         const tieneMoq = moqRaw !== undefined && moqRaw > 0;
         const moq = tieneMoq ? moqRaw! : 0;
@@ -228,19 +317,26 @@ export async function GET(request: NextRequest) {
           accion = "⚠️ RIESGO: Quiebre Inminente";
         }
 
-        const diasHastaQuiebre = demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
+        const diasHastaQuiebre =
+          demandaDiaria > 0 ? Math.floor(stock / demandaDiaria) : 999;
         const fechaQuiebre = new Date(today);
         fechaQuiebre.setDate(fechaQuiebre.getDate() + diasHastaQuiebre);
         const fechaQuiebreEstimada =
           diasHastaQuiebre >= 999
             ? "Sin riesgo"
-            : fechaQuiebre.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
+            : fechaQuiebre.toLocaleDateString("es-VE", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              });
 
         return {
           id: pId,
           codigo,
           name: prod.name,
-          marca: prod.name ? prod.name.split(" ")[0].toUpperCase() : "SIN MARCA",
+          marca: prod.name
+            ? prod.name.split(" ")[0].toUpperCase()
+            : "SIN MARCA",
           categoria: prod.categ_id ? prod.categ_id[1] : "Sin Categoría",
           ventas45d,
           ventas365d,
@@ -255,7 +351,8 @@ export async function GET(request: NextRequest) {
           stockSeguridad,
           puntoReorden: Number(puntoReorden.toFixed(1)),
           stockObjetivo: Number(stockObjetivo.toFixed(1)),
-          diasInvActual: diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
+          diasInvActual:
+            diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
           tieneMoq,
           cantidadAComprar,
           valorAComprar: Number(valorAComprar.toFixed(2)),

@@ -145,15 +145,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: [
-      "dashboard",
-      "cuota",
-      "MapaClientes",
-      "inventory",
-      "actividad",
-      "spiff",
-      "reporte_diario",
-    ],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
@@ -173,7 +165,6 @@ export const rolePermissions: RolePermissions = {
       "integraciondepago", // Integración De Pago,
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones
-      "compras", // Agregado asumiendo que Operaciones supervisa compras (opcional)
       "spiff", // Gestión de spiffs por marca
     ],
   },
@@ -204,12 +195,12 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard", // KPIs de compras, alertas de quiebre de stock
       "sugeridos", // Productos con baja rotación o bajo stock
-      "proveedores", // Gestión y registro de proveedores
-      "ordenes",
       "moq",
       "menor_rotacion",
       "mayor_rotacion",
-      // Historial y aprobación de órdenes de compra
+      "cobertura", // Cobertura de stock (días de inventario)
+      "rotacion_categoria", // Clasificación ABC por categoría
+      "tendencia", // Tendencia de ventas histórica
     ],
   },
 };

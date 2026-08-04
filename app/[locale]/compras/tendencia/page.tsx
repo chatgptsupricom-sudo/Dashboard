@@ -10,6 +10,9 @@ import {
 } from "@/components/ui/select";
 import { Loader2, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 import {
   Bar,
   BarChart,
@@ -55,21 +58,32 @@ interface DrillDown {
   productos: { nombre: string; qty: number }[];
 }
 
-const SEDES = [
-  { id: "todas", label: "Todas las sedes" },
-  { id: "9", label: "Valencia" },
-  { id: "10", label: "Caracas" },
-  { id: "7", label: "Panamá" },
-];
-
 const COLORES = [
-  "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-  "#0891b2", "#be185d", "#65a30d", "#ea580c", "#6d28d9",
+  "#2563eb",
+  "#16a34a",
+  "#dc2626",
+  "#d97706",
+  "#7c3aed",
+  "#0891b2",
+  "#be185d",
+  "#65a30d",
+  "#ea580c",
+  "#6d28d9",
 ];
 
 const MESES_ES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
 ];
 
 function generarMeses(n = 13) {
@@ -86,15 +100,18 @@ function generarMeses(n = 13) {
 
 async function fetchHistorico(sede: string): Promise<HistoricoData | null> {
   const params = new URLSearchParams({ historico: "true" });
-  if (sede !== "todas") params.set("sede", sede);
+  if (sede) params.set("sede", sede);
   const r = await fetch(`/api/compras/tendencia?${params}`);
   const json = await r.json();
   return json.success ? json.data : null;
 }
 
-async function fetchTendencia(mes: string, sede: string): Promise<TendenciaData | null> {
+async function fetchTendencia(
+  mes: string,
+  sede: string,
+): Promise<TendenciaData | null> {
   const params = new URLSearchParams({ mes });
-  if (sede !== "todas") params.set("sede", sede);
+  if (sede) params.set("sede", sede);
   const r = await fetch(`/api/compras/tendencia?${params}`);
   const json = await r.json();
   return json.success ? json.data : null;
@@ -104,10 +121,12 @@ export default function TendenciaPage() {
   const mesesDisponibles = useMemo(() => generarMeses(13), []);
   const mesActual = mesesDisponibles[0].value;
 
-  const [sede, setSede] = useState("todas");
+  const [sede, setSede] = useState("9");
 
   // KPI cards: histórico últimos 24 meses
-  const [historicoData, setHistoricoData] = useState<HistoricoData | null>(null);
+  const [historicoData, setHistoricoData] = useState<HistoricoData | null>(
+    null,
+  );
   const [kpiLoading, setKpiLoading] = useState(true);
 
   // Gráficas: mes seleccionable
@@ -139,28 +158,47 @@ export default function TendenciaPage() {
       .finally(() => setChartLoading(false));
   }, [sede, chartMes]);
 
-  const chartMesLabel = mesesDisponibles.find((m) => m.value === chartMes)?.label ?? chartMes;
+  const chartMesLabel =
+    mesesDisponibles.find((m) => m.value === chartMes)?.label ?? chartMes;
 
   const handleBarClick = (weekLabel: string) => {
     if (!chartData) return;
-    if (activeBar === weekLabel) { setDrillDown(null); setActiveBar(null); return; }
-    setDrillDown({ titulo: weekLabel, productos: chartData.productosPorSemana[weekLabel] ?? [] });
+    if (activeBar === weekLabel) {
+      setDrillDown(null);
+      setActiveBar(null);
+      return;
+    }
+    setDrillDown({
+      titulo: weekLabel,
+      productos: chartData.productosPorSemana[weekLabel] ?? [],
+    });
     setActiveBar(weekLabel);
   };
 
-  const handleKpiClick = (titulo: string, productos: { nombre: string; qty: number }[]) => {
-    if (drillDown?.titulo === titulo) { setDrillDown(null); return; }
+  const handleKpiClick = (
+    titulo: string,
+    productos: { nombre: string; qty: number }[],
+  ) => {
+    if (drillDown?.titulo === titulo) {
+      setDrillDown(null);
+      return;
+    }
     setDrillDown({ titulo, productos });
     setActiveBar(null);
   };
 
   // Chart values
-  const barData = chartData?.totalPorSemana.map((s) => ({ semana: s.semana, total: s.total })) ?? [];
+  const barData =
+    chartData?.totalPorSemana.map((s) => ({
+      semana: s.semana,
+      total: s.total,
+    })) ?? [];
   const lineData = chartData
     ? chartData.semanas.map((sem, wi) => {
         const point: Record<string, any> = { semana: sem };
         chartData.topProductos.slice(0, topN).forEach((p) => {
-          const key = p.nombre.length > 28 ? p.nombre.slice(0, 28) + "…" : p.nombre;
+          const key =
+            p.nombre.length > 28 ? p.nombre.slice(0, 28) + "…" : p.nombre;
           point[key] = p.semanal[wi];
         });
         return point;
@@ -172,7 +210,9 @@ export default function TendenciaPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tendencia de Ventas</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Tendencia de Ventas
+          </h1>
           <p className="text-gray-500">Unidades facturadas por semana.</p>
         </div>
         <Select value={sede} onValueChange={setSede}>
@@ -180,14 +220,20 @@ export default function TendenciaPage() {
             <SelectValue placeholder="Sede" />
           </SelectTrigger>
           <SelectContent>
-            {SEDES.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+            {SEDES.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
       {/* KPI cards — histórico últimos 24 meses */}
       <div>
-        <p className="text-xs text-gray-400 uppercase tracking-wide mb-3 font-medium">Histórico últimos 24 meses</p>
+        <p className="text-xs text-gray-400 uppercase tracking-wide mb-3 font-medium">
+          Histórico últimos 24 meses
+        </p>
         {kpiLoading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
@@ -200,33 +246,58 @@ export default function TendenciaPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Card
               className={`border-blue-200 bg-blue-50/40 shadow-sm cursor-pointer transition-all ${drillDown?.titulo === "Top productos histórico" ? "ring-2 ring-blue-500" : "hover:shadow-md"}`}
-              onClick={() => handleKpiClick("Top productos histórico", historicoData?.topProductos ?? [])}
+              onClick={() =>
+                handleKpiClick(
+                  "Top productos histórico",
+                  historicoData?.topProductos ?? [],
+                )
+              }
             >
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Total histórico</p>
-                <p className="text-3xl font-bold text-blue-700 mt-1">{(historicoData?.totalHistorico ?? 0).toLocaleString()}</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                  Total histórico
+                </p>
+                <p className="text-3xl font-bold text-blue-700 mt-1">
+                  {(historicoData?.totalHistorico ?? 0).toLocaleString()}
+                </p>
                 <p className="text-xs text-blue-400 mt-1">Ver productos →</p>
               </CardContent>
             </Card>
             <Card className="border-gray-200 shadow-sm">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Promedio mensual</p>
-                <p className="text-3xl font-bold text-gray-700 mt-1">{(historicoData?.promedioMensual ?? 0).toLocaleString()}</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                  Promedio mensual
+                </p>
+                <p className="text-3xl font-bold text-gray-700 mt-1">
+                  {(historicoData?.promedioMensual ?? 0).toLocaleString()}
+                </p>
                 <p className="text-xs text-gray-400 mt-1">Unidades / mes</p>
               </CardContent>
             </Card>
             <Card className="border-green-200 bg-green-50/40 shadow-sm">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Mejor mes</p>
-                <p className="text-3xl font-bold text-green-700 mt-1">{(historicoData?.mejorMes.total ?? 0).toLocaleString()}</p>
-                <p className="text-xs text-green-400 mt-1">{historicoData?.mejorMes.label ?? "-"}</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                  Mejor mes
+                </p>
+                <p className="text-3xl font-bold text-green-700 mt-1">
+                  {(historicoData?.mejorMes.total ?? 0).toLocaleString()}
+                </p>
+                <p className="text-xs text-green-400 mt-1">
+                  {historicoData?.mejorMes.label ?? "-"}
+                </p>
               </CardContent>
             </Card>
             <Card className="border-gray-200 shadow-sm">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Meses con venta</p>
-                <p className="text-3xl font-bold text-gray-700 mt-1">{historicoData?.mesesConVenta ?? 0}</p>
-                <p className="text-xs text-gray-400 mt-1">De 24 meses analizados</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                  Meses con venta
+                </p>
+                <p className="text-3xl font-bold text-gray-700 mt-1">
+                  {historicoData?.mesesConVenta ?? 0}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  De 24 meses analizados
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -240,10 +311,20 @@ export default function TendenciaPage() {
             <CardTitle className="text-base text-blue-800">
               Productos — {drillDown.titulo}
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({drillDown.productos.length} productos · {drillDown.productos.reduce((s, p) => s + p.qty, 0).toLocaleString()} uds)
+                ({drillDown.productos.length} productos ·{" "}
+                {drillDown.productos
+                  .reduce((s, p) => s + p.qty, 0)
+                  .toLocaleString()}{" "}
+                uds)
               </span>
             </CardTitle>
-            <button onClick={() => { setDrillDown(null); setActiveBar(null); }} className="text-gray-400 hover:text-gray-700">
+            <button
+              onClick={() => {
+                setDrillDown(null);
+                setActiveBar(null);
+              }}
+              className="text-gray-400 hover:text-gray-700"
+            >
               <X className="h-4 w-4" />
             </button>
           </CardHeader>
@@ -252,22 +333,45 @@ export default function TendenciaPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-blue-50 border-b">
                   <tr>
-                    <th className="text-left py-2 px-3 font-medium text-gray-600">#</th>
-                    <th className="text-left py-2 px-3 font-medium text-gray-600">Producto</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-600">Unidades</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-600">% del total</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">
+                      <ColumnHeader label="#" tooltip={COLUMN_TOOLTIPS["#"]} />
+                    </th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">
+                      <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                    </th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-600">
+                      <ColumnHeader label="Unidades" tooltip={COLUMN_TOOLTIPS.Unidades} />
+                    </th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-600">
+                      <ColumnHeader label="% del total" tooltip={COLUMN_TOOLTIPS["% del total"]} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {drillDown.productos.map((p, i) => {
-                    const total = drillDown.productos.reduce((s, x) => s + x.qty, 0);
-                    const pct = total > 0 ? ((p.qty / total) * 100).toFixed(1) : "0.0";
+                    const total = drillDown.productos.reduce(
+                      (s, x) => s + x.qty,
+                      0,
+                    );
+                    const pct =
+                      total > 0 ? ((p.qty / total) * 100).toFixed(1) : "0.0";
                     return (
-                      <tr key={i} className="border-b last:border-0 hover:bg-blue-50/50">
-                        <td className="py-1.5 px-3 text-gray-400 text-xs">{i + 1}</td>
-                        <td className="py-1.5 px-3 truncate max-w-[400px]">{p.nombre}</td>
-                        <td className="py-1.5 px-3 text-right font-medium">{p.qty.toLocaleString()}</td>
-                        <td className="py-1.5 px-3 text-right text-gray-500">{pct}%</td>
+                      <tr
+                        key={i}
+                        className="border-b last:border-0 hover:bg-blue-50/50"
+                      >
+                        <td className="py-1.5 px-3 text-gray-400 text-xs">
+                          {i + 1}
+                        </td>
+                        <td className="py-1.5 px-3 truncate max-w-[400px]">
+                          {p.nombre}
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-medium">
+                          {p.qty.toLocaleString()}
+                        </td>
+                        <td className="py-1.5 px-3 text-right text-gray-500">
+                          {pct}%
+                        </td>
                       </tr>
                     );
                   })}
@@ -294,7 +398,9 @@ export default function TendenciaPage() {
                 <CardTitle className="text-base flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-blue-600" />
                   Unidades facturadas por semana
-                  <span className="text-xs font-normal text-gray-400">(clic en barra para ver productos)</span>
+                  <span className="text-xs font-normal text-gray-400">
+                    (clic en barra para ver productos)
+                  </span>
                 </CardTitle>
                 <Select value={chartMes} onValueChange={setChartMes}>
                   <SelectTrigger className="w-44 flex-shrink-0">
@@ -302,7 +408,9 @@ export default function TendenciaPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {mesesDisponibles.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -312,19 +420,25 @@ export default function TendenciaPage() {
                   <BarChart
                     data={barData}
                     margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                    onClick={(e) => { if (e?.activeLabel) handleBarClick(e.activeLabel); }}
+                    onClick={(e) => {
+                      if (e?.activeLabel) handleBarClick(e.activeLabel);
+                    }}
                     style={{ cursor: "pointer" }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="semana" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: any) => [v.toLocaleString(), "Unidades"]} />
+                    <Tooltip
+                      formatter={(v: any) => [v.toLocaleString(), "Unidades"]}
+                    />
                     <Bar dataKey="total" radius={[3, 3, 0, 0]} name="Total">
                       {barData.map((entry) => (
                         <Cell
                           key={entry.semana}
                           fill="#2563eb"
-                          opacity={activeBar && activeBar !== entry.semana ? 0.45 : 1}
+                          opacity={
+                            activeBar && activeBar !== entry.semana ? 0.45 : 1
+                          }
                         />
                       ))}
                     </Bar>
@@ -337,8 +451,13 @@ export default function TendenciaPage() {
             {chartData && chartData.topProductos.length > 0 && (
               <Card className="shadow-sm border-gray-200">
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
-                  <CardTitle className="text-base">Top productos — {chartMesLabel}</CardTitle>
-                  <Select value={String(topN)} onValueChange={(v) => setTopN(Number(v))}>
+                  <CardTitle className="text-base">
+                    Top productos — {chartMesLabel}
+                  </CardTitle>
+                  <Select
+                    value={String(topN)}
+                    onValueChange={(v) => setTopN(Number(v))}
+                  >
                     <SelectTrigger className="w-28">
                       <SelectValue />
                     </SelectTrigger>
@@ -351,17 +470,29 @@ export default function TendenciaPage() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={lineData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <LineChart
+                      data={lineData}
+                      margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="semana" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       {chartData.topProductos.slice(0, topN).map((p, i) => {
-                        const key = p.nombre.length > 28 ? p.nombre.slice(0, 28) + "…" : p.nombre;
+                        const key =
+                          p.nombre.length > 28
+                            ? p.nombre.slice(0, 28) + "…"
+                            : p.nombre;
                         return (
-                          <Line key={p.id} type="monotone" dataKey={key}
-                            stroke={COLORES[i % COLORES.length]} strokeWidth={2} dot={false} />
+                          <Line
+                            key={p.id}
+                            type="monotone"
+                            dataKey={key}
+                            stroke={COLORES[i % COLORES.length]}
+                            strokeWidth={2}
+                            dot={false}
+                          />
                         );
                       })}
                     </LineChart>
@@ -374,35 +505,65 @@ export default function TendenciaPage() {
             {historicoData && (
               <Card className="shadow-sm border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-base">Top 10 productos — Histórico 24 meses</CardTitle>
+                  <CardTitle className="text-base">
+                    Top 10 productos — Histórico 24 meses
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 border-b">
                         <tr>
-                          <th className="text-left px-4 py-3 font-medium text-gray-600">#</th>
-                          <th className="text-left px-4 py-3 font-medium text-gray-600">Producto</th>
-                          <th className="text-right px-4 py-3 font-medium text-gray-600">Unidades</th>
-                          <th className="text-right px-4 py-3 font-medium text-gray-600">% del total</th>
+                          <th className="text-left px-4 py-3 font-medium text-gray-600">
+                            <ColumnHeader label="#" tooltip={COLUMN_TOOLTIPS["#"]} />
+                          </th>
+                          <th className="text-left px-4 py-3 font-medium text-gray-600">
+                            <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                          </th>
+                          <th className="text-right px-4 py-3 font-medium text-gray-600">
+                            <ColumnHeader label="Unidades" tooltip={COLUMN_TOOLTIPS.Unidades} />
+                          </th>
+                          <th className="text-right px-4 py-3 font-medium text-gray-600">
+                            <ColumnHeader label="% del total" tooltip={COLUMN_TOOLTIPS["% del total"]} />
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {historicoData.topProductos.slice(0, 10).map((p, i) => {
-                          const pct = historicoData.totalHistorico > 0
-                            ? ((p.qty / historicoData.totalHistorico) * 100).toFixed(1)
-                            : "0.0";
+                          const pct =
+                            historicoData.totalHistorico > 0
+                              ? (
+                                  (p.qty / historicoData.totalHistorico) *
+                                  100
+                                ).toFixed(1)
+                              : "0.0";
                           return (
-                            <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-                              <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
+                            <tr
+                              key={i}
+                              className="border-b last:border-0 hover:bg-gray-50"
+                            >
+                              <td className="px-4 py-2.5 text-gray-400">
+                                {i + 1}
+                              </td>
                               <td className="px-4 py-2.5">
                                 <div className="flex items-center gap-2">
-                                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: COLORES[i % COLORES.length] }} />
-                                  <span className="truncate max-w-[420px]">{p.nombre}</span>
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                    style={{
+                                      background: COLORES[i % COLORES.length],
+                                    }}
+                                  />
+                                  <span className="truncate max-w-[420px]">
+                                    {p.nombre}
+                                  </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5 text-right font-medium">{p.qty.toLocaleString()}</td>
-                              <td className="px-4 py-2.5 text-right text-gray-500">{pct}%</td>
+                              <td className="px-4 py-2.5 text-right font-medium">
+                                {p.qty.toLocaleString()}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-gray-500">
+                                {pct}%
+                              </td>
                             </tr>
                           );
                         })}

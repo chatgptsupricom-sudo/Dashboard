@@ -22,6 +22,9 @@ import {
 import { Download, Loader2, Search, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoAnalisis {
   id: number;
@@ -34,23 +37,16 @@ interface ProductoAnalisis {
   days_inactive: number;
 }
 
-const SEDES = [
-  { id: "todas", label: "Todas las sedes" },
-  { id: "9", label: "Valencia" },
-  { id: "10", label: "Caracas" },
-  { id: "7", label: "Panamá" },
-];
-
 export default function MenorRotacionPage() {
   const [productos, setProductos] = useState<ProductoAnalisis[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filtros
-  const [sede, setSede] = useState<string>("todas");
+  const [sede, setSede] = useState<string>("9");
   const [busqueda, setBusqueda] = useState<string>("");
   const [filtroMarca, setFiltroMarca] = useState<string>("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("TODAS");
-  const [filtroDias, setFiltroDias] = useState<string>("30");
+  const [filtroDias, setFiltroDias] = useState<string>("TODOS");
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -59,7 +55,7 @@ export default function MenorRotacionPage() {
     const fetchBIData = async () => {
       setLoading(true);
       try {
-        const params = sede !== "todas" ? `?sede=${sede}` : "";
+        const params = `?sede=${sede}`;
         const response = await fetch(`/api/compras/estancados${params}`);
         const result = await response.json();
 
@@ -99,11 +95,12 @@ export default function MenorRotacionPage() {
         const cumpleCategoria =
           filtroCategoria === "TODAS" || p.categoria === filtroCategoria;
 
-        // Filtro Días Inactivos
+        // Filtro Días Inactivos (rangos excluyentes)
         let cumpleDias = false;
-        if (filtroDias === "30") cumpleDias = p.days_inactive >= 30;
-        else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60;
-        else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90;
+        if (filtroDias === "TODOS") cumpleDias = p.days_inactive >= 30;
+        else if (filtroDias === "30") cumpleDias = p.days_inactive >= 30 && p.days_inactive < 60;
+        else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60 && p.days_inactive < 90;
+        else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90 && p.days_inactive !== 999;
         else if (filtroDias === "NUNCA") cumpleDias = p.days_inactive === 999;
 
         return (
@@ -188,13 +185,21 @@ export default function MenorRotacionPage() {
 
       <Card className="bg-white shadow-sm border-gray-200">
         <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
-          <Select value={sede} onValueChange={(v) => { setSede(v); setCurrentPage(1); }}>
+          <Select
+            value={sede}
+            onValueChange={(v) => {
+              setSede(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Sede" />
             </SelectTrigger>
             <SelectContent>
               {SEDES.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -215,9 +220,10 @@ export default function MenorRotacionPage() {
               <SelectValue placeholder="Inactividad" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="30">Más de 30 días</SelectItem>
-              <SelectItem value="60">Más de 60 días</SelectItem>
-              <SelectItem value="90">Más de 90 días</SelectItem>
+              <SelectItem value="TODOS">Todos (30+ días)</SelectItem>
+              <SelectItem value="30">30 – 59 días sin vender</SelectItem>
+              <SelectItem value="60">60 – 89 días sin vender</SelectItem>
+              <SelectItem value="90">90+ días sin vender</SelectItem>
               <SelectItem value="NUNCA">Nunca se ha vendido</SelectItem>
             </SelectContent>
           </Select>
@@ -264,25 +270,41 @@ export default function MenorRotacionPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Productos filtrados</p>
-            <p className="text-3xl font-bold text-gray-800 mt-1">{menorRotacionFiltrados.length}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Productos filtrados
+            </p>
+            <p className="text-3xl font-bold text-gray-800 mt-1">
+              {menorRotacionFiltrados.length}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Con stock disponible</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Unidades en stock</p>
-            <p className="text-3xl font-bold text-blue-700 mt-1">{totalUnidades.toLocaleString("en-US")}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Unidades en stock
+            </p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">
+              {totalUnidades.toLocaleString("en-US")}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Unidades inmovilizadas</p>
           </CardContent>
         </Card>
         <Card className="border-red-200 bg-red-50/40 shadow-sm">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Capital inmovilizado</p>
-            <p className="text-3xl font-bold text-red-700 mt-1">
-              ${totalCapital.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Capital inmovilizado
             </p>
-            <p className="text-xs text-gray-400 mt-1">Solo productos con costo configurado</p>
+            <p className="text-3xl font-bold text-red-700 mt-1">
+              $
+              {totalCapital.toLocaleString("en-US", {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              })}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Solo productos con costo configurado
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -299,17 +321,23 @@ export default function MenorRotacionPage() {
             <Table>
               <TableHeader className="bg-red-50/30">
                 <TableRow>
-                  <TableHead className="w-[300px] px-6">Producto</TableHead>
-                  <TableHead className="text-center">Marca/Cat</TableHead>
+                  <TableHead className="w-[300px] px-6">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
                   <TableHead className="text-center font-bold text-gray-800">
-                    Stock Físico
+                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
                   </TableHead>
                   <TableHead className="text-center text-red-700">
-                    Días Inactivos
+                    <ColumnHeader label="Días Inactivos" tooltip={COLUMN_TOOLTIPS["Días Inactivos"]} />
                   </TableHead>
-                  <TableHead className="text-center">Costo Unid. ($)</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unid. ($)" tooltip={COLUMN_TOOLTIPS["Costo Unid. ($)"]} />
+                  </TableHead>
                   <TableHead className="text-right font-bold text-red-800 pr-6">
-                    Capital Estancado ($)
+                    <ColumnHeader label="Capital Estancado ($)" tooltip={COLUMN_TOOLTIPS["Capital Estancado ($)"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -353,14 +381,22 @@ export default function MenorRotacionPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center text-gray-600 font-medium">
-                        {item.costo > 0
-                          ? `$${item.costo.toFixed(2)}`
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo</span>}
+                        {item.costo > 0 ? (
+                          `$${item.costo.toFixed(2)}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-bold text-red-700 text-lg pr-6">
-                        {item.costo > 0
-                          ? `$${(item.stockDisponible * item.costo).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo config.</span>}
+                        {item.costo > 0 ? (
+                          `$${(item.stockDisponible * item.costo).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo config.
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -389,7 +425,9 @@ export default function MenorRotacionPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(p + 1, totalPages))
+                  }
                   disabled={currentPage === totalPages}
                 >
                   Siguiente

@@ -19,9 +19,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, Download, Loader2, Search, ShoppingCart, TrendingDown } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoQuiebre {
   id: number;
@@ -39,19 +42,12 @@ interface ProductoQuiebre {
   fechaQuiebreEstimada: string;
 }
 
-const SEDES = [
-  { id: "todas", label: "Todas las sedes" },
-  { id: "9", label: "Valencia" },
-  { id: "10", label: "Caracas" },
-  { id: "7", label: "Panamá" },
-];
-
 export default function MayorRotacionPage() {
   const [productos, setProductos] = useState<ProductoQuiebre[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filtros
-  const [sede, setSede] = useState<string>("todas");
+  const [sede, setSede] = useState<string>("9");
   const [busqueda, setBusqueda] = useState<string>("");
   const [filtroMarca, setFiltroMarca] = useState<string>("TODAS");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("TODAS");
@@ -63,7 +59,7 @@ export default function MayorRotacionPage() {
     const fetchQuiebreData = async () => {
       setLoading(true);
       try {
-        const params = sede !== "todas" ? `?sede=${sede}` : "";
+        const params = `?sede=${sede}`;
         const response = await fetch(`/api/compras/quiebre${params}`);
         const result = await response.json();
 
@@ -113,12 +109,22 @@ export default function MayorRotacionPage() {
     currentPage * itemsPerPage,
   );
 
-  const kpis = useMemo(() => ({
-    enQuiebre: productosFiltrados.filter((p) => p.nivelCritico === "QUIEBRE TOTAL").length,
-    enRiesgo: productosFiltrados.filter((p) => p.nivelCritico === "RIESGO ALTO").length,
-    valorCompra: productosFiltrados.reduce((s, p) => s + p.cantidadAComprar * p.costo, 0),
-    totalSkus: productosFiltrados.length,
-  }), [productosFiltrados]);
+  const kpis = useMemo(
+    () => ({
+      enQuiebre: productosFiltrados.filter(
+        (p) => p.nivelCritico === "QUIEBRE TOTAL",
+      ).length,
+      enRiesgo: productosFiltrados.filter(
+        (p) => p.nivelCritico === "RIESGO ALTO",
+      ).length,
+      valorCompra: productosFiltrados.reduce(
+        (s, p) => s + p.cantidadAComprar * p.costo,
+        0,
+      ),
+      totalSkus: productosFiltrados.length,
+    }),
+    [productosFiltrados],
+  );
 
   const exportarExcel = () => {
     const data = productosFiltrados.map((item) => ({
@@ -169,29 +175,48 @@ export default function MayorRotacionPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-red-200 bg-red-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Quiebre Total</p>
-            <p className="text-3xl font-bold text-red-700 mt-1">{kpis.enQuiebre}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Quiebre Total
+            </p>
+            <p className="text-3xl font-bold text-red-700 mt-1">
+              {kpis.enQuiebre}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">En Riesgo Inminente</p>
-            <p className="text-3xl font-bold text-orange-600 mt-1">{kpis.enRiesgo}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              En Riesgo Inminente
+            </p>
+            <p className="text-3xl font-bold text-orange-600 mt-1">
+              {kpis.enRiesgo}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Bajo punto de reorden</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Valor Estimado Compra</p>
-            <p className="text-3xl font-bold text-blue-700 mt-1">${kpis.valorCompra.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Valor Estimado Compra
+            </p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">
+              $
+              {kpis.valorCompra.toLocaleString("en-US", {
+                maximumFractionDigits: 0,
+              })}
+            </p>
             <p className="text-xs text-gray-400 mt-1">{kpis.totalSkus} SKUs</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Alertas</p>
-            <p className="text-3xl font-bold text-gray-700 mt-1">{kpis.totalSkus}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Total Alertas
+            </p>
+            <p className="text-3xl font-bold text-gray-700 mt-1">
+              {kpis.totalSkus}
+            </p>
             <p className="text-xs text-gray-400 mt-1">Productos filtrados</p>
           </CardContent>
         </Card>
@@ -199,13 +224,21 @@ export default function MayorRotacionPage() {
 
       <Card className="bg-white shadow-sm border-gray-200">
         <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
-          <Select value={sede} onValueChange={(v) => { setSede(v); setCurrentPage(1); }}>
+          <Select
+            value={sede}
+            onValueChange={(v) => {
+              setSede(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Sede" />
             </SelectTrigger>
             <SelectContent>
               {SEDES.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -267,14 +300,30 @@ export default function MayorRotacionPage() {
             <Table>
               <TableHeader className="bg-orange-50/30">
                 <TableRow>
-                  <TableHead className="w-[300px] px-6">Producto</TableHead>
-                  <TableHead className="text-center">Marca/Cat</TableHead>
-                  <TableHead className="text-center">Ventas (45d)</TableHead>
-                  <TableHead className="text-center text-orange-700 font-bold">Stock Físico</TableHead>
-                  <TableHead className="text-center font-bold">Pto. Reorden</TableHead>
-                  <TableHead className="text-center">Cant. Comprar</TableHead>
-                  <TableHead className="text-center font-bold text-blue-700">Valor Compra ($)</TableHead>
-                  <TableHead className="text-right pr-6">Nivel Alerta</TableHead>
+                  <TableHead className="w-[300px] px-6">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Ventas (45d)" tooltip={COLUMN_TOOLTIPS["Ventas (45d)"]} />
+                  </TableHead>
+                  <TableHead className="text-center text-orange-700 font-bold">
+                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold">
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-blue-700">
+                    <ColumnHeader label="Valor Compra ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
+                  </TableHead>
+                  <TableHead className="text-right pr-6">
+                    <ColumnHeader label="Nivel Alerta" tooltip={COLUMN_TOOLTIPS["Nivel Alerta"]} />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -339,9 +388,13 @@ export default function MayorRotacionPage() {
                         +{item.cantidadAComprar}
                       </TableCell>
                       <TableCell className="text-center font-bold text-gray-800">
-                        {item.costo > 0
-                          ? `$${(item.cantidadAComprar * item.costo).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">Sin costo</span>}
+                        {item.costo > 0 ? (
+                          `$${(item.cantidadAComprar * item.costo).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+                            Sin costo
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right pr-6">
                         <Badge
@@ -351,10 +404,14 @@ export default function MayorRotacionPage() {
                               : "bg-orange-500 text-white"
                           }
                         >
-                          {item.nivelCritico === "QUIEBRE TOTAL" ? "QUIEBRE" : "RIESGO"}
+                          {item.nivelCritico === "QUIEBRE TOTAL"
+                            ? "QUIEBRE"
+                            : "RIESGO"}
                         </Badge>
                         <div className="text-[10px] text-gray-400 mt-1 text-right">
-                          {item.fechaQuiebreEstimada !== "Sin riesgo inmediato" ? item.fechaQuiebreEstimada : ""}
+                          {item.fechaQuiebreEstimada !== "Sin riesgo inmediato"
+                            ? item.fechaQuiebreEstimada
+                            : ""}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -384,7 +441,9 @@ export default function MayorRotacionPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(p + 1, totalPages))
+                  }
                   disabled={currentPage === totalPages}
                 >
                   Siguiente
