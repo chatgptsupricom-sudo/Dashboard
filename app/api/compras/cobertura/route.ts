@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((p) => p.ventas45d > 0 && p.stockDisponible > 0)
-      .sort((a, b) => a.diasCobertura - b.diasCobertura);
+      .sort((a, b) => b.ventas45d - a.ventas45d);
 
     coberturaCache.set(cacheKey, { data: result, ts: Date.now() });
     return NextResponse.json({ success: true, data: result });
