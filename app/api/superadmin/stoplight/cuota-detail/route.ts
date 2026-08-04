@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Weekly summary
-      const semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[] = [];
+      const semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number | null }[] = [];
       const primerDiaMes = new Date(anio, mesNum - 1, 1);
       let semanaInicio = new Date(primerDiaMes);
 
@@ -157,6 +157,7 @@ export async function GET(request: NextRequest) {
           facturadoSemana += dailyMap[dateStr] || 0;
         }
 
+        const esFuturo = semanaInicio > new Date();
         const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
         semanas.push({
           numero: numSemana,
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
           facturado: Math.round(facturadoSemana * 100) / 100,
           cuotaSemanal: Math.round(cuotaSemanal * 100) / 100,
           diasUtiles: diasUtilesSemana,
-          porcentaje: cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0,
+          porcentaje: esFuturo ? null : (cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0),
         });
 
         semanaInicio = new Date(semanaFin);
