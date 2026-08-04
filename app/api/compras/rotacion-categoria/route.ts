@@ -10,6 +10,24 @@ const JWT_SECRET = new TextEncoder().encode(
 const rotCatCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 15 * 60 * 1000;
 
+async function fetchLines(domain: any[], fields: string[]): Promise<any[]> {
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      "account.move.line",
+      "search_read",
+      [domain],
+      { fields, order: "id asc", limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const token = request.cookies.get("token")?.value;
@@ -29,15 +47,16 @@ export async function GET(request: NextRequest) {
     const sedeParam = searchParams.get("sede");
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
-    const cacheKey = `compras_rotcat_v2_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_rotcat_v3_sede${sedeId ?? "todas"}`;
     const cached = rotCatCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
     }
 
-    // Stock locations
     const ALL_COMPANIES = [9, 10, 7];
     const companiesToFetch = sedeId ? [sedeId] : ALL_COMPANIES;
+
+    // Stock locations
     const warehouseIds = companiesToFetch
       .map((cid) => MAIN_WAREHOUSE_BY_COMPANY[cid])
       .filter(Boolean);
@@ -45,29 +64,16 @@ export async function GET(request: NextRequest) {
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "lot_stock_id", "company_id"], limit: 0 },
+      { fields: ["id", "lot_stock_id"], limit: 0 },
     );
     const locationIds =
       warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
-
-    // Map lot_stock_id → company_id
-    const locCompanyMap: Record<number, number> = {};
-    warehouseData?.forEach((w: any) => {
-      const locId = w.lot_stock_id?.[0];
-      const compId = w.company_id?.[0];
-      if (locId && compId) locCompanyMap[locId] = compId;
-    });
 
     // Productos activos
     const productos = await callOdooRPC<any[]>(
       "product.product",
       "search_read",
-      [
-        [
-          ["active", "=", true],
-          ["type", "=", "product"],
-        ],
-      ],
+      [[["active", "=", true], ["type", "=", "product"]]],
       {
         fields: ["id", "default_code", "name", "categ_id", "product_tmpl_id"],
         limit: 0,
@@ -78,28 +84,13 @@ export async function GET(request: NextRequest) {
     // Stock por producto y por compañía
     const stockDomain: any[] =
       locationIds.length > 0
-        ? [
-            ["location_id", "child_of", locationIds],
-            ["product_id", "!=", false],
-          ]
-        : [
-            ["location_id.usage", "=", "internal"],
-            ["product_id", "!=", false],
-          ];
+        ? [["location_id", "child_of", locationIds], ["product_id", "!=", false]]
+        : [["location_id.usage", "=", "internal"], ["product_id", "!=", false]];
     const stockData = await callOdooRPC<any[]>(
       "stock.quant",
       "search_read",
       [stockDomain],
-      {
-        fields: [
-          "product_id",
-          "quantity",
-          "reserved_quantity",
-          "location_id",
-          "company_id",
-        ],
-        limit: 0,
-      },
+      { fields: ["product_id", "quantity", "reserved_quantity", "company_id"], limit: 0 },
     );
     const stockPorProdYComp: Record<number, Record<number, number>> = {};
     stockData?.forEach((s: any) => {
@@ -113,13 +104,13 @@ export async function GET(request: NextRequest) {
     });
 
     // ============================================================
-    // VENTAS 45d: sin pedir move_id.company_id en fields (causa bugs)
-    // Si sedeId está设, el dominio ya filtra por empresa
+    // VENTAS 45d — mismo patrón que tendencia (que sí funciona)
     // ============================================================
     const today = new Date();
     const date45Ago = new Date();
     date45Ago.setDate(today.getDate() - 45);
     const date45Str = date45Ago.toISOString().split("T")[0];
+
     const invoiceDomain: any[] = [
       ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
@@ -130,27 +121,8 @@ export async function GET(request: NextRequest) {
     ];
     if (sedeId) invoiceDomain.push(["move_id.company_id", "=", sedeId]);
 
-    let saleLines: any[] = [];
-    let offset = 0;
-    while (true) {
-      const page = await callOdooRPC<any[]>(
-        "account.move.line",
-        "search_read",
-        [invoiceDomain],
-        {
-          fields: ["product_id", "quantity"],
-          order: "id asc",
-          limit: 5000,
-          offset,
-        },
-      );
-      if (!page || page.length === 0) break;
-      saleLines = saleLines.concat(page);
-      if (page.length < 5000) break;
-      offset += 5000;
-    }
+    const saleLines = await fetchLines(invoiceDomain, ["product_id", "quantity"]);
 
-    // Ventas por producto (ya filtrado por sede si aplica)
     const ventasPorProd: Record<number, number> = {};
     saleLines.forEach((l: any) => {
       if (!l.product_id) return;
@@ -158,23 +130,14 @@ export async function GET(request: NextRequest) {
       ventasPorProd[pid] = (ventasPorProd[pid] ?? 0) + (l.quantity || 0);
     });
 
-    // Mapa de ventas totales por producto (ya filtrado por sede si aplica)
-    const ventasMapGlobal: Record<number, number> = ventasPorProd;
-
     // ============================================================
     // COSTOS: 3 niveles de fallback
-    // 1. product.template.standard_price
-    // 2. product.product.standard_price
-    // 3. product.supplierinfo.price (proveedor "Compras")
     // ============================================================
     const tmplIds = [
-      ...new Set(
-        productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
-      ),
+      ...new Set(productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean)),
     ];
     const prodIds = productos.map((p: any) => p.id);
 
-    // Nivel 1: product.template
     const tmplPriceMap: Record<number, number> = {};
     const costCompanies = sedeId ? [sedeId] : ALL_COMPANIES;
     for (const cid of costCompanies) {
@@ -191,7 +154,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Nivel 2: product.product
     const prodPriceMap: Record<number, number> = {};
     for (const cid of costCompanies) {
       const prices = await callOdooRPC<any[]>(
@@ -207,7 +169,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Nivel 3: product.supplierinfo (precio de compra)
     const supplierPriceMap: Record<number, number> = {};
     const supplierInfos = await callOdooRPC<any[]>(
       "product.supplierinfo",
@@ -223,7 +184,6 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Construir priceMap con fallback
     const priceMap: Record<number, number> = {};
     productos.forEach((p: any) => {
       const tmplId = p.product_tmpl_id?.[0];
@@ -236,9 +196,12 @@ export async function GET(request: NextRequest) {
       priceMap[p.id] = cost;
     });
 
-    // Clasificación ABC por ventas totales (global, sin importar sede)
+    // ============================================================
+    // CLASIFICACIÓN ABC (global)
+    // ============================================================
+    const ventasTotalGlobal = Object.values(ventasPorProd).reduce((a, b) => a + b, 0);
     const productosOrdenados = productos
-      .map((p: any) => ({ id: p.id, ventas: ventasMapGlobal[p.id] ?? 0 }))
+      .map((p: any) => ({ id: p.id, ventas: ventasPorProd[p.id] ?? 0 }))
       .sort((a, b) => b.ventas - a.ventas);
     const abcMap: Record<number, "A" | "B" | "C"> = {};
     let acumulado = 0;
@@ -248,26 +211,12 @@ export async function GET(request: NextRequest) {
       abcMap[p.id] = pct <= 0.8 ? "A" : pct <= 0.95 ? "B" : "C";
     }
 
-    // Agrupar por categoría
-    const categorias: Record<
-      string,
-      {
-        nombre: string;
-        skus: number;
-        clasA: number;
-        clasB: number;
-        clasC: number;
-        ventas45d: number;
-        stockTotal: number;
-        capitalEstancado: number;
-        skusQuiebre: number;
-      }
-    > = {};
-
-    // Para capital estancado: calculamos por (producto, compañía) y sumamos,
-    // así un producto con stock muerto en Valencia pero ventas en Caracas
-    // se cuenta correctamente como estancado en Valencia.
+    // ============================================================
+    // AGRUPAR POR CATEGORÍA
+    // ============================================================
+    const categorias: Record<string, any> = {};
     const companies = sedeId ? [sedeId] : ALL_COMPANIES;
+
     productos.forEach((p: any) => {
       const catId = p.categ_id?.[0] ?? 0;
       const catNombre = p.categ_id?.[1] ?? "Sin categoría";
@@ -294,29 +243,24 @@ export async function GET(request: NextRequest) {
       else if (abc === "B") cat.clasB++;
       else cat.clasC++;
 
-      // Capital estancado: stock GLOBAL sin ventas GLOBALES
-      // Si un producto no vende, todo su stock es capital estancado
+      // Stock total
       let stockTotal = 0;
-
       for (const cid of companies) {
-        const stock =
-          Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
-        stockTotal += stock;
+        stockTotal += Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
       }
 
-      const ventasTotal = ventasPorProd[p.id] ?? 0;
-      const capital = ventasTotal === 0 && stockTotal > 0 ? stockTotal * costo : 0;
+      const ventas = ventasPorProd[p.id] ?? 0;
+      const capital = ventas === 0 && stockTotal > 0 ? stockTotal * costo : 0;
 
-      cat.ventas45d += Math.round(ventasTotal);
+      cat.ventas45d += Math.round(ventas);
       cat.stockTotal += stockTotal;
       cat.capitalEstancado += capital;
 
-      // Quiebre: global — stock total 0 pero ventas > 0
-      if (stockTotal <= 0 && ventasTotal > 0) cat.skusQuiebre++;
+      if (stockTotal <= 0 && ventas > 0) cat.skusQuiebre++;
     });
 
     const resultado = Object.values(categorias)
-      .map((c) => ({
+      .map((c: any) => ({
         ...c,
         ventas45d: Math.round(c.ventas45d),
         stockTotal: Math.round(c.stockTotal),
@@ -325,7 +269,7 @@ export async function GET(request: NextRequest) {
         pctB: c.skus > 0 ? Math.round((c.clasB / c.skus) * 100) : 0,
         pctC: c.skus > 0 ? Math.round((c.clasC / c.skus) * 100) : 0,
       }))
-      .sort((a, b) => b.ventas45d - a.ventas45d);
+      .sort((a: any, b: any) => b.ventas45d - a.ventas45d);
 
     rotCatCache.set(cacheKey, { data: resultado, ts: Date.now() });
     return NextResponse.json({ success: true, data: resultado });
