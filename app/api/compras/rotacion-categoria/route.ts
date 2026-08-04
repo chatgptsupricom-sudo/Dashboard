@@ -112,7 +112,10 @@ export async function GET(request: NextRequest) {
         Math.max(0, s.quantity - s.reserved_quantity);
     });
 
-    // Ventas 45d por producto y por compañía
+    // ============================================================
+    // VENTAS 45d: sin pedir move_id.company_id en fields (causa bugs)
+    // Si sedeId está设, el dominio ya filtra por empresa
+    // ============================================================
     const today = new Date();
     const date45Ago = new Date();
     date45Ago.setDate(today.getDate() - 45);
@@ -135,7 +138,7 @@ export async function GET(request: NextRequest) {
         "search_read",
         [invoiceDomain],
         {
-          fields: ["product_id", "quantity", "move_id.company_id"],
+          fields: ["product_id", "quantity"],
           order: "id asc",
           limit: 5000,
           offset,
@@ -146,31 +149,17 @@ export async function GET(request: NextRequest) {
       if (page.length < 5000) break;
       offset += 5000;
     }
-    const ventasPorProdYComp: Record<number, Record<number, number>> = {};
-    let ventasTotalGlobal = 0;
+
+    // Ventas por producto (ya filtrado por sede si aplica)
+    const ventasPorProd: Record<number, number> = {};
     saleLines.forEach((l: any) => {
       if (!l.product_id) return;
       const pid = l.product_id[0];
-      let compId: number | null = null;
-      if (sedeId) {
-        compId = sedeId;
-      } else if (l.move_id_company_id) {
-        compId = Array.isArray(l.move_id_company_id) ? l.move_id_company_id[0] : l.move_id_company_id;
-      } else {
-        return; // skip lines without company info in "todas" mode
-      }
-      ventasPorProdYComp[pid] ??= {};
-      const qty = l.quantity || 0;
-      ventasPorProdYComp[pid][compId] =
-        (ventasPorProdYComp[pid][compId] ?? 0) + qty;
-      ventasTotalGlobal += qty;
+      ventasPorProd[pid] = (ventasPorProd[pid] ?? 0) + (l.quantity || 0);
     });
 
-    // Mapa de ventas totales por producto (global, para ABC)
-    const ventasMapGlobal: Record<number, number> = {};
-    for (const [pid, comps] of Object.entries(ventasPorProdYComp)) {
-      ventasMapGlobal[+pid] = Object.values(comps).reduce((a, b) => a + b, 0);
-    }
+    // Mapa de ventas totales por producto (ya filtrado por sede si aplica)
+    const ventasMapGlobal: Record<number, number> = ventasPorProd;
 
     // ============================================================
     // COSTOS: 3 niveles de fallback
@@ -306,18 +295,16 @@ export async function GET(request: NextRequest) {
       else cat.clasC++;
 
       // Capital estancado: stock GLOBAL sin ventas GLOBALES
-      // Si un producto no vende en ninguna sede, todo su stock es capital estancado
+      // Si un producto no vende, todo su stock es capital estancado
       let stockTotal = 0;
-      let ventasTotal = 0;
 
       for (const cid of companies) {
         const stock =
           Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
-        const ventas = ventasPorProdYComp[p.id]?.[cid] ?? 0;
         stockTotal += stock;
-        ventasTotal += ventas;
       }
 
+      const ventasTotal = ventasPorProd[p.id] ?? 0;
       const capital = ventasTotal === 0 && stockTotal > 0 ? stockTotal * costo : 0;
 
       cat.ventas45d += Math.round(ventasTotal);

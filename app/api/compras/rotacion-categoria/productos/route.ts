@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
         "search_read",
         [invoiceDomain],
         {
-          fields: ["product_id", "quantity", "move_id.company_id"],
+          fields: ["product_id", "quantity"],
           order: "id asc",
           limit: 5000,
           offset,
@@ -130,21 +130,13 @@ export async function GET(request: NextRequest) {
       if (page.length < 5000) break;
       offset += 5000;
     }
-    const ventasPorProdYComp: Record<number, Record<number, number>> = {};
+
+    // Ventas por producto (ya filtrado por sede si aplica)
+    const ventasPorProd: Record<number, number> = {};
     saleLines.forEach((l: any) => {
       if (!l.product_id) return;
       const pid = l.product_id[0];
-      let compId: number | null = null;
-      if (sedeId) {
-        compId = sedeId;
-      } else if (l.move_id_company_id) {
-        compId = Array.isArray(l.move_id_company_id) ? l.move_id_company_id[0] : l.move_id_company_id;
-      } else {
-        return;
-      }
-      ventasPorProdYComp[pid] ??= {};
-      ventasPorProdYComp[pid][compId] =
-        (ventasPorProdYComp[pid][compId] ?? 0) + (l.quantity || 0);
+      ventasPorProd[pid] = (ventasPorProd[pid] ?? 0) + (l.quantity || 0);
     });
 
     // ============================================================
@@ -223,14 +215,8 @@ export async function GET(request: NextRequest) {
     });
 
     const companies_ = sedeId ? [sedeId] : ALL_COMPANIES;
-    // Ventas totales globales para ABC
-    const ventasTotalesGlobal: Record<number, number> = {};
-    for (const [pid, comps] of Object.entries(ventasPorProdYComp)) {
-      ventasTotalesGlobal[+pid] = Object.values(comps).reduce(
-        (a, b) => a + b,
-        0,
-      );
-    }
+    // Ventas totales para ABC (ya filtrado por sede si aplica)
+    const ventasTotalesGlobal: Record<number, number> = ventasPorProd;
     const totalVentasGlobal = Object.values(ventasTotalesGlobal).reduce(
       (a, b) => a + b,
       0,
@@ -248,15 +234,13 @@ export async function GET(request: NextRequest) {
 
     let result = productos.map((p: any) => {
       const costo = priceMap[p.id] ?? 0;
-      // Capital estancado: stock GLOBAL sin ventas GLOBALES
+      // Capital estancado: stock GLOBAL sin ventas
       let stock = 0;
-      let ventas = 0;
       for (const cid of companies_) {
         const s = Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
-        const v = ventasPorProdYComp[p.id]?.[cid] ?? 0;
         stock += s;
-        ventas += v;
       }
+      const ventas = ventasPorProd[p.id] ?? 0;
       const capital = ventas === 0 && stock > 0 ? stock * costo : 0;
       const quiebre = stock <= 0 && ventas > 0;
       return {
