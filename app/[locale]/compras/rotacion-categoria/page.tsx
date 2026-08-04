@@ -96,14 +96,17 @@ export default function RotacionCategoriaPage() {
   );
   const [modalProductos, setModalProductos] = useState<ProductoModal[]>([]);
   const [modalLoading, setModalLoading] = useState(false);
+  const [modalFromCategory, setModalFromCategory] = useState(false);
 
   const abrirModal = async (
     title: string,
     params: string,
     mode: "categories" | "products" = "products",
+    fromCategory = false,
   ) => {
     setModalTitle(title);
     setModalMode(mode);
+    setModalFromCategory(fromCategory);
     setModalOpen(true);
     if (mode === "categories") {
       setModalProductos([]);
@@ -361,6 +364,8 @@ export default function RotacionCategoriaPage() {
                             abrirModal(
                               `Productos: ${c.nombre}`,
                               `categoria=${encodeURIComponent(c.nombre)}`,
+                              "products",
+                              true,
                             )
                           }
                         >
@@ -579,9 +584,15 @@ export default function RotacionCategoriaPage() {
                     <th className="text-left px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Nombre" tooltip={COLUMN_TOOLTIPS.Producto} />
                     </th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">
-                      <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
-                    </th>
+                    {modalFromCategory ? (
+                      <th className="text-center px-3 py-2 font-medium text-gray-600">
+                        <ColumnHeader label="Cap. Estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
+                      </th>
+                    ) : (
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">
+                        <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                      </th>
+                    )}
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
                     </th>
@@ -606,7 +617,19 @@ export default function RotacionCategoriaPage() {
                         {p.codigo}
                       </td>
                       <td className="px-3 py-2 text-gray-800">{p.nombre}</td>
-                      <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
+                      {modalFromCategory ? (
+                        <td className="px-3 py-2 text-center text-gray-600">
+                          {p.capitalEstancado > 0 ? (
+                            <span className="text-red-600 font-semibold">
+                              ${p.capitalEstancado.toLocaleString("en-US", { minimumFractionDigits: 0 })}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                      ) : (
+                        <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
+                      )}
                       <td className="px-3 py-2 text-center text-gray-600">
                         {p.stock}
                       </td>
