@@ -45,6 +45,8 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
     "Distribución de ventas de la categoría: %A = % del total que representan los productos clase A",
   "Capital estancado":
     "Valor total del stock de la categoría sin rotación reciente (últimos 45 días)",
+  Quiebres:
+    "SKUs con stock = 0 pero con ventas en los últimos 45 días (demanda activa sin inventario)",
 
   // Tendencia
   "#": "Posición en el ranking por ventas",

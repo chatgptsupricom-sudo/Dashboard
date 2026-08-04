@@ -147,11 +147,20 @@ export async function GET(request: NextRequest) {
         (ventasPorProdYComp[pid][compId] ?? 0) + (l.quantity || 0);
     });
 
+    // ============================================================
+    // COSTOS: 3 niveles de fallback
+    // 1. product.template.standard_price
+    // 2. product.product.standard_price
+    // 3. product.supplierinfo.price
+    // ============================================================
     const tmplIds = [
       ...new Set(
         productos.map((p: any) => p.product_tmpl_id?.[0]).filter(Boolean),
       ),
     ];
+    const prodIds = productos.map((p: any) => p.id);
+
+    // Nivel 1: product.template
     const tmplPriceMap: Record<number, number> = {};
     const costCompanies = sedeId ? [sedeId] : ALL_COMPANIES;
     for (const cid of costCompanies) {
@@ -167,10 +176,50 @@ export async function GET(request: NextRequest) {
         if (val > 0) tmplPriceMap[t.id] = val;
       });
     }
+
+    // Nivel 2: product.product
+    const prodPriceMap: Record<number, number> = {};
+    for (const cid of costCompanies) {
+      const prices = await callOdooRPC<any[]>(
+        "product.product",
+        "search_read",
+        [[["id", "in", prodIds]]],
+        { fields: ["id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+      );
+      if (!prices) continue;
+      prices.forEach((p: any) => {
+        const val = Number(p.standard_price) || 0;
+        if (val > 0) prodPriceMap[p.id] = val;
+      });
+    }
+
+    // Nivel 3: product.supplierinfo
+    const supplierPriceMap: Record<number, number> = {};
+    const supplierInfos = await callOdooRPC<any[]>(
+      "product.supplierinfo",
+      "search_read",
+      [[["product_tmpl_id", "in", tmplIds]]],
+      { fields: ["product_tmpl_id", "price"], limit: 0 },
+    );
+    supplierInfos?.forEach((s: any) => {
+      const tmplId = s.product_tmpl_id?.[0];
+      const val = Number(s.price) || 0;
+      if (tmplId && val > 0 && !supplierPriceMap[tmplId]) {
+        supplierPriceMap[tmplId] = val;
+      }
+    });
+
+    // Construir priceMap con fallback
     const priceMap: Record<number, number> = {};
     productos.forEach((p: any) => {
       const tmplId = p.product_tmpl_id?.[0];
-      priceMap[p.id] = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
+      let cost = 0;
+      if (tmplId) {
+        cost = tmplPriceMap[tmplId] ?? prodPriceMap[p.id] ?? supplierPriceMap[tmplId] ?? 0;
+      } else {
+        cost = prodPriceMap[p.id] ?? 0;
+      }
+      priceMap[p.id] = cost;
     });
 
     const companies_ = sedeId ? [sedeId] : ALL_COMPANIES;
@@ -199,17 +248,16 @@ export async function GET(request: NextRequest) {
 
     let result = productos.map((p: any) => {
       const costo = priceMap[p.id] ?? 0;
-      // Calcular stock, ventas y estancado por compañía y sumar
+      // Capital estancado: stock GLOBAL sin ventas GLOBALES
       let stock = 0;
       let ventas = 0;
-      let capital = 0;
       for (const cid of companies_) {
         const s = Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
         const v = ventasPorProdYComp[p.id]?.[cid] ?? 0;
         stock += s;
         ventas += v;
-        if (v === 0 && s > 0) capital += s * costo;
       }
+      const capital = ventas === 0 && stock > 0 ? stock * costo : 0;
       const quiebre = stock <= 0 && ventas > 0;
       return {
         id: p.id,
