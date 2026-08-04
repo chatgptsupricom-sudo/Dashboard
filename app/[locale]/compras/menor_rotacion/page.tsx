@@ -93,11 +93,11 @@ export default function MenorRotacionPage() {
         const cumpleCategoria =
           filtroCategoria === "TODAS" || p.categoria === filtroCategoria;
 
-        // Filtro Días Inactivos
+        // Filtro Días Inactivos (rangos excluyentes)
         let cumpleDias = false;
-        if (filtroDias === "30") cumpleDias = p.days_inactive >= 30;
-        else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60;
-        else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90;
+        if (filtroDias === "30") cumpleDias = p.days_inactive >= 30 && p.days_inactive < 60;
+        else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60 && p.days_inactive < 90;
+        else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90 && p.days_inactive !== 999;
         else if (filtroDias === "NUNCA") cumpleDias = p.days_inactive === 999;
 
         return (
