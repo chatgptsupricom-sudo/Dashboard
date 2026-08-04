@@ -33,6 +33,7 @@ interface QuiebreHistorico {
   totalSalidas180d: number;
   semanasConVenta: number;
   quiebresContados: number;
+  semanasQuiebre: number;
   frecuenciaQuiebre: number;
 }
 
@@ -114,6 +115,7 @@ export default function QuiebresHistoricosPage() {
       "Salidas 180d": p.totalSalidas180d,
       "Semanas con venta": p.semanasConVenta,
       "Quiebres detectados": p.quiebresContados,
+      "Semanas en quiebre": p.semanasQuiebre,
       "Frecuencia quiebre (%)": p.frecuenciaQuiebre,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -143,8 +145,8 @@ export default function QuiebresHistoricosPage() {
           Quiebres Históricos
         </h1>
         <p className="text-gray-500">
-          Productos que han experimentado brechas sin ventas en los últimos 6
-          meses (posibles quiebres de stock).
+          Productos con brechas de stock detectadas en los últimos 6 meses
+          (semanas sin ventas entre semanas con ventas).
         </p>
       </div>
 
@@ -163,12 +165,12 @@ export default function QuiebresHistoricosPage() {
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Promedio de quiebres
+              Promedio semanas en quiebre
             </p>
             <p className="text-3xl font-bold text-gray-700 mt-1">
               {filtrados.length > 0
                 ? (
-                    filtrados.reduce((s, p) => s + p.quiebresContados, 0) /
+                    filtrados.reduce((s, p) => s + p.semanasQuiebre, 0) /
                     filtrados.length
                   ).toFixed(1)
                 : "0"}
@@ -258,6 +260,7 @@ export default function QuiebresHistoricosPage() {
                   <TableHead className="text-center font-bold text-rose-700">
                     Quiebres
                   </TableHead>
+                  <TableHead className="text-center">Sem. en quiebre</TableHead>
                   <TableHead className="text-center">Frecuencia</TableHead>
                 </TableRow>
               </TableHeader>
@@ -309,6 +312,9 @@ export default function QuiebresHistoricosPage() {
                           {p.quiebresContados}
                         </span>
                       </TableCell>
+                      <TableCell className="text-center text-gray-600">
+                        {p.semanasQuiebre}
+                      </TableCell>
                       <TableCell className="text-center">
                         <FreqBadge pct={p.frecuenciaQuiebre} />
                       </TableCell>
@@ -352,11 +358,10 @@ export default function QuiebresHistoricosPage() {
       </Card>
 
       <p className="text-xs text-gray-400">
-        Metodología: se analizan movimientos de stock de los últimos 180 días.
-        Un quiebre se cuenta solo cuando una semana sin ventas entre semanas con
-        ventas coincide con una recepción de compra (reabastecimiento), lo que
-        confirma que el producto realmente se agotó y no fue simplemente baja
-        demanda.
+        Metodología: se analizan facturas de venta de los últimos 180 días
+        (26 semanas). Un quiebre se detecta cuando hay una semana sin ventas
+        entre semanas con ventas. Cada período consecutivo sin ventas cuenta
+        como un solo quiebre.
       </p>
     </div>
   );
