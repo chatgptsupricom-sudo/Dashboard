@@ -39,11 +39,12 @@ export async function GET(request: NextRequest) {
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     const warehouseData = await callOdooRPC<any[]>(
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds =
       warehouseData?.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean) ?? [];
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
           ["type", "=", "product"],
         ],
       ],
-      { fields: ["id", "default_code", "name", "categ_id"], limit: 0 },
+      { fields: ["id", "default_code", "name", "categ_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     if (!productos) throw new Error("Sin productos");
 
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
       "stock.quant",
       "search_read",
       [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
+      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const stockMap: Record<number, number> = {};
     stockData?.forEach((s: any) => {
@@ -119,6 +120,7 @@ export async function GET(request: NextRequest) {
           order: "id asc",
           limit: 5000,
           offset,
+          context: { allowed_company_ids: companies },
         },
       );
       if (!page || page.length === 0) break;
@@ -152,6 +154,7 @@ export async function GET(request: NextRequest) {
           order: "id asc",
           limit: 5000,
           offset,
+          context: { allowed_company_ids: companies },
         },
       );
       if (!page || page.length === 0) break;
