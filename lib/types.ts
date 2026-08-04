@@ -57,6 +57,7 @@ export const rolePermissions: RolePermissions = {
       "MapaClientes", // Mapa de Clientes
       "spiff", // Gestión de spiffs por marca
       "reporte_diario", // Reporte Diario de Ventas
+      "cuentas_por_cobrar", // Cuentas por Cobrar
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -145,7 +146,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
@@ -166,6 +167,7 @@ export const rolePermissions: RolePermissions = {
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones
       "spiff", // Gestión de spiffs por marca
+      "cuentas_por_cobrar", // Cuentas por Cobrar
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {

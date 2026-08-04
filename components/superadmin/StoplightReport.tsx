@@ -17,6 +17,7 @@ import {
   Calendar,
   TrendingUp,
   ArrowLeft,
+  RefreshCw,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import ComprasDetailModal from "./ComprasDetailModal";
@@ -28,6 +29,30 @@ const getCellColor = (value: string) => {
   if (numValue < 60) return "bg-red-100 text-red-800 font-medium";
   if (numValue >= 100) return "bg-green-100 text-green-800 font-medium";
   return "bg-yellow-100 text-yellow-800 font-medium";
+};
+
+const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
+  if (!value) return "";
+  const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
+  const numGoal = parseFloat(goal);
+  if (isNaN(numVal) || isNaN(numGoal)) return getCellColor(value);
+
+  const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos"];
+  const lowerBetter = ["cartera_vencida", "dso"];
+
+  if (higherBetter.includes(kpiId)) {
+    if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
+    if (numVal >= numGoal * 0.85) return "bg-amber-100 text-amber-800 font-medium";
+    return "bg-red-100 text-red-800 font-medium";
+  }
+
+  if (lowerBetter.includes(kpiId)) {
+    if (numVal <= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
+    if (numVal <= numGoal * 1.2) return "bg-amber-100 text-amber-800 font-medium";
+    return "bg-red-100 text-red-800 font-medium";
+  }
+
+  return getCellColor(value);
 };
 
 interface SellerData {
@@ -102,6 +127,18 @@ export default function StoplightReportSuperadmin() {
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [marketingData, setMarketingData] = useState<any>(null);
+  const [marketingLoading, setMarketingLoading] = useState(false);
+  const [cxcData, setCxcData] = useState<any>(null);
+  const [cxcLoading, setCxcLoading] = useState(false);
+  const [cxcModalOpen, setCxcModalOpen] = useState(false);
+  const [cxcModalLoading, setCxcModalLoading] = useState(false);
+  const [cxcModalData, setCxcModalData] = useState<any>(null);
+  const [cxcModalKpi, setCxcModalKpi] = useState<string>("");
+  const [cxcSelectedInvoice, setCxcSelectedInvoice] = useState<any>(null);
+  const [cxcInvoiceDetail, setCxcInvoiceDetail] = useState<any>(null);
+  const [cxcInvoiceLoading, setCxcInvoiceLoading] = useState(false);
+  const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
   const [comprasModalOpen, setComprasModalOpen] = useState(false);
   const [comprasKpiType, setComprasKpiType] = useState<string>("");
@@ -134,14 +171,80 @@ export default function StoplightReportSuperadmin() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const fetchMarketingData = useCallback(async () => {
+    setMarketingLoading(true);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${currentMes}`);
+      const json = await res.json();
+      if (json.success) setMarketingData(json);
+    } catch (e) {
+      console.error("Error fetching marketing data:", e);
+    }
+    setMarketingLoading(false);
+  }, [currentMes]);
+
+  useEffect(() => { fetchMarketingData(); }, [fetchMarketingData]);
+
+  const fetchCxCData = useCallback(async () => {
+    setCxcLoading(true);
+    try {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[selectedCompanyId] || "valencia";
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`);
+      const json = await res.json();
+      if (json.success) setCxcData(json.data);
+    } catch (e) {
+      console.error("Error fetching CxC data:", e);
+    }
+    setCxcLoading(false);
+  }, [selectedCompanyId]);
+
+  useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
+
+  const openCxcModal = async (kpiId: string) => {
+    setCxcModalKpi(kpiId);
+    setCxcModalOpen(true);
+    setCxcModalLoading(true);
+    try {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[selectedCompanyId] || "valencia";
+      let url = `/api/superadmin/cuentas-por-cobrar/detail?empresa=${empresa}`;
+      if (kpiId === "cartera_vencida") {
+        const bandMap: Record<string, string> = {
+          "1-15": "1-15", "16-30": "16-30", "31-60": "31-60", "61-90": "61-90", "90+": "90+"
+        };
+        url += `&aging_band=${encodeURIComponent("1-15")}`;
+      }
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success) setCxcModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching CxC detail:", e);
+    }
+    setCxcModalLoading(false);
+  };
+
+  const openCxcInvoiceDetail = async (inv: any) => {
+    setCxcSelectedInvoice(inv);
+    setCxcInvoiceLoading(true);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/invoice-detail?invoice_id=${inv.id}&company_id=${inv.companyId}`);
+      const json = await res.json();
+      if (json.success) setCxcInvoiceDetail(json.data);
+    } catch (e) {
+      console.error("Error fetching invoice detail:", e);
+    }
+    setCxcInvoiceLoading(false);
+  };
+
   useEffect(() => {
-    if (clientesModalOpen || modalOpen) {
+    if (clientesModalOpen || modalOpen || cxcModalOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [clientesModalOpen, modalOpen]);
+  }, [clientesModalOpen, modalOpen, cxcModalOpen]);
 
   const saveMeta = async (kpiKey: string, value: number) => {
     try {
@@ -437,13 +540,177 @@ export default function StoplightReportSuperadmin() {
     },
   ];
 
-  const groups = [
-    { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis },
-    { id: "group-compras", title: "Departamento de Compras", count: comprasKpis.length, kpis: comprasKpis },
-    { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis },
-  ];
+  const marketingKpis = marketingData?.connected ? (() => {
+    const md = marketingData.data;
+    const numSemanas = md?.numSemanas || 5;
+    const defWeeks = Array(numSemanas).fill(null);
+    const weekClicks = md?.weekly?.clicks || [];
+    const weekImpressions = md?.weekly?.impressions || [];
+    const ga4W = md?.ga4Weekly;
+
+    const toWeekly = (arr: (number | null)[] | undefined) => arr && arr.length > 0 ? arr.map(v => v === null ? null : String(v)) : defWeeks;
+    const toWeeklyPct = (arr: (number | null)[] | undefined) => arr && arr.length > 0 ? arr.map(v => v === null ? null : `${Math.round(v)}%`) : defWeeks;
+    const scWeeksPct = (clicks: (number | null)[], impressions: (number | null)[]) => {
+      if (!clicks.length) return defWeeks;
+      return clicks.map((c, i) => {
+        if (c === null || impressions[i] === null) return null;
+        const imp = impressions[i] || 0;
+        return imp > 0 ? `${Math.round((c / imp) * 100)}%` : null;
+      });
+    };
+
+    return [
+      {
+        id: "usuarios_totales",
+        trend: "help",
+        title: "Usuarios totales (GA4)",
+        peso: "15%",
+        average: String(md?.ga4?.totalUsers || 0),
+        weeks: toWeekly(ga4W?.totalUsers),
+        goalDefault: "500",
+        goalSuffix: "",
+      },
+      {
+        id: "sesiones",
+        trend: "help",
+        title: "Sesiones totales (GA4)",
+        peso: "15%",
+        average: String(md?.ga4?.sessions || 0),
+        weeks: toWeekly(ga4W?.sessions),
+        goalDefault: "1000",
+        goalSuffix: "",
+      },
+      {
+        id: "paginas_vistas",
+        trend: "help",
+        title: "Paginas vistas (GA4)",
+        peso: "10%",
+        average: String(md?.ga4?.pageviews || 0),
+        weeks: toWeekly(ga4W?.pageviews),
+        goalDefault: "5000",
+        goalSuffix: "",
+      },
+      {
+        id: "tasa_rebote",
+        trend: (md?.ga4?.bounceRate || 0) > 50 ? "alert" : "help",
+        title: "Tasa de rebote (GA4)",
+        peso: "10%",
+        average: `${md?.ga4?.bounceRate || 0}%`,
+        weeks: toWeeklyPct(ga4W?.bounceRate),
+        goalDefault: "40",
+        goalSuffix: "%",
+      },
+      {
+        id: "clicks_sc",
+        trend: "help",
+        title: "Clics desde Google (SC)",
+        peso: "15%",
+        average: String(md?.totals?.totalClicks || 0),
+        weeks: toWeekly(weekClicks),
+        goalDefault: "500",
+        goalSuffix: "",
+      },
+      {
+        id: "impresiones_sc",
+        trend: "help",
+        title: "Impresiones en Google (SC)",
+        peso: "10%",
+        average: String(md?.totals?.totalImpressions || 0),
+        weeks: toWeekly(weekImpressions),
+        goalDefault: "10000",
+        goalSuffix: "",
+      },
+      {
+        id: "ctr_sc",
+        trend: "help",
+        title: "CTR promedio (SC)",
+        peso: "10%",
+        average: `${md?.totals?.overallCtr || 0}%`,
+        weeks: scWeeksPct(weekClicks, weekImpressions),
+        goalDefault: "3",
+        goalSuffix: "%",
+      },
+      {
+        id: "posicion_sc",
+        trend: (md?.totals?.avgPosition || 0) > 10 ? "alert" : "help",
+        title: "Posicion promedio (SC)",
+        peso: "15%",
+        average: String(md?.totals?.avgPosition || 0),
+        weeks: defWeeks,
+        goalDefault: "5",
+        goalSuffix: "",
+      },
+    ];
+  })() : [];
+
+  const cxcKpis = cxcData ? (() => {
+    const k = cxcData.kpis;
+    const aging = cxcData.agingDistribution || {};
+    const agingTotal = Object.values(aging).reduce((a: number, b: any) => a + (b as number), 0) as number;
+    const agingPcts = Object.entries(aging).map(([band, val]) => {
+      const v = val as number;
+      return agingTotal > 0 ? Math.round((v / agingTotal) * 100) : 0;
+    });
+    const agingLabels = [" corriente", "1-15", "16-30", "31-60", "61-90", "90+"];
+    const semana1 = k.carteraVencida.carteraTotal > 0 ? Math.round(k.carteraVencida.saldoVencido / k.carteraVencida.carteraTotal * 100) : 0;
+
+    return [
+      {
+        id: "efectividad_cobranza",
+        trend: k.efectividad.value === null ? "help" : k.efectividad.value >= 95 ? "success" : k.efectividad.value >= 85 ? "warning" : "alert",
+        title: "Efectividad de cobranza",
+        peso: "35%",
+        average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
+        weeks: [k.efectividad.value !== null ? String(k.efectividad.value) + "%" : null, null, null, null, null],
+        goalDefault: String(k.efectividad.meta),
+        goalSuffix: "%",
+        isClickable: true,
+      },
+      {
+        id: "cartera_vencida",
+        trend: k.carteraVencida.value === null ? "help" : k.carteraVencida.value <= 10 ? "success" : k.carteraVencida.value <= 20 ? "warning" : "alert",
+        title: "Porcentaje de cartera vencida",
+        peso: "30%",
+        average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
+        weeks: [k.carteraVencida.value !== null ? String(k.carteraVencida.value) + "%" : null, null, null, null, null],
+        goalDefault: String(k.carteraVencida.meta),
+        goalSuffix: "%",
+        isClickable: true,
+      },
+      {
+        id: "recuperacion_vencidos",
+        trend: k.recuperacion.value === null ? "help" : k.recuperacion.value >= 60 ? "success" : k.recuperacion.value >= 30 ? "warning" : "alert",
+        title: "Recuperación de cartera vencida",
+        peso: "25%",
+        average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
+        weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
+        goalDefault: String(k.recuperacion.meta),
+        goalSuffix: "%",
+        isClickable: true,
+      },
+      {
+        id: "dso",
+        trend: k.dso.value === null ? "help" : k.dso.value <= 45 ? "success" : k.dso.value <= 60 ? "warning" : "alert",
+        title: "Días promedio de cobro (DSO)",
+        peso: "10%",
+        average: k.dso.value !== null ? `${k.dso.value} días` : "N/A",
+        weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
+        goalDefault: String(k.dso.meta),
+        goalSuffix: " días",
+        isClickable: true,
+      },
+    ];
+  })() : [];
 
   const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];
+
+  const groups = [
+    { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
+    { id: "group-compras", title: "Departamento de Compras", count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
+    { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
+    ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: "Cuentas por Cobrar", count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
+    ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
+  ];
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -456,15 +723,27 @@ export default function StoplightReportSuperadmin() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {marketingData && !marketingData.connected && (
+            <a
+              href="/api/auth/google"
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors shadow-sm"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Conectar Google
+            </a>
+          )}
+          {marketingData?.connected && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium rounded-md border border-green-200">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              Google Conectado
+            </span>
+          )}
           <button className="text-sm font-medium text-amber-600 flex items-center gap-1 transition-transform hover:scale-105">
             Ask Supri{" "}
             <span className="text-[10px] bg-amber-100 px-1 rounded text-amber-700">NEW</span>
           </button>
           <button className="p-2 border rounded-md hover:bg-slate-50 transition-colors">
             <Settings size={16} />
-          </button>
-          <button className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-md hover:bg-amber-600 transition-colors shadow-sm">
-            Create
           </button>
         </div>
       </div>
@@ -539,6 +818,27 @@ export default function StoplightReportSuperadmin() {
         </div>
       </div>
 
+      {/* Marketing Not Connected Banner */}
+      {marketingData && !marketingData.connected && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+              <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-blue-900">Conecta Google Analytics y Search Console</p>
+              <p className="text-xs text-blue-600">Para ver los KPIs de Marketing y SEO de tus sitios web</p>
+            </div>
+          </div>
+          <a
+            href="/api/auth/google"
+            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+          >
+            Conectar Google
+          </a>
+        </div>
+      )}
+
       {/* KPI Groups */}
       <div className="space-y-6">
         {groups.map((group) => (
@@ -585,7 +885,7 @@ export default function StoplightReportSuperadmin() {
                       <th className="p-3 w-24 text-center border-r font-medium">Goal</th>
                       <th className="p-3 w-24 text-center border-r font-medium">Average</th>
                       <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">Peso</th>
-                      {weekHeaders.map((week, idx) => (
+                      {(group as any).weekHeaders.map((week: string, idx: number) => (
                         <th key={idx} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-400">
                           <div className="flex flex-col">
                             <span>{week.split(" - ")[0]} -</span>
@@ -600,16 +900,24 @@ export default function StoplightReportSuperadmin() {
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" className="rounded border-slate-300" />
                         </td>
                         <td className="p-3 text-center border-r bg-white">
-                          {kpi.trend === "help" ? (
-                            <HelpCircle size={16} className="text-slate-400 mx-auto cursor-pointer hover:text-slate-600" />
+                          {kpi.trend === "alert" ? (
+                            <AlertTriangle
+                              size={16}
+                              className="text-red-500 mx-auto cursor-pointer hover:text-red-600"
+                              onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
+                            />
                           ) : (
-                            <AlertTriangle size={16} className="text-amber-500 mx-auto cursor-pointer hover:text-amber-600" />
+                            <HelpCircle
+                              size={16}
+                              className="text-slate-400 mx-auto cursor-pointer hover:text-slate-600"
+                              onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
+                            />
                           )}
                         </td>
                         <td className="p-3 border-r text-slate-700 bg-white font-medium">
@@ -637,7 +945,11 @@ export default function StoplightReportSuperadmin() {
                         {kpi.weeks.map((val: string | null, idx: number) => (
                           <td
                             key={idx}
-                            className={`border-r text-center p-3 transition-colors ${getCellColor(val || "")}`}
+                            className={`border-r text-center p-3 transition-colors ${
+                              kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso"
+                                ? getKpiCellColor(kpi.id, val, kpi.goalDefault)
+                                : getCellColor(val || "")
+                            }`}
                           >
                             {val || "-"}
                           </td>
@@ -1384,6 +1696,278 @@ export default function StoplightReportSuperadmin() {
         companyId={selectedCompanyId}
         mes={currentMes}
       />
+
+      {cxcModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+              <div className="flex items-center gap-3">
+                {cxcSelectedInvoice && (
+                  <button
+                    onClick={() => { setCxcSelectedInvoice(null); setCxcInvoiceDetail(null); }}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    <ArrowLeft size={16} /> Volver
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {cxcSelectedInvoice
+                      ? `${cxcSelectedInvoice.name} — ${cxcSelectedInvoice.partnerName}`
+                      : cxcModalKpi === "efectividad_cobranza" ? "Efectividad de Cobranza — Detalle"
+                      : cxcModalKpi === "cartera_vencida" ? "Cartera Vencida — Detalle"
+                      : cxcModalKpi === "recuperacion_vencidos" ? "Recuperación de Cartera Vencida — Detalle"
+                      : "Días Promedio de Cobro (DSO) — Detalle"}
+                  </h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {cxcSelectedInvoice
+                      ? `Factura ${cxcSelectedInvoice.invoiceDate || ""} — ${cxcSelectedInvoice.companyName}`
+                      : `Facturas con saldo abierto — ${empresaLabel} | ${currentMes}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setCxcModalOpen(false); setCxcModalData(null); setCxcModalKpi(""); setCxcSelectedInvoice(null); setCxcInvoiceDetail(null); }}
+                className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
+              >
+                <X size={20} className="text-slate-700" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-5">
+              {cxcModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                </div>
+              ) : !cxcModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+              ) : cxcSelectedInvoice ? (
+                <>
+                  {cxcInvoiceLoading ? (
+                    <div className="flex items-center justify-center py-20 text-slate-400">
+                      <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                    </div>
+                  ) : !cxcInvoiceDetail ? (
+                    <div className="flex items-center justify-center py-20 text-slate-400">No se pudo cargar el detalle</div>
+                  ) : (
+                    <>
+                      {cxcInvoiceDetail.lines.some((l: any) => l.productName.includes("SAL_INI") || l.productName.includes("Saldo Inicial")) && (
+                        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                          <strong>Saldo Inicial:</strong> Esta factura fue creada como asiento de apertura al migrar a Odoo. No es una venta real, sino el saldo deudor que la empresa ya tenía antes de la migración.
+                        </div>
+                      )}
+                      <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Subtotal</p>
+                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Impuestos</p>
+                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className={`rounded-xl p-4 ${cxcInvoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
+                          <p className={`text-xs font-medium ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>Total</p>
+                          <p className={`text-lg font-bold ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
+                            ${Math.abs(cxcInvoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b">
+                              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
+                              <th className="p-3 text-right font-medium text-slate-600">Cantidad</th>
+                              <th className="p-3 text-right font-medium text-slate-600">P. Unitario</th>
+                              <th className="p-3 text-right font-medium text-slate-600">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cxcInvoiceDetail.lines.map((line: any, idx: number) => {
+                              const isSaldoInicial = line.productName.includes("SAL_INI") || line.productName.includes("Saldo Inicial");
+                              return (
+                                <tr key={idx} className={`border-b hover:bg-blue-50/40 transition-colors ${isSaldoInicial ? "bg-amber-50/30" : ""}`}>
+                                  <td className="p-3 font-medium text-slate-800">
+                                    {line.productName}
+                                    {isSaldoInicial && (
+                                      <span className="ml-2 inline-block px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">
+                                        Saldo de migración a Odoo
+                                      </span>
+                                    )}
+                                  </td>
+                                <td className="p-3 text-right text-slate-600">{line.quantity}</td>
+                                <td className="p-3 text-right text-slate-600">${line.priceUnit.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                <td className="p-3 text-right font-medium text-slate-800">${line.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-slate-50">
+                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Subtotal</td>
+                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                            <tr className="bg-slate-50">
+                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Impuestos</td>
+                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                            <tr className={`border-t-2 ${cxcInvoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
+                              <td colSpan={3} className="p-3 text-right font-bold text-slate-700">Total</td>
+                              <td className={`p-3 text-right font-bold text-lg ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
+                                ${Math.abs(cxcInvoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-slate-50 rounded-xl p-4">
+                      <p className="text-xs text-slate-500 font-medium">Total cartera abierta</p>
+                      <p className="text-lg font-bold text-slate-800">${cxcModalData.total.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4">
+                      <p className="text-xs text-slate-500 font-medium">Facturas con saldo</p>
+                      <p className="text-lg font-bold text-slate-800">{cxcModalData.count}</p>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b">
+                          <th className="p-3 text-left font-medium text-slate-600">Factura</th>
+                          <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Sede</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Fecha factura</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Vencimiento</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
+                          <th className="p-3 text-right font-medium text-slate-600">Monto</th>
+                          <th className="p-3 text-right font-medium text-slate-600">Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cxcModalData.invoices.map((inv: any) => (
+                          <tr
+                            key={inv.id}
+                            className="border-b hover:bg-blue-50/40 transition-colors cursor-pointer"
+                            onClick={() => openCxcInvoiceDetail(inv)}
+                          >
+                            <td className="p-3 font-medium text-slate-800">{inv.name}</td>
+                            <td className="p-3 text-slate-700 max-w-[200px] truncate">{inv.partnerName}</td>
+                            <td className="p-3 text-center text-slate-600">{inv.companyName}</td>
+                            <td className="p-3 text-center text-slate-600">{inv.invoiceDate || "—"}</td>
+                            <td className="p-3 text-center text-slate-600">{inv.invoiceDateDue || "—"}</td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                inv.paymentState === "paid" ? "bg-emerald-100 text-emerald-700" :
+                                inv.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
+                                "bg-red-100 text-red-700"
+                              }`}>
+                                {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`font-medium ${
+                                inv.agingDays > 60 ? "text-red-600" : inv.agingDays > 30 ? "text-amber-600" : inv.agingDays > 0 ? "text-orange-500" : "text-emerald-600"
+                              }`}>
+                                {inv.agingDays > 0 ? inv.agingDays : "—"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right text-slate-600">${Math.abs(inv.amountUntaxed).toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right font-bold">
+                              <span className={inv.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
+                                ${Math.abs(inv.amountResidual).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {kpiInfoModal.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">{kpiInfoModal.title}</h2>
+              <button
+                onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}
+                className="p-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
+              >
+                <X size={18} className="text-slate-700" />
+              </button>
+            </div>
+            <div className="text-sm text-slate-600 leading-relaxed space-y-3">
+              {kpiInfoModal.kpiId === "efectividad_cobranza" && (
+                <>
+                  <p><strong>Qué mide:</strong> Cuánto se cobró de todo lo que era exigible durante el período.</p>
+                  <p><strong>Fórmula:</strong> Monto cobrado ÷ Monto exigible × 100</p>
+                  <p><strong>Monto exigible:</strong> Saldo total de facturas cuya fecha de vencimiento es anterior o igual al final del período, incluyendo saldos vencidos anteriores que permanecían abiertos.</p>
+                  <p><strong>Monto cobrado:</strong> Pagos efectivamente conciliados contra facturas incluidas en el monto exigible.</p>
+                  <p><strong>Semáforo:</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
+                </>
+              )}
+              {kpiInfoModal.kpiId === "cartera_vencida" && (
+                <>
+                  <p><strong>Qué mide:</strong> La proporción de cuentas por cobrar que ya superaron su fecha de vencimiento.</p>
+                  <p><strong>Fórmula:</strong> Saldo vencido a la fecha de corte ÷ Cartera total abierta × 100</p>
+                  <p><strong>Saldo vencido:</strong> Suma de saldos residuales de facturas con fecha de vencimiento anterior a hoy.</p>
+                  <p><strong>Cartera total:</strong> Suma de todos los saldos residuales de facturas abiertas (con y sin vencer).</p>
+                  <p><strong>Semáforo:</strong> Verde ≤10% | Amarillo 10.01%–20% | Rojo &gt;20%</p>
+                </>
+              )}
+              {kpiInfoModal.kpiId === "recuperacion_vencidos" && (
+                <>
+                  <p><strong>Qué mide:</strong> Cuánto de la deuda vencida que existía al inicio del mes se logró recuperar.</p>
+                  <p><strong>Fórmula:</strong> Vencido recuperado ÷ Vencido inicial del mes × 100</p>
+                  <p><strong>Cohorte (vencido inicial):</strong> Fotografía de las facturas vencidas y sus saldos al inicio del mes. Las facturas que se vencen durante el mes no se incluyen en el denominador.</p>
+                  <p><strong>Vencido recuperado:</strong> Diferencia entre el saldo inicial de la cohorte y el saldo restante actual (pagos conciliados + notas de crédito).</p>
+                  <p><strong>Semáforo:</strong> Verde ≥60% | Amarillo 30%–59.99% | Rojo &lt;30%</p>
+                </>
+              )}
+              {kpiInfoModal.kpiId === "dso" && (
+                <>
+                  <p><strong>Qué mide:</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
+                  <p><strong>Fórmula:</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
+                  <p><strong>Ventas netas a crédito:</strong> Total de facturas tipo "out_invoice" (excluyendo notas de crédito) de los últimos 90 días.</p>
+                  <p><strong>Período:</strong> Se usa ventana móvil de 90 días para reducir volatilidad.</p>
+                  <p><strong>Semáforo:</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
+                </>
+              )}
+              {kpiInfoModal.kpiId === "cumplimiento_cuota" && (
+                <>
+                  <p><strong>Qué mide:</strong> Porcentaje de facturado contra la cuota mensual asignada a cada vendedor.</p>
+                  <p><strong>Fórmula:</strong> Facturado del vendedor ÷ Cuota asignada × 100</p>
+                  <p><strong>Semáforo:</strong> Verde ≥100% | Amarillo 70%–99.99% | Rojo &lt;70%</p>
+                </>
+              )}
+              {kpiInfoModal.kpiId === "clientes_nuevos" && (
+                <>
+                  <p><strong>Qué mide:</strong> Cantidad de clientes nuevos captados por los vendedores en el mes.</p>
+                  <p><strong>Definición:</strong> Cliente nuevo = partner cuya primera factura en Odoo es del mes actual.</p>
+                  <p><strong>Meta:</strong> Cada vendedor debe captar la cantidad asignada de clientes nuevos al mes.</p>
+                </>
+              )}
+              {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota", "clientes_nuevos"].includes(kpiInfoModal.kpiId) && (
+                <p>Este KPI se calcula automáticamente a partir de los datos de Odoo. Consulte la definición completa en la documentación del dashboard.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
