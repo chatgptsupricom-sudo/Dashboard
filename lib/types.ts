@@ -198,9 +198,7 @@ export const rolePermissions: RolePermissions = {
       "menor_rotacion",
       "mayor_rotacion",
       "cobertura", // Cobertura de stock (días de inventario)
-      "quiebres_historicos", // Análisis de quiebres en 180 días
       "rotacion_categoria", // Clasificación ABC por categoría
-      "sin_costo", // Productos sin costo registrado
       "tendencia", // Tendencia de ventas histórica
     ],
   },

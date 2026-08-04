@@ -39,21 +39,6 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
   "Capital Estancado ($)":
     "Valor del stock sin movimiento = Stock × Costo unitario. Representa capital inmovilizado",
 
-  // Quiebres históricos
-  "Stock actual": "Unidades disponibles actualmente en el almacén",
-  "Salidas 180d": "Total de unidades salidas (vendidas) en los últimos 180 días",
-  "Sem. con venta": "Semanas en las que hubo al menos 1 venta en los últimos 6 meses",
-  Quiebres:
-    "Número de semanas donde hubo pedidos que no se pudieron entregar completamente (demanda real no cumplida)",
-  "Sem. en quiebre":
-    "Total de semanas que el producto tuvo pedidos sin entregar",
-  "Pedidos sin entregar":
-    "Número total de líneas de venta donde la cantidad pedida era mayor a la cantidad entregada",
-  "Unidades faltantes":
-    "Suma de unidades que faltaron por entregar = qty pedida - qty entregada",
-  Frecuencia:
-    "Porcentaje de semanas con quiebre del total de semanas analizadas (6 meses)",
-
   // Rotación por categoría
   SKUs: "Número de productos distintos (SKUs) en la categoría",
   "Clasificación ABC":
@@ -65,9 +50,4 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
   "#": "Posición en el ranking por ventas",
   Unidades: "Unidades vendidas en el período seleccionado",
   "% del total": "Porcentaje que representa este producto del total de ventas del período",
-
-  // Sin costo
-  "Sin costo en": "Sedes donde el producto no tiene costo registrado en Odoo",
-  "Stock por sede": "Distribución del stock por cada sede (Valencia, Caracas, Panamá)",
-  "Stock total": "Suma del stock en todas las sedes",
 };
