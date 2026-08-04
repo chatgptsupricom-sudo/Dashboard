@@ -579,8 +579,8 @@ export default function RotacionCategoriaPage() {
                     <th className="text-left px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Nombre" tooltip={COLUMN_TOOLTIPS.Producto} />
                     </th>
-                    <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      <ColumnHeader label="Cap. Estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">
+                      <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
@@ -606,15 +606,7 @@ export default function RotacionCategoriaPage() {
                         {p.codigo}
                       </td>
                       <td className="px-3 py-2 text-gray-800">{p.nombre}</td>
-                      <td className="px-3 py-2 text-center text-gray-600">
-                        {p.capitalEstancado > 0 ? (
-                          <span className="text-red-600 font-semibold">
-                            ${p.capitalEstancado.toLocaleString("en-US", { minimumFractionDigits: 0 })}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
+                      <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
                       <td className="px-3 py-2 text-center text-gray-600">
                         {p.stock}
                       </td>
