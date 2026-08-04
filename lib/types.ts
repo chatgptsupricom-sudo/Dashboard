@@ -57,6 +57,7 @@ export const rolePermissions: RolePermissions = {
       "MapaClientes", // Mapa de Clientes
       "spiff", // Gestión de spiffs por marca
       "reporte_diario", // Reporte Diario de Ventas
+      "cuentas_por_cobrar", // Cuentas por Cobrar
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -152,6 +153,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "spiff",
       "reporte_diario",
+      "cuentas_por_cobrar",
     ],
   },
   [UserRole.GERENTE_OPERACIONES]: {
@@ -174,6 +176,7 @@ export const rolePermissions: RolePermissions = {
       "auditoria_panel", // Auditoría de acciones
       "compras", // Agregado asumiendo que Operaciones supervisa compras (opcional)
       "spiff", // Gestión de spiffs por marca
+      "cuentas_por_cobrar", // Cuentas por Cobrar
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {

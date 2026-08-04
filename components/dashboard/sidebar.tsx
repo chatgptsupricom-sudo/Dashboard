@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ClipboardList,
   CreditCard,
+  DollarSign,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -131,6 +132,12 @@ export function Sidebar({
       label: "Top Clientes",
       icon: Trophy,
       slug: "/top-clientes",
+    },
+    {
+      id: "cuentas_por_cobrar",
+      label: "Cuentas por Cobrar",
+      icon: DollarSign,
+      slug: "/cuentas-por-cobrar",
     },
     { id: "spiff", label: "Spiff", icon: Award, slug: "/spiff" },
     {
