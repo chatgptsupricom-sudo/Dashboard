@@ -463,7 +463,7 @@ export default function RotacionCategoriaPage() {
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-[1400px] w-[98vw] max-h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-[1400px] w-[98vw] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{modalTitle}</DialogTitle>
           </DialogHeader>
