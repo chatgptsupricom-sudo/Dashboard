@@ -23,6 +23,8 @@ import { CalendarDays, Download, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoCobertura {
   id: number;
@@ -342,17 +344,29 @@ export default function CoberturaPage() {
             <Table>
               <TableHeader className="bg-blue-50/30">
                 <TableRow>
-                  <TableHead className="px-6 w-[300px]">Producto</TableHead>
-                  <TableHead className="text-center">ABC</TableHead>
-                  <TableHead className="text-center">Categoría</TableHead>
-                  <TableHead className="text-center">Stock</TableHead>
-                  <TableHead className="text-center">Ventas 45d</TableHead>
-                  <TableHead className="text-center">Dem. diaria</TableHead>
+                  <TableHead className="px-6 w-[300px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Dem. diaria" tooltip={COLUMN_TOOLTIPS["Dem. diaria"]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold text-blue-700">
-                    Días cobertura
+                    <ColumnHeader label="Días cobertura" tooltip={COLUMN_TOOLTIPS["Días cobertura"]} />
                   </TableHead>
                   <TableHead className="text-right pr-6">
-                    Quiebre estimado
+                    <ColumnHeader label="Quiebre estimado" tooltip={COLUMN_TOOLTIPS["Quiebre estimado"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>

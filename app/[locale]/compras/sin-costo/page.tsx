@@ -23,6 +23,8 @@ import { AlertCircle, Download, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoSinCosto {
   id: number;
@@ -220,12 +222,20 @@ export default function SinCostoPage() {
             <Table>
               <TableHeader className="bg-amber-50/30">
                 <TableRow>
-                  <TableHead className="px-6 w-[300px]">Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="text-center">Sin costo en</TableHead>
-                  <TableHead className="text-center">Stock por sede</TableHead>
+                  <TableHead className="px-6 w-[300px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead>
+                    <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Sin costo en" tooltip={COLUMN_TOOLTIPS["Sin costo en"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock por sede" tooltip={COLUMN_TOOLTIPS["Stock por sede"]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold">
-                    Stock total
+                    <ColumnHeader label="Stock total" tooltip={COLUMN_TOOLTIPS["Stock total"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>

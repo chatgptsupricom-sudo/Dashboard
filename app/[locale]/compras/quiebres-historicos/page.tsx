@@ -23,6 +23,8 @@ import { Download, History, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface QuiebreHistorico {
   id: number;
@@ -252,16 +254,30 @@ export default function QuiebresHistoricosPage() {
             <Table>
               <TableHeader className="bg-rose-50/30">
                 <TableRow>
-                  <TableHead className="px-6 w-[300px]">Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="text-center">Stock actual</TableHead>
-                  <TableHead className="text-center">Salidas 180d</TableHead>
-                  <TableHead className="text-center">Sem. con venta</TableHead>
-                  <TableHead className="text-center font-bold text-rose-700">
-                    Quiebres
+                  <TableHead className="px-6 w-[300px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                   </TableHead>
-                  <TableHead className="text-center">Sem. en quiebre</TableHead>
-                  <TableHead className="text-center">Frecuencia</TableHead>
+                  <TableHead>
+                    <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock actual" tooltip={COLUMN_TOOLTIPS["Stock actual"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Salidas 180d" tooltip={COLUMN_TOOLTIPS["Salidas 180d"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Sem. con venta" tooltip={COLUMN_TOOLTIPS["Sem. con venta"]} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-rose-700">
+                    <ColumnHeader label="Quiebres" tooltip={COLUMN_TOOLTIPS.Quiebres} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Sem. en quiebre" tooltip={COLUMN_TOOLTIPS["Sem. en quiebre"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Frecuencia" tooltip={COLUMN_TOOLTIPS.Frecuencia} />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

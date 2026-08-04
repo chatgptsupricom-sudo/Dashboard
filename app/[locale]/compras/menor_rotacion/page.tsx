@@ -23,6 +23,8 @@ import { Download, Loader2, Search, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoAnalisis {
   id: number;
@@ -319,17 +321,23 @@ export default function MenorRotacionPage() {
             <Table>
               <TableHeader className="bg-red-50/30">
                 <TableRow>
-                  <TableHead className="w-[300px] px-6">Producto</TableHead>
-                  <TableHead className="text-center">Marca/Cat</TableHead>
+                  <TableHead className="w-[300px] px-6">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
                   <TableHead className="text-center font-bold text-gray-800">
-                    Stock Físico
+                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
                   </TableHead>
                   <TableHead className="text-center text-red-700">
-                    Días Inactivos
+                    <ColumnHeader label="Días Inactivos" tooltip={COLUMN_TOOLTIPS["Días Inactivos"]} />
                   </TableHead>
-                  <TableHead className="text-center">Costo Unid. ($)</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unid. ($)" tooltip={COLUMN_TOOLTIPS["Costo Unid. ($)"]} />
+                  </TableHead>
                   <TableHead className="text-right font-bold text-red-800 pr-6">
-                    Capital Estancado ($)
+                    <ColumnHeader label="Capital Estancado ($)" tooltip={COLUMN_TOOLTIPS["Capital Estancado ($)"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>

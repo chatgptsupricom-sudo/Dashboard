@@ -23,6 +23,8 @@ import { AlertTriangle, Download, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoQuiebre {
   id: number;
@@ -298,21 +300,29 @@ export default function MayorRotacionPage() {
             <Table>
               <TableHeader className="bg-orange-50/30">
                 <TableRow>
-                  <TableHead className="w-[300px] px-6">Producto</TableHead>
-                  <TableHead className="text-center">Marca/Cat</TableHead>
-                  <TableHead className="text-center">Ventas (45d)</TableHead>
+                  <TableHead className="w-[300px] px-6">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Ventas (45d)" tooltip={COLUMN_TOOLTIPS["Ventas (45d)"]} />
+                  </TableHead>
                   <TableHead className="text-center text-orange-700 font-bold">
-                    Stock Físico
+                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
                   </TableHead>
                   <TableHead className="text-center font-bold">
-                    Pto. Reorden
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
                   </TableHead>
-                  <TableHead className="text-center">Cant. Comprar</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold text-blue-700">
-                    Valor Compra ($)
+                    <ColumnHeader label="Valor Compra ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
                   </TableHead>
                   <TableHead className="text-right pr-6">
-                    Nivel Alerta
+                    <ColumnHeader label="Nivel Alerta" tooltip={COLUMN_TOOLTIPS["Nivel Alerta"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>

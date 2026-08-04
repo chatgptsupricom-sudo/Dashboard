@@ -21,6 +21,8 @@ import { Download, Layers, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface RotacionCategoria {
   nombre: string;
@@ -317,25 +319,25 @@ export default function RotacionCategoriaPage() {
               <thead className="bg-indigo-50/40 border-b">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 min-w-[220px]">
-                    Categoría
+                    <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600">
-                    SKUs
+                    <ColumnHeader label="SKUs" tooltip={COLUMN_TOOLTIPS.SKUs} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600">
-                    Ventas 45d
+                    <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600">
-                    Stock
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600 min-w-[160px]">
-                    Clasificación ABC
+                    <ColumnHeader label="Clasificación ABC" tooltip={COLUMN_TOOLTIPS["Clasificación ABC"]} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-red-700">
-                    Capital estancado
+                    <ColumnHeader label="Capital estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-orange-700">
-                    Quiebres
+                    <ColumnHeader label="Quiebres" tooltip={COLUMN_TOOLTIPS.Quiebres} />
                   </th>
                 </tr>
               </thead>
@@ -471,25 +473,25 @@ export default function RotacionCategoriaPage() {
                 <thead className="bg-indigo-50/40 border-b sticky top-0">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">
-                      Categoría
+                      <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600">
-                      SKUs
+                      <ColumnHeader label="SKUs" tooltip={COLUMN_TOOLTIPS.SKUs} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600">
-                      Ventas 45d
+                      <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600">
-                      Stock
+                      <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600 min-w-[160px]">
-                      Clasificación ABC
+                      <ColumnHeader label="Clasificación ABC" tooltip={COLUMN_TOOLTIPS["Clasificación ABC"]} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-red-700">
-                      Capital estancado
+                      <ColumnHeader label="Capital estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-orange-700">
-                      Quiebres
+                      <ColumnHeader label="Quiebres" tooltip={COLUMN_TOOLTIPS.Quiebres} />
                     </th>
                   </tr>
                 </thead>
@@ -572,25 +574,25 @@ export default function RotacionCategoriaPage() {
                 <thead className="bg-gray-50 border-b sticky top-0">
                   <tr>
                     <th className="text-left px-3 py-2 font-medium text-gray-600">
-                      Código
+                      <ColumnHeader label="Código" tooltip="Código SKU del producto" />
                     </th>
                     <th className="text-left px-3 py-2 font-medium text-gray-600">
-                      Nombre
+                      <ColumnHeader label="Nombre" tooltip={COLUMN_TOOLTIPS.Producto} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      Stock
+                      <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      Ventas 45d
+                      <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      Costo
+                      <ColumnHeader label="Costo" tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      ABC
+                      <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-red-600">
-                      Cap. Estancado
+                      <ColumnHeader label="Cap. Estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
                     </th>
                   </tr>
                 </thead>

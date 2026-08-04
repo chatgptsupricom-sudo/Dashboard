@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface MoqItem {
   sku: string;
@@ -410,14 +412,24 @@ export default function MoqConfigPage() {
                   <Table>
                     <TableHeader className="bg-blue-50/30">
                       <TableRow>
-                        <TableHead className="px-4 w-[160px]">SKU</TableHead>
-                        <TableHead className="px-4">Producto</TableHead>
-                        <TableHead>Categoría</TableHead>
-                        <TableHead className="text-center font-bold text-blue-700">
-                          MOQ
+                        <TableHead className="px-4 w-[160px]">
+                          <ColumnHeader label="SKU" tooltip="Código SKU del producto" />
                         </TableHead>
-                        <TableHead className="text-center">Costo Unit.</TableHead>
-                        <TableHead className="text-center">Valor Total</TableHead>
+                        <TableHead className="px-4">
+                          <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
+                        </TableHead>
+                        <TableHead>
+                          <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-blue-700">
+                          <ColumnHeader label="MOQ" tooltip={COLUMN_TOOLTIPS.MOQ} />
+                        </TableHead>
+                        <TableHead className="text-center">
+                          <ColumnHeader label="Costo Unit." tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
+                        </TableHead>
+                        <TableHead className="text-center">
+                          <ColumnHeader label="Valor Total" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

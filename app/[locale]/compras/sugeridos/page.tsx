@@ -23,6 +23,8 @@ import { AlertTriangle, Download, Loader2, Package, Search } from "lucide-react"
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
 interface ProductoSugerido {
   id: number;
@@ -386,18 +388,32 @@ export default function SugeridosPage() {
             <Table>
               <TableHeader className="bg-red-50/30">
                 <TableRow>
-                  <TableHead className="px-4 w-[280px]">Producto</TableHead>
-                  <TableHead className="text-center">ABC</TableHead>
-                  <TableHead className="text-center">Stock</TableHead>
-                  <TableHead className="text-center">Días Inv.</TableHead>
-                  <TableHead className="text-center">Pto. Reorden</TableHead>
-                  <TableHead className="text-center">MOQ</TableHead>
-                  <TableHead className="text-center font-bold text-blue-700">
-                    Cant. Comprar
+                  <TableHead className="px-4 w-[280px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                   </TableHead>
-                  <TableHead className="text-center">Costo Unit.</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Días Inv." tooltip={COLUMN_TOOLTIPS["Días Inv."]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="MOQ" tooltip={COLUMN_TOOLTIPS.MOQ} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-blue-700">
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unit." tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold">
-                    Valor ($)
+                    <ColumnHeader label="Valor ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -535,18 +551,32 @@ export default function SugeridosPage() {
             <Table>
               <TableHeader className="bg-orange-50/30">
                 <TableRow>
-                  <TableHead className="px-4 w-[280px]">Producto</TableHead>
-                  <TableHead className="text-center">ABC</TableHead>
-                  <TableHead className="text-center">Stock</TableHead>
-                  <TableHead className="text-center">Días Inv.</TableHead>
-                  <TableHead className="text-center">Pto. Reorden</TableHead>
-                  <TableHead className="text-center">MOQ</TableHead>
-                  <TableHead className="text-center font-bold text-blue-700">
-                    Cant. Comprar
+                  <TableHead className="px-4 w-[280px]">
+                    <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                   </TableHead>
-                  <TableHead className="text-center">Costo Unit.</TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Días Inv." tooltip={COLUMN_TOOLTIPS["Días Inv."]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="MOQ" tooltip={COLUMN_TOOLTIPS.MOQ} />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-blue-700">
+                    <ColumnHeader label="Cant. Comprar" tooltip={COLUMN_TOOLTIPS["Cant. Comprar"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Costo Unit." tooltip={COLUMN_TOOLTIPS["Costo Unit."]} />
+                  </TableHead>
                   <TableHead className="text-center font-bold">
-                    Valor ($)
+                    <ColumnHeader label="Valor ($)" tooltip={COLUMN_TOOLTIPS["Valor ($)"]} />
                   </TableHead>
                 </TableRow>
               </TableHeader>

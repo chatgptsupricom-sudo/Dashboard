@@ -11,6 +11,8 @@ import {
 import { Loader2, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 import {
   Bar,
   BarChart,
@@ -332,16 +334,16 @@ export default function TendenciaPage() {
                 <thead className="sticky top-0 bg-blue-50 border-b">
                   <tr>
                     <th className="text-left py-2 px-3 font-medium text-gray-600">
-                      #
+                      <ColumnHeader label="#" tooltip={COLUMN_TOOLTIPS["#"]} />
                     </th>
                     <th className="text-left py-2 px-3 font-medium text-gray-600">
-                      Producto
+                      <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                     </th>
                     <th className="text-right py-2 px-3 font-medium text-gray-600">
-                      Unidades
+                      <ColumnHeader label="Unidades" tooltip={COLUMN_TOOLTIPS.Unidades} />
                     </th>
                     <th className="text-right py-2 px-3 font-medium text-gray-600">
-                      % del total
+                      <ColumnHeader label="% del total" tooltip={COLUMN_TOOLTIPS["% del total"]} />
                     </th>
                   </tr>
                 </thead>
@@ -513,16 +515,16 @@ export default function TendenciaPage() {
                       <thead className="bg-gray-50 border-b">
                         <tr>
                           <th className="text-left px-4 py-3 font-medium text-gray-600">
-                            #
+                            <ColumnHeader label="#" tooltip={COLUMN_TOOLTIPS["#"]} />
                           </th>
                           <th className="text-left px-4 py-3 font-medium text-gray-600">
-                            Producto
+                            <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                           </th>
                           <th className="text-right px-4 py-3 font-medium text-gray-600">
-                            Unidades
+                            <ColumnHeader label="Unidades" tooltip={COLUMN_TOOLTIPS.Unidades} />
                           </th>
                           <th className="text-right px-4 py-3 font-medium text-gray-600">
-                            % del total
+                            <ColumnHeader label="% del total" tooltip={COLUMN_TOOLTIPS["% del total"]} />
                           </th>
                         </tr>
                       </thead>
