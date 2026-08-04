@@ -241,7 +241,7 @@ export default function RotacionCategoriaPage() {
         <Card
           className="border-red-200 bg-red-50/40 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
           onClick={() =>
-            abrirModal("Productos con capital estancado", `tipo=estancado`)
+            abrirModal("Productos con capital estancado", `tipo=estancado`, "products", true)
           }
         >
           <CardContent className="p-4">
