@@ -36,6 +36,8 @@ interface QuiebreHistorico {
   semanasConVenta: number;
   quiebresContados: number;
   semanasQuiebre: number;
+  ventasNoCumplidas: number;
+  unidadesFaltantes: number;
   frecuenciaQuiebre: number;
 }
 
@@ -118,6 +120,8 @@ export default function QuiebresHistoricosPage() {
       "Semanas con venta": p.semanasConVenta,
       "Quiebres detectados": p.quiebresContados,
       "Semanas en quiebre": p.semanasQuiebre,
+      "Pedidos sin entregar": p.ventasNoCumplidas,
+      "Unidades faltantes": p.unidadesFaltantes,
       "Frecuencia quiebre (%)": p.frecuenciaQuiebre,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -270,10 +274,16 @@ export default function QuiebresHistoricosPage() {
                     <ColumnHeader label="Sem. con venta" tooltip={COLUMN_TOOLTIPS["Sem. con venta"]} />
                   </TableHead>
                   <TableHead className="text-center font-bold text-rose-700">
-                    <ColumnHeader label="Quiebres" tooltip={COLUMN_TOOLTIPS.Quiebres} />
+                    <ColumnHeader label="Quiebres" tooltip="Semanas con pedidos que no se pudieron entregar completamente" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Sem. en quiebre" tooltip={COLUMN_TOOLTIPS["Sem. en quiebre"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Pedidos sin entregar" tooltip="Número de líneas de venta donde qty pedida > qty entregada" />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Unidades faltantes" tooltip="Suma de unidades pedidas menos entregadas (faltante real)" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Frecuencia" tooltip={COLUMN_TOOLTIPS.Frecuencia} />
@@ -284,7 +294,7 @@ export default function QuiebresHistoricosPage() {
                 {pageItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={10}
                       className="text-center py-8 text-gray-400"
                     >
                       No se detectaron quiebres históricos con los filtros
@@ -330,6 +340,14 @@ export default function QuiebresHistoricosPage() {
                       </TableCell>
                       <TableCell className="text-center text-gray-600">
                         {p.semanasQuiebre}
+                      </TableCell>
+                      <TableCell className="text-center text-orange-600 font-medium">
+                        {p.ventasNoCumplidas}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-medium text-red-600">
+                          {p.unidadesFaltantes.toLocaleString()}
+                        </span>
                       </TableCell>
                       <TableCell className="text-center">
                         <FreqBadge pct={p.frecuenciaQuiebre} />

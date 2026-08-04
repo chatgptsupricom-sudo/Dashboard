@@ -44,11 +44,15 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
   "Salidas 180d": "Total de unidades salidas (vendidas) en los últimos 180 días",
   "Sem. con venta": "Semanas en las que hubo al menos 1 venta en los últimos 6 meses",
   Quiebres:
-    "Número de brechas detectadas: desde que se agotó el stock hasta que volvieron a comprar",
+    "Número de semanas donde hubo pedidos que no se pudieron entregar completamente (demanda real no cumplida)",
   "Sem. en quiebre":
-    "Total de semanas que el producto estuvo sin stock durante las brechas detectadas",
+    "Total de semanas que el producto tuvo pedidos sin entregar",
+  "Pedidos sin entregar":
+    "Número total de líneas de venta donde la cantidad pedida era mayor a la cantidad entregada",
+  "Unidades faltantes":
+    "Suma de unidades que faltaron por entregar = qty pedida - qty entregada",
   Frecuencia:
-    "Porcentaje de semanas en quiebre del total de semanas analizadas (6 meses). Indica la frecuencia del problema",
+    "Porcentaje de semanas con quiebre del total de semanas analizadas (6 meses)",
 
   // Rotación por categoría
   SKUs: "Número de productos distintos (SKUs) en la categoría",

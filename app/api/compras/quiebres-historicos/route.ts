@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const sedeParam = searchParams.get("sede");
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
-    const cacheKey = `compras_qh_v2_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_qh_v3_sede${sedeId ?? "todas"}`;
     const cached = qhCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
@@ -81,68 +81,10 @@ export async function GET(request: NextRequest) {
     });
 
     // ============================================================
-    // FACTURAS: ventas de los últimos 180 días
-    // ============================================================
-    const today = new Date();
-    const date180 = new Date();
-    date180.setDate(today.getDate() - 180);
-    const str180 = date180.toISOString().split("T")[0];
-
-    async function fetchInvoiceLines(fechaDesde: string): Promise<any[]> {
-      let result: any[] = [];
-      let offset = 0;
-      while (true) {
-        const domain: any[] = [
-          ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
-          ["move_id.state", "=", "posted"],
-          ["move_id.invoice_date", ">=", fechaDesde],
-          ["move_id.partner_id.name", "not ilike", "supricom"],
-          ["move_id.partner_id.name", "not ilike", "office solution"],
-          ["product_id", "!=", false],
-        ];
-        if (sedeId) domain.push(["move_id.company_id", "=", sedeId]);
-        const page = await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [domain],
-          { fields: ["product_id", "quantity", "move_id"], order: "id asc", limit: 5000, offset },
-        );
-        if (!page || page.length === 0) break;
-        result = result.concat(page);
-        if (page.length < 5000) break;
-        offset += 5000;
-      }
-      return result;
-    }
-
-    const invoiceLines = await fetchInvoiceLines(str180);
-
-    // Obtener move_ids únicos para buscar fechas
-    const moveIds = [...new Set(invoiceLines.map((l: any) => l.move_id?.[0]).filter(Boolean))];
-    const moveDateMap: Record<number, Date> = {};
-
-    if (moveIds.length > 0) {
-      const CHUNK = 1000;
-      for (let i = 0; i < moveIds.length; i += CHUNK) {
-        const chunk = moveIds.slice(i, i + CHUNK);
-        const moves = await callOdooRPC<any[]>(
-          "account.move",
-          "search_read",
-          [[["id", "in", chunk]]],
-          { fields: ["id", "invoice_date"], limit: 0 },
-        );
-        if (moves) {
-          moves.forEach((m: any) => {
-            if (m.invoice_date) moveDateMap[m.id] = new Date(m.invoice_date);
-          });
-        }
-      }
-    }
-
-    // ============================================================
     // VENTANAS SEMANALES (26 semanas = 180 días)
     // ============================================================
     const WEEKS = 26;
+    const today = new Date();
     const weekStarts: Date[] = [];
     for (let i = WEEKS - 1; i >= 0; i--) {
       const d = new Date(today);
@@ -161,78 +103,143 @@ export async function GET(request: NextRequest) {
       return -1;
     }
 
-    // Agregar ventas por producto y semana usando invoice_date
-    const weeklySales: Record<number, boolean[]> = {};
-    const totalSales: Record<number, number> = {};
+    // ============================================================
+    // OBTENER ÓRDENES DE VENTA CON ENTREGAS INCOMPLETAS
+    // Un quiebre real = cuando alguien pidió pero no se pudo entregar
+    // ============================================================
+    const date180 = new Date();
+    date180.setDate(today.getDate() - 180);
+    const str180 = date180.toISOString().split("T")[0];
 
-    invoiceLines.forEach((line: any) => {
-      if (!line.product_id) return;
-      const pId = line.product_id[0];
-      const qty = line.quantity || 0;
-      const moveId = line.move_id?.[0];
-      const fecha = moveDateMap[moveId];
-      if (!fecha) return;
+    // Buscar sale.order.line donde qty_delivered < product_uom_qty (entrega incompleta)
+    async function fetchIncompleteLines(): Promise<any[]> {
+      let result: any[] = [];
+      let offset = 0;
+      while (true) {
+        const domain: any[] = [
+          ["create_date", ">=", str180],
+          ["product_id", "!=", false],
+          ["product_uom_qty", ">", 0],
+          // Solo líneas donde no se entregó todo
+          ["qty_delivered", "<", "product_uom_qty"],
+          // Excluir supricom y office solution
+          ["order_id.partner_id.name", "not ilike", "supricom"],
+          ["order_id.partner_id.name", "not ilike", "office solution"],
+        ];
+        if (sedeId) domain.push(["order_id.company_id", "=", sedeId]);
+        const page = await callOdooRPC<any[]>(
+          "sale.order.line",
+          "search_read",
+          [domain],
+          { fields: ["product_id", "product_uom_qty", "qty_delivered", "order_id", "create_date", "state"],
+            order: "create_date asc", limit: 5000, offset,
+            context: { allowed_company_ids: companies } },
+        );
+        if (!page || page.length === 0) break;
+        result = result.concat(page);
+        if (page.length < 5000) break;
+        offset += 5000;
+      }
+      return result;
+    }
 
+    const incompleteLines = await fetchIncompleteLines();
+
+    // ============================================================
+    // DETECCIÓN DE QUIEBRES REALES
+    // Cada línea incompleta = 1 semana de quiebre para ese producto
+    // Si hay múltiples líneas en la misma semana = 1 sola semana
+    // ============================================================
+    const quiebresPorProducto: Record<number, Set<number>> = {};
+    const ventasNoCumplidas: Record<number, number> = {};
+    const unidadesFaltantes: Record<number, number> = {};
+
+    incompleteLines.forEach((line: any) => {
+      const pId = line.product_id?.[0];
+      if (!pId) return;
+
+      const fecha = new Date(line.create_date);
       const wi = getWeekIndex(fecha);
       if (wi === -1) return;
 
-      if (!weeklySales[pId]) weeklySales[pId] = Array(WEEKS).fill(false);
-      weeklySales[pId][wi] = true;
-      totalSales[pId] = (totalSales[pId] || 0) + qty;
+      if (!quiebresPorProducto[pId]) quiebresPorProducto[pId] = new Set();
+      quiebresPorProducto[pId].add(wi);
+
+      ventasNoCumplidas[pId] = (ventasNoCumplidas[pId] ?? 0) + 1;
+      unidadesFaltantes[pId] = (unidadesFaltantes[pId] ?? 0) + (line.product_uom_qty - (line.qty_delivered || 0));
+    });
+
+    // También obtener ventas totales (facturas entregadas) para contexto
+    async function fetchDeliveredLines(): Promise<any[]> {
+      let result: any[] = [];
+      let offset = 0;
+      while (true) {
+        const domain: any[] = [
+          ["create_date", ">=", str180],
+          ["product_id", "!=", false],
+          ["qty_delivered", ">", 0],
+          ["order_id.partner_id.name", "not ilike", "supricom"],
+          ["order_id.partner_id.name", "not ilike", "office solution"],
+        ];
+        if (sedeId) domain.push(["order_id.company_id", "=", sedeId]);
+        const page = await callOdooRPC<any[]>(
+          "sale.order.line",
+          "search_read",
+          [domain],
+          { fields: ["product_id", "qty_delivered", "create_date"],
+            order: "create_date asc", limit: 5000, offset,
+            context: { allowed_company_ids: companies } },
+        );
+        if (!page || page.length === 0) break;
+        result = result.concat(page);
+        if (page.length < 5000) break;
+        offset += 5000;
+      }
+      return result;
+    }
+
+    const deliveredLines = await fetchDeliveredLines();
+    const totalSales: Record<number, number> = {};
+    const semanasConVenta: Record<number, Set<number>> = {};
+
+    deliveredLines.forEach((line: any) => {
+      const pId = line.product_id?.[0];
+      if (!pId) return;
+      totalSales[pId] = (totalSales[pId] ?? 0) + (line.qty_delivered || 0);
+
+      const fecha = new Date(line.create_date);
+      const wi = getWeekIndex(fecha);
+      if (wi !== -1) {
+        if (!semanasConVenta[pId]) semanasConVenta[pId] = new Set();
+        semanasConVenta[pId].add(wi);
+      }
     });
 
     // ============================================================
-    // DETECCIÓN DE QUIEBRES
-    // Brecha de al menos 1 semana sin ventas entre semanas con ventas
+    // RESULTADO: productos con quiebres reales
     // ============================================================
     const resultado = productos
+      .filter((p: any) => quiebresPorProducto[p.id]?.size > 0)
       .map((p: any) => {
-        const sales = weeklySales[p.id] ?? Array(WEEKS).fill(false);
-        const total = totalSales[p.id] ?? 0;
-
-        // Encontrar primera y última semana con ventas
-        const firstSale = sales.findIndex((v) => v);
-        const lastSale = sales.reduceRight(
-          (acc, v, i) => (acc === -1 && v ? i : acc),
-          -1,
-        );
-
-        let quiebresContados = 0;
-        let semanasQuiebre = 0;
-        let enQuiebre = false;
-
-        if (firstSale !== -1 && lastSale !== -1 && lastSale > firstSale) {
-          for (let wi = firstSale; wi <= lastSale; wi++) {
-            if (!sales[wi]) {
-              // Semana sin ventas entre primera y última venta
-              if (!enQuiebre) {
-                quiebresContados++; // Nuevo quiebre
-                enQuiebre = true;
-              }
-              semanasQuiebre++; // Semana en quiebre
-            } else {
-              enQuiebre = false; // Se reabasteció
-            }
-          }
-        }
-
-        const semanasConVenta = sales.filter(Boolean).length;
-        const stockActual = stockMap[p.id] ?? 0;
+        const semanasQuiebre = quiebresPorProducto[p.id]?.size ?? 0;
+        const totalVentas = totalSales[p.id] ?? 0;
+        const semanasActivas = semanasConVenta[p.id]?.size ?? 0;
 
         return {
           id: p.id,
           codigo: p.default_code ? String(p.default_code).trim() : `PROD-${p.id}`,
           name: p.name,
           categoria: p.categ_id?.[1] ?? "Sin categoría",
-          stockActual,
-          totalSalidas180d: Math.round(total),
-          semanasConVenta,
-          quiebresContados,
+          stockActual: stockMap[p.id] ?? 0,
+          totalSalidas180d: Math.round(totalVentas),
+          semanasConVenta: semanasActivas,
+          quiebresContados: semanasQuiebre,
           semanasQuiebre,
+          ventasNoCumplidas: ventasNoCumplidas[p.id] ?? 0,
+          unidadesFaltantes: Math.round(unidadesFaltantes[p.id] ?? 0),
           frecuenciaQuiebre: WEEKS > 0 ? Math.round((semanasQuiebre / WEEKS) * 100) : 0,
         };
       })
-      .filter((p) => p.quiebresContados > 0)
       .sort((a, b) => b.quiebresContados - a.quiebresContados);
 
     qhCache.set(cacheKey, { data: resultado, ts: Date.now() });
