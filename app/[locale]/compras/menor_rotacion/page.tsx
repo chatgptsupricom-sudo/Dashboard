@@ -217,9 +217,9 @@ export default function MenorRotacionPage() {
               <SelectValue placeholder="Inactividad" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="30">Más de 30 días</SelectItem>
-              <SelectItem value="60">Más de 60 días</SelectItem>
-              <SelectItem value="90">Más de 90 días</SelectItem>
+              <SelectItem value="30">30 – 59 días sin vender</SelectItem>
+              <SelectItem value="60">60 – 89 días sin vender</SelectItem>
+              <SelectItem value="90">90+ días sin vender</SelectItem>
               <SelectItem value="NUNCA">Nunca se ha vendido</SelectItem>
             </SelectContent>
           </Select>
