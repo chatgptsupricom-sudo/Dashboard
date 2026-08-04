@@ -7,5 +7,5 @@ export const SEDES = [
 export const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
   9: 9,   // Valencia
   10: 10, // Caracas
-  7: 11,  // Panamá
+  7: 7,   // Panamá
 };
