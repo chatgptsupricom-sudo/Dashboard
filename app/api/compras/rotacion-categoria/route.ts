@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       if (sedeId) {
         compId = sedeId;
       } else if (l.move_id_company_id) {
-        compId = l.move_id_company_id;
+        compId = Array.isArray(l.move_id_company_id) ? l.move_id_company_id[0] : l.move_id_company_id;
       } else {
         return; // skip lines without company info in "todas" mode
       }
