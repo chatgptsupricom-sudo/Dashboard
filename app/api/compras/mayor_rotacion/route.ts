@@ -212,6 +212,52 @@ export async function GET(request: NextRequest) {
         if (val > 0) tmplPriceMap[t.id] = val;
       });
     }
+    // Fallback 2: standard_price a nivel product.product
+    const tmplIdsSinCosto = tmplIds.filter((tid) => !tmplPriceMap[tid] || tmplPriceMap[tid] === 0);
+    const productPriceFallback: Record<number, number> = {};
+    if (tmplIdsSinCosto.length > 0) {
+      const prodIdsFallback = productos
+        .filter((p: any) => tmplIdsSinCosto.includes(p.product_tmpl_id?.[0]))
+        .map((p: any) => p.id);
+      if (prodIdsFallback.length > 0) {
+        for (const cid of companies) {
+          const prodPrices = await callOdooRPC<any[]>(
+            "product.product",
+            "search_read",
+            [[["id", "in", prodIdsFallback]]],
+            { fields: ["id", "product_tmpl_id", "standard_price"], limit: 0, context: { allowed_company_ids: [cid] } },
+          );
+          if (!prodPrices) continue;
+          prodPrices.forEach((p: any) => {
+            const val = Number(p.standard_price) || 0;
+            if (val > 0) productPriceFallback[p.id] = val;
+          });
+        }
+      }
+    }
+    // Fallback 3: precio de compra desde product.supplierinfo
+    const tmplIdsAunSinCosto = tmplIdsSinCosto.filter((tid) => {
+      const prod = productos.find((p: any) => p.product_tmpl_id?.[0] === tid);
+      return prod && !(productPriceFallback[prod.id] > 0);
+    });
+    const supplierPriceFallback: Record<number, number> = {};
+    if (tmplIdsAunSinCosto.length > 0) {
+      const supplierData = await callOdooRPC<any[]>(
+        "product.supplierinfo",
+        "search_read",
+        [[["product_tmpl_id", "in", tmplIdsAunSinCosto]]],
+        { fields: ["product_tmpl_id", "price"], limit: 0 },
+      );
+      if (supplierData) {
+        supplierData.forEach((s: any) => {
+          const tmplId = s.product_tmpl_id?.[0];
+          const val = Number(s.price) || 0;
+          if (tmplId && val > 0 && !supplierPriceFallback[tmplId]) {
+            supplierPriceFallback[tmplId] = val;
+          }
+        });
+      }
+    }
 
     // MOQ desde MySQL
     const moqMap = new Map(
@@ -238,7 +284,7 @@ export async function GET(request: NextRequest) {
         const ventas365d = Math.round(stats365[pId] || 0);
         const ingresos = Number((stats45[pId]?.ingresos || 0).toFixed(2));
         const stock = stockMap[pId] || 0;
-        const costo = tmplId ? (tmplPriceMap[tmplId] ?? 0) : 0;
+        const costo = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[pId] || supplierPriceFallback[tmplId] || 0) : 0;
         const moqRaw = moqMap.get(codigo);
         const tieneMoq = moqRaw !== undefined && moqRaw > 0;
         const moq = tieneMoq ? moqRaw! : 0;

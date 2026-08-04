@@ -247,6 +247,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Fallback 3: precio de compra desde product.supplierinfo (pestaña "Compras" en Odoo)
+    const tmplIdsAunSinCosto = tmplIdsSinCosto.filter((tid) => {
+      const prod = productos.find((p: any) => p.product_tmpl_id?.[0] === tid);
+      return prod && !(productPriceFallback[prod.id] > 0);
+    });
+    const supplierPriceFallback: Record<number, number> = {};
+    if (tmplIdsAunSinCosto.length > 0) {
+      const supplierData = await callOdooRPC<any[]>(
+        "product.supplierinfo",
+        "search_read",
+        [[["product_tmpl_id", "in", tmplIdsAunSinCosto]]],
+        { fields: ["product_tmpl_id", "price"], limit: 0 },
+      );
+      if (supplierData) {
+        supplierData.forEach((s: any) => {
+          const tmplId = s.product_tmpl_id?.[0];
+          const val = Number(s.price) || 0;
+          if (tmplId && val > 0 && !supplierPriceFallback[tmplId]) {
+            supplierPriceFallback[tmplId] = val;
+          }
+        });
+      }
+    }
+
     const moqMap = new Map(
       (moqResult as any).rows.map((m: any) => [m.sku, Number(m.cantidad)]),
     );
@@ -267,7 +291,7 @@ export async function GET(request: NextRequest) {
         const ventas45d = Math.round(stats45[pId]?.unidades || 0);
         const ventas365d = Math.round(stats365[pId] || 0);
         const stock = stockMap[pId] || 0;
-        const costo = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[pId] || 0) : (productPriceFallback[pId] || 0);
+        const costo = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[pId] || supplierPriceFallback[tmplId] || 0) : (productPriceFallback[pId] || 0);
         const moqRaw = moqMap.get(codigo);
         const tieneMoq = moqRaw !== undefined && moqRaw > 0;
         const moq = tieneMoq ? moqRaw! : 0;
