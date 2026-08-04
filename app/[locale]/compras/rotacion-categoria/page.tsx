@@ -579,6 +579,9 @@ export default function RotacionCategoriaPage() {
                     <th className="text-left px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Nombre" tooltip={COLUMN_TOOLTIPS.Producto} />
                     </th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">
+                      <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
+                    </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
                     </th>
@@ -590,9 +593,6 @@ export default function RotacionCategoriaPage() {
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="ABC" tooltip={COLUMN_TOOLTIPS.ABC} />
-                    </th>
-                    <th className="text-center px-3 py-2 font-medium text-red-600">
-                      <ColumnHeader label="Cap. Estancado" tooltip={COLUMN_TOOLTIPS["Capital estancado"]} />
                     </th>
                   </tr>
                 </thead>
@@ -606,6 +606,7 @@ export default function RotacionCategoriaPage() {
                         {p.codigo}
                       </td>
                       <td className="px-3 py-2 text-gray-800">{p.nombre}</td>
+                      <td className="px-3 py-2 text-sm text-gray-500">{p.categoria}</td>
                       <td className="px-3 py-2 text-center text-gray-600">
                         {p.stock}
                       </td>
@@ -630,18 +631,6 @@ export default function RotacionCategoriaPage() {
                         >
                           {p.abc}
                         </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.capitalEstancado > 0 ? (
-                          <span className="font-medium text-red-700">
-                            $
-                            {p.capitalEstancado.toLocaleString("en-US", {
-                              maximumFractionDigits: 0,
-                            })}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
                       </td>
                     </tr>
                   ))}

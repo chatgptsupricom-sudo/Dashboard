@@ -227,6 +227,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Excluir productos sin stock Y sin ventas (no aportan a esta vista)
+    result = result.filter((p) => p.stock > 0 || p.ventas45d > 0);
+
     if (categoria) {
       result = result.filter(
         (p) => p.categoria.toLowerCase() === categoria.toLowerCase(),

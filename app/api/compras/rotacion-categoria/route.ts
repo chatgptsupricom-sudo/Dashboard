@@ -218,6 +218,16 @@ export async function GET(request: NextRequest) {
     const companies = sedeId ? [sedeId] : ALL_COMPANIES;
 
     productos.forEach((p: any) => {
+      // Calcular stock y ventas primero para filtrar
+      let stockTotal = 0;
+      for (const cid of companies) {
+        stockTotal += Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
+      }
+      const ventas = ventasPorProd[p.id] ?? 0;
+
+      // Excluir productos sin stock Y sin ventas (no aportan)
+      if (stockTotal <= 0 && ventas <= 0) return;
+
       const catId = p.categ_id?.[0] ?? 0;
       const catNombre = p.categ_id?.[1] ?? "Sin categoría";
       const key = String(catId);
@@ -243,13 +253,6 @@ export async function GET(request: NextRequest) {
       else if (abc === "B") cat.clasB++;
       else cat.clasC++;
 
-      // Stock total
-      let stockTotal = 0;
-      for (const cid of companies) {
-        stockTotal += Math.round((stockPorProdYComp[p.id]?.[cid] ?? 0) * 100) / 100;
-      }
-
-      const ventas = ventasPorProd[p.id] ?? 0;
       const capital = ventas === 0 && stockTotal > 0 ? stockTotal * costo : 0;
 
       cat.ventas45d += Math.round(ventas);
