@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
       ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
       ["move_id.state", "=", "posted"],
       ["move_id.partner_id.name", "not ilike", "supricom"],
+      ["move_id.partner_id.name", "not ilike", "office solution"],
       ["product_id", "!=", false],
     ];
     if (sedeParam)

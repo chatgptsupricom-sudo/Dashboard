@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
           ["move_id.state", "=", "posted"],
           ["move_id.invoice_date", ">=", fechaDesde],
           ["move_id.partner_id.name", "not ilike", "supricom"],
+          ["move_id.partner_id.name", "not ilike", "office solution"],
           ["product_id", "!=", false],
         ];
         if (sedeId) domain.push(["move_id.company_id", "=", sedeId]);

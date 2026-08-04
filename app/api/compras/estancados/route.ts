@@ -192,6 +192,7 @@ export async function GET(request: NextRequest) {
           ["move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
           ["state", "=", "posted"],
           ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.name", "not ilike", "office solution"],
         ];
         if (sedeId) domain.push(["company_id", "=", sedeId]);
         const page = await callOdooRPC<any[]>(
