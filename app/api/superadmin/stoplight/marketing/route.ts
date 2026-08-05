@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -335,6 +336,94 @@ export async function GET(request: NextRequest) {
       return `${d1.toLocaleDateString("es-VE", opts)} - ${d2.toLocaleDateString("es-VE", opts)}`;
     });
 
+    // ========================================
+    // Odoo Email Marketing (mass_mailing)
+    // ========================================
+    let emailOpenRate: number | null = null;
+    let emailWeeklyOpenRate: (number | null)[] = Array(numSemanas).fill(null);
+    let emailTotalSent = 0;
+    let emailTotalOpened = 0;
+    let emailDebug = { mailingsFound: 0, statsFound: 0, error: null as string | null };
+
+    try {
+      const mailings = (await callOdooRPC<any[]>(
+        "mail.mass_mailing",
+        "search_read",
+        [[
+          ["create_date", ">=", startDate],
+          ["create_date", "<=", endDate],
+        ]],
+        {
+          fields: ["id", "name", "create_date", "sent_date", "state", "mailing_model_id"],
+          limit: 500,
+        }
+      )) || [];
+
+      emailDebug.mailingsFound = mailings.length;
+
+      if (mailings.length > 0) {
+        const mailingIds = mailings.map((m: any) => m.id);
+
+        const stats = (await callOdooRPC<any[]>(
+          "mail.mass_mailing.stat",
+          "search_read",
+          [[["mass_mailing_id", "in", mailingIds]]],
+          {
+            fields: ["mass_mailing_id", "total", "delivered", "opened", "clicked", "bounced"],
+            limit: 5000,
+          }
+        )) || [];
+
+        emailDebug.statsFound = stats.length;
+
+        const statsByMailing: Record<number, any> = {};
+        stats.forEach((s: any) => {
+          const mid = Array.isArray(s.mass_mailing_id) ? s.mass_mailing_id[0] : s.mass_mailing_id;
+          if (!statsByMailing[mid]) statsByMailing[mid] = { total: 0, delivered: 0, opened: 0 };
+          statsByMailing[mid].total += Number(s.total) || 0;
+          statsByMailing[mid].delivered += Number(s.delivered) || 0;
+          statsByMailing[mid].opened += Number(s.opened) || 0;
+        });
+
+        let totalSent = 0;
+        let totalOpened = 0;
+        const weekSent: number[] = Array(numSemanas).fill(0);
+        const weekOpened: number[] = Array(numSemanas).fill(0);
+
+        for (const mailing of mailings) {
+          const stat = statsByMailing[mailing.id];
+          if (!stat) continue;
+
+          const sent = stat.delivered || stat.total;
+          const opened = stat.opened;
+          totalSent += sent;
+          totalOpened += opened;
+
+          const mailingDate = (mailing.sent_date || mailing.create_date || "").split(" ")[0];
+          for (let i = 0; i < semanas.length; i++) {
+            if (mailingDate >= semanas[i].inicio && mailingDate <= semanas[i].fin) {
+              weekSent[i] += sent;
+              weekOpened[i] += opened;
+              break;
+            }
+          }
+        }
+
+        emailTotalSent = totalSent;
+        emailTotalOpened = totalOpened;
+        emailOpenRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
+
+        for (let i = 0; i < numSemanas; i++) {
+          if (weekSent[i] > 0) {
+            emailWeeklyOpenRate[i] = Math.round((weekOpened[i] / weekSent[i]) * 100);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error("Error fetching Odoo email marketing:", e.message);
+      emailDebug.error = e.message;
+    }
+
     return NextResponse.json({
       success: true,
       connected: true,
@@ -356,6 +445,13 @@ export async function GET(request: NextRequest) {
         weekly: {
           clicks: weekClicksAll,
           impressions: weekImpressionsAll,
+        },
+        emailMarketing: {
+          openRate: emailOpenRate,
+          totalSent: emailTotalSent,
+          totalOpened: emailTotalOpened,
+          weeklyOpenRate: emailWeeklyOpenRate,
+          debug: emailDebug,
         },
       },
     });

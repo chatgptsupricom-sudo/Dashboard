@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["efectividad_cierre", companyId, mes]
     );
-    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 60;
+    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
     // 6. Build response
     const result = Object.values(sellerDataMap).map((seller) => {

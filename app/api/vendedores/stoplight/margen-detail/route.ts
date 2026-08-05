@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["margen_bruto", companyId, mes]
     );
-    const metaMargen = (metaResult.rows as any[])[0]?.meta_mensual || 15;
+    const metaMargen = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
     const margenMensual = totalRevenue > 0 ? Math.round(((totalRevenue - totalCosto) / totalRevenue) * 100) : 0;
     const margenMensualPct = metaMargen > 0 ? Math.round((margenMensual / metaMargen) * 100) : 0;

@@ -370,9 +370,9 @@ export async function GET(request: NextRequest) {
       });
 
     const metaVisitasSemanal = metasMap["visitas_semanales"] || 0;
-    const metaMargen = metasMap["margen_bruto"] || 15;
-    const metaEfectividad = metasMap["efectividad_cierre"] || 60;
-    const metaActivacion = metasMap["activacion_cartera"] || 60;
+    const metaMargen = metasMap["margen_bruto"] || 0;
+    const metaEfectividad = metasMap["efectividad_cierre"] || 0;
+    const metaActivacion = metasMap["activacion_cartera"] || 0;
     const metaCantidad = metasMap["cobertura_marcas"] || 0;
 
     // --- Margen Bruto (gross margin per week) ---

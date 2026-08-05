@@ -142,6 +142,8 @@ export async function GET(request: NextRequest) {
     (metasResult.rows as any[]).forEach((r) => { metasMap[r.kpi_key] = Number(r.meta_mensual); });
 
     // === CUMPLIMIENTO CUOTA ===
+    const metaCuotaVenta = metasMap["cumplimiento_cuota_ventas"] || 0;
+    const effectiveCuota = metaCuotaVenta > 0 ? metaCuotaVenta : cuotaNum;
     const semanaCuota = semanas.map((sem) => {
       const esFuturo = sem.inicio > now;
       if (esFuturo) return null;
@@ -150,7 +152,7 @@ export async function GET(request: NextRequest) {
         const dateStr = d.toISOString().split("T")[0];
         facturadoSemana += dailyMap[dateStr] || 0;
       }
-      const cuotaSemanal = cuotaNum * (sem.diasUtiles / totalDiasUtilesMes);
+      const cuotaSemanal = effectiveCuota > 0 ? (effectiveCuota * sem.diasUtiles / totalDiasUtilesMes) : 0;
       const pct = cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0;
       return `${pct}%`;
     });
@@ -507,7 +509,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         sellerName,
-        metaMensual: metasMap["cumplimiento_cuota_ventas"] || cuotaNum,
+        metaMensual: effectiveCuota,
         cuotaMensual: cuotaNum,
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,

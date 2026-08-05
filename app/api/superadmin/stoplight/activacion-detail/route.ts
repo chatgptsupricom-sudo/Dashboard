@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["activacion_cartera", companyId, mes]
     );
-    const metaActivacion = (metaResult.rows as any[])[0]?.meta_mensual || 60;
+    const metaActivacion = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
     // 7. Build response
     const result = Object.keys(sellerClientsMap).map((name) => {

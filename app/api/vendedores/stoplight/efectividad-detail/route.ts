@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["efectividad_cierre", companyId, mes]
     );
-    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 60;
+    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
     const efectividad = totalOrdenes > 0 ? Math.round((totalFacturadas / totalOrdenes) * 100) : 0;
     const efectividadPct = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : 0;
