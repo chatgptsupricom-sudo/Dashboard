@@ -183,17 +183,16 @@ export async function GET(req: Request) {
       }
     });
 
-    // ── PEDIDOS: órdenes confirmadas NO facturadas, excluyendo clientes internos ──
+    // ── PEDIDOS: cotizaciones + órdenes confirmadas (facturadas y no facturadas), excluyendo clientes internos ──
     const allOrders =
       (await callOdooRPC<any[]>(
         "sale.order",
         "search_read",
         [
           [
-            ["state", "in", ["sale", "done"]],
+            ["state", "in", ["draft", "sent", "sale", "done"]],
             ["date_order", ">=", `${firstDayOfMonth} 00:00:00`],
             ["date_order", "<=", dayEnd],
-            ["invoice_ids", "=", false],
             ["partner_id.name", "not ilike", "office solution"],
             ["partner_id.name", "not ilike", "supricom"],
           ],
