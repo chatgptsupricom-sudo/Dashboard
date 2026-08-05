@@ -183,10 +183,8 @@ export async function GET(req: Request) {
       }
     });
 
-    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes confirmadas NO facturadas ──
-    const dateFilters = [
-      ["date_order", ">=", `${firstDayOfMonth} 00:00:00`],
-      ["date_order", "<=", dayEnd],
+    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% (sin filtro de fecha) ──
+    const pedidoFilters = [
       ["partner_id.name", "not ilike", "office solution"],
       ["partner_id.name", "not ilike", "supricom"],
     ];
@@ -194,13 +192,13 @@ export async function GET(req: Request) {
       callOdooRPC<any[]>(
         "sale.order",
         "search_read",
-        [[["state", "in", ["draft", "sent"]], ...dateFilters]],
+        [[["state", "in", ["draft", "sent"]], ...pedidoFilters]],
         { fields: ["amount_untaxed", "user_id"] },
       ),
       callOdooRPC<any[]>(
         "sale.order",
         "search_read",
-        [[["state", "in", ["sale", "done"]], ["invoice_ids", "=", false], ...dateFilters]],
+        [[["state", "in", ["sale", "done"]], ["invoice_status", "!=", "invoiced"], ...pedidoFilters]],
         { fields: ["amount_untaxed", "user_id"] },
       ),
     ]);
