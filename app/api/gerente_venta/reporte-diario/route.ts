@@ -149,6 +149,8 @@ export async function GET(req: Request) {
       .toISOString()
       .split("T")[0];
 
+    const odooUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
+
     // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
     const allInvoices =
       (await callOdooRPC<any[]>(
@@ -160,12 +162,11 @@ export async function GET(req: Request) {
             ["state", "=", "posted"],
             ["invoice_date", ">=", firstDayOfMonth],
             ["invoice_date", "<=", dateStr],
-            ["company_id", "in", companyIds],
+            ["invoice_user_id", "in", odooUserIds],
           ],
         ],
         {
           fields: ["amount_untaxed", "invoice_user_id", "move_type"],
-          context: { allowed_company_ids: companyIds },
         },
       )) || [];
 
@@ -187,7 +188,7 @@ export async function GET(req: Request) {
 
     // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% ──
     const pedidoFilters = [
-      ["company_id", "in", companyIds],
+      ["user_id", "in", odooUserIds],
       ["partner_id.name", "not ilike", "office solution"],
       ["partner_id.name", "not ilike", "supricom"],
     ];
