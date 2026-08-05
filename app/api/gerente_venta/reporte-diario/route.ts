@@ -160,10 +160,12 @@ export async function GET(req: Request) {
             ["state", "=", "posted"],
             ["invoice_date", ">=", firstDayOfMonth],
             ["invoice_date", "<=", dateStr],
+            ["company_id", "in", companyIds],
           ],
         ],
         {
           fields: ["amount_untaxed", "invoice_user_id", "move_type"],
+          context: { allowed_company_ids: companyIds },
         },
       )) || [];
 
@@ -194,13 +196,13 @@ export async function GET(req: Request) {
         "sale.order",
         "search_read",
         [[["state", "in", ["draft", "sent"]], ...pedidoFilters]],
-        { fields: ["amount_untaxed", "user_id"] },
+        { fields: ["amount_untaxed", "user_id"], context: { allowed_company_ids: companyIds } },
       ),
       callOdooRPC<any[]>(
         "sale.order",
         "search_read",
         [[["state", "in", ["sale", "done"]], ["invoice_status", "!=", "invoiced"], ...pedidoFilters]],
-        { fields: ["amount_untaxed", "user_id"] },
+        { fields: ["amount_untaxed", "user_id"], context: { allowed_company_ids: companyIds } },
       ),
     ]);
     const allOrders = [...(quotations || []), ...(confirmedOrders || [])];
