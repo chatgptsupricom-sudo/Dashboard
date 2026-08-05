@@ -183,8 +183,9 @@ export async function GET(req: Request) {
       }
     });
 
-    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% (sin filtro de fecha) ──
+    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% ──
     const pedidoFilters = [
+      ["company_id", "in", companyIds],
       ["partner_id.name", "not ilike", "office solution"],
       ["partner_id.name", "not ilike", "supricom"],
     ];
