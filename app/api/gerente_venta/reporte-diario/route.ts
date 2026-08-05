@@ -150,6 +150,8 @@ export async function GET(req: Request) {
       .split("T")[0];
 
     const odooUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
+    console.log("🔍 PEDIDOS DEBUG - sellers:", sellers.map((s: any) => ({ name: s.name, user_id: s.user_id, cids: s.cids })));
+    console.log("🔍 PEDIDOS DEBUG - odooUserIds:", odooUserIds);
 
     // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
     const allInvoices =
@@ -207,6 +209,11 @@ export async function GET(req: Request) {
       ),
     ]);
     const allOrders = [...(quotations || []), ...(confirmedOrders || [])];
+    console.log("🔍 PEDIDOS DEBUG - quotations:", quotations?.length, "confirmed:", confirmedOrders?.length, "total:", allOrders.length);
+    console.log("🔍 PEDIDOS DEBUG - total amount:", allOrders.reduce((sum: number, o: any) => sum + (o.amount_untaxed || 0), 0));
+    if (allOrders.length > 0) {
+      console.log("🔍 PEDIDOS DEBUG - sample order:", { user_id: allOrders[0].user_id, amount: allOrders[0].amount_untaxed });
+    }
 
     const orderNameMap: Record<string, number> = {};
     const orderUserIdMap: Record<number, number> = {};
