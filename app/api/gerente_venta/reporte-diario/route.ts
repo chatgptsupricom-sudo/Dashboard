@@ -183,24 +183,28 @@ export async function GET(req: Request) {
       }
     });
 
-    // ── PEDIDOS: cotizaciones + órdenes confirmadas (facturadas y no facturadas), excluyendo clientes internos ──
-    const allOrders =
-      (await callOdooRPC<any[]>(
+    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes confirmadas NO facturadas ──
+    const dateFilters = [
+      ["date_order", ">=", `${firstDayOfMonth} 00:00:00`],
+      ["date_order", "<=", dayEnd],
+      ["partner_id.name", "not ilike", "office solution"],
+      ["partner_id.name", "not ilike", "supricom"],
+    ];
+    const [quotations, confirmedOrders] = await Promise.all([
+      callOdooRPC<any[]>(
         "sale.order",
         "search_read",
-        [
-          [
-            ["state", "in", ["draft", "sent", "sale", "done"]],
-            ["date_order", ">=", `${firstDayOfMonth} 00:00:00`],
-            ["date_order", "<=", dayEnd],
-            ["partner_id.name", "not ilike", "office solution"],
-            ["partner_id.name", "not ilike", "supricom"],
-          ],
-        ],
-        {
-          fields: ["amount_untaxed", "user_id"],
-        },
-      )) || [];
+        [[["state", "in", ["draft", "sent"]], ...dateFilters]],
+        { fields: ["amount_untaxed", "user_id"] },
+      ),
+      callOdooRPC<any[]>(
+        "sale.order",
+        "search_read",
+        [[["state", "in", ["sale", "done"]], ["invoice_ids", "=", false], ...dateFilters]],
+        { fields: ["amount_untaxed", "user_id"] },
+      ),
+    ]);
+    const allOrders = [...(quotations || []), ...(confirmedOrders || [])];
 
     const orderNameMap: Record<string, number> = {};
     const orderUserIdMap: Record<number, number> = {};
