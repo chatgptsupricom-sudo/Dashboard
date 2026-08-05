@@ -623,7 +623,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
   const ventasKpis = [
     {
       id: "cumplimiento_cuota",
-      trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "alert" : "alert") : "help",
+      trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "warning" : "alert") : "help",
       title: "Cumplimiento de cuota de ventas",
       peso: "30%",
       average: kpiData ? `${kpiData.avgCumplimiento}%` : "0%",
@@ -920,7 +920,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
       },
       {
         id: "email_open_rate",
-        trend: (md?.emailMarketing?.openRate || 0) >= 20 ? "help" : (md?.emailMarketing?.openRate || 0) >= 10 ? "alert" : "alert",
+        trend: (md?.emailMarketing?.openRate || 0) >= 20 ? "help" : (md?.emailMarketing?.openRate || 0) >= 10 ? "warning" : "alert",
         title: "Email marketing",
         peso: "12%",
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
@@ -939,7 +939,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
       const v = val as number;
       return agingTotal > 0 ? Math.round((v / agingTotal) * 100) : 0;
     });
-    const agingLabels = [" corriente", "1-15", "16-30", "31-60", "61-90", "90+"];
+    const agingLabels = ["corriente", "1-15", "16-30", "31-60", "61-90", "90+"];
     const semana1 = k.carteraVencida.carteraTotal > 0 ? Math.round(k.carteraVencida.saldoVencido / k.carteraVencida.carteraTotal * 100) : 0;
 
     return [
@@ -1048,7 +1048,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
   const allGroups = [
     { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
     { id: "group-compras", title: "Compras", count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
-    { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
+    //{ id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
     ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: "Cuentas por Cobrar", count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),

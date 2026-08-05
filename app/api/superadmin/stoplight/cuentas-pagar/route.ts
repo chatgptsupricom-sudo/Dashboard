@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       [moveDomain],
       {
         fields: [
-          "id", "name", "partner_id", "invoice_date", "invoice_date_due",
+          "id", "name", "move_type", "partner_id", "invoice_date", "invoice_date_due",
           "amount_untaxed", "amount_total", "amount_residual",
           "payment_state", "company_id", "invoice_user_id",
           "create_date", "ref",
@@ -196,8 +196,11 @@ export async function GET(request: NextRequest) {
       const weekIdxInv = findWeekIdx(invDate);
       const weekIdxDue = findWeekIdx(dueDate);
 
+      const inMonthInv = invDate && invDate >= monthStart && invDate <= monthEnd;
+      const inMonthDue = dueDate && dueDate >= monthStart && dueDate <= monthEnd;
+
       // ========================================
-      // KPI2: Aging / CxP vencida (por fecha vencimiento)
+      // KPI2: Aging / CxP vencida (snapshot: todas las facturas abiertas)
       // ========================================
       if (residual > 0 && !isRefund) {
         totalCxPOpen += residual;
@@ -215,9 +218,10 @@ export async function GET(request: NextRequest) {
       }
 
       // ========================================
-      // KPI1: Pagos realizados a tiempo (por fecha vencimiento)
+      // KPI1: Pagos realizados a tiempo
+      // Solo facturas con fecha de vencimiento en el mes seleccionado
       // ========================================
-      if (dueDate && !isRefund) {
+      if (inMonthDue && !isRefund) {
         facturasQueVencian++;
         montoExigible += amount;
         if (weekIdxDue >= 0) {
@@ -225,29 +229,30 @@ export async function GET(request: NextRequest) {
           weeklyData[weekIdxDue].queVencian++;
         }
 
-        if (paymentState === "paid" || paymentState === "partial") {
+        const isPaid = paymentState === "paid" || paymentState === "reconciled";
+        if (isPaid) {
           const paidAmount = amount - residual;
           if (paidAmount > 0) {
-            if (today <= dueDate || paymentState === "paid") {
-              montoPagadoATiempo += paidAmount;
-              facturasPagadasPuntualmente++;
-              if (weekIdxDue >= 0) weeklyData[weekIdxDue].pagosATiempoMonto += paidAmount;
-            }
+            montoPagadoATiempo += paidAmount;
+            facturasPagadasPuntualmente++;
+            if (weekIdxDue >= 0) weeklyData[weekIdxDue].pagosATiempoMonto += paidAmount;
           }
         }
       }
 
       // ========================================
-      // KPI3: Procesamiento oportuno (por fecha factura)
+      // KPI3: Procesamiento oportuno
+      // Solo facturas con fecha de factura en el mes seleccionado
+      // Mide días hábiles entre fecha factura y fecha creación en sistema
       // ========================================
-      if (invDate && !isRefund) {
+      if (inMonthInv && !isRefund) {
         facturasRecibidas++;
         if (weekIdxInv >= 0) weeklyData[weekIdxInv].recibidas++;
 
         const createDate = bill.create_date ? new Date(bill.create_date) : invDate;
         const processingDays = countBusinessDays(invDate, createDate);
 
-        const hasPO = bill.ref && bill.ref.includes("PO") || false;
+        const hasPO = (bill.ref && bill.ref.toLowerCase().includes("po")) || false;
         const sla = hasPO ? 3 : 5;
 
         tiemposProcesamiento.push(processingDays);
@@ -258,7 +263,7 @@ export async function GET(request: NextRequest) {
       }
 
       // ========================================
-      // KPI4: DPO (90-day window)
+      // KPI4: DPO (90-day window, usa todas las facturas del período)
       // ========================================
       if (invDate && invDate >= dpoWindowStart && !isRefund) {
         dpoCxPTotal += residual;
@@ -266,13 +271,10 @@ export async function GET(request: NextRequest) {
     }
 
     // DPO: Compras netas a crédito del período (90 días)
+    // dpoBills ya filtra solo in_invoice, así que sumamos todos
     for (const bill of dpoBills) {
       const amount = Math.abs(Number(bill.amount_untaxed) || 0);
-      if (bill.move_type === "in_invoice") {
-        dpoComprasCredito += amount;
-      } else if (bill.move_type === "in_refund") {
-        dpoComprasCredito -= amount;
-      }
+      dpoComprasCredito += amount;
     }
 
     // ========================================

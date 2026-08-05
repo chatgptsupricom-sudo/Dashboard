@@ -28,6 +28,23 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
+  const { callOdooRPC } = await import("@/lib/odoo");
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      model, "search_read", [domain],
+      { fields, order: "id asc", limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -53,21 +70,17 @@ export async function GET(request: NextRequest) {
       ["company_id", "in", companyIds],
     ];
 
-    const allInvoices = (await callOdooRPC<any[]>(
+    const allInvoices = await fetchPaginated(
       "account.move",
-      "search_read",
-      [moveDomain],
-      {
-        fields: [
-          "id", "name", "partner_id", "company_id", "move_type",
-          "invoice_date", "invoice_date_due", "payment_state",
-          "amount_untaxed", "amount_tax", "amount_total",
-          "amount_residual", "invoice_user_id", "currency_id",
-          "invoice_origin",
-        ],
-        limit: 5000,
-      },
-    )) || [];
+      moveDomain,
+      [
+        "id", "name", "partner_id", "company_id", "move_type",
+        "invoice_date", "invoice_date_due", "payment_state",
+        "amount_untaxed", "amount_tax", "amount_total",
+        "amount_residual", "invoice_user_id", "currency_id",
+        "invoice_origin",
+      ],
+    );
 
     const invoices = allInvoices.map((inv) => {
       const amount = inv.move_type === "out_refund" ? -Math.abs(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
@@ -81,9 +94,9 @@ export async function GET(request: NextRequest) {
         agingDays = daysBetween(dueDate, today);
       }
 
-      let agingBand = " corriente";
+      let agingBand = "corriente";
       if (residual > 0 && dueDate) {
-        if (agingDays <= 0) agingBand = " corriente";
+        if (agingDays <= 0) agingBand = "corriente";
         else if (agingDays <= 15) agingBand = "1-15";
         else if (agingDays <= 30) agingBand = "16-30";
         else if (agingDays <= 60) agingBand = "31-60";
@@ -125,11 +138,10 @@ export async function GET(request: NextRequest) {
     const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
     const totalReceivable = allOpenInvoices.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
 
-    // Efectividad: Monto exigible = todas las facturas con vencimiento <= fin del mes
-    // (facturas que ya vencieron o vencen este mes, incluyendo saldos anteriores abiertos)
+    // Efectividad: Monto exigible = facturas con vencimiento en el mes seleccionado
     const exigibleInvoices = invoices.filter((inv) => {
       const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate <= monthEnd && inv.amountResidual >= 0;
+      return dueDate && dueDate >= monthStart && dueDate <= monthEnd && inv.amountResidual >= 0;
     });
     const montoExigible = exigibleInvoices.reduce((sum, inv) => {
       const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
@@ -153,21 +165,24 @@ export async function GET(request: NextRequest) {
       : null;
 
     // Recuperación: Cohorte = facturas que ya estaban vencidas al inicio del mes
-    // Vencido recuperado = monto total pagado contra esas facturas durante todo su生命周期
     const cohortStart = getMonthStart(currentYear, currentMonth);
     const cohortOverdue = invoices.filter((inv) => {
       const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
       return dueDate && dueDate < cohortStart && inv.amountResidual > 0;
     });
-    const cohortTotal = cohortOverdue.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
-
-    // Recuperación = (vencido inicial del mes - saldo restante) / vencido inicial
-    // Pero también incluimos notas de crédito que se aplicaron como ajuste
+    const cohortOriginalTotal = cohortOverdue.reduce((sum, inv) => {
+      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
+      return sum + Math.abs(total);
+    }, 0);
     const cohortRecovered = cohortOverdue.reduce((sum, inv) => {
       const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      const pagado = Math.max(total - Math.abs(inv.amountResidual), 0);
+      const pagado = Math.max(Math.abs(total) - Math.abs(inv.amountResidual), 0);
       return sum + pagado;
     }, 0);
+
+    const recuperacionPct = cohortOriginalTotal > 0
+      ? Math.round((cohortRecovered / cohortOriginalTotal) * 10000) / 100
+      : null;
 
     const totalCreditSales90d = (() => {
       const d90 = new Date(today);
@@ -185,7 +200,7 @@ export async function GET(request: NextRequest) {
       : null;
 
     const agingDistribution = {
-      " corriente": 0,
+      "corriente": 0,
       "1-15": 0,
       "16-30": 0,
       "31-60": 0,
@@ -278,9 +293,9 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: cohortTotal > 0 ? Math.round((cohortRecovered / cohortTotal) * 10000) / 100 : null,
+            value: recuperacionPct,
             meta: 60,
-            vencidoInicial: Math.round(cohortTotal * 100) / 100,
+            vencidoInicial: Math.round(cohortOriginalTotal * 100) / 100,
             vencidoRestante: Math.round(cohortOverdue.reduce((s, i) => s + Math.abs(i.amountResidual), 0) * 100) / 100,
           },
           dso: {

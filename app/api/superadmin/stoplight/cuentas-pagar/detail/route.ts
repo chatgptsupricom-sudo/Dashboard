@@ -42,10 +42,14 @@ export async function GET(request: NextRequest) {
       ["company_id", "=", companyId],
     ];
 
-    if (kpiId === "pagos_a_tiempo" || kpiId === "cuentas_pagar_vencidas") {
+    if (kpiId === "pagos_a_tiempo") {
+      domain.push(["invoice_date_due", ">=", formatDate(monthStart)]);
+      domain.push(["invoice_date_due", "<=", formatDate(monthEnd)]);
+    } else if (kpiId === "procesamiento_oportuno") {
       domain.push(["invoice_date", ">=", formatDate(monthStart)]);
       domain.push(["invoice_date", "<=", formatDate(monthEnd)]);
     }
+    // cuentas_pagar_vencidas: no filtra por mes (es snapshot de todo lo abierto)
 
     const bills = (await callOdooRPC<any[]>(
       "account.move",
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
       [domain],
       {
         fields: [
-          "id", "name", "partner_id", "invoice_date", "invoice_date_due",
+          "id", "name", "move_type", "partner_id", "invoice_date", "invoice_date_due",
           "amount_untaxed", "amount_residual", "payment_state",
           "company_id", "ref",
         ],
