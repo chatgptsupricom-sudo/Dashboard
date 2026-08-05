@@ -75,7 +75,7 @@ export async function GET(request: Request) {
         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
       LEFT JOIN leads l ON s.id = l.seller_id ${sellerId ? `AND l.seller_id = ${parseInt(sellerId)}` : ""} ${dateJoinCond}
-      WHERE 1=1 ${sedeJoin}
+      WHERE 1=1 AND s.activo = 1 ${sedeJoin}
       GROUP BY s.id, s.name
     `);
 

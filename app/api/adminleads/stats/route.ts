@@ -311,7 +311,7 @@ export async function GET(request: Request) {
         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
       LEFT JOIN leads l ON s.id = l.seller_id ${sellerId ? "AND l.seller_id = " + parseInt(sellerId) : ""} ${dateJoinCond}
-      WHERE 1=1 ${sedeJoin}
+      WHERE 1=1 AND s.activo = 1 ${sedeJoin}
       GROUP BY s.id
     `);
 
@@ -322,6 +322,7 @@ export async function GET(request: Request) {
       INNER JOIN leads l ON s.id = l.seller_id
       WHERE l.status = 'CERRADO'
       AND l.motivo_cierre IN ('VENTA', 'GANADO')
+      AND s.activo = 1
       ${sede ? `AND s.cids = ${parseInt(sede)}` : ""}
       ${fechaInicio ? `AND COALESCE(l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
       ${fechaFin ? `AND COALESCE(l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
