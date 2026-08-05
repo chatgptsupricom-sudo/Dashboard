@@ -837,7 +837,28 @@ export async function GET(request: NextRequest) {
     const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
     const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
     const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90, true);
-    const semanaForecast = fromSavedOrComputed("forecast_semanal", Array(semanas.length).fill(null));
+    const semanaForecast = await (async () => {
+      try {
+        const checklistRows = await query(
+          "SELECT semana_index, reunion_realizada, forecast_actualizado, quiebres_revisados, decisiones_registradas FROM forecast_checklist WHERE company_id = ? AND mes = ?",
+          [companyId, mes]
+        );
+        const checkMap: Record<number, any> = {};
+        (checklistRows.rows as any[]).forEach((r: any) => { checkMap[r.semana_index] = r; });
+        return semanas.map((semana, i) => {
+          const esFuturo = semana.inicio > now;
+          if (esFuturo) return null;
+          const saved = savedMap["forecast_semanal"]?.[i];
+          if (saved) return `${Math.round(saved.valor)}%`;
+          const row = checkMap[i];
+          if (!row) return null;
+          const checked = [row.reunion_realizada, row.forecast_actualizado, row.quiebres_revisados, row.decisiones_registradas].filter(Boolean).length;
+          return `${Math.round((checked / 4) * 100)}%`;
+        });
+      } catch {
+        return Array(semanas.length).fill(null);
+      }
+    })();
     const semanaPropuestas = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;

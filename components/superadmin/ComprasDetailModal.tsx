@@ -24,6 +24,11 @@ export default function ComprasDetailModal({
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [forecastRows, setForecastRows] = useState<any[]>([]);
+  const [forecastComponents, setForecastComponents] = useState<any[]>([]);
+  const [editingWeek, setEditingWeek] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !kpiType) return;
@@ -31,15 +36,126 @@ export default function ComprasDetailModal({
     setData(null);
     setError(null);
     setSelectedItem(null);
-    fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setData(json.data);
-        else setError(json.error || "Error al cargar datos");
-      })
-      .catch(() => setError("Error de conexion"))
-      .finally(() => setLoading(false));
+    setEditingWeek(null);
+
+    if (kpiType === "forecast") {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[companyId] || "valencia";
+
+      const [yearStr, monthStr] = mes.split("-");
+      const year = parseInt(yearStr);
+      const month = parseInt(monthStr) - 1;
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0);
+      const allWeeks: { inicio: Date; fin: Date }[] = [];
+      let cur = new Date(monthStart);
+      while (cur <= monthEnd) {
+        const start = new Date(cur);
+        let end = new Date(cur);
+        end.setDate(end.getDate() + 6);
+        if (end > monthEnd) end = new Date(monthEnd);
+        allWeeks.push({ inicio: start, fin: end });
+        cur = new Date(end);
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      fetch(`/api/superadmin/stoplight/forecast-semanal?empresa=${empresa}&mes=${mes}`)
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success) {
+            const existingRows = json.data.rows || [];
+            const existingMap: Record<number, any> = {};
+            existingRows.forEach((r: any) => { existingMap[r.semanaIndex] = r; });
+
+            const fullRows = allWeeks.map((w, i) => {
+              if (existingMap[i]) return existingMap[i];
+              const label = `${w.inicio.getDate()} ${w.inicio.toLocaleDateString("es-VE", { month: "short" })} - ${w.fin.getDate()} ${w.fin.toLocaleDateString("es-VE", { month: "short" })}`;
+              return {
+                semanaIndex: i,
+                semanaLabel: label,
+                reunionRealizada: false,
+                forecastActualizado: false,
+                quiebresRevisados: false,
+                decisionesRegistradas: false,
+                notas: "",
+                score: 0,
+              };
+            });
+
+            setForecastRows(fullRows);
+            setForecastComponents(json.data.components);
+            setData({ forecastScore: json.data.score });
+          } else setError(json.error || "Error al cargar datos");
+        })
+        .catch(() => setError("Error de conexion"))
+        .finally(() => setLoading(false));
+    } else {
+      fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}`)
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success) setData(json.data);
+          else setError(json.error || "Error al cargar datos");
+        })
+        .catch(() => setError("Error de conexion"))
+        .finally(() => setLoading(false));
+    }
   }, [isOpen, kpiType, companyId, mes]);
+
+  const startEditWeek = (row: any) => {
+    setEditingWeek(row.semanaIndex);
+    setEditForm({
+      reunion_realizada: row.reunionRealizada,
+      forecast_actualizado: row.forecastActualizado,
+      quiebres_revisados: row.quiebresRevisados,
+      decisiones_registradas: row.decisionesRegistradas,
+    });
+  };
+
+  const saveForecastWeek = async () => {
+    if (editingWeek === null) return;
+    setSaving(true);
+    try {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[companyId] || "valencia";
+      const res = await fetch("/api/superadmin/stoplight/forecast-semanal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresa,
+          mes,
+          semana_index: editingWeek,
+          reunion_realizada: editForm.reunion_realizada || false,
+          forecast_actualizado: editForm.forecast_actualizado || false,
+          quiebres_revisados: editForm.quiebres_revisados || false,
+          decisiones_registradas: editForm.decisiones_registradas || false,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setForecastRows((prev) => {
+          const updated = [...prev];
+          const idx = updated.findIndex((r: any) => r.semanaIndex === editingWeek);
+          const checked = Object.values(editForm).filter(Boolean).length;
+          const newRow = {
+            semanaIndex: editingWeek,
+            reunionRealizada: editForm.reunion_realizada || false,
+            forecastActualizado: editForm.forecast_actualizado || false,
+            quiebresRevisados: editForm.quiebres_revisados || false,
+            decisionesRegistradas: editForm.decisiones_registradas || false,
+            notas: "",
+            score: Math.round((checked / 4) * 100),
+          };
+          if (idx >= 0) updated[idx] = newRow;
+          else updated.push(newRow);
+          return updated;
+        });
+        setEditingWeek(null);
+      }
+    } catch (e) {
+      console.error("Error saving forecast:", e);
+    }
+    setSaving(false);
+  };
 
   useEffect(() => {
     if (isOpen) document.body.style.overflow = "hidden";
@@ -88,6 +204,105 @@ export default function ComprasDetailModal({
             </div>
           ) : !data ? (
             <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+          ) : kpiType === "forecast" ? (
+            editingWeek !== null ? (
+              <div className="space-y-4">
+                <button onClick={() => setEditingWeek(null)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors">
+                  <ArrowLeft size={16} /> Volver a la lista
+                </button>
+                <h3 className="text-lg font-bold text-slate-900">Semana {editingWeek + 1} — Checklist del Forecast</h3>
+                <p className="text-sm text-slate-500">Marca los puntos completados. Cada punto vale 25% del score semanal.</p>
+                <div className="space-y-3">
+                  {forecastComponents.map((comp: any) => (
+                    <label key={comp.key} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={editForm[comp.key] || false}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, [comp.key]: e.target.checked }))}
+                        className="mt-1 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <p className="font-medium text-slate-800">{comp.label}</p>
+                        <p className="text-xs text-slate-500">Peso: {comp.peso}%</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 pt-4">
+                  <div className="text-lg font-bold text-slate-800">
+                    Score: {Math.round((Object.values(editForm).filter(Boolean).length / 4) * 100)}%
+                  </div>
+                  <button
+                    onClick={saveForecastWeek}
+                    disabled={saving}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? "Guardando..." : "Guardar"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 font-medium">Score promedio</p>
+                    <p className="text-2xl font-bold text-slate-800">{data.forecastScore ?? 0}%</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 font-medium">Semanas con datos</p>
+                    <p className="text-2xl font-bold text-slate-800">{forecastRows.length}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 font-medium">Componentes</p>
+                    <p className="text-2xl font-bold text-slate-800">{forecastComponents.length}</p>
+                  </div>
+                </div>
+        <div className="border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b">
+                        <th className="p-3 text-left font-medium text-slate-600">Semana</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Reunión</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Forecast</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Quiebres</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Decisiones</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Score</th>
+                        <th className="p-3 text-center font-medium text-slate-600">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {forecastRows.length === 0 ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">No hay datos disponibles.</td></tr>
+                      ) : (
+                        forecastRows.map((row: any) => (
+                          <tr key={row.semanaIndex} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => startEditWeek(row)}>
+                            <td className="p-3 font-medium text-slate-800">
+                              Semana {row.semanaIndex + 1}
+                              {row.semanaLabel && <span className="text-xs text-slate-400 ml-2">({row.semanaLabel})</span>}
+                            </td>
+                            <td className="p-3 text-center">{row.reunionRealizada ? <Check size={18} className="text-green-600 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="p-3 text-center">{row.forecastActualizado ? <Check size={18} className="text-green-600 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="p-3 text-center">{row.quiebresRevisados ? <Check size={18} className="text-green-600 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="p-3 text-center">{row.decisionesRegistradas ? <Check size={18} className="text-green-600 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="p-3 text-center">
+                              <span className={`font-bold ${row.score >= 100 ? "text-green-600" : row.score >= 75 ? "text-amber-600" : "text-red-600"}`}>
+                                {row.score}%
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">{row.score > 0 ? "Editar" : "Registrar"}</button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+          </table>
+          </div>
+        </div>
+                <p className="text-xs text-slate-400 mt-2">Haz clic en una semana vacía o en "Editar" para registrar el checklist semanal.</p>
+              </div>
+            )
           ) : selectedItem ? (
             renderDetail(kpiType, selectedItem, fmt)
           ) : (
@@ -111,6 +326,8 @@ function getResumenText(kpi: string, r: any): string {
         return `${r.totalConDemanda ?? 0} elegibles | ${r.enQuiebre ?? 0} quiebre | ${r.enRiesgo ?? 0} riesgo | ${r.porcentaje ?? 0}% SKU-días`;
       case "inventario_90":
         return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} +90d | ${r.porcentaje ?? 0}% valor ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
+      case "forecast":
+        return `Score promedio: ${r.forecastScore ?? 0}% | Semáforo: ${r.forecastScore >= 100 ? "Verde" : r.forecastScore >= 75 ? "Amarillo" : "Rojo"}`;
       default:
         return "";
     }
@@ -129,7 +346,8 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
     return (
       <div className="space-y-4">
         <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
                 <th className="p-3 text-left font-medium text-slate-600">Producto</th>
@@ -165,6 +383,7 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );
@@ -185,7 +404,8 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           </div>
         )}
         <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
                 <th className="p-3 text-left font-medium text-slate-600">Producto</th>
@@ -227,6 +447,7 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );
@@ -236,7 +457,8 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
     return (
       <div className="space-y-4">
         <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
                 <th className="p-3 text-left font-medium text-slate-600">Producto</th>
@@ -292,6 +514,7 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );
@@ -314,7 +537,8 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           </div>
         )}
         <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
                 <th className="p-3 text-left font-medium text-slate-600">Producto</th>
@@ -358,6 +582,7 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );

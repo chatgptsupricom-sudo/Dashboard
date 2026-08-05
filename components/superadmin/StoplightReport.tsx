@@ -133,6 +133,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
   const [marketingLoading, setMarketingLoading] = useState(false);
   const [cxcData, setCxcData] = useState<any>(null);
   const [cxcLoading, setCxcLoading] = useState(false);
+  const [cppData, setCppData] = useState<any>(null);
+  const [cppLoading, setCppLoading] = useState(false);
   const [cxcModalOpen, setCxcModalOpen] = useState(false);
   const [cxcModalLoading, setCxcModalLoading] = useState(false);
   const [cxcModalData, setCxcModalData] = useState<any>(null);
@@ -140,6 +142,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
   const [cxcSelectedInvoice, setCxcSelectedInvoice] = useState<any>(null);
   const [cxcInvoiceDetail, setCxcInvoiceDetail] = useState<any>(null);
   const [cxcInvoiceLoading, setCxcInvoiceLoading] = useState(false);
+
+  const [cppModalOpen, setCppModalOpen] = useState(false);
+  const [cppModalLoading, setCppModalLoading] = useState(false);
+  const [cppModalData, setCppModalData] = useState<any>(null);
+  const [cppModalKpi, setCppModalKpi] = useState<string>("");
+  const [cppSelectedBill, setCppSelectedBill] = useState<any>(null);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
   const [margenModalOpen, setMargenModalOpen] = useState(false);
@@ -256,8 +264,24 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
 
+  const fetchCppData = useCallback(async () => {
+    setCppLoading(true);
+    try {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[selectedCompanyId] || "valencia";
+      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`);
+      const json = await res.json();
+      if (json.success) setCppData(json.data);
+    } catch (e) {
+      console.error("Error fetching CPP data:", e);
+    }
+    setCppLoading(false);
+  }, [selectedCompanyId]);
+
+  useEffect(() => { fetchCppData(); }, [fetchCppData]);
+
   useEffect(() => {
-    if (clientesModalOpen || modalOpen || cxcModalOpen) {
+    if (clientesModalOpen || modalOpen || cxcModalOpen || cppModalOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -403,6 +427,23 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
       console.error("Error fetching invoice detail:", e);
     }
     setCxcInvoiceLoading(false);
+  };
+
+  const openCppModal = async (kpiId: string) => {
+    setCppModalKpi(kpiId);
+    setCppModalOpen(true);
+    setCppModalLoading(true);
+    try {
+      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+      const empresa = empresaMap[selectedCompanyId] || "valencia";
+      let url = `${apiPrefix}/cuentas-pagar/detail?empresa=${empresa}&kpi_id=${kpiId}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success) setCppModalData(json.data);
+    } catch (e) {
+      console.error("Error fetching CPP detail:", e);
+    }
+    setCppModalLoading(false);
   };
 
   const openMargenModal = async () => {
@@ -763,6 +804,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
       weeks: kpiData?.semanaForecast || defaultWeeks,
       goalDefault: kpiData?.metas?.["forecast_semanal"] ? String(kpiData.metas["forecast_semanal"]) : "75",
       goalSuffix: "%",
+      isClickable: true,
     },
     {
       id: "propuestas_calificadas",
@@ -938,6 +980,59 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
     ];
   })() : [];
 
+  const cppKpis = cppData ? (() => {
+    return [
+      {
+        id: "pagos_a_tiempo",
+        trend: cppData.pagosATiempoPct >= 95 ? "success" : cppData.pagosATiempoPct >= 85 ? "warning" : "alert",
+        title: "Pagos realizados a tiempo",
+        peso: "35%",
+        average: `${cppData.pagosATiempoPct}%`,
+        weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
+        goalDefault: "95",
+        goalSuffix: "%",
+        isClickable: true,
+        subtitle: `Por monto: ${cppData.pagosATiempoPct}% | Por cantidad: ${cppData.pagosATiempoCantidad}%`,
+      },
+      {
+        id: "cuentas_pagar_vencidas",
+        trend: cppData.cuentasVencidasPct <= 5 ? "success" : cppData.cuentasVencidasPct <= 10 ? "warning" : "alert",
+        title: "Porcentaje de cuentas por pagar vencidas",
+        peso: "30%",
+        average: `${cppData.cuentasVencidasPct}%`,
+        weeks: cppData.semanaVencidas || Array(5).fill(null),
+        goalDefault: "5",
+        goalSuffix: "%",
+        isClickable: true,
+        subtitle: `Vencido: $${cppData.totalVencido?.toLocaleString()} / Total abierto: $${cppData.totalCxPOpen?.toLocaleString()}`,
+      },
+      {
+        id: "procesamiento_oportuno",
+        trend: cppData.procesamientoOportunoPct >= 95 ? "success" : cppData.procesamientoOportunoPct >= 85 ? "warning" : "alert",
+        title: "Procesamiento oportuno de facturas",
+        peso: "20%",
+        average: `${cppData.procesamientoOportunoPct}%`,
+        weeks: cppData.semanaProcesamiento || Array(5).fill(null),
+        goalDefault: "95",
+        goalSuffix: "%",
+        isClickable: true,
+        subtitle: `SLA: ≤3 días con OC, ≤5 días sin OC | Promedio: ${cppData.avgProcessingDays} días`,
+      },
+      {
+        id: "dpo",
+        trend: cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
+        title: "Días promedio de pago (DPO)",
+        peso: "15%",
+        average: `${cppData.dpo} días`,
+        weeks: cppData.semanaDpo || Array(5).fill(null),
+        goalDefault: "30",
+        goalSuffix: " días",
+        isClickable: true,
+        subtitle: `Ventana: 90 días | CxP: $${cppData.dpoCxPTotal?.toLocaleString()} | Compras crédito: $${cppData.dpoComprasCredito?.toLocaleString()}`,
+      },
+    ];
+  })() : [];
+
   const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];
 
   const allGroups = [
@@ -945,6 +1040,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
     { id: "group-compras", title: "Departamento de Compras", count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
     { id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
     ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: "Cuentas por Cobrar", count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
+    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
   const groups = vendorMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
@@ -1142,7 +1238,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           {kpi.cumple ? (
@@ -3441,6 +3537,169 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                             <td className="p-3 text-right font-bold">
                               <span className={inv.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
                                 ${Math.abs(inv.amountResidual).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cppModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  {cppModalKpi === "pagos_a_tiempo" ? "Pagos realizados a tiempo — Detalle"
+                    : cppModalKpi === "cuentas_pagar_vencidas" ? "Cuentas por pagar vencidas — Detalle"
+                    : cppModalKpi === "procesamiento_oportuno" ? "Procesamiento oportuno — Detalle"
+                    : "Días promedio de pago (DPO) — Detalle"}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {empresaLabel} | {currentMes}
+                </p>
+              </div>
+              <button
+                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); }}
+                className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
+              >
+                <X size={20} className="text-slate-700" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-5">
+              {cppModalLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                  <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                </div>
+              ) : !cppModalData ? (
+                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {cppModalKpi === "pagos_a_tiempo" && (
+                      <>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Total facturas vencidas</p>
+                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Monto residual</p>
+                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                      </>
+                    )}
+                    {cppModalKpi === "cuentas_pagar_vencidas" && (
+                      <>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Facturas con saldo</p>
+                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Monto vencido</p>
+                          <p className="text-lg font-bold text-red-600">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        {cppModalData.agingBuckets && (
+                          <div className="col-span-2 grid grid-cols-6 gap-2">
+                            {Object.entries(cppModalData.agingBuckets).map(([band, info]: [string, any]) => (
+                              <div key={band} className={`rounded-lg p-2 text-center ${band === "corriente" ? "bg-emerald-50" : band === "90+" ? "bg-red-50" : "bg-amber-50"}`}>
+                                <p className="text-[10px] font-medium text-slate-500">{band === "corriente" ? "Corriente" : band}</p>
+                                <p className="text-sm font-bold text-slate-800">${info.amount?.toLocaleString("es-VE", { maximumFractionDigits: 0 })}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {cppModalKpi === "procesamiento_oportuno" && (
+                      <>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Facturas recibidas</p>
+                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Monto total</p>
+                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                      </>
+                    )}
+                    {cppModalKpi === "dpo" && (
+                      <>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">CxP abierta (90 días)</p>
+                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Compras a crédito (90 días)</p>
+                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="border rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b">
+                          <th className="p-3 text-left font-medium text-slate-600">Factura</th>
+                          <th className="p-3 text-left font-medium text-slate-600">Proveedor</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Fecha factura</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Vencimiento</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
+                          <th className="p-3 text-center font-medium text-slate-600">Banda aging</th>
+                          <th className="p-3 text-right font-medium text-slate-600">Monto</th>
+                          <th className="p-3 text-right font-medium text-slate-600">Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cppModalData.bills.map((bill: any) => (
+                          <tr key={bill.id} className="border-b hover:bg-blue-50/40 transition-colors">
+                            <td className="p-3 font-medium text-slate-800">{bill.name}</td>
+                            <td className="p-3 text-slate-700 max-w-[200px] truncate">{bill.partnerName}</td>
+                            <td className="p-3 text-center text-slate-600">{bill.invoiceDate || "—"}</td>
+                            <td className="p-3 text-center text-slate-600">{bill.invoiceDateDue || "—"}</td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                bill.paymentState === "paid" ? "bg-emerald-100 text-emerald-700" :
+                                bill.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
+                                bill.paymentState === "nota_credito" ? "bg-purple-100 text-purple-700" :
+                                bill.isRefund ? "bg-purple-100 text-purple-700" :
+                                "bg-red-100 text-red-700"
+                              }`}>
+                                {bill.paymentState === "paid" ? "Pagada" :
+                                 bill.paymentState === "partial" ? "Parcial" :
+                                 bill.paymentState === "nota_credito" ? "N. Crédito" :
+                                 bill.isRefund ? "N. Crédito" : "Pendiente"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`font-medium ${
+                                bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-amber-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
+                              }`}>
+                                {bill.daysOverdue > 0 ? bill.daysOverdue : "—"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
+                                bill.agingBand === "90+" ? "bg-red-100 text-red-700" :
+                                "bg-amber-100 text-amber-700"
+                              }`}>
+                                {bill.agingBand === "corriente" ? "Corriente" : bill.agingBand}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right text-slate-600">${bill.amountUntaxed.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right font-bold">
+                              <span className={bill.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
+                                ${bill.amountResidual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                               </span>
                             </td>
                           </tr>
