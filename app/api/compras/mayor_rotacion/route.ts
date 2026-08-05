@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_mayor_rotacion_v6_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_mayor_rotacion_v7_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
     const cached = mayorRotacionCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json({ success: true, data: cached.data });
@@ -61,11 +61,13 @@ export async function GET(request: NextRequest) {
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
 
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+
     const warehouseData = await callOdooRPC<any[]>(
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "lot_stock_id"], limit: 0 },
+      { fields: ["id", "lot_stock_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
@@ -146,8 +148,8 @@ export async function GET(request: NextRequest) {
     if (productIds.length === 0)
       return NextResponse.json({ success: true, data: [] });
 
-    // Paso 2: datos de productos, stock y costos en paralelo
-    const [productos, stockData, tmplPricesRaw] = await Promise.all([
+    // Paso 2: datos de productos y stock por compañía
+    const [productos] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
@@ -162,29 +164,36 @@ export async function GET(request: NextRequest) {
           limit: 0,
         },
       ),
-      callOdooRPC<any[]>(
-        "stock.quant",
-        "search_read",
-        [
-          [
-            ...(locationIds.length > 0
-              ? [["location_id", "child_of", locationIds]]
-              : [["location_id.usage", "=", "internal"]]),
-            ["product_id", "in", productIds],
-          ],
-        ],
-        { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
-      ),
-      // placeholder — costos se obtienen después de tener tmplIds
-      Promise.resolve(null as any),
-    ]);
 
+    ]);
     if (!productos) throw new Error("Error obteniendo productos");
 
-    // Stock map
+    // Stock por producto y por compañía — query por cada empresa
     const stockMap: Record<number, number> = {};
-    if (stockData) {
-      stockData.forEach((s: any) => {
+    for (const cid of companies) {
+      const whId = MAIN_WAREHOUSE_BY_COMPANY[cid];
+      const wh = warehouseData?.find((w: any) => w.id === whId);
+      const whLoc = wh?.lot_stock_id?.[0];
+
+      const stockDomain: any[] = [["product_id", "in", productIds]];
+      if (whLoc) {
+        stockDomain.push(["location_id", "child_of", [whLoc]]);
+      } else {
+        stockDomain.push(["location_id.usage", "=", "internal"]);
+      }
+      stockDomain.push(["company_id", "=", cid]);
+
+      const stockData = await callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [stockDomain],
+        {
+          fields: ["product_id", "quantity", "reserved_quantity"],
+          limit: 0,
+          context: { allowed_company_ids: [cid] },
+        },
+      );
+      stockData?.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
         stockMap[id] =
@@ -199,7 +208,7 @@ export async function GET(request: NextRequest) {
       ),
     ];
     const tmplPriceMap: Record<number, number> = {};
-    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+
     for (const cid of companies) {
       const prices = await callOdooRPC<any[]>(
         "product.template",

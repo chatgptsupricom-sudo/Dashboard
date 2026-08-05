@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_estancados_v10_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_estancados_v11_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
     const cached = estancadosCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json(
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Paso 1: obtener lot_stock_id de los almacenes principales conocidos.
+    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
     const warehouseIds = sedeId
       ? [MAIN_WAREHOUSE_BY_COMPANY[sedeId]].filter(Boolean)
       : Object.values(MAIN_WAREHOUSE_BY_COMPANY);
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
       "stock.warehouse",
       "search_read",
       [[["id", "in", warehouseIds]]],
-      { fields: ["id", "name", "lot_stock_id", "company_id"], limit: 0 },
+      { fields: ["id", "name", "lot_stock_id", "company_id"], limit: 0, context: { allowed_company_ids: companies } },
     );
     const locationIds = warehouseData
       ? warehouseData.map((w: any) => w.lot_stock_id?.[0]).filter(Boolean)
@@ -76,26 +77,32 @@ export async function GET(request: NextRequest) {
     );
     if (!productsData) throw new Error("Error obteniendo productos");
 
-    // Paso 3: traer stock del almacén principal y todas sus sub-ubicaciones.
-    // child_of incluye la ubicación y todos sus hijos en el árbol de ubicaciones.
-    const stockDomain: any[] = [["product_id", "!=", false]];
-    if (locationIds.length > 0) {
-      stockDomain.push(["location_id", "child_of", locationIds]);
-    } else {
-      stockDomain.push(["location_id.usage", "=", "internal"]);
-      if (sedeId) stockDomain.push(["company_id", "=", sedeId]);
-    }
-
-    const stockData = await callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
-    );
-
+    // Paso 3: traer stock del almacén principal — query por cada empresa
     const stockMap: Record<number, number> = {};
-    if (stockData) {
-      stockData.forEach((s: any) => {
+    for (const cid of companies) {
+      const whId = MAIN_WAREHOUSE_BY_COMPANY[cid];
+      const wh = warehouseData?.find((w: any) => w.id === whId);
+      const whLoc = wh?.lot_stock_id?.[0];
+
+      const stockDomain: any[] = [["product_id", "!=", false]];
+      if (whLoc) {
+        stockDomain.push(["location_id", "child_of", [whLoc]]);
+      } else {
+        stockDomain.push(["location_id.usage", "=", "internal"]);
+      }
+      stockDomain.push(["company_id", "=", cid]);
+
+      const stockData = await callOdooRPC<any[]>(
+        "stock.quant",
+        "search_read",
+        [stockDomain],
+        {
+          fields: ["product_id", "quantity", "reserved_quantity"],
+          limit: 0,
+          context: { allowed_company_ids: [cid] },
+        },
+      );
+      stockData?.forEach((s: any) => {
         if (!s.product_id) return;
         const id = s.product_id[0];
         stockMap[id] =
@@ -115,7 +122,7 @@ export async function GET(request: NextRequest) {
       ),
     ];
     const tmplPriceMap: Record<number, number> = {};
-    const companies = sedeId ? [sedeId] : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
+
     for (const cid of companies) {
       const prices = await callOdooRPC<any[]>(
         "product.template",
