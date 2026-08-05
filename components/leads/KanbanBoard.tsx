@@ -353,7 +353,8 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
   const handleCloseLead = (lead: Lead) => {
     setLeadToClose(lead);
     setFormData({
-      motivo: "VENTA",
+      motivo: "",
+      motivoPerdido: "",
       monto: "",
       factura: "",
       fecha: new Date().toISOString().split("T")[0],
@@ -427,7 +428,7 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
   });
   const totalLeads = leads.length;
   const closedVenta = leads.filter(
-    (l) => l.estatus === "CERRADO" && l.motivoCierre === "VENTA",
+    (l) => l.estatus === "CERRADO" && (l.motivoCierre === "VENTA" || l.motivoCierre === "GANADO" || l.motivoCierre === "YA_ES_CLIENTE"),
   ).length;
   const efectividad =
     totalLeads > 0 ? Math.round((closedVenta / totalLeads) * 100) : 0;
@@ -651,6 +652,7 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               await fetch("/api/vendedores/leads", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
+<<<<<<< HEAD
                 body: JSON.stringify(
                   Object.assign(
                     {
@@ -668,6 +670,24 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
                       : {},
                   ),
                 ),
+=======
+                body: JSON.stringify({
+                  id: leadToClose?.id,
+                  status: "CERRADO",
+                  motivo: formData.motivo,
+                  fecha: formData.fecha,
+                  observacionesCierres: formData.observaciones || undefined,
+                  ...(formData.motivo === "GANADO" || formData.motivo === "YA_ES_CLIENTE"
+                    ? {
+                        monto: parseFloat(formData.monto),
+                        factura: formData.factura,
+                      }
+                    : {}),
+                  ...(formData.motivo === "PERDIDO" && formData.motivoPerdido
+                    ? { motivoPerdido: formData.motivoPerdido }
+                    : {}),
+                }),
+>>>>>>> cdfa043 (fix: closure form fields not showing for sellers)
               });
               setShowClosureModal(false);
               fetchLeads();
