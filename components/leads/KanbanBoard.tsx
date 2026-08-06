@@ -110,7 +110,8 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
   const [showClosureModal, setShowClosureModal] = useState(false);
   const [leadToClose, setLeadToClose] = useState<Lead | null>(null);
   const [formData, setFormData] = useState({
-    motivo: "VENTA",
+    motivo: "",
+    motivoPerdido: "",
     monto: "",
     factura: "",
     fecha: new Date().toISOString().split("T")[0],
@@ -648,29 +649,10 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
             onClick={(e) => e.stopPropagation()}
             onSubmit={async (e) => {
               e.preventDefault();
-              if (formData.motivo === "VENTA") confetti();
+              if (formData.motivo === "GANADO") confetti();
               await fetch("/api/vendedores/leads", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-<<<<<<< HEAD
-                body: JSON.stringify(
-                  Object.assign(
-                    {
-                      id: leadToClose?.id,
-                      status: "CERRADO",
-                      motivo: formData.motivo,
-                      observacionesCierres: formData.observaciones || undefined,
-                    },
-                    formData.motivo === "VENTA"
-                      ? {
-                          monto: parseFloat(formData.monto),
-                          factura: formData.factura,
-                          fecha: formData.fecha,
-                        }
-                      : {},
-                  ),
-                ),
-=======
                 body: JSON.stringify({
                   id: leadToClose?.id,
                   status: "CERRADO",
@@ -687,7 +669,6 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
                     ? { motivoPerdido: formData.motivoPerdido }
                     : {}),
                 }),
->>>>>>> cdfa043 (fix: closure form fields not showing for sellers)
               });
               setShowClosureModal(false);
               fetchLeads();
@@ -708,16 +689,18 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               className="w-full border border-zinc-300 p-2.5 rounded-lg"
               value={formData.motivo}
               onChange={(e) =>
-                setFormData({ ...formData, motivo: e.target.value })
+                setFormData({ ...formData, motivo: e.target.value, motivoPerdido: "" })
               }
             >
               <option value="" disabled>
                 Selecciona un motivo...
               </option>
-              <option value="VENTA">Cierre por venta</option>
-              <option value="ABANDONO">Cierre por abandono</option>
+              <option value="GANADO">Cierre ganado</option>
+              <option value="YA_ES_CLIENTE">Ya es cliente</option>
+              <option value="PERDIDO">Cierre perdido</option>
             </select>
-            {formData.motivo === "VENTA" && (
+            {(formData.motivo === "GANADO" ||
+              formData.motivo === "YA_ES_CLIENTE") && (
               <>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase">
@@ -753,6 +736,43 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
                     setFormData({ ...formData, factura: e.target.value })
                   }
                 />
+              </>
+            )}
+            {formData.motivo === "PERDIDO" && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase">
+                    Fecha de cierre
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full border border-zinc-300 p-2.5 rounded-lg"
+                    value={formData.fecha}
+                    onChange={(e) =>
+                      setFormData({ ...formData, fecha: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase">
+                    Motivo de pérdida
+                  </label>
+                  <select
+                    required
+                    className="w-full border border-zinc-300 p-2.5 rounded-lg text-sm"
+                    value={formData.motivoPerdido}
+                    onChange={(e) =>
+                      setFormData({ ...formData, motivoPerdido: e.target.value })
+                    }
+                  >
+                    <option value="" disabled>
+                      Selecciona motivo de pérdida...
+                    </option>
+                    <option value="Sin inventario">Sin inventario</option>
+                    <option value="Cliente final">Cliente final</option>
+                  </select>
+                </div>
               </>
             )}
             <div className="space-y-1">
