@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -57,6 +58,14 @@ export async function GET(request: NextRequest) {
     const companyId = empresa && COMPANY_MAP[empresa]
       ? COMPANY_MAP[empresa]
       : 9;
+
+    const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+    const cppMetasResult = await query(
+      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('pagos_a_tiempo', 'cuentas_pagar_vencidas', 'procesamiento_oportuno', 'dpo')",
+      [companyId, mes]
+    );
+    const cppMetas: Record<string, number> = {};
+    (cppMetasResult.rows as any[]).forEach((r: any) => { cppMetas[r.kpi_key] = Number(r.meta_mensual); });
 
     // ========================================
     // Fetch ALL vendor bills (in_invoice + in_refund) posted
@@ -374,6 +383,8 @@ export async function GET(request: NextRequest) {
         semanaVencidas,
         semanaProcesamiento,
         semanaDpo,
+
+        metas: cppMetas,
       },
     });
   } catch (error: any) {

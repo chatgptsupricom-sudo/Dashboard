@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -63,6 +64,15 @@ export async function GET(request: NextRequest) {
     const companyIds = empresa && COMPANY_MAP[empresa]
       ? [COMPANY_MAP[empresa]]
       : [7, 9, 10];
+
+    const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+    const companyId = companyIds[0] || 9;
+    const cxcMetasResult = await query(
+      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso')",
+      [companyId, mes]
+    );
+    const cxcMetas: Record<string, number> = {};
+    (cxcMetasResult.rows as any[]).forEach((r: any) => { cxcMetas[r.kpi_key] = Number(r.meta_mensual); });
 
     const moveDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
@@ -281,26 +291,26 @@ export async function GET(request: NextRequest) {
         kpis: {
           efectividad: {
             value: efectividad,
-            meta: 95,
+            meta: cxcMetas["efectividad_cobranza"] || 95,
             cobradoMes: Math.round(cobradoEnPeriodo * 100) / 100,
             exigibleMes: Math.round(montoExigible * 100) / 100,
             pendiente: Math.round((montoExigible - cobradoEnPeriodo) * 100) / 100,
           },
           carteraVencida: {
             value: carteraVencidaPct,
-            meta: 10,
+            meta: cxcMetas["cartera_vencida"] || 10,
             saldoVencido: Math.round(totalOverdue * 100) / 100,
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
             value: recuperacionPct,
-            meta: 60,
+            meta: cxcMetas["recuperacion_vencidos"] || 60,
             vencidoInicial: Math.round(cohortOriginalTotal * 100) / 100,
             vencidoRestante: Math.round(cohortOverdue.reduce((s, i) => s + Math.abs(i.amountResidual), 0) * 100) / 100,
           },
           dso: {
             value: dso90,
-            meta: 45,
+            meta: cxcMetas["dso"] || 45,
             carteraAbierta: Math.round(totalReceivable * 100) / 100,
             ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
           },

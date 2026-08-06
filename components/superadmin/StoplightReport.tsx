@@ -39,8 +39,8 @@ const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   const numGoal = parseFloat(goal);
   if (isNaN(numVal) || isNaN(numGoal)) return getCellColor(value);
 
-  const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos"];
-  const lowerBetter = ["cartera_vencida", "dso"];
+  const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno"];
+  const lowerBetter = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo"];
 
   if (higherBetter.includes(kpiId)) {
     if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
@@ -622,7 +622,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
 
   const ventasKpis = [
     {
-      id: "cumplimiento_cuota",
+      id: "cumplimiento_cuota_ventas",
       trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "warning" : "alert") : "help",
       title: "Cumplimiento de cuota de ventas",
       peso: "30%",
@@ -991,6 +991,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
   })() : [];
 
   const cppKpis = cppData ? (() => {
+    const metas = cppData.metas || {};
     return [
       {
         id: "pagos_a_tiempo",
@@ -999,7 +1000,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
         peso: "35%",
         average: `${cppData.pagosATiempoPct}%`,
         weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
-        goalDefault: "95",
+        goalDefault: String(metas["pagos_a_tiempo"] ?? 95),
         goalSuffix: "%",
         isClickable: true,
         subtitle: `Por monto: ${cppData.pagosATiempoPct}% | Por cantidad: ${cppData.pagosATiempoCantidad}%`,
@@ -1011,7 +1012,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
         peso: "30%",
         average: `${cppData.cuentasVencidasPct}%`,
         weeks: cppData.semanaVencidas || Array(5).fill(null),
-        goalDefault: "5",
+        goalDefault: String(metas["cuentas_pagar_vencidas"] ?? 5),
         goalSuffix: "%",
         isClickable: true,
         subtitle: `Vencido: $${cppData.totalVencido?.toLocaleString()} / Total abierto: $${cppData.totalCxPOpen?.toLocaleString()}`,
@@ -1023,7 +1024,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
         peso: "20%",
         average: `${cppData.procesamientoOportunoPct}%`,
         weeks: cppData.semanaProcesamiento || Array(5).fill(null),
-        goalDefault: "95",
+        goalDefault: String(metas["procesamiento_oportuno"] ?? 95),
         goalSuffix: "%",
         isClickable: true,
         subtitle: `SLA: ≤3 días con OC, ≤5 días sin OC | Promedio: ${cppData.avgProcessingDays} días`,
@@ -1035,7 +1036,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
         peso: "15%",
         average: `${cppData.dpo} días`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
-        goalDefault: "30",
+        goalDefault: String(metas["dpo"] ?? 30),
         goalSuffix: " días",
         isClickable: true,
         subtitle: `Ventana: 90 días | CxP: $${cppData.dpoCxPTotal?.toLocaleString()} | Compras crédito: $${cppData.dpoComprasCredito?.toLocaleString()}`,
@@ -1248,7 +1249,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           {kpi.cumple ? (
@@ -1304,7 +1305,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                           <td
                             key={idx}
                             className={`border-r text-center p-3 transition-colors ${
-                              kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso"
+                              ["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "pagos_a_tiempo", "cuentas_pagar_vencidas", "procesamiento_oportuno", "dpo"].includes(kpi.id)
                                 ? getKpiCellColor(kpi.id, val, kpi.goalDefault)
                                 : getCellColor(val || "")
                             }`}
@@ -3773,7 +3774,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                   <p><strong>Semáforo:</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
                 </>
               )}
-              {kpiInfoModal.kpiId === "cumplimiento_cuota" && (
+              {kpiInfoModal.kpiId === "cumplimiento_cuota_ventas" && (
                 <>
                   <p><strong>Qué mide:</strong> Porcentaje de facturado contra la cuota mensual asignada a cada vendedor.</p>
                   <p><strong>Fórmula:</strong> Facturado del vendedor ÷ Cuota asignada × 100</p>
@@ -3787,7 +3788,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                   <p><strong>Meta:</strong> Cada vendedor debe captar la cantidad asignada de clientes nuevos al mes.</p>
                 </>
               )}
-              {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota", "clientes_nuevos"].includes(kpiInfoModal.kpiId) && (
+              {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos"].includes(kpiInfoModal.kpiId) && (
                 <p>Este KPI se calcula automáticamente a partir de los datos de Odoo. Consulte la definición completa en la documentación del dashboard.</p>
               )}
             </div>
