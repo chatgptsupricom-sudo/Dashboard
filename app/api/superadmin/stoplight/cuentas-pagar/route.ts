@@ -341,7 +341,8 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    const semanaDpo = weeklyData.map(() => {
+    const semanaDpo = weeklyData.map((_, i) => {
+      if (semanas[i].inicio > today) return null;
       if (dpoComprasCredito <= 0 || dpoCxPTotal <= 0) return null;
       return `${dpo}`;
     });

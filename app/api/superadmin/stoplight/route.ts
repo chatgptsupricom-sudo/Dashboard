@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas") {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
@@ -680,7 +680,8 @@ export async function GET(request: NextRequest) {
     });
 
     // --- Cobertura de marcas (brand coverage per week) ---
-    let semanaCoberturaData: { cantidad: number }[] = semanas.map(() => ({ cantidad: 0 }));
+    // Counts distinct brands (spiff_brand_id) sold each week vs. the goal (# target brands)
+    const semanaCoberturaDataBrands: Set<number>[] = semanas.map(() => new Set());
     let totalRevenueBrandsMes = 0;
     let totalCostoBrandsMes = 0;
     try {
@@ -704,6 +705,7 @@ export async function GET(request: NextRequest) {
 
         const brandProductIds = [...new Set(brandLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
         const brandProductCostMap: Record<number, number> = {};
+        const productBrandMap: Record<number, number> = {};
 
         if (brandProductIds.length > 0) {
           const brandVariants = (await callOdooRPC<any[]>(
@@ -724,17 +726,21 @@ export async function GET(request: NextRequest) {
               "product.template",
               "search_read",
               [[["id", "in", brandTmplIds]]],
-              { fields: ["id", "standard_price"], limit: 0 }
+              { fields: ["id", "standard_price", "spiff_brand_id"], limit: 0 }
             )) || [];
 
             const brandTmplCostMap: Record<number, number> = {};
+            const tmplBrandMap: Record<number, number> = {};
             brandTemplates.forEach((t: any) => {
               brandTmplCostMap[t.id] = Number(t.standard_price) || 0;
+              const brandId = t.spiff_brand_id?.[0];
+              if (brandId) tmplBrandMap[t.id] = brandId;
             });
 
             brandProductIds.forEach((pid: number) => {
               const tid = brandVariantToTmpl[pid];
               brandProductCostMap[pid] = tid ? (brandTmplCostMap[tid] || 0) : 0;
+              if (tid && tmplBrandMap[tid]) productBrandMap[pid] = tmplBrandMap[tid];
             });
           }
         }
@@ -761,15 +767,17 @@ export async function GET(request: NextRequest) {
           const isRefund = inv?.move_type === "out_refund";
           const revenueFinal = isRefund ? -revenue : revenue;
           const costoFinal = isRefund ? -costo : costo;
-          const qtyFinal = isRefund ? -qty : qty;
 
           totalRevenueBrandsMes += revenueFinal;
           totalCostoBrandsMes += costoFinal;
 
-          for (let i = 0; i < semanas.length; i++) {
-            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-              semanaCoberturaData[i].cantidad += qtyFinal;
-              break;
+          const brandId = productId ? productBrandMap[productId] : undefined;
+          if (brandId) {
+            for (let i = 0; i < semanas.length; i++) {
+              if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+                semanaCoberturaDataBrands[i].add(brandId);
+                break;
+              }
             }
           }
         });
@@ -788,11 +796,12 @@ export async function GET(request: NextRequest) {
         const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
         return `${pct}%`;
       }
+      const brandCount = semanaCoberturaDataBrands[i].size;
       if (metaCantidad > 0) {
-        const pct = Math.round((semanaCoberturaData[i].cantidad / metaCantidad) * 100);
+        const pct = Math.round((brandCount / metaCantidad) * 100);
         return `${pct}%`;
       }
-      return semanaCoberturaData[i].cantidad > 0 ? String(semanaCoberturaData[i].cantidad) : null;
+      return brandCount > 0 ? String(brandCount) : null;
     });
 
     // --- Visitas semanales (from weekly_visits table) ---
@@ -937,7 +946,7 @@ export async function POST(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas") {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 

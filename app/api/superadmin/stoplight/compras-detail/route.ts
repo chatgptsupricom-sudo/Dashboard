@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas") {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 

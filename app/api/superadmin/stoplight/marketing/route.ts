@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas") return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
 
     const accessToken = await getValidAccessToken();
     if (!accessToken) {
@@ -274,6 +274,8 @@ export async function GET(request: NextRequest) {
       let avgPosition = 0;
       const scWeeklyClicks: (number | null)[] = Array(numSemanas).fill(null);
       const scWeeklyImpressions: (number | null)[] = Array(numSemanas).fill(null);
+      const scWeeklyPositionSum: (number | null)[] = Array(numSemanas).fill(null);
+      const scWeeklyPositionCount: number[] = Array(numSemanas).fill(0);
 
       if (scData?.rows) {
         for (const row of scData.rows) {
@@ -292,11 +294,19 @@ export async function GET(request: NextRequest) {
             if (semanaActiva(i) && rowDate >= semanas[i].inicio && rowDate <= semanas[i].fin) {
               scWeeklyClicks[i] = (scWeeklyClicks[i] || 0) + (row.clicks || 0);
               scWeeklyImpressions[i] = (scWeeklyImpressions[i] || 0) + (row.impressions || 0);
+              scWeeklyPositionSum[i] = (scWeeklyPositionSum[i] || 0) + (row.position || 0);
+              scWeeklyPositionCount[i]++;
               break;
             }
           }
         }
       }
+
+      const scWeeklyPosition: (number | null)[] = scWeeklyPositionSum.map((sum, i) =>
+        sum !== null && scWeeklyPositionCount[i] > 0
+          ? Math.round((sum / scWeeklyPositionCount[i]) * 10) / 10
+          : null
+      );
 
       siteResults.push({
         siteName: site.name,
@@ -305,6 +315,7 @@ export async function GET(request: NextRequest) {
           totalClicks, totalImpressions, avgCtr, avgPosition,
           weeklyClicks: scWeeklyClicks,
           weeklyImpressions: scWeeklyImpressions,
+          weeklyPosition: scWeeklyPosition,
         },
       });
     }
@@ -318,6 +329,8 @@ export async function GET(request: NextRequest) {
 
     const weekClicksAll: (number | null)[] = Array(numSemanas).fill(null);
     const weekImpressionsAll: (number | null)[] = Array(numSemanas).fill(null);
+    const weekPositionSum: (number | null)[] = Array(numSemanas).fill(null);
+    const weekPositionCount: number[] = Array(numSemanas).fill(0);
     for (const site of siteResults) {
       for (let i = 0; i < numSemanas; i++) {
         if (site.searchConsole.weeklyClicks[i] !== null) {
@@ -326,8 +339,17 @@ export async function GET(request: NextRequest) {
         if (site.searchConsole.weeklyImpressions[i] !== null) {
           weekImpressionsAll[i] = (weekImpressionsAll[i] || 0) + (site.searchConsole.weeklyImpressions[i] || 0);
         }
+        if (site.searchConsole.weeklyPosition[i] !== null) {
+          weekPositionSum[i] = (weekPositionSum[i] || 0) + (site.searchConsole.weeklyPosition[i] || 0);
+          weekPositionCount[i]++;
+        }
       }
     }
+    const weekPositionAll: (number | null)[] = weekPositionSum.map((sum, i) =>
+      sum !== null && weekPositionCount[i] > 0
+        ? Math.round((sum / weekPositionCount[i]) * 10) / 10
+        : null
+    );
 
     const weekHeaders = semanas.map((s) => {
       const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
@@ -445,6 +467,7 @@ export async function GET(request: NextRequest) {
         weekly: {
           clicks: weekClicksAll,
           impressions: weekImpressionsAll,
+          position: weekPositionAll,
         },
         emailMarketing: {
           openRate: emailOpenRate,

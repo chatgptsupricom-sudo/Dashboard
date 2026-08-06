@@ -122,7 +122,6 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "top_clientes",
       "spiff",
-      "stoplight_reports",
     ], // IDs que deben coincidir con menuItems
   },
   [UserRole.ADMIN_LEADS]: {
@@ -146,7 +145,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
@@ -203,6 +202,7 @@ export const rolePermissions: RolePermissions = {
       "cobertura", // Cobertura de stock (días de inventario)
       "rotacion_categoria", // Clasificación ABC por categoría
       "tendencia", // Tendencia de ventas histórica
+      "stoplight_reports",
     ],
   },
 };
