@@ -196,12 +196,11 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard", // KPIs de compras, alertas de quiebre de stock
       "sugeridos", // Productos con baja rotación o bajo stock
+      "proveedores", // Gestión y registro de proveedores
+      "ordenes",
       "moq",
       "menor_rotacion",
       "mayor_rotacion",
-      "cobertura", // Cobertura de stock (días de inventario)
-      "rotacion_categoria", // Clasificación ABC por categoría
-      "tendencia", // Tendencia de ventas histórica
       "stoplight_reports",
     ],
   },

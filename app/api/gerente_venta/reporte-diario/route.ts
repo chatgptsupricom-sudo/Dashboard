@@ -204,7 +204,7 @@ export async function GET(req: Request) {
       callOdooRPC<any[]>(
         "sale.order",
         "search_read",
-        [[["state", "in", ["sale", "done"]], ["invoice_status", "!=", "invoiced"], ...pedidoFilters]],
+        [[["state", "in", ["sale", "done"]], ["invoice_status", "=", "no"], ...pedidoFilters]],
         { fields: ["amount_untaxed", "user_id"] },
       ),
     ]);

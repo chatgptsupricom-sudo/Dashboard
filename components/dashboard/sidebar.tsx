@@ -156,7 +156,7 @@ export function Sidebar({
     allowedSections.includes("menor_rotacion") ||
     allowedSections.includes("mayor_rotacion");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "quiebres_historicos", "rotacion_categoria", "sin_costo", "tendencia"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "proveedores", "ordenes"];
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 

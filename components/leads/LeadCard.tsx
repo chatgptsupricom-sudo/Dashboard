@@ -643,7 +643,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             >
               {onCloseLead &&
                 lead.estatus !== "CERRADO" &&
-                userRole === "ADMIN" &&
                 (() => {
                   const isCloseAllowed = lead.estatus !== "NUEVO";
                   return (
