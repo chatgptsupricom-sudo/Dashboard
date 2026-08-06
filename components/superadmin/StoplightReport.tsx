@@ -105,7 +105,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false }: { vendorMode?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false }: { vendorMode?: boolean; comprasMode?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -1181,7 +1181,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = vendorMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
+  const groups = vendorMode 
+    ? allGroups.filter((g) => g.id === "group-ventas") 
+    : comprasMode 
+      ? allGroups.filter((g) => g.id === "group-compras") 
+      : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
