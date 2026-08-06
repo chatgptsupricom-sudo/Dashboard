@@ -105,7 +105,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -1470,7 +1470,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           </div>
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
-                          {vendorMode ? (
+                          {!isSuperAdmin ? (
                             <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <input

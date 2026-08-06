@@ -14,7 +14,7 @@ export default function StoplightReportPage() {
         pero este contenedor asegura que ocupe todo el espacio disponible
         dentro del layout del superadmin.
       */}
-      <StoplightReportSuperadmin />
+      <StoplightReportSuperadmin isSuperAdmin={true} />
     </div>
   );
 }
