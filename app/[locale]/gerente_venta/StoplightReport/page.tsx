@@ -8,7 +8,7 @@ export const metadata = {
 export default function StoplightGerenteVentaPage() {
   return (
     <div className="w-full h-full min-h-screen bg-slate-50/50">
-      <StoplightReportSuperadmin />
+      <StoplightReportSuperadmin gerenteVentaMode={true} />
     </div>
   );
 }
