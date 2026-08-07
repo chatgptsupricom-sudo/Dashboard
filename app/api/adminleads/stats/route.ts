@@ -1,207 +1,3 @@
-// // import { query } from "@/lib/db";
-// // import { NextResponse } from "next/server";
-
-// // export async function GET(request: Request) {
-// //   try {
-// //     const { searchParams } = new URL(request.url);
-// //     const sellerId = searchParams.get("seller_id");
-// //     const sellerFilter = sellerId ? "WHERE seller_id = ?" : "";
-// //     const sellerParams = sellerId ? [sellerId] : [];
-
-// //     // 1. KPIs Globales (filtrados por vendedor si aplica)
-// //     const statsResult: any = await query(`
-// //       SELECT
-// //         IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
-// //         (SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100 as tasa_efectividad,
-// //         SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) as total_ventas_filtradas,
-// //         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
-// //         IFNULL(AVG(
-// //           CASE
-// //             WHEN fecha_venta IS NOT NULL AND tiempo_primer_contacto_minutos IS NOT NULL
-// //             THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) - tiempo_primer_contacto_minutos
-// //             ELSE NULL
-// //           END
-// //         ), 0) as avg_tiempo_cierre,
-// //         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
-// //          NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion
-// //       FROM leads ${sellerFilter}
-// //     `, sellerParams);
-
-// //     // 2. Distribución por etapas (filtrada por vendedor si aplica)
-// //     const stageResult: any = await query(`
-// //       SELECT
-// //         status,
-// //         COUNT(*) as count,
-// //         SUM(CASE WHEN motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) as venta,
-// //         SUM(CASE WHEN status = 'CERRADO' AND (motivo_cierre = 'ABANDONO' OR motivo_cierre IS NULL OR motivo_cierre != 'VENTA') THEN 1 ELSE 0 END) as abandono
-// //       FROM leads ${sellerFilter}
-// //       GROUP BY status
-// //       ORDER BY FIELD(status, 'NUEVO', 'CONTACTADO', 'CERRADO')
-// //     `, sellerParams);
-
-// //     // 3. Rendimiento por vendedores
-// //     const vendorResult: any = await query(`
-// //       SELECT
-// //         s.id, s.name,
-// //         COUNT(CASE WHEN l.status != 'CERRADO' THEN 1 END) as activos,
-// //         COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN 1 END) as ganados,
-// //         COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 END) as perdidos,
-// //         IFNULL(SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
-// //         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
-// //       FROM sellers s
-// //       LEFT JOIN leads l ON s.id = l.seller_id
-// //       GROUP BY s.id
-// //     `);
-
-// //     // 4. Top 5 Vendedores
-// //     // 4. Top 5 Vendedores por Cierre
-// //     const topVendorsResult: any = await query(`
-// //   SELECT s.name, COUNT(l.id) as total_ventas
-// //   FROM sellers s
-// //   INNER JOIN leads l ON s.id = l.seller_id
-// //   WHERE l.status = 'CERRADO'
-// //   AND l.motivo_cierre = 'VENTA'
-// //   GROUP BY s.id, s.name
-// //   ORDER BY total_ventas DESC
-// //   LIMIT 5
-// // `);
-
-// //     const statsRow = statsResult.rows?.[0] || {};
-// //     const totalVentas = sellerId
-// //       ? (parseInt(statsRow.total_ventas_filtradas) || 0)
-// //       : vendorResult.rows?.reduce((acc: number, curr: any) => acc + (curr.ganados || 0), 0) || 0;
-
-// //     return NextResponse.json({
-// //       stats: { ...statsRow, total_ventas: totalVentas },
-// //       stageData: stageResult.rows || [],
-// //       vendorData: vendorResult.rows || [],
-// //       topVendors: topVendorsResult.rows || [],
-// //     });
-// //   } catch (error) {
-// //     console.error("Error en API stats:", error);
-// //     return NextResponse.json(
-// //       { error: "Error en base de datos" },
-// //       { status: 500 },
-// //     );
-// //   }
-// // }
-// import { query } from "@/lib/db";
-// import { NextResponse } from "next/server";
-
-// export async function GET(request: Request) {
-//   try {
-//     const { searchParams } = new URL(request.url);
-//     const sellerId = searchParams.get("seller_id");
-//     const sellerFilter = sellerId ? "WHERE seller_id = ?" : "";
-//     const sellerParams = sellerId ? [sellerId] : [];
-
-//     // 1. KPIs Globales (filtrados por vendedor si aplica)
-//     const statsResult: any = await query(
-//       `
-//       SELECT
-//         IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
-//         (SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100 as tasa_efectividad,
-//         SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) as total_ventas_filtradas,
-//         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
-//         IFNULL(AVG(
-//           CASE
-//             WHEN fecha_venta IS NOT NULL AND tiempo_primer_contacto_minutos IS NOT NULL
-//             THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) - tiempo_primer_contacto_minutos
-//             ELSE NULL
-//           END
-//         ), 0) as avg_tiempo_cierre,
-//         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
-//          NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion
-//       FROM leads ${sellerFilter}
-//     `,
-//       sellerParams,
-//     );
-
-//     // 2. Distribución por etapas (filtrada por vendedor si aplica)
-//     const stageResult: any = await query(
-//       `
-//       SELECT
-//         l.status,
-//         COUNT(*) as count,
-//         SUM(CASE WHEN l.motivo_cierre = 'VENTA' THEN 1 ELSE 0 END) as venta,
-//         SUM(CASE WHEN l.status = 'CERRADO' AND (l.motivo_cierre = 'ABANDONO' OR l.motivo_cierre IS NULL OR l.motivo_cierre != 'VENTA') THEN 1 ELSE 0 END) as abandono,
-//         COALESCE(ls.order_index, 9999) as order_index
-//       FROM leads l
-//       LEFT JOIN lead_statuses ls ON l.status COLLATE utf8mb4_unicode_ci = ls.name COLLATE utf8mb4_unicode_ci
-//       ${sellerId ? "WHERE l.seller_id = ?" : ""}
-//       GROUP BY l.status, ls.order_index
-//       ORDER BY order_index ASC
-//     `,
-//       sellerParams,
-//     );
-
-//     // 3. Rendimiento por vendedores
-//     const vendorResult: any = await query(`
-//       SELECT
-//         s.id, s.name,
-//         COUNT(CASE WHEN l.status != 'CERRADO' THEN 1 END) as activos,
-//         COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN 1 END) as ganados,
-//         COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 END) as perdidos,
-//         IFNULL(SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
-//         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'VENTA' THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
-//       FROM sellers s
-//       LEFT JOIN leads l ON s.id = l.seller_id
-//       GROUP BY s.id
-//     `);
-
-//     // 4. Top 5 Vendedores
-//     // 4. Top 5 Vendedores por Cierre
-//     const topVendorsResult: any = await query(`
-//   SELECT s.name, COUNT(l.id) as total_ventas
-//   FROM sellers s
-//   INNER JOIN leads l ON s.id = l.seller_id
-//   WHERE l.status = 'CERRADO'
-//   AND l.motivo_cierre = 'VENTA'
-//   GROUP BY s.id, s.name
-//   ORDER BY total_ventas DESC
-//   LIMIT 5
-// `);
-
-//     // 5. Ranking de estados por volumen de leads
-//     const ubicacionRankingResult: any = await query(
-//       `
-//       SELECT ubicacion_estado, COUNT(*) as total
-//       FROM leads
-//       WHERE ubicacion_estado IS NOT NULL AND ubicacion_estado != ''
-//       ${sellerId ? "AND seller_id = ?" : ""}
-//       GROUP BY ubicacion_estado
-//       ORDER BY total DESC
-//       LIMIT 10
-//     `,
-//       sellerParams,
-//     );
-
-//     const statsRow = statsResult.rows?.[0] || {};
-//     const totalVentas = sellerId
-//       ? parseInt(statsRow.total_ventas_filtradas) || 0
-//       : vendorResult.rows?.reduce(
-//           (acc: number, curr: any) => acc + (curr.ganados || 0),
-//           0,
-//         ) || 0;
-
-//     return NextResponse.json({
-//       stats: { ...statsRow, total_ventas: totalVentas },
-//       stageData: stageResult.rows || [],
-//       vendorData: vendorResult.rows || [],
-//       topVendors: topVendorsResult.rows || [],
-//       ubicacionRanking: ubicacionRankingResult.rows || [],
-//     });
-//   } catch (error: any) {
-//     console.error("Error en API stats:", error);
-//     return NextResponse.json(
-//       {
-//         error: "Error en base de datos",
-//         detail: error?.message || String(error),
-//       },
-//       { status: 500 },
-//     );
-//   }
-// }
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
@@ -239,11 +35,11 @@ export async function GET(request: Request) {
       params.push(sellerId);
     }
     if (fechaInicio) {
-      conditions.push("COALESCE(fecha_ingreso, created_at) >= ?");
+      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
       params.push(`${fechaInicio} 00:00:00`);
     }
     if (fechaFin) {
-      conditions.push("COALESCE(fecha_ingreso, created_at) <= ?");
+      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) <= ?");
       params.push(`${fechaFin} 23:59:59`);
     }
 
@@ -271,6 +67,7 @@ export async function GET(request: Request) {
     const stageConditions = conditions.map((c) =>
       c
         .replace(/\bseller_id\b/g, "l.seller_id")
+        .replace(/\bfecha_venta\b/g, "l.fecha_venta")
         .replace(/\bfecha_ingreso\b/g, "l.fecha_ingreso")
         .replace(/\bcreated_at\b/g, "l.created_at"),
     );
@@ -298,8 +95,8 @@ export async function GET(request: Request) {
     // 3. Rendimiento por vendedores
     const sedeJoin = sede ? `AND s.cids = ${parseInt(sede)}` : userCids !== 7 ? "AND s.cids != 7" : "";
     const dateJoinCond = [
-      fechaInicio ? `AND COALESCE(l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
-      fechaFin ? `AND COALESCE(l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
+      fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
+      fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
     ].join(" ");
     const vendorResult: any = await query(`
       SELECT
@@ -324,8 +121,8 @@ export async function GET(request: Request) {
       AND l.motivo_cierre IN ('VENTA', 'GANADO')
       AND s.activo = 1
       ${sede ? `AND s.cids = ${parseInt(sede)}` : ""}
-      ${fechaInicio ? `AND COALESCE(l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
-      ${fechaFin ? `AND COALESCE(l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
+      ${fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
+      ${fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
       GROUP BY s.id, s.name
       ORDER BY total_ventas DESC
       LIMIT 5
@@ -364,8 +161,8 @@ export async function GET(request: Request) {
         AND producto_perdido != ''
         AND producto_perdido != 'OTRO'
         ${sede ? `AND seller_id IN (SELECT id FROM sellers WHERE cids = ${parseInt(sede)})` : ""}
-        ${fechaInicio ? `AND COALESCE(fecha_ingreso, created_at) >= '${fechaInicio} 00:00:00'` : ""}
-        ${fechaFin ? `AND COALESCE(fecha_ingreso, created_at) <= '${fechaFin} 23:59:59'` : ""}
+        ${fechaInicio ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) >= '${fechaInicio} 00:00:00'` : ""}
+        ${fechaFin ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) <= '${fechaFin} 23:59:59'` : ""}
       GROUP BY producto_perdido
       ORDER BY total DESC
       LIMIT 10
