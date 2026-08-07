@@ -122,7 +122,7 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
                       <td className="px-6 py-4 text-xs text-zinc-500 font-medium">
                         {lead.fechaVenta ? new Date(lead.fechaVenta).toLocaleDateString("es-VE", { year: "numeric", month: "short", day: "numeric" }) : "—"}
                       </td>
-                      <td className="px-6 py-4 text-xs text-zinc-500 max-w-[150px] truncate">
+                      <td className="px-6 py-4 text-xs text-zinc-500 whitespace-pre-wrap">
                         {lead.observaciones_cierres || lead.observacionesCierres || "—"}
                       </td>
                     </tr>

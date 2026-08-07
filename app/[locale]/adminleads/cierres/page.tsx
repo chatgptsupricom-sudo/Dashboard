@@ -318,7 +318,7 @@ export default function AdminCierresPage() {
                           )
                         : "—"}
                     </td>
-                    <td className="px-6 py-4 text-xs text-zinc-500 max-w-[200px] truncate">
+                    <td className="px-6 py-4 text-xs text-zinc-500 whitespace-pre-wrap">
                       {lead.observaciones_cierres || "—"}
                     </td>
                     <td className="px-6 py-4 text-center">
