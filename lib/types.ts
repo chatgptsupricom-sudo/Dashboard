@@ -12,6 +12,7 @@ export enum UserRole {
   GERENTE_OPERACIONES = "Gerente de Operations", // Rol Gerente de Operaciones
   RECURSOS_HUMANOS = "recursos humanos", // Sincronizado con minúsculas y middleware de SQL
   COMPRAS = "compras", // NUEVO: Rol Compras (ID 11 en tu base de datos)
+  RMA = "rma", // Servicio Técnico / RMA
 }
 
 // Permisos por rol
@@ -58,6 +59,7 @@ export const rolePermissions: RolePermissions = {
       "spiff", // Gestión de spiffs por marca
       "reporte_diario", // Reporte Diario de Ventas
       "cuentas_por_cobrar", // Cuentas por Cobrar
+      "rma", // Servicio Técnico / RMA
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -205,6 +207,18 @@ export const rolePermissions: RolePermissions = {
       "rotacion_categoria",
       "tendencia",
       "stoplight_reports",
+    ],
+  },
+  // NUEVA DEFINICIÓN: Rol RMA (Servicio Técnico)
+  [UserRole.RMA]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [
+      "dashboard", // KPIs de servicio técnico
+      "rma", // Gestión de RMA / servicio técnico
     ],
   },
 };

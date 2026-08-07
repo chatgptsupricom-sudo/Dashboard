@@ -25,6 +25,7 @@ export const ROLE_HIERARCHY: Record<string, { canView: string[] | "all" }> = {
   brandManagement: { canView: ["brandManagement"] },
   adminleads: { canView: ["adminleads"] },
   vendedor: { canView: ["vendedor"] },
+  rma: { canView: ["rma"] },
 };
 
 /**

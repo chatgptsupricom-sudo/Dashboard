@@ -25,7 +25,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gerente_venta") ||
     pathname.includes("/gerente_operaciones") ||
     pathname.includes("/recursos_humanos") ||
-    pathname.includes("/compras");
+    pathname.includes("/compras") ||
+    pathname.includes("/rma");
 
   if (isProtectedPath) {
     if (!token) {
@@ -49,6 +50,9 @@ export default async function middleware(request: NextRequest) {
 
       // Nueva constante para el rol de Compras
       const isCompras = userRole === "compras";
+
+      // Nueva constante para el rol de RMA (Servicio Técnico)
+      const isRma = userRole === "rma";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -106,6 +110,13 @@ export default async function middleware(request: NextRequest) {
 
       // 7. Lógica para Compras
       if (pathname.includes("/compras") && !isCompras && !isSuperAdmin) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 8. Lógica para RMA (Servicio Técnico)
+      if (pathname.includes("/rma") && !isRma && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );

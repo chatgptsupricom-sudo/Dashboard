@@ -29,6 +29,7 @@ import {
   Trophy,
   UserCheck,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -113,6 +114,7 @@ export function Sidebar({
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
+    { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma" },
     { id: "adminleads", label: t("dashboard_leads"), icon: Target, slug: "", adminLeadsOnly: true },
     { id: "catalogo_adminleads", label: t("catalogo"), icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
@@ -139,6 +141,8 @@ export function Sidebar({
         return `/${locale}/gerente_operaciones`;
       case "compras":
         return `/${locale}/compras`;
+      case "rma":
+        return `/${locale}/rma`;
       default:
         return `/${locale}/dashboard`;
     }
