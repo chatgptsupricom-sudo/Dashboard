@@ -164,36 +164,28 @@ export async function PATCH(request: Request) {
         [status ?? null, id],
       );
     } else {
-      const params: any[] = [
-        status ?? null,
-        motivo ?? null,
-        monto ? Number(monto) : null,
-        factura ?? null,
-        fecha ? `${fecha} ${new Date().toTimeString().split(" ")[0]}` : null,
-      ];
+      const fields: string[] = [];
+      const params: any[] = [];
+
+      if (status !== undefined) { fields.push("status = ?"); params.push(status); }
+      if (motivo !== undefined) { fields.push("motivo_cierre = ?"); params.push(motivo); }
+      if (monto !== undefined) { fields.push("monto_cerrado_usd = ?"); params.push(monto ? Number(monto) : null); }
+      if (factura !== undefined) { fields.push("num_factura = ?"); params.push(factura); }
+      if (fecha !== undefined) { fields.push("fecha_venta = ?"); params.push(fecha ? `${fecha} ${new Date().toTimeString().split(" ")[0]}` : null); }
+      if (tiempoPrimerContacto !== undefined) { fields.push("tiempo_primer_contacto_minutos = ?"); params.push(tiempoPrimerContacto); }
+      if (observacionesCierres !== undefined) { fields.push("observaciones_cierres = ?"); params.push(observacionesCierres); }
+      if (motivoPerdido !== undefined) { fields.push("motivo_perdido = ?"); params.push(motivoPerdido); }
+      if (productoPerdido !== undefined) { fields.push("producto_perdido = ?"); params.push(productoPerdido); }
+      if (productoGanado !== undefined) { fields.push("producto_ganado = ?"); params.push(productoGanado); }
+
+      if (fields.length === 0) {
+        return NextResponse.json({ error: "No hay campos para actualizar" }, { status: 400 });
+      }
+
       if (status !== undefined) await logStatusChange(id, status);
-      if (tiempoPrimerContacto !== undefined) params.push(tiempoPrimerContacto);
-      if (observacionesCierres !== undefined) params.push(observacionesCierres);
-      if (motivoPerdido !== undefined) params.push(motivoPerdido);
-      if (productoPerdido !== undefined) params.push(productoPerdido);
-      if (productoGanado !== undefined) params.push(productoGanado);
       params.push(id);
 
-      await query(
-        `UPDATE leads SET
-          status = ?,
-          motivo_cierre = ?,
-          monto_cerrado_usd = ?,
-          num_factura = ?,
-          fecha_venta = ?
-          ${tiempoPrimerContacto !== undefined ? ", tiempo_primer_contacto_minutos = ?" : ""}
-          ${observacionesCierres !== undefined ? ", observaciones_cierres = ?" : ""}
-          ${motivoPerdido !== undefined ? ", motivo_perdido = ?" : ""}
-          ${productoPerdido !== undefined ? ", producto_perdido = ?" : ""}
-          ${productoGanado !== undefined ? ", producto_ganado = ?" : ""}
-        WHERE id = ?`,
-        params,
-      );
+      await query(`UPDATE leads SET ${fields.join(", ")} WHERE id = ?`, params);
     }
 
     if (global.io) {
