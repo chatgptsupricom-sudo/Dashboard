@@ -98,3 +98,17 @@ export function obtenerSemanasDelMes(anio: number, mes: number): { inicio: Date;
 
   return semanas;
 }
+
+export function obtenerSemanasDelRango(inicio: Date, fin: Date): { inicio: Date; fin: Date; diasUtiles: number }[] {
+  const semanas: { inicio: Date; fin: Date; diasUtiles: number }[] = [];
+  let semanaInicio = new Date(inicio);
+  while (semanaInicio <= fin) {
+    let semanaFin = new Date(semanaInicio);
+    semanaFin.setDate(semanaFin.getDate() + 6);
+    if (semanaFin > fin) semanaFin = new Date(fin);
+    const diasUtiles = contarDiasUtiles(semanaInicio, semanaFin);
+    semanas.push({ inicio: new Date(semanaInicio), fin: new Date(semanaFin), diasUtiles });
+    semanaInicio.setDate(semanaInicio.getDate() + 7);
+  }
+  return semanas;
+}
