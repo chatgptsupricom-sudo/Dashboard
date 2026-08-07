@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { contarDiasUtiles, obtenerSemanasDelMes } from "@/lib/feriados";
+import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { computeComprasKpis } from "@/lib/compras/kpis";
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -62,6 +62,8 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
+    const startDateParam = url.searchParams.get("startDate");
+    const endDateParam = url.searchParams.get("endDate");
     const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
     const now = new Date();
@@ -70,7 +72,12 @@ export async function GET(request: NextRequest) {
     const anio = parseInt(anioStr, 10);
     const mesNum = parseInt(mesStr, 10);
 
-    const semanas = obtenerSemanasDelMes(anio, mesNum);
+    const fechaInicio = startDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+    const fechaFin = endDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+
+    const semanas = startDateParam && endDateParam
+      ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
+      : obtenerSemanasDelMes(anio, mesNum);
     const numSemanas = semanas.length;
 
     // 1. Load saved weekly data from DB
@@ -104,9 +111,7 @@ export async function GET(request: NextRequest) {
       console.error("Error cuota:", e.message);
     }
 
-    // 3. Fetch invoices for the month
-    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
-    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+    // 3. Fetch invoices for the date range
 
     const invoices = await callOdooRPC<any[]>(
       "account.move",

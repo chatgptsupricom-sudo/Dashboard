@@ -188,23 +188,25 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const mesParam = url.searchParams.get("mes");
+    const startDateParam = url.searchParams.get("startDate");
+    const endDateParam = url.searchParams.get("endDate");
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const [anioStr, mesStr] = mes.split("-");
     const anio = parseInt(anioStr, 10);
     const mesNum = parseInt(mesStr, 10);
-    const startDate = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
-    const lastDay = new Date(anio, mesNum, 0).getDate();
-    const endDate = `${anio}-${String(mesNum).padStart(2, "0")}-${lastDay}`;
+    const startDate = startDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+    const endDate = endDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+    const rangeEnd = new Date(endDate);
 
     const semanas: { inicio: string; fin: string }[] = [];
-    let current = new Date(anio, mesNum - 1, 1);
-    while (current <= new Date(anio, mesNum - 1, lastDay)) {
+    let current = new Date(startDate);
+    while (current <= rangeEnd) {
       const semanaInicio = new Date(current);
       let semanaFin = new Date(current);
       semanaFin.setDate(semanaFin.getDate() + 6);
-      if (semanaFin > new Date(anio, mesNum - 1, lastDay)) {
-        semanaFin = new Date(anio, mesNum - 1, lastDay);
+      if (semanaFin > rangeEnd) {
+        semanaFin = new Date(rangeEnd);
       }
       semanas.push({
         inicio: semanaInicio.toISOString().split("T")[0],

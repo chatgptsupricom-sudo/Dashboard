@@ -52,12 +52,24 @@ export async function GET(request: NextRequest) {
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
     const monthParam = searchParams.get("month");
     const yearParam = searchParams.get("year");
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
 
     const now = new Date();
-    const currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
-    const currentMonth = monthParam ? parseInt(monthParam) - 1 : now.getMonth();
-    const monthStart = getMonthStart(currentYear, currentMonth);
-    const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+    let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
+
+    if (startDateParam && endDateParam) {
+      monthStart = new Date(startDateParam + "T00:00:00");
+      monthEnd = new Date(endDateParam + "T23:59:59");
+      currentYear = monthStart.getFullYear();
+      currentMonth = monthStart.getMonth();
+    } else {
+      currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
+      currentMonth = monthParam ? parseInt(monthParam) - 1 : now.getMonth();
+      monthStart = getMonthStart(currentYear, currentMonth);
+      monthEnd = new Date(currentYear, currentMonth + 1, 0);
+    }
+
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
