@@ -48,6 +48,11 @@ export async function GET(request: NextRequest) {
     } else if (kpiId === "procesamiento_oportuno") {
       domain.push(["invoice_date", ">=", formatDate(monthStart)]);
       domain.push(["invoice_date", "<=", formatDate(monthEnd)]);
+    } else if (kpiId === "dpo") {
+      const dpoWindowStart = new Date(today);
+      dpoWindowStart.setDate(dpoWindowStart.getDate() - 90);
+      domain.push(["invoice_date", ">=", formatDate(dpoWindowStart)]);
+      domain.push(["invoice_date", "<=", formatDate(today)]);
     }
     // cuentas_pagar_vencidas: no filtra por mes (es snapshot de todo lo abierto)
 
@@ -59,7 +64,7 @@ export async function GET(request: NextRequest) {
         fields: [
           "id", "name", "move_type", "partner_id", "invoice_date", "invoice_date_due",
           "amount_untaxed", "amount_residual", "payment_state",
-          "company_id", "ref",
+          "company_id", "ref", "create_date",
         ],
         limit: 5000,
       }
@@ -72,16 +77,24 @@ export async function GET(request: NextRequest) {
         const residual = Math.abs(Number(b.amount_residual) || 0);
         if (kpiId === "pagos_a_tiempo") return residual > 0 || b.payment_state === "paid" || b.payment_state === "in_payment" || b.payment_state === "reconciled";
         if (kpiId === "cuentas_pagar_vencidas") return residual > 0 && b.move_type === "in_invoice";
+        if (kpiId === "procesamiento_oportuno" || kpiId === "dpo") return b.move_type === "in_invoice";
         return true;
       })
       .map((b) => {
         const dueDate = b.invoice_date_due ? new Date(b.invoice_date_due) : null;
+        const invDate = b.invoice_date ? new Date(b.invoice_date) : null;
+        const createDate = b.create_date ? new Date(b.create_date) : invDate;
         const residual = Math.abs(Number(b.amount_residual) || 0);
         const amount = Math.abs(Number(b.amount_untaxed) || 0);
         const paidAmount = amount - residual;
         const daysOverdue = dueDate ? daysBetween(dueDate, today) : 0;
         const agingBand = getAgingBand(daysOverdue);
         const isRefund = b.move_type === "in_refund";
+
+        const processingDays = invDate && createDate ? Math.max(0, daysBetween(invDate, createDate)) : null;
+        const hasPO = (b.ref && b.ref.toLowerCase().includes("po")) || false;
+        const sla = hasPO ? 3 : 5;
+        const slaOk = processingDays !== null ? processingDays <= sla : null;
 
         let status: string = b.payment_state || "not_paid";
         if (isRefund) status = "nota_credito";
@@ -101,6 +114,9 @@ export async function GET(request: NextRequest) {
           daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
           isRefund,
           companyId,
+          processingDays,
+          sla,
+          slaOk,
         };
       });
 
