@@ -239,11 +239,11 @@ export async function GET(request: Request) {
       params.push(sellerId);
     }
     if (fechaInicio) {
-      conditions.push("COALESCE(fecha_ingreso, created_at) >= ?");
+      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
       params.push(`${fechaInicio} 00:00:00`);
     }
     if (fechaFin) {
-      conditions.push("COALESCE(fecha_ingreso, created_at) <= ?");
+      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) <= ?");
       params.push(`${fechaFin} 23:59:59`);
     }
 
@@ -271,6 +271,7 @@ export async function GET(request: Request) {
     const stageConditions = conditions.map((c) =>
       c
         .replace(/\bseller_id\b/g, "l.seller_id")
+        .replace(/\bfecha_venta\b/g, "l.fecha_venta")
         .replace(/\bfecha_ingreso\b/g, "l.fecha_ingreso")
         .replace(/\bcreated_at\b/g, "l.created_at"),
     );
@@ -298,8 +299,8 @@ export async function GET(request: Request) {
     // 3. Rendimiento por vendedores
     const sedeJoin = sede ? `AND s.cids = ${parseInt(sede)}` : userCids !== 7 ? "AND s.cids != 7" : "";
     const dateJoinCond = [
-      fechaInicio ? `AND COALESCE(l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
-      fechaFin ? `AND COALESCE(l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
+      fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
+      fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
     ].join(" ");
     const vendorResult: any = await query(`
       SELECT
@@ -324,8 +325,8 @@ export async function GET(request: Request) {
       AND l.motivo_cierre IN ('VENTA', 'GANADO')
       AND s.activo = 1
       ${sede ? `AND s.cids = ${parseInt(sede)}` : ""}
-      ${fechaInicio ? `AND COALESCE(l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
-      ${fechaFin ? `AND COALESCE(l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
+      ${fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
+      ${fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
       GROUP BY s.id, s.name
       ORDER BY total_ventas DESC
       LIMIT 5
@@ -364,8 +365,8 @@ export async function GET(request: Request) {
         AND producto_perdido != ''
         AND producto_perdido != 'OTRO'
         ${sede ? `AND seller_id IN (SELECT id FROM sellers WHERE cids = ${parseInt(sede)})` : ""}
-        ${fechaInicio ? `AND COALESCE(fecha_ingreso, created_at) >= '${fechaInicio} 00:00:00'` : ""}
-        ${fechaFin ? `AND COALESCE(fecha_ingreso, created_at) <= '${fechaFin} 23:59:59'` : ""}
+        ${fechaInicio ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) >= '${fechaInicio} 00:00:00'` : ""}
+        ${fechaFin ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) <= '${fechaFin} 23:59:59'` : ""}
       GROUP BY producto_perdido
       ORDER BY total DESC
       LIMIT 10

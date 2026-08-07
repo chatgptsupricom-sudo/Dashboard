@@ -160,9 +160,12 @@ export function Sidebar({
     allowedSections.includes("compras") ||
     allowedSections.includes("sugeridos") ||
     allowedSections.includes("menor_rotacion") ||
-    allowedSections.includes("mayor_rotacion");
+    allowedSections.includes("mayor_rotacion") ||
+    allowedSections.includes("cobertura") ||
+    allowedSections.includes("rotacion_categoria") ||
+    allowedSections.includes("tendencia");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "proveedores", "ordenes"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 

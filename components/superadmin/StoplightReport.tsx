@@ -144,6 +144,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     if (modalFetchRef.current) await modalFetchRef.current(newMes);
   };
 
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string } | null>(null);
+  const [dateInputStart, setDateInputStart] = useState("");
+  const [dateInputEnd, setDateInputEnd] = useState("");
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const [viewByOpen, setViewByOpen] = useState(false);
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
   const [monthlyHistLoading, setMonthlyHistLoading] = useState(false);
@@ -249,7 +253,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const params = vendorMode ? `mes=${selectedMes}` : `mes=${selectedMes}&company_id=${selectedCompanyId}`;
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const params = vendorMode ? `mes=${selectedMes}${dateExtra}` : `mes=${selectedMes}&company_id=${selectedCompanyId}${dateExtra}`;
       const res = await fetch(`${apiPrefix}?${params}`);
       const json = await res.json();
       if (json.success) {
@@ -260,21 +265,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching stoplight data:", e);
     }
     setLoading(false);
-  }, [selectedMes, selectedCompanyId, vendorMode]);
+  }, [selectedMes, selectedCompanyId, vendorMode, customDateRange]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fetchMarketingData = useCallback(async () => {
     setMarketingLoading(true);
     try {
-      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}${dateExtra}`);
       const json = await res.json();
       if (json.success) setMarketingData(json);
     } catch (e) {
       console.error("Error fetching marketing data:", e);
     }
     setMarketingLoading(false);
-  }, [selectedMes]);
+  }, [selectedMes, customDateRange]);
 
   useEffect(() => { fetchMarketingData(); }, [fetchMarketingData]);
 
@@ -284,14 +290,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
       const json = await res.json();
       if (json.success) setCxcData(json.data);
     } catch (e) {
       console.error("Error fetching CxC data:", e);
     }
     setCxcLoading(false);
-  }, [selectedCompanyId, selectedMes]);
+  }, [selectedCompanyId, selectedMes, customDateRange]);
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
 
@@ -301,14 +308,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
       const json = await res.json();
       if (json.success) setCppData(json.data);
     } catch (e) {
       console.error("Error fetching CPP data:", e);
     }
     setCppLoading(false);
-  }, [selectedCompanyId, selectedMes]);
+  }, [selectedCompanyId, selectedMes, customDateRange]);
 
   useEffect(() => { fetchCppData(); }, [fetchCppData]);
 
@@ -1374,6 +1382,95 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {opt.label}
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Date Range */}
+          <div className="relative">
+            <button
+              onClick={() => { setDateRangeOpen(o => !o); setViewByOpen(false); }}
+              className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors ${customDateRange ? "border-amber-400 bg-amber-50 text-amber-700" : ""}`}
+            >
+              <Calendar size={14} />
+              {customDateRange
+                ? `${customDateRange.start.slice(8)}/${customDateRange.start.slice(5, 7)} – ${customDateRange.end.slice(8)}/${customDateRange.end.slice(5, 7)}`
+                : (mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1))
+              }
+              <ChevronDown size={14} />
+            </button>
+            {dateRangeOpen && (
+              <div data-dropdown-content className="absolute top-full left-0 mt-2 bg-white border rounded-xl shadow-xl z-50 w-72 p-4">
+                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Rango de fechas</p>
+                <div className="space-y-2 mb-3">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Desde</label>
+                    <input
+                      type="date"
+                      value={dateInputStart}
+                      onChange={e => setDateInputStart(e.target.value)}
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Hasta</label>
+                    <input
+                      type="date"
+                      value={dateInputEnd}
+                      onChange={e => setDateInputEnd(e.target.value)}
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (dateInputStart && dateInputEnd && dateInputStart <= dateInputEnd) {
+                        const [y, m] = dateInputStart.split("-").map(Number);
+                        setSelectedMes(`${y}-${String(m).padStart(2, "0")}`);
+                        setCustomDateRange({ start: dateInputStart, end: dateInputEnd });
+                        setDateRangeOpen(false);
+                      }
+                    }}
+                    disabled={!dateInputStart || !dateInputEnd || dateInputStart > dateInputEnd}
+                    className="flex-1 bg-amber-500 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Aplicar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCustomDateRange(null);
+                      setDateInputStart("");
+                      setDateInputEnd("");
+                      const n = new Date();
+                      setSelectedMes(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`);
+                      setDateRangeOpen(false);
+                    }}
+                    className="px-3 py-1.5 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+                <div className="mt-3 border-t pt-3">
+                  <p className="text-xs font-medium text-slate-500 mb-2">Acceso rápido</p>
+                  <div className="flex flex-wrap gap-1">
+                    {getMesOptions().slice(0, 4).map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          setSelectedMes(opt.value);
+                          setCustomDateRange(null);
+                          setDateInputStart("");
+                          setDateInputEnd("");
+                          setDateRangeOpen(false);
+                        }}
+                        className={`px-2 py-1 rounded-md text-xs transition-colors capitalize ${selectedMes === opt.value && !customDateRange ? "bg-amber-100 text-amber-700 font-medium" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>

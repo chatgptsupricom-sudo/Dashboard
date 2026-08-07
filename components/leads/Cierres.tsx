@@ -9,8 +9,13 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
   const filtered = useMemo(() =>
     closedLeads.filter((lead: any) => {
       if (!motivoFilter) return true;
-      const motivo = lead.motivo_cierre || (lead.status === "CERRADO_VENTA" ? "VENTA" : "ABANDONO");
-      return motivo === motivoFilter;
+      const motivo = lead.motivo_cierre;
+      const isGanado = motivo === "GANADO" || motivo === "VENTA";
+      const isCliente = motivo === "YA_ES_CLIENTE";
+      if (motivoFilter === "GANADO" && !isGanado) return false;
+      if (motivoFilter === "YA_ES_CLIENTE" && !isCliente) return false;
+      if (motivoFilter === "PERDIDO" && (isGanado || isCliente)) return false;
+      return true;
     }),
     [closedLeads, motivoFilter],
   );
@@ -24,17 +29,20 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
         <div className="flex gap-2">
           {[
             { value: "", label: "Todos" },
-            { value: "VENTA", label: "✓ Venta" },
-            { value: "ABANDONO", label: "✗ Abandono" },
+            { value: "GANADO", label: "✓ Ganado" },
+            { value: "YA_ES_CLIENTE", label: "★ Ya es cliente" },
+            { value: "PERDIDO", label: "✗ Perdido" },
           ].map((opt) => (
             <button
               key={opt.value}
               onClick={() => setMotivoFilter(opt.value)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 motivoFilter === opt.value
-                  ? opt.value === "VENTA"
+                  ? opt.value === "GANADO"
                     ? "bg-emerald-600 text-white"
-                    : opt.value === "ABANDONO"
+                    : opt.value === "YA_ES_CLIENTE"
+                    ? "bg-blue-600 text-white"
+                    : opt.value === "PERDIDO"
                     ? "bg-red-500 text-white"
                     : "bg-zinc-800 text-white"
                   : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
@@ -74,7 +82,10 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
                 </tr>
               ) : (
                 filtered.map((lead: any) => {
-                  const motivo = lead.motivo_cierre || (lead.status === "CERRADO_VENTA" ? "VENTA" : "ABANDONO");
+                  const mc = lead.motivo_cierre;
+                  const isGanado = mc === "GANADO" || mc === "VENTA";
+                  const isCliente = mc === "YA_ES_CLIENTE";
+                  const isPerdido = mc === "PERDIDO" || mc === "ABANDONO";
                   return (
                     <tr key={lead.id} className="hover:bg-blue-50/30 transition-colors group">
                       <td className="px-6 py-4">
@@ -89,11 +100,18 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
                         <td className="px-6 py-4 text-xs font-semibold text-zinc-700">{lead.vendedor || "—"}</td>
                       )}
                       <td className="px-6 py-4 text-center">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                          motivo === "VENTA" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
-                        }`}>
-                          {motivo === "VENTA" ? "✓ Venta" : "✗ Abandono"}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                            isGanado ? "bg-emerald-50 text-emerald-600" : isCliente ? "bg-blue-50 text-blue-600" : isPerdido ? "bg-red-50 text-red-600" : "bg-zinc-100 text-zinc-500"
+                          }`}>
+                            {isGanado ? "✓ Ganado" : isCliente ? "★ Ya es cliente" : isPerdido ? "✗ Perdido" : mc || "Sin motivo"}
+                          </span>
+                          {isPerdido && lead.motivo_perdido && (
+                            <span className="text-[9px] text-zinc-400 font-medium max-w-[120px] truncate" title={lead.motivo_perdido}>
+                              {lead.motivo_perdido}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right font-black text-zinc-900 text-sm">
                         {lead.valorEstimado > 0 ? `$${lead.valorEstimado.toLocaleString()}` : "—"}
@@ -104,7 +122,7 @@ export const ClosuresTab = ({ closedLeads, userRole }: any) => {
                       <td className="px-6 py-4 text-xs text-zinc-500 font-medium">
                         {lead.fechaVenta ? new Date(lead.fechaVenta).toLocaleDateString("es-VE", { year: "numeric", month: "short", day: "numeric" }) : "—"}
                       </td>
-                      <td className="px-6 py-4 text-xs text-zinc-500 max-w-[150px] truncate">
+                      <td className="px-6 py-4 text-xs text-zinc-500 whitespace-pre-wrap">
                         {lead.observaciones_cierres || lead.observacionesCierres || "—"}
                       </td>
                     </tr>
