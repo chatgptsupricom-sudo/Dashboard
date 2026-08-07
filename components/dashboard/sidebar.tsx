@@ -12,7 +12,6 @@ import {
   BrainCircuit,
   Calendar,
   ChevronDown,
-  ClipboardList,
   CreditCard,
   DollarSign,
   FileText,
@@ -111,8 +110,6 @@ export function Sidebar({
     { id: "cobertura", label: "Cobertura de Stock", icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: "Rotación por Categoría", icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: "Tendencia de Ventas", icon: BarChart3, slug: "/tendencia" },
-    { id: "proveedores", label: "Proveedores", icon: Users, slug: "/proveedores" },
-    { id: "ordenes", label: "Órdenes de Compra", icon: ClipboardList, slug: "/ordenes" },
     { id: "adminleads", label: "Dashboard Leads", icon: Target, slug: "", adminLeadsOnly: true },
     { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
     { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
@@ -159,11 +156,9 @@ export function Sidebar({
     allowedSections.includes("mayor_rotacion") ||
     allowedSections.includes("cobertura") ||
     allowedSections.includes("rotacion_categoria") ||
-    allowedSections.includes("tendencia") ||
-    allowedSections.includes("proveedores") ||
-    allowedSections.includes("ordenes");
+    allowedSections.includes("tendencia");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "proveedores", "ordenes", "cobertura", "rotacion_categoria", "tendencia"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
 
@@ -485,16 +480,6 @@ export function Sidebar({
                           label: "Tendencia de Ventas",
                           href: `/${locale}/compras/tendencia`,
                           permission: "tendencia",
-                        },
-                        {
-                          label: "Proveedores",
-                          href: `/${locale}/compras/proveedores`,
-                          permission: "proveedores",
-                        },
-                        {
-                          label: "Órdenes de Compra",
-                          href: `/${locale}/compras/ordenes`,
-                          permission: "ordenes",
                         },
                       ].map((subItem, index) => {
                         if (
