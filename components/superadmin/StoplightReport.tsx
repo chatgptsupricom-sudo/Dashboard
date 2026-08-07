@@ -159,6 +159,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [cppModalLoading, setCppModalLoading] = useState(false);
   const [cppModalData, setCppModalData] = useState<any>(null);
   const [cppModalKpi, setCppModalKpi] = useState<string>("");
+  const [cppPagosFilter, setCppPagosFilter] = useState<"all" | "pagado" | "no_pagado">("all");
   const [cppSelectedBill, setCppSelectedBill] = useState<any>(null);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
@@ -3811,7 +3812,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 </p>
               </div>
               <button
-                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); }}
+                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); setCppPagosFilter("all"); }}
                 className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
               >
                 <X size={20} className="text-slate-700" />
@@ -3837,6 +3838,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div className="bg-slate-50 rounded-xl p-4">
                           <p className="text-xs text-slate-500 font-medium">Monto residual</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="col-span-2 flex gap-2">
+                          {(["all", "pagado", "no_pagado"] as const).map((f) => (
+                            <button
+                              key={f}
+                              onClick={() => setCppPagosFilter(f)}
+                              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                                cppPagosFilter === f
+                                  ? f === "pagado" ? "bg-emerald-500 text-white" : f === "no_pagado" ? "bg-red-500 text-white" : "bg-slate-700 text-white"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              {f === "all" ? "Todos" : f === "pagado" ? "Pagado" : "No pagado"}
+                            </button>
+                          ))}
                         </div>
                       </>
                     )}
@@ -3913,7 +3929,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         </tr>
                       </thead>
                       <tbody>
-                        {cppModalData.bills.map((bill: any) => (
+                        {(cppModalKpi === "pagos_a_tiempo"
+                          ? cppModalData.bills.filter((b: any) => {
+                              const isPaid = b.paymentState === "paid" || b.paymentState === "reconciled" || b.paymentState === "in_payment";
+                              if (cppPagosFilter === "pagado") return isPaid;
+                              if (cppPagosFilter === "no_pagado") return !isPaid;
+                              return true;
+                            })
+                          : cppModalData.bills
+                        ).map((bill: any) => (
                           <tr key={bill.id} className="border-b hover:bg-blue-50/40 transition-colors">
                             <td className="p-3 font-medium text-slate-800">{bill.name}</td>
                             <td className="p-3 text-slate-700 max-w-[200px] truncate">{bill.partnerName}</td>
