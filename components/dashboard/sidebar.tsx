@@ -12,6 +12,7 @@ import {
   BrainCircuit,
   Calendar,
   ChevronDown,
+  ClipboardList,
   CreditCard,
   DollarSign,
   FileText,
