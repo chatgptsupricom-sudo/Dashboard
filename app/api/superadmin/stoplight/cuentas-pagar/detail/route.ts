@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
     const monthEnd = new Date(currentYear, currentMonth + 1, 0);
 
     const companyId = COMPANY_MAP[empresa] || 9;
+    const today = new Date();
 
     const domain: any[] = [
       ["move_type", "in", ["in_invoice", "in_refund"]],
@@ -69,8 +70,6 @@ export async function GET(request: NextRequest) {
         limit: 5000,
       }
     )) || [];
-
-    const today = new Date();
 
     const mapped = bills
       .filter((b) => {
