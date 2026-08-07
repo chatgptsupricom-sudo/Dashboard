@@ -105,9 +105,9 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false }: { vendorMode?: boolean; comprasMode?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("Weekly");
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingMeta, setEditingMeta] = useState(false);
@@ -125,6 +125,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
   });
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string } | null>(null);
+  const [dateInputStart, setDateInputStart] = useState("");
+  const [dateInputEnd, setDateInputEnd] = useState("");
   const [viewByOpen, setViewByOpen] = useState(false);
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
@@ -159,6 +162,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [cppModalLoading, setCppModalLoading] = useState(false);
   const [cppModalData, setCppModalData] = useState<any>(null);
   const [cppModalKpi, setCppModalKpi] = useState<string>("");
+  const [cppPagosFilter, setCppPagosFilter] = useState<"all" | "pagado" | "no_pagado">("all");
   const [cppSelectedBill, setCppSelectedBill] = useState<any>(null);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
@@ -230,7 +234,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const params = vendorMode ? `mes=${selectedMes}` : `mes=${selectedMes}&company_id=${selectedCompanyId}`;
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const params = vendorMode ? `mes=${selectedMes}${dateExtra}` : `mes=${selectedMes}&company_id=${selectedCompanyId}${dateExtra}`;
       const res = await fetch(`${apiPrefix}?${params}`);
       const json = await res.json();
       if (json.success) {
@@ -241,21 +246,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching stoplight data:", e);
     }
     setLoading(false);
-  }, [selectedMes, selectedCompanyId, vendorMode]);
+  }, [selectedMes, selectedCompanyId, vendorMode, customDateRange]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fetchMarketingData = useCallback(async () => {
     setMarketingLoading(true);
     try {
-      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}${dateExtra}`);
       const json = await res.json();
       if (json.success) setMarketingData(json);
     } catch (e) {
       console.error("Error fetching marketing data:", e);
     }
     setMarketingLoading(false);
-  }, [selectedMes]);
+  }, [selectedMes, customDateRange]);
 
   useEffect(() => { fetchMarketingData(); }, [fetchMarketingData]);
 
@@ -265,14 +271,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
       const json = await res.json();
       if (json.success) setCxcData(json.data);
     } catch (e) {
       console.error("Error fetching CxC data:", e);
     }
     setCxcLoading(false);
-  }, [selectedCompanyId, selectedMes]);
+  }, [selectedCompanyId, selectedMes, customDateRange]);
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
 
@@ -282,14 +289,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
+      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
+      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
       const json = await res.json();
       if (json.success) setCppData(json.data);
     } catch (e) {
       console.error("Error fetching CPP data:", e);
     }
     setCppLoading(false);
-  }, [selectedCompanyId, selectedMes]);
+  }, [selectedCompanyId, selectedMes, customDateRange]);
 
   useEffect(() => { fetchCppData(); }, [fetchCppData]);
 
@@ -1181,11 +1189,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = vendorMode 
-    ? allGroups.filter((g) => g.id === "group-ventas") 
-    : comprasMode 
-      ? allGroups.filter((g) => g.id === "group-compras") 
-      : allGroups;
+  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -1292,23 +1296,87 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           <div className="relative">
             <button
               onClick={() => { setDateRangeOpen(o => !o); setViewByOpen(false); }}
-              className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors"
+              className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors ${customDateRange ? "border-amber-400 bg-amber-50 text-amber-700" : ""}`}
             >
               <Calendar size={14} />
-              {mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1)}
+              {customDateRange
+                ? `${customDateRange.start.slice(8)}/${customDateRange.start.slice(5, 7)} – ${customDateRange.end.slice(8)}/${customDateRange.end.slice(5, 7)}`
+                : (mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1))
+              }
               <ChevronDown size={14} />
             </button>
             {dateRangeOpen && (
-              <div data-dropdown-content className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-50 min-w-[200px] max-h-64 overflow-y-auto">
-                {getMesOptions().map(opt => (
+              <div data-dropdown-content className="absolute top-full left-0 mt-2 bg-white border rounded-xl shadow-xl z-50 w-72 p-4">
+                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Rango de fechas</p>
+                <div className="space-y-2 mb-3">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Desde</label>
+                    <input
+                      type="date"
+                      value={dateInputStart}
+                      onChange={e => setDateInputStart(e.target.value)}
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Hasta</label>
+                    <input
+                      type="date"
+                      value={dateInputEnd}
+                      onChange={e => setDateInputEnd(e.target.value)}
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
                   <button
-                    key={opt.value}
-                    onClick={() => { setSelectedMes(opt.value); setDateRangeOpen(false); }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors capitalize ${selectedMes === opt.value ? "bg-amber-50 text-amber-700 font-medium" : "text-slate-700"}`}
+                    onClick={() => {
+                      if (dateInputStart && dateInputEnd && dateInputStart <= dateInputEnd) {
+                        const [y, m] = dateInputStart.split("-").map(Number);
+                        setSelectedMes(`${y}-${String(m).padStart(2, "0")}`);
+                        setCustomDateRange({ start: dateInputStart, end: dateInputEnd });
+                        setDateRangeOpen(false);
+                      }
+                    }}
+                    disabled={!dateInputStart || !dateInputEnd || dateInputStart > dateInputEnd}
+                    className="flex-1 bg-amber-500 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
-                    {opt.label}
+                    Aplicar
                   </button>
-                ))}
+                  <button
+                    onClick={() => {
+                      setCustomDateRange(null);
+                      setDateInputStart("");
+                      setDateInputEnd("");
+                      const n = new Date();
+                      setSelectedMes(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`);
+                      setDateRangeOpen(false);
+                    }}
+                    className="px-3 py-1.5 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+                <div className="mt-3 border-t pt-3">
+                  <p className="text-xs font-medium text-slate-500 mb-2">Acceso rápido</p>
+                  <div className="flex flex-wrap gap-1">
+                    {getMesOptions().slice(0, 4).map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          setSelectedMes(opt.value);
+                          setCustomDateRange(null);
+                          setDateInputStart("");
+                          setDateInputEnd("");
+                          setDateRangeOpen(false);
+                        }}
+                        className={`px-2 py-1 rounded-md text-xs transition-colors capitalize ${selectedMes === opt.value && !customDateRange ? "bg-amber-100 text-amber-700 font-medium" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1474,7 +1542,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           </div>
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
-                          {vendorMode ? (
+                          {!isSuperAdmin ? (
                             <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <input
@@ -3765,11 +3833,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <td className="p-3 text-center text-slate-600">{inv.invoiceDateDue || "—"}</td>
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                inv.paymentState === "paid" ? "bg-emerald-100 text-emerald-700" :
+                                inv.paymentState === "paid" || inv.paymentState === "reconciled" || inv.paymentState === "in_payment" ? "bg-emerald-100 text-emerald-700" :
                                 inv.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
-                                {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                                {inv.paymentState === "paid" || inv.paymentState === "reconciled" ? "Pagada" :
+                                 inv.paymentState === "in_payment" ? "En pago" :
+                                 inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
                               </span>
                             </td>
                             <td className="p-3 text-center">
@@ -3813,7 +3883,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 </p>
               </div>
               <button
-                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); }}
+                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); setCppPagosFilter("all"); }}
                 className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
               >
                 <X size={20} className="text-slate-700" />
@@ -3833,12 +3903,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {cppModalKpi === "pagos_a_tiempo" && (
                       <>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Total facturas vencidas</p>
+                          <p className="text-xs text-slate-500 font-medium">Total facturas</p>
                           <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
                           <p className="text-xs text-slate-500 font-medium">Monto residual</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="col-span-2 flex gap-2">
+                          {(["all", "pagado", "no_pagado"] as const).map((f) => (
+                            <button
+                              key={f}
+                              onClick={() => setCppPagosFilter(f)}
+                              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                                cppPagosFilter === f
+                                  ? f === "pagado" ? "bg-emerald-500 text-white" : f === "no_pagado" ? "bg-red-500 text-white" : "bg-slate-700 text-white"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              {f === "all" ? "Todos" : f === "pagado" ? "Pagado" : "No pagado"}
+                            </button>
+                          ))}
                         </div>
                       </>
                     )}
@@ -3899,14 +3984,31 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           <th className="p-3 text-center font-medium text-slate-600">Fecha factura</th>
                           <th className="p-3 text-center font-medium text-slate-600">Vencimiento</th>
                           <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Banda aging</th>
+                          {cppModalKpi === "procesamiento_oportuno" ? (
+                            <>
+                              <th className="p-3 text-center font-medium text-slate-600">Días proc.</th>
+                              <th className="p-3 text-center font-medium text-slate-600">SLA</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
+                              <th className="p-3 text-center font-medium text-slate-600">Banda aging</th>
+                            </>
+                          )}
                           <th className="p-3 text-right font-medium text-slate-600">Monto</th>
                           <th className="p-3 text-right font-medium text-slate-600">Saldo</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {cppModalData.bills.map((bill: any) => (
+                        {(cppModalKpi === "pagos_a_tiempo"
+                          ? cppModalData.bills.filter((b: any) => {
+                              const isPaid = b.paymentState === "paid" || b.paymentState === "reconciled" || b.paymentState === "in_payment";
+                              if (cppPagosFilter === "pagado") return isPaid;
+                              if (cppPagosFilter === "no_pagado") return !isPaid;
+                              return true;
+                            })
+                          : cppModalData.bills
+                        ).map((bill: any) => (
                           <tr key={bill.id} className="border-b hover:bg-blue-50/40 transition-colors">
                             <td className="p-3 font-medium text-slate-800">{bill.name}</td>
                             <td className="p-3 text-slate-700 max-w-[200px] truncate">{bill.partnerName}</td>
@@ -3914,34 +4016,48 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <td className="p-3 text-center text-slate-600">{bill.invoiceDateDue || "—"}</td>
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                bill.paymentState === "paid" ? "bg-emerald-100 text-emerald-700" :
+                                bill.paymentState === "paid" || bill.paymentState === "reconciled" || bill.paymentState === "in_payment" ? "bg-emerald-100 text-emerald-700" :
                                 bill.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
-                                bill.paymentState === "nota_credito" ? "bg-purple-100 text-purple-700" :
-                                bill.isRefund ? "bg-purple-100 text-purple-700" :
+                                bill.paymentState === "nota_credito" || bill.isRefund ? "bg-purple-100 text-purple-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
-                                {bill.paymentState === "paid" ? "Pagada" :
+                                {bill.paymentState === "paid" || bill.paymentState === "reconciled" ? "Pagada" :
+                                 bill.paymentState === "in_payment" ? "En pago" :
                                  bill.paymentState === "partial" ? "Parcial" :
-                                 bill.paymentState === "nota_credito" ? "N. Crédito" :
-                                 bill.isRefund ? "N. Crédito" : "Pendiente"}
+                                 bill.paymentState === "nota_credito" || bill.isRefund ? "N. Crédito" : "Pendiente"}
                               </span>
                             </td>
-                            <td className="p-3 text-center">
-                              <span className={`font-medium ${
-                                bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-amber-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
-                              }`}>
-                                {bill.daysOverdue > 0 ? bill.daysOverdue : "—"}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
-                                bill.agingBand === "90+" ? "bg-red-100 text-red-700" :
-                                "bg-amber-100 text-amber-700"
-                              }`}>
-                                {bill.agingBand === "corriente" ? "Corriente" : bill.agingBand}
-                              </span>
-                            </td>
+                            {cppModalKpi === "procesamiento_oportuno" ? (
+                              <>
+                                <td className="p-3 text-center font-medium text-slate-700">{bill.processingDays ?? "—"}</td>
+                                <td className="p-3 text-center">
+                                  {bill.slaOk === null ? <span className="text-slate-400">—</span> : (
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bill.slaOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                                      {bill.slaOk ? `≤${bill.sla}d ✓` : `>${bill.sla}d ✗`}
+                                    </span>
+                                  )}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="p-3 text-center">
+                                  <span className={`font-medium ${
+                                    bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-amber-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
+                                  }`}>
+                                    {bill.daysOverdue > 0 ? bill.daysOverdue : "—"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
+                                    bill.agingBand === "90+" ? "bg-red-100 text-red-700" :
+                                    "bg-amber-100 text-amber-700"
+                                  }`}>
+                                    {bill.agingBand === "corriente" ? "Corriente" : bill.agingBand}
+                                  </span>
+                                </td>
+                              </>
+                            )}
                             <td className="p-3 text-right text-slate-600">${bill.amountUntaxed.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                             <td className="p-3 text-right font-bold">
                               <span className={bill.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
