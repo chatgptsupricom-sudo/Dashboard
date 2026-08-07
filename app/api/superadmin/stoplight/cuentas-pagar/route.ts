@@ -238,7 +238,7 @@ export async function GET(request: NextRequest) {
           weeklyData[weekIdxDue].queVencian++;
         }
 
-        const isPaid = paymentState === "paid" || paymentState === "reconciled";
+        const isPaid = paymentState === "paid" || paymentState === "reconciled" || paymentState === "in_payment";
         if (isPaid) {
           const paidAmount = amount - residual;
           if (paidAmount > 0) {
