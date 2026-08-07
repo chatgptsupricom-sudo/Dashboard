@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const mapped = bills
       .filter((b) => {
         const residual = Math.abs(Number(b.amount_residual) || 0);
-        if (kpiId === "pagos_a_tiempo") return residual > 0 || b.payment_state === "paid";
+        if (kpiId === "pagos_a_tiempo") return residual > 0 || b.payment_state === "paid" || b.payment_state === "in_payment" || b.payment_state === "reconciled";
         if (kpiId === "cuentas_pagar_vencidas") return residual > 0 && b.move_type === "in_invoice";
         return true;
       })
