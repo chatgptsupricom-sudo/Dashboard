@@ -34,6 +34,7 @@ import {
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 export function Sidebar({
   open,
@@ -44,6 +45,7 @@ export function Sidebar({
 }) {
   const { user, logout } = useAuthStore();
   const pathname = usePathname();
+  const t = useTranslations("sidebar");
 
   // Estados para los menús desplegables
   const [isReportsOpen, setIsReportsOpen] = useState(false);
@@ -85,37 +87,37 @@ export function Sidebar({
 
   // Definición del menú base
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "" },
-    { id: "actividad", label: "Actividades", icon: Calendar, slug: "/actividad" },
-    { id: "alert", label: "Alertas", icon: Bell, slug: "/alert" },
-    { id: "stoplight_reports", label: "Stoplight Report", icon: BarChart3, slug: "/StoplightReport" },
-    { id: "users", label: "Usuarios", icon: Users, slug: "/usuarios" },
-    { id: "seller_map", label: "Mapa Clientes", icon: Map, slug: "/vendedores" },
-    { id: "cuota", label: "Cuota", icon: FileText, slug: "/cuota" },
-    { id: "inventory", label: "Inventario", icon: Package, slug: "/inventory" },
-    { id: "agenteia", label: "Agente IA", icon: BrainCircuit, slug: "/agenteia" },
-    { id: "integraciondepago", label: "Integración De Pago", icon: CreditCard, slug: "/integraciondepago" },
-    { id: "clientes", label: "Clientes", icon: UserCheck, slug: "/clientes" },
-    { id: "catalogo", label: "Catálogo", icon: Boxes, slug: "/catalogo" },
-    { id: "leads", label: "Leads", icon: UserCheck, slug: "/leads" },
-    { id: "MapaClientes", label: "Mapa de Clientes", icon: Map, slug: "/mapa_clientes" },
-    { id: "cierres", label: "Cierres", icon: FileText, slug: "/Cierres" },
-    { id: "top_clientes", label: "Top Clientes", icon: Trophy, slug: "/top-clientes" },
-    { id: "cuentas_por_cobrar", label: "Cuentas por Cobrar", icon: DollarSign, slug: "/cuentas-por-cobrar" },
-    { id: "spiff", label: "Spiff", icon: Award, slug: "/spiff" },
-    { id: "reporte_diario", label: "Reporte Diario", icon: ClipboardList, slug: "/reporte-diario" },
-    { id: "sugeridos", label: "Sugerencia de compras", icon: Package, slug: "/sugeridos" },
-    { id: "menor_rotacion", label: "Menor Rotación", icon: TrendingDown, slug: "/menor_rotacion" },
-    { id: "mayor_rotacion", label: "Mayor Rotación", icon: TrendingUp, slug: "/mayor_rotacion" },
-    { id: "moq", label: "MOQ", icon: Settings2, slug: "/moq" },
-    { id: "cobertura", label: "Cobertura de Stock", icon: Shield, slug: "/cobertura" },
-    { id: "rotacion_categoria", label: "Rotación por Categoría", icon: PieChart, slug: "/rotacion-categoria" },
-    { id: "tendencia", label: "Tendencia de Ventas", icon: BarChart3, slug: "/tendencia" },
-    { id: "adminleads", label: "Dashboard Leads", icon: Target, slug: "", adminLeadsOnly: true },
-    { id: "catalogo_adminleads", label: "Catálogo", icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
-    { id: "monitoreo_leads", label: "Monitoreo de leads", icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
-    { id: "cierres_adminleads", label: "Cierres", icon: FileText, slug: "/cierres", adminLeadsOnly: true },
-    { id: "configuracion_leads", label: "Configuración", icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
+    { id: "dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
+    { id: "actividad", label: t("actividades"), icon: Calendar, slug: "/actividad" },
+    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
+    { id: "stoplight_reports", label: t("stoplight_report"), icon: BarChart3, slug: "/StoplightReport" },
+    { id: "users", label: t("usuarios"), icon: Users, slug: "/usuarios" },
+    { id: "seller_map", label: t("mapa_clientes"), icon: Map, slug: "/vendedores" },
+    { id: "cuota", label: t("cuota"), icon: FileText, slug: "/cuota" },
+    { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
+    { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
+    { id: "integraciondepago", label: t("integracion_pago"), icon: CreditCard, slug: "/integraciondepago" },
+    { id: "clientes", label: t("clientes"), icon: UserCheck, slug: "/clientes" },
+    { id: "catalogo", label: t("catalogo"), icon: Boxes, slug: "/catalogo" },
+    { id: "leads", label: t("leads"), icon: UserCheck, slug: "/leads" },
+    { id: "MapaClientes", label: t("mapa_de_clientes"), icon: Map, slug: "/mapa_clientes" },
+    { id: "cierres", label: t("cierres"), icon: FileText, slug: "/Cierres" },
+    { id: "top_clientes", label: t("top_clientes"), icon: Trophy, slug: "/top-clientes" },
+    { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
+    { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
+    { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
+    { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
+    { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
+    { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
+    { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
+    { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
+    { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
+    { id: "adminleads", label: t("dashboard_leads"), icon: Target, slug: "", adminLeadsOnly: true },
+    { id: "catalogo_adminleads", label: t("catalogo"), icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
+    { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
+    { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
+    { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
   ];
 
   const getBasePath = () => {
@@ -286,7 +288,7 @@ export function Sidebar({
                 >
                   <div className="flex items-center gap-3">
                     <Target size={20} className="text-slate-400" />
-                    <span className="text-sm">Leads</span>
+                    <span className="text-sm">{t("leads")}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -305,22 +307,22 @@ export function Sidebar({
                       {[
                         // Las rutas apuntan al directorio /adminleads ignorando el basePath
                         {
-                          label: "Dashboard Leads",
+                          label: t("dashboard_leads"),
                           href: `/${locale}/adminleads`,
                           permission: "adminleads",
                         },
                         {
-                          label: "Monitoreo de leads",
+                          label: t("monitoreo_leads"),
                           href: `/${locale}/adminleads/monitoreo_leads`,
                           permission: "monitoreo_leads",
                         },
                         {
-                          label: "Cierres",
+                          label: t("cierres"),
                           href: `/${locale}/adminleads/cierres`,
                           permission: "cierres_adminleads",
                         },
                         {
-                          label: "Configuración",
+                          label: t("configuracion"),
                           href: `/${locale}/adminleads/configuracion`,
                           permission: "configuracion_leads",
                         },
@@ -365,7 +367,7 @@ export function Sidebar({
                 >
                   <div className="flex items-center gap-3">
                     <FileText size={20} className="text-slate-400" />
-                    <span className="text-sm">Auditoria</span>
+                    <span className="text-sm">{t("auditoria")}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -383,12 +385,12 @@ export function Sidebar({
                     >
                       {[
                         {
-                          label: "Auditoria de Odoo",
+                          label: t("auditoria_odoo"),
                           href: `${basePath}/auditoria`,
                           permission: "audit",
                         },
                         {
-                          label: "Auditoria del Panel",
+                          label: t("auditoria_panel"),
                           href: `${basePath}/auditoria_panel`,
                           permission: "auditoria_panel",
                         },
@@ -432,7 +434,7 @@ export function Sidebar({
                 >
                   <div className="flex items-center gap-3">
                     <Package size={20} className="text-slate-400" />
-                    <span className="text-sm">Compras</span>
+                    <span className="text-sm">{t("compras")}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -450,32 +452,32 @@ export function Sidebar({
                     >
                       {[
                         {
-                          label: "Sugerencia de compras",
+                          label: t("sugerencia_compras"),
                           href: `/${locale}/compras/sugeridos`,
                           permission: "sugeridos",
                         },
                         {
-                          label: "Menor Rotacion",
+                          label: t("menor_rotacion"),
                           href: `/${locale}/compras/menor_rotacion`,
                           permission: "menor_rotacion",
                         },
                         {
-                          label: "Mayor Rotacion",
+                          label: t("mayor_rotacion"),
                           href: `/${locale}/compras/mayor_rotacion`,
                           permission: "mayor_rotacion",
                         },
                         {
-                          label: "Cobertura de Stock",
+                          label: t("cobertura_stock"),
                           href: `/${locale}/compras/cobertura`,
                           permission: "cobertura",
                         },
                         {
-                          label: "Rotación por Categoría",
+                          label: t("rotacion_categoria"),
                           href: `/${locale}/compras/rotacion-categoria`,
                           permission: "rotacion_categoria",
                         },
                         {
-                          label: "Tendencia de Ventas",
+                          label: t("tendencia_ventas"),
                           href: `/${locale}/compras/tendencia`,
                           permission: "tendencia",
                         },
@@ -522,7 +524,7 @@ export function Sidebar({
                 >
                   <div className="flex items-center gap-3">
                     <TrendingUp size={20} className="text-slate-400" />
-                    <span className="text-sm">Ventas</span>
+                    <span className="text-sm">{t("ventas")}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -540,12 +542,12 @@ export function Sidebar({
                     >
                       {[
                         {
-                          label: "Cuota",
+                          label: t("cuota"),
                           href: `${basePath}/cuota`,
                           permission: "cuota",
                         },
                         {
-                          label: "Mapa de Clientes",
+                          label: t("mapa_de_clientes"),
                           href: `${basePath}/vendedores`,
                           permission: "seller_map",
                         },
@@ -586,7 +588,7 @@ export function Sidebar({
                 >
                   <div className="flex items-center gap-3">
                     <BarChart3 size={20} className="text-slate-400" />
-                    <span className="text-sm">Reportes</span>
+                    <span className="text-sm">{t("reportes")}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -603,9 +605,9 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { label: "Inventario", slug: "/reports/inventory" },
-                        { label: "Por Vendedor", slug: "/reports/sellers" },
-                        { label: "Por Cliente", slug: "/reports/clients" },
+                        { label: t("inventario"), slug: "/reports/inventory" },
+                        { label: t("por_vendedor"), slug: "/reports/sellers" },
+                        { label: t("por_cliente"), slug: "/reports/clients" },
                       ].map((subItem, index) => {
                         const subHref = `${basePath}${subItem.slug}`;
                         const isSubActive = pathname === subHref;
@@ -651,7 +653,7 @@ export function Sidebar({
                 <p
                   className={`text-[10px] ${accentColor} truncate uppercase font-bold`}
                 >
-                  {userRole === "superAdmin" ? "Super Admin" : user.role}
+                  {userRole === "superAdmin" ? t("super_admin") : user.role}
                 </p>
               </div>
             </div>
@@ -659,7 +661,7 @@ export function Sidebar({
               onClick={handleLogout}
               className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-red-400/5 rounded-lg transition-colors"
             >
-              <LogOut size={18} /> <span>Cerrar Sesión</span>
+              <LogOut size={18} /> <span>{t("cerrar_sesion")}</span>
             </button>
           </div>
         </motion.div>

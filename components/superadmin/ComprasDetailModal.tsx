@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ArrowLeft, Check, AlertTriangle, BarChart3 } from "lucide-react";
+import { X, ArrowLeft, Check, AlertTriangle, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ComprasDetailModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface ComprasDetailModalProps {
   kpiTitle: string;
   companyId: number;
   mes: string;
+  onMesChange?: (mes: string) => void;
 }
 
 export default function ComprasDetailModal({
@@ -19,6 +20,7 @@ export default function ComprasDetailModal({
   kpiTitle,
   companyId,
   mes,
+  onMesChange,
 }: ComprasDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -167,6 +169,18 @@ export default function ComprasDetailModal({
 
   const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const mesLabelLocal = (mesStr: string) => {
+    const [y, m] = mesStr.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString("es-VE", { month: "short", year: "2-digit" });
+  };
+
+  const goMonth = (delta: number) => {
+    if (!onMesChange) return;
+    const [y, m] = mes.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    onMesChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -188,9 +202,24 @@ export default function ComprasDetailModal({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-            <X size={20} className="text-slate-500" />
-          </button>
+          <div className="flex items-center gap-3">
+            {onMesChange && (
+              <div className="flex items-center gap-1 border rounded-lg px-2 py-1">
+                <button onClick={() => goMonth(-1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs font-medium min-w-[80px] text-center capitalize">
+                  {mesLabelLocal(mes)}
+                </span>
+                <button onClick={() => goMonth(1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+              <X size={20} className="text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

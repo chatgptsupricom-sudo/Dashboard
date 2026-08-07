@@ -24,7 +24,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, Tooltip } from "recharts";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import ComprasDetailModal from "./ComprasDetailModal";
 
 const getCellColor = (value: string) => {
@@ -106,6 +107,7 @@ interface SellerDetail {
 }
 
 export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean } = {}) {
+  const t = useTranslations("stoplight");
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -125,11 +127,24 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string } | null>(null);
-  const [dateInputStart, setDateInputStart] = useState("");
-  const [dateInputEnd, setDateInputEnd] = useState("");
+  const [modalMes, setModalMes] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const modalFetchRef = useRef<((mes: string) => Promise<void>) | null>(null);
+
+  const openModalWith = async (fetchFn: (mes: string) => Promise<void>, mes: string) => {
+    modalFetchRef.current = fetchFn;
+    setModalMes(mes);
+    await fetchFn(mes);
+  };
+
+  const onModalMesChange = async (newMes: string) => {
+    setModalMes(newMes);
+    if (modalFetchRef.current) await modalFetchRef.current(newMes);
+  };
+
   const [viewByOpen, setViewByOpen] = useState(false);
-  const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
   const [monthlyHistLoading, setMonthlyHistLoading] = useState(false);
 
@@ -213,8 +228,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [visitaFormLoading, setVisitaFormLoading] = useState(false);
 
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
-  const q = (extras: Record<string, string> = {}) => {
-    const base: Record<string, string> = { mes: selectedMes, ...extras };
+  const q = (extras: Record<string, string> = {}, mesOverride?: string) => {
+    const base: Record<string, string> = { mes: mesOverride || selectedMes, ...extras };
     if (!vendorMode) base.company_id = String(selectedCompanyId);
     return new URLSearchParams(base).toString();
   };
@@ -234,8 +249,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
-      const params = vendorMode ? `mes=${selectedMes}${dateExtra}` : `mes=${selectedMes}&company_id=${selectedCompanyId}${dateExtra}`;
+      const params = vendorMode ? `mes=${selectedMes}` : `mes=${selectedMes}&company_id=${selectedCompanyId}`;
       const res = await fetch(`${apiPrefix}?${params}`);
       const json = await res.json();
       if (json.success) {
@@ -246,22 +260,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching stoplight data:", e);
     }
     setLoading(false);
-  }, [selectedMes, selectedCompanyId, vendorMode, customDateRange]);
+  }, [selectedMes, selectedCompanyId, vendorMode]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fetchMarketingData = useCallback(async () => {
     setMarketingLoading(true);
     try {
-      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
-      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}${dateExtra}`);
+      const res = await fetch(`/api/superadmin/stoplight/marketing?mes=${selectedMes}`);
       const json = await res.json();
       if (json.success) setMarketingData(json);
     } catch (e) {
       console.error("Error fetching marketing data:", e);
     }
     setMarketingLoading(false);
-  }, [selectedMes, customDateRange]);
+  }, [selectedMes]);
 
   useEffect(() => { fetchMarketingData(); }, [fetchMarketingData]);
 
@@ -271,15 +284,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
-      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
       const json = await res.json();
       if (json.success) setCxcData(json.data);
     } catch (e) {
       console.error("Error fetching CxC data:", e);
     }
     setCxcLoading(false);
-  }, [selectedCompanyId, selectedMes, customDateRange]);
+  }, [selectedCompanyId, selectedMes]);
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
 
@@ -289,15 +301,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
-      const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
-      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
+      const res = await fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}`);
       const json = await res.json();
       if (json.success) setCppData(json.data);
     } catch (e) {
       console.error("Error fetching CPP data:", e);
     }
     setCppLoading(false);
-  }, [selectedCompanyId, selectedMes, customDateRange]);
+  }, [selectedCompanyId, selectedMes]);
 
   useEffect(() => { fetchCppData(); }, [fetchCppData]);
 
@@ -337,16 +348,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   }, [activeTab, fetchMonthlyHistory]);
 
   useEffect(() => {
-    if (!viewByOpen && !dateRangeOpen && !teamDropdownOpen) return;
+    if (!viewByOpen && !teamDropdownOpen) return;
     const close = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-dropdown-content]")) return;
       setViewByOpen(false);
-      setDateRangeOpen(false);
       setTeamDropdownOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, [viewByOpen, dateRangeOpen, teamDropdownOpen]);
+  }, [viewByOpen, teamDropdownOpen]);
 
   useEffect(() => {
     if (clientesModalOpen || modalOpen || cxcModalOpen || cppModalOpen) {
@@ -400,13 +410,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const openCuotaModal = async () => {
+  const openCuotaModalWithMes = async (mes: string) => {
+    modalFetchRef.current = openCuotaModalWithMes;
     setModalOpen(true);
     setModalLoading(true);
     setSelectedSeller(null);
     setModalTab("resumen");
     try {
-      const res = await fetch(`${apiPrefix}/cuota-detail?${q()}`);
+      const res = await fetch(`${apiPrefix}/cuota-detail?${q({}, mes)}`);
       const json = await res.json();
       if (json.success) setModalData(json.data);
     } catch (e) {
@@ -415,7 +426,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setModalLoading(false);
   };
 
-  const openClientesModal = async () => {
+  const openCuotaModal = async () => {
+    await openCuotaModalWithMes(selectedMes);
+  };
+
+  const openClientesModalWithMes = async (mes: string) => {
+    modalFetchRef.current = openClientesModalWithMes;
     setClientesModalOpen(true);
     setClientesModalLoading(true);
     setClientesModalTab("resumen");
@@ -423,13 +439,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setSelectedClientesClient(null);
     setClientesSellerDetail(null);
     try {
-      const res = await fetch(`${apiPrefix}/clientes-nuevos-detail?${q()}`);
+      const res = await fetch(`${apiPrefix}/clientes-nuevos-detail?${q({}, mes)}`);
       const json = await res.json();
       if (json.success) setClientesModalData(json.data);
     } catch (e) {
       console.error("Error fetching clientes nuevos detail:", e);
     }
     setClientesModalLoading(false);
+  };
+
+  const openClientesModal = async () => {
+    await openClientesModalWithMes(selectedMes);
   };
 
   const openClientesSellerDetail = async (seller: any) => {
@@ -514,13 +534,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setCppModalLoading(false);
   };
 
-  const openMargenModal = async () => {
+  const openMargenModalWithMes = async (mes: string) => {
+    modalFetchRef.current = openMargenModalWithMes;
     setMargenModalOpen(true);
     setMargenModalLoading(true);
     setSelectedMargenSeller(null);
     setMargenModalTab("vendedor");
     try {
-      const res = await fetch(`${apiPrefix}/margen-detail?${q()}`);
+      const res = await fetch(`${apiPrefix}/margen-detail?${q({}, mes)}`);
       const json = await res.json();
       if (json.success) setMargenModalData(json.data);
     } catch (e) {
@@ -529,14 +550,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setMargenModalLoading(false);
   };
 
-  const openEfectividadModal = async (periodo: string = "mes") => {
+  const openMargenModal = async () => {
+    await openMargenModalWithMes(selectedMes);
+  };
+
+  const openEfectividadModalWithMes = async (mes: string, periodo: string = "mes") => {
+    modalFetchRef.current = (m: string) => openEfectividadModalWithMes(m, efectividadPeriodo);
     setEfectividadModalOpen(true);
     setEfectividadModalLoading(true);
     setSelectedEfectividadSeller(null);
     setEfectividadModalTab("vendedor");
     setEfectividadPeriodo(periodo as any);
     try {
-      const res = await fetch(`${apiPrefix}/efectividad-detail?${q({ periodo })}`);
+      const res = await fetch(`${apiPrefix}/efectividad-detail?${q({ periodo }, mes)}`);
       const json = await res.json();
       if (json.success) setEfectividadModalData(json.data);
     } catch (e) {
@@ -545,14 +571,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setEfectividadModalLoading(false);
   };
 
-  const openCoberturaModal = async (periodo: string = "mes") => {
+  const openEfectividadModal = async (periodo: string = "mes") => {
+    await openEfectividadModalWithMes(selectedMes, periodo);
+  };
+
+  const openCoberturaModalWithMes = async (mes: string, periodo: string = "mes") => {
+    modalFetchRef.current = (m: string) => openCoberturaModalWithMes(m, coberturaPeriodo);
     setCoberturaModalOpen(true);
     setCoberturaModalLoading(true);
     setSelectedCoberturaSeller(null);
     setCoberturaModalTab("vendedor");
     setCoberturaPeriodo(periodo as any);
     try {
-      const res = await fetch(`${apiPrefix}/cobertura-detail?${q({ periodo })}`);
+      const res = await fetch(`${apiPrefix}/cobertura-detail?${q({ periodo }, mes)}`);
       const json = await res.json();
       if (json.success) setCoberturaModalData(json.data);
     } catch (e) {
@@ -561,14 +592,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setCoberturaModalLoading(false);
   };
 
-  const openActivacionModal = async (periodo: string = "mes") => {
+  const openCoberturaModal = async (periodo: string = "mes") => {
+    await openCoberturaModalWithMes(selectedMes, periodo);
+  };
+
+  const openActivacionModalWithMes = async (mes: string, periodo: string = "mes") => {
+    modalFetchRef.current = (m: string) => openActivacionModalWithMes(m, activacionPeriodo);
     setActivacionModalOpen(true);
     setActivacionModalLoading(true);
     setSelectedActivacionSeller(null);
     setActivacionModalTab("vendedor");
     setActivacionPeriodo(periodo as any);
     try {
-      const res = await fetch(`${apiPrefix}/activacion-detail?${q({ periodo })}`);
+      const res = await fetch(`${apiPrefix}/activacion-detail?${q({ periodo }, mes)}`);
       const json = await res.json();
       if (json.success) setActivacionModalData(json.data);
     } catch (e) {
@@ -577,7 +613,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setActivacionModalLoading(false);
   };
 
-  const openVisitasModal = async () => {
+  const openActivacionModal = async (periodo: string = "mes") => {
+    await openActivacionModalWithMes(selectedMes, periodo);
+  };
+
+  const openVisitasModalWithMes = async (mes: string) => {
+    modalFetchRef.current = openVisitasModalWithMes;
     setVisitasModalOpen(true);
     setVisitasModalLoading(true);
     setVisitaForm({
@@ -587,12 +628,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       visit_date: new Date().toISOString().split("T")[0],
     });
     try {
-      // Fetch existing visits
-      const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q()}`);
+      const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q({}, mes)}`);
       const jsonVisits = await resVisits.json();
       if (jsonVisits.success) setVisitasData(jsonVisits.data);
-
-      // Fetch sellers from stoplight data
       if (kpiData?.sellers) {
         setVisitasVendedores(kpiData.sellers);
       }
@@ -600,6 +638,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching visitas:", e);
     }
     setVisitasModalLoading(false);
+  };
+
+  const openVisitasModal = async () => {
+    await openVisitasModalWithMes(selectedMes);
   };
 
   const fetchVisitasClientes = async (sellerName: string) => {
@@ -698,6 +740,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return opts;
   };
 
+  const ModalMonthPicker = ({ value, onChange }: { value: string; onChange: (mes: string) => void }) => {
+    const goMonth = (delta: number) => {
+      const [y, m] = value.split("-").map(Number);
+      const d = new Date(y, m - 1 + delta, 1);
+      onChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    };
+    return (
+      <div className="flex items-center gap-1 border rounded-lg px-2 py-1">
+        <button onClick={() => goMonth(-1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+          <ChevronLeft size={14} />
+        </button>
+        <span className="text-xs font-medium min-w-[80px] text-center capitalize">
+          {mesLabel(value)}
+        </span>
+        <button onClick={() => goMonth(1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    );
+  };
+
   const getMonthlyValue = (kpiId: string, h: { ventas: any; cxc: any; cpp: any }): string => {
     const d = h.ventas;
     const cxc = h.cxc;
@@ -759,7 +822,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "cumplimiento_cuota_ventas",
       trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "warning" : "alert") : "help",
-      title: "Cumplimiento de cuota de ventas",
+      title: t("kpi_cuota_ventas"),
       peso: "30%",
       average: kpiData ? `${kpiData.avgCumplimiento}%` : "0%",
       weeks: kpiData?.semanaGlobal || defaultWeeks,
@@ -771,7 +834,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "margen_bruto",
       trend: "help",
-      title: "Margen bruto",
+      title: t("kpi_margen_bruto"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgMargen}%` : "0%",
       weeks: kpiData?.semanaMargen || defaultWeeks,
@@ -783,7 +846,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "visitas_semanales",
       trend: "help",
-      title: "Cantidad de visitas semanales",
+      title: t("kpi_visitas"),
       peso: "10%",
       average: kpiData ? String(kpiData.avgVisitas) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
@@ -795,7 +858,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "efectividad_cierre",
       trend: "help",
-      title: "Tasa de efectividad de cierre",
+      title: t("kpi_efectividad"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
       weeks: kpiData?.semanaEfectividad || defaultWeeks,
@@ -807,7 +870,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "activacion_cartera",
       trend: "help",
-      title: "Porcentaje de activación de cartera",
+      title: t("kpi_activacion"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
       weeks: kpiData?.semanaActivacion || defaultWeeks,
@@ -819,7 +882,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "clientes_nuevos",
       trend: "help",
-      title: "Clientes nuevos captados",
+      title: t("kpi_clientes_nuevos"),
       peso: "5%",
       average: kpiData ? `${kpiData.avgClientes}%` : "0%",
       weeks: kpiData?.semanaClientes || defaultWeeks,
@@ -831,7 +894,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "cobertura_marcas",
       trend: "help",
-      title: "Cobertura de marcas",
+      title: t("kpi_cobertura"),
       peso: "10%",
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
@@ -889,67 +952,73 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "variacion_costo_compra",
       trend: "help",
-      title: "Variación del costo de compra",
+      title: t("kpi_variacion_costo"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgVarCosto}%` : "0%",
       weeks: kpiData?.semanaVarCosto || defaultWeeks,
       goalDefault: kpiData?.metas?.["variacion_costo_compra"] ? String(kpiData.metas["variacion_costo_compra"]) : "0",
       goalSuffix: "%",
       isClickable: true,
+      cumple: kpiData ? kpiData.avgVarCosto >= 100 : false,
     },
     {
       id: "rotacion_saludable",
       trend: "help",
-      title: "Rotación saludable de compras",
+      title: t("kpi_rotacion"),
       peso: "17%",
       average: kpiData ? `${kpiData.avgRotacion}%` : "0%",
       weeks: kpiData?.semanaRotacion || defaultWeeks,
       goalDefault: kpiData?.metas?.["rotacion_saludable"] ? String(kpiData.metas["rotacion_saludable"]) : "0",
       goalSuffix: "%",
       isClickable: true,
+      cumple: kpiData ? kpiData.avgRotacion >= 100 : false,
     },
     {
       id: "quiebre_inventario",
       trend: "help",
-      title: "Porcentaje de quiebre de inventario",
+      title: t("kpi_quiebre"),
       peso: "25%",
       average: kpiData ? `${kpiData.avgQuiebre}%` : "0%",
       weeks: kpiData?.semanaQuiebre || defaultWeeks,
       goalDefault: kpiData?.metas?.["quiebre_inventario"] ? String(kpiData.metas["quiebre_inventario"]) : "0",
       goalSuffix: "%",
       isClickable: true,
+      cumple: kpiData ? kpiData.avgQuiebre >= 100 : false,
     },
     {
       id: "inventario_90_dias",
       trend: "help",
-      title: "Inventario con más de 90 días",
+      title: t("kpi_inventario_90"),
       peso: "20%",
       average: kpiData ? `${kpiData.avgInv90}%` : "0%",
       weeks: kpiData?.semanaInv90 || defaultWeeks,
       goalDefault: kpiData?.metas?.["inventario_90_dias"] ? String(kpiData.metas["inventario_90_dias"]) : "0",
       goalSuffix: "%",
       isClickable: true,
+      cumple: kpiData ? kpiData.avgInv90 >= 100 : false,
     },
     {
       id: "forecast_semanal",
       trend: "help",
-      title: "Revisión semanal de forecast Compras–Ventas",
+      title: t("kpi_forecast"),
       peso: "11%",
       average: kpiData ? `${kpiData.avgForecast}%` : "0%",
       weeks: kpiData?.semanaForecast || defaultWeeks,
       goalDefault: kpiData?.metas?.["forecast_semanal"] ? String(kpiData.metas["forecast_semanal"]) : "75",
       goalSuffix: "%",
       isClickable: true,
+      cumple: kpiData ? kpiData.avgForecast >= 100 : false,
     },
     {
       id: "propuestas_calificadas",
       trend: "help",
-      title: "Propuestas calificadas de nuevos productos y tendencias",
+      title: t("kpi_propuestas"),
       peso: "12%",
       average: kpiData ? String(kpiData.avgPropuestas) : "0",
       weeks: kpiData?.semanaPropuestas || defaultWeeks,
       goalDefault: kpiData?.metas?.["propuestas_calificadas"] ? String(kpiData.metas["propuestas_calificadas"]) : "3",
       goalSuffix: "",
+      cumple: kpiData ? kpiData.avgPropuestas >= (kpiData?.metas?.["propuestas_calificadas"] || 3) : false,
     },
   ];
 
@@ -976,92 +1045,101 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "usuarios_totales",
         trend: "help",
-        title: "Usuarios totales (GA4)",
+        title: t("kpi_usuarios_ga4"),
         peso: "13%",
         average: String(md?.ga4?.totalUsers || 0),
         weeks: toWeekly(ga4W?.totalUsers),
         goalDefault: "500",
         goalSuffix: "",
+        cumple: (md?.ga4?.totalUsers || 0) >= 500,
       },
       {
         id: "sesiones",
         trend: "help",
-        title: "Sesiones totales (GA4)",
+        title: t("kpi_sesiones_ga4"),
         peso: "13%",
         average: String(md?.ga4?.sessions || 0),
         weeks: toWeekly(ga4W?.sessions),
         goalDefault: "1000",
         goalSuffix: "",
+        cumple: (md?.ga4?.sessions || 0) >= 1000,
       },
       {
         id: "paginas_vistas",
         trend: "help",
-        title: "Paginas vistas (GA4)",
+        title: t("kpi_paginas_ga4"),
         peso: "9%",
         average: String(md?.ga4?.pageviews || 0),
         weeks: toWeekly(ga4W?.pageviews),
         goalDefault: "5000",
         goalSuffix: "",
+        cumple: (md?.ga4?.pageviews || 0) >= 5000,
       },
       {
         id: "tasa_rebote",
         trend: (md?.ga4?.bounceRate || 0) > 50 ? "alert" : "help",
-        title: "Tasa de rebote (GA4)",
+        title: t("kpi_rebote_ga4"),
         peso: "9%",
         average: `${md?.ga4?.bounceRate || 0}%`,
         weeks: toWeeklyPct(ga4W?.bounceRate),
         goalDefault: "40",
         goalSuffix: "%",
+        cumple: (md?.ga4?.bounceRate || 0) <= 40,
       },
       {
         id: "clicks_sc",
         trend: "help",
-        title: "Clics desde Google (SC)",
+        title: t("kpi_clicks_sc"),
         peso: "13%",
         average: String(md?.totals?.totalClicks || 0),
         weeks: toWeekly(weekClicks),
         goalDefault: "500",
         goalSuffix: "",
+        cumple: (md?.totals?.totalClicks || 0) >= 500,
       },
       {
         id: "impresiones_sc",
         trend: "help",
-        title: "Impresiones en Google (SC)",
+        title: t("kpi_impresiones_sc"),
         peso: "9%",
         average: String(md?.totals?.totalImpressions || 0),
         weeks: toWeekly(weekImpressions),
         goalDefault: "10000",
         goalSuffix: "",
+        cumple: (md?.totals?.totalImpressions || 0) >= 10000,
       },
       {
         id: "ctr_sc",
         trend: "help",
-        title: "CTR promedio (SC)",
+        title: t("kpi_ctr_sc"),
         peso: "9%",
         average: `${md?.totals?.overallCtr || 0}%`,
         weeks: scWeeksPct(weekClicks, weekImpressions),
         goalDefault: "3",
         goalSuffix: "%",
+        cumple: (md?.totals?.overallCtr || 0) >= 3,
       },
       {
         id: "posicion_sc",
         trend: (md?.totals?.avgPosition || 0) > 10 ? "alert" : "help",
-        title: "Posicion promedio (SC)",
+        title: t("kpi_posicion_sc"),
         peso: "13%",
         average: String(md?.totals?.avgPosition || 0),
         weeks: toWeekly(md?.weekly?.position),
         goalDefault: "5",
         goalSuffix: "",
+        cumple: (md?.totals?.avgPosition || 0) <= 5 && (md?.totals?.avgPosition || 0) > 0,
       },
       {
         id: "email_open_rate",
         trend: (md?.emailMarketing?.openRate || 0) >= 20 ? "help" : (md?.emailMarketing?.openRate || 0) >= 10 ? "warning" : "alert",
-        title: "Email marketing",
+        title: t("kpi_email"),
         peso: "12%",
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
         weeks: (md?.emailMarketing?.weeklyOpenRate || defWeeks).map((v: number | null) => v != null ? `${v}%` : null),
         goalDefault: "20",
         goalSuffix: "%",
+        cumple: (md?.emailMarketing?.openRate || 0) >= 20,
       },
     ];
   })() : [];
@@ -1081,46 +1159,50 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "efectividad_cobranza",
         trend: k.efectividad.value === null ? "help" : k.efectividad.value >= 95 ? "success" : k.efectividad.value >= 85 ? "warning" : "alert",
-        title: "Efectividad de cobranza",
+        title: t("kpi_efectividad_cobranza"),
         peso: "35%",
         average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
         weeks: [k.efectividad.value !== null ? String(k.efectividad.value) + "%" : null, null, null, null, null],
         goalDefault: String(k.efectividad.meta),
         goalSuffix: "%",
         isClickable: true,
+        cumple: k.efectividad.value !== null ? k.efectividad.value >= k.efectividad.meta : false,
       },
       {
         id: "cartera_vencida",
         trend: k.carteraVencida.value === null ? "help" : k.carteraVencida.value <= 10 ? "success" : k.carteraVencida.value <= 20 ? "warning" : "alert",
-        title: "Porcentaje de cartera vencida",
+        title: t("kpi_cartera_vencida"),
         peso: "30%",
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
         weeks: [k.carteraVencida.value !== null ? String(k.carteraVencida.value) + "%" : null, null, null, null, null],
         goalDefault: String(k.carteraVencida.meta),
         goalSuffix: "%",
         isClickable: true,
+        cumple: k.carteraVencida.value !== null ? k.carteraVencida.value <= k.carteraVencida.meta : false,
       },
       {
         id: "recuperacion_vencidos",
         trend: k.recuperacion.value === null ? "help" : k.recuperacion.value >= 60 ? "success" : k.recuperacion.value >= 30 ? "warning" : "alert",
-        title: "Recuperación de cartera vencida",
+        title: t("kpi_recuperacion"),
         peso: "25%",
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
         weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
         goalDefault: String(k.recuperacion.meta),
         goalSuffix: "%",
         isClickable: true,
+        cumple: k.recuperacion.value !== null ? k.recuperacion.value >= k.recuperacion.meta : false,
       },
       {
         id: "dso",
         trend: k.dso.value === null ? "help" : k.dso.value <= 45 ? "success" : k.dso.value <= 60 ? "warning" : "alert",
-        title: "Días promedio de cobro (DSO)",
+        title: t("kpi_dso"),
         peso: "10%",
         average: k.dso.value !== null ? `${k.dso.value} días` : "N/A",
         weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
         goalDefault: String(k.dso.meta),
         goalSuffix: " días",
         isClickable: true,
+        cumple: k.dso.value !== null ? k.dso.value <= k.dso.meta : false,
       },
     ];
   })() : [];
@@ -1131,7 +1213,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "pagos_a_tiempo",
         trend: cppData.pagosATiempoPct >= 95 ? "success" : cppData.pagosATiempoPct >= 85 ? "warning" : "alert",
-        title: "Pagos realizados a tiempo",
+        title: t("kpi_pagos_tiempo"),
         peso: "35%",
         average: `${cppData.pagosATiempoPct}%`,
         weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
@@ -1139,11 +1221,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalSuffix: "%",
         isClickable: true,
         subtitle: `Por monto: ${cppData.pagosATiempoPct}% | Por cantidad: ${cppData.pagosATiempoCantidad}%`,
+        cumple: cppData.pagosATiempoPct >= (metas["pagos_a_tiempo"] ?? 95),
       },
       {
         id: "cuentas_pagar_vencidas",
         trend: cppData.cuentasVencidasPct <= 5 ? "success" : cppData.cuentasVencidasPct <= 10 ? "warning" : "alert",
-        title: "Porcentaje de cuentas por pagar vencidas",
+        title: t("kpi_cxpagar_vencidas"),
         peso: "30%",
         average: `${cppData.cuentasVencidasPct}%`,
         weeks: cppData.semanaVencidas || Array(5).fill(null),
@@ -1151,11 +1234,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalSuffix: "%",
         isClickable: true,
         subtitle: `Vencido: $${cppData.totalVencido?.toLocaleString()} / Total abierto: $${cppData.totalCxPOpen?.toLocaleString()}`,
+        cumple: cppData.cuentasVencidasPct <= (metas["cuentas_pagar_vencidas"] ?? 5),
       },
       {
         id: "procesamiento_oportuno",
         trend: cppData.procesamientoOportunoPct >= 95 ? "success" : cppData.procesamientoOportunoPct >= 85 ? "warning" : "alert",
-        title: "Procesamiento oportuno de facturas",
+        title: t("kpi_procesamiento"),
         peso: "20%",
         average: `${cppData.procesamientoOportunoPct}%`,
         weeks: cppData.semanaProcesamiento || Array(5).fill(null),
@@ -1163,11 +1247,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalSuffix: "%",
         isClickable: true,
         subtitle: `SLA: ≤3 días con OC, ≤5 días sin OC | Promedio: ${cppData.avgProcessingDays} días`,
+        cumple: cppData.procesamientoOportunoPct >= (metas["procesamiento_oportuno"] ?? 95),
       },
       {
         id: "dpo",
         trend: cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
-        title: "Días promedio de pago (DPO)",
+        title: t("kpi_dpo"),
         peso: "15%",
         average: `${cppData.dpo} días`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
@@ -1175,6 +1260,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalSuffix: " días",
         isClickable: true,
         subtitle: `Ventana: 90 días | CxP: $${cppData.dpoCxPTotal?.toLocaleString()} | Compras crédito: $${cppData.dpoComprasCredito?.toLocaleString()}`,
+        cumple: cppData.dpo <= (metas["dpo"] ?? 30),
       },
     ];
   })() : [];
@@ -1182,12 +1268,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];
 
   const allGroups = [
-    { id: "group-ventas", title: "Ventas", count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
-    { id: "group-compras", title: "Compras", count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
+    { id: "group-ventas", title: t("group_ventas"), count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
+    { id: "group-compras", title: t("group_compras"), count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
     //{ id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
-    ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: "Cuentas por Cobrar", count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
-    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
-    ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
+    ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
+    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
+    ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
   const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
 
@@ -1196,9 +1282,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {/* Header & Title */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Stoplight Reports</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{t("page_title")}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Record and evaluate key metrics, streamlined for strategic success.
+            {t("page_subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -1208,13 +1294,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors shadow-sm"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-              Conectar Google
+              {t("google_connect")}
             </a>
           )}
           {marketingData?.connected && (
             <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium rounded-md border border-green-200">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Google Conectado
+              {t("google_connected")}
             </span>
           )}
           <button className="p-2 border rounded-md hover:bg-slate-50 transition-colors">
@@ -1225,13 +1311,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Tabs */}
       <div className="flex gap-6 border-b mb-6 text-sm font-medium text-slate-500">
-        {["Trends", "Weekly", "Monthly", "Quarterly", "Annual"].map((tab) => (
+        {([["Trends", t("tab_trends")], ["Weekly", t("tab_weekly")], ["Monthly", t("tab_monthly")], ["Quarterly", t("tab_quarterly")], ["Annual", t("tab_annual")]] as const).map(([key, label]) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`pb-3 transition-colors ${activeTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "hover:text-slate-800"}`}
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`pb-3 transition-colors ${activeTab === key ? "text-amber-500 border-b-2 border-amber-500" : "hover:text-slate-800"}`}
           >
-            {tab}
+            {label}
           </button>
         ))}
       </div>
@@ -1266,7 +1352,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           {/* View by */}
           <div className="relative">
             <button
-              onClick={() => { setViewByOpen(o => !o); setDateRangeOpen(false); }}
+              onClick={() => setViewByOpen(o => !o)}
               className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors"
             >
               View by: {activeTab === "Monthly" ? "Month" : activeTab === "Quarterly" ? "Quarter" : activeTab === "Annual" ? "Year" : "Week"}
@@ -1288,95 +1374,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {opt.label}
                   </button>
                 ))}
-              </div>
-            )}
-          </div>
-
-          {/* Date Range */}
-          <div className="relative">
-            <button
-              onClick={() => { setDateRangeOpen(o => !o); setViewByOpen(false); }}
-              className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors ${customDateRange ? "border-amber-400 bg-amber-50 text-amber-700" : ""}`}
-            >
-              <Calendar size={14} />
-              {customDateRange
-                ? `${customDateRange.start.slice(8)}/${customDateRange.start.slice(5, 7)} – ${customDateRange.end.slice(8)}/${customDateRange.end.slice(5, 7)}`
-                : (mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1))
-              }
-              <ChevronDown size={14} />
-            </button>
-            {dateRangeOpen && (
-              <div data-dropdown-content className="absolute top-full left-0 mt-2 bg-white border rounded-xl shadow-xl z-50 w-72 p-4">
-                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Rango de fechas</p>
-                <div className="space-y-2 mb-3">
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Desde</label>
-                    <input
-                      type="date"
-                      value={dateInputStart}
-                      onChange={e => setDateInputStart(e.target.value)}
-                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Hasta</label>
-                    <input
-                      type="date"
-                      value={dateInputEnd}
-                      onChange={e => setDateInputEnd(e.target.value)}
-                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (dateInputStart && dateInputEnd && dateInputStart <= dateInputEnd) {
-                        const [y, m] = dateInputStart.split("-").map(Number);
-                        setSelectedMes(`${y}-${String(m).padStart(2, "0")}`);
-                        setCustomDateRange({ start: dateInputStart, end: dateInputEnd });
-                        setDateRangeOpen(false);
-                      }
-                    }}
-                    disabled={!dateInputStart || !dateInputEnd || dateInputStart > dateInputEnd}
-                    className="flex-1 bg-amber-500 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Aplicar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCustomDateRange(null);
-                      setDateInputStart("");
-                      setDateInputEnd("");
-                      const n = new Date();
-                      setSelectedMes(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`);
-                      setDateRangeOpen(false);
-                    }}
-                    className="px-3 py-1.5 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                  >
-                    Limpiar
-                  </button>
-                </div>
-                <div className="mt-3 border-t pt-3">
-                  <p className="text-xs font-medium text-slate-500 mb-2">Acceso rápido</p>
-                  <div className="flex flex-wrap gap-1">
-                    {getMesOptions().slice(0, 4).map(opt => (
-                      <button
-                        key={opt.value}
-                        onClick={() => {
-                          setSelectedMes(opt.value);
-                          setCustomDateRange(null);
-                          setDateInputStart("");
-                          setDateInputEnd("");
-                          setDateRangeOpen(false);
-                        }}
-                        className={`px-2 py-1 rounded-md text-xs transition-colors capitalize ${selectedMes === opt.value && !customDateRange ? "bg-amber-100 text-amber-700 font-medium" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
           </div>
@@ -1483,12 +1480,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <th className="p-3 w-10 text-center border-r">
                         <input type="checkbox" className="rounded border-slate-300" />
                       </th>
-                      <th className="p-3 w-16 text-center border-r text-xs font-normal">View<br />Trend</th>
-                      <th className="p-3 border-r font-medium min-w-[300px]">Title</th>
-                      <th className="p-3 w-16 text-center border-r font-medium">Owner</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">Goal</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">Average</th>
-                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">Peso</th>
+                      <th className="p-3 w-16 text-center border-r text-xs font-normal">{t("column_trend")}</th>
+                      <th className="p-3 border-r font-medium min-w-[300px]">{t("column_title")}</th>
+                      <th className="p-3 w-16 text-center border-r font-medium">{t("column_owner")}</th>
+                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_goal")}</th>
+                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_average")}</th>
+                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
                         <th key={idx} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-400">
                           <div className="flex flex-col">
@@ -1504,7 +1501,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
                           {kpi.cumple ? (
@@ -1644,16 +1641,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Cumplimiento de Cuota de Ventas</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Detalle por vendedor - {modalData?.mes || selectedMes} | Dias utiles: {modalData?.totalDiasUtiles || 0}
+                    Detalle por vendedor - {modalData?.mes || modalMes} | Dias utiles: {modalData?.totalDiasUtiles || 0}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => { setModalOpen(false); setSelectedSeller(null); }}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
+              <div className="flex items-center gap-3">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
+                <button
+                  onClick={() => { setModalOpen(false); setSelectedSeller(null); }}
+                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Tabs */}
@@ -1994,20 +1994,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setClientesModalOpen(false);
-                  setClientesModalData(null);
-                  setSelectedClientesSeller(null);
-                  setSelectedClientesClient(null);
-                  setSelectedInvoice(null);
-                  setInvoiceDetail(null);
-                  setClientesSellerDetail(null);
-                }}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
+              <div className="flex items-center gap-3">
+                {!selectedInvoice && !selectedClientesClient && !selectedClientesSeller && (
+                  <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
+                )}
+                <button
+                  onClick={() => {
+                    setClientesModalOpen(false);
+                    setClientesModalData(null);
+                    setSelectedClientesSeller(null);
+                    setSelectedClientesClient(null);
+                    setSelectedInvoice(null);
+                    setInvoiceDetail(null);
+                    setClientesSellerDetail(null);
+                  }}
+                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
             </div>
 
             {/* Tabs - only show when not in drill-down */}
@@ -2375,16 +2380,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Margen Bruto</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Detalle por vendedor y producto - {margenModalData?.mes || selectedMes}
+                    Detalle por vendedor y producto - {margenModalData?.mes || modalMes}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => { setMargenModalOpen(false); setSelectedMargenSeller(null); setMargenModalData(null); }}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
+              <div className="flex items-center gap-3">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
+                <button
+                  onClick={() => { setMargenModalOpen(false); setSelectedMargenSeller(null); setMargenModalData(null); }}
+                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Tabs */}
@@ -2702,10 +2710,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
               {/* Period Selector */}
               <div className="flex items-center gap-2">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
                 {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
                   <button
                     key={p}
-                    onClick={() => openEfectividadModal(p)}
+                    onClick={() => openEfectividadModalWithMes(modalMes, p)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       efectividadPeriodo === p
                         ? "bg-amber-500 text-white"
@@ -2947,10 +2956,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
               {/* Period Selector */}
               <div className="flex items-center gap-2">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
                 {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
                   <button
                     key={p}
-                    onClick={() => openCoberturaModal(p)}
+                    onClick={() => openCoberturaModalWithMes(modalMes, p)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       coberturaPeriodo === p
                         ? "bg-cyan-500 text-white"
@@ -3180,10 +3190,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
               {/* Period Selector */}
               <div className="flex items-center gap-2">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
                 {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
                   <button
                     key={p}
-                    onClick={() => openActivacionModal(p)}
+                    onClick={() => openActivacionModalWithMes(modalMes, p)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       activacionPeriodo === p
                         ? "bg-orange-500 text-white"
@@ -3412,16 +3423,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Visitas Semanales</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    {kpiData?.sellers?.length || 0} vendedores - {selectedMes}
+                    {kpiData?.sellers?.length || 0} vendedores - {modalMes}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setVisitasModalOpen(false)}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
+              <div className="flex items-center gap-3">
+                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
+                <button
+                  onClick={() => setVisitasModalOpen(false)}
+                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
@@ -3434,7 +3448,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <div className="space-y-6">
                   {/* Formulario Nueva Visita */}
                   <div className="bg-gradient-to-r from-indigo-50 to-white rounded-xl p-6 border">
-                    <h3 className="text-sm font-semibold text-slate-700 mb-4">Registrar Nueva Visita</h3>
+                    <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("registrar_visita")}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Selector de Vendedor */}
                       <div>
@@ -3588,7 +3602,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
                   {/* Lista de Visitas */}
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700 mb-4">Visitas Registradas ({visitasData.length})</h3>
+                    <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("visitas_registradas", { count: visitasData.length })}</h3>
                     {visitasData.length === 0 ? (
                       <div className="text-center py-10 text-slate-400 text-sm">
                         No hay visitas registradas este mes
@@ -3662,7 +3676,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         kpiType={comprasKpiType}
         kpiTitle={comprasKpiTitle}
         companyId={selectedCompanyId}
-        mes={selectedMes}
+        mes={modalMes}
+        onMesChange={onModalMesChange}
       />
       {cxcModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
