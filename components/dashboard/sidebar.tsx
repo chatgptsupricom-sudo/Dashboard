@@ -180,7 +180,7 @@ export function Sidebar({
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
 
   const isSellerPausado =
     (userRole === "seller" || userRole === "vendedor") &&
