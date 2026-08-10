@@ -106,7 +106,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean } = {}) {
   const t = useTranslations("stoplight");
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
@@ -1283,7 +1283,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
+  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -1331,7 +1331,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       </div>
 
       {/* Toolbar */}
-      {!vendorMode && (
+      {!vendorMode && !cxCMode && (
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
           <div

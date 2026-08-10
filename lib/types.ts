@@ -1,18 +1,19 @@
 // Tipos de roles - Actualizados para coincidir con SQL
 export enum UserRole {
-  SUPER_ADMIN = "superAdmin", // Cambiado de 'presidency' para coincidir con SQL
-  MARKETING_MANAGEMENT = "marketingManagement", // Sincronizado con cammelCase de SQL
-  BRAND_MANAGEMENT = "brandManagement", // Sincronizado con cammelCase de SQL
-  MARKETING = "marketing", // Rol Marketing
-  PROGRAMMERS = "programmers", // Rol Programador
-  AUDIT = "audit", // Rol Auditor
-  SELLER = "seller", // Rol Vendedores
-  ADMIN_LEADS = "adminLeads", // Rol Administrador de Leads
-  GERENTE_VENTA = "Gerencia De Ventas", // Rol Gerente de Venta
-  GERENTE_OPERACIONES = "Gerente de Operations", // Rol Gerente de Operaciones
-  RECURSOS_HUMANOS = "recursos humanos", // Sincronizado con minúsculas y middleware de SQL
-  COMPRAS = "compras", // NUEVO: Rol Compras (ID 11 en tu base de datos)
-  RMA = "rma", // Servicio Técnico / RMA
+  SUPER_ADMIN = "superAdmin",
+  MARKETING_MANAGEMENT = "marketingManagement",
+  BRAND_MANAGEMENT = "brandManagement",
+  MARKETING = "marketing",
+  PROGRAMMERS = "programmers",
+  AUDIT = "audit",
+  SELLER = "seller",
+  ADMIN_LEADS = "adminLeads",
+  GERENTE_VENTA = "Gerencia De Ventas",
+  GERENTE_OPERACIONES = "Gerente de Operations",
+  RECURSOS_HUMANOS = "recursos humanos",
+  COMPRAS = "compras",
+  RMA = "rma",
+  CUENTAS_POR_COBRAR = "cuentas por cobrar",
 }
 
 // Permisos por rol
@@ -196,10 +197,8 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
-      "dashboard", // KPIs de compras, alertas de quiebre de stock
-      "sugeridos", // Productos con baja rotación o bajo stock
-      "proveedores", // Gestión y registro de proveedores
-      "ordenes",
+      "dashboard",
+      "sugeridos",
       "moq",
       "menor_rotacion",
       "mayor_rotacion",
@@ -209,7 +208,6 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
     ],
   },
-  // NUEVA DEFINICIÓN: Rol RMA (Servicio Técnico)
   [UserRole.RMA]: {
     canViewAllSections: false,
     canManageUsers: false,
@@ -217,8 +215,25 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
-      "dashboard", // KPIs de servicio técnico
-      "rma", // Gestión de RMA / servicio técnico
+      "dashboard",
+      "rma",
+    ],
+  },
+  [UserRole.CUENTAS_POR_COBRAR]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [
+      "dashboard",
+      "cuentas_por_cobrar",
+      "stoplight_reports",
+      "referencia_comercial",
+      "integraciondepago",
+      "cxc_alerts",
+      "cxc_search",
+      "cxc_top_clients",
     ],
   },
 };
