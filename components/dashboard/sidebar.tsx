@@ -178,7 +178,7 @@ export function Sidebar({
   const isComprasRole = userRole === "compras";
   const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
 
@@ -576,6 +576,16 @@ export function Sidebar({
                           label: t("mapa_de_clientes"),
                           href: `${basePath}/vendedores`,
                           permission: "seller_map",
+                        },
+                        {
+                          label: t("spiff"),
+                          href: `${basePath}/spiff`,
+                          permission: "spiff",
+                        },
+                        {
+                          label: t("reporte_diario"),
+                          href: `${basePath}/reporte-diario`,
+                          permission: "reporte_diario",
                         },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
