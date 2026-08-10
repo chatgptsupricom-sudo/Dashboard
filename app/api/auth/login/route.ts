@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     });
 
     // 6. Respuesta con cookie
-    const response = NextResponse.json({ user: normalizedUser });
+    const response = NextResponse.json({ user: normalizedUser, token });
 
     response.cookies.set("token", token, {
       httpOnly: true,
