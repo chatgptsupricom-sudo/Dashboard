@@ -568,6 +568,11 @@ export function Sidebar({
                     >
                       {[
                         {
+                          label: t("reporte_diario"),
+                          href: `${basePath}/reporte-diario`,
+                          permission: "reporte_diario",
+                        },
+                        {
                           label: t("cuota"),
                           href: `${basePath}/cuota`,
                           permission: "cuota",
@@ -581,11 +586,6 @@ export function Sidebar({
                           label: t("spiff"),
                           href: `${basePath}/spiff`,
                           permission: "spiff",
-                        },
-                        {
-                          label: t("reporte_diario"),
-                          href: `${basePath}/reporte-diario`,
-                          permission: "reporte_diario",
                         },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
@@ -641,6 +641,11 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
+                        {
+                          label: "Cuentas por cobrar",
+                          href: `/${locale}/cuentas-por-cobrar`,
+                          permission: "cuentas_por_cobrar",
+                        },
                         {
                           label: "Alertas",
                           href: `/${locale}/cuentas-por-cobrar/alertas`,
