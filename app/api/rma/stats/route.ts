@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 
     // Last 10 cases
     const recentResult = await query(
-      `SELECT id, case_number, client_name, product_name, status, technician_name, created_at
+      `SELECT id, case_number, client_name, model, product_code, hardware, status, created_at
        FROM rma_cases WHERE 1=1 ${companyFilter}
        ORDER BY created_at DESC LIMIT 10`,
       params
@@ -49,8 +49,10 @@ export async function GET(request: Request) {
     // Status map
     const statusMap: Record<string, number> = {
       recibido: 0,
-      en_reparacion: 0,
       reparado: 0,
+      nota_credito: 0,
+      no_procesado: 0,
+      reingresado: 0,
     };
     statusResult.rows.forEach((r: any) => {
       statusMap[r.status] = r.count;
@@ -63,9 +65,11 @@ export async function GET(request: Request) {
       stats: {
         total: totalResult.rows[0]?.total || 0,
         pending,
-        inRepair: statusMap.en_reparacion || 0,
         completedThisMonth: completedResult.rows[0]?.total || 0,
         thisMonth: monthResult.rows[0]?.total || 0,
+        notaCredito: statusMap.nota_credito || 0,
+        noProcesado: statusMap.no_procesado || 0,
+        reingresado: statusMap.reingresado || 0,
         byStatus: statusMap,
       },
       recent: recentResult.rows,

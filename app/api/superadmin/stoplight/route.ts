@@ -134,12 +134,13 @@ export async function GET(request: NextRequest) {
 
     // 4. Normalize seller names
     const normalizedSellerMap: Record<string, string> = {};
-    const sellerMap: Record<string, { nombre: string; cuotaMensual: number; facturadoMensual: number; semanas: { facturado: number; cuotaSemanal: number }[] }> = {};
+    const sellerMap: Record<string, { nombre: string; user_id: number; cuotaMensual: number; facturadoMensual: number; semanas: { facturado: number; cuotaSemanal: number }[] }> = {};
     sellers.forEach((s) => {
       const norm = normalize(s.name);
       normalizedSellerMap[norm] = s.name;
       sellerMap[s.name] = {
         nombre: s.name,
+        user_id: s.user_id,
         cuotaMensual: Number(s.cuota || 0),
         facturadoMensual: 0,
         semanas: semanas.map(() => ({ facturado: 0, cuotaSemanal: 0 })),

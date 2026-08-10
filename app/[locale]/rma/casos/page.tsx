@@ -11,7 +11,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Plus, Search, Wrench } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Plus, Search, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -19,14 +27,18 @@ import { useTranslations } from "next-intl";
 
 const statusColors: Record<string, string> = {
   recibido: "bg-blue-100 text-blue-700 border-blue-200",
-  en_reparacion: "bg-amber-100 text-amber-700 border-amber-200",
   reparado: "bg-green-100 text-green-700 border-green-200",
+  nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
+  no_procesado: "bg-red-100 text-red-700 border-red-200",
+  reingresado: "bg-teal-100 text-teal-700 border-teal-200",
 };
 
 const statusLabels: Record<string, string> = {
   recibido: "Recibido",
-  en_reparacion: "En Reparación",
   reparado: "Reparado",
+  nota_credito: "Nota de Crédito",
+  no_procesado: "No Procesado",
+  reingresado: "Reingresado",
 };
 
 export default function RmaCasosPage() {
@@ -42,6 +54,8 @@ export default function RmaCasosPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchCases();
@@ -74,6 +88,23 @@ export default function RmaCasosPage() {
   const handleSearch = () => {
     setPage(1);
     fetchCases();
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      setDeleting(true);
+      const res = await fetch(`/api/rma/${deleteId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setDeleteId(null);
+        fetchCases();
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -123,8 +154,10 @@ export default function RmaCasosPage() {
               <SelectContent>
                 <SelectItem value="all">{t("all_statuses")}</SelectItem>
                 <SelectItem value="recibido">{statusLabels.recibido}</SelectItem>
-                <SelectItem value="en_reparacion">{statusLabels.en_reparacion}</SelectItem>
                 <SelectItem value="reparado">{statusLabels.reparado}</SelectItem>
+                <SelectItem value="nota_credito">{statusLabels.nota_credito}</SelectItem>
+                <SelectItem value="no_procesado">{statusLabels.no_procesado}</SelectItem>
+                <SelectItem value="reingresado">{statusLabels.reingresado}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" onClick={handleSearch}>
@@ -154,10 +187,11 @@ export default function RmaCasosPage() {
                   <tr className="border-b text-left text-slate-500 bg-slate-50">
                     <th className="p-4 font-medium">{t("case_number")}</th>
                     <th className="p-4 font-medium">{t("client")}</th>
-                    <th className="p-4 font-medium">{t("product")}</th>
+                    <th className="p-4 font-medium">{t("model")}</th>
                     <th className="p-4 font-medium">{t("serial")}</th>
                     <th className="p-4 font-medium">{t("status_label")}</th>
                     <th className="p-4 font-medium">{t("date")}</th>
+                    <th className="p-4 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -167,8 +201,8 @@ export default function RmaCasosPage() {
                         <span className="text-blue-600 font-medium">{c.case_number}</span>
                       </td>
                       <td className="p-4 text-slate-700">{c.client_name}</td>
-                      <td className="p-4 text-slate-700">{c.product_name}</td>
-                      <td className="p-4 text-slate-500 font-mono text-xs">{c.product_serial || "—"}</td>
+                      <td className="p-4 text-slate-700">{c.model || c.product_code || "—"}</td>
+                      <td className="p-4 text-slate-500 font-mono text-xs">{c.serial_quantity || "—"}</td>
                       <td className="p-4">
                         <Badge className={`${statusColors[c.status]} border text-[11px]`}>
                           {statusLabels[c.status]}
@@ -176,6 +210,16 @@ export default function RmaCasosPage() {
                       </td>
                       <td className="p-4 text-slate-500">
                         {new Date(c.created_at).toLocaleDateString("es-VE")}
+                      </td>
+                      <td className="p-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -212,6 +256,23 @@ export default function RmaCasosPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("delete_case")}</DialogTitle>
+            <DialogDescription>{t("delete_confirm")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>{t("cancel")}</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t("delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

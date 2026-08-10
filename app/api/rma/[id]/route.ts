@@ -9,12 +9,7 @@ export async function GET(
     const { id } = await params;
 
     const caseResult = await query(
-      `SELECT c.*, h.changed_by as last_changed_by, h.notes as last_change_notes, h.created_at as last_change_at
-       FROM rma_cases c
-       LEFT JOIN rma_history h ON h.case_id = c.id
-       WHERE c.id = ? OR c.case_number = ?
-       ORDER BY h.created_at DESC
-       LIMIT 1`,
+      `SELECT * FROM rma_cases WHERE id = ? OR case_number = ?`,
       [id, id]
     );
 
@@ -24,7 +19,6 @@ export async function GET(
 
     const caseData = caseResult.rows[0];
 
-    // Get full history
     const historyResult = await query(
       `SELECT * FROM rma_history WHERE case_id = ? ORDER BY created_at ASC`,
       [caseData.id]
@@ -49,11 +43,13 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const {
+      product_code,
+      hardware,
+      brand,
+      model,
+      invoice_number,
       client_name,
-      client_phone,
-      product_name,
-      product_serial,
-      product_model,
+      serial_quantity,
       reported_fault,
       status,
       diagnosis,
@@ -63,7 +59,6 @@ export async function PUT(
       change_notes,
     } = body;
 
-    // Check if case exists
     const existing = await query("SELECT id, status FROM rma_cases WHERE id = ?", [id]);
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Caso no encontrado" }, { status: 404 });
@@ -71,21 +66,21 @@ export async function PUT(
 
     const oldStatus = existing.rows[0].status;
 
-    // Build dynamic UPDATE
     const updates: string[] = [];
     const values: any[] = [];
 
+    if (product_code !== undefined) { updates.push("product_code = ?"); values.push(product_code); }
+    if (hardware !== undefined) { updates.push("hardware = ?"); values.push(hardware); }
+    if (brand !== undefined) { updates.push("brand = ?"); values.push(brand); }
+    if (model !== undefined) { updates.push("model = ?"); values.push(model); }
+    if (invoice_number !== undefined) { updates.push("invoice_number = ?"); values.push(invoice_number); }
     if (client_name !== undefined) { updates.push("client_name = ?"); values.push(client_name); }
-    if (client_phone !== undefined) { updates.push("client_phone = ?"); values.push(client_phone); }
-    if (product_name !== undefined) { updates.push("product_name = ?"); values.push(product_name); }
-    if (product_serial !== undefined) { updates.push("product_serial = ?"); values.push(product_serial); }
-    if (product_model !== undefined) { updates.push("product_model = ?"); values.push(product_model); }
+    if (serial_quantity !== undefined) { updates.push("serial_quantity = ?"); values.push(serial_quantity); }
     if (reported_fault !== undefined) { updates.push("reported_fault = ?"); values.push(reported_fault); }
     if (diagnosis !== undefined) { updates.push("diagnosis = ?"); values.push(diagnosis); }
     if (notes !== undefined) { updates.push("notes = ?"); values.push(notes); }
     if (company_id !== undefined) { updates.push("company_id = ?"); values.push(company_id); }
 
-    // Status change → record in history
     if (status && status !== oldStatus) {
       updates.push("status = ?");
       values.push(status);

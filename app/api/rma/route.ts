@@ -15,9 +15,9 @@ export async function GET(request: Request) {
     const params: any[] = [];
 
     if (search) {
-      where += " AND (c.case_number LIKE ? OR c.client_name LIKE ? OR c.product_name LIKE ? OR c.product_serial LIKE ?)";
+      where += " AND (c.case_number LIKE ? OR c.client_name LIKE ? OR c.product_code LIKE ? OR c.hardware LIKE ? OR c.brand LIKE ? OR c.model LIKE ? OR c.serial_quantity LIKE ?)";
       const s = `%${search}%`;
-      params.push(s, s, s, s);
+      params.push(s, s, s, s, s, s, s);
     }
 
     if (status) {
@@ -34,14 +34,7 @@ export async function GET(request: Request) {
     const total = countResult.rows[0]?.total || 0;
 
     const casesResult = await query(
-      `SELECT c.id, c.case_number, c.client_name, c.client_email, c.client_phone,
-              c.product_name, c.product_serial, c.product_model, c.reported_fault,
-              c.status, c.technician_name, c.diagnosis, c.notes, c.company_id,
-              c.created_by, c.created_at, c.updated_at
-       FROM rma_cases c
-       ${where}
-       ORDER BY c.created_at DESC
-       LIMIT ? OFFSET ?`,
+      `SELECT c.* FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
 
@@ -62,48 +55,52 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
+      product_code,
+      hardware,
+      brand,
+      model,
+      invoice_number,
       client_name,
-      client_phone,
-      product_name,
-      product_serial,
-      product_model,
+      serial_quantity,
       reported_fault,
       company_id,
       created_by,
       notes,
     } = body;
 
-    if (!client_name || !product_name || !reported_fault || !created_by) {
+    if (!client_name || !reported_fault || !created_by) {
       return NextResponse.json(
-        { error: "Faltan campos obligatorios: client_name, product_name, reported_fault, created_by" },
+        { error: "Faltan campos obligatorios: client_name, reported_fault, created_by" },
         { status: 400 }
       );
     }
 
-    // Generate case number: RMA-YYYY-XXXX
-    const year = new Date().getFullYear();
+    // Generate sequential case number
     const lastCase = await query(
-      `SELECT case_number FROM rma_cases WHERE case_number LIKE ? ORDER BY id DESC LIMIT 1`,
-      [`RMA-${year}-%`]
+      `SELECT case_number FROM rma_cases ORDER BY id DESC LIMIT 1`
     );
 
     let nextNum = 1;
     if (lastCase.rows.length > 0) {
-      const lastNum = parseInt(lastCase.rows[0].case_number.split("-")[2], 10);
-      nextNum = lastNum + 1;
+      const lastNum = parseInt(lastCase.rows[0].case_number, 10);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
     }
-    const case_number = `RMA-${year}-${String(nextNum).padStart(4, "0")}`;
+    const case_number = String(nextNum).padStart(4, "0");
 
     const result = await query(
-      `INSERT INTO rma_cases (case_number, client_name, client_phone, product_name, product_serial, product_model, reported_fault, status, notes, company_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?)`,
+      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, serial_quantity, reported_fault, status, notes, company_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?)`,
       [
         case_number,
+        product_code || null,
+        hardware || null,
+        brand || null,
+        model || null,
+        invoice_number || null,
         client_name,
-        client_phone || null,
-        product_name,
-        product_serial || null,
-        product_model || null,
+        serial_quantity || null,
         reported_fault,
         notes || null,
         company_id || 9,
@@ -113,7 +110,6 @@ export async function POST(request: Request) {
 
     const caseId = result.rows.insertId;
 
-    // Insert initial history entry
     await query(
       `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
        VALUES (?, NULL, 'recibido', ?, 'Caso creado')`,
