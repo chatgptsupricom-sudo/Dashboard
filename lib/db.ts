@@ -17,6 +17,6 @@ export const query = async (sql: string, params?: any[]) => {
     return { rows: results as any[] };
   } catch (error) {
     console.error("❌ Error ejecutando query en la DB:", error);
-    throw error; // Lanzamos el error para que la API sepa qué pasó
+    throw error;
   }
 };

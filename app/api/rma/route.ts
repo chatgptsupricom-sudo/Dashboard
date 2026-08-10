@@ -34,8 +34,8 @@ export async function GET(request: Request) {
     const total = countResult.rows[0]?.total || 0;
 
     const casesResult = await query(
-      `SELECT c.* FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+      `SELECT c.* FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      params
     );
 
     return NextResponse.json({

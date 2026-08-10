@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS rma_cases (
   product_code VARCHAR(100) DEFAULT NULL,
   hardware VARCHAR(200) DEFAULT NULL,
   brand VARCHAR(100) DEFAULT NULL,
-  model VARCHAR(100) DEFAULT NULL,
+  model           VARCHAR(500) DEFAULT NULL,
   invoice_number VARCHAR(100) DEFAULT NULL,
   client_name VARCHAR(200) NOT NULL,
   serial_quantity VARCHAR(200) DEFAULT NULL,

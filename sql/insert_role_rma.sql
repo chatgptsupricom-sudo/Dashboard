@@ -4,8 +4,8 @@
 -- 1. Insertar el rol en la tabla roles
 -- Nota: El ID se auto-incrementa, pero se muestra el último ID conocido para referencia
 -- Ajustar el ID según la base de datos actual
-INSERT INTO roles (name) VALUES ('rma')
-ON DUPLICATE KEY UPDATE name = 'rma';
+INSERT INTO roles (name, display_name) VALUES ('rma', 'RMA (Servicio Técnico)')
+ON DUPLICATE KEY UPDATE display_name = 'RMA (Servicio Técnico)';
 
 -- 2. Verificar que el rol se insertó correctamente
 SELECT id, name FROM roles WHERE name = 'rma';

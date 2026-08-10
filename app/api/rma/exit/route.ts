@@ -14,8 +14,8 @@ export async function GET(request: Request) {
     const result = await query(
       `SELECT e.*, c.case_number FROM rma_exit e
        LEFT JOIN rma_cases c ON c.id = e.case_id
-       ORDER BY e.created_at DESC LIMIT ? OFFSET ?`,
-      [limit, offset]
+       ORDER BY e.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      []
     );
 
     return NextResponse.json({
