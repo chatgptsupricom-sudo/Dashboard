@@ -3,7 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, Wrench } from "lucide-react";
+import { ArrowRight, Loader2, Plus, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +24,35 @@ const statusLabels: Record<string, string> = {
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
 };
+
+const statusPillColors: Record<string, string> = {
+  recibido: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  reparado: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  nota_credito: "bg-violet-50 text-violet-700 ring-violet-600/20",
+  no_procesado: "bg-rose-50 text-rose-700 ring-rose-600/20",
+  reingresado: "bg-teal-50 text-teal-700 ring-teal-600/20",
+};
+
+const statusDotColors: Record<string, string> = {
+  recibido: "bg-amber-500",
+  reparado: "bg-emerald-500",
+  nota_credito: "bg-violet-500",
+  no_procesado: "bg-rose-500",
+  reingresado: "bg-teal-500",
+};
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset whitespace-nowrap ${
+        statusPillColors[status] || "bg-slate-50 text-slate-600 ring-slate-600/20"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${statusDotColors[status] || "bg-slate-400"}`} />
+      {statusLabels[status] || status}
+    </span>
+  );
+}
 
 interface KpiCardProps {
   label: string;
@@ -267,47 +296,73 @@ export default function RmaDashboardPage() {
       </div>
 
       {/* Recent Cases */}
-      <Card className="rounded-3xl border-none shadow-sm">
-        <div className="flex flex-row items-center justify-between px-6 pt-6">
-          <p className="text-lg font-semibold text-slate-900">{t("recent_cases")}</p>
-          <Link href={`/${locale}/rma/casos`}>
-            <Button variant="outline" size="sm">{t("view_all")}</Button>
+      <Card className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <div className="flex items-center justify-between px-6 pt-5">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-base font-semibold tracking-tight text-slate-900">
+              {t("recent_cases")}
+            </h2>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 tabular-nums">
+              {recent.length}
+            </span>
+          </div>
+          <Link
+            href={`/${locale}/rma/casos`}
+            className="group inline-flex items-center gap-1 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700"
+          >
+            {t("view_all")}
+            <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
-        <div className="p-6 pt-3">
+        <div className="px-2 pb-2 pt-1">
           {recent.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              <p>{t("no_cases")}</p>
-            </div>
+            <div className="py-12 text-center text-sm text-slate-400">{t("no_cases")}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-slate-500">
-                    <th className="pb-3 font-medium">{t("case_number")}</th>
-                    <th className="pb-3 font-medium">{t("client")}</th>
-                    <th className="pb-3 font-medium">{t("model")}</th>
-                    <th className="pb-3 font-medium">{t("status_label")}</th>
-                    <th className="pb-3 font-medium">{t("date")}</th>
+                  <tr className="text-left">
+                    <th className="px-4 pb-2 pt-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                      {t("case_number")}
+                    </th>
+                    <th className="px-4 pb-2 pt-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                      {t("client")}
+                    </th>
+                    <th className="px-4 pb-2 pt-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                      {t("model")}
+                    </th>
+                    <th className="px-4 pb-2 pt-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                      {t("status_label")}
+                    </th>
+                    <th className="px-4 pb-2 pt-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                      {t("date")}
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100">
                   {recent.map((c: any) => (
-                    <tr key={c.id} className="border-b last:border-0 hover:bg-slate-50">
-                      <td className="py-3">
-                        <Link href={`/${locale}/rma/casos/${c.id}`} className="text-blue-600 hover:underline font-medium">
+                    <tr key={c.id} className="group transition-colors hover:bg-slate-50/80">
+                      <td className="px-4 py-3.5">
+                        <Link
+                          href={`/${locale}/rma/casos/${c.id}`}
+                          className="font-medium text-slate-900 tabular-nums transition-colors group-hover:text-blue-600"
+                        >
                           {c.case_number}
                         </Link>
                       </td>
-                      <td className="py-3 text-slate-700">{c.client_name}</td>
-                      <td className="py-3 text-slate-700">{c.model || c.product_code || "—"}</td>
-                      <td className="py-3">
-                        <Badge className={`${statusColors[c.status]} border text-[11px]`}>
-                          {statusLabels[c.status]}
-                        </Badge>
+                      <td className="px-4 py-3.5 font-medium text-slate-700">{c.client_name}</td>
+                      <td className="max-w-[180px] truncate px-4 py-3.5 text-slate-500">
+                        {c.model || c.product_code || "—"}
                       </td>
-                      <td className="py-3 text-slate-500">
-                        {new Date(c.created_at).toLocaleDateString("es-VE")}
+                      <td className="px-4 py-3.5">
+                        <StatusPill status={c.status} />
+                      </td>
+                      <td className="px-4 py-3.5 text-right text-slate-500 whitespace-nowrap">
+                        {new Date(c.created_at).toLocaleDateString("es-VE", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
                       </td>
                     </tr>
                   ))}
