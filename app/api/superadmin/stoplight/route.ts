@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
+    const isCxC = userRole === "cuentas por cobrar";
+    if (userRole !== "superadmin" && !isCxC) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
+    const companyId = isCxC ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -937,8 +938,13 @@ export async function POST(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin") {
+    const isCxC = userRole === "cuentas por cobrar";
+    if (userRole !== "superadmin" && !isCxC) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
+
+    if (isCxC) {
+      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
     }
 
     await ensureTables();

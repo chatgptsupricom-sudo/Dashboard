@@ -50,6 +50,9 @@ export default async function middleware(request: NextRequest) {
       // Nueva constante para el rol de Compras
       const isCompras = userRole === "compras";
 
+      // Nueva constante para el rol de Cuentas por Cobrar
+      const isCxC = userRole === "cuentas por cobrar";
+
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
         return NextResponse.redirect(
@@ -57,8 +60,15 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 2. Lógica para SuperAdmin
-      if (pathname.includes("/superadmin") && !isSuperAdmin) {
+      // 2. Lógica para SuperAdmin (solo rutas que NO son stoplight)
+      if (pathname.includes("/superadmin") && !pathname.includes("/stoplight") && !isSuperAdmin) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 2b. Lógica para Stoplight Reports (superAdmin + CxC + gerenciaventas + gerenciaoperaciones)
+      if (pathname.includes("/superadmin/stoplight") && !isSuperAdmin && !isCxC && !isGerenciaVentas && !isGerenciaOperaciones) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -110,6 +120,14 @@ export default async function middleware(request: NextRequest) {
           new URL(`/${locale}/dashboard`, request.url),
         );
       }
+
+      // 8. Lógica para Cuentas por Cobrar
+      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
     } catch (e) {
       console.error("Error en middleware:", e);
       return NextResponse.redirect(new URL(`/${locale}/login`, request.url));

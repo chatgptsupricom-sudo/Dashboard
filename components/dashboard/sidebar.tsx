@@ -21,6 +21,7 @@ import {
   Map,
   Package,
   PieChart,
+  Search,
   Settings2,
   Shield,
   Target,
@@ -51,6 +52,7 @@ export function Sidebar({
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isComprasOpen, setIsComprasOpen] = useState(false);
   const [isVentasOpen, setIsVentasOpen] = useState(false);
+  const [isCxCOpen, setIsCxCOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -85,6 +87,7 @@ export function Sidebar({
 
   // Definición del menú base
   const menuItems = [
+    { id: "cxc_alerts", label: "Alertas", icon: AlertTriangle, slug: "/alertas" },
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "" },
     { id: "actividad", label: "Actividades", icon: Calendar, slug: "/actividad" },
     { id: "alert", label: "Alertas", icon: Bell, slug: "/alert" },
@@ -102,6 +105,9 @@ export function Sidebar({
     { id: "cierres", label: "Cierres", icon: FileText, slug: "/Cierres" },
     { id: "top_clientes", label: "Top Clientes", icon: Trophy, slug: "/top-clientes" },
     { id: "cuentas_por_cobrar", label: "Cuentas por Cobrar", icon: DollarSign, slug: "/cuentas-por-cobrar" },
+    { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
+    { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
+    { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
     { id: "spiff", label: "Spiff", icon: Award, slug: "/spiff" },
     { id: "reporte_diario", label: "Reporte Diario", icon: ClipboardList, slug: "/reporte-diario" },
     { id: "sugeridos", label: "Sugerencia de compras", icon: Package, slug: "/sugeridos" },
@@ -137,6 +143,8 @@ export function Sidebar({
         return `/${locale}/gerente_operaciones`;
       case "compras":
         return `/${locale}/compras`;
+      case "cuentas por cobrar":
+        return `/${locale}/cuentas-por-cobrar`;
       default:
         return `/${locale}/dashboard`;
     }
@@ -159,6 +167,8 @@ export function Sidebar({
   const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "quiebres_historicos", "rotacion_categoria", "sin_costo", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
+  const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
+  const cxcDropdownIds = ["cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
 
   const isSellerPausado =
     (userRole === "seller" || userRole === "vendedor") &&
@@ -174,14 +184,22 @@ export function Sidebar({
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
         (!isSuperAdminRole || !ventasDropdownIds.includes(item.id)) &&
+        (!isSuperAdminRole || !cxcDropdownIds.includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || userCids === 9) &&
-        !(isSellerPausado && (item.id === "leads" || item.id === "cierres"))
+        !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
+        !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
     .map((item) => {
       if (item.id === "actividad") {
         return {
           ...item,
           href: `/${locale}/gestion/actividades?userId=${user?.uid || user?.id}`,
+        };
+      }
+      if (item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") {
+        return {
+          ...item,
+          href: basePath,
         };
       }
       return {
@@ -245,9 +263,7 @@ export function Sidebar({
             {/* Renderizado de Opciones Simples */}
             {availableItems.map((item) => {
               const Icon = item.icon;
-              const isActive = item.slug
-                ? pathname.includes(item.slug)
-                : pathname === basePath || pathname === basePath + "/";
+              const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
 
               return (
                 <Link
@@ -548,6 +564,90 @@ export function Sidebar({
                           label: "Mapa de Clientes",
                           href: `${basePath}/vendedores`,
                           permission: "seller_map",
+                        },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de CUENTAS POR COBRAR (solo SuperAdmin) */}
+            {isSuperAdminRole && hasCxCPermission && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsCxCOpen(!isCxCOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <DollarSign size={20} className="text-slate-400" />
+                    <span className="text-sm">Cuentas por Cobrar</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isCxCOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isCxCOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: "Alertas",
+                          href: `/${locale}/cuentas-por-cobrar/alertas`,
+                          permission: "cxc_alerts",
+                        },
+                        {
+                          label: "Stoplight Report",
+                          href: `/${locale}/cuentas-por-cobrar/StoplightReport`,
+                          permission: "stoplight_reports",
+                        },
+                        {
+                          label: "Integración De Pago",
+                          href: `/${locale}/cuentas-por-cobrar/integraciondepago`,
+                          permission: "integraciondepago",
+                        },
+                        {
+                          label: "Referencia Comercial",
+                          href: `/${locale}/cuentas-por-cobrar/referencia-comercial`,
+                          permission: "referencia_comercial",
+                        },
+                        {
+                          label: "Buscar Facturas",
+                          href: `/${locale}/cuentas-por-cobrar/buscar`,
+                          permission: "cxc_search",
+                        },
+                        {
+                          label: "Top Clientes / Vendedor",
+                          href: `/${locale}/cuentas-por-cobrar/top-clientes-vendedor`,
+                          permission: "cxc_top_clients",
                         },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;

@@ -73,8 +73,18 @@ export async function GET(request: NextRequest) {
       const amount = inv.move_type === "out_refund" ? -Math.abs(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
       const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : (inv.amount_total || 0);
       const residual = inv.amount_residual || 0;
-      const dueDate = inv.invoice_date_due ? new Date(inv.invoice_date_due) : null;
-      const invoiceDate = inv.invoice_date ? new Date(inv.invoice_date) : null;
+
+      const dueDateStr = inv.invoice_date_due || null;
+      const invoiceDateStr = inv.invoice_date || null;
+
+      function parseLocalDate(dateStr: string | null): Date | null {
+        if (!dateStr) return null;
+        const [y, m, d] = dateStr.split(" ")[0].split("-").map(Number);
+        return new Date(y, m - 1, d);
+      }
+
+      const dueDate = parseLocalDate(dueDateStr);
+      const invoiceDate = parseLocalDate(invoiceDateStr);
 
       let agingDays = 0;
       if (dueDate && residual > 0) {
@@ -99,8 +109,8 @@ export async function GET(request: NextRequest) {
         companyId: inv.company_id?.[0] || 0,
         companyName: inv.company_id?.[1] || "",
         moveType: inv.move_type,
-        invoiceDate: inv.invoice_date || null,
-        invoiceDateDue: inv.invoice_date_due || null,
+        invoiceDate: invoiceDateStr,
+        invoiceDateDue: dueDateStr,
         paymentState: inv.payment_state || "not_paid",
         amountUntaxed: amount,
         amountTotal: amountTotal,
@@ -114,8 +124,10 @@ export async function GET(request: NextRequest) {
     });
 
     const invoicesInMonth = invoices.filter((inv) => {
-      const d = inv.invoiceDate ? new Date(inv.invoiceDate) : null;
-      return d && d >= monthStart && d <= monthEnd;
+      if (!inv.invoiceDate) return false;
+      const [y, m, d] = inv.invoiceDate.split(" ")[0].split("-").map(Number);
+      const dd = new Date(y, m - 1, d);
+      return dd >= monthStart && dd <= monthEnd;
     });
 
     const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
@@ -155,19 +167,27 @@ export async function GET(request: NextRequest) {
     // Recuperación: Cohorte = facturas que ya estaban vencidas al inicio del mes
     // Vencido recuperado = monto total pagado contra esas facturas durante todo su生命周期
     const cohortStart = getMonthStart(currentYear, currentMonth);
-    const cohortOverdue = invoices.filter((inv) => {
-      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate < cohortStart && inv.amountResidual > 0;
-    });
-    const cohortTotal = cohortOverdue.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
 
-    // Recuperación = (vencido inicial del mes - saldo restante) / vencido inicial
-    // Pero también incluimos notas de crédito que se aplicaron como ajuste
-    const cohortRecovered = cohortOverdue.reduce((sum, inv) => {
+    // Todas las facturas vencidas al inicio del mes (incluyendo las que ya se pagaron)
+    const cohortAll = invoices.filter((inv) => {
+      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
+      return dueDate && dueDate < cohortStart;
+    });
+
+    // Monto original vencido al inicio del mes (amountTotal, no residual)
+    const cohortTotalInicial = cohortAll.reduce((sum, inv) => {
       const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      const pagado = Math.max(total - Math.abs(inv.amountResidual), 0);
-      return sum + pagado;
+      return sum + total;
     }, 0);
+
+    // Monto que aún queda por cobrar de esas facturas (residual actual)
+    const cohortRestante = cohortAll.reduce((sum, inv) => sum + Math.abs(inv.amountResidual || 0), 0);
+
+    // Monto recuperado = lo que ya se pagó contra esas facturas
+    const cohortRecovered = cohortTotalInicial - cohortRestante;
+
+    // Solo para referencia: facturas que siguen abiertas (con residual > 0)
+    const cohortOverdue = cohortAll.filter((inv) => inv.amountResidual > 0);
 
     const totalCreditSales90d = (() => {
       const d90 = new Date(today);
@@ -278,10 +298,10 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: cohortTotal > 0 ? Math.round((cohortRecovered / cohortTotal) * 10000) / 100 : null,
+            value: cohortTotalInicial > 0 ? Math.round((cohortRecovered / cohortTotalInicial) * 10000) / 100 : null,
             meta: 60,
-            vencidoInicial: Math.round(cohortTotal * 100) / 100,
-            vencidoRestante: Math.round(cohortOverdue.reduce((s, i) => s + Math.abs(i.amountResidual), 0) * 100) / 100,
+            vencidoInicial: Math.round(cohortTotalInicial * 100) / 100,
+            vencidoRestante: Math.round(cohortRestante * 100) / 100,
           },
           dso: {
             value: dso90,

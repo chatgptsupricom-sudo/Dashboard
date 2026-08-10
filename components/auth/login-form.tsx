@@ -252,8 +252,9 @@ export function LoginForm() {
         // Redirección para el nuevo rol de Recursos Humanos
         router.push(`/${locale}/recursos_humanos`);
       } else if (role === "compras") {
-        // Redirección para el nuevo rol de Compras
         router.push(`/${locale}/compras`);
+      } else if (role === "cuentas por cobrar") {
+        router.push(`/${locale}/cuentas-por-cobrar`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);

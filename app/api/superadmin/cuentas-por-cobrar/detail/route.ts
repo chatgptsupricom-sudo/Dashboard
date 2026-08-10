@@ -55,14 +55,24 @@ export async function GET(request: NextRequest) {
     )) || [];
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const results = invoices
       .map((inv) => {
         const amount = inv.move_type === "out_refund" ? -Math.abs(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
-        const dueDate = inv.invoice_date_due ? new Date(inv.invoice_date_due) : null;
-        const agingDays = dueDate && inv.amount_residual > 0 ? daysBetween(dueDate, today) : 0;
+        const residual = inv.amount_residual || 0;
+
+        function parseLocalDate(dateStr: string | null): Date | null {
+          if (!dateStr) return null;
+          const [y, m, d] = dateStr.split(" ")[0].split("-").map(Number);
+          return new Date(y, m - 1, d);
+        }
+
+        const dueDate = parseLocalDate(inv.invoice_date_due);
+        const agingDays = dueDate && residual > 0 ? daysBetween(dueDate, today) : 0;
 
         let band = " corriente";
-        if (inv.amount_residual > 0 && dueDate) {
+        if (residual > 0.001 && dueDate) {
           if (agingDays <= 0) band = " corriente";
           else if (agingDays <= 15) band = "1-15";
           else if (agingDays <= 30) band = "16-30";

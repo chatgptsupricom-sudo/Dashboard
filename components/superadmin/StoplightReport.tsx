@@ -101,7 +101,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false }: { vendorMode?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, cxCMode = false }: { vendorMode?: boolean; cxCMode?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -1053,7 +1053,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: "Cuentas por Pagar", count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: "Marketing & SEO", count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = vendorMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
+  const groups = cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -1108,7 +1108,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
       </div>
 
       {/* Toolbar */}
-      {!vendorMode && (
+      {!vendorMode && !cxCMode && (
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
           <div
@@ -1286,7 +1286,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false }: { vend
                           </div>
                         </td>
                         <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
-                          {vendorMode ? (
+                          {vendorMode || cxCMode ? (
                             <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <input
