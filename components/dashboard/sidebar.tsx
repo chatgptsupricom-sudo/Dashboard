@@ -91,10 +91,10 @@ export function Sidebar({
 
   // Definición del menú base
   const menuItems = [
+    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
     { id: "cxc_alerts", label: "Alertas CxC", icon: AlertTriangle, slug: "/alertas" },
     { id: "dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
     { id: "actividad", label: t("actividades"), icon: Calendar, slug: "/actividad" },
-    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
     { id: "stoplight_reports", label: t("stoplight_report"), icon: BarChart3, slug: "/StoplightReport" },
     { id: "users", label: t("usuarios"), icon: Users, slug: "/usuarios" },
     { id: "seller_map", label: t("mapa_clientes"), icon: Map, slug: "/vendedores" },
