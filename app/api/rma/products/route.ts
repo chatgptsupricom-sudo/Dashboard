@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       "search_read",
       [domain],
       {
-        fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "list_price", "type"],
+        fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "list_price", "standard_price", "company_sale_price", "type", "image_128"],
         limit: 20,
       },
     );
@@ -84,9 +84,11 @@ export async function GET(request: Request) {
           hardware: categoryName,
           brand: Array.isArray(m) ? m[1] : m || "",
           model: p.name || "",
-          list_price: p.list_price || 0,
+          list_price: p.company_sale_price || p.list_price || 0,
+          standard_price: p.standard_price || 0,
           type: p.type || "",
           invoice_number,
+          image: p.image_128 ? `data:image/png;base64,${p.image_128}` : "",
         };
       }),
     );

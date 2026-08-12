@@ -33,6 +33,7 @@ interface OdooProduct {
   list_price: number;
   type: string;
   invoice_number: string;
+  image: string;
 }
 
 export default function RmaNuevoPage() {

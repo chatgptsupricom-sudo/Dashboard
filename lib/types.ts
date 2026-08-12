@@ -14,6 +14,7 @@ export enum UserRole {
   COMPRAS = "compras",
   RMA = "rma",
   CUENTAS_POR_COBRAR = "cuentas por cobrar",
+  DISENADOR = "diseñador",
 }
 
 // Permisos por rol
@@ -61,6 +62,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "rma", // Servicio Técnico / RMA
+      "banco_imagenes", // Banco de Imágenes (AdminLeads)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -139,6 +141,7 @@ export const rolePermissions: RolePermissions = {
       "cierres_adminleads",
       "configuracion_leads",
       "catalogo_adminleads",
+      "banco_imagenes",
       "actividad",
     ],
   },
@@ -234,6 +237,17 @@ export const rolePermissions: RolePermissions = {
       "cxc_alerts",
       "cxc_search",
       "cxc_top_clients",
+    ],
+  },
+  [UserRole.DISENADOR]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [
+      "actividad",
+      "catalogo_disenador",
     ],
   },
 };
