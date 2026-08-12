@@ -92,10 +92,10 @@ export function Sidebar({
 
   // Definición del menú base
   const menuItems = [
+    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
     { id: "cxc_alerts", label: "Alertas CxC", icon: AlertTriangle, slug: "/alertas" },
     { id: "dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
     { id: "actividad", label: t("actividades"), icon: Calendar, slug: "/actividad" },
-    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
     { id: "stoplight_reports", label: t("stoplight_report"), icon: BarChart3, slug: "/StoplightReport" },
     { id: "users", label: t("usuarios"), icon: Users, slug: "/usuarios" },
     { id: "seller_map", label: t("mapa_clientes"), icon: Map, slug: "/vendedores" },
@@ -183,9 +183,9 @@ export function Sidebar({
   const isComprasRole = userRole === "compras";
   const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
 
   const isSellerPausado =
     (userRole === "seller" || userRole === "vendedor") &&
@@ -573,6 +573,11 @@ export function Sidebar({
                     >
                       {[
                         {
+                          label: t("reporte_diario"),
+                          href: `${basePath}/reporte-diario`,
+                          permission: "reporte_diario",
+                        },
+                        {
                           label: t("cuota"),
                           href: `${basePath}/cuota`,
                           permission: "cuota",
@@ -581,6 +586,11 @@ export function Sidebar({
                           label: t("mapa_de_clientes"),
                           href: `${basePath}/vendedores`,
                           permission: "seller_map",
+                        },
+                        {
+                          label: t("spiff"),
+                          href: `${basePath}/spiff`,
+                          permission: "spiff",
                         },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
@@ -636,6 +646,11 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
+                        {
+                          label: "Cuentas por cobrar",
+                          href: `/${locale}/cuentas-por-cobrar`,
+                          permission: "cuentas_por_cobrar",
+                        },
                         {
                           label: "Alertas",
                           href: `/${locale}/cuentas-por-cobrar/alertas`,
