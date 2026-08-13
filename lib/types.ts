@@ -63,6 +63,7 @@ export const rolePermissions: RolePermissions = {
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
+      "vista_custom", // Vista HTML personalizada de AdminLeads
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -144,6 +145,7 @@ export const rolePermissions: RolePermissions = {
       "catalogo_adminleads",
       "banco_imagenes",
       "actividad",
+      "vista_custom",
     ],
   },
   [UserRole.GERENTE_VENTA]: {
@@ -249,6 +251,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "actividad",
       "catalogo_disenador",
+      "vista_custom",
     ],
   },
 };

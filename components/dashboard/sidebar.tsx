@@ -17,6 +17,7 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  Globe,
   LayoutDashboard,
   LogOut,
   Map,
@@ -131,6 +132,7 @@ export function Sidebar({
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes", adminLeadsOnly: true },
+    { id: "vista_custom", label: "Plan de Contenido", icon: Globe, slug: "/vista-custom" },
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
   ];
