@@ -45,15 +45,13 @@ const COMPANY_TO_COUNTRY: Record<number, string> = {
 const MAP_CONFIG: Record<string, any> = {
   VE: {
     name: "venezuela",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson",
+    geoUrl: "/geojson/venezuela.geojson",
     scale: 2800,
     center: [-66.3, 6.6],
   },
   PA: {
     name: "panama",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/panama.geojson",
+    geoUrl: "/geojson/panama.geojson",
     scale: 3500,
     center: [-80.1, 8.6],
   },
@@ -68,6 +66,7 @@ export default function MapsClientsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const clientsPerPage = 4;
   const [userCompanyId, setUserCompanyId] = useState<number | null>(null);
+  const [isCountryLocked, setIsCountryLocked] = useState(false);
   const [selSeller, setSelSeller] = useState("all");
   const [availableSellers, setAvailableSellers] = useState<any[]>([]);
 
@@ -105,11 +104,16 @@ export default function MapsClientsPage() {
         const res = await fetch(url, { cache: "no-store" });
         const d = await res.json();
         setData(d.summary || []);
-        setUserCompanyId(d.company_id);
         setAvailableSellers(d.sellers || []);
         // Auto-detect country based on company
         if (d.company_id && COMPANY_TO_COUNTRY[d.company_id]) {
           setCurrentCountry(COMPANY_TO_COUNTRY[d.company_id]);
+          setUserCompanyId(d.company_id);
+          setIsCountryLocked(true);
+        } else {
+          // superAdmin with null cids - not locked, can switch countries
+          setUserCompanyId(null);
+          setIsCountryLocked(false);
         }
         setLoading(false);
       } catch (e) {
@@ -235,6 +239,7 @@ export default function MapsClientsPage() {
 
             <div className="w-px bg-slate-200 my-1.5" />
 
+            {!isCountryLocked && (
             <div className="flex gap-1.5">
               {Object.entries(MAP_CONFIG).map(([code, config]) => (
                 <button
@@ -253,6 +258,7 @@ export default function MapsClientsPage() {
                 </button>
               ))}
             </div>
+            )}
           </div>
         </div>
       </header>
