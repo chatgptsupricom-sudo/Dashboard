@@ -35,12 +35,47 @@ export async function GET(request: NextRequest) {
       companyFilter = ["company_id", "=", parseInt(payload.cids as any)];
     }
 
+    const sellerExclusions: Record<number, string[]> = {
+      9: ["asistente", "yusne"],
+      10: ["asistente", "adriana"],
+      7: ["hercilio"],
+    };
+
+    const sellerExcludeCompanyId =
+      payload.role === "superAdmin"
+        ? (searchParams.get("company_id") ? parseInt(searchParams.get("company_id")!) : null)
+        : parseInt(payload.cids as any);
+
+    const sellerExcludeRules = sellerExclusions[sellerExcludeCompanyId] || [];
+    let excludedMoveIds: number[] = [];
+
+    if (sellerExcludeRules.length > 0) {
+      const excludeSellersDomain: any[] = [
+        ["move_type", "in", ["out_invoice", "out_refund"]],
+        ["state", "=", "posted"],
+        ["invoice_date", ">=", start],
+        ["invoice_date", "<=", end],
+        companyFilter,
+      ];
+      const excludedSellerInvoices = await callOdooRPC<any[]>(
+        "account.move", "search_read", [excludeSellersDomain],
+        { fields: ["invoice_user_id"] },
+      );
+      excludedMoveIds = (excludedSellerInvoices || [])
+        .filter((inv: any) => {
+          const name = (inv.invoice_user_id?.[1] || "").toLowerCase();
+          return sellerExcludeRules.some((rule) => name.includes(rule));
+        })
+        .map((inv: any) => inv.id);
+    }
+
     const baseFilters = [
       ["move_id.move_type", "=", "out_invoice"],
       ["parent_state", "=", "posted"],
       ["display_type", "=", "product"],
       ["product_id", "!=", false],
       companyFilter,
+      ...(excludedMoveIds.length > 0 ? [["move_id", "not in", excludedMoveIds]] : []),
     ];
 
     const currentMonthFilters = [
@@ -120,6 +155,8 @@ export async function GET(request: NextRequest) {
       .split("T")[0];
     const today = now.toISOString().split("T")[0];
 
+    const clientsExcludedFilter = excludedMoveIds.length > 0 ? [["id", "not in", excludedMoveIds]] : [];
+
     const [clientsRanking, allClientsCount] = await Promise.all([
       callOdooRPC<any[]>("account.move", "read_group", [
         [
@@ -128,6 +165,7 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", start],
           ["invoice_date", "<=", end],
           companyFilter,
+          ...clientsExcludedFilter,
         ],
         ["amount_untaxed", "partner_id"],
         ["partner_id"],
@@ -140,17 +178,12 @@ export async function GET(request: NextRequest) {
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
           companyFilter,
+          ...clientsExcludedFilter,
         ],
         ["partner_id"],
         ["partner_id"],
       ]),
     ]);
-
-    const sellerExclusions: Record<number, string[]> = {
-      9: ["asistente", "yusne"],
-      10: ["asistente", "adriana"],
-      7: ["hercilio"],
-    };
 
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
