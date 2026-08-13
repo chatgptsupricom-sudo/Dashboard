@@ -83,6 +83,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    if (userRole === "gerente de operaciones") {
+      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
+    }
 
     const formData = await request.formData();
     const seller_name = formData.get("seller_name") as string;
@@ -130,7 +134,11 @@ export async function DELETE(request: NextRequest) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    if (userRole === "gerente de operaciones") {
+      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
