@@ -10,14 +10,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const payload = verifyToken(token);
-    if (!payload || !payload.cids) {
-      return NextResponse.json(
-        { error: "Empresa no definida" },
-        { status: 403 },
-      );
+    if (!payload) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
-    const userCompanyId = parseInt(payload.cids as string);
+    const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
+    const allCompanyIds = [9, 10, 7];
+    let userCompanyId: number;
+    let companyFilter: any[];
+
+    if (payload.cids) {
+      userCompanyId = parseInt(payload.cids as string);
+      companyFilter = ["company_id", "=", userCompanyId];
+    } else if (isSuperAdmin) {
+      userCompanyId = 0; // sentinel for "all"
+      companyFilter = ["company_id", "in", allCompanyIds];
+    } else {
+      return NextResponse.json({ error: "Empresa no definida" }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
     const countryCode = searchParams.get("country") || "VE";
     const vendorId = searchParams.get("vendor_id");
@@ -36,7 +46,7 @@ export async function GET(request: NextRequest) {
       const invoiceDomain: any[] = [
         ["move_type", "=", "out_invoice"],
         ["state", "=", "posted"],
-        ["company_id", "=", userCompanyId],
+        companyFilter,
         ["invoice_date", ">=", startDate],
         ["invoice_date", "<=", endDate],
       ];
@@ -84,7 +94,7 @@ export async function GET(request: NextRequest) {
       const domain: any[] = [
         ["is_company", "=", true],
         ["state_id", "!=", false],
-        ["company_id", "=", userCompanyId],
+        companyFilter,
       ];
 
       if (countryCode) domain.push(["country_id.code", "=", countryCode]);
@@ -110,7 +120,7 @@ export async function GET(request: NextRequest) {
     // 3. FILTRADO ESTRICTO EN MEMORIA (Seguridad garantizada)
     // =========================================================
     const filteredClients = clientsToProcess.filter(
-      (c) => !c.company_id || c.company_id[0] === userCompanyId,
+      (c) => !c.company_id || (userCompanyId === 0 ? allCompanyIds.includes(c.company_id[0]) : c.company_id[0] === userCompanyId),
     );
 
     // =========================================================
@@ -158,7 +168,7 @@ export async function GET(request: NextRequest) {
     const allClients = await callOdooRPC<any[]>("res.partner", "search_read", [
       [
         ["is_company", "=", true],
-        ["company_id", "=", userCompanyId],
+        companyFilter,
       ],
       ["user_id"],
     ]);
@@ -176,7 +186,7 @@ export async function GET(request: NextRequest) {
         ? await callOdooRPC<any[]>("res.users", "search_read", [
             [
               ["id", "in", allSellerIds],
-              ["company_ids", "in", [userCompanyId]],
+              ["company_ids", "in", userCompanyId === 0 ? allCompanyIds : [userCompanyId]],
             ],
             ["name"],
           ])

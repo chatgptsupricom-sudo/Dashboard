@@ -10,13 +10,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const payload = verifyToken(token);
-    const userCompanyId = parseInt(payload?.cids as string);
+    const isSuperAdmin = (payload?.role as string)?.toLowerCase().trim() === "superadmin";
+    const allCompanyIds = [9, 10, 7];
+    let userCompanyId: number;
 
-    if (!userCompanyId)
-      return NextResponse.json(
-        { error: "Empresa no definida" },
-        { status: 403 },
-      );
+    if (payload?.cids) {
+      userCompanyId = parseInt(payload.cids as string);
+    } else if (isSuperAdmin) {
+      userCompanyId = 0;
+    } else {
+      return NextResponse.json({ error: "Empresa no definida" }, { status: 403 });
+    }
 
     // 2. PARÁMETROS
     const { searchParams } = new URL(req.url);
@@ -37,7 +41,7 @@ export async function GET(req: Request) {
       callOdooRPC<any[]>(
         "res.company",
         "search_read",
-        [[["id", "=", userCompanyId]]],
+        [[userCompanyId === 0 ? ["id", "in", allCompanyIds] : ["id", "=", userCompanyId]]],
         {
           fields: ["id", "name"],
         },
@@ -62,7 +66,7 @@ export async function GET(req: Request) {
         "search_read",
         [domain],
         {
-          context: { allowed_company_ids: [userCompanyId] },
+          context: { allowed_company_ids: userCompanyId === 0 ? allCompanyIds : [userCompanyId] },
           fields: ["create_date", "amount", "debit_move_id", "credit_move_id"],
           order: "id DESC",
           limit: 2000,
@@ -103,7 +107,7 @@ export async function GET(req: Request) {
       (await callOdooRPC<any[]>(
         "account.move",
         "search_read",
-        [[["company_id", "=", userCompanyId]]],
+        [[userCompanyId === 0 ? ["company_id", "in", allCompanyIds] : ["company_id", "=", userCompanyId]]],
         {
           fields: [
             "name",
