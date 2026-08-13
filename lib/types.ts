@@ -127,6 +127,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "top_clientes",
       "spiff",
+      "banco_imagenes_seller",
     ], // IDs que deben coincidir con menuItems
   },
   [UserRole.ADMIN_LEADS]: {

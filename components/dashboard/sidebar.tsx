@@ -130,7 +130,8 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
-    { id: "banco_imagenes", label: "Banco de Imágenes", icon: Camera, slug: "/banco-imagenes", adminLeadsOnly: true },
+    { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes", adminLeadsOnly: true },
+    { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
   ];
 

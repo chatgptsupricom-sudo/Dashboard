@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     const brand = searchParams.get("brand") || "";
     const category = searchParams.get("category") || "";
     const withFilters = searchParams.get("filters") === "1";
+    const noImage = searchParams.get("noImage") === "1";
 
     const domain: any[] = [["sale_ok", "=", true]];
 
@@ -27,6 +28,66 @@ export async function GET(request: Request) {
 
     const offset = (page - 1) * limit;
 
+    // ── noImage: filter via product.template where image_1920 is a native stored field ──
+    if (noImage) {
+      // image_1920 on product.template is a direct stored field (not inherited),
+      // so domain filtering on it is reliable.
+      const noImageTemplates = await callOdooRPC<any[]>(
+        "product.template",
+        "search_read",
+        [[["sale_ok", "=", true], ["image_1920", "=", false]]],
+        { fields: ["id"], limit: 10000, offset: 0 }
+      );
+
+      const noImageTmplIds = (noImageTemplates || []).map((t: any) => t.id);
+
+      if (noImageTmplIds.length === 0) {
+        return NextResponse.json({
+          success: true,
+          products: [],
+          total: 0,
+          page,
+          totalPages: 0,
+          brands: [],
+          categories: [],
+        });
+      }
+
+      // Combine with existing domain (brand, search, category filters still apply)
+      const noImageDomain = [...domain, ["product_tmpl_id", "in", noImageTmplIds]];
+
+      const [noImageProducts, noImageTotal] = await Promise.all([
+        callOdooRPC<any[]>("product.product", "search_read", [noImageDomain], {
+          fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "list_price", "company_sale_price", "image_128"],
+          limit,
+          offset,
+          order: "name asc",
+        }),
+        callOdooRPC<number>("product.product", "search_count", [noImageDomain]),
+      ]);
+
+      const noImageResults = (noImageProducts || []).map((p: any) => ({
+        id: p.id,
+        default_code: p.default_code || "",
+        name: p.name || "",
+        brand: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : (p.x_studio_marca || ""),
+        category: Array.isArray(p.categ_id) ? p.categ_id[1] : "",
+        price: p.company_sale_price || p.list_price || 0,
+        image: p.image_128 ? `data:image/png;base64,${p.image_128}` : "",
+      }));
+
+      return NextResponse.json({
+        success: true,
+        products: noImageResults,
+        total: noImageTotal || 0,
+        page,
+        totalPages: Math.ceil((noImageTotal || 0) / limit),
+        brands: [],
+        categories: [],
+      });
+    }
+
+    // ── Normal fetch ───────────────────────────────────────────────────────────
     const [products, total] = await Promise.all([
       callOdooRPC<any[]>("product.product", "search_read", [domain], {
         fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "list_price", "company_sale_price", "image_128"],

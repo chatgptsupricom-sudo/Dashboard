@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
+  ImageOff,
 } from "lucide-react";
 
 interface Product {
@@ -48,6 +49,7 @@ export default function CatalogoProductosPage() {
   const [search, setSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [noImageOnly, setNoImageOnly] = useState(false);
 
   const [brands, setBrands] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -60,6 +62,7 @@ export default function CatalogoProductosPage() {
     q: string;
     brand: string;
     category: string;
+    noImage?: boolean;
     withFilters?: boolean;
   }) => {
     try {
@@ -71,6 +74,7 @@ export default function CatalogoProductosPage() {
       if (opts.q) qs.set("q", opts.q);
       if (opts.brand && opts.brand !== "all") qs.set("brand", opts.brand);
       if (opts.category && opts.category !== "all") qs.set("category", opts.category);
+      if (opts.noImage) qs.set("noImage", "1");
       if (opts.withFilters) qs.set("filters", "1");
 
       const res = await fetch(`/api/disenador/productos?${qs}`);
@@ -104,25 +108,32 @@ export default function CatalogoProductosPage() {
     setPage(1);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
-      fetchProducts({ page: 1, q: val, brand: brandFilter, category: categoryFilter });
+      fetchProducts({ page: 1, q: val, brand: brandFilter, category: categoryFilter, noImage: noImageOnly });
     }, 400);
   };
 
   const handleBrandChange = (val: string) => {
     setBrandFilter(val);
     setPage(1);
-    fetchProducts({ page: 1, q: search, brand: val, category: categoryFilter });
+    fetchProducts({ page: 1, q: search, brand: val, category: categoryFilter, noImage: noImageOnly });
   };
 
   const handleCategoryChange = (val: string) => {
     setCategoryFilter(val);
     setPage(1);
-    fetchProducts({ page: 1, q: search, brand: brandFilter, category: val });
+    fetchProducts({ page: 1, q: search, brand: brandFilter, category: val, noImage: noImageOnly });
+  };
+
+  const handleToggleNoImage = () => {
+    const next = !noImageOnly;
+    setNoImageOnly(next);
+    setPage(1);
+    fetchProducts({ page: 1, q: search, brand: brandFilter, category: categoryFilter, noImage: next });
   };
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    fetchProducts({ page: newPage, q: search, brand: brandFilter, category: categoryFilter });
+    fetchProducts({ page: newPage, q: search, brand: brandFilter, category: categoryFilter, noImage: noImageOnly });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -130,11 +141,12 @@ export default function CatalogoProductosPage() {
     setSearch("");
     setBrandFilter("all");
     setCategoryFilter("all");
+    setNoImageOnly(false);
     setPage(1);
-    fetchProducts({ page: 1, q: "", brand: "all", category: "all" });
+    fetchProducts({ page: 1, q: "", brand: "all", category: "all", noImage: false });
   };
 
-  const hasActiveFilters = search || brandFilter !== "all" || categoryFilter !== "all";
+  const hasActiveFilters = search || brandFilter !== "all" || categoryFilter !== "all" || noImageOnly;
 
   return (
     <div className="space-y-5">
@@ -196,6 +208,17 @@ export default function CatalogoProductosPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Button
+              variant={noImageOnly ? "default" : "outline"}
+              size="sm"
+              onClick={handleToggleNoImage}
+              className={`gap-1.5 shrink-0 ${noImageOnly ? "bg-amber-500 hover:bg-amber-600 border-amber-500 text-white" : "text-slate-600 hover:text-amber-600 hover:border-amber-400"}`}
+            >
+              <ImageOff className="w-3.5 h-3.5" />
+              Sin imagen
+              {noImageOnly && <span className="ml-0.5 text-[10px] bg-white/20 rounded px-1">activo</span>}
+            </Button>
 
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={handleReset} className="text-slate-500 gap-1.5">

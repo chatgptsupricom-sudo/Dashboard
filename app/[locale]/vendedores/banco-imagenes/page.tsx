@@ -1,26 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
-import { useAuthStore } from "@/lib/stores/auth.store";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
   Search,
   Loader2,
-  X,
-  Upload,
-  Trash2,
   Image as ImageIcon,
   Camera,
   Download,
@@ -29,20 +20,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  X,
 } from "lucide-react";
-
-interface OdooProduct {
-  id: number;
-  default_code: string;
-  name: string;
-  hardware: string;
-  brand: string;
-  model: string;
-  list_price: number;
-  type: string;
-  invoice_number: string;
-  image: string;
-}
 
 interface ProductImage {
   id: number;
@@ -63,36 +42,7 @@ interface FlyerSettings {
   badgePos: { x: number; y: number };
 }
 
-export default function BancoImagenesPage() {
-  const params = useParams();
-  const locale = (params?.locale as string) || "es";
-  const { user } = useAuthStore();
-
-  // Product search
-  const [productSearch, setProductSearch] = useState("");
-  const [productResults, setProductResults] = useState<OdooProduct[]>([]);
-  const [searchingProduct, setSearchingProduct] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Form
-  const [form, setForm] = useState({
-    odoo_product_id: null as number | null,
-    product_code: "",
-    model: "",
-    brand: "",
-    category: "",
-    price: "",
-    price_adjust: "",
-  });
-
-  // Image upload
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState("");
-  const [odooImage, setOdooImage] = useState("");
-  const [saving, setSaving] = useState(false);
-
+export default function VendedoresBancoImagenesPage() {
   // Gallery
   const [images, setImages] = useState<ProductImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(true);
@@ -101,14 +51,10 @@ export default function BancoImagenesPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  // Delete
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // Single preview modal
+  // Single preview
   const [previewImage, setPreviewImage] = useState<ProductImage | null>(null);
 
-  // Shared price/badge state (used by both single and multi modal)
+  // Shared price / badge state
   const [priceMode, setPriceMode] = useState<"odoo" | "custom">("odoo");
   const [customPrice, setCustomPrice] = useState("");
   const [badgePos, setBadgePos] = useState({ x: 82, y: 88 });
@@ -119,23 +65,20 @@ export default function BancoImagenesPage() {
   // Multi-select
   const [selectedImages, setSelectedImages] = useState<Map<number, ProductImage>>(new Map());
 
-  // Multi-editor modal
+  // Multi-editor
   const [multiImages, setMultiImages] = useState<ProductImage[]>([]);
   const [multiIndex, setMultiIndex] = useState(0);
   const [flyerSettings, setFlyerSettings] = useState<Record<number, FlyerSettings>>({});
   const thumbnailStripRef = useRef<HTMLDivElement>(null);
 
-  // ── Drag handlers for price badge ─────────────────────────────────────────
+  // ── Drag handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current || !imgRef.current) return;
       const rect = imgRef.current.getBoundingClientRect();
       const x = ((e.clientX - rect.left - dragOffset.current.x) / rect.width) * 100;
       const y = ((e.clientY - rect.top - dragOffset.current.y) / rect.height) * 100;
-      setBadgePos({
-        x: Math.max(3, Math.min(97, x)),
-        y: Math.max(3, Math.min(97, y)),
-      });
+      setBadgePos({ x: Math.max(3, Math.min(97, x)), y: Math.max(3, Math.min(97, y)) });
     };
     const handleMouseUp = () => { isDragging.current = false; };
     document.addEventListener("mousemove", handleMouseMove);
@@ -153,17 +96,6 @@ export default function BancoImagenesPage() {
     const active = thumbs[multiIndex];
     if (active) active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [multiIndex, multiImages]);
-
-  // ── Close dropdown on outside click ───────────────────────────────────────
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // ── Gallery fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -186,111 +118,6 @@ export default function BancoImagenesPage() {
       console.error("Error:", error);
     } finally {
       setLoadingImages(false);
-    }
-  };
-
-  // ── Odoo product search ────────────────────────────────────────────────────
-  const searchProducts = useCallback(async (q: string) => {
-    if (q.length < 2) { setProductResults([]); setShowDropdown(false); return; }
-    try {
-      setSearchingProduct(true);
-      const res = await fetch(`/api/rma/products?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      setProductResults(data);
-      setShowDropdown(data.length > 0);
-    } catch {
-      setProductResults([]);
-    } finally {
-      setSearchingProduct(false);
-    }
-  }, []);
-
-  const handleProductSearchChange = (value: string) => {
-    setProductSearch(value);
-    setForm((prev) => ({ ...prev, product_code: value }));
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => searchProducts(value), 300);
-  };
-
-  const handleSelectProduct = (product: OdooProduct) => {
-    setForm({
-      odoo_product_id: product.id,
-      product_code: product.default_code,
-      model: product.name,
-      brand: product.brand,
-      category: product.hardware,
-      price: String(product.list_price),
-      price_adjust: "",
-    });
-    setProductSearch(product.default_code);
-    setShowDropdown(false);
-    setProductResults([]);
-    setOdooImage(product.image || "");
-  };
-
-  const handleClearProduct = () => {
-    setForm({ odoo_product_id: null, product_code: "", model: "", brand: "", category: "", price: "", price_adjust: "" });
-    setProductSearch("");
-    setImageFile(null);
-    setImagePreview("");
-    setOdooImage("");
-  };
-
-  const applyPriceAdjust = () => {
-    if (!form.price_adjust || !form.price) return;
-    const pct = parseFloat(form.price_adjust);
-    const base = parseFloat(form.price);
-    if (isNaN(pct) || isNaN(base)) return;
-    setForm((prev) => ({ ...prev, price: (base * (1 + pct / 100)).toFixed(2), price_adjust: "" }));
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setImageFile(file);
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setImagePreview("");
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!imageFile || !user?.name) return;
-    try {
-      setSaving(true);
-      const fd = new FormData();
-      fd.append("image", imageFile);
-      fd.append("created_by", user.name);
-      if (form.odoo_product_id) fd.append("odoo_product_id", String(form.odoo_product_id));
-      if (form.product_code) fd.append("product_code", form.product_code);
-      if (form.model) fd.append("model", form.model);
-      if (form.brand) fd.append("brand", form.brand);
-      if (form.category) fd.append("category", form.category);
-      if (form.price) fd.append("price", form.price);
-      const res = await fetch("/api/adminleads/banco-imagenes", { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.success) { handleClearProduct(); fetchImages(); }
-    } catch (error) {
-      console.error("Error saving:", error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      setDeleting(true);
-      const res = await fetch(`/api/adminleads/banco-imagenes?id=${deleteId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) { setDeleteId(null); fetchImages(); }
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -322,13 +149,8 @@ export default function BancoImagenesPage() {
 
     const settings: Record<number, FlyerSettings> = {};
     selected.forEach((img) => {
-      settings[img.id] = {
-        priceMode: "odoo",
-        customPrice: String(img.price || ""),
-        badgePos: { x: 82, y: 88 },
-      };
+      settings[img.id] = { priceMode: "odoo", customPrice: String(img.price || ""), badgePos: { x: 82, y: 88 } };
     });
-
     setFlyerSettings(settings);
     setMultiImages(selected);
     setMultiIndex(0);
@@ -338,21 +160,13 @@ export default function BancoImagenesPage() {
     setBadgePos(first.badgePos);
   };
 
-  // ── Switch flyer inside multi-editor ──────────────────────────────────────
+  // ── Switch flyer ───────────────────────────────────────────────────────────
   const handleSwitchFlyer = (newIndex: number) => {
     if (newIndex === multiIndex || !multiImages[newIndex]) return;
-
-    // Persist current flyer state
     const currentId = multiImages[multiIndex].id;
-    const updated = {
-      ...flyerSettings,
-      [currentId]: { priceMode, customPrice, badgePos },
-    };
+    const updated = { ...flyerSettings, [currentId]: { priceMode, customPrice, badgePos } };
     setFlyerSettings(updated);
-
-    // Restore new flyer state
-    const newId = multiImages[newIndex].id;
-    const s = updated[newId];
+    const s = updated[multiImages[newIndex].id];
     setPriceMode(s.priceMode);
     setCustomPrice(s.customPrice);
     setBadgePos(s.badgePos);
@@ -372,7 +186,7 @@ export default function BancoImagenesPage() {
     img.src = targetImage.image_path;
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
-      img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+      img.onerror = () => reject();
     });
 
     const canvas = document.createElement("canvas");
@@ -389,7 +203,6 @@ export default function BancoImagenesPage() {
       const padY = fontSize * 0.4;
       const labelW = textWidth + padX * 2;
       const labelH = fontSize + padY * 2;
-
       const centerX = (badgePos.x / 100) * canvas.width;
       const centerY = (badgePos.y / 100) * canvas.height;
       const labelX = Math.max(10, Math.min(canvas.width - labelW - 10, centerX - labelW / 2));
@@ -447,170 +260,40 @@ export default function BancoImagenesPage() {
     setBadgePos({ x: 82, y: 88 });
   };
 
-  // ── Derived values ─────────────────────────────────────────────────────────
+  // ── Derived ────────────────────────────────────────────────────────────────
   const activeImage = multiImages.length > 0 ? multiImages[multiIndex] : previewImage;
   const isModalOpen = previewImage !== null || multiImages.length > 0;
   const isMultiMode = multiImages.length > 0;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-3 bg-blue-100 rounded-xl">
-          <Camera className="w-6 h-6 text-blue-600" />
+        <div className="p-3 bg-red-100 rounded-xl">
+          <Camera className="w-6 h-6 text-red-500" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Banco de Flyers</h1>
-          <p className="text-sm text-slate-500">Administra flyers de productos</p>
+          <p className="text-sm text-slate-500">Selecciona y descarga flyers con precio</p>
         </div>
       </div>
-
-      {/* Form Card */}
-      <Card className="rounded-3xl border-none shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold text-slate-900">Agregar Flyer</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Product Search */}
-            <div className="relative" ref={dropdownRef}>
-              <Label className="text-sm font-medium text-slate-700">Buscar Producto</Label>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  value={productSearch}
-                  onChange={(e) => handleProductSearchChange(e.target.value)}
-                  placeholder="Buscar por código de referencia..."
-                  className="pl-10 pr-8"
-                  onFocus={() => { if (productResults.length > 0) setShowDropdown(true); }}
-                />
-                {productSearch && (
-                  <button type="button" onClick={handleClearProduct} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-                {searchingProduct && (
-                  <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-slate-400" />
-                )}
-              </div>
-              {showDropdown && productResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-                  {productResults.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => handleSelectProduct(product)}
-                      className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{product.default_code}</p>
-                          <p className="text-xs text-slate-500 truncate max-w-[300px]">{product.name}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-xs text-slate-400">{product.brand}</span>
-                          {product.hardware && <p className="text-[10px] text-blue-500">{product.hardware}</p>}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Product Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Modelo</Label>
-                <Input value={form.model} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} placeholder="Nombre del producto" />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Marca</Label>
-                <Input value={form.brand} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} placeholder="Ej: HP, Epson" />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Categoría</Label>
-                <Input value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))} placeholder="Ej: Impresora, Laptop" />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Precio</Label>
-                <div className="flex gap-2">
-                  <Input value={form.price} onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))} placeholder="0.00" type="number" step="0.01" className="flex-1" />
-                  <div className="flex items-center gap-1">
-                    <Input
-                      value={form.price_adjust}
-                      onChange={(e) => setForm((prev) => ({ ...prev, price_adjust: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPriceAdjust(); } }}
-                      placeholder="± %"
-                      type="number"
-                      step="1"
-                      className="w-24"
-                    />
-                    {form.price_adjust && (
-                      <button type="button" onClick={() => setForm((prev) => ({ ...prev, price_adjust: "" }))} className="text-xs text-slate-400 hover:text-slate-600 px-1">✕</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Image Upload */}
-            <div>
-              <Label className="text-sm font-medium text-slate-700">Flyer del Producto</Label>
-              <div className="mt-1 flex items-center gap-4">
-                {odooImage && !imagePreview && (
-                  <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-blue-300 bg-slate-50 flex-shrink-0">
-                    <img src={odooImage} alt="Odoo" className="w-full h-full object-contain" />
-                    <div className="text-[10px] text-center text-blue-600 bg-blue-50 py-0.5">Odoo</div>
-                  </div>
-                )}
-                <label className="flex flex-col items-center justify-center w-40 h-40 border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
-                  {imagePreview ? (
-                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-2xl" />
-                  ) : (
-                    <div className="text-center">
-                      <Upload className="w-8 h-8 mx-auto text-slate-400 mb-1" />
-                      <span className="text-xs text-slate-400">Subir flyer</span>
-                    </div>
-                  )}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                </label>
-                {imagePreview && (
-                  <button type="button" onClick={() => { setImageFile(null); setImagePreview(""); }} className="text-sm text-red-500 hover:text-red-700">
-                    Quitar flyer
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <Button type="submit" disabled={!imageFile || saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                Guardar Flyer
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
 
       {/* Gallery */}
       <Card className="rounded-3xl border-none shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
           <CardTitle className="text-lg font-semibold text-slate-900">
-            Galería <span className="text-sm font-normal text-slate-400">({total} imágenes)</span>
+            Galería <span className="text-sm font-normal text-slate-400">({total} flyers)</span>
           </CardTitle>
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Selection action bar */}
             {selectedImages.size > 0 && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
-                <span className="text-sm font-medium text-blue-700">
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-1.5">
+                <span className="text-sm font-medium text-red-700">
                   {selectedImages.size} seleccionado{selectedImages.size > 1 ? "s" : ""}
                 </span>
-                <button onClick={clearSelection} className="text-blue-400 hover:text-blue-600 transition-colors">
+                <button onClick={clearSelection} className="text-red-400 hover:text-red-600 transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
-                <Button size="sm" onClick={handleOpenMultiEditor} className="bg-blue-600 hover:bg-blue-700 text-white h-7 text-xs px-3">
+                <Button size="sm" onClick={handleOpenMultiEditor} className="bg-red-500 hover:bg-red-600 text-white h-7 text-xs px-3">
                   <Layers className="w-3 h-3 mr-1.5" />
                   Editar seleccionados
                 </Button>
@@ -619,7 +302,7 @@ export default function BancoImagenesPage() {
             <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                placeholder="Buscar..."
+                placeholder="Buscar flyer..."
                 value={gallerySearch}
                 onChange={(e) => { setGallerySearch(e.target.value); setPage(1); }}
                 className="pl-10"
@@ -635,7 +318,7 @@ export default function BancoImagenesPage() {
           ) : images.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No hay flyers registrados</p>
+              <p>No hay flyers disponibles</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -646,7 +329,7 @@ export default function BancoImagenesPage() {
                     key={img.id}
                     className={`group relative rounded-2xl overflow-hidden border-2 transition-all cursor-pointer
                       ${isSelected
-                        ? "border-blue-500 shadow-lg shadow-blue-200 scale-[1.02]"
+                        ? "border-red-500 shadow-lg shadow-red-100 scale-[1.02]"
                         : "border-slate-200 hover:shadow-md hover:border-slate-300"
                       }`}
                     onClick={() => {
@@ -656,34 +339,26 @@ export default function BancoImagenesPage() {
                       setBadgePos({ x: 82, y: 88 });
                     }}
                   >
-                    {/* Selection checkbox */}
+                    {/* Checkbox */}
                     <div
                       className={`absolute top-2 left-2 z-10 transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                       onClick={(e) => { e.stopPropagation(); toggleSelect(img); }}
                     >
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm transition-colors
-                        ${isSelected ? "bg-blue-500 border-blue-500" : "bg-white/90 border-slate-300 hover:border-blue-400"}`}
+                        ${isSelected ? "bg-red-500 border-red-500" : "bg-white/90 border-slate-300 hover:border-red-400"}`}
                       >
                         {isSelected && <Check className="w-3 h-3 text-white" />}
                       </div>
                     </div>
 
                     <div className="aspect-square bg-slate-100">
-                      <img src={img.image_path} alt={img.model || "Producto"} className="w-full h-full object-cover" />
+                      <img src={img.image_path} alt={img.model || "Flyer"} className="w-full h-full object-cover" />
                     </div>
                     <div className="p-2">
                       <p className="text-xs font-medium text-slate-900 truncate">{img.product_code || "—"}</p>
                       <p className="text-[10px] text-slate-500 truncate">{img.brand || "—"}</p>
                       {img.price ? <p className="text-[10px] text-green-600 font-medium">${Number(img.price).toFixed(2)}</p> : null}
                     </div>
-
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteId(img.id); }}
-                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
                   </div>
                 );
               })}
@@ -703,30 +378,13 @@ export default function BancoImagenesPage() {
         </CardContent>
       </Card>
 
-      {/* Delete Dialog */}
-      <Dialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Eliminar Flyer</DialogTitle>
-            <DialogDescription>¿Estás seguro de eliminar este flyer? Esta acción no se puede deshacer.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Eliminar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Preview / Multi-editor Modal */}
       <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) resetPreview(); }}>
         <DialogContent className="!max-w-[98vw] !w-[98vw] !h-[96vh] !max-h-[96vh] p-0 gap-0 overflow-hidden rounded-2xl">
-          <DialogTitle className="sr-only">{activeImage?.model || "Vista Previa del Flyer"}</DialogTitle>
+          <DialogTitle className="sr-only">{activeImage?.model || "Vista Previa"}</DialogTitle>
 
           <div className="flex h-full">
-            {/* ── Main image panel ──────────────────────────────── */}
+            {/* ── Image panel ───────────────────────────────────── */}
             <div className="flex-1 min-w-0 bg-slate-950 relative overflow-hidden select-none">
               {activeImage?.image_path && (
                 <div className="absolute inset-0 flex items-center justify-center p-8">
@@ -772,7 +430,7 @@ export default function BancoImagenesPage() {
                 </div>
               )}
 
-              {/* Prev / Next arrows (multi mode) */}
+              {/* Prev / Next arrows */}
               {isMultiMode && (
                 <>
                   <button
@@ -789,15 +447,13 @@ export default function BancoImagenesPage() {
                   >
                     <ChevronRight className="w-6 h-6" />
                   </button>
-
-                  {/* Counter badge */}
                   <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1 rounded-full border border-white/10">
                     {multiIndex + 1} / {multiImages.length}
                   </div>
                 </>
               )}
 
-              {/* Info badges bottom-left */}
+              {/* Info badges */}
               <div className="absolute bottom-4 left-4 flex gap-2 flex-wrap pointer-events-none">
                 {activeImage?.brand && (
                   <span className="bg-white/10 backdrop-blur-sm text-white text-xs px-3 py-1 rounded-full font-medium border border-white/20">
@@ -805,7 +461,7 @@ export default function BancoImagenesPage() {
                   </span>
                 )}
                 {activeImage?.category && (
-                  <span className="bg-blue-500/80 backdrop-blur-sm text-white text-xs px-3 py-1 rounded-full font-medium">
+                  <span className="bg-red-500/80 backdrop-blur-sm text-white text-xs px-3 py-1 rounded-full font-medium">
                     {activeImage.category}
                   </span>
                 )}
@@ -815,10 +471,10 @@ export default function BancoImagenesPage() {
             {/* ── Right sidebar ─────────────────────────────────── */}
             <div className="w-[300px] shrink-0 bg-white border-l flex flex-col overflow-hidden">
 
-              {/* Thumbnail strip (multi mode only) */}
+              {/* Thumbnail strip */}
               {isMultiMode && (
                 <div className="shrink-0 bg-slate-900 border-b border-slate-700">
-                  <div className="px-3 pt-3 pb-1 flex items-center justify-between">
+                  <div className="px-3 pt-3 pb-1">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
                       {multiImages.length} flyers seleccionados
                     </span>
@@ -835,19 +491,17 @@ export default function BancoImagenesPage() {
                         onClick={() => handleSwitchFlyer(idx)}
                         className={`relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden transition-all duration-200
                           ${idx === multiIndex
-                            ? "ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-900 scale-105 shadow-lg"
+                            ? "ring-2 ring-red-400 ring-offset-2 ring-offset-slate-900 scale-105 shadow-lg"
                             : "opacity-50 hover:opacity-80 hover:scale-105"
                           }`}
                       >
                         <img src={img.image_path} alt="" className="w-full h-full object-cover" />
-                        {/* Number indicator */}
                         <span className={`absolute bottom-0 right-0 text-[8px] font-bold px-1 py-0.5 rounded-tl
-                          ${idx === multiIndex ? "bg-blue-500 text-white" : "bg-black/60 text-white/80"}`}>
+                          ${idx === multiIndex ? "bg-red-500 text-white" : "bg-black/60 text-white/80"}`}>
                           {idx + 1}
                         </span>
-                        {/* Active checkmark */}
                         {idx === multiIndex && (
-                          <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                          <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
                             <Check className="w-2.5 h-2.5 text-white" />
                           </div>
                         )}
@@ -857,7 +511,7 @@ export default function BancoImagenesPage() {
                 </div>
               )}
 
-              {/* Product info header */}
+              {/* Product info */}
               <div className="px-5 py-4 border-b bg-slate-50 shrink-0">
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono mb-1">
                   {activeImage?.product_code || "—"}
@@ -867,24 +521,24 @@ export default function BancoImagenesPage() {
                 </h2>
               </div>
 
-              {/* Price selection */}
+              {/* Price selector */}
               <div className="px-5 py-4 flex-1 overflow-y-auto space-y-3 min-h-0">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Precio para el flyer</p>
 
-                <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${priceMode === "odoo" ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-slate-300"}`}>
-                  <input type="radio" name="priceMode" checked={priceMode === "odoo"} onChange={() => setPriceMode("odoo")} className="accent-blue-600" />
+                <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${priceMode === "odoo" ? "border-red-500 bg-red-50" : "border-slate-200 hover:border-slate-300"}`}>
+                  <input type="radio" name="priceMode" checked={priceMode === "odoo"} onChange={() => setPriceMode("odoo")} className="accent-red-500" />
                   <div>
-                    <span className="text-xs font-medium text-slate-500">Precio Odoo</span>
-                    <p className="text-2xl font-bold text-blue-600 leading-tight">
+                    <span className="text-xs font-medium text-slate-500">Precio base</span>
+                    <p className="text-2xl font-bold text-red-500 leading-tight">
                       ${Number(activeImage?.price || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                 </label>
 
-                <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${priceMode === "custom" ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-slate-300"}`}>
-                  <input type="radio" name="priceMode" checked={priceMode === "custom"} onChange={() => setPriceMode("custom")} className="accent-blue-600 mt-1" />
+                <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${priceMode === "custom" ? "border-red-500 bg-red-50" : "border-slate-200 hover:border-slate-300"}`}>
+                  <input type="radio" name="priceMode" checked={priceMode === "custom"} onChange={() => setPriceMode("custom")} className="accent-red-500 mt-1" />
                   <div className="flex-1">
-                    <span className="text-xs font-medium text-slate-500">Personalizado</span>
+                    <span className="text-xs font-medium text-slate-500">Precio personalizado</span>
                     {priceMode === "custom" && (
                       <Input
                         type="number"
@@ -900,14 +554,14 @@ export default function BancoImagenesPage() {
                 </label>
               </div>
 
-              {/* Download buttons */}
+              {/* Download */}
               <div className="px-5 py-4 border-t space-y-2 bg-slate-50 shrink-0">
                 {isMultiMode && (
                   <p className="text-[10px] text-slate-400 text-center mb-1">
                     Descargando flyer {multiIndex + 1} de {multiImages.length}
                   </p>
                 )}
-                <Button onClick={() => handleDownload(true)} className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 text-sm font-semibold">
+                <Button onClick={() => handleDownload(true)} className="w-full bg-red-500 hover:bg-red-600 text-white h-11 text-sm font-semibold">
                   <Download className="w-4 h-4 mr-2" />
                   Descargar con Precio
                 </Button>
