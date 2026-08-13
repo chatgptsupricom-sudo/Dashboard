@@ -184,9 +184,13 @@ export function Sidebar({
   const isComprasRole = userRole === "compras";
   const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
+  const isGerenteOperaciones = userRole === "gerente_operaciones";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
+  const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
+  const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
+  const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
 
   const isSellerPausado =
     (userRole === "seller" || userRole === "vendedor") &&
@@ -201,8 +205,8 @@ export function Sidebar({
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
-        (!isSuperAdminRole || !ventasDropdownIds.includes(item.id)) &&
-        (!isSuperAdminRole || !cxcDropdownIds.includes(item.id)) &&
+        (!showVentasDropdown || !ventasDropdownIds.includes(item.id)) &&
+        (!showCxCDropdown || !cxcDropdownIds.includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || userCids === 9) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
@@ -547,8 +551,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de VENTAS (solo SuperAdmin) */}
-            {isSuperAdminRole && (
+            {/* Submenú Desplegable de VENTAS */}
+            {showVentasDropdown && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsVentasOpen(!isVentasOpen)}
@@ -621,8 +625,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de CUENTAS POR COBRAR (solo SuperAdmin) */}
-            {isSuperAdminRole && hasCxCPermission && (
+            {/* Submenú Desplegable de CUENTAS POR COBRAR */}
+            {showCxCDropdown && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsCxCOpen(!isCxCOpen)}

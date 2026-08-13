@@ -174,6 +174,20 @@ export const rolePermissions: RolePermissions = {
       "auditoria_panel", // Auditoría de acciones
       "spiff", // Gestión de spiffs por marca
       "cuentas_por_cobrar", // Cuentas por Cobrar
+      // Ventas dropdown
+      "reporte_diario", // Reporte Diario
+      "seller_map", // Mapa de Clientes (sub-item de Ventas)
+      // Leads dropdown
+      "adminleads", // Leads (permiso principal del dropdown)
+      "monitoreo_leads", // Monitoreo de Leads
+      "cierres_adminleads", // Cierres
+      "configuracion_leads", // Configuración de Leads
+      // CxC dropdown sub-items
+      "cxc_alerts", // Alertas CxC
+      "stoplight_reports", // Stoplight Report
+      "referencia_comercial", // Referencia Comercial
+      "cxc_search", // Buscar Facturas
+      "cxc_top_clients", // Top Clientes / Vendedor
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {
