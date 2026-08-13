@@ -591,7 +591,7 @@ export function Sidebar({
                         },
                         {
                           label: t("mapa_de_clientes"),
-                          href: `${basePath}/vendedores`,
+                          href: isGerenteOperaciones ? `${basePath}/mapa_clientes` : `${basePath}/vendedores`,
                           permission: "seller_map",
                         },
                         {
