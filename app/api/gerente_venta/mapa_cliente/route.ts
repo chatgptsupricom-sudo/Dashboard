@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
+    // For superAdmin viewing all companies, filter by country
+    const COUNTRY_TO_COMPANIES: Record<string, number[]> = {
+      VE: [9, 10],
+      PA: [7],
+    };
+    if (userCompanyId === 0 && COUNTRY_TO_COMPANIES[countryCode]) {
+      companyFilter = ["company_id", "in", COUNTRY_TO_COMPANIES[countryCode]];
+    }
+
     let clientsToProcess: any[] = [];
     const periodTotals = new Map<number, number>();
 
@@ -196,6 +205,11 @@ export async function GET(request: NextRequest) {
       `CLIENTES PROCESADOS: ${filteredClients.length} | MODO: ${startDate ? "RANGO" : "HISTORIAL"}`,
     );
 
+    // Determine effective company_id for response
+    const effectiveCompanyId = userCompanyId === 0
+      ? (COUNTRY_TO_COMPANIES[countryCode]?.[0] || null)
+      : userCompanyId;
+
     return NextResponse.json({
       summary: Object.entries(stateStats).map(([state, data]) => ({
         state: data.original_name,
@@ -206,8 +220,8 @@ export async function GET(request: NextRequest) {
       })),
       total_clients: filteredClients.length,
       currency: "USD",
-      applied_company_id: userCompanyId,
-      company_id: userCompanyId,
+      applied_company_id: effectiveCompanyId,
+      company_id: effectiveCompanyId,
       sellers: sellers,
     });
   } catch (error: any) {

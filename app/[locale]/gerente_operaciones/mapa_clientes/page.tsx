@@ -36,6 +36,12 @@ const COMPANY_NAMES: Record<number, string> = {
   7: "Panama",
 };
 
+const COMPANY_TO_COUNTRY: Record<number, string> = {
+  9: "VE",
+  10: "VE",
+  7: "PA",
+};
+
 const MAP_CONFIG: Record<string, any> = {
   VE: {
     name: "venezuela",
@@ -43,6 +49,13 @@ const MAP_CONFIG: Record<string, any> = {
       "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson",
     scale: 2800,
     center: [-66.3, 6.6],
+  },
+  PA: {
+    name: "panama",
+    geoUrl:
+      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/panama.geojson",
+    scale: 3500,
+    center: [-80.1, 8.6],
   },
 };
 
@@ -94,6 +107,10 @@ export default function MapsClientsPage() {
         setData(d.summary || []);
         setUserCompanyId(d.company_id);
         setAvailableSellers(d.sellers || []);
+        // Auto-detect country based on company
+        if (d.company_id && COMPANY_TO_COUNTRY[d.company_id]) {
+          setCurrentCountry(COMPANY_TO_COUNTRY[d.company_id]);
+        }
         setLoading(false);
       } catch (e) {
         setLoading(false);
