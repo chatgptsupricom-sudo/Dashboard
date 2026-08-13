@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const role = payload.role as string;
-  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operations"];
+  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operaciones"];
   if (!allowedRoles.includes(role)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
   }
@@ -123,7 +123,7 @@ export async function PATCH(request: Request) {
   if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const role = payload.role as string;
-  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operations"];
+  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operaciones"];
   if (!allowedRoles.includes(role)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
   }
@@ -165,7 +165,7 @@ export async function DELETE(request: Request) {
   if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const role = payload.role as string;
-  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operations"];
+  const allowedRoles = ["superAdmin", "Gerencia De Ventas", "Gerente de Operaciones"];
   if (!allowedRoles.includes(role)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
   }

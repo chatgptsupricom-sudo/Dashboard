@@ -9,7 +9,7 @@ export enum UserRole {
   SELLER = "seller",
   ADMIN_LEADS = "adminLeads",
   GERENTE_VENTA = "Gerencia De Ventas",
-  GERENTE_OPERACIONES = "Gerente de Operations",
+  GERENTE_OPERACIONES = "Gerente de Operaciones",
   RECURSOS_HUMANOS = "recursos humanos",
   COMPRAS = "compras",
   RMA = "rma",

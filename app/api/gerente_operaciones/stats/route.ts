@@ -255,8 +255,10 @@ export async function GET(request: NextRequest) {
           [
             ["move_id.move_type", "=", "out_invoice"],
             ["move_id.state", "=", "posted"],
-            ["move_id.invoice_date", ">=", firstDayOfMonth],
+            ["move_id.invoice_date", ">=", start],
+            ["move_id.invoice_date", "<=", end],
             ["product_id", "!=", false],
+            companyFilter,
           ],
           ["price_subtotal", "move_id.invoice_user_id"],
           ["move_id.invoice_user_id"],

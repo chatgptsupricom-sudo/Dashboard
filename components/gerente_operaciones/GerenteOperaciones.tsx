@@ -107,21 +107,21 @@
 //         />
 //         <MetricCard
 //           title={t("star_product")}
-//           value={data.summary.topProductName}
+//           value={data.summary?.topProductName || "N/A"}
 //           icon={Package}
 //           trend={t("leader")}
 //           color="purple"
 //         />
 //         <MetricCard
 //           title={t("active_clients")}
-//           value={data.summary.activeClientsCount}
+//           value={data.summary?.activeClientsCount || 0}
 //           icon={Users}
 //           trend={t("total_odoo")}
 //           color="green"
 //         />
 //         <MetricCard
 //           title={t("growth")}
-//           value={data.summary.growthRate}
+//           value={data.summary?.growthRate || 0}
 //           icon={TrendingUp}
 //           trend={t("monthly")}
 //           color="orange"
@@ -484,21 +484,21 @@ export function GerenteOperacionesView() {
         />
         <MetricCard
           title={t("star_product")}
-          value={data.summary.topProductName}
+          value={data.summary?.topProductName || "N/A"}
           icon={Package}
           trend={t("leader")}
           color="purple"
         />
         <MetricCard
           title={t("active_clients")}
-          value={data.summary.activeClientsCount}
+          value={data.summary?.activeClientsCount || 0}
           icon={Users}
           trend={t("total_odoo")}
           color="green"
         />
         <MetricCard
           title={t("growth")}
-          value={data.summary.growthRate}
+          value={data.summary?.growthRate || 0}
           icon={TrendingUp}
           trend={t("monthly")}
           color="orange"
