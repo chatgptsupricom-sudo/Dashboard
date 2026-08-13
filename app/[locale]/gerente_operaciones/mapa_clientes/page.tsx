@@ -13,13 +13,13 @@ import {
   Title,
 } from "@tremor/react";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Building2,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
+  CreditCard,
   FilterX,
   Globe,
   History,
@@ -271,8 +271,8 @@ export default function MapsClientsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* MAPA GRANDE Y CENTRADO */}
-        <div className="lg:col-span-8">
-          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[900px] flex flex-col relative">
+        <div className="lg:col-span-9">
+          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[1050px] flex flex-col relative">
             <div className="p-8 border-b border-slate-50 flex justify-between items-center z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
@@ -403,7 +403,7 @@ export default function MapsClientsPage() {
         </div>
 
         {/* SIDEBAR */}
-        <aside className="lg:col-span-4 space-y-8">
+        <aside className="lg:col-span-3 space-y-8">
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-900 text-white p-10 overflow-hidden relative">
             <Building2 className="absolute -right-12 -bottom-12 text-white/5 w-64 h-64 rotate-12" />
             <Text
@@ -564,107 +564,173 @@ export default function MapsClientsPage() {
          </div>
        </div>
 
-       {/* MODAL DETALLE DE CLIENTE */}
-       {selectedClient && (
-         <div
-           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-           onClick={() => setSelectedClient(null)}
-         >
-           <div
-             className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
-             onClick={(e) => e.stopPropagation()}
-           >
-             {/* Header */}
-             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white">
-               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-blue-100 rounded-2xl">
-                   <Building2 size={24} className="text-blue-600" />
-                 </div>
-                 <div>
-                   <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+       {/* MODAL DETALLADO PREMIUM */}
+       <AnimatePresence>
+         {selectedClient && (
+           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
+             <motion.div
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               className="absolute inset-0"
+               onClick={() => setSelectedClient(null)}
+             />
+
+             <motion.div
+               initial={{ scale: 0.95, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.95, opacity: 0, y: 20 }}
+               transition={{ type: "spring", duration: 0.5 }}
+               className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100 relative z-10 flex flex-col max-h-[90vh]"
+             >
+               {/* Header del Modal */}
+               <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start gap-4">
+                 <div className="space-y-1">
+                   <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-2.5 py-1 rounded-md uppercase tracking-wider">
+                     Ficha de Cliente
+                   </span>
+                   <Title className="text-2xl font-black text-slate-900 uppercase tracking-tight mt-1">
                      {selectedClient.name}
-                   </h2>
-                   <p className="text-sm font-mono font-bold text-slate-400 mt-0.5">
+                   </Title>
+                   <Text className="text-xs font-mono font-bold text-slate-400 tracking-wider">
                      RIF: {selectedClient.rif}
-                   </p>
+                   </Text>
                  </div>
-               </div>
-               <button
-                 onClick={() => setSelectedClient(null)}
-                 className="p-2 rounded-xl hover:bg-slate-100 transition-colors"
-               >
-                 <X size={20} className="text-slate-400" />
-               </button>
-             </div>
-
-             {/* Body */}
-             <div className="flex-1 overflow-y-auto p-6 space-y-5">
-               {/* KPI Cards */}
-               <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
-                   <div className="flex items-center gap-2 mb-2">
-                     <DollarSign size={16} className="text-blue-600" />
-                     <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                       Monto Facturado
-                     </span>
-                   </div>
-                   <p className="text-2xl font-black text-slate-900">
-                     ${selectedClient.value?.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                   </p>
-                 </div>
-                 <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
-                   <div className="flex items-center gap-2 mb-2">
-                     <User size={16} className="text-emerald-600" />
-                     <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                       Ejecutivo Comercial
-                     </span>
-                   </div>
-                   <p className="text-sm font-bold text-slate-800 uppercase">
-                     {selectedClient.seller || "Sin Vendedor Asignado"}
-                   </p>
-                 </div>
+                 <button
+                   onClick={() => setSelectedClient(null)}
+                   className="p-2 bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl transition-all border border-slate-100 shadow-sm"
+                 >
+                   <X size={18} />
+                 </button>
                </div>
 
-               {/* Ubicación */}
-               <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                 <div className="flex items-center gap-2 mb-3">
-                   <MapPin size={16} className="text-slate-500" />
-                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                     Localización Geográfica
-                   </span>
-                 </div>
-                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                     <span className="text-[10px] text-slate-400 font-bold uppercase">Ciudad</span>
-                     <p className="text-sm font-bold text-slate-800">{selectedClient.city || "N/A"}</p>
+               {/* Contenido */}
+               <div className="p-8 overflow-y-auto space-y-6 flex-1">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                   <div className="p-5 bg-blue-50/50 border border-blue-100/50 rounded-2xl flex items-center gap-4">
+                     <div className="p-3 bg-blue-600 rounded-xl text-white shadow-md shadow-blue-200">
+                       <Receipt size={20} />
+                     </div>
+                     <div>
+                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                         Monto
+                       </span>
+                       <div className="text-xl font-black text-blue-600 mt-0.5 tabular-nums">
+                         ${" "}
+                         {selectedClient.value.toLocaleString("en-US", {
+                           minimumFractionDigits: 2,
+                         })}
+                       </div>
+                     </div>
                    </div>
-                   <div>
-                     <span className="text-[10px] text-slate-400 font-bold uppercase">Estado</span>
-                     <p className="text-sm font-bold text-slate-800">{selectedState || "Nacional"}</p>
-                   </div>
-                 </div>
-               </div>
 
-               {/* Término de Venta */}
-               <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100">
-                 <div className="flex items-center gap-2 mb-2">
-                   <Receipt size={16} className="text-amber-600" />
-                   <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
-                     Término de Venta
-                   </span>
+                   <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center gap-4">
+                     <div className="p-3 bg-slate-900 rounded-xl text-white shadow-md">
+                       <CreditCard size={20} />
+                     </div>
+                     <div>
+                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                         Término de Venta
+                       </span>
+                       <div className="text-sm font-black text-slate-800 uppercase mt-0.5 tracking-wide">
+                         {selectedClient.value > 25000 ? (
+                           <Badge className="bg-amber-100 border-none text-amber-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
+                             Crédito
+                           </Badge>
+                         ) : (
+                           <Badge className="bg-emerald-100 border-none text-emerald-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
+                             Contado
+                           </Badge>
+                         )}
+                       </div>
+                     </div>
+                   </div>
                  </div>
-                 <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-black uppercase ${
-                   selectedClient.value > 25000
-                     ? "bg-blue-100 text-blue-700"
-                     : "bg-green-100 text-green-700"
-                 }`}>
-                   {selectedClient.value > 25000 ? "Crédito" : "Contado"}
-                 </span>
+
+                 <div className="space-y-4">
+                   <div className="flex items-start gap-4 p-4 border border-slate-100 rounded-2xl bg-white hover:bg-slate-50/50 transition-all">
+                     <div className="p-2 bg-slate-100 text-slate-600 rounded-xl mt-0.5">
+                       <User size={16} />
+                     </div>
+                     <div>
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                         Vendedor
+                       </h4>
+                       <p className="text-sm font-bold text-slate-800 mt-0.5 uppercase tracking-tight">
+                         {selectedClient.seller &&
+                         selectedClient.seller !== "N/A"
+                           ? selectedClient.seller
+                           : "Asesor Comercial Predeterminado"}
+                       </p>
+                     </div>
+                   </div>
+
+                   <div className="flex items-start gap-4 p-4 border border-slate-100 rounded-2xl bg-white hover:bg-slate-50/50 transition-all">
+                     <div className="p-2 bg-slate-100 text-slate-600 rounded-xl mt-0.5">
+                       <MapPin size={16} />
+                     </div>
+                     <div>
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                         Localización Geográfica
+                       </h4>
+                       <p className="text-sm font-bold text-slate-800 mt-0.5 uppercase tracking-tight">
+                         {selectedClient.city || "Ciudad Principal"} -{" "}
+                         {selectedState || MAP_CONFIG[currentCountry].name}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* Productos Adquiridos */}
+                 <div className="space-y-3">
+                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                     Productos Adquiridos
+                   </h4>
+                   <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm">
+                     <div className="bg-slate-50 px-5 py-3 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                       <span>Artículo / Cantidad</span>
+                       <span>Monto Facturado</span>
+                     </div>
+                     <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                       {selectedClient.products &&
+                       selectedClient.products.length > 0 ? (
+                         selectedClient.products.map((item: any, i: number) => (
+                           <div
+                             key={i}
+                             className="px-5 py-3.5 flex justify-between items-center text-xs hover:bg-slate-50/40 transition-all"
+                           >
+                             <div className="flex flex-col gap-0.5 max-w-[70%]">
+                               <span className="font-bold text-slate-800 uppercase tracking-tight line-clamp-2">
+                                 {item.product}
+                               </span>
+                               <span className="text-[10px] text-slate-400 font-bold tabular-nums">
+                                 {" "}
+                                 {item.quantity.toLocaleString("en-US")} unidades
+                               </span>
+                             </div>
+                             <span className="font-mono font-black text-blue-600 text-right tabular-nums">
+                               ${" "}
+                               {item.total.toLocaleString("en-US", {
+                                 minimumFractionDigits: 2,
+                                 maximumFractionDigits: 2,
+                               })}
+                             </span>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="py-8 text-center text-xs text-slate-400 italic font-medium">
+                           Sin desglose de productos para visualización histórica
+                           total o período vacío.
+                         </div>
+                       )}
+                     </div>
+                   </div>
+                 </div>
                </div>
-             </div>
+             </motion.div>
            </div>
-         </div>
-       )}
+         )}
+       </AnimatePresence>
      </div>
    );
  }
