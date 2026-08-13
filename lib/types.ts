@@ -174,6 +174,8 @@ export const rolePermissions: RolePermissions = {
       "auditoria_panel", // Auditoría de acciones
       "spiff", // Gestión de spiffs por marca
       "cuentas_por_cobrar", // Cuentas por Cobrar
+      // Alertas
+      "alert", // Sistema de alertas
       // Ventas dropdown
       "reporte_diario", // Reporte Diario
       "seller_map", // Mapa de Clientes (sub-item de Ventas)

@@ -323,9 +323,12 @@ export async function GET(request: NextRequest) {
     const today = new Date();
     const { searchParams } = new URL(request.url);
     const empresaParam = searchParams.get("empresa")?.toLowerCase();
+    const cidsParam = searchParams.get("cids");
 
     let COMPANY_IDS = [9];
-    if (empresaParam && COMPANY_MAP[empresaParam]) {
+    if (cidsParam) {
+      COMPANY_IDS = [parseInt(cidsParam, 10)];
+    } else if (empresaParam && COMPANY_MAP[empresaParam]) {
       COMPANY_IDS = [COMPANY_MAP[empresaParam]];
     }
     const companyId = COMPANY_IDS[0];
