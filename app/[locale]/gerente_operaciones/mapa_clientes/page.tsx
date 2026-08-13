@@ -19,11 +19,16 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  DollarSign,
   FilterX,
   Globe,
   History,
   Info,
+  MapPin,
+  Receipt,
   TrendingUp,
+  User,
+  X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
@@ -67,6 +72,7 @@ export default function MapsClientsPage() {
   const clientsPerPage = 4;
   const [userCompanyId, setUserCompanyId] = useState<number | null>(null);
   const [isCountryLocked, setIsCountryLocked] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any>(null);
   const [selSeller, setSelSeller] = useState("all");
   const [availableSellers, setAvailableSellers] = useState<any[]>([]);
 
@@ -266,7 +272,7 @@ export default function MapsClientsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* MAPA GRANDE Y CENTRADO */}
         <div className="lg:col-span-8">
-          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[750px] flex flex-col relative">
+          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[900px] flex flex-col relative">
             <div className="p-8 border-b border-slate-50 flex justify-between items-center z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
@@ -528,7 +534,8 @@ export default function MapsClientsPage() {
                         key={client.rif + absIdx}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="group hover:bg-blue-50/40 border-b border-slate-50 last:border-0 transition-all"
+                        onClick={() => setSelectedClient(client)}
+                        className="group hover:bg-blue-50/40 border-b border-slate-50 last:border-0 transition-all cursor-pointer"
                       >
                         <TableCell className="pl-12 py-8">
                           <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-slate-100 text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
@@ -553,9 +560,111 @@ export default function MapsClientsPage() {
                 </TableBody>
               </Table>
             </div>
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
-}
+           </Card>
+         </div>
+       </div>
+
+       {/* MODAL DETALLE DE CLIENTE */}
+       {selectedClient && (
+         <div
+           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+           onClick={() => setSelectedClient(null)}
+         >
+           <div
+             className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+             onClick={(e) => e.stopPropagation()}
+           >
+             {/* Header */}
+             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white">
+               <div className="flex items-center gap-4">
+                 <div className="p-3 bg-blue-100 rounded-2xl">
+                   <Building2 size={24} className="text-blue-600" />
+                 </div>
+                 <div>
+                   <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                     {selectedClient.name}
+                   </h2>
+                   <p className="text-sm font-mono font-bold text-slate-400 mt-0.5">
+                     RIF: {selectedClient.rif}
+                   </p>
+                 </div>
+               </div>
+               <button
+                 onClick={() => setSelectedClient(null)}
+                 className="p-2 rounded-xl hover:bg-slate-100 transition-colors"
+               >
+                 <X size={20} className="text-slate-400" />
+               </button>
+             </div>
+
+             {/* Body */}
+             <div className="flex-1 overflow-y-auto p-6 space-y-5">
+               {/* KPI Cards */}
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
+                   <div className="flex items-center gap-2 mb-2">
+                     <DollarSign size={16} className="text-blue-600" />
+                     <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                       Monto Facturado
+                     </span>
+                   </div>
+                   <p className="text-2xl font-black text-slate-900">
+                     ${selectedClient.value?.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                   </p>
+                 </div>
+                 <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
+                   <div className="flex items-center gap-2 mb-2">
+                     <User size={16} className="text-emerald-600" />
+                     <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                       Ejecutivo Comercial
+                     </span>
+                   </div>
+                   <p className="text-sm font-bold text-slate-800 uppercase">
+                     {selectedClient.seller || "Sin Vendedor Asignado"}
+                   </p>
+                 </div>
+               </div>
+
+               {/* Ubicación */}
+               <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                 <div className="flex items-center gap-2 mb-3">
+                   <MapPin size={16} className="text-slate-500" />
+                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                     Localización Geográfica
+                   </span>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">Ciudad</span>
+                     <p className="text-sm font-bold text-slate-800">{selectedClient.city || "N/A"}</p>
+                   </div>
+                   <div>
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">Estado</span>
+                     <p className="text-sm font-bold text-slate-800">{selectedState || "Nacional"}</p>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Término de Venta */}
+               <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100">
+                 <div className="flex items-center gap-2 mb-2">
+                   <Receipt size={16} className="text-amber-600" />
+                   <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                     Término de Venta
+                   </span>
+                 </div>
+                 <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-black uppercase ${
+                   selectedClient.value > 25000
+                     ? "bg-blue-100 text-blue-700"
+                     : "bg-green-100 text-green-700"
+                 }`}>
+                   {selectedClient.value > 25000 ? "Crédito" : "Contado"}
+                 </span>
+               </div>
+             </div>
+           </div>
+         </div>
+       )}
+     </div>
+   );
+ }
