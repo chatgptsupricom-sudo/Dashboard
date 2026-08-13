@@ -184,7 +184,8 @@ export function Sidebar({
   const isComprasRole = userRole === "compras";
   const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
   const isSuperAdminRole = userRole === "superAdmin";
-  const isGerenteOperaciones = userRole === "gerente_operaciones";
+  const normalizedUserRole = userRole?.toLowerCase().trim();
+  const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
