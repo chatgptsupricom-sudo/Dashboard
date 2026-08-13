@@ -138,11 +138,13 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "sales_dashboard",
       "adminleads",
       "monitoreo_leads",
       "cierres_adminleads",
       "configuracion_leads",
       "catalogo_adminleads",
+      "catalogo_disenador",
       "banco_imagenes",
       "actividad",
       "vista_custom",
@@ -249,6 +251,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "sales_dashboard",
       "actividad",
       "catalogo_disenador",
       "vista_custom",

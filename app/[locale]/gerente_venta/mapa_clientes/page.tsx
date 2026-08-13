@@ -29,11 +29,18 @@ import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { DateRange } from "react-day-picker";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 const COMPANY_NAMES: Record<number, string> = {
   9: "Valencia",
   10: "Caracas",
   7: "Panama",
+};
+
+const CID_TO_COUNTRY: Record<number, string> = {
+  9: "VE",
+  10: "VE",
+  7: "PA",
 };
 
 const MAP_CONFIG: Record<string, any> = {
@@ -44,11 +51,20 @@ const MAP_CONFIG: Record<string, any> = {
     scale: 2800,
     center: [-66.3, 6.6],
   },
+  PA: {
+    name: "panama",
+    geoUrl:
+      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/panama.geojson",
+    scale: 3000,
+    center: [-80.1, 8.6],
+  },
 };
 
 export default function MapsClientsPage() {
   const t = useTranslations("mapsClientsPage");
-  const [currentCountry, setCurrentCountry] = useState("VE");
+  const { user } = useAuthStore();
+  const defaultCountry = CID_TO_COUNTRY[user?.cids ?? 9] || "VE";
+  const [currentCountry, setCurrentCountry] = useState(defaultCountry);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedState, setSelectedState] = useState<string | null>(null);

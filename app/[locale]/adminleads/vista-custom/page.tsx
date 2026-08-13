@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { UserRole } from "@/lib/types";
 import { Globe, Upload, RefreshCw, CheckCircle2, AlertCircle, Loader2, Maximize2 } from "lucide-react";
@@ -16,6 +17,8 @@ interface FileMeta {
 export default function VistaCustomPage() {
   const { user } = useAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [meta, setMeta] = useState<FileMeta>({ exists: false });
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
@@ -23,13 +26,64 @@ export default function VistaCustomPage() {
 
   const canUpload =
     user?.role === UserRole.SUPER_ADMIN ||
-    (user?.role === UserRole.ADMIN_LEADS && (user as any).cids === 9);
+    (user?.role === UserRole.ADMIN_LEADS && Number((user as any).cids) === 9);
+
+  // Fetch server checks and push them into the iframe
+  const pushChecksToIframe = useCallback(async () => {
+    try {
+      const res = await fetch("/api/adminleads/custom-view/checks");
+      const data = await res.json();
+      const checks = data.checks || {};
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SUPRICOM_CHECK_RESTORE", checks },
+        "*"
+      );
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     fetch("/api/adminleads/custom-view/meta")
       .then((r) => r.json())
       .then(setMeta)
       .catch(() => setMeta({ exists: false }));
+  }, []);
+
+  // Socket.IO: receive real-time check updates from other users
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+    if (!url) return;
+    const socket = io(url, { transports: ["websocket"] });
+    socketRef.current = socket;
+
+    socket.on("vista-checks-updated", (payload: { checks: Record<string, number> }) => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SUPRICOM_CHECK_RESTORE", checks: payload.checks || {} },
+        "*"
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
+
+  // Listen for check-save messages from the iframe, then POST to API
+  useEffect(() => {
+    const handler = async (e: MessageEvent) => {
+      if (!e.data || e.data.type !== "SUPRICOM_CHECK_SAVE") return;
+      const checks = e.data.checks || {};
+      try {
+        await fetch("/api/adminleads/custom-view/checks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(checks),
+        });
+        // No need to re-push: the server emits WebSocket which we handle above
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, []);
 
   const showToast = (type: "ok" | "err", msg: string) => {
@@ -167,10 +221,12 @@ export default function VistaCustomPage() {
           </div>
         ) : (
           <iframe
+            ref={iframeRef}
             key={iframeKey}
             src={`/api/adminleads/custom-view?t=${iframeKey}`}
             className="w-full h-full border-0"
             title="Plan de Contenido"
+            onLoad={pushChecksToIframe}
           />
         )}
       </div>

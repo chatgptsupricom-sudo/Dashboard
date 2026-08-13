@@ -5,15 +5,23 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";
+    const category = searchParams.get("category") || "";
+    const fetchInvoice = searchParams.get("fetch_invoice") === "1";
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
 
-    if (!search || search.length < 2) {
+    if (!category && (!search || search.length < 2)) {
       return NextResponse.json([]);
     }
 
-    const domain: any[] = [
-      ["sale_ok", "=", true],
-      ["default_code", "ilike", search],
-    ];
+    const domain: any[] = [["sale_ok", "=", true]];
+
+    if (search) {
+      domain.push(["default_code", "ilike", search]);
+    }
+
+    if (category) {
+      domain.push(["categ_id.name", "ilike", category]);
+    }
 
     const products = await callOdooRPC<any[]>(
       "product.product",
@@ -21,7 +29,7 @@ export async function GET(request: Request) {
       [domain],
       {
         fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "list_price", "standard_price", "company_sale_price", "type", "image_128"],
-        limit: 20,
+        limit,
       },
     );
 
@@ -29,48 +37,50 @@ export async function GET(request: Request) {
       return NextResponse.json([]);
     }
 
-    // For each product, try to find the last invoice that includes it
+    // For each product, optionally try to find the last invoice that includes it
     const results = await Promise.all(
       products.map(async (p: any) => {
         let invoice_number = "";
 
-        try {
-          // Find account.move.line records for this product
-          const invoiceLines = await callOdooRPC<any[]>(
-            "account.move.line",
-            "search_read",
-            [
-              [
-                ["product_id", "=", p.id],
-                ["move_id.move_type", "=", "out_invoice"],
-                ["move_id.state", "=", "posted"],
-              ],
-            ],
-            {
-              fields: ["move_id"],
-              limit: 1,
-              order: "date desc",
-            },
-          );
-
-          if (invoiceLines && invoiceLines.length > 0) {
-            const moveId = invoiceLines[0].move_id[0] || invoiceLines[0].move_id;
-            // Fetch the invoice name
-            const invoice = await callOdooRPC<any[]>(
-              "account.move",
+        if (fetchInvoice) {
+          try {
+            // Find account.move.line records for this product
+            const invoiceLines = await callOdooRPC<any[]>(
+              "account.move.line",
               "search_read",
-              [[["id", "=", moveId]]],
+              [
+                [
+                  ["product_id", "=", p.id],
+                  ["move_id.move_type", "=", "out_invoice"],
+                  ["move_id.state", "=", "posted"],
+                ],
+              ],
               {
-                fields: ["name", "invoice_date"],
+                fields: ["move_id"],
                 limit: 1,
+                order: "date desc",
               },
             );
-            if (invoice && invoice.length > 0) {
-              invoice_number = invoice[0].name || "";
+
+            if (invoiceLines && invoiceLines.length > 0) {
+              const moveId = invoiceLines[0].move_id[0] || invoiceLines[0].move_id;
+              // Fetch the invoice name
+              const invoice = await callOdooRPC<any[]>(
+                "account.move",
+                "search_read",
+                [[["id", "=", moveId]]],
+                {
+                  fields: ["name", "invoice_date"],
+                  limit: 1,
+                },
+              );
+              if (invoice && invoice.length > 0) {
+                invoice_number = invoice[0].name || "";
+              }
             }
+          } catch {
+            // Invoice lookup is best-effort, don't fail the whole request
           }
-        } catch {
-          // Invoice lookup is best-effort, don't fail the whole request
         }
 
         const m = p.x_studio_marca;

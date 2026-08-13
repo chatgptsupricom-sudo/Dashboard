@@ -165,6 +165,7 @@ export async function GET(req: Request) {
             ["invoice_date", ">=", firstDayOfMonth],
             ["invoice_date", "<=", dateStr],
             ["invoice_user_id", "in", odooUserIds],
+            ["company_id", "in", companyIds],
           ],
         ],
         {
@@ -191,6 +192,7 @@ export async function GET(req: Request) {
     // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% ──
     const pedidoFilters = [
       ["user_id", "in", odooUserIds],
+      ["company_id", "in", companyIds],
       ["partner_id.name", "not ilike", "office solution"],
       ["partner_id.name", "not ilike", "supricom"],
     ];

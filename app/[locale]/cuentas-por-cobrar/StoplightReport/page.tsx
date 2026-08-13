@@ -1,14 +1,15 @@
-import StoplightReportSuperadmin from "@/components/superadmin/StoplightReport";
+"use client";
 
-export const metadata = {
-  title: "Stoplight Reports | Cuentas por Cobrar",
-  description: "Gestión y evaluación de KPIs estratégicos",
-};
+import StoplightReportSuperadmin from "@/components/superadmin/StoplightReport";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 export default function StoplightReportPage() {
+  const { user } = useAuthStore();
+  const cid = user?.cids ?? 9;
+
   return (
     <div className="w-full h-full min-h-screen bg-slate-50/50">
-      <StoplightReportSuperadmin cxCMode />
+      <StoplightReportSuperadmin cxCMode companyId={cid} />
     </div>
   );
 }

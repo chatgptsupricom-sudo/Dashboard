@@ -106,7 +106,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
@@ -121,7 +121,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [selectedSeller, setSelectedSeller] = useState<SellerDetail | null>(null);
   const [modalTab, setModalTab] = useState<"resumen" | "diario" | "semanal">("resumen");
   const [goalValues, setGoalValues] = useState<Record<string, string>>({});
-  const [selectedCompanyId, setSelectedCompanyId] = useState(9);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(companyId ?? 9);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [selectedMes, setSelectedMes] = useState(() => {
     const n = new Date();
@@ -1334,6 +1334,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {!vendorMode && !cxCMode && (
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
+          {isSuperAdmin ? (
           <div
             onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
             className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
@@ -1357,6 +1358,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             )}
           </div>
+          ) : (
+          <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm bg-slate-50 text-slate-600">
+            Team: {empresaLabel}
+          </div>
+          )}
           {/* View by */}
           <div className="relative">
             <button

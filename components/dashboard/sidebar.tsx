@@ -126,6 +126,7 @@ export function Sidebar({
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
     { id: "rma_salida", label: t("salida_rma"), icon: Truck, slug: "/rma/salida", absoluteHref: true },
+    { id: "sales_dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "/dashboard" },
     { id: "adminleads", label: t("dashboard_leads"), icon: Target, slug: "", adminLeadsOnly: true },
     { id: "catalogo_adminleads", label: t("catalogo"), icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
@@ -205,7 +206,8 @@ export function Sidebar({
           !comprasDropdownIds.includes(item.id)) &&
         (!isSuperAdminRole || !ventasDropdownIds.includes(item.id)) &&
         (!isSuperAdminRole || !cxcDropdownIds.includes(item.id)) &&
-        (item.id !== "catalogo_adminleads" || userCids === 9) &&
+        (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
+        (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -220,6 +222,12 @@ export function Sidebar({
         return {
           ...item,
           href: `/${locale}${item.slug}`,
+        };
+      }
+      if (item.id === "catalogo_disenador" && userRole?.toLowerCase().trim() === "adminleads") {
+        return {
+          ...item,
+          href: `/${locale}/disenador/productos`,
         };
       }
       return {

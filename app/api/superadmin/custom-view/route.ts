@@ -32,6 +32,7 @@ export async function GET() {
   const script = `<script>
 (function(){
   var KEY='supricom_checks_sa';
+  var isRestoring=false;
 
   function keyOf(el,selector){
     var anc=el.parentElement;
@@ -45,6 +46,7 @@ export async function GET() {
   }
 
   function save(){
+    if(isRestoring)return;
     var s={};
     document.querySelectorAll('.piece').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.piece')]=1;
@@ -52,18 +54,25 @@ export async function GET() {
     document.querySelectorAll('.email-card').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
     });
-    localStorage.setItem(KEY,JSON.stringify(s));
+    try{localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}
+    try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
   }
 
-  function restore(){
-    var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){return;}
+  function restore(s){
+    isRestoring=true;
     document.querySelectorAll('.piece').forEach(function(el){
       el.classList.toggle('checked',!!s[keyOf(el,'.piece')]);
     });
     document.querySelectorAll('.email-card').forEach(function(el){
       el.classList.toggle('checked',!!s[keyOf(el,'.email-card')]);
     });
+    setTimeout(function(){isRestoring=false;},150);
   }
+
+  window.addEventListener('message',function(e){
+    if(!e.data||e.data.type!=='SUPRICOM_CHECK_RESTORE')return;
+    restore(e.data.checks||{});
+  });
 
   var _orig=window.toggleCheck;
   window.toggleCheck=function(el,e){
@@ -71,8 +80,10 @@ export async function GET() {
     setTimeout(save,20);
   };
 
-  restore();
-  window.addEventListener('load',function(){setTimeout(restore,300);});
+  (function(){
+    var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
+    if(Object.keys(s).length)restore(s);
+  })();
 })();
 </script>`;
   const injected = html.includes('</body>')

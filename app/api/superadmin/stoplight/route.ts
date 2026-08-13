@@ -97,9 +97,9 @@ export async function GET(request: NextRequest) {
     let totalCuotaMensual = 0;
     try {
       const cuotaResult = await query(
-        `SELECT s.id as seller_id, s.name, s.user_id, c.cuota 
+        `SELECT s.id as seller_id, s.name, s.user_id, COALESCE(c.cuota, 0) as cuota 
          FROM sellers s 
-         INNER JOIN (
+         LEFT JOIN (
            SELECT seller_id, cuota FROM cuota 
            WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
          ) c ON s.id = c.seller_id

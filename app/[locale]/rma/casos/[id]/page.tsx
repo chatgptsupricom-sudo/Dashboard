@@ -178,10 +178,10 @@ export default function RmaCasoDetailPage() {
           model: editForm.model,
           invoice_number: editForm.invoice_number,
           client_name: editForm.client_name,
+          client_phone: editForm.client_phone,
           serial_quantity: editForm.serial_quantity,
           reported_fault: editForm.reported_fault,
           diagnosis: editForm.diagnosis,
-          notes: editForm.notes,
           status: editForm.status,
         }),
       });
@@ -355,13 +355,23 @@ export default function RmaCasoDetailPage() {
               <CardTitle className="text-lg font-semibold text-slate-900">{t("client_info")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div>
-                <Label className="text-xs font-medium text-slate-400 uppercase">{t("client_name")}</Label>
-                {editing ? (
-                  <Input value={editForm.client_name} onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })} />
-                ) : (
-                  <p className="text-sm text-slate-700 mt-1">{caseData.client_name}</p>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("client_name")}</Label>
+                  {editing ? (
+                    <Input value={editForm.client_name} onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })} />
+                  ) : (
+                    <p className="text-sm text-slate-700 mt-1">{caseData.client_name}</p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">Teléfono del cliente</Label>
+                  {editing ? (
+                    <Input value={editForm.client_phone || ""} onChange={(e) => setEditForm({ ...editForm, client_phone: e.target.value })} />
+                  ) : (
+                    <p className="text-sm text-slate-700 mt-1">{caseData.client_phone || "—"}</p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -386,14 +396,6 @@ export default function RmaCasoDetailPage() {
                   <Textarea value={editForm.diagnosis || ""} onChange={(e) => setEditForm({ ...editForm, diagnosis: e.target.value })} rows={3} />
                 ) : (
                   <p className="text-sm text-slate-700 mt-1">{caseData.diagnosis || "—"}</p>
-                )}
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-400 uppercase">{t("notes")}</Label>
-                {editing ? (
-                  <Textarea value={editForm.notes || ""} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} rows={3} />
-                ) : (
-                  <p className="text-sm text-slate-700 mt-1">{caseData.notes || "—"}</p>
                 )}
               </div>
               {editing && (

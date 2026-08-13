@@ -76,6 +76,11 @@ export default function BancoImagenesPage() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Category filter
+  const [categories, setCategories] = useState<{ id: number; name: string; parent: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
   // Form
   const [form, setForm] = useState({
     odoo_product_id: null as number | null,
@@ -84,7 +89,6 @@ export default function BancoImagenesPage() {
     brand: "",
     category: "",
     price: "",
-    price_adjust: "",
   });
 
   // Image upload
@@ -165,6 +169,38 @@ export default function BancoImagenesPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // ── Load categories from Odoo ──────────────────────────────────────────────
+  useEffect(() => {
+    async function fetchCategories() {
+      try {
+        setLoadingCategories(true);
+        const res = await fetch("/api/rma/categories");
+        const data = await res.json();
+        setCategories(data || []);
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+      } finally {
+        setLoadingCategories(false);
+      }
+    }
+    fetchCategories();
+  }, []);
+
+  const searchProductsByCategory = async () => {
+    if (!selectedCategory) return;
+    try {
+      setSearchingProduct(true);
+      const res = await fetch(`/api/rma/products?category=${encodeURIComponent(selectedCategory)}&limit=100`);
+      const data = await res.json();
+      setProductResults(data);
+      setShowDropdown(data.length > 0);
+    } catch {
+      setProductResults([]);
+    } finally {
+      setSearchingProduct(false);
+    }
+  };
+
   // ── Gallery fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetchImages();
@@ -220,7 +256,6 @@ export default function BancoImagenesPage() {
       brand: product.brand,
       category: product.hardware,
       price: String(product.list_price),
-      price_adjust: "",
     });
     setProductSearch(product.default_code);
     setShowDropdown(false);
@@ -229,19 +264,11 @@ export default function BancoImagenesPage() {
   };
 
   const handleClearProduct = () => {
-    setForm({ odoo_product_id: null, product_code: "", model: "", brand: "", category: "", price: "", price_adjust: "" });
+    setForm({ odoo_product_id: null, product_code: "", model: "", brand: "", category: "", price: "" });
     setProductSearch("");
     setImageFile(null);
     setImagePreview("");
     setOdooImage("");
-  };
-
-  const applyPriceAdjust = () => {
-    if (!form.price_adjust || !form.price) return;
-    const pct = parseFloat(form.price_adjust);
-    const base = parseFloat(form.price);
-    if (isNaN(pct) || isNaN(base)) return;
-    setForm((prev) => ({ ...prev, price: (base * (1 + pct / 100)).toFixed(2), price_adjust: "" }));
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -494,8 +521,35 @@ export default function BancoImagenesPage() {
                   <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-slate-400" />
                 )}
               </div>
+
+              {/* Category filter */}
+              <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="flex-1 h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={loadingCategories}
+                >
+                  <option value="">{loadingCategories ? "Cargando categorías..." : "Seleccionar categoría"}</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.name}>
+                      {cat.parent ? `${cat.parent} / ` : ""}{cat.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={searchProductsByCategory}
+                  disabled={!selectedCategory || searchingProduct}
+                  className="h-10"
+                >
+                  {searchingProduct ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                  Buscar productos
+                </Button>
+              </div>
               {showDropdown && productResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-80 overflow-y-auto">
                   {productResults.map((product) => (
                     <button
                       key={product.id}
@@ -532,26 +586,6 @@ export default function BancoImagenesPage() {
               <div>
                 <Label className="text-sm font-medium text-slate-700">Categoría</Label>
                 <Input value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))} placeholder="Ej: Impresora, Laptop" />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Precio</Label>
-                <div className="flex gap-2">
-                  <Input value={form.price} onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))} placeholder="0.00" type="number" step="0.01" className="flex-1" />
-                  <div className="flex items-center gap-1">
-                    <Input
-                      value={form.price_adjust}
-                      onChange={(e) => setForm((prev) => ({ ...prev, price_adjust: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPriceAdjust(); } }}
-                      placeholder="± %"
-                      type="number"
-                      step="1"
-                      className="w-24"
-                    />
-                    {form.price_adjust && (
-                      <button type="button" onClick={() => setForm((prev) => ({ ...prev, price_adjust: "" }))} className="text-xs text-slate-400 hover:text-slate-600 px-1">✕</button>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
 

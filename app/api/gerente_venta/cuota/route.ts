@@ -25,11 +25,13 @@ export async function GET(req: Request) {
       (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
     );
 
+    const sellerIds = sellers.map((s: any) => s.id);
+    const cuotaPlaceholders = sellerIds.map(() => "?").join(",");
     const [resultCuotas]: any = await db.query(`
       SELECT c.seller_id, c.cuota FROM cuota c
-      INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota GROUP BY seller_id) latest
+      INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota WHERE seller_id IN (${cuotaPlaceholders}) GROUP BY seller_id) latest
       ON c.seller_id = latest.seller_id AND c.created_at = latest.max_date
-    `);
+    `, sellerIds);
     const cuotas = resultCuotas || [];
 
     const firstDayOfMonth = new Date(

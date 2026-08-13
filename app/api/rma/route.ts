@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       model,
       invoice_number,
       client_name,
+      client_phone,
       serial_quantity,
       reported_fault,
       company_id,
@@ -90,8 +91,8 @@ export async function POST(request: Request) {
     const case_number = String(nextNum).padStart(4, "0");
 
     const result = await query(
-      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, serial_quantity, reported_fault, status, notes, company_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?)`,
+      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, client_phone, serial_quantity, reported_fault, status, notes, company_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?)`,
       [
         case_number,
         product_code || null,
@@ -100,10 +101,11 @@ export async function POST(request: Request) {
         model || null,
         invoice_number || null,
         client_name,
+        client_phone || null,
         serial_quantity || null,
         reported_fault,
         notes || null,
-        company_id || 9,
+        company_id || null,
         created_by,
       ]
     );

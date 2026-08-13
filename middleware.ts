@@ -26,7 +26,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gerente_operaciones") ||
     pathname.includes("/recursos_humanos") ||
     pathname.includes("/compras") ||
-    pathname.includes("/rma");
+    pathname.includes("/rma") ||
+    pathname.includes("/disenador");
 
   if (isProtectedPath) {
     if (!token) {
@@ -55,6 +56,8 @@ export default async function middleware(request: NextRequest) {
       const isRma = userRole === "rma";
       // Nueva constante para el rol de Cuentas por Cobrar
       const isCxC = userRole === "cuentas por cobrar";
+      // Nueva constante para el rol de Diseñador
+      const isDisenador = userRole === "diseñador";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -104,6 +107,16 @@ export default async function middleware(request: NextRequest) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
+      }
+
+      // 5b. Lógica para Diseñador / Productos (acceso: diseñador, adminleads de Valencia cids=9, superAdmin)
+      if (pathname.includes("/disenador")) {
+        const userCids = Number(payload.cids);
+        if (!isDisenador && !isSuperAdmin && !(isAdminLeads && userCids === 9)) {
+          return NextResponse.redirect(
+            new URL(`/${locale}/dashboard`, request.url),
+          );
+        }
       }
 
       // 6. Lógica para Recursos Humanos

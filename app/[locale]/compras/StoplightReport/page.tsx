@@ -1,14 +1,15 @@
-import StoplightReportSuperadmin from "@/components/superadmin/StoplightReport";
+"use client";
 
-export const metadata = {
-  title: "Stoplight Reports | Compras",
-  description: "Gestión y evaluación de KPIs estratégicos del departamento de compras",
-};
+import StoplightReportSuperadmin from "@/components/superadmin/StoplightReport";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 export default function StoplightComprasPage() {
+  const { user } = useAuthStore();
+  const cid = user?.cids ?? 9;
+
   return (
     <div className="w-full h-full min-h-screen bg-slate-50/50">
-      <StoplightReportSuperadmin comprasMode={true} />
+      <StoplightReportSuperadmin comprasMode={true} companyId={cid} />
     </div>
   );
 }

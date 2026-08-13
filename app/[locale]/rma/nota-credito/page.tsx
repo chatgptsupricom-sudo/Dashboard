@@ -26,7 +26,6 @@ export default function RmaNotaCreditoPage() {
   const [saved, setSaved] = useState(false);
   const [notaId, setNotaId] = useState<number | null>(null);
 
-  const [detail, setDetail] = useState("");
   const [observations, setObservations] = useState("");
   const [images, setImages] = useState<{ name: string; url: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,7 +54,6 @@ export default function RmaNotaCreditoPage() {
         const ncRes = await fetch(`/api/rma/nota-credito?case_id=${data.case.id}`);
         const ncData = await ncRes.json();
         if (ncData.success && ncData.nota) {
-          setDetail(ncData.nota.detail || "");
           setObservations(ncData.nota.observations || "");
           const imgs = ncData.nota.images;
           setImages(Array.isArray(imgs) ? imgs : typeof imgs === "string" ? JSON.parse(imgs) : []);
@@ -86,7 +84,6 @@ export default function RmaNotaCreditoPage() {
         const ncRes = await fetch(`/api/rma/nota-credito?case_id=${data.case.id}`);
         const ncData = await ncRes.json();
         if (ncData.success && ncData.nota) {
-          setDetail(ncData.nota.detail || "");
           setObservations(ncData.nota.observations || "");
           const imgs = ncData.nota.images;
           setImages(Array.isArray(imgs) ? imgs : typeof imgs === "string" ? JSON.parse(imgs) : []);
@@ -134,7 +131,7 @@ export default function RmaNotaCreditoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           case_id: caseData.id,
-          detail,
+          detail: caseData.reported_fault || "",
           observations,
           images,
           created_by: "Usuario Actual",
@@ -202,8 +199,7 @@ export default function RmaNotaCreditoPage() {
               <th>Modelo</th>
               <th>Factura</th>
               <th>Cliente</th>
-              <th>Serial/Cant.</th>
-              <th>Detalle</th>
+              <th>Serial</th>
               <th>Estatus</th>
             </tr>
           </thead>
@@ -215,7 +211,6 @@ export default function RmaNotaCreditoPage() {
               <td>${caseData?.invoice_number || ""}</td>
               <td>${caseData?.client_name || ""}</td>
               <td>${caseData?.serial_quantity || ""}</td>
-              <td>${detail || caseData?.diagnosis || ""}</td>
               <td>${caseData?.status?.replace("_", " ")?.toUpperCase() || ""}</td>
             </tr>
           </tbody>
@@ -319,7 +314,6 @@ export default function RmaNotaCreditoPage() {
                         <th className="p-2 text-left text-xs">{t("invoice_number")}</th>
                         <th className="p-2 text-left text-xs">{t("client_name")}</th>
                         <th className="p-2 text-left text-xs">{t("serial_quantity")}</th>
-                        <th className="p-2 text-left text-xs">{t("detail")}</th>
                         <th className="p-2 text-left text-xs">{t("status_label")}</th>
                       </tr>
                     </thead>
@@ -331,27 +325,11 @@ export default function RmaNotaCreditoPage() {
                         <td className="p-2 border">{caseData.invoice_number || ""}</td>
                         <td className="p-2 border">{caseData.client_name || ""}</td>
                         <td className="p-2 border">{caseData.serial_quantity || ""}</td>
-                        <td className="p-2 border">{detail || caseData.diagnosis || ""}</td>
                         <td className="p-2 border uppercase font-semibold">{caseData.status?.replace("_", " ")}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Detail */}
-            <Card className="rounded-3xl border-none shadow-sm mb-6">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-slate-900">{t("detail")}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={detail}
-                  onChange={(e) => setDetail(e.target.value)}
-                  placeholder={t("detail_placeholder")}
-                  rows={3}
-                />
               </CardContent>
             </Card>
 

@@ -16,12 +16,7 @@ import { ArrowLeft, Loader2, Save, Search, Wrench, X } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-
-const empresas = [
-  { id: 9, name: "Valencia" },
-  { id: 10, name: "Caracas" },
-  { id: 7, name: "Panamá" },
-];
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 interface OdooProduct {
   id: number;
@@ -42,6 +37,7 @@ export default function RmaNuevoPage() {
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
 
+  const { user } = useAuthStore();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     product_code: "",
@@ -50,12 +46,12 @@ export default function RmaNuevoPage() {
     model: "",
     invoice_number: "",
     client_name: "",
+    client_phone: "",
     serial_quantity: "",
     reported_fault: "",
     status: "recibido",
-    company_id: "9",
-    notes: "",
   });
+  const [hasSerial, setHasSerial] = useState<"yes" | "no" | null>(null);
 
   // Product search state
   const [productSearch, setProductSearch] = useState("");
@@ -118,11 +114,28 @@ export default function RmaNuevoPage() {
       hardware: product.hardware,
       brand: product.brand,
       model: product.model,
-      invoice_number: product.invoice_number || prev.invoice_number,
     }));
     setOdooProductId(product.id);
     setShowDropdown(false);
     setProductResults([]);
+
+    // If serial is already selected as yes, fetch invoice from Odoo
+    if (hasSerial === "yes") {
+      fetchInvoiceForProduct(product.id);
+    }
+  };
+
+  const fetchInvoiceForProduct = async (productId: number) => {
+    try {
+      const res = await fetch(`/api/rma/products?q=${encodeURIComponent(form.product_code)}&fetch_invoice=1`);
+      const data = await res.json();
+      const product = data.find((p: OdooProduct) => p.id === productId);
+      if (product?.invoice_number) {
+        setForm((prev) => ({ ...prev, invoice_number: product.invoice_number }));
+      }
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+    }
   };
 
   const handleClearProduct = () => {
@@ -132,9 +145,11 @@ export default function RmaNuevoPage() {
       hardware: "",
       brand: "",
       model: "",
+      invoice_number: "",
     }));
     setOdooProductId(null);
     setProductSearch("");
+    setHasSerial(null);
   };
 
   const handleChange = (field: string, value: string) => {
@@ -144,7 +159,7 @@ export default function RmaNuevoPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.client_name || !form.reported_fault) {
+    if (!form.client_name || !form.reported_fault || !hasSerial) {
       alert(t("required_fields"));
       return;
     }
@@ -156,8 +171,7 @@ export default function RmaNuevoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          company_id: parseInt(form.company_id, 10),
-          created_by: "Usuario Actual",
+          created_by: user?.name || user?.email || "Usuario Actual",
           odoo_product_id: odooProductId,
         }),
       });
@@ -282,20 +296,63 @@ export default function RmaNuevoPage() {
                   placeholder={t("model_placeholder")}
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">{t("invoice_number")}</Label>
-                <Input
-                  value={form.invoice_number}
-                  onChange={(e) => handleChange("invoice_number", e.target.value)}
-                  placeholder={t("invoice_placeholder")}
-                />
+            </div>
+
+            {/* Serial number question */}
+            <div className="pt-2">
+              <Label className="text-sm font-medium text-slate-700">¿El producto tiene número de serial? *</Label>
+              <div className="mt-2 flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="hasSerial"
+                    value="yes"
+                    checked={hasSerial === "yes"}
+                    onChange={() => {
+                      setHasSerial("yes");
+                      if (odooProductId) {
+                        fetchInvoiceForProduct(odooProductId);
+                      }
+                    }}
+                    className="accent-blue-600"
+                  />
+                  <span className="text-sm text-slate-700">Sí</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="hasSerial"
+                    value="no"
+                    checked={hasSerial === "no"}
+                    onChange={() => {
+                      setHasSerial("no");
+                      setForm((prev) => ({ ...prev, invoice_number: "" }));
+                    }}
+                    className="accent-blue-600"
+                  />
+                  <span className="text-sm text-slate-700">No</span>
+                </label>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium text-slate-700">{t("serial_quantity")}</Label>
                 <Input
                   value={form.serial_quantity}
                   onChange={(e) => handleChange("serial_quantity", e.target.value)}
                   placeholder={t("serial_placeholder")}
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-slate-700">{t("invoice_number")}</Label>
+                <Input
+                  value={form.invoice_number}
+                  onChange={(e) => handleChange("invoice_number", e.target.value)}
+                  placeholder={t("invoice_placeholder")}
+                  disabled={hasSerial === "yes"}
+                  className={hasSerial === "yes" ? "bg-slate-100" : ""}
+                  title={hasSerial === "yes" ? "La factura se trae automáticamente de Odoo" : "Ingresa el número de factura manualmente"}
                 />
               </div>
             </div>
@@ -319,19 +376,12 @@ export default function RmaNuevoPage() {
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium text-slate-700">{t("company")} *</Label>
-                <Select value={form.company_id} onValueChange={(v) => handleChange("company_id", v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {empresas.map((e) => (
-                      <SelectItem key={e.id} value={String(e.id)}>
-                        {e.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-sm font-medium text-slate-700">Teléfono del cliente</Label>
+                <Input
+                  value={form.client_phone}
+                  onChange={(e) => handleChange("client_phone", e.target.value)}
+                  placeholder="Ej: +58 424 1234567"
+                />
               </div>
             </div>
           </CardContent>
@@ -368,14 +418,6 @@ export default function RmaNuevoPage() {
                     <SelectItem value="reingresado">{t("status_reingresado")}</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">{t("notes")}</Label>
-                <Input
-                  value={form.notes}
-                  onChange={(e) => handleChange("notes", e.target.value)}
-                  placeholder={t("notes_placeholder")}
-                />
               </div>
             </div>
           </CardContent>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 import { Globe, RefreshCw, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -12,14 +13,65 @@ interface FileMeta {
 }
 
 export default function VistaCustomDisenadorPage() {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [meta, setMeta] = useState<FileMeta>({ exists: false });
   const [iframeKey, setIframeKey] = useState(0);
+
+  const pushChecksToIframe = useCallback(async () => {
+    try {
+      const res = await fetch("/api/adminleads/custom-view/checks");
+      const data = await res.json();
+      const checks = data.checks || {};
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SUPRICOM_CHECK_RESTORE", checks },
+        "*"
+      );
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     fetch("/api/adminleads/custom-view/meta")
       .then((r) => r.json())
       .then(setMeta)
       .catch(() => setMeta({ exists: false }));
+  }, []);
+
+  // Socket.IO: receive real-time check updates
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+    if (!url) return;
+    const socket = io(url, { transports: ["websocket"] });
+    socketRef.current = socket;
+
+    socket.on("vista-checks-updated", (payload: { checks: Record<string, number> }) => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SUPRICOM_CHECK_RESTORE", checks: payload.checks || {} },
+        "*"
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
+
+  // Listen for save messages from iframe — diseñador can also mark checks
+  useEffect(() => {
+    const handler = async (e: MessageEvent) => {
+      if (!e.data || e.data.type !== "SUPRICOM_CHECK_SAVE") return;
+      const checks = e.data.checks || {};
+      try {
+        await fetch("/api/adminleads/custom-view/checks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(checks),
+        });
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, []);
 
   const formatDate = (iso?: string) => {
@@ -90,10 +142,12 @@ export default function VistaCustomDisenadorPage() {
           </div>
         ) : (
           <iframe
+            ref={iframeRef}
             key={iframeKey}
             src={`/api/adminleads/custom-view?t=${iframeKey}`}
             className="w-full h-full border-0"
             title="Plan de Contenido"
+            onLoad={pushChecksToIframe}
           />
         )}
       </div>

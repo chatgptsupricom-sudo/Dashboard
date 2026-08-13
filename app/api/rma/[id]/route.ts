@@ -49,6 +49,7 @@ export async function PUT(
       model,
       invoice_number,
       client_name,
+      client_phone,
       serial_quantity,
       reported_fault,
       status,
@@ -75,6 +76,7 @@ export async function PUT(
     if (model !== undefined) { updates.push("model = ?"); values.push(model); }
     if (invoice_number !== undefined) { updates.push("invoice_number = ?"); values.push(invoice_number); }
     if (client_name !== undefined) { updates.push("client_name = ?"); values.push(client_name); }
+    if (client_phone !== undefined) { updates.push("client_phone = ?"); values.push(client_phone); }
     if (serial_quantity !== undefined) { updates.push("serial_quantity = ?"); values.push(serial_quantity); }
     if (reported_fault !== undefined) { updates.push("reported_fault = ?"); values.push(reported_fault); }
     if (diagnosis !== undefined) { updates.push("diagnosis = ?"); values.push(diagnosis); }
