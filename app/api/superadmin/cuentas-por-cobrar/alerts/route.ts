@@ -11,11 +11,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
+    const userCidsParam = searchParams.get("userCids");
 
     const companyIds =
       empresa && COMPANY_MAP[empresa]
         ? [COMPANY_MAP[empresa]]
-        : [7, 9, 10];
+        : userCidsParam
+          ? [parseInt(userCidsParam, 10)]
+          : [7, 9, 10];
 
     const moveDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],

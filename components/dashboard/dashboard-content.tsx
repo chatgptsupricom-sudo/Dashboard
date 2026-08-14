@@ -24,7 +24,6 @@ export function SuperAdminView() {
       .then((res) => res.json())
       .then((json) => {
         // Normalización de datos para evitar errores de undefined
-        
         const sanitizedData = {
           ...json,
           topClients: (json.topClients || []).filter(

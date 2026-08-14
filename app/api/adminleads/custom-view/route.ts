@@ -1,54 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile, mkdir, stat } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 
 const STORAGE_DIR = path.join(process.cwd(), "uploads", "custom-views");
 const HTML_FILE = path.join(STORAGE_DIR, "adminleads.html");
 const META_FILE = path.join(STORAGE_DIR, "adminleads.meta.json");
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
 
 async function ensureDir() {
-  const parentDir = path.join(process.cwd(), "uploads");
-  if (!existsSync(parentDir)) await mkdir(parentDir, { recursive: true });
   if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
 }
 
 // GET — serve the stored HTML or a placeholder
 export async function GET() {
-  try {
-    await ensureDir();
+  await ensureDir();
 
-    if (!existsSync(HTML_FILE)) {
-      return new Response(
-        `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-        <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
-        .box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
-        p{font-size:14px}</style></head><body>
-        <div class="box"><div class="icon">📄</div>
-        <div class="title">Sin vista personalizada</div>
-        <p>Sube un archivo HTML desde el panel para verlo aquí.</p></div>
-        </body></html>`,
-        { headers: { "Content-Type": "text/html; charset=utf-8" } }
-      );
-    }
+  if (!existsSync(HTML_FILE)) {
+    return new Response(
+      `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+      <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
+      .box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
+      p{font-size:14px}</style></head><body>
+      <div class="box"><div class="icon">📄</div>
+      <div class="title">Sin vista personalizada</div>
+      <p>Sube un archivo HTML desde el panel para verlo aquí.</p></div>
+      </body></html>`,
+      { headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
 
-    const html = await readFile(HTML_FILE, "utf-8");
-  const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+  const html = await readFile(HTML_FILE, "utf-8");
   const script = `<script>
 (function(){
   var KEY='supricom_checks_al';
   var isRestoring=false;
 
   function keyOf(el,selector){
-    // If element has a stable id or data-id, use that
-    if(el.id) return 'id|'+el.id;
-    if(el.getAttribute('data-id')) return 'did|'+el.getAttribute('data-id');
-    // Content-based key: tag + trimmed text (first 80 chars)
-    var txt=(el.textContent||'').trim().replace(/\\s+/g,' ').substring(0,80);
-    var tag=el.tagName||'';
-    // Simple hash of content for shorter keys
-    var h=0;for(var i=0;i<txt.length;i++){h=((h<<5)-h)+txt.charCodeAt(i);h=h&h;}
-    return tag+'|'+Math.abs(h)+'|'+txt.length;
+    var anc=el.parentElement;
+    while(anc&&!anc.id)anc=anc.parentElement;
+    if(anc&&anc.id){
+      var siblings=Array.from(anc.querySelectorAll(selector));
+      var i=siblings.indexOf(el);
+      if(i>=0)return anc.id+'|'+i;
+    }
+    return 'g|'+Array.from(document.querySelectorAll(selector)).indexOf(el);
   }
 
   function save(){
@@ -109,7 +105,7 @@ export async function GET() {
         if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
       }).catch(function(){});
       // Connect Socket.IO for live updates
-      var socketUrl='__SOCKET_URL__';
+      var socketUrl='${SOCKET_URL}';
       if(socketUrl){
         var script=document.createElement('script');
         script.src=socketUrl+'/socket.io/socket.io.js';
@@ -127,20 +123,12 @@ export async function GET() {
   })();
 })();
 </script>`;
-  const finalScript = socketUrl ? script.replace("__SOCKET_URL__", socketUrl) : script.replace("__SOCKET_URL__", "");
   const injected = html.includes('</body>')
-    ? html.replace('</body>', finalScript + '</body>')
-    : html + finalScript;
+    ? html.replace('</body>', script + '</body>')
+    : html + script;
   return new Response(injected, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
-  } catch (error: any) {
-    console.error("custom-view GET error:", error.message);
-    return new Response(
-      `<!DOCTYPE html><html><body><h1>Error</h1><p>${error.message}</p></body></html>`,
-      { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
-    );
-  }
 }
 
 // POST — receive and save new HTML file

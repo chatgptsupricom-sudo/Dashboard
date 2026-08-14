@@ -11,14 +11,20 @@ import {
 import {
   AlertTriangle,
   Building2,
+  Calendar,
   ChevronRight,
   Clock,
+  DollarSign,
+  FileText,
+  Package,
   RefreshCw,
   Search,
+  Target,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import useSWR from "swr";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -36,6 +42,306 @@ function formatDDMMYYYY(dateStr: string | null) {
   const [d] = dateStr.split(" ");
   const [y, m, day] = d.split("-");
   return `${day}-${m}-${y}`;
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split(" ")[0].split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function InvoiceDetailTrigger({ item, onRenderSub }: { item: any; onRenderSub?: (item: any) => React.ReactNode }) {
+  const [detail, setDetail] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const fetchDetail = useCallback(async () => {
+    setOpen(true);
+    setLoading(true);
+    setDetail(null);
+    try {
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/invoice/${item.id}`);
+      const json = await res.json();
+      if (json.success) setDetail(json.data);
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  }, [item.id]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <div
+          onClick={(e) => { e.preventDefault(); fetchDetail(); }}
+          className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center cursor-pointer hover:border-blue-400 transition-all"
+        >
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <span className="text-sm font-medium truncate">{item.name || item.partnerName || "—"}</span>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{item.partnerName}</span>
+              <span>•</span>
+              <span>{item.companyName}</span>
+              {item.invoiceUserName && item.invoiceUserName !== "Sin asignar" && (
+                <><span>•</span><span>{item.invoiceUserName}</span></>
+              )}
+            </div>
+            {onRenderSub && onRenderSub(item)}
+          </div>
+          <div className="text-right shrink-0 ml-4">
+            <div className="text-sm font-bold text-slate-900">{formatCurrency(Math.abs(item.amountResidual))}</div>
+            <div className="text-[10px] text-slate-400">{item.invoiceDateDue ? formatDDMMYYYY(item.invoiceDateDue) : ""}</div>
+          </div>
+          <ChevronRight size={16} className="text-slate-400 shrink-0 ml-2" />
+        </div>
+      </DialogTrigger>
+
+      <DialogContent className="sm:max-w-5xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold">Factura {detail?.name || item.name || ""}</DialogTitle>
+          <DialogDescription className="sr-only">Detalle completo de factura</DialogDescription>
+        </DialogHeader>
+
+        <div className="overflow-y-auto max-h-[78vh] pr-2 space-y-5 mt-2">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <RefreshCw size={28} className="animate-spin text-blue-500 mx-auto mb-3" />
+                <span className="text-slate-400 text-sm">Cargando documento...</span>
+              </div>
+            </div>
+          ) : !detail ? (
+            <div className="text-center py-16 text-slate-400">Error al cargar</div>
+          ) : (
+            <>
+              {/* STATUS BANNER */}
+              <div className={`flex items-center justify-between px-5 py-3.5 rounded-xl border ${
+                detail.paymentState === "paid" ? "bg-emerald-50 border-emerald-200"
+                  : detail.paymentState === "partial" ? "bg-amber-50 border-amber-200"
+                    : detail.amountResidual > 0 && detail.invoiceDateDue && new Date(detail.invoiceDateDue) < new Date() ? "bg-red-50 border-red-200"
+                      : "bg-blue-50 border-blue-200"
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2.5 h-2.5 rounded-full ${detail.paymentState === "paid" ? "bg-emerald-500" : detail.paymentState === "partial" ? "bg-amber-500" : "bg-red-500"}`} />
+                  <span className="text-sm font-bold text-slate-800">
+                    {detail.paymentState === "paid" ? "Factura Pagada" : detail.paymentState === "partial" ? "Pago Parcial" : "Pendiente de Pago"}
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                  {detail.moveType === "out_refund" ? "Nota de Crédito" : "Factura de Venta"}
+                </span>
+              </div>
+
+              {/* PAYMENT PROGRESS */}
+              {detail.amountTotal > 0 && (
+                <div className="bg-white border border-slate-100 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Progreso de Pago</span>
+                    <span className="text-xs font-bold text-slate-700">{Math.round((detail.amountPaid / detail.amountTotal) * 100)}%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${detail.paymentState === "paid" ? "bg-emerald-500" : detail.paymentState === "partial" ? "bg-amber-500" : "bg-blue-500"}`}
+                      style={{ width: `${Math.min((detail.amountPaid / detail.amountTotal) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-medium">
+                    <span>Pagado: {formatCurrency(detail.amountPaid)}</span>
+                    <span>Pendiente: {formatCurrency(detail.amountResidual)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* INFO GRID */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Cliente</span>
+                  <p className="text-sm font-bold text-slate-800 leading-tight">{detail.partnerName}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Sede</span>
+                  <p className="text-sm font-bold text-slate-800">{detail.companyName}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Vendedor</span>
+                  <p className="text-sm font-medium text-slate-700">{detail.invoiceUserName}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Moneda</span>
+                  <p className="text-sm font-medium text-slate-700">{detail.currencyName || "USD"}</p>
+                </div>
+              </div>
+
+              {/* DATES ROW */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0"><Calendar size={14} className="text-blue-600" /></div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Emisión</span>
+                    <p className="text-xs font-bold text-slate-800">{formatDate(detail.invoiceDate)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${detail.invoiceDateDue && new Date(detail.invoiceDateDue) < new Date() && detail.amountResidual > 0 ? "bg-red-50" : "bg-amber-50"}`}>
+                    <Clock size={14} className={detail.invoiceDateDue && new Date(detail.invoiceDateDue) < new Date() && detail.amountResidual > 0 ? "text-red-600" : "text-amber-600"} />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Vencimiento</span>
+                    <p className={`text-xs font-bold ${detail.invoiceDateDue && new Date(detail.invoiceDateDue) < new Date() && detail.amountResidual > 0 ? "text-red-600" : "text-slate-800"}`}>{formatDate(detail.invoiceDateDue)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center shrink-0"><FileText size={14} className="text-purple-600" /></div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Diario</span>
+                    <p className="text-xs font-medium text-slate-700">{detail.journalName || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0"><Target size={14} className="text-slate-500" /></div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Ref. Pago</span>
+                    <p className="text-xs font-medium text-slate-700 truncate max-w-[120px]">{detail.paymentReference || "—"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* TOTALS CARDS */}
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { label: "Subtotal", value: detail.totals.subtotal, bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-100" },
+                  { label: "Impuesto", value: detail.totals.tax, bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-100" },
+                  { label: "Total", value: detail.totals.total, bg: "bg-blue-50", text: "text-blue-800", border: "border-blue-100" },
+                  { label: "Pagado", value: detail.totals.paid, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-100" },
+                  { label: "Pendiente", value: detail.totals.residual, bg: "bg-red-50", text: "text-red-700", border: "border-red-100" },
+                ].map((t) => (
+                  <div key={t.label} className={`${t.bg} border ${t.border} rounded-xl p-3 text-center`}>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-1">{t.label}</span>
+                    <span className={`text-sm font-bold ${t.text}`}>{formatCurrency(t.value)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* LINE ITEMS */}
+              {detail.lines.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Package size={14} className="text-slate-400" />
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detalle de Productos</h4>
+                    <span className="text-[10px] text-slate-400 font-medium ml-auto">{detail.lines.length} ítems</span>
+                  </div>
+                  <div className="border border-slate-100 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/80">
+                          <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">#</th>
+                          <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Producto</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cant.</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Precio Unit.</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Desc.</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subtotal</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.lines.map((line: any, idx: number) => (
+                          <tr key={line.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                            <td className="py-2.5 px-4 text-slate-400 font-medium">{idx + 1}</td>
+                            <td className="py-2.5 px-4">
+                              <p className="font-semibold text-slate-800 text-xs">{line.productName || line.name}</p>
+                              {line.productName && line.name !== line.productName && <p className="text-[10px] text-slate-400 mt-0.5">{line.name}</p>}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-medium text-slate-700">{line.quantity}</td>
+                            <td className="py-2.5 px-4 text-right text-slate-600">{formatCurrency(line.priceUnit)}</td>
+                            <td className="py-2.5 px-4 text-right">
+                              {line.discount > 0 ? <span className="inline-block px-1.5 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100 rounded">{line.discount}%</span> : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2.5 px-4 text-right text-slate-600">{formatCurrency(line.priceSubtotal)}</td>
+                            <td className="py-2.5 px-4 text-right font-bold text-slate-800">{formatCurrency(line.priceTotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-50/80 border-t border-slate-200">
+                          <td colSpan={5} className="py-2.5 px-4 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subtotal</td>
+                          <td colSpan={2} className="py-2.5 px-4 text-right font-bold text-slate-800 text-xs">{formatCurrency(detail.totals.subtotal)}</td>
+                        </tr>
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={5} className="py-2 px-4 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Impuesto</td>
+                          <td colSpan={2} className="py-2 px-4 text-right font-medium text-slate-600 text-xs">{formatCurrency(detail.totals.tax)}</td>
+                        </tr>
+                        <tr className="bg-blue-50/60 border-t border-blue-100">
+                          <td colSpan={5} className="py-3 px-4 text-right text-[10px] font-bold text-blue-700 uppercase tracking-widest">Total</td>
+                          <td colSpan={2} className="py-3 px-4 text-right font-black text-blue-900 text-sm">{formatCurrency(detail.totals.total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* PAYMENT HISTORY */}
+              {detail.payments && detail.payments.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <DollarSign size={14} className="text-emerald-500" />
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Historial de Pagos</h4>
+                    <span className="text-[10px] text-slate-400 font-medium ml-auto">{detail.payments.length} movimientos</span>
+                  </div>
+                  <div className="border border-slate-100 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/80">
+                          <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Referencia</th>
+                          <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Débito</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Crédito</th>
+                          <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                          <th className="text-center py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Conciliado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.payments.map((p: any) => (
+                          <tr key={p.id} className="border-t border-slate-50 hover:bg-emerald-50/20 transition-colors">
+                            <td className="py-2.5 px-4 font-medium text-slate-700">{p.name}</td>
+                            <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
+                            <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                            <td className="py-2.5 px-4 text-center">
+                              {p.reconciled ? <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span> : <span className="inline-block w-5 h-5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold leading-5 text-center">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* NOTES */}
+              {(detail.invoiceOrigin || detail.narration) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {detail.invoiceOrigin && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Origen</span>
+                      <p className="text-xs text-slate-700 leading-relaxed">{detail.invoiceOrigin}</p>
+                    </div>
+                  )}
+                  {detail.narration && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Notas Internas</span>
+                      <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{detail.narration.replace(/<[^>]*>/g, "")}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function AlertCard({
@@ -144,112 +450,7 @@ function AlertCard({
 
           {filteredList.length > 0 ? (
             filteredList.map((item: any, i: number) => (
-              <Dialog key={i}>
-                <DialogTrigger asChild>
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center cursor-pointer hover:border-blue-400 transition-all">
-                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                      <span className="text-sm font-medium truncate">
-                        {item.name || item.partnerName || "—"}
-                      </span>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <span>{item.partnerName}</span>
-                        <span>•</span>
-                        <span>{item.companyName}</span>
-                        {item.invoiceUserName &&
-                          item.invoiceUserName !== "Sin asignar" && (
-                            <>
-                              <span>•</span>
-                              <span>{item.invoiceUserName}</span>
-                            </>
-                          )}
-                      </div>
-                      {onRenderSub && onRenderSub(item)}
-                    </div>
-                    <div className="text-right shrink-0 ml-4">
-                      <div className="text-sm font-bold text-slate-900">
-                        {formatCurrency(Math.abs(item.amountResidual))}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        {item.invoiceDateDue
-                          ? formatDDMMYYYY(item.invoiceDateDue)
-                          : ""}
-                      </div>
-                    </div>
-                    <ChevronRight
-                      size={16}
-                      className="text-slate-400 shrink-0 ml-2"
-                    />
-                  </div>
-                </DialogTrigger>
-
-                <DialogContent className="sm:max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {item.name || item.partnerName || "—"}
-                    </DialogTitle>
-                    <DialogDescription className="sr-only">
-                      Detalle de factura
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="mt-4 space-y-4 max-h-[65vh] overflow-y-auto pr-2">
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-                        Detalles de Factura
-                      </h4>
-                      <div className="grid grid-cols-2 gap-y-2 text-sm">
-                        <span className="text-slate-500">Cliente:</span>
-                        <span className="font-medium text-right sm:text-left">
-                          {item.partnerName}
-                        </span>
-
-                        <span className="text-slate-500">Empresa:</span>
-                        <span className="font-medium text-right sm:text-left">
-                          {item.companyName}
-                        </span>
-
-                        <span className="text-slate-500">Vendedor:</span>
-                        <span className="font-medium text-slate-700 text-right sm:text-left">
-                          {item.invoiceUserName || "No asignado"}
-                        </span>
-
-                        <span className="text-slate-500">Fecha factura:</span>
-                        <span className="font-mono text-right sm:text-left">
-                          {formatDDMMYYYY(item.invoiceDate)}
-                        </span>
-
-                        <span className="text-slate-500">Vencimiento:</span>
-                        <span className="font-mono text-right sm:text-left">
-                          {formatDDMMYYYY(item.invoiceDateDue)}
-                        </span>
-
-                        <span className="text-slate-500">Total facturado:</span>
-                        <span className="font-bold text-slate-900 text-right sm:text-left">
-                          {formatCurrency(Math.abs(item.amountTotal))}
-                        </span>
-
-                        <span className="text-slate-500 font-semibold">
-                          Saldo pendiente:
-                        </span>
-                        <span className="font-bold text-red-600 text-right sm:text-left">
-                          {formatCurrency(Math.abs(item.amountResidual))}
-                        </span>
-
-                        {item.agingDays > 0 && (
-                          <>
-                            <span className="text-slate-500">
-                              Días vencido:
-                            </span>
-                            <span className="font-bold text-red-600 text-right sm:text-left">
-                              {item.agingDays} días
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <InvoiceDetailTrigger key={i} item={item} onRenderSub={onRenderSub} />
             ))
           ) : list.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -273,10 +474,12 @@ function AlertCard({
 }
 
 export default function CxcAlertas() {
+  const { user } = useAuthStore();
+  const userCids = user?.cids;
   const [empresa, setEmpresa] = useState("");
 
   const { data, error, isLoading, mutate } = useSWR(
-    `/api/superadmin/cuentas-por-cobrar/alerts?empresa=${empresa}`,
+    `/api/superadmin/cuentas-por-cobrar/alerts?empresa=${empresa}${userCids && !empresa ? `&userCids=${userCids}` : ""}`,
     fetcher,
     { refreshInterval: 300000 },
   );
@@ -308,22 +511,24 @@ export default function CxcAlertas() {
         </button>
       </div>
 
-      <div className="flex p-1 bg-slate-200/60 rounded-xl max-w-md shadow-inner">
-        {empresas.map((emp) => (
-          <button
-            key={emp.id}
-            onClick={() => setEmpresa(emp.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 text-sm font-semibold rounded-lg transition-all ${
-              empresa === emp.id
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Building2 size={15} />
-            {emp.label}
-          </button>
-        ))}
-      </div>
+      {!userCids && (
+        <div className="flex p-1 bg-slate-200/60 rounded-xl max-w-md shadow-inner">
+          {empresas.map((emp) => (
+            <button
+              key={emp.id}
+              onClick={() => setEmpresa(emp.id)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 text-sm font-semibold rounded-lg transition-all ${
+                empresa === emp.id
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Building2 size={15} />
+              {emp.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="p-20 text-center font-bold text-slate-400 uppercase animate-pulse tracking-wider">

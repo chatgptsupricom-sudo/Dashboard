@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", {
@@ -592,6 +593,8 @@ function SalespersonCard({ sp }: { sp: any }) {
 }
 
 export default function TopClientesVendedorPage() {
+  const { user } = useAuthStore();
+  const userCids = user?.cids;
   const [empresa, setEmpresa] = useState("");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -601,6 +604,7 @@ export default function TopClientesVendedorPage() {
     try {
       const params = new URLSearchParams();
       if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
       const res = await fetch(
         `/api/superadmin/cuentas-por-cobrar/top-clients?${params}`,
       );
@@ -610,7 +614,7 @@ export default function TopClientesVendedorPage() {
       console.error(e);
     }
     setLoading(false);
-  }, [empresa]);
+  }, [empresa, userCids]);
 
   useEffect(() => {
     fetchData();
@@ -646,22 +650,24 @@ export default function TopClientesVendedorPage() {
         </button>
       </div>
 
-      <div className="flex p-1 bg-slate-200/60 rounded-xl max-w-md shadow-inner">
-        {empresas.map((emp) => (
-          <button
-            key={emp.id}
-            onClick={() => setEmpresa(emp.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
-              empresa === emp.id
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Building2 size={13} />
-            {emp.label}
-          </button>
-        ))}
-      </div>
+      {!userCids && (
+        <div className="flex p-1 bg-slate-200/60 rounded-xl max-w-md shadow-inner">
+          {empresas.map((emp) => (
+            <button
+              key={emp.id}
+              onClick={() => setEmpresa(emp.id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
+                empresa === emp.id
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Building2 size={13} />
+              {emp.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="p-20 text-center font-bold text-slate-400 uppercase animate-pulse tracking-wider text-sm">

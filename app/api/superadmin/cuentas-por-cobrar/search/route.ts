@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
+    const userCidsParam = searchParams.get("userCids");
     const q = searchParams.get("q")?.trim() || "";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
@@ -35,7 +36,9 @@ export async function GET(request: NextRequest) {
     const companyIds =
       empresa && COMPANY_MAP[empresa]
         ? [COMPANY_MAP[empresa]]
-        : [7, 9, 10];
+        : userCidsParam
+          ? [parseInt(userCidsParam, 10)]
+          : [7, 9, 10];
 
     const domain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],

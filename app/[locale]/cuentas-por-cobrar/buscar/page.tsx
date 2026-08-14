@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", {
@@ -248,6 +249,8 @@ function InvoiceDetailView({ invoiceId }: { invoiceId: number }) {
 }
 
 export default function BuscarFacturasPage() {
+  const { user } = useAuthStore();
+  const userCids = user?.cids;
   const [query, setQuery] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [data, setData] = useState<any>(null);
@@ -273,6 +276,7 @@ export default function BuscarFacturasPage() {
         page: String(page),
         limit: "50",
       });
+      if (!empresa && userCids) params.set("userCids", String(userCids));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/search?${params}`);
       const json = await res.json();
       setData(json);
@@ -280,7 +284,7 @@ export default function BuscarFacturasPage() {
       console.error(e);
     }
     setLoading(false);
-  }, [debouncedQuery, empresa, page]);
+  }, [debouncedQuery, empresa, userCids, page]);
 
   useEffect(() => {
     fetchData();
@@ -334,25 +338,27 @@ export default function BuscarFacturasPage() {
           )}
         </div>
 
-        <div className="flex p-1 bg-slate-200/60 rounded-xl shadow-inner">
-          {empresas.map((emp) => (
-            <button
-              key={emp.id}
-              onClick={() => {
-                setEmpresa(emp.id);
-                setPage(1);
-              }}
-              className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
-                empresa === emp.id
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              <Building2 size={13} />
-              {emp.label}
-            </button>
-          ))}
-        </div>
+        {!userCids && (
+          <div className="flex p-1 bg-slate-200/60 rounded-xl shadow-inner">
+            {empresas.map((emp) => (
+              <button
+                key={emp.id}
+                onClick={() => {
+                  setEmpresa(emp.id);
+                  setPage(1);
+                }}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
+                  empresa === emp.id
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Building2 size={13} />
+                {emp.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && (

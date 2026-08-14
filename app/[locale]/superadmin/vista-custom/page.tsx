@@ -28,7 +28,7 @@ export default function VistaCustomSuperadminPage() {
 
   const pushChecksToIframe = useCallback(async () => {
     try {
-      const res = await fetch("/api/adminleads/custom-view/checks");
+      const res = await fetch("/api/superadmin/custom-view/checks");
       const data = await res.json();
       const checks = data.checks || {};
       iframeRef.current?.contentWindow?.postMessage(
@@ -39,7 +39,7 @@ export default function VistaCustomSuperadminPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/adminleads/custom-view/meta")
+    fetch("/api/superadmin/custom-view/meta")
       .then((r) => r.json())
       .then(setMeta)
       .catch(() => setMeta({ exists: false }));
@@ -52,7 +52,7 @@ export default function VistaCustomSuperadminPage() {
     const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
 
-    socket.on("vista-checks-updated", (payload: { checks: Record<string, number> }) => {
+    socket.on("vista-sa-checks-updated", (payload: { checks: Record<string, number> }) => {
       iframeRef.current?.contentWindow?.postMessage(
         { type: "SUPRICOM_CHECK_RESTORE", checks: payload.checks || {} },
         "*"
@@ -71,7 +71,7 @@ export default function VistaCustomSuperadminPage() {
       if (!e.data || e.data.type !== "SUPRICOM_CHECK_SAVE") return;
       const checks = e.data.checks || {};
       try {
-        await fetch("/api/adminleads/custom-view/checks", {
+        await fetch("/api/superadmin/custom-view/checks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(checks),
@@ -98,7 +98,7 @@ export default function VistaCustomSuperadminPage() {
     try {
       const form = new FormData();
       form.append("html", file);
-      const res = await fetch("/api/adminleads/custom-view", { method: "POST", body: form });
+      const res = await fetch("/api/superadmin/custom-view", { method: "POST", body: form });
       const data = await res.json();
       if (data.success) {
         setMeta({ exists: true, ...data.meta });
@@ -153,7 +153,7 @@ export default function VistaCustomSuperadminPage() {
           {meta.exists && (
             <Button
               variant="outline" size="sm"
-              onClick={() => window.open("/api/adminleads/custom-view", "_blank")}
+              onClick={() => window.open("/api/superadmin/custom-view", "_blank")}
               className="gap-1.5 text-slate-600"
             >
               <Maximize2 className="w-3.5 h-3.5" />
@@ -215,7 +215,7 @@ export default function VistaCustomSuperadminPage() {
           <iframe
             ref={iframeRef}
             key={iframeKey}
-            src={`/api/adminleads/custom-view?t=${iframeKey}`}
+            src={`/api/superadmin/custom-view?t=${iframeKey}`}
             className="w-full h-full border-0"
             title="Vista Personalizada"
             onLoad={pushChecksToIframe}

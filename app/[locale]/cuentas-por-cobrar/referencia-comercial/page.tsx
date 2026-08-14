@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuthStore } from "@/lib/stores/auth.store";
 import { ChevronDown, FileText, Printer, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -100,6 +101,8 @@ function SignatureSVG() {
 }
 
 export default function ReferenciaComercialPage() {
+  const { user } = useAuthStore();
+  const userCids = user?.cids;
   const [partners, setPartners] = useState<Partner[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,7 +115,11 @@ export default function ReferenciaComercialPage() {
   const fetchPartners = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/superadmin/cuentas-por-cobrar/partners");
+      const params = new URLSearchParams();
+      if (userCids) params.set("companyId", String(userCids));
+      const res = await fetch(
+        `/api/superadmin/cuentas-por-cobrar/partners?${params}`,
+      );
       const json = await res.json();
       if (json.success && json.data) {
         setPartners(json.data);
@@ -121,7 +128,7 @@ export default function ReferenciaComercialPage() {
       console.error("Error fetching partners:", e);
     }
     setLoading(false);
-  }, []);
+  }, [userCids]);
 
   useEffect(() => {
     fetchPartners();
@@ -192,7 +199,14 @@ svg { display: block; }
           alt="OSC"
           style={{ width: "170px", display: "block" }}
         />
-        <div style={{ fontSize: "12px", color: "#333", marginTop: "1px", textAlign: "center" }}>
+        <div
+          style={{
+            fontSize: "12px",
+            color: "#333",
+            marginTop: "1px",
+            textAlign: "center",
+          }}
+        >
           RIF: J-31163115-1
         </div>
       </div>
@@ -236,8 +250,8 @@ svg { display: block; }
           <strong>{selectedPartner.name}</strong>, RIF{" "}
           <strong>{selectedPartner.vat}</strong> mantiene relaciones{" "}
           <strong>comerciales</strong> y maneja{" "}
-          <strong>negociaciones mensuales puntuales</strong> de manera&nbsp;
-          <strong>satisfactoria</strong>, desde hace{" "}
+          <strong>negociaciones mensuales puntuales</strong>&nbsp;de
+          manera&nbsp;<strong>satisfactoria</strong>, desde hace{" "}
           <strong>
             {yearsRelation < 10 ? "0" : ""}
             {yearsRelation} años ({yearsWord.toLowerCase()} años)

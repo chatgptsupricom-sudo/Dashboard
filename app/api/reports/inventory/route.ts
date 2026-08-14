@@ -398,9 +398,9 @@ export async function GET(request: NextRequest) {
     if (companyId !== "all") {
       companyFilter.push(["company_id", "=", parseInt(companyId, 10)]);
     } else if (userCids !== null && userCids !== "null" && userCids !== "") {
-      const companyIds = userCids
-        .split(",")
-        .map((id: string) => parseInt(id.trim(), 10));
+      const companyIds = typeof userCids === "number"
+        ? [userCids]
+        : String(userCids).split(",").map((id: string) => parseInt(id.trim(), 10));
       companyFilter.push(["company_id", "in", companyIds]);
     }
 
