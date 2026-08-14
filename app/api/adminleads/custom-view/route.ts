@@ -6,6 +6,7 @@ import path from "path";
 const STORAGE_DIR = path.join(process.cwd(), "uploads", "custom-views");
 const HTML_FILE = path.join(STORAGE_DIR, "adminleads.html");
 const META_FILE = path.join(STORAGE_DIR, "adminleads.meta.json");
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
 
 async function ensureDir() {
   if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
@@ -55,10 +56,20 @@ export async function GET() {
     document.querySelectorAll('.email-card').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
     });
-    // Keep localStorage as offline fallback
     try{localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}
-    // Notify parent page to sync via WebSocket
-    try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
+    // If inside an iframe, notify parent page to sync via WebSocket
+    if(window.parent!==window){
+      try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
+    } else {
+      // Fullscreen mode: POST directly to API
+      try{
+        fetch('/api/adminleads/custom-view/checks',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(s)
+        }).catch(function(){});
+      }catch(e){}
+    }
   }
 
   function restore(s){
@@ -88,6 +99,27 @@ export async function GET() {
   (function(){
     var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
     if(Object.keys(s).length)restore(s);
+    // In fullscreen mode, fetch latest checks from server and connect Socket.IO
+    if(window.parent===window){
+      fetch('/api/adminleads/custom-view/checks').then(function(r){return r.json();}).then(function(d){
+        if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
+      }).catch(function(){});
+      // Connect Socket.IO for live updates
+      var socketUrl='${SOCKET_URL}';
+      if(socketUrl){
+        var script=document.createElement('script');
+        script.src=socketUrl+'/socket.io/socket.io.js';
+        script.onload=function(){
+          try{
+            var socket=io(socketUrl,{transports:['websocket']});
+            socket.on('vista-checks-updated',function(payload){
+              if(payload&&payload.checks)restore(payload.checks);
+            });
+          }catch(e){}
+        };
+        document.head.appendChild(script);
+      }
+    }
   })();
 })();
 </script>`;

@@ -62,8 +62,10 @@ export default function VendedoresPage() {
           topClients: (json.topClients || []).filter((c: any) => !c.name?.toLowerCase().includes("supricom")).slice(0, 5),
           topProducts: json.topProducts || [],
           crecimiento: json.crecimiento || 0,
+          rankingVentas: json.rankingVentas || null,
         });
       })
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [periodo]);
 
@@ -106,7 +108,7 @@ export default function VendedoresPage() {
       <div className={`grid gap-2 sm:gap-4 ${showLeads ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5" : "grid-cols-2 sm:grid-cols-3"}`}>
         <MetricCard
           title="Ranking Ventas"
-          value={isPresentationMode ? "#N" : `#${data.rankingVentas || "-"}`}
+          value={isPresentationMode ? "#N" : `#${data?.rankingVentas || "-"}`}
           icon={Medal}
           color="blue"
         />
