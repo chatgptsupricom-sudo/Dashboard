@@ -101,6 +101,8 @@ export default function BancoImagenesPage() {
   const [images, setImages] = useState<ProductImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(true);
   const [gallerySearch, setGallerySearch] = useState("");
+  const [galleryCategory, setGalleryCategory] = useState("");
+  const [galleryCategories, setGalleryCategories] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -204,13 +206,22 @@ export default function BancoImagenesPage() {
   // ── Gallery fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetchImages();
-  }, [page, gallerySearch]);
+  }, [page, gallerySearch, galleryCategory]);
+
+  // Fetch gallery categories on mount
+  useEffect(() => {
+    fetch("/api/adminleads/banco-imagenes/categories")
+      .then(r => r.json())
+      .then(d => { if (d.success) setGalleryCategories(d.categories || []); })
+      .catch(() => {});
+  }, []);
 
   const fetchImages = async () => {
     try {
       setLoadingImages(true);
       const p = new URLSearchParams({ page: String(page), limit: "24" });
       if (gallerySearch) p.set("search", gallerySearch);
+      if (galleryCategory) p.set("category", galleryCategory);
       const res = await fetch(`/api/adminleads/banco-imagenes?${p}`);
       const data = await res.json();
       if (data.success) {
@@ -659,6 +670,33 @@ export default function BancoImagenesPage() {
                 className="pl-10"
               />
             </div>
+            <select
+              value={galleryCategory}
+              onChange={(e) => { setGalleryCategory(e.target.value); setPage(1); }}
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Todas las categorías</option>
+              {galleryCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            {galleryCategory && images.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedImages(prev => {
+                    const next = new Map(prev);
+                    images.forEach(img => next.set(img.id, img));
+                    return next;
+                  });
+                }}
+                className="h-10 gap-1.5 text-slate-600"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Seleccionar todos ({images.length})
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>

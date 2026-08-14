@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const search = url.searchParams.get("search") || "";
+    const category = url.searchParams.get("category") || "";
     const page = parseInt(url.searchParams.get("page") || "1", 10);
     const limit = parseInt(url.searchParams.get("limit") || "24", 10);
     const offset = (page - 1) * limit;
@@ -28,6 +29,11 @@ export async function GET(request: NextRequest) {
       where += " AND (pi.model LIKE ? OR pi.brand LIKE ? OR pi.product_code LIKE ? OR pi.category LIKE ?)";
       const s = `%${search}%`;
       params.push(s, s, s, s);
+    }
+
+    if (category) {
+      where += " AND pi.category = ?";
+      params.push(category);
     }
 
     const countResult = await query(
