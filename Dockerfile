@@ -103,6 +103,9 @@ COPY --from=builder /app/package.json ./package.json
 # ¡IMPORTANTE! Copia el server.js a la imagen final
 COPY --from=builder /app/server.js ./server.js
 
+# Crear directorio de uploads con permisos para nextjs
+RUN mkdir -p /app/uploads/custom-views && chown -R nextjs:nodejs /app/uploads
+
 USER nextjs
 
 ENV HOST=0.0.0.0
@@ -111,4 +114,4 @@ ENV PORT=3000
 EXPOSE 3000
 
 # CAMBIO AQUÍ: Ahora ejecutamos nuestro servidor personalizado
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "mkdir -p /app/uploads/custom-views && node server.js"]

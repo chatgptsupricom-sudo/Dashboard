@@ -1,10 +1,21 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
+);
 
 export async function GET(request: NextRequest) {
   try {
+    const token = request.cookies.get("token")?.value;
+    if (!token) return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 401 });
+
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const companyId = Number(payload.cids) || 9;
+
     const { searchParams } = new URL(request.url);
-    const months = parseInt(searchParams.get("months") || "3", 10);
+    const months = parseInt(searchParams.get("months") || "1", 10);
 
     const now = new Date();
     const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1)
@@ -12,20 +23,20 @@ export async function GET(request: NextRequest) {
       .split("T")[0];
     const endDate = now.toISOString().split("T")[0];
 
-    // Fetch invoice lines with product details
+    const domain: any[] = [
+      ["move_id.move_type", "=", "out_invoice"],
+      ["move_id.state", "=", "posted"],
+      ["move_id.invoice_date", ">=", startDate],
+      ["move_id.invoice_date", "<=", endDate],
+      ["move_id.company_id", "=", companyId],
+      ["product_id", "!=", false],
+      ["quantity", ">", 0],
+    ];
+
     const lines = await callOdooRPC<any[]>(
       "account.move.line",
       "search_read",
-      [
-        [
-          ["move_id.move_type", "=", "out_invoice"],
-          ["move_id.state", "=", "posted"],
-          ["move_id.invoice_date", ">=", startDate],
-          ["move_id.invoice_date", "<=", endDate],
-          ["product_id", "!=", false],
-          ["quantity", ">", 0],
-        ],
-      ],
+      [domain],
       {
         fields: ["product_id", "quantity"],
         limit: 50000,

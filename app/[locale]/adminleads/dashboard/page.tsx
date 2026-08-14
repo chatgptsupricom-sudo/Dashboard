@@ -12,7 +12,7 @@ export default function AdminLeadsDashboardPage() {
     async function fetchStats() {
       try {
         setLoading(true);
-        const res = await fetch("/api/adminleads/product-stats?months=3");
+        const res = await fetch("/api/adminleads/product-stats?months=1");
         const json = await res.json();
         if (json.success) setData(json);
       } catch (error) {
@@ -33,7 +33,7 @@ export default function AdminLeadsDashboardPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Dashboard de Productos</h1>
-          <p className="text-sm text-slate-500">Estadísticas de ventas de los últimos 3 meses</p>
+          <p className="text-sm text-slate-500">Estadísticas de ventas del último mes</p>
         </div>
       </div>
 
