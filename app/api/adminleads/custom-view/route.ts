@@ -40,14 +40,15 @@ export async function GET() {
   var isRestoring=false;
 
   function keyOf(el,selector){
-    var anc=el.parentElement;
-    while(anc&&!anc.id)anc=anc.parentElement;
-    if(anc&&anc.id){
-      var siblings=Array.from(anc.querySelectorAll(selector));
-      var i=siblings.indexOf(el);
-      if(i>=0)return anc.id+'|'+i;
-    }
-    return 'g|'+Array.from(document.querySelectorAll(selector)).indexOf(el);
+    // If element has a stable id or data-id, use that
+    if(el.id) return 'id|'+el.id;
+    if(el.getAttribute('data-id')) return 'did|'+el.getAttribute('data-id');
+    // Content-based key: tag + trimmed text (first 80 chars)
+    var txt=(el.textContent||'').trim().replace(/\\s+/g,' ').substring(0,80);
+    var tag=el.tagName||'';
+    // Simple hash of content for shorter keys
+    var h=0;for(var i=0;i<txt.length;i++){h=((h<<5)-h)+txt.charCodeAt(i);h=h&h;}
+    return tag+'|'+Math.abs(h)+'|'+txt.length;
   }
 
   function save(){
