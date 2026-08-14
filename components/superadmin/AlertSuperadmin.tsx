@@ -23,6 +23,7 @@ import {
 import { useTranslations } from "next-intl";
 import { useState } from "react"; // IMPORTANTE: Agregado para controlar la empresa actual
 import useSWR from "swr";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -483,15 +484,19 @@ function InvoiceDetailView({ item }: { item: any }) {
   );
 }
 
-export default function AlertSuperadmin() {
+export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: boolean } = {}) {
   const t = useTranslations("userManagement");
+  const { user } = useAuthStore();
 
   // Controlamos la empresa seleccionada (por defecto 'valencia')
   const [empresa, setEmpresa] = useState("valencia");
 
   // Pasamos el query param directamente en la key de SWR
+  const swrKey = cidsLocked && user?.cids
+    ? `/api/superadmin/alert?cids=${user.cids}`
+    : `/api/superadmin/alert?empresa=${empresa}`;
   const { data, error, isLoading, mutate } = useSWR(
-    `/api/superadmin/alert?empresa=${empresa}`,
+    swrKey,
     fetcher,
     { refreshInterval: 300000 },
   );
@@ -524,6 +529,7 @@ export default function AlertSuperadmin() {
       </div>
 
       {/* FILTRO DE EMPRESAS INDEPENDIENTE */}
+      {!cidsLocked && (
       <div className="flex p-1 bg-slate-200/60 rounded-xl max-w-md shadow-inner">
         {empresasDisponibles.map((emp) => (
           <button
@@ -540,6 +546,7 @@ export default function AlertSuperadmin() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Contenido / Estado de Carga */}
       {isLoading ? (

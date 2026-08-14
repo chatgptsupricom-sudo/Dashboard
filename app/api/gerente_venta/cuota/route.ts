@@ -15,11 +15,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
     const userCids = payload.cids as number;
+    const sellerCidsFilter = userCids ? [userCids] : isSuperAdmin ? [9, 10, 7] : null;
 
+    if (!sellerCidsFilter) {
+      return NextResponse.json({ error: "Empresa no definida" }, { status: 403 });
+    }
+
+    const placeholders = sellerCidsFilter.map(() => "?").join(",");
     const [resultSellers]: any = await db.query(
-      "SELECT id, name, user_id FROM sellers WHERE cids = ?",
-      [userCids],
+      `SELECT id, name, user_id FROM sellers WHERE cids IN (${placeholders})`,
+      sellerCidsFilter,
     );
     const sellers = (resultSellers || []).filter(
       (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
@@ -51,7 +58,7 @@ export async function GET(req: Request) {
             ["move_type", "in", ["out_invoice", "out_refund"]],
             ["state", "=", "posted"],
             ["invoice_date", ">=", firstDayOfMonth],
-            ["company_id", "=", userCids],
+            userCids ? ["company_id", "=", userCids] : ["company_id", "in", [9, 10, 7]],
           ],
         ],
         {

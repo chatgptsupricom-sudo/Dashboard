@@ -106,7 +106,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; companyId?: number } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
@@ -234,7 +234,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
   const q = (extras: Record<string, string> = {}, mesOverride?: string) => {
     const base: Record<string, string> = { mes: mesOverride || selectedMes, ...extras };
-    if (!vendorMode) base.company_id = String(selectedCompanyId);
+    if (!vendorMode && !gerenteOpsMode) base.company_id = String(selectedCompanyId);
     return new URLSearchParams(base).toString();
   };
   const [comprasModalOpen, setComprasModalOpen] = useState(false);
@@ -254,7 +254,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     if (!silent) setLoading(true);
     try {
       const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
-      const params = vendorMode ? `mes=${selectedMes}${dateExtra}` : `mes=${selectedMes}&company_id=${selectedCompanyId}${dateExtra}`;
+      const params = vendorMode ? `mes=${selectedMes}${dateExtra}` : gerenteOpsMode ? `mes=${selectedMes}${dateExtra}` : `mes=${selectedMes}&company_id=${selectedCompanyId}${dateExtra}`;
       const res = await fetch(`${apiPrefix}?${params}`);
       const json = await res.json();
       if (json.success) {
@@ -1283,7 +1283,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : allGroups;
+  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
 
   return (
     <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
@@ -1331,7 +1331,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       </div>
 
       {/* Toolbar */}
-      {!vendorMode && !cxCMode && (
+      {!vendorMode && !cxCMode && !gerenteOpsMode && (
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-3">
           {isSuperAdmin ? (
@@ -3550,6 +3550,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               ) : (
                 <div className="space-y-6">
                   {/* Formulario Nueva Visita */}
+                  {!gerenteOpsMode && (
                   <div className="bg-gradient-to-r from-indigo-50 to-white rounded-xl p-6 border">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("registrar_visita")}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3702,6 +3703,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       </button>
                     </div>
                   </div>
+                  )}
 
                   {/* Lista de Visitas */}
                   <div>
@@ -3720,7 +3722,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
                               <th className="p-3 text-center font-medium text-slate-600">Tipo</th>
                               <th className="p-3 text-center font-medium text-slate-600">Foto</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Acciones</th>
+                              {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">Acciones</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -3752,12 +3754,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   )}
                                 </td>
                                 <td className="p-3 text-center">
+                                  {!gerenteOpsMode && (
                                   <button
                                     onClick={() => deleteVisita(visita.id)}
                                     className="text-red-500 hover:text-red-700 text-xs"
                                   >
                                     Eliminar
                                   </button>
+                                  )}
                                 </td>
                               </tr>
                             ))}

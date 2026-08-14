@@ -427,9 +427,7 @@ export function GerenteOperacionesView() {
     const start = format(date.from, "yyyy-MM-dd");
     const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
 
-    // Nota: Si tienes una API específica para operaciones (ej: /api/gerente_operaciones/stats),
-    // asegúrate de cambiar esta URL. Actualmente apunta a la de gerente_venta.
-    fetch(`/api/gerente_operaciones/stats?startDate=${start}&endDate=${end}`)
+    fetch(`/api/gerente_venta/stats?startDate=${start}&endDate=${end}`)
       .then((res) => res.json())
       .then((json) => {
         setData(json);
@@ -484,21 +482,21 @@ export function GerenteOperacionesView() {
         />
         <MetricCard
           title={t("star_product")}
-          value={data.summary?.topProductName || "N/A"}
+          value={data.summary?.topProductName || "-"}
           icon={Package}
           trend={t("leader")}
           color="purple"
         />
         <MetricCard
           title={t("active_clients")}
-          value={data.summary?.activeClientsCount || 0}
+          value={data.summary?.activeClientsCount ?? 0}
           icon={Users}
           trend={t("total_odoo")}
           color="green"
         />
         <MetricCard
           title={t("growth")}
-          value={data.summary?.growthRate || 0}
+          value={data.summary?.growthRate ?? "-"}
           icon={TrendingUp}
           trend={t("monthly")}
           color="orange"
@@ -516,7 +514,7 @@ export function GerenteOperacionesView() {
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={data.monthlyGrowth}
+                data={data.monthlyGrowth || []}
                 margin={{ left: 40, right: 20, top: 20, bottom: 20 }}
               >
                 <CartesianGrid
@@ -560,7 +558,7 @@ export function GerenteOperacionesView() {
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={data.salesByUser}
+                data={data.salesByUser || []}
                 margin={{ left: 40, bottom: 40 }}
               >
                 <CartesianGrid
@@ -601,25 +599,25 @@ export function GerenteOperacionesView() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <RankTable
           title={t("top_brands")}
-          data={data.brands?.mostSold}
+          data={data.brands?.mostSold || []}
           icon={TrendingUp}
           color="green"
         />
         <RankTable
           title={t("least_sold_brands")}
-          data={data.brands?.leastSold}
+          data={data.brands?.leastSold || []}
           icon={Activity}
           color="red"
         />
         <RankTable
           title={t("top_products")}
-          data={data.topProducts}
+          data={data.topProducts || []}
           icon={Package}
           color="blue"
         />
         <RankTable
           title={t("least_sold_products")}
-          data={data.bottomProducts}
+          data={data.bottomProducts || []}
           icon={ShoppingBag}
           color="orange"
         />

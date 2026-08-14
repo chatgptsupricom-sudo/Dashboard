@@ -11,23 +11,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const payload = verifyToken(token);
-    if (!payload || !payload.cids) {
-      return NextResponse.json(
-        { error: "Empresa no definida" },
-        { status: 403 },
-      );
+    if (!payload) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
-    const userCompanyId = parseInt(payload.cids as string);
+    const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
+    const allCompanyIds = [9, 10, 7];
+    let userCompanyId: number;
+
+    if (payload.cids) {
+      userCompanyId = parseInt(payload.cids as string);
+    } else if (isSuperAdmin) {
+      userCompanyId = 0;
+    } else {
+      return NextResponse.json({ error: "Empresa no definida" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
 
     // 1. DOMINIO MAESTRO (Filtro base por empresa y ubicación interna)
     const companyFilter =
-      payload.role === "superAdmin" &&
-      searchParams.get("company_id") &&
-      searchParams.get("company_id") !== "all"
+      isSuperAdmin && searchParams.get("company_id") && searchParams.get("company_id") !== "all"
         ? ["company_id", "=", parseInt(searchParams.get("company_id")!)]
-        : ["company_id", "=", userCompanyId];
+        : userCompanyId === 0
+          ? ["company_id", "in", allCompanyIds]
+          : ["company_id", "=", userCompanyId];
 
     const masterDomain = [
       ["location_id.usage", "=", "internal"],

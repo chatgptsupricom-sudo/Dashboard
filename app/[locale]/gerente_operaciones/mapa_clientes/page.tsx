@@ -13,17 +13,22 @@ import {
   Title,
 } from "@tremor/react";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Building2,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   FilterX,
   Globe,
   History,
   Info,
+  MapPin,
+  Receipt,
   TrendingUp,
+  User,
+  X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
@@ -36,13 +41,24 @@ const COMPANY_NAMES: Record<number, string> = {
   7: "Panama",
 };
 
+const COMPANY_TO_COUNTRY: Record<number, string> = {
+  9: "VE",
+  10: "VE",
+  7: "PA",
+};
+
 const MAP_CONFIG: Record<string, any> = {
   VE: {
     name: "venezuela",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson",
+    geoUrl: "/geojson/venezuela.geojson",
     scale: 2800,
     center: [-66.3, 6.6],
+  },
+  PA: {
+    name: "panama",
+    geoUrl: "/geojson/panama.geojson",
+    scale: 3500,
+    center: [-80.1, 8.6],
   },
 };
 
@@ -55,6 +71,8 @@ export default function MapsClientsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const clientsPerPage = 4;
   const [userCompanyId, setUserCompanyId] = useState<number | null>(null);
+  const [isCountryLocked, setIsCountryLocked] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any>(null);
   const [selSeller, setSelSeller] = useState("all");
   const [availableSellers, setAvailableSellers] = useState<any[]>([]);
 
@@ -92,8 +110,17 @@ export default function MapsClientsPage() {
         const res = await fetch(url, { cache: "no-store" });
         const d = await res.json();
         setData(d.summary || []);
-        setUserCompanyId(d.company_id);
         setAvailableSellers(d.sellers || []);
+        // Auto-detect country based on company
+        if (d.company_id && COMPANY_TO_COUNTRY[d.company_id]) {
+          setCurrentCountry(COMPANY_TO_COUNTRY[d.company_id]);
+          setUserCompanyId(d.company_id);
+          setIsCountryLocked(true);
+        } else {
+          // superAdmin with null cids - not locked, can switch countries
+          setUserCompanyId(null);
+          setIsCountryLocked(false);
+        }
         setLoading(false);
       } catch (e) {
         setLoading(false);
@@ -218,6 +245,7 @@ export default function MapsClientsPage() {
 
             <div className="w-px bg-slate-200 my-1.5" />
 
+            {!isCountryLocked && (
             <div className="flex gap-1.5">
               {Object.entries(MAP_CONFIG).map(([code, config]) => (
                 <button
@@ -236,14 +264,15 @@ export default function MapsClientsPage() {
                 </button>
               ))}
             </div>
+            )}
           </div>
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* MAPA GRANDE Y CENTRADO */}
-        <div className="lg:col-span-8">
-          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[750px] flex flex-col relative">
+        <div className="lg:col-span-9">
+          <Card className="rounded-[3rem] border-none shadow-xl p-0 bg-white overflow-hidden h-[1050px] flex flex-col relative">
             <div className="p-8 border-b border-slate-50 flex justify-between items-center z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
@@ -374,7 +403,7 @@ export default function MapsClientsPage() {
         </div>
 
         {/* SIDEBAR */}
-        <aside className="lg:col-span-4 space-y-8">
+        <aside className="lg:col-span-3 space-y-8">
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-900 text-white p-10 overflow-hidden relative">
             <Building2 className="absolute -right-12 -bottom-12 text-white/5 w-64 h-64 rotate-12" />
             <Text
@@ -505,7 +534,8 @@ export default function MapsClientsPage() {
                         key={client.rif + absIdx}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="group hover:bg-blue-50/40 border-b border-slate-50 last:border-0 transition-all"
+                        onClick={() => setSelectedClient(client)}
+                        className="group hover:bg-blue-50/40 border-b border-slate-50 last:border-0 transition-all cursor-pointer"
                       >
                         <TableCell className="pl-12 py-8">
                           <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-slate-100 text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
@@ -530,9 +560,177 @@ export default function MapsClientsPage() {
                 </TableBody>
               </Table>
             </div>
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
-}
+           </Card>
+         </div>
+       </div>
+
+       {/* MODAL DETALLADO PREMIUM */}
+       <AnimatePresence>
+         {selectedClient && (
+           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
+             <motion.div
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               className="absolute inset-0"
+               onClick={() => setSelectedClient(null)}
+             />
+
+             <motion.div
+               initial={{ scale: 0.95, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.95, opacity: 0, y: 20 }}
+               transition={{ type: "spring", duration: 0.5 }}
+               className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100 relative z-10 flex flex-col max-h-[90vh]"
+             >
+               {/* Header del Modal */}
+               <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start gap-4">
+                 <div className="space-y-1">
+                   <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-2.5 py-1 rounded-md uppercase tracking-wider">
+                     Ficha de Cliente
+                   </span>
+                   <Title className="text-2xl font-black text-slate-900 uppercase tracking-tight mt-1">
+                     {selectedClient.name}
+                   </Title>
+                   <Text className="text-xs font-mono font-bold text-slate-400 tracking-wider">
+                     RIF: {selectedClient.rif}
+                   </Text>
+                 </div>
+                 <button
+                   onClick={() => setSelectedClient(null)}
+                   className="p-2 bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl transition-all border border-slate-100 shadow-sm"
+                 >
+                   <X size={18} />
+                 </button>
+               </div>
+
+               {/* Contenido */}
+               <div className="p-8 overflow-y-auto space-y-6 flex-1">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                   <div className="p-5 bg-blue-50/50 border border-blue-100/50 rounded-2xl flex items-center gap-4">
+                     <div className="p-3 bg-blue-600 rounded-xl text-white shadow-md shadow-blue-200">
+                       <Receipt size={20} />
+                     </div>
+                     <div>
+                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                         Monto
+                       </span>
+                       <div className="text-xl font-black text-blue-600 mt-0.5 tabular-nums">
+                         ${" "}
+                         {selectedClient.value.toLocaleString("en-US", {
+                           minimumFractionDigits: 2,
+                         })}
+                       </div>
+                     </div>
+                   </div>
+
+                   <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center gap-4">
+                     <div className="p-3 bg-slate-900 rounded-xl text-white shadow-md">
+                       <CreditCard size={20} />
+                     </div>
+                     <div>
+                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                         Término de Venta
+                       </span>
+                       <div className="text-sm font-black text-slate-800 uppercase mt-0.5 tracking-wide">
+                         {selectedClient.value > 25000 ? (
+                           <Badge className="bg-amber-100 border-none text-amber-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
+                             Crédito
+                           </Badge>
+                         ) : (
+                           <Badge className="bg-emerald-100 border-none text-emerald-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
+                             Contado
+                           </Badge>
+                         )}
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+
+                 <div className="space-y-4">
+                   <div className="flex items-start gap-4 p-4 border border-slate-100 rounded-2xl bg-white hover:bg-slate-50/50 transition-all">
+                     <div className="p-2 bg-slate-100 text-slate-600 rounded-xl mt-0.5">
+                       <User size={16} />
+                     </div>
+                     <div>
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                         Vendedor
+                       </h4>
+                       <p className="text-sm font-bold text-slate-800 mt-0.5 uppercase tracking-tight">
+                         {selectedClient.seller &&
+                         selectedClient.seller !== "N/A"
+                           ? selectedClient.seller
+                           : "Asesor Comercial Predeterminado"}
+                       </p>
+                     </div>
+                   </div>
+
+                   <div className="flex items-start gap-4 p-4 border border-slate-100 rounded-2xl bg-white hover:bg-slate-50/50 transition-all">
+                     <div className="p-2 bg-slate-100 text-slate-600 rounded-xl mt-0.5">
+                       <MapPin size={16} />
+                     </div>
+                     <div>
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                         Localización Geográfica
+                       </h4>
+                       <p className="text-sm font-bold text-slate-800 mt-0.5 uppercase tracking-tight">
+                         {selectedClient.city || "Ciudad Principal"} -{" "}
+                         {selectedState || MAP_CONFIG[currentCountry].name}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* Productos Adquiridos */}
+                 <div className="space-y-3">
+                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                     Productos Adquiridos
+                   </h4>
+                   <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm">
+                     <div className="bg-slate-50 px-5 py-3 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                       <span>Artículo / Cantidad</span>
+                       <span>Monto Facturado</span>
+                     </div>
+                     <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                       {selectedClient.products &&
+                       selectedClient.products.length > 0 ? (
+                         selectedClient.products.map((item: any, i: number) => (
+                           <div
+                             key={i}
+                             className="px-5 py-3.5 flex justify-between items-center text-xs hover:bg-slate-50/40 transition-all"
+                           >
+                             <div className="flex flex-col gap-0.5 max-w-[70%]">
+                               <span className="font-bold text-slate-800 uppercase tracking-tight line-clamp-2">
+                                 {item.product}
+                               </span>
+                               <span className="text-[10px] text-slate-400 font-bold tabular-nums">
+                                 {" "}
+                                 {item.quantity.toLocaleString("en-US")} unidades
+                               </span>
+                             </div>
+                             <span className="font-mono font-black text-blue-600 text-right tabular-nums">
+                               ${" "}
+                               {item.total.toLocaleString("en-US", {
+                                 minimumFractionDigits: 2,
+                                 maximumFractionDigits: 2,
+                               })}
+                             </span>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="py-8 text-center text-xs text-slate-400 italic font-medium">
+                           Sin desglose de productos para visualización histórica
+                           total o período vacío.
+                         </div>
+                       )}
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </motion.div>
+           </div>
+         )}
+       </AnimatePresence>
+     </div>
+   );
+ }

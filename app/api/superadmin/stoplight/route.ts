@@ -54,7 +54,8 @@ export async function GET(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const isCxC = userRole === "cuentas por cobrar";
-    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC) {
+    const isGerenteOps = userRole === "gerente de operaciones";
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
     const mesParam = url.searchParams.get("mes");
     const startDateParam = url.searchParams.get("startDate");
     const endDateParam = url.searchParams.get("endDate");
-    const companyId = isCxC ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
+    const companyId = (isCxC || isGerenteOps) ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -954,11 +955,12 @@ export async function POST(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const isCxC = userRole === "cuentas por cobrar";
-    if (userRole !== "superadmin" && !isCxC) {
+    const isGerenteOps = userRole === "gerente de operaciones";
+    if (userRole !== "superadmin" && !isCxC && !isGerenteOps) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
-    if (isCxC) {
+    if (isCxC || isGerenteOps) {
       return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
     }
 

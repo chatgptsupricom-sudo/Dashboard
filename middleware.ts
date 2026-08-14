@@ -103,7 +103,7 @@ export default async function middleware(request: NextRequest) {
       }
 
       // 5. Lógica para AdminLeads
-      if (pathname.includes("/adminleads") && !isAdminLeads && !isSuperAdmin) {
+      if (pathname.includes("/adminleads") && !isAdminLeads && !isSuperAdmin && !isGerenciaOperaciones) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -145,7 +145,7 @@ export default async function middleware(request: NextRequest) {
       }
 
       // 9. Lógica para Cuentas por Cobrar
-      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin) {
+      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
