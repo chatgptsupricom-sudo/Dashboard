@@ -1,8 +1,28 @@
+import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
+    const token = request.cookies.get("token")?.value;
+    if (!token)
+      return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 401 });
+
+    const payload = verifyToken(token);
+    if (!payload)
+      return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 401 });
+
+    const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
+
+    let companyFilter: any[];
+    if (isSuperAdmin) {
+      companyFilter = ["company_id", "in", [7, 9, 10]];
+    } else {
+      if (!payload.cids)
+        return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 403 });
+      companyFilter = ["company_id", "=", parseInt(payload.cids as any)];
+    }
+
     const { searchParams } = new URL(request.url);
     const months = parseInt(searchParams.get("months") || "3", 10);
 
@@ -24,6 +44,7 @@ export async function GET(request: NextRequest) {
           ["move_id.invoice_date", "<=", endDate],
           ["product_id", "!=", false],
           ["quantity", ">", 0],
+          companyFilter,
         ],
       ],
       {

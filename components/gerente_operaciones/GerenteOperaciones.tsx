@@ -412,6 +412,7 @@ export function GerenteOperacionesView() {
   const t = useTranslations("userManagement"); // Namespace para las traducciones
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string>("all");
 
   const [date, setDate] = useState<DateRange | undefined>({
@@ -423,26 +424,47 @@ export function GerenteOperacionesView() {
     if (!date?.from) return;
 
     setLoading(true);
-    // Convertimos fechas a formato YYYY-MM-DD
+    setError(null);
     const start = format(date.from, "yyyy-MM-dd");
     const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
 
     fetch(`/api/gerente_venta/stats?startDate=${start}&endDate=${end}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          setError(`Error ${res.status}: no se pudo cargar la información`);
+          setLoading(false);
+          return null;
+        }
+        return res.json();
+      })
       .then((json) => {
-        setData(json);
+        if (!json) return;
+        if (json.error) {
+          setError(json.error);
+        } else {
+          setData(json);
+        }
         setLoading(false);
       })
       .catch((err) => {
         console.error("Error:", err);
+        setError("No se pudo conectar al servidor");
         setLoading(false);
       });
-  }, [date]); // Se ejecuta cada vez que cambia la fecha
+  }, [date]);
 
   if (loading)
     return (
       <div className="p-10 text-center font-bold text-slate-400 uppercase animate-pulse">
         {t("loading.dashboard")}
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="p-10 text-center">
+        <p className="text-red-500 font-bold uppercase text-sm">{error}</p>
+        <p className="text-slate-400 text-xs mt-2">Verifique que su cuenta tenga empresa asignada</p>
       </div>
     );
 
