@@ -1,41 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, writeFile, mkdir, stat } from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
+import { query } from "@/lib/db";
 
-const STORAGE_DIR = path.join(process.cwd(), "uploads", "custom-views");
-const HTML_FILE = path.join(STORAGE_DIR, "adminleads.html");
-const META_FILE = path.join(STORAGE_DIR, "adminleads.meta.json");
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+declare global { var io: any; }
 
-async function ensureDir() {
+const VIEW_NAME = "adminleads";
+
+async function ensureTable() {
   try {
-    if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
+    await query(`
+      CREATE TABLE IF NOT EXISTS custom_views (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        view_name VARCHAR(100) NOT NULL UNIQUE,
+        html_content LONGTEXT NOT NULL,
+        filename VARCHAR(255),
+        file_size INT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   } catch (e: any) {
-    console.error("ensureDir failed:", e.message);
+    console.error("ensureTable failed:", e.message);
   }
 }
 
-// GET — serve the stored HTML or a placeholder
-export async function GET() {
-  await ensureDir();
+const PLACEHOLDER_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
+.box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
+p{font-size:14px}</style></head><body>
+<div class="box"><div class="icon">&#128196;</div>
+<div class="title">Sin vista personalizada</div>
+<p>Sube un archivo HTML desde el panel para verlo aqui.</p></div>
+</body></html>`;
 
-  if (!existsSync(HTML_FILE)) {
-    return new Response(
-      `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-      <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
-      .box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
-      p{font-size:14px}</style></head><body>
-      <div class="box"><div class="icon">📄</div>
-      <div class="title">Sin vista personalizada</div>
-      <p>Sube un archivo HTML desde el panel para verlo aquí.</p></div>
-      </body></html>`,
-      { headers: { "Content-Type": "text/html; charset=utf-8" } }
-    );
-  }
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
 
-  const html = await readFile(HTML_FILE, "utf-8");
-  const script = `<script>
+const CHECKS_SCRIPT = `<script>
 (function(){
   var KEY='supricom_checks_al';
   var isRestoring=false;
@@ -123,50 +121,77 @@ export async function GET() {
   })();
 })();
 </script>`;
-  const injected = html.includes('</body>')
-    ? html.replace('</body>', script + '</body>')
-    : html + script;
-  return new Response(injected, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+
+// GET — serve the stored HTML or a placeholder
+export async function GET() {
+  try {
+    await ensureTable();
+
+    const result = await query(
+      `SELECT html_content FROM custom_views WHERE view_name = ?`,
+      [VIEW_NAME]
+    );
+    const row = result.rows?.[0];
+
+    if (!row?.html_content) {
+      return new Response(PLACEHOLDER_HTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    const html = row.html_content;
+    const injected = html.includes("</body>")
+      ? html.replace("</body>", CHECKS_SCRIPT + "</body>")
+      : html + CHECKS_SCRIPT;
+
+    return new Response(injected, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  } catch (error: any) {
+    console.error("custom-view GET error:", error.message);
+    return new Response(
+      `<!DOCTYPE html><html><body><h1>Error</h1><p>${error.message}</p></body></html>`,
+      { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
 }
 
 // POST — receive and save new HTML file
 export async function POST(request: NextRequest) {
   try {
-    await ensureDir();
+    await ensureTable();
 
     const formData = await request.formData();
     const file = formData.get("html") as File | null;
     if (!file) {
-      return NextResponse.json({ success: false, error: "No se recibió archivo" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "No se recibio archivo" }, { status: 400 });
     }
 
     const content = await file.text();
     if (!content.trim().toLowerCase().startsWith("<!doctype") && !content.trim().toLowerCase().startsWith("<html")) {
-      return NextResponse.json({ success: false, error: "El archivo no parece ser un HTML válido" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "El archivo no parece ser un HTML valido" }, { status: 400 });
     }
-
-    await writeFile(HTML_FILE, content, "utf-8");
 
     const meta = {
       updatedAt: new Date().toISOString(),
       filename: file.name,
       size: file.size,
     };
-    await writeFile(META_FILE, JSON.stringify(meta), "utf-8");
+
+    await query(
+      `INSERT INTO custom_views (view_name, html_content, filename, file_size, updated_at)
+       VALUES (?, ?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE html_content = VALUES(html_content), filename = VALUES(filename), file_size = VALUES(file_size), updated_at = NOW()`,
+      [VIEW_NAME, content, file.name, file.size]
+    );
+
+    if (global.io) {
+      global.io.emit("vista-html-updated", { meta });
+    }
 
     return NextResponse.json({ success: true, meta });
   } catch (error: any) {
     console.error("custom-view POST error:", error.message);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
-}
-
-// GET /api/adminleads/custom-view/meta — metadata only
-export async function HEAD() {
-  if (!existsSync(META_FILE)) {
-    return new Response(null, { status: 404 });
-  }
-  return new Response(null, { status: 200 });
 }

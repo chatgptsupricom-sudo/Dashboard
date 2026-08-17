@@ -61,6 +61,13 @@ export default function VistaCustomPage() {
       );
     });
 
+    socket.on("vista-html-updated", (payload: { meta: FileMeta }) => {
+      if (payload?.meta) {
+        setMeta({ exists: true, ...payload.meta });
+        setIframeKey((k) => k + 1);
+      }
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;

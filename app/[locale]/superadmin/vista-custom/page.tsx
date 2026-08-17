@@ -28,7 +28,7 @@ export default function VistaCustomSuperadminPage() {
 
   const pushChecksToIframe = useCallback(async () => {
     try {
-      const res = await fetch("/api/superadmin/custom-view/checks");
+      const res = await fetch("/api/adminleads/custom-view/checks");
       const data = await res.json();
       const checks = data.checks || {};
       iframeRef.current?.contentWindow?.postMessage(
@@ -39,23 +39,29 @@ export default function VistaCustomSuperadminPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/superadmin/custom-view/meta")
+    fetch("/api/adminleads/custom-view/meta")
       .then((r) => r.json())
       .then(setMeta)
       .catch(() => setMeta({ exists: false }));
   }, []);
 
-  // Socket.IO: receive real-time check updates
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
     const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
 
-    socket.on("vista-sa-checks-updated", (payload: { checks: Record<string, number> }) => {
+    socket.on("vista-checks-updated", (payload: { checks: Record<string, number> }) => {
       iframeRef.current?.contentWindow?.postMessage(
         { type: "SUPRICOM_CHECK_RESTORE", checks: payload.checks || {} },
         "*"
       );
+    });
+
+    socket.on("vista-html-updated", (payload: { meta: FileMeta }) => {
+      if (payload?.meta) {
+        setMeta({ exists: true, ...payload.meta });
+        setIframeKey((k) => k + 1);
+      }
     });
 
     return () => {
@@ -64,13 +70,12 @@ export default function VistaCustomSuperadminPage() {
     };
   }, []);
 
-  // Listen for check-save messages from the iframe, then POST to API
   useEffect(() => {
     const handler = async (e: MessageEvent) => {
       if (!e.data || e.data.type !== "SUPRICOM_CHECK_SAVE") return;
       const checks = e.data.checks || {};
       try {
-        await fetch("/api/superadmin/custom-view/checks", {
+        await fetch("/api/adminleads/custom-view/checks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(checks),
@@ -97,17 +102,17 @@ export default function VistaCustomSuperadminPage() {
     try {
       const form = new FormData();
       form.append("html", file);
-      const res = await fetch("/api/superadmin/custom-view", { method: "POST", body: form });
+      const res = await fetch("/api/adminleads/custom-view", { method: "POST", body: form });
       const data = await res.json();
       if (data.success) {
         setMeta({ exists: true, ...data.meta });
         setIframeKey((k) => k + 1);
-        showToast("ok", "Vista actualizada correctamente");
+        showToast("ok", "Plan de contenido actualizado correctamente");
       } else {
         showToast("err", data.error || "Error al subir el archivo");
       }
     } catch {
-      showToast("err", "Error de conexión");
+      showToast("err", "Error de conexion");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -130,14 +135,13 @@ export default function VistaCustomSuperadminPage() {
 
   return (
     <div className="flex flex-col gap-3" style={{ height: "calc(100dvh - 80px)" }}>
-      {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-100 rounded-xl">
             <Globe className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Vista Personalizada</h1>
+            <h1 className="text-xl font-bold text-slate-900">Plan de Contenido</h1>
             {meta.exists && (
               <p className="text-xs text-slate-400">
                 {meta.filename && <span className="font-medium text-slate-500">{meta.filename}</span>}
@@ -152,7 +156,7 @@ export default function VistaCustomSuperadminPage() {
           {meta.exists && (
             <Button
               variant="outline" size="sm"
-              onClick={() => window.open("/api/superadmin/custom-view", "_blank")}
+              onClick={() => window.open("/api/adminleads/custom-view", "_blank")}
               className="gap-1.5 text-slate-600"
             >
               <Maximize2 className="w-3.5 h-3.5" />
@@ -186,7 +190,6 @@ export default function VistaCustomSuperadminPage() {
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium flex-shrink-0 ${
           toast.type === "ok"
@@ -200,23 +203,22 @@ export default function VistaCustomSuperadminPage() {
         </div>
       )}
 
-      {/* iframe */}
       <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 shadow-sm min-h-0">
         {!meta.exists ? (
           <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 gap-4">
             <Globe className="w-16 h-16 opacity-20" />
             <div className="text-center">
-              <p className="text-lg font-semibold text-slate-600">Sin vista personalizada</p>
-              <p className="text-sm mt-1">Sube un archivo HTML con el botón "Actualizar HTML"</p>
+              <p className="text-lg font-semibold text-slate-600">Sin plan de contenido</p>
+              <p className="text-sm mt-1">Sube un archivo HTML con el boton &quot;Actualizar HTML&quot;</p>
             </div>
           </div>
         ) : (
           <iframe
             ref={iframeRef}
             key={iframeKey}
-            src={`/api/superadmin/custom-view?t=${iframeKey}`}
+            src={`/api/adminleads/custom-view?t=${iframeKey}`}
             className="w-full h-full border-0"
-            title="Vista Personalizada"
+            title="Plan de Contenido"
             onLoad={pushChecksToIframe}
           />
         )}
