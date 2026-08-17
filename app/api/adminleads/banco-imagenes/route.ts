@@ -1,24 +1,29 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, unlink, mkdir } from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "banco-imagenes");
-
-async function ensureUploadDir() {
+// Ensure the new image storage columns exist (images live in MySQL so they survive deploys)
+async function ensureImageColumns() {
   try {
-    if (!existsSync(UPLOAD_DIR)) {
-      await mkdir(UPLOAD_DIR, { recursive: true });
-    }
+    await query(`ALTER TABLE product_images ADD COLUMN image_data LONGBLOB NULL`);
   } catch (e: any) {
-    console.error("ensureUploadDir failed:", e.message);
+    if (!e.message?.includes("Duplicate column")) {
+      console.error("ensureImageColumns(image_data):", e.message);
+    }
+  }
+  try {
+    await query(`ALTER TABLE product_images ADD COLUMN image_mime VARCHAR(100) NULL`);
+  } catch (e: any) {
+    if (!e.message?.includes("Duplicate column")) {
+      console.error("ensureImageColumns(image_mime):", e.message);
+    }
   }
 }
 
 // GET: List product images
 export async function GET(request: NextRequest) {
   try {
+    await ensureImageColumns();
+
     const url = new URL(request.url);
     const search = url.searchParams.get("search") || "";
     const category = url.searchParams.get("category") || "";
@@ -46,8 +51,11 @@ export async function GET(request: NextRequest) {
     );
     const total = countResult.rows[0]?.total || 0;
 
+    // Do NOT select image_data here (heavy). Point image_path to the serving endpoint.
     const result = await query(
-      `SELECT pi.* FROM product_images pi ${where} ORDER BY pi.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT pi.id, pi.odoo_product_id, pi.product_code, pi.model, pi.brand, pi.category, pi.price, pi.created_by, pi.created_at,
+              CONCAT('/api/adminleads/banco-imagenes/image/', pi.id) AS image_path
+       FROM product_images pi ${where} ORDER BY pi.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 
@@ -64,10 +72,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Save a new product image
+// POST: Save a new product image (stored in MySQL, survives deploys)
 export async function POST(request: NextRequest) {
   try {
-    await ensureUploadDir();
+    await ensureImageColumns();
 
     const formData = await request.formData();
     const odoo_product_id = formData.get("odoo_product_id") as string | null;
@@ -93,16 +101,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ext = image.name.split(".").pop() || "jpg";
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const filePath = path.join(UPLOAD_DIR, filename);
     const buffer = Buffer.from(await image.arrayBuffer());
-    await writeFile(filePath, buffer);
-    const imagePath = `/uploads/banco-imagenes/${filename}`;
+    const mime = image.type || "image/jpeg";
 
-    await query(
-      `INSERT INTO product_images (odoo_product_id, product_code, model, brand, category, price, image_path, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    const insertResult = await query(
+      `INSERT INTO product_images (odoo_product_id, product_code, model, brand, category, price, image_path, created_by, image_data, image_mime)
+       VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)`,
       [
         odoo_product_id || null,
         product_code || null,
@@ -110,10 +114,18 @@ export async function POST(request: NextRequest) {
         brand || null,
         category || null,
         price ? parseFloat(price) : 0,
-        imagePath,
         created_by,
+        buffer,
+        mime,
       ]
     );
+
+    const newId = (insertResult.rows as any)?.insertId;
+    const imagePath = `/api/adminleads/banco-imagenes/image/${newId}`;
+
+    if (newId) {
+      await query(`UPDATE product_images SET image_path = ? WHERE id = ?`, [imagePath, newId]);
+    }
 
     return NextResponse.json({ success: true, image_path: imagePath }, { status: 201 });
   } catch (error: any) {
@@ -122,7 +134,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE: Remove a product image
+// DELETE: Remove a product image (DB row only — no disk involved)
 export async function DELETE(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -130,13 +142,6 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: "Falta ID" }, { status: 400 });
-    }
-
-    const existing = await query(`SELECT image_path FROM product_images WHERE id = ?`, [id]);
-    const row = existing.rows?.[0];
-    if (row?.image_path) {
-      const filePath = path.join(process.cwd(), "public", row.image_path);
-      if (existsSync(filePath)) await unlink(filePath);
     }
 
     await query(`DELETE FROM product_images WHERE id = ?`, [id]);
