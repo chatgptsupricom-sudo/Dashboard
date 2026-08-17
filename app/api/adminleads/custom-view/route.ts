@@ -35,11 +35,13 @@ export async function GET() {
     }
 
     const html = await readFile(HTML_FILE, "utf-8");
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "";
     const script = `<script>
 (function(){
   var KEY='supricom_checks_al';
   var isRestoring=false;
+  var _unloading=false;
+
+  window.addEventListener('beforeunload',function(){_unloading=true;});
 
   function keyOf(el,selector){
     if(el.id) return 'id|'+el.id;
@@ -51,7 +53,7 @@ export async function GET() {
   }
 
   function save(){
-    if(isRestoring)return;
+    if(isRestoring||_unloading)return;
     var s={};
     document.querySelectorAll('.piece').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.piece')]=1;
@@ -102,7 +104,7 @@ export async function GET() {
       fetch('/api/adminleads/custom-view/checks').then(function(r){return r.json();}).then(function(d){
         if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
       }).catch(function(){});
-      var socketUrl='${socketUrl}';
+      var socketUrl=window.location.origin;
       if(socketUrl){
         var script=document.createElement('script');
         script.src=socketUrl+'/socket.io/socket.io.js';
@@ -120,10 +122,9 @@ export async function GET() {
   })();
 })();
 </script>`;
-    const finalScript = socketUrl ? script.replace("'__SOCKET_URL__'", `'${socketUrl}'`) : script;
     const injected = html.includes('</body>')
-      ? html.replace('</body>', finalScript + '</body>')
-      : html + finalScript;
+      ? html.replace('</body>', script + '</body>')
+      : html + script;
     return new Response(injected, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });

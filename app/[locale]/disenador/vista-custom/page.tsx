@@ -39,7 +39,7 @@ export default function VistaCustomDisenadorPage() {
 
   // Socket.IO: receive real-time check updates
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
     if (!url) return;
     const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
