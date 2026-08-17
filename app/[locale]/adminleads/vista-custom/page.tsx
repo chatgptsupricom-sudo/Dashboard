@@ -50,8 +50,7 @@ export default function VistaCustomPage() {
 
   // Socket.IO: receive real-time check updates from other users
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || "";
-    if (!url) return;
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
     const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
 

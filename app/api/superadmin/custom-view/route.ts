@@ -29,10 +29,13 @@ export async function GET() {
   }
 
   const html = await readFile(HTML_FILE, "utf-8");
+  const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
   const script = `<script>
 (function(){
   var KEY='supricom_checks_sa';
   var isRestoring=false;
+  var _unloading=false;
+  window.addEventListener('beforeunload',function(){_unloading=true;});
 
   function keyOf(el,selector){
     var anc=el.parentElement;
@@ -46,7 +49,7 @@ export async function GET() {
   }
 
   function save(){
-    if(isRestoring)return;
+    if(isRestoring||_unloading)return;
     var s={};
     document.querySelectorAll('.piece').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.piece')]=1;
@@ -55,7 +58,17 @@ export async function GET() {
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
     });
     try{localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}
-    try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
+    if(window.parent!==window){
+      try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
+    } else {
+      try{
+        fetch('/api/superadmin/custom-view/checks',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(s)
+        }).catch(function(){});
+      }catch(e){}
+    }
   }
 
   function restore(s){
@@ -83,6 +96,25 @@ export async function GET() {
   (function(){
     var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
     if(Object.keys(s).length)restore(s);
+    if(window.parent===window){
+      fetch('/api/superadmin/custom-view/checks').then(function(r){return r.json();}).then(function(d){
+        if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
+      }).catch(function(){});
+      var socketUrl='${SOCKET_URL}'||window.location.origin;
+      if(socketUrl){
+        var sc=document.createElement('script');
+        sc.src=socketUrl+'/socket.io/socket.io.js';
+        sc.onload=function(){
+          try{
+            var socket=io(socketUrl,{transports:['websocket']});
+            socket.on('vista-sa-checks-updated',function(payload){
+              if(payload&&payload.checks)restore(payload.checks);
+            });
+          }catch(e){}
+        };
+        document.head.appendChild(sc);
+      }
+    }
   })();
 })();
 </script>`;

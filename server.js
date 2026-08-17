@@ -55,10 +55,7 @@ app.prepare().then(() => {
   // Configuración de Socket.io con CORS permitido
   const io = new Server(httpServer, {
     cors: {
-      origin: [
-        "https://dashboard-test-dashboard.larlxe.easypanel.host",
-        "https://panel.supricom.com.ve",
-      ],
+      origin: true,
       methods: ["GET", "POST"],
       credentials: true,
     },

@@ -39,6 +39,8 @@ export async function GET() {
 (function(){
   var KEY='supricom_checks_al';
   var isRestoring=false;
+  var _unloading=false;
+  window.addEventListener('beforeunload',function(){_unloading=true;});
 
   function keyOf(el,selector){
     var anc=el.parentElement;
@@ -52,7 +54,7 @@ export async function GET() {
   }
 
   function save(){
-    if(isRestoring)return;
+    if(isRestoring||_unloading)return;
     var s={};
     document.querySelectorAll('.piece').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.piece')]=1;
@@ -61,11 +63,9 @@ export async function GET() {
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
     });
     try{localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}
-    // If inside an iframe, notify parent page to sync via WebSocket
     if(window.parent!==window){
       try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
     } else {
-      // Fullscreen mode: POST directly to API
       try{
         fetch('/api/adminleads/custom-view/checks',{
           method:'POST',
@@ -87,7 +87,6 @@ export async function GET() {
     setTimeout(function(){isRestoring=false;},150);
   }
 
-  // Receive restore commands from parent (WebSocket updates)
   window.addEventListener('message',function(e){
     if(!e.data||e.data.type!=='SUPRICOM_CHECK_RESTORE')return;
     restore(e.data.checks||{});
@@ -99,21 +98,18 @@ export async function GET() {
     setTimeout(save,20);
   };
 
-  // Initial restore: try localStorage while server fetch is in-flight
   (function(){
     var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
     if(Object.keys(s).length)restore(s);
-    // In fullscreen mode, fetch latest checks from server and connect Socket.IO
     if(window.parent===window){
       fetch('/api/adminleads/custom-view/checks').then(function(r){return r.json();}).then(function(d){
         if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
       }).catch(function(){});
-      // Connect Socket.IO for live updates
-      var socketUrl='${SOCKET_URL}';
+      var socketUrl='${SOCKET_URL}'||window.location.origin;
       if(socketUrl){
-        var script=document.createElement('script');
-        script.src=socketUrl+'/socket.io/socket.io.js';
-        script.onload=function(){
+        var sc=document.createElement('script');
+        sc.src=socketUrl+'/socket.io/socket.io.js';
+        sc.onload=function(){
           try{
             var socket=io(socketUrl,{transports:['websocket']});
             socket.on('vista-checks-updated',function(payload){
@@ -121,7 +117,7 @@ export async function GET() {
             });
           }catch(e){}
         };
-        document.head.appendChild(script);
+        document.head.appendChild(sc);
       }
     }
   })();
