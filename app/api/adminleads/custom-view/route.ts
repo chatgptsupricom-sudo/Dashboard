@@ -9,7 +9,11 @@ const META_FILE = path.join(STORAGE_DIR, "adminleads.meta.json");
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
 
 async function ensureDir() {
-  if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
+  try {
+    if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
+  } catch (e: any) {
+    console.error("ensureDir failed:", e.message);
+  }
 }
 
 // GET — serve the stored HTML or a placeholder

@@ -7,8 +7,12 @@ import path from "path";
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "banco-imagenes");
 
 async function ensureUploadDir() {
-  if (!existsSync(UPLOAD_DIR)) {
-    await mkdir(UPLOAD_DIR, { recursive: true });
+  try {
+    if (!existsSync(UPLOAD_DIR)) {
+      await mkdir(UPLOAD_DIR, { recursive: true });
+    }
+  } catch (e: any) {
+    console.error("ensureUploadDir failed:", e.message);
   }
 }
 
