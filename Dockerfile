@@ -111,4 +111,4 @@ ENV PORT=3000
 EXPOSE 3000
 
 # CAMBIO AQUÍ: Ahora ejecutamos nuestro servidor personalizado
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "mkdir -p /app/uploads/custom-views /app/public/uploads/banco-imagenes 2>/dev/null; node server.js"]

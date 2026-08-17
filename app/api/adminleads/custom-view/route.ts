@@ -1,50 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, writeFile, mkdir, stat } from "fs/promises";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 
 const STORAGE_DIR = path.join(process.cwd(), "uploads", "custom-views");
 const HTML_FILE = path.join(STORAGE_DIR, "adminleads.html");
 const META_FILE = path.join(STORAGE_DIR, "adminleads.meta.json");
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
 
 async function ensureDir() {
-  if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
+  try {
+    if (!existsSync(STORAGE_DIR)) await mkdir(STORAGE_DIR, { recursive: true });
+  } catch (e: any) {
+    console.error("ensureDir failed:", e.message);
+  }
 }
 
 // GET — serve the stored HTML or a placeholder
 export async function GET() {
-  await ensureDir();
+  try {
+    await ensureDir();
 
-  if (!existsSync(HTML_FILE)) {
-    return new Response(
-      `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-      <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
-      .box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
-      p{font-size:14px}</style></head><body>
-      <div class="box"><div class="icon">📄</div>
-      <div class="title">Sin vista personalizada</div>
-      <p>Sube un archivo HTML desde el panel para verlo aquí.</p></div>
-      </body></html>`,
-      { headers: { "Content-Type": "text/html; charset=utf-8" } }
-    );
-  }
+    if (!existsSync(HTML_FILE)) {
+      return new Response(
+        `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+        <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
+        .box{text-align:center}.icon{font-size:64px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px;color:#1e293b}
+        p{font-size:14px}</style></head><body>
+        <div class="box"><div class="icon">📄</div>
+        <div class="title">Sin vista personalizada</div>
+        <p>Sube un archivo HTML desde el panel para verlo aquí.</p></div>
+        </body></html>`,
+        { headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
 
-  const html = await readFile(HTML_FILE, "utf-8");
-  const script = `<script>
+    const html = await readFile(HTML_FILE, "utf-8");
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+    const script = `<script>
 (function(){
   var KEY='supricom_checks_al';
   var isRestoring=false;
 
   function keyOf(el,selector){
-    var anc=el.parentElement;
-    while(anc&&!anc.id)anc=anc.parentElement;
-    if(anc&&anc.id){
-      var siblings=Array.from(anc.querySelectorAll(selector));
-      var i=siblings.indexOf(el);
-      if(i>=0)return anc.id+'|'+i;
-    }
-    return 'g|'+Array.from(document.querySelectorAll(selector)).indexOf(el);
+    if(el.id) return 'id|'+el.id;
+    if(el.getAttribute('data-id')) return 'did|'+el.getAttribute('data-id');
+    var txt=(el.textContent||'').trim().replace(/\\s+/g,' ').substring(0,80);
+    var tag=el.tagName||'';
+    var h=0;for(var i=0;i<txt.length;i++){h=((h<<5)-h)+txt.charCodeAt(i);h=h&h;}
+    return tag+'|'+Math.abs(h)+'|'+txt.length;
   }
 
   function save(){
@@ -57,11 +60,9 @@ export async function GET() {
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
     });
     try{localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}
-    // If inside an iframe, notify parent page to sync via WebSocket
     if(window.parent!==window){
       try{parent.postMessage({type:'SUPRICOM_CHECK_SAVE',checks:s},'*');}catch(e){}
     } else {
-      // Fullscreen mode: POST directly to API
       try{
         fetch('/api/adminleads/custom-view/checks',{
           method:'POST',
@@ -83,7 +84,6 @@ export async function GET() {
     setTimeout(function(){isRestoring=false;},150);
   }
 
-  // Receive restore commands from parent (WebSocket updates)
   window.addEventListener('message',function(e){
     if(!e.data||e.data.type!=='SUPRICOM_CHECK_RESTORE')return;
     restore(e.data.checks||{});
@@ -95,17 +95,14 @@ export async function GET() {
     setTimeout(save,20);
   };
 
-  // Initial restore: try localStorage while server fetch is in-flight
   (function(){
     var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
     if(Object.keys(s).length)restore(s);
-    // In fullscreen mode, fetch latest checks from server and connect Socket.IO
     if(window.parent===window){
       fetch('/api/adminleads/custom-view/checks').then(function(r){return r.json();}).then(function(d){
         if(d.checks&&Object.keys(d.checks).length)restore(d.checks);
       }).catch(function(){});
-      // Connect Socket.IO for live updates
-      var socketUrl='${SOCKET_URL}';
+      var socketUrl='${socketUrl}';
       if(socketUrl){
         var script=document.createElement('script');
         script.src=socketUrl+'/socket.io/socket.io.js';
@@ -123,12 +120,20 @@ export async function GET() {
   })();
 })();
 </script>`;
-  const injected = html.includes('</body>')
-    ? html.replace('</body>', script + '</body>')
-    : html + script;
-  return new Response(injected, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+    const finalScript = socketUrl ? script.replace("'__SOCKET_URL__'", `'${socketUrl}'`) : script;
+    const injected = html.includes('</body>')
+      ? html.replace('</body>', finalScript + '</body>')
+      : html + finalScript;
+    return new Response(injected, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  } catch (error: any) {
+    console.error("custom-view GET error:", error.message);
+    return new Response(
+      `<!DOCTYPE html><html><body><h1>Error</h1><p>${error.message}</p></body></html>`,
+      { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
 }
 
 // POST — receive and save new HTML file
