@@ -9,7 +9,7 @@ async function ensureTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS custom_view_checks (
       role VARCHAR(50) PRIMARY KEY,
-      checks_json MEDIUMTEXT NOT NULL DEFAULT '{}',
+      checks_json MEDIUMTEXT NOT NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
