@@ -57,7 +57,7 @@ export async function fetchCampaignInsights(
   if (!token) throw new Error("META_ACCESS_TOKEN no configurado");
 
   const params = new URLSearchParams({
-    fields: "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,actions",
+    fields: "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,actions,cost_per_action_type,action_values",
     level: "campaign",
     time_range: JSON.stringify({ since: fechaInicio, until: fechaFin }),
     access_token: token,
@@ -73,6 +73,9 @@ export async function fetchCampaignInsights(
   }
 
   const data = await res.json();
+
+  console.log(`[Meta API] ${adAccountId} | campaigns: ${data.data?.length || 0} | sample:`, JSON.stringify(data.data?.[0] || null).slice(0, 500));
+
   return data.data || [];
 }
 
@@ -82,7 +85,7 @@ export function normalizeCampaign(
   adAccountId: string,
 ): NormalizedCampaign {
   const leadAction = raw.actions?.find((a) => a.action_type === "lead");
-  return {
+  const normalized = {
     campaign_id: raw.campaign_id,
     campaign_name: raw.campaign_name,
     pais,
@@ -94,6 +97,10 @@ export function normalizeCampaign(
     cpc: parseFloat(raw.cpc) || 0,
     leads_from_ads: leadAction ? parseInt(leadAction.value) || 0 : 0,
   };
+  if (normalized.spend_usd > 0) {
+    console.log(`[Meta] ${raw.campaign_name}: spend=$${normalized.spend_usd}, imp=${normalized.impressions}, clicks=${normalized.clicks}`);
+  }
+  return normalized;
 }
 
 export async function syncAllCampaigns(

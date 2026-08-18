@@ -27,9 +27,7 @@ export async function GET(request: Request) {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     const fechaInicio = dateRegex.test(searchParams.get("fecha_inicio") || "")
       ? searchParams.get("fecha_inicio")!
-      : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-          .toISOString()
-          .slice(0, 10);
+      : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
     const fechaFin = dateRegex.test(searchParams.get("fecha_fin") || "")
       ? searchParams.get("fecha_fin")!
       : new Date().toISOString().slice(0, 10);
