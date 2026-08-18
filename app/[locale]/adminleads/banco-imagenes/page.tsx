@@ -282,16 +282,77 @@ export default function BancoImagenesPage() {
     setOdooImage("");
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Comprime la imagen en el navegador antes de subirla:
+  // max 1200px de lado, JPEG 0.85 (PNG se mantiene PNG para no perder transparencia).
+  // Un PNG de 5MB suele bajar a ~200-400KB.
+  const compressImage = (file: File): Promise<{ file: File; preview: string }> => {
+    const MAX_DIM = 1200;
+    const SKIP_BYTES = 800 * 1024; // archivos pequeños se suben tal cual
+
+    const fallback = (): Promise<{ file: File; preview: string }> =>
+      new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve({ file, preview: ev.target?.result as string });
+        reader.readAsDataURL(file);
+      });
+
+    if (file.size < SKIP_BYTES) return fallback();
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(fallback()); };
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width <= MAX_DIM && height <= MAX_DIM && file.size < SKIP_BYTES) {
+          resolve(fallback());
+          return;
+        }
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(fallback()); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        const isPng = file.type === "image/png";
+        const mime = isPng ? "image/png" : "image/jpeg";
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { resolve(fallback()); return; }
+            const ext = isPng ? "png" : "jpg";
+            const compressed = new File(
+              [blob],
+              file.name.replace(/\.[^.]+$/, "") + "." + ext,
+              { type: mime }
+            );
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve({ file: compressed, preview: ev.target?.result as string });
+            reader.readAsDataURL(compressed);
+          },
+          mime,
+          isPng ? undefined : 0.85
+        );
+      };
+      img.src = url;
+    });
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
-    setImageFile(file);
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
+    if (!file) {
+      setImageFile(null);
       setImagePreview("");
+      return;
     }
+    const { file: compressed, preview } = await compressImage(file);
+    setImageFile(compressed);
+    setImagePreview(preview);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -271,6 +271,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "catalogo_disenador",
       "vista_custom",
+      "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],
   },
 };
