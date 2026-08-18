@@ -638,27 +638,31 @@ export default function CxcDashboardPage() {
         ) : (
           <div className="space-y-5">
             {/* ── STATUS BANNER ── */}
-            <div className={`flex items-center justify-between px-5 py-3.5 rounded-xl border ${
-              invoiceDetail.paymentState === "paid"
-                ? "bg-emerald-50 border-emerald-200"
-                : invoiceDetail.paymentState === "partial"
-                  ? "bg-amber-50 border-amber-200"
-                  : invoiceDetail.amountResidual > 0 && invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date()
-                    ? "bg-red-50 border-red-200"
-                    : "bg-blue-50 border-blue-200"
-            }`}>
-              <div className="flex items-center gap-3">
-                <div className={`w-2.5 h-2.5 rounded-full ${
-                  invoiceDetail.paymentState === "paid" ? "bg-emerald-500" : invoiceDetail.paymentState === "partial" ? "bg-amber-500" : "bg-red-500"
-                }`} />
-                <span className="text-sm font-bold text-slate-800">
-                  {invoiceDetail.paymentState === "paid" ? "Factura Pagada" : invoiceDetail.paymentState === "partial" ? "Pago Parcial" : "Pendiente de Pago"}
-                </span>
-              </div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                {invoiceDetail.moveType === "out_refund" ? "Nota de Crédito" : "Factura de Venta"}
-              </span>
-            </div>
+            {(() => {
+              const isPaid = invoiceDetail.paymentState === "paid" || invoiceDetail.amountResidual <= 0;
+              const isPartial = !isPaid && (invoiceDetail.paymentState === "partial" || (invoiceDetail.amountPaid > 0 && invoiceDetail.amountResidual > 0));
+              const isOverdue = !isPaid && !isPartial && invoiceDetail.amountResidual > 0 && invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date();
+              return (
+                <div className={`flex items-center justify-between px-5 py-3.5 rounded-xl border ${
+                  isPaid ? "bg-emerald-50 border-emerald-200"
+                    : isPartial ? "bg-amber-50 border-amber-200"
+                      : isOverdue ? "bg-red-50 border-red-200"
+                        : "bg-blue-50 border-blue-200"
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${
+                      isPaid ? "bg-emerald-500" : isPartial ? "bg-amber-500" : "bg-red-500"
+                    }`} />
+                    <span className="text-sm font-bold text-slate-800">
+                      {isPaid ? "Factura Pagada" : isPartial ? "Pago Parcial" : "Pendiente de Pago"}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                    {invoiceDetail.moveType === "out_refund" ? "Nota de Crédito" : "Factura de Venta"}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* ── PAYMENT PROGRESS ── */}
             {invoiceDetail.amountTotal > 0 && (
