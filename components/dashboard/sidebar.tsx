@@ -207,6 +207,7 @@ export function Sidebar({
       (item) =>
         allowedSections.includes(item.id) &&
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
+        !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
