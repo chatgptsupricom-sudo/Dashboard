@@ -9,58 +9,51 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "META_ACCESS_TOKEN no configurado" }, { status: 500 });
     }
 
-    if (accounts.length === 0) {
-      return NextResponse.json({ error: "META_AD_ACCOUNTS no configurado" }, { status: 500 });
-    }
-
     const results = [];
 
     for (const account of accounts) {
-      console.log(`[Meta Test] Probando cuenta: ${account.id} (${account.nombre})`);
-
-      // Test 1: Basic account info
+      // Test 1: Get account info (simple GET)
       const accountUrl = `https://graph.facebook.com/v21.0/${account.id}?fields=name,account_status,currency&access_token=${token}`;
       const accountRes = await fetch(accountUrl);
-      const accountData = await accountRes.json();
+      const accountText = await accountRes.text();
+      let accountData;
+      try { accountData = JSON.parse(accountText); } catch { accountData = { raw: accountText }; }
 
-      // Test 2: Insights with POST
+      // Test 2: Get campaigns list (simple GET, no insights)
+      const campaignsUrl = `https://graph.facebook.com/v21.0/${account.id}/campaigns?fields=name,status,objective&limit=5&access_token=${token}`;
+      const campaignsRes = await fetch(campaignsUrl);
+      const campaignsText = await campaignsRes.text();
+      let campaignsData;
+      try { campaignsData = JSON.parse(campaignsText); } catch { campaignsData = { raw: campaignsText }; }
+
+      // Test 3: Insights POST
       const insightsUrl = `https://graph.facebook.com/v21.0/${account.id}/insights`;
-      const insightsBody = {
-        fields: ["campaign_id", "campaign_name", "spend", "impressions", "clicks", "actions"],
-        level: "campaign",
-        time_range: { since: "2026-07-01", until: "2026-08-18" },
-        access_token: token,
-      };
-
-      console.log(`[Meta Test] POST ${insightsUrl}`);
-      console.log(`[Meta Test] Body:`, JSON.stringify(insightsBody));
-
       const insightsRes = await fetch(insightsUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(insightsBody),
+        body: JSON.stringify({
+          fields: ["campaign_id", "campaign_name", "spend", "impressions", "clicks"],
+          level: "campaign",
+          time_range: { since: "2026-07-01", until: "2026-08-18" },
+          access_token: token,
+        }),
       });
-
-      const insightsData = await insightsRes.json();
-
-      console.log(`[Meta Test] Response status: ${insightsRes.status}`);
-      console.log(`[Meta Test] Response:`, JSON.stringify(insightsData).slice(0, 1000));
+      const insightsText = await insightsRes.text();
+      let insightsData;
+      try { insightsData = JSON.parse(insightsText); } catch { insightsData = { raw: insightsText }; }
 
       results.push({
         account_id: account.id,
         account_name: account.nombre,
         pais: account.pais,
         account_info: accountData,
-        insights_status: insightsRes.status,
-        insights_error: insightsData.error || null,
-        insights_data: insightsData.data || [],
-        insights_paging: insightsData.paging || null,
+        campaigns_list: campaignsData,
+        insights: insightsData,
       });
     }
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ token_prefix: token.substring(0, 20) + "...", results });
   } catch (error: any) {
-    console.error("[Meta Test] Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message, stack: error.stack }, { status: 500 });
   }
 }
