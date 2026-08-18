@@ -794,6 +794,8 @@ export default function MetricsDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
+          {activeTab === "general" && (
+            <>
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
             value={sede}
@@ -821,6 +823,8 @@ export default function MetricsDashboardPage() {
               </option>
             ))}
           </select>
+            </>
+          )}
           <div className="flex items-center gap-1">
             <select
               className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
