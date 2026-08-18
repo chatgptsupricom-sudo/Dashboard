@@ -123,6 +123,8 @@ export default function CxcDashboardPage() {
   const [kpiModal, setKpiModal] = useState<{ open: boolean; type: string; title: string }>({ open: false, type: "", title: "" });
   const [kpiData, setKpiData] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
+  // Track where invoice detail was opened from
+  const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -162,9 +164,11 @@ export default function CxcDashboardPage() {
   }, [empresa, userCids]);
 
   // STEP 2: Click invoice → show invoice detail
-  const fetchInvoiceDetail = useCallback(async (invoiceId: number) => {
+  const fetchInvoiceDetail = useCallback(async (invoiceId: number, from: "invoices" | "clientInvoices" = "invoices") => {
+    setDetailOrigin(from);
     setInvoiceDetailModal({ open: true, invoiceId });
     setInvoicesModal((prev) => ({ ...prev, open: false }));
+    setClientInvoicesModal((prev) => ({ ...prev, open: false }));
     setInvoiceDetailLoading(true);
     setInvoiceDetail(null);
     try {
@@ -181,10 +185,13 @@ export default function CxcDashboardPage() {
   const fetchClientInvoices = useCallback(async (partnerId: number, partnerName: string, userId: number, userName: string) => {
     setClientInvoicesModal({ open: true, partnerId, partnerName, userId, userName });
     setInvoiceDetailModal((prev) => ({ ...prev, open: false }));
+    setInvoicesModal((prev) => ({ ...prev, open: false }));
+    setKpiModal((prev) => ({ ...prev, open: false }));
     setClientInvoicesLoading(true);
     setClientInvoicesData([]);
     try {
-      const params = new URLSearchParams({ user_id: String(userId), partner_id: String(partnerId) });
+      const params = new URLSearchParams({ partner_id: String(partnerId) });
+      if (userId > 0) params.set("user_id", String(userId));
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/detail?${params}`);
@@ -198,12 +205,19 @@ export default function CxcDashboardPage() {
 
   // Close handlers - navigate back through the chain
   const closeClientInvoicesModal = () => {
+    const prevUserId = clientInvoicesModal.userId;
     setClientInvoicesModal({ open: false, partnerId: 0, partnerName: "", userId: 0, userName: "" });
-    setInvoiceDetailModal((prev) => ({ ...prev, open: true }));
+    if (prevUserId > 0) {
+      setInvoicesModal((prev) => ({ ...prev, open: true }));
+    }
   };
   const closeInvoiceDetail = () => {
     setInvoiceDetailModal({ open: false, invoiceId: 0 });
-    setInvoicesModal((prev) => ({ ...prev, open: true }));
+    if (detailOrigin === "clientInvoices") {
+      setClientInvoicesModal((prev) => ({ ...prev, open: true }));
+    } else {
+      setInvoicesModal((prev) => ({ ...prev, open: true }));
+    }
   };
   const closeInvoicesModal = () => {
     setInvoicesModal({ open: false, userId: 0, userName: "" });
@@ -471,11 +485,16 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
+                      <th className="w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.topDebtors.map((d: any) => (
-                      <tr key={d.partnerId} className="border-b border-slate-100 hover:bg-slate-50">
+                      <tr
+                        key={d.partnerId}
+                        onClick={() => fetchClientInvoices(d.partnerId, d.name, 0, "")}
+                        className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                      >
                         <td className="py-2.5 font-medium text-slate-700 max-w-[200px] truncate">{d.name}</td>
                         <td className="py-2.5 text-right text-slate-600">{formatCurrency(d.total)}</td>
                         <td className="py-2.5 text-right">
@@ -485,6 +504,7 @@ export default function CxcDashboardPage() {
                           <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>{d.oldest}</span>
                         </td>
                         <td className="py-2.5 text-right text-slate-500">{d.count}</td>
+                        <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -875,8 +895,8 @@ export default function CxcDashboardPage() {
         )}
       </Modal>
 
-      {/* MODAL 3: Client invoices (click client name in invoice detail → see all invoices of that client) */}
-      <Modal open={clientInvoicesModal.open} onClose={closeClientInvoicesModal} title={`${clientInvoicesModal.partnerName} — Historial de Facturas`} wide>
+      {/* MODAL 3: Client invoices / Estado de Cuenta */}
+      <Modal open={clientInvoicesModal.open} onClose={closeClientInvoicesModal} title={clientInvoicesModal.userId > 0 ? `${clientInvoicesModal.partnerName} — Historial de Facturas` : `${clientInvoicesModal.partnerName} — Estado de Cuenta`} wide>
         {clientInvoicesLoading ? (
           <div className="flex items-center justify-center py-12">
             <RefreshCw size={24} className="animate-spin text-blue-500 mr-2" />
@@ -885,43 +905,108 @@ export default function CxcDashboardPage() {
         ) : clientInvoicesData.length === 0 ? (
           <div className="text-center py-12 text-slate-400">Sin facturas abiertas</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left py-2 text-slate-500 font-medium">Factura</th>
-                  <th className="text-left py-2 text-slate-500 font-medium">Tipo</th>
-                  <th className="text-left py-2 text-slate-500 font-medium">Fecha</th>
-                  <th className="text-left py-2 text-slate-500 font-medium">Vencimiento</th>
-                  <th className="text-center py-2 text-slate-500 font-medium">Estado</th>
-                  <th className="text-right py-2 text-slate-500 font-medium">Total</th>
-                  <th className="text-right py-2 text-slate-500 font-medium">Pendiente</th>
-                  <th className="text-center py-2 text-slate-500 font-medium">Días</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientInvoicesData.map((inv) => (
-                  <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50 transition">
-                    <td className="py-2.5 font-medium text-slate-700">{inv.name}</td>
-                    <td className="py-2.5 text-slate-500 text-xs">{inv.moveType === "out_refund" ? "NC" : "Factura"}</td>
-                    <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDate)}</td>
-                    <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDateDue)}</td>
-                    <td className="py-2.5 text-center">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.paymentState === "partial" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-                        {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
-                    <td className="py-2.5 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
-                    <td className="py-2.5 text-center">
-                      <span className={inv.agingDays > 60 ? "text-red-600 font-bold text-xs" : inv.agingDays > 30 ? "text-amber-600 font-medium text-xs" : "text-slate-500 text-xs"}>
-                        {inv.agingDays > 0 ? `${inv.agingDays}d` : "Al día"}
-                      </span>
-                    </td>
+          <div className="space-y-4">
+            {/* Summary cards for estado de cuenta */}
+            {clientInvoicesModal.userId === 0 && (() => {
+              const total = clientInvoicesData.reduce((s, i) => s + i.amountResidual, 0);
+              const overdue = clientInvoicesData.filter((i) => i.agingDays > 0).reduce((s, i) => s + i.amountResidual, 0);
+              const bands: Record<string, { count: number; total: number }> = {};
+              clientInvoicesData.forEach((i) => {
+                const band = i.agingBand || "corriente";
+                if (!bands[band]) bands[band] = { count: 0, total: 0 };
+                bands[band].count++;
+                bands[band].total += i.amountResidual;
+              });
+              const bandColors: Record<string, { bg: string; text: string }> = {
+                corriente: { bg: "bg-emerald-50", text: "text-emerald-700" },
+                "1-30": { bg: "bg-amber-50", text: "text-amber-700" },
+                "31-60": { bg: "bg-orange-50", text: "text-orange-700" },
+                "61-90": { bg: "bg-red-50", text: "text-red-700" },
+                "91+": { bg: "bg-red-100", text: "text-red-800" },
+              };
+              return (
+                <div className="grid grid-cols-5 gap-2">
+                  {["corriente", "1-30", "31-60", "61-90", "91+"].map((band) => {
+                    const b = bands[band] || { count: 0, total: 0 };
+                    const c = bandColors[band];
+                    return (
+                      <div key={band} className={`${c.bg} border rounded-xl p-3 text-center`}>
+                        <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{band === "corriente" ? "Corriente" : `${band} días`}</span>
+                        <span className={`text-base font-bold ${c.text}`}>{formatCurrency(b.total)}</span>
+                        <span className="text-[10px] text-slate-400 block">{b.count} fact.</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 text-slate-500 font-medium">Factura</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Tipo</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Fecha</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Vencimiento</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Band</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Estado</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">Pendiente</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Días</th>
+                    <th className="w-8"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {clientInvoicesData.map((inv) => {
+                    const bandColors: Record<string, string> = {
+                      corriente: "bg-emerald-50 text-emerald-700",
+                      "1-30": "bg-amber-50 text-amber-700",
+                      "31-60": "bg-orange-50 text-orange-700",
+                      "61-90": "bg-red-50 text-red-700",
+                      "91+": "bg-red-100 text-red-800",
+                    };
+                    return (
+                      <tr
+                        key={inv.id}
+                        onClick={() => fetchInvoiceDetail(inv.moveId || inv.id, "clientInvoices")}
+                        className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                      >
+                        <td className="py-2.5 font-medium text-slate-700">{inv.name}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{inv.transactionType === "out_refund" ? "NC" : "Factura"}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDate)}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDateDue)}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bandColors[inv.agingBand] || "bg-slate-50 text-slate-600"}`}>
+                            {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.amountResidual <= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                            {inv.amountResidual <= 0 ? "Pagada" : "Pendiente"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={inv.agingDays > 60 ? "text-red-600 font-bold text-xs" : inv.agingDays > 30 ? "text-amber-600 font-medium text-xs" : "text-slate-500 text-xs"}>
+                            {inv.agingDays > 0 ? `${inv.agingDays}d` : "Al día"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50/80 border-t border-slate-200">
+                    <td colSpan={6} className="py-2.5 px-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Pendiente</td>
+                    <td className="py-2.5 px-4 text-right font-bold text-slate-800 text-sm">
+                      {formatCurrency(clientInvoicesData.reduce((s, i) => s + i.amountResidual, 0))}
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
       </Modal>
