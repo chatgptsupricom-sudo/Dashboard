@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
           "transaction_type", "document_number",
         ],
         limit: 2000,
-        order: "date_maturity asc",
+        order: "days_overdue desc, date_maturity asc",
       },
     )) || [];
 
@@ -84,6 +84,12 @@ export async function GET(request: NextRequest) {
       .filter((inv) => {
         if (agingBand && inv.agingBand !== agingBand) return false;
         return true;
+      })
+      .sort((a, b) => {
+        // Primero: más vencidos primero (days_overdue desc)
+        if (b.agingDays !== a.agingDays) return b.agingDays - a.agingDays;
+        // Segundo: por fecha de vencimiento más antigua primero
+        return (a.invoiceDateDue || "").localeCompare(b.invoiceDateDue || "");
       });
 
     // Fetch amount_total from account.move for each unique moveId
