@@ -1,3 +1,3 @@
-import VendedoresBancoImagenesPage from "../../vendedores/banco-imagenes/page";
+import AdminLeadsBancoImagenesPage from "../../adminleads/banco-imagenes/page";
 
-export default VendedoresBancoImagenesPage;
+export default AdminLeadsBancoImagenesPage;
