@@ -32,7 +32,8 @@ export interface NormalizedCampaign {
 
 export function getAdAccounts(): MetaAdAccount[] {
   try {
-    return JSON.parse(process.env.META_AD_ACCOUNTS || "[]");
+    const raw = process.env.META_AD_ACCOUNTS || "[]";
+    return JSON.parse(raw.replace(/\n/g, "").trim());
   } catch {
     return [];
   }
