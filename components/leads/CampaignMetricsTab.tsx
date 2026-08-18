@@ -202,7 +202,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         </CardHeader>
         <CardContent className="pt-4 overflow-x-auto">
           {campaigns.length > 0 ? (
-            <table className="w-full text-xs min-w-[800px]">
+            <table className="w-full text-xs min-w-[1100px]">
               <thead className="bg-zinc-50/50 text-zinc-500">
                 <tr>
                   <th className="px-4 py-3 text-left">Campaña</th>
@@ -222,7 +222,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
               <tbody className="divide-y divide-zinc-100">
                 {campaigns.map((c) => (
                   <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-4 py-3 font-medium text-zinc-900 max-w-[200px] truncate" title={c.campaign_name}>
+                    <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap">
                       {c.campaign_name}
                     </td>
                     <td className="px-4 py-3 text-center">
