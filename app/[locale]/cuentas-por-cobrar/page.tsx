@@ -119,6 +119,11 @@ export default function CxcDashboardPage() {
   const [clientInvoicesData, setClientInvoicesData] = useState<any[]>([]);
   const [clientInvoicesLoading, setClientInvoicesLoading] = useState(false);
 
+  // KPI detail modals
+  const [kpiModal, setKpiModal] = useState<{ open: boolean; type: string; title: string }>({ open: false, type: "", title: "" });
+  const [kpiData, setKpiData] = useState<any>(null);
+  const [kpiLoading, setKpiLoading] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -204,6 +209,26 @@ export default function CxcDashboardPage() {
     setInvoicesModal({ open: false, userId: 0, userName: "" });
   };
 
+  // KPI detail modal handlers
+  const fetchKpiDetail = useCallback(async (type: string, title: string) => {
+    setKpiModal({ open: true, type, title });
+    setKpiLoading(true);
+    setKpiData(null);
+    try {
+      const params = new URLSearchParams({ type });
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      params.set("month", String(selectedMonth));
+      params.set("year", String(selectedYear));
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/kpi-detail?${params}`);
+      const json = await res.json();
+      if (json.success) setKpiData(json.data);
+    } catch (e) {
+      console.error(e);
+    }
+    setKpiLoading(false);
+  }, [empresa, userCids, selectedMonth, selectedYear]);
+
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
   const agingColors: Record<string, string> = {
     "corriente": "bg-emerald-400",
@@ -279,7 +304,7 @@ export default function CxcDashboardPage() {
       {data && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
+            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`} />
@@ -297,7 +322,7 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
             </div>
 
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`} />
@@ -315,7 +340,7 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
             </div>
 
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
+            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`} />
@@ -333,7 +358,7 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Restante: {formatCurrency(data.kpis.recuperacion.vencidoRestante)}</div>
             </div>
 
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`} />
@@ -897,6 +922,288 @@ export default function CxcDashboardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* KPI DETAIL MODALS */}
+      <Modal open={kpiModal.open} onClose={() => setKpiModal({ open: false, type: "", title: "" })} title={kpiModal.title} wide>
+        {kpiLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <RefreshCw size={28} className="animate-spin text-blue-500 mx-auto mb-3" />
+              <span className="text-slate-400 text-sm">Cargando detalle...</span>
+            </div>
+          </div>
+        ) : !kpiData ? (
+          <div className="text-center py-16 text-slate-400">Error al cargar</div>
+        ) : (
+          <div className="space-y-5">
+            {/* ── Efectividad Cobranza Detail ── */}
+            {kpiData.type === "efectividad" && (
+              <>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.totalExigible)}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.totalCobrado)}</span>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Pendiente</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.totalPendiente)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.efectividad}%</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.paidCount}/{kpiData.summary.count} pagadas</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Tipo</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{inv.moveType === "out_refund" ? "NC" : "Factura"}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.amountResidual <= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                              {inv.paymentState === "paid" || inv.amountResidual <= 0 ? "Pagada" : "Pendiente"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.amountPaid)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── Cartera Vencida Detail ── */}
+            {kpiData.type === "cartera" && (
+              <>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Cartera Total</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.totalReceivable)}</span>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Vencida</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.totalOverdue)}</span>
+                    <span className="text-[10px] text-red-400 block">{kpiData.summary.overduePct}%</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.count}</span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest block mb-1">Vencidas</span>
+                    <span className="text-lg font-bold text-amber-800">{kpiData.summary.overdueCount}</span>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
+                  <div className="grid grid-cols-5 gap-2">
+                    {["corriente", "1-30", "31-60", "61-90", "91+"].map((band) => {
+                      const bandData = kpiData.byBand[band] || { count: 0, total: 0 };
+                      const colors: Record<string, { bg: string; text: string }> = {
+                        corriente: { bg: "bg-emerald-50", text: "text-emerald-700" },
+                        "1-30": { bg: "bg-amber-50", text: "text-amber-700" },
+                        "31-60": { bg: "bg-orange-50", text: "text-orange-700" },
+                        "61-90": { bg: "bg-red-50", text: "text-red-700" },
+                        "91+": { bg: "bg-red-100", text: "text-red-800" },
+                      };
+                      const c = colors[band] || colors.corriente;
+                      return (
+                        <div key={band} className={`${c.bg} border rounded-xl p-3 text-center`}>
+                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{band === "corriente" ? "Corriente" : `${band} días`}</span>
+                          <span className={`text-base font-bold ${c.text}`}>{formatCurrency(bandData.total)}</span>
+                          <span className="text-[10px] text-slate-400 block">{bandData.count} fact.</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sede</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Band</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.map((inv: any) => {
+                        const bandColors: Record<string, string> = {
+                          corriente: "bg-emerald-50 text-emerald-700",
+                          "1-30": "bg-amber-50 text-amber-700",
+                          "31-60": "bg-orange-50 text-orange-700",
+                          "61-90": "bg-red-50 text-red-700",
+                          "91+": "bg-red-100 text-red-800",
+                        };
+                        return (
+                          <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                            <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                            <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bandColors[inv.agingBand] || "bg-slate-50 text-slate-600"}`}>
+                                {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={inv.daysOverdue > 60 ? "text-red-600 font-bold" : inv.daysOverdue > 30 ? "text-amber-600 font-medium" : "text-slate-500"}>
+                                {inv.daysOverdue > 0 ? `${inv.daysOverdue}d` : "0d"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── Recuperación Vencidos Detail ── */}
+            {kpiData.type === "recuperacion" && (
+              <>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Vencido Inicial</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.vencidoInicial)}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Recuperado</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.recuperado)}</span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest block mb-1">Restante</span>
+                    <span className="text-lg font-bold text-amber-800">{formatCurrency(kpiData.summary.vencidoRestante)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Recuperación</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.recuperacion}%</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.recoveredCount}/{kpiData.summary.count} recuperadas</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.status === "Recuperado" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.amountPaid)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── DSO Detail ── */}
+            {kpiData.type === "dso" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Cartera Abierta</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Crédito 90d</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasCredito90d)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso} días</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} facturas</span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
+                  <p className="text-xs text-slate-600">
+                    DSO = (Cartera Abierta ÷ Ventas Crédito 90 días) × 90 = ({formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasCredito90d)}) × 90 = <strong>{kpiData.summary.dso} días</strong>
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDate)}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.paymentState === "partial" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
+                              {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
       </Modal>
