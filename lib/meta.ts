@@ -57,35 +57,30 @@ export async function fetchCampaignInsights(
   const token = process.env.META_ACCESS_TOKEN;
   if (!token) throw new Error("META_ACCESS_TOKEN no configurado");
 
-  const url = `${META_BASE_URL}/${adAccountId}/insights`;
-  const body = {
-    fields: ["campaign_id", "campaign_name", "spend", "impressions", "clicks", "ctr", "cpc", "actions", "cost_per_action_type", "action_values"],
+  const params = new URLSearchParams({
+    fields: "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,actions",
     level: "campaign",
-    time_range: { since: fechaInicio, until: fechaFin },
-    time_increment: 0,
+    time_range: JSON.stringify({ since: fechaInicio, until: fechaFin }),
+    limit: "500",
     access_token: token,
-  };
-
-  console.log(`[Meta API] Fetching ${adAccountId} from ${fechaInicio} to ${fechaFin}`);
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
   });
+
+  console.log(`[Meta API] GET ${adAccountId}/insights`);
+
+  const res = await fetch(`${META_BASE_URL}/${adAccountId}/insights?${params}`);
 
   const data = await res.json();
 
   if (data.error) {
-    console.error(`[Meta API] Error ${adAccountId}:`, JSON.stringify(data.error));
-    throw new Error(data.error.message || "Meta API error");
+    console.error(`[Meta API] Error ${adAccountId}:`, data.error.message);
+    throw new Error(data.error.message);
   }
 
   console.log(`[Meta API] ${adAccountId} | campaigns: ${data.data?.length || 0}`);
 
   if (data.data && data.data.length > 0) {
     const sample = data.data[0];
-    console.log(`[Meta API] Sample: campaign=${sample.campaign_name} spend=${sample.spend} imp=${sample.impressions} clicks=${sample.clicks}`);
+    console.log(`[Meta API] Sample: ${sample.campaign_name} spend=${sample.spend} imp=${sample.impressions}`);
   }
 
   return data.data || [];

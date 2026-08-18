@@ -19,37 +19,33 @@ export async function GET(request: Request) {
     const accText = await accRes.text();
     push(`Account ${acc.id}: ${accText.substring(0, 200)}`);
 
-    // Test 2: Insights POST
-    const insightsRes = await fetch(`https://graph.facebook.com/v21.0/${acc.id}/insights`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fields: ["campaign_id", "campaign_name", "spend", "impressions", "clicks", "actions"],
-        level: "campaign",
-        time_range: { since: "2026-07-01", until: "2026-08-18" },
-        access_token: token,
-      }),
+    // Test 2: Insights GET (not POST - POST returns async report_run_id)
+    const insightsParams = new URLSearchParams({
+      fields: "campaign_id,campaign_name,spend,impressions,clicks,actions",
+      level: "campaign",
+      time_range: JSON.stringify({ since: "2026-07-01", until: "2026-08-18" }),
+      limit: "10",
+      access_token: token,
     });
+    const insightsRes = await fetch(`https://graph.facebook.com/v21.0/${acc.id}/insights?${insightsParams}`);
     const insightsText = await insightsRes.text();
-    push(`Insights ${acc.id} (${insightsRes.status}): ${insightsText.substring(0, 1500)}`);
+    push(`Insights GET ${acc.id} (${insightsRes.status}): ${insightsText.substring(0, 1500)}`);
   }
 
-  // Test 3: Second account
-  if (accounts.length > 1) {
-    const acc = accounts[1];
-    const insightsRes = await fetch(`https://graph.facebook.com/v21.0/${acc.id}/insights`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fields: ["campaign_id", "campaign_name", "spend", "impressions", "clicks", "actions"],
+    // Test 3: Second account
+    if (accounts.length > 1) {
+      const acc = accounts[1];
+      const insightsParams = new URLSearchParams({
+        fields: "campaign_id,campaign_name,spend,impressions,clicks,actions",
         level: "campaign",
-        time_range: { since: "2026-07-01", until: "2026-08-18" },
+        time_range: JSON.stringify({ since: "2026-07-01", until: "2026-08-18" }),
+        limit: "10",
         access_token: token,
-      }),
-    });
-    const insightsText = await insightsRes.text();
-    push(`Insights ${acc.id} (${insightsRes.status}): ${insightsText.substring(0, 1500)}`);
-  }
+      });
+      const insightsRes = await fetch(`https://graph.facebook.com/v21.0/${acc.id}/insights?${insightsParams}`);
+      const insightsText = await insightsRes.text();
+      push(`Insights GET ${acc.id} (${insightsRes.status}): ${insightsText.substring(0, 1500)}`);
+    }
 
   return NextResponse.json({ log });
 }
