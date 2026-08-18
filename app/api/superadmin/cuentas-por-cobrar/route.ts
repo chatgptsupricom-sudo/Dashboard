@@ -193,83 +193,33 @@ export async function GET(request: NextRequest) {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // FUENTE 2: account.move — KPIs que necesitan historial
+    // KPIs calculados desde digiflex.cxc.report (aging bands)
     // ═══════════════════════════════════════════════════════════════════
-    const moveDomain: any[] = [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
-      ["company_id", "in", companyIds],
-    ];
+    const totalCurrent = agingDistribution["corriente"];
+    const total1_30 = agingDistribution["1-30"];
+    const total31_60 = agingDistribution["31-60"];
+    const total61_90 = agingDistribution["61-90"];
+    const total91Plus = agingDistribution["91+"];
 
-    const allMoveInvoices = await fetchPaginated(
-      "account.move",
-      moveDomain,
-      [
-        "id", "name", "move_type",
-        "invoice_date", "invoice_date_due", "payment_state",
-        "amount_untaxed", "amount_total", "amount_residual",
-      ],
-    );
-
-    const moveInvoices = allMoveInvoices.map((inv: any) => {
-      const amountUntaxed = inv.move_type === "out_refund" ? -Math.abs(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : (inv.amount_total || 0);
-      const residual = inv.amount_residual || 0;
-      return {
-        id: inv.id,
-        moveType: inv.move_type,
-        invoiceDate: inv.invoice_date || null,
-        invoiceDateDue: inv.invoice_date_due || null,
-        paymentState: inv.payment_state || "not_paid",
-        amountUntaxed,
-        amountTotal,
-        amountResidual: residual,
-      };
-    });
-
-    // ── Efectividad Cobranza ──
-    const exigibleInvoices = moveInvoices.filter((inv) => {
-      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate >= monthStart && dueDate <= monthEnd && inv.amountResidual >= 0;
-    });
-    const montoExigible = exigibleInvoices.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      return sum + total;
-    }, 0);
-    const cobradoEnPeriodo = exigibleInvoices.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      const pagado = total - Math.abs(inv.amountResidual);
-      return sum + Math.max(pagado, 0);
-    }, 0);
-    const efectividad = montoExigible > 0
-      ? Math.round((cobradoEnPeriodo / montoExigible) * 10000) / 100
+    // ── Efectividad Cobranza: % de cartera que está al día (corriente) ──
+    const efectividad = totalReceivable > 0
+      ? Math.round((totalCurrent / totalReceivable) * 10000) / 100
       : null;
 
-    // ── Recuperación Vencidos (cohorte) ──
-    const cohortStart = getMonthStart(currentYear, currentMonth);
-    const cohortAll = moveInvoices.filter((inv) => {
-      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate < cohortStart;
-    });
-    const cohortTotalInicial = cohortAll.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      return sum + total;
-    }, 0);
-    const cohortRestante = cohortAll.reduce((sum, inv) => sum + Math.abs(inv.amountResidual || 0), 0);
-    const cohortRecovered = cohortTotalInicial - cohortRestante;
+    // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
-    // ── DSO (ventas crédito últimos 90 días) ──
-    const d90 = new Date(today);
-    d90.setDate(d90.getDate() - 90);
-    const totalCreditSales90d = moveInvoices
-      .filter((inv) => {
-        const d = inv.invoiceDate ? new Date(inv.invoiceDate) : null;
-        return inv.moveType === "out_invoice" && d && d >= d90;
-      })
-      .reduce((sum, inv) => sum + Math.abs(inv.amountUntaxed), 0);
+    // ── Recuperación Vencidos: % de vencido que NO está estancado en 91+ ──
+    const totalOverdueBands = total1_30 + total31_60 + total61_90 + total91Plus;
+    const recuperacion = totalOverdueBands > 0
+      ? Math.round(((totalOverdueBands - total91Plus) / totalOverdueBands) * 10000) / 100
+      : null;
 
-    const dso90 = totalCreditSales90d > 0
-      ? Math.round((totalReceivable / totalCreditSales90d) * 90)
+    // ── DSO: días promedio de cobro usando bandas del aging (midpoints) ──
+    // 1-30 → 15d, 31-60 → 45d, 61-90 → 75d, 91+ → 105d
+    const dsoNumerator = (total1_30 * 15) + (total31_60 * 45) + (total61_90 * 75) + (total91Plus * 105);
+    const totalOverdueWeighted = total1_30 + total31_60 + total61_90 + total91Plus;
+    const dso = totalOverdueWeighted > 0
+      ? Math.round(dsoNumerator / totalOverdueWeighted)
       : null;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -282,9 +232,9 @@ export async function GET(request: NextRequest) {
           efectividad: {
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            cobradoMes: Math.round(cobradoEnPeriodo * 100) / 100,
-            exigibleMes: Math.round(montoExigible * 100) / 100,
-            pendiente: Math.round((montoExigible - cobradoEnPeriodo) * 100) / 100,
+            cobradoMes: Math.round(totalCurrent * 100) / 100,
+            exigibleMes: Math.round(totalReceivable * 100) / 100,
+            pendiente: Math.round(totalOverdue * 100) / 100,
           },
           carteraVencida: {
             value: carteraVencidaPct,
@@ -293,16 +243,16 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: cohortTotalInicial > 0 ? Math.round((cohortRecovered / cohortTotalInicial) * 10000) / 100 : null,
+            value: recuperacion,
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(cohortTotalInicial * 100) / 100,
-            vencidoRestante: Math.round(cohortRestante * 100) / 100,
+            vencidoInicial: Math.round(totalOverdueBands * 100) / 100,
+            vencidoRestante: Math.round(total91Plus * 100) / 100,
           },
           dso: {
-            value: dso90,
+            value: dso,
             meta: cxcMetas["dso"] || 45,
             carteraAbierta: Math.round(totalReceivable * 100) / 100,
-            ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
+            ventasCredito90d: Math.round(totalOverdueWeighted * 100) / 100,
           },
         },
         agingDistribution,

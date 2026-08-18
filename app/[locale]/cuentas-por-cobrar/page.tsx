@@ -595,7 +595,7 @@ export default function CxcDashboardPage() {
                 {invoicesData.map((inv) => (
                   <tr
                     key={inv.id}
-                    onClick={() => fetchInvoiceDetail(inv.id)}
+                    onClick={() => fetchInvoiceDetail(inv.moveId || inv.id, "invoices")}
                     className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
                   >
                     <td className="py-2.5 font-medium text-slate-700">{inv.name}</td>
