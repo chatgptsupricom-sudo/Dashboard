@@ -206,12 +206,11 @@ export default function CxcDashboardPage() {
 
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
   const agingColors: Record<string, string> = {
-    " corriente": "bg-emerald-400",
-    "1-15": "bg-amber-400",
-    "16-30": "bg-orange-400",
-    "31-60": "bg-red-400",
+    "corriente": "bg-emerald-400",
+    "1-30": "bg-amber-400",
+    "31-60": "bg-orange-400",
     "61-90": "bg-red-500",
-    "90+": "bg-red-700",
+    "91+": "bg-red-700",
   };
 
   const filteredSalespersons = data?.bySalesperson

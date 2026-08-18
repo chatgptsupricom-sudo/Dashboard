@@ -499,9 +499,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       let url = `/api/superadmin/cuentas-por-cobrar/detail?empresa=${empresa}`;
       if (kpiId === "cartera_vencida") {
         const bandMap: Record<string, string> = {
-          "1-15": "1-15", "16-30": "16-30", "31-60": "31-60", "61-90": "61-90", "90+": "90+"
+          "1-30": "1-30", "31-60": "31-60", "61-90": "61-90", "91+": "91+"
         };
-        url += `&aging_band=${encodeURIComponent("1-15")}`;
+        url += `&aging_band=${encodeURIComponent("1-30")}`;
       }
       const res = await fetch(url);
       const json = await res.json();
@@ -1160,7 +1160,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const v = val as number;
       return agingTotal > 0 ? Math.round((v / agingTotal) * 100) : 0;
     });
-    const agingLabels = ["corriente", "1-15", "16-30", "31-60", "61-90", "90+"];
+    const agingLabels = ["corriente", "1-30", "31-60", "61-90", "91+"];
     const semana1 = k.carteraVencida.carteraTotal > 0 ? Math.round(k.carteraVencida.saldoVencido / k.carteraVencida.carteraTotal * 100) : 0;
 
     return [
@@ -4062,7 +4062,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         {cppModalData.agingBuckets && (
                           <div className="col-span-2 grid grid-cols-6 gap-2">
                             {Object.entries(cppModalData.agingBuckets).map(([band, info]: [string, any]) => (
-                              <div key={band} className={`rounded-lg p-2 text-center ${band === "corriente" ? "bg-emerald-50" : band === "90+" ? "bg-red-50" : "bg-amber-50"}`}>
+                              <div key={band} className={`rounded-lg p-2 text-center ${band === "corriente" ? "bg-emerald-50" : band === "91+" ? "bg-red-50" : "bg-amber-50"}`}>
                                 <p className="text-[10px] font-medium text-slate-500">{band === "corriente" ? "Corriente" : band}</p>
                                 <p className="text-sm font-bold text-slate-800">${info.amount?.toLocaleString("es-VE", { maximumFractionDigits: 0 })}</p>
                               </div>
@@ -4172,7 +4172,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 <td className="p-3 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                     bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
-                                    bill.agingBand === "90+" ? "bg-red-100 text-red-700" :
+                                    bill.agingBand === "91+" ? "bg-red-100 text-red-700" :
                                     "bg-amber-100 text-amber-700"
                                   }`}>
                                     {bill.agingBand === "corriente" ? "Corriente" : bill.agingBand}
