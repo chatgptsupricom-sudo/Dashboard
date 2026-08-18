@@ -660,6 +660,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import CampaignMetricsTab from "@/components/leads/CampaignMetricsTab";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -700,6 +701,7 @@ export default function MetricsDashboardPage() {
   const [preset, setPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
+  const [activeTab, setActiveTab] = useState<"general" | "campanas">("general");
 
   useEffect(() => {
     setError(null);
@@ -861,6 +863,32 @@ export default function MetricsDashboardPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab("general")}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            activeTab === "general"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+          }`}
+        >
+          General
+        </button>
+        <button
+          onClick={() => setActiveTab("campanas")}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            activeTab === "campanas"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+          }`}
+        >
+          Campañas Meta
+        </button>
+      </div>
+
+      {activeTab === "general" && (
+      <>
       {/* 1. KPIs Principales en Grid optimizado */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
         <MetricCard
@@ -1199,6 +1227,16 @@ export default function MetricsDashboardPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {activeTab === "campanas" && (
+        <CampaignMetricsTab
+          sede={sede}
+          fechaInicio={fechaInicio}
+          fechaFin={fechaFin}
+        />
+      )}
     </div>
   );
 }
