@@ -79,11 +79,33 @@ export async function GET(request: NextRequest) {
         agingDays: r.days_overdue || 0,
         agingBand: getAgingBand(r),
         transactionType: r.transaction_type || "",
+        amountTotal: 0,
       }))
       .filter((inv) => {
         if (agingBand && inv.agingBand !== agingBand) return false;
         return true;
       });
+
+    // Fetch amount_total from account.move for each unique moveId
+    const moveIds = [...new Set(results.map((r) => r.moveId).filter((id) => id > 0))];
+    if (moveIds.length > 0) {
+      try {
+        const moves = await callOdooRPC<any[]>(
+          "account.move", "search_read",
+          [[["id", "in", moveIds]]],
+          { fields: ["id", "amount_total"], limit: moveIds.length },
+        );
+        const moveTotals: Record<number, number> = {};
+        (moves || []).forEach((m: any) => { moveTotals[m.id] = Math.abs(m.amount_total || 0); });
+        results.forEach((r) => {
+          if (r.moveId && moveTotals[r.moveId]) {
+            r.amountTotal = Math.round(moveTotals[r.moveId] * 100) / 100;
+          }
+        });
+      } catch {
+        // Ignore errors - leave amountTotal as 0
+      }
+    }
 
     return NextResponse.json({
       success: true,
