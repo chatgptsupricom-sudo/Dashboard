@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
         return {
           id: r.id,
-          moveId: r.move_id?.[0] || 0,
+          moveId: Array.isArray(r.move_id) ? r.move_id[0] : (typeof r.move_id === "number" ? r.move_id : 0),
           name: r.document_number || "",
           partnerId: r.partner_id?.[0] || 0,
           partnerName: r.partner_name || r.partner_id?.[1] || "Sin cliente",

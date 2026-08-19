@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 export function Sidebar({
@@ -81,6 +81,19 @@ export function Sidebar({
   const locale = params?.locale || "es";
   const userName = user?.name || "Usuario";
   const router = useRouter();
+  const navRef = useRef<HTMLElement>(null);
+
+  const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    const atTop = scrollTop === 0 && e.deltaY < 0;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
+    if (!atTop && !atBottom) {
+      e.preventDefault();
+      nav.scrollTop += e.deltaY;
+    }
+  }, []);
 
   // Prevención de renderizado si no hay usuario
   if (!user) return null;
@@ -268,7 +281,8 @@ export function Sidebar({
           animate={{ x: 0 }}
           exit={{ x: -280 }}
           transition={{ type: "spring", damping: 20, stiffness: 100 }}
-          className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-y-auto"
+          className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-hidden"
+          onWheel={handleSidebarWheel}
         >
           {/* Header */}
           <div className="p-6 flex items-center justify-between flex-shrink-0">
@@ -294,7 +308,7 @@ export function Sidebar({
           </div>
 
           {/* Menú de Navegación */}
-          <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
+          <nav ref={navRef} className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto overscroll-contain">
             {/* Renderizado de Opciones Simples */}
             {availableItems.map((item) => {
               const Icon = item.icon;
