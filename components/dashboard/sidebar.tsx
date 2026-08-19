@@ -268,7 +268,7 @@ export function Sidebar({
           animate={{ x: 0 }}
           exit={{ x: -280 }}
           transition={{ type: "spring", damping: 20, stiffness: 100 }}
-          className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-hidden"
+          className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-y-auto"
         >
           {/* Header */}
           <div className="p-6 flex items-center justify-between flex-shrink-0">
