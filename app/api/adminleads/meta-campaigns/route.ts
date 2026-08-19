@@ -122,6 +122,7 @@ export async function GET(request: Request) {
         : "";
 
     let qualificationData: any[] = [];
+    let totalQualificationCounts: any = { total_calificados: 0, total_no_calificados: 0 };
     try {
       const result: any = await query(
         `
@@ -138,6 +139,18 @@ export async function GET(request: Request) {
         convParams,
       );
       qualificationData = result.rows || [];
+
+      const countsResult: any = await query(
+        `
+        SELECT
+          SUM(CASE WHEN es_calificado = 'Calificado' THEN 1 ELSE 0 END) as total_calificados,
+          SUM(CASE WHEN es_calificado = 'No Calificado' THEN 1 ELSE 0 END) as total_no_calificados
+        FROM conversaciones
+        ${convWhere}
+      `,
+        convParams,
+      );
+      totalQualificationCounts = countsResult.rows?.[0] || totalQualificationCounts;
     } catch {
       console.warn("Tabla conversaciones no disponible aún");
     }
@@ -269,18 +282,15 @@ export async function GET(request: Request) {
     const summary = {
       total_spend: campaigns.reduce((s, c) => s + c.spend_usd, 0),
       total_leads: campaigns.reduce((s, c) => s + c.total_leads, 0),
-      total_calificados: campaigns.reduce((s, c) => s + c.calificados, 0),
-      total_no_calificados: campaigns.reduce(
-        (s, c) => s + c.no_calificados,
-        0,
-      ),
+      total_calificados: parseInt(totalQualificationCounts.total_calificados) || 0,
+      total_no_calificados: parseInt(totalQualificationCounts.total_no_calificados) || 0,
       total_ventas: campaigns.reduce((s, c) => s + c.ventas_cerradas, 0),
       recaudo_total: campaigns.reduce((s, c) => s + c.recaudo_usd, 0),
       costo_por_lead_calificado:
-        campaigns.reduce((s, c) => s + c.calificados, 0) > 0
+        (parseInt(totalQualificationCounts.total_calificados) || 0) > 0
           ? Math.round(
               (campaigns.reduce((s, c) => s + c.spend_usd, 0) /
-                campaigns.reduce((s, c) => s + c.calificados, 0)) *
+                (parseInt(totalQualificationCounts.total_calificados) || 1)) *
                 100,
             ) / 100
           : 0,
