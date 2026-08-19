@@ -102,9 +102,9 @@ export async function GET(request: Request) {
     convConditions.push("canal = 'Instagram'");
 
     if (userCids === 7) {
-      convConditions.push("pais = 'Panama'");
+      convConditions.push("pais IN ('Panama', 'PA')");
     } else {
-      convConditions.push("pais = 'Venezuela'");
+      convConditions.push("pais IN ('Venezuela', 'VE')");
     }
 
     if (fechaInicio) {
