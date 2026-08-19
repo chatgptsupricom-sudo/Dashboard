@@ -27,18 +27,20 @@ export async function GET(request: Request) {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     const fechaInicio = dateRegex.test(searchParams.get("fecha_inicio") || "")
       ? searchParams.get("fecha_inicio")!
-      : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
+      : null;
     const fechaFin = dateRegex.test(searchParams.get("fecha_fin") || "")
       ? searchParams.get("fecha_fin")!
-      : new Date().toISOString().slice(0, 10);
+      : null;
 
     const accounts = filterByCids(getAdAccounts(), userCids);
 
     let metaCampaigns: NormalizedCampaign[] = [];
     try {
+      const metaFechaInicio = fechaInicio || "2026-01-01";
+      const metaFechaFin = fechaFin || new Date().toISOString().slice(0, 10);
       metaCampaigns = await syncAllCampaigns(
-        fechaInicio,
-        fechaFin,
+        metaFechaInicio,
+        metaFechaFin,
         accounts.length > 0 ? accounts : undefined,
       );
     } catch (err) {
@@ -157,8 +159,7 @@ export async function GET(request: Request) {
 
     let aiUsageData: any[] = [];
     try {
-      const result: any = await query(
-        `
+      let aiQuery = `
         SELECT
           source,
           model,
@@ -166,10 +167,18 @@ export async function GET(request: Request) {
           IFNULL(SUM(total_tokens), 0) as total_tokens,
           IFNULL(SUM(estimated_cost_usd), 0) as total_cost_usd
         FROM ai_usage_logs
-        WHERE request_timestamp >= ? AND request_timestamp <= ?
-        GROUP BY source, model
-      `,
-        [`${fechaInicio} 00:00:00`, `${fechaFin} 23:59:59`],
+      `;
+      const aiParams: any[] = [];
+      if (fechaInicio || fechaFin) {
+        aiQuery += ` WHERE request_timestamp >= ? AND request_timestamp <= ?`;
+        aiParams.push(
+          `${fechaInicio || "2026-01-01"} 00:00:00`,
+          `${fechaFin || new Date().toISOString().slice(0, 10)} 23:59:59`,
+        );
+      }
+      aiQuery += ` GROUP BY source, model`;
+
+      const result: any = await query(aiQuery, aiParams);
       );
       aiUsageData = result.rows || [];
     } catch {
