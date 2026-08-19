@@ -22,7 +22,7 @@ import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
 // URL verificada y estable (GeoJSON de alta fidelidad)
 const geoUrl =
-  "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson";
+  "/geojson/venezuela.geojson";
 
 const SELLERS_DATA = [
   { name: "ARTURO ARAY", state: "ANZOÁTEGUI", zone: "CENTRO" },
