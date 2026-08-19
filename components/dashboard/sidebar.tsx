@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   LogOut,
   Map,
+  Megaphone,
   Package,
   PieChart,
   Search,
@@ -59,6 +60,7 @@ export function Sidebar({
   const [isComprasOpen, setIsComprasOpen] = useState(false);
   const [isVentasOpen, setIsVentasOpen] = useState(false);
   const [isCxCOpen, setIsCxCOpen] = useState(false);
+  const [isMarketingOpen, setIsMarketingOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -132,8 +134,6 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
-    { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes", adminLeadsOnly: true },
-    { id: "vista_custom", label: "Plan de Contenido", icon: Globe, slug: "/vista-custom" },
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
   ];
@@ -769,6 +769,58 @@ export function Sidebar({
                                 window.matchMedia("(max-width: 767px)").matches
                               )
                                 onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsMarketingOpen(!isMarketingOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone size={20} className="text-slate-400" />
+                    <span className="text-sm">Marketing</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isMarketingOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isMarketingOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
                             }}
                           >
                             <div
