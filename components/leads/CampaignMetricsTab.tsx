@@ -12,6 +12,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { useAuthStore } from "@/lib/stores/auth.store";
 import { useEffect, useState } from "react";
 
 interface CampaignRow {
@@ -65,6 +66,8 @@ interface Props {
 }
 
 export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Props) {
+  const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === "superAdmin";
   const [data, setData] = useState<CampaignMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +209,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
               <thead className="bg-zinc-50/50 text-zinc-500">
                 <tr>
                   <th className="px-4 py-3 text-left">Campaña</th>
-                  <th className="px-4 py-3 text-center">País</th>
+                  {isSuperAdmin && <th className="px-4 py-3 text-center">País</th>}
                   <th className="px-4 py-3 text-right">Inversión</th>
                   <th className="px-4 py-3 text-center">Impresiones</th>
                   <th className="px-4 py-3 text-center">Clics</th>
@@ -225,6 +228,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                     <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap">
                       {c.campaign_name}
                     </td>
+                    {isSuperAdmin && (
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         c.pais === "Panama"
@@ -234,6 +238,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                         {c.pais}
                       </span>
                     </td>
+                    )}
                     <td className="px-4 py-3 text-right font-semibold">
                       ${c.spend_usd.toLocaleString()}
                     </td>
