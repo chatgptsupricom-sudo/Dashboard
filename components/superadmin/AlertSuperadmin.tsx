@@ -720,7 +720,7 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
             gradient="from-orange-50 to-white"
             severity={devolucionesFiltradas.length}
             filterSlot={
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
                 {["24h", "7d", "30d"].map((p) => (
                   <button
                     key={p}
@@ -734,24 +734,18 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
                     {p === "24h" ? "24h" : p === "7d" ? "7 días" : "30 días"}
                   </button>
                 ))}
-                <span className="w-px h-5 bg-slate-200 self-center" />
-                {devolucionesMeses.map((m) => {
-                  const [y, mo] = m.split("-");
-                  const meses = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => setDevolucionesPeriodo(m)}
-                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                        devolucionesPeriodo === m
-                          ? "bg-orange-500 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {meses[parseInt(mo)]} {y}
-                    </button>
-                  );
-                })}
+                <select
+                  value={["24h", "7d", "30d"].includes(devolucionesPeriodo) ? "" : devolucionesPeriodo}
+                  onChange={(e) => setDevolucionesPeriodo(e.target.value)}
+                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-orange-300 focus:border-orange-400 focus:outline-none transition-colors cursor-pointer"
+                >
+                  <option value="" disabled>Por mes...</option>
+                  {devolucionesMeses.map((m) => {
+                    const [y, mo] = m.split("-");
+                    const meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+                    return <option key={m} value={m}>{meses[parseInt(mo)]} {y}</option>;
+                  })}
+                </select>
               </div>
             }
           />
