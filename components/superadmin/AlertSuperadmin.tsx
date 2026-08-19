@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Download,
   RefreshCw,
   RotateCcw,
   TrendingDown,
@@ -23,6 +24,8 @@ import {
 import { useTranslations } from "next-intl";
 import { useState } from "react"; // IMPORTANTE: Agregado para controlar la empresa actual
 import useSWR from "swr";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -507,6 +510,74 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
     { id: "panama", label: "Panamá" },
   ];
 
+  const exportCaidaProductos = async (items: any[]) => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Supricom";
+    wb.created = new Date();
+    const ws = wb.addWorksheet("Caída de Productos", { views: [{ state: "frozen", ySplit: 1 }] });
+
+    ws.columns = [
+      { header: "Producto", key: "name", width: 40 },
+      { header: "Caída %", key: "decline_pct", width: 12 },
+      { header: "Período Anterior (uds)", key: "prior_qty", width: 20 },
+      { header: "Período Actual (uds)", key: "current_qty", width: 20 },
+      { header: "Anterior (USD)", key: "prior_amount", width: 18 },
+      { header: "Actual (USD)", key: "current_amount", width: 18 },
+      { header: "Última Venta", key: "last_sale_date", width: 15 },
+      { header: "Último Cliente", key: "last_client", width: 25 },
+      { header: "Monto Última Venta", key: "last_client_amount", width: 20 },
+      { header: "Mejor Vendedor", key: "top_seller", width: 25 },
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    items.forEach((item) => {
+      ws.addRow({
+        name: item.name || "—",
+        decline_pct: item.decline_pct ?? 0,
+        prior_qty: item.prior_qty ?? 0,
+        current_qty: item.current_qty ?? 0,
+        prior_amount: item.prior_amount ?? 0,
+        current_amount: item.current_amount ?? 0,
+        last_sale_date: item.last_sale_date || "—",
+        last_client: item.last_client || "—",
+        last_client_amount: item.last_client_amount ?? 0,
+        top_seller: item.top_seller || "—",
+      });
+    });
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE5E7EB" } },
+            bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+            left: { style: "thin", color: { argb: "FFE5E7EB" } },
+            right: { style: "thin", color: { argb: "FFE5E7EB" } },
+          };
+          if (colNumber === 2) {
+            cell.font = { bold: true, color: { argb: "FFDC2626" } };
+            cell.numFmt = '0.0"%"';
+          }
+          if (colNumber === 5 || colNumber === 6 || colNumber === 9) {
+            cell.numFmt = '#,##0.00';
+          }
+          if (colNumber === 3 || colNumber === 4) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      }
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const fecha = new Date().toISOString().split("T")[0];
+    saveAs(blob, `Caida_Productos_${empresa}_${fecha}.xlsx`);
+  };
+
   return (
     <div className="space-y-6 p-8 bg-slate-50/50 min-h-screen">
       {/* Encabezado Principal */}
@@ -586,6 +657,7 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
             desc="Productos estrella afectados"
             gradient="from-purple-50 to-white"
             severity={data?.alertas?.productos_alerta?.length}
+            onExport={exportCaidaProductos}
           />
           <AlertCard
             title="Mora Avanzada"
@@ -788,7 +860,7 @@ function VendedorSinActividadDetailView({ item }: { item: any }) {
   );
 }
 
-function AlertCard({ title, icon, data, desc, gradient, severity = 0 }: any) {
+function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport }: any) {
   const list = Array.isArray(data) ? data : [];
 
   const severityLevel = severity > 10 ? "high" : severity > 3 ? "medium" : severity > 0 ? "low" : "none";
@@ -838,7 +910,18 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0 }: any) {
 
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+            {onExport && list.length > 0 && (
+              <button
+                onClick={() => onExport(list)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              >
+                <Download size={14} />
+                Exportar Excel
+              </button>
+            )}
+          </div>
           <DialogDescription className="sr-only">
             Detalle de {title.toLowerCase()} que requieren atención en el sistema.
           </DialogDescription>
