@@ -129,8 +129,8 @@ export async function GET(request: Request) {
           campana,
           pais,
           COUNT(*) as total_conversaciones,
-          SUM(CASE WHEN es_calificado IS NULL OR es_calificado = '' THEN 1 ELSE 0 END) as calificados,
-          SUM(CASE WHEN es_calificado IS NOT NULL AND es_calificado != '' THEN 1 ELSE 0 END) as no_calificados
+          SUM(CASE WHEN es_calificado = 'Calificado' THEN 1 ELSE 0 END) as calificados,
+          SUM(CASE WHEN es_calificado = 'No Calificado' THEN 1 ELSE 0 END) as no_calificados
         FROM conversaciones
         ${convWhere}
         GROUP BY campana, pais
