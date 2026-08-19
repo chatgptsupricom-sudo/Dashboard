@@ -60,7 +60,7 @@ function InvoiceDetailTrigger({ item, onRenderSub }: { item: any; onRenderSub?: 
     setLoading(true);
     setDetail(null);
     try {
-      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/invoice/${item.id}`);
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/invoice/${item.moveId || item.id}`);
       const json = await res.json();
       if (json.success) setDetail(json.data);
     } catch (e) {
