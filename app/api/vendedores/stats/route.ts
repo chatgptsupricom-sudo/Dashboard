@@ -594,6 +594,9 @@ export async function GET(request: Request) {
         )
         .reduce((a, b) => a + signedAmount(b), 0);
     } else {
+      // Comparar mismo día: mes actual (1 até hoy) vs mes anterior (1 até mismo día)
+      const diaActual = hoy.getDate();
+      const mesAnteriorMismoDia = new Date(hoy.getFullYear(), hoy.getMonth() - 1, diaActual);
       vActual = misFacturasC
         .filter(
           (f) => f.invoice_date >= mesActualInicio.toISOString().split("T")[0],
@@ -603,7 +606,7 @@ export async function GET(request: Request) {
         .filter(
           (f) =>
             f.invoice_date >= mesPasadoInicio.toISOString().split("T")[0] &&
-            f.invoice_date < mesActualInicio.toISOString().split("T")[0],
+            f.invoice_date <= mesAnteriorMismoDia.toISOString().split("T")[0],
         )
         .reduce((a, b) => a + signedAmount(b), 0);
     }
