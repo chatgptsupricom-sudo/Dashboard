@@ -364,107 +364,120 @@ export async function GET(request: Request) {
           let projects: any[] = [];
           try {
             const projRes = await fetch(`${baseUrl}/projects`, { headers });
-            const projText = await projRes.text();
-            console.log(`[OpenAI] Projects (${projRes.status}): ${projText.substring(0, 300)}`);
             if (projRes.ok) {
-              const projJson = JSON.parse(projText);
+              const projJson = await projRes.json();
               projects = projJson.data || [];
             }
-          } catch (e: any) {
-            console.log(`[OpenAI] Projects error: ${e.message}`);
+          } catch (e) {
+            console.log("[OpenAI] Could not list projects:", e);
           }
 
-          // Step 2: Get org-level completions usage
-          const usageRes = await fetch(
-            `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
-            { headers },
-          );
+          // Step 2: Get per-project usage by querying each project separately
+          const PRICING: Record<string, { input: number; output: number }> = {
+            "gpt-4o": { input: 2.50, output: 10.00 },
+            "gpt-4o-mini": { input: 0.15, output: 0.60 },
+            "o3-mini": { input: 1.10, output: 4.40 },
+            "o3": { input: 10.00, output: 40.00 },
+            "o4-mini": { input: 1.10, output: 4.40 },
+            "gpt-4-turbo": { input: 10.00, output: 30.00 },
+            "gpt-3.5-turbo": { input: 0.50, output: 1.50 },
+          };
 
-          if (usageRes.ok) {
-            const usageJson = await usageRes.json();
-            const buckets = usageJson.data || [];
+          // Map known project IDs to friendly names
+          const PROJECT_NAMES: Record<string, string> = {
+            "proj_AQAvbt97wLltTNUTMQk1vopO": "Dashboard (Panel)",
+            "proj_oYndr5CRzK6cceAfR2BElEkl": "n8n auto chat (Bot)",
+          };
 
-            // OpenAI pricing per 1M tokens (input/output)
-            const PRICING: Record<string, { input: number; output: number }> = {
-              "gpt-4o": { input: 2.50, output: 10.00 },
-              "gpt-4o-mini": { input: 0.15, output: 0.60 },
-              "o3-mini": { input: 1.10, output: 4.40 },
-              "o3": { input: 10.00, output: 40.00 },
-              "o4-mini": { input: 1.10, output: 4.40 },
-              "gpt-4-turbo": { input: 10.00, output: 30.00 },
-              "gpt-3.5-turbo": { input: 0.50, output: 1.50 },
-            };
+          for (const project of projects) {
+            let projectTokens = 0;
+            let projectRequests = 0;
 
-            for (const bucket of buckets) {
-              for (const item of bucket.results || []) {
-                const inputTokens = item.input_tokens || 0;
-                const outputTokens = item.output_tokens || 0;
-                const model = item.model || (item.service_tier === "flex" ? "gpt-4o (flex)" : "gpt-4o");
-                const pricing = PRICING[item.model] || { input: 2.50, output: 10.00 };
-                const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+            try {
+              const usageRes = await fetch(
+                `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31&project_id=${project.id}`,
+                { headers },
+              );
 
-                allUsage.push({
-                  model,
-                  cost_usd: cost,
-                  tokens: inputTokens + outputTokens,
-                  requests: item.num_model_requests || 0,
-                });
+              if (usageRes.ok) {
+                const usageJson = await usageRes.json();
+                const buckets = usageJson.data || [];
+
+                for (const bucket of buckets) {
+                  for (const item of bucket.results || []) {
+                    const inputTokens = item.input_tokens || 0;
+                    const outputTokens = item.output_tokens || 0;
+                    const model = item.model || "gpt-4o";
+                    const pricing = PRICING[item.model] || { input: 2.50, output: 10.00 };
+                    const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+
+                    allUsage.push({
+                      model,
+                      cost_usd: cost,
+                      tokens: inputTokens + outputTokens,
+                      requests: item.num_model_requests || 0,
+                      project_id: project.id,
+                    });
+
+                    projectTokens += inputTokens + outputTokens;
+                    projectRequests += item.num_model_requests || 0;
+                  }
+                }
+              } else {
+                const errText = await usageRes.text().catch(() => "");
+                console.log(`[OpenAI] Usage ${project.name} (${usageRes.status}): ${errText.substring(0, 200)}`);
               }
+            } catch (e) {
+              console.log(`[OpenAI] Error for project ${project.name}:`, e);
             }
+
+            byProject.push({
+              project_id: project.id,
+              project_name: PROJECT_NAMES[project.id] || project.name,
+              total_tokens: projectTokens,
+              total_requests: projectRequests,
+              total_cost_usd: 0,
+            });
           }
 
-          // Step 3: Get per-project costs using costs endpoint
-          try {
-            const startTsCost = Math.floor(new Date(start).getTime() / 1000);
-            const endTsCost = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
-            const costsRes = await fetch(
-              `${baseUrl}/costs?start_time=${startTsCost}&end_time=${endTsCost}&limit=180`,
-              { headers },
-            );
-            const costsText = await costsRes.text();
-            console.log(`[OpenAI] Costs (${costsRes.status}): ${costsText.substring(0, 500)}`);
-
-            if (costsRes.ok) {
-              const costsJson = JSON.parse(costsText);
-              const costBuckets = costsJson.data || [];
-
-              // Group costs by project_id
-              const projectCostMap = new Map<string, number>();
-              let orgTotalCost = 0;
-              for (const bucket of costBuckets) {
-                for (const item of bucket.results || []) {
-                  const cost = item.amount?.value || 0;
-                  orgTotalCost += cost;
-                  const projId = item.project_id || "org";
-                  projectCostMap.set(projId, (projectCostMap.get(projId) || 0) + cost);
+          // If no projects found, get org-level usage
+          if (projects.length === 0) {
+            try {
+              const usageRes = await fetch(
+                `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
+                { headers },
+              );
+              if (usageRes.ok) {
+                const usageJson = await usageRes.json();
+                const buckets = usageJson.data || [];
+                for (const bucket of buckets) {
+                  for (const item of bucket.results || []) {
+                    const inputTokens = item.input_tokens || 0;
+                    const outputTokens = item.output_tokens || 0;
+                    const model = item.model || "gpt-4o";
+                    const pricing = PRICING[item.model] || { input: 2.50, output: 10.00 };
+                    const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+                    allUsage.push({ model, cost_usd: cost, tokens: inputTokens + outputTokens, requests: item.num_model_requests || 0 });
+                  }
                 }
               }
-
-            // Map known project IDs to friendly names
-            const PROJECT_NAMES: Record<string, string> = {
-              "proj_AQAvbt97wLltTNUTMQk1vopO": "Dashboard (Panel)",
-              "proj_oYndr5CRzK6cceAfR2BElEkl": "n8n auto chat (Bot)",
-            };
-
-            if (projects.length > 0) {
-              byProject = projects.map((p: any) => ({
-                project_id: p.id,
-                project_name: PROJECT_NAMES[p.id] || p.name || p.id,
-                total_cost_usd: Math.round((projectCostMap.get(p.id) || 0) * 10000) / 10000,
-              }));
-            } else if (orgTotalCost > 0) {
-              byProject = [{
-                project_id: "org",
-                project_name: "Organización",
-                total_cost_usd: Math.round(orgTotalCost * 10000) / 10000,
-              }];
-            }
-            }
-          } catch (e) {
-            console.error("[OpenAI] Error fetching costs:", e);
+            } catch (e) {}
           }
+
+          // Calculate costs from usage data (since costs endpoint doesn't have project_id)
+          const projectCostMap = new Map<string, number>();
+          for (const u of allUsage) {
+            const projId = u.project_id || "org";
+            projectCostMap.set(projId, (projectCostMap.get(projId) || 0) + u.cost_usd);
+          }
+
+          byProject = byProject.map((p) => ({
+            ...p,
+            total_cost_usd: Math.round((projectCostMap.get(p.project_id) || 0) * 10000) / 10000,
+          }));
+
         } catch (e) {
-          console.error("[OpenAI] Error fetching completions usage:", e);
+          console.error("[OpenAI] Error:", e);
         }
         // Aggregate by model
         const modelMap = new Map();
