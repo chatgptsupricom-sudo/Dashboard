@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import {
+  Activity,
   AlertTriangle,
   Award,
   BarChart3,
@@ -229,6 +230,7 @@ export function Sidebar({
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
+    { id: "salud_financiera", label: "Salud Financiera", icon: Activity, slug: "" },
   ];
 
   const getBasePath = () => {
@@ -259,6 +261,8 @@ export function Sidebar({
         return `/${locale}/cuentas-por-cobrar`;
       case "diseñador":
         return `/${locale}/disenador`;
+      case "administración":
+        return `/${locale}/administracion`;
       default:
         return `/${locale}/dashboard`;
     }

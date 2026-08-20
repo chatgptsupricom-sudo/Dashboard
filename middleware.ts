@@ -27,7 +27,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/recursos_humanos") ||
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
-    pathname.includes("/disenador");
+    pathname.includes("/disenador") ||
+    pathname.includes("/administracion");
 
   if (isProtectedPath) {
     if (!token) {
@@ -60,6 +61,8 @@ export default async function middleware(request: NextRequest) {
       const isDisenador = userRole === "diseñador";
       // Nueva constante para Asistente de Ventas
       const isAsistenteVentas = userRole === "asistente de ventas";
+      // Nueva constante para Administración
+      const isAdministracion = userRole === "administración";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -149,6 +152,13 @@ export default async function middleware(request: NextRequest) {
 
       // 9. Lógica para Cuentas por Cobrar
       if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 10. Lógica para Administración
+      if (pathname.includes("/administracion") && !isAdministracion && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
