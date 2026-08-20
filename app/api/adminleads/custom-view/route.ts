@@ -111,6 +111,20 @@ const CHECKS_SCRIPT = `<script>
     setTimeout(save,20);
   };
 
+  // Guarda ante CUALQUIER cambio de estado "checked", venga de donde venga:
+  // click individual, boton "HECHO" por semana (checkAllWeek/checkAllEmailWeek,
+  // que marcan varias piezas directamente sin pasar por toggleCheck), o
+  // cualquier otra interaccion futura que el HTML agregue. El toggleCheck
+  // de arriba queda como respaldo para que el guardado sea instantaneo en
+  // el click individual; esto cubre todo lo demas.
+  var saveDebounce=null;
+  var observer=new MutationObserver(function(){
+    if(isRestoring)return;
+    clearTimeout(saveDebounce);
+    saveDebounce=setTimeout(save,400);
+  });
+  observer.observe(document.body,{attributes:true,attributeFilter:['class'],subtree:true});
+
   (function(){
     var s;try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){s={};}
     if(Object.keys(s).length)restore(s);
