@@ -118,7 +118,7 @@ export default function ConfiguracionPage() {
     await fetch("/api/adminleads/service-costs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: svc.id, is_paid: !svc.is_paid }),
+      body: JSON.stringify({ id: svc.id, toggle_paid: !svc.is_paid }),
     });
     fetchServices();
   };

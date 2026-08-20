@@ -153,15 +153,16 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   };
 
   const handleTogglePaid = async (svc: ServiceItem) => {
-    const newPaid = svc.is_paid ? 0 : 1;
+    const makePaid = !svc.is_paid;
     setServices((prev) =>
-      prev.map((s) => (s.id === svc.id ? { ...s, is_paid: newPaid } : s))
+      prev.map((s) => (s.id === svc.id ? { ...s, is_paid: makePaid ? 1 : 0 } : s))
     );
     await fetch("/api/adminleads/service-costs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: svc.id, is_paid: !!newPaid }),
+      body: JSON.stringify({ id: svc.id, toggle_paid: makePaid }),
     });
+    fetchServices();
   };
 
   const getPaymentStatus = (svc: ServiceItem) => {

@@ -119,6 +119,44 @@ export async function PUT(request: Request) {
     await jwtVerify(token, secret);
 
     const body = await request.json();
+
+    // Toggle paid: creates/removes transaction to accumulate monthly total
+    if (body.toggle_paid !== undefined && body.id) {
+      const svcId = parseInt(body.id);
+      const makePaid = body.toggle_paid;
+
+      // Get service info
+      const svcResult: any = await query(
+        "SELECT id, service_name, monthly_cost, currency FROM service_costs WHERE id = ?",
+        [svcId],
+      );
+      const svc = svcResult.rows?.[0];
+      if (!svc) {
+        return NextResponse.json({ error: "Servicio no encontrado" }, { status: 404 });
+      }
+
+      if (makePaid) {
+        // Create transaction for today with the service cost
+        const today = new Date().toISOString().slice(0, 10);
+        await query(
+          "INSERT INTO service_transactions (service_name, amount_usd, transaction_date, notes) VALUES (?, ?, ?, ?)",
+          [svc.service_name, parseFloat(svc.monthly_cost) || 0, today, "Pago registrado"],
+        );
+        await query("UPDATE service_costs SET is_paid = 1 WHERE id = ?", [svcId]);
+      } else {
+        // Remove today's transaction for this service
+        const today = new Date().toISOString().slice(0, 10);
+        await query(
+          "DELETE FROM service_transactions WHERE service_name = ? AND transaction_date = ? AND notes = ?",
+          [svc.service_name, today, "Pago registrado"],
+        );
+        await query("UPDATE service_costs SET is_paid = 0 WHERE id = ?", [svcId]);
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
+    // Standard update
     const { id, monthly_cost, currency, payment_date, is_paid } = body;
 
     if (!id) {
