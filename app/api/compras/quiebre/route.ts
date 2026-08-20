@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
+import { getPendingPurchaseQtyByProduct } from "@/lib/compras/purchaseOrders";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -104,10 +105,12 @@ export async function GET(request: NextRequest) {
       });
     }
     const moqPromise = query("SELECT sku, cantidad FROM moqs");
+    const pendingPurchasePromise = getPendingPurchaseQtyByProduct(companies);
 
-    const [productsData, moqResult] = await Promise.all([
+    const [productsData, moqResult, pendingPurchaseByProduct] = await Promise.all([
       productPromise,
       moqPromise,
+      pendingPurchasePromise,
     ]);
     if (!productsData) throw new Error("Error obteniendo productos");
 
@@ -265,9 +268,11 @@ export async function GET(request: NextRequest) {
         const puntoReorden = demandaDiaria * etaDias + stockSeguridad;
         const stockObjetivo = demandaDiaria * diasInventarioDeseado;
 
+        const cantidadEnOC = pendingPurchaseByProduct[prodId] || 0;
+
         let cantidadAComprar = 0;
         if (stock <= puntoReorden && demandaDiaria > 0) {
-          const gap = stockObjetivo - stock;
+          const gap = stockObjetivo - stock - cantidadEnOC;
           if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
         }
 
@@ -301,6 +306,8 @@ export async function GET(request: NextRequest) {
           moq,
           costo,
           cantidadAComprar,
+          cantidadEnOC,
+          tieneOCPendiente: cantidadEnOC > 0,
           nivelCritico,
           accion: nivelCritico,
           fechaQuiebreEstimada,

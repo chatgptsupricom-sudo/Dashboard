@@ -41,6 +41,8 @@ interface ProductoSugerido {
   cantidadAComprar: number;
   costo: number;
   valorAComprar: number;
+  cantidadEnOC: number;
+  tieneOCPendiente: boolean;
   tipo: "quiebre" | "riesgo";
 }
 
@@ -204,6 +206,7 @@ export default function SugeridosPage() {
       "Días Inv.":
         item.diasInvActual >= 999 ? "∞" : item.diasInvActual,
       "Cant. a Comprar": item.cantidadAComprar,
+      "Cant. en OC (en camino)": item.cantidadEnOC,
       "Costo Unit. ($)": item.costo,
       "Valor a Comprar ($)": item.valorAComprar,
     });
@@ -239,8 +242,8 @@ export default function SugeridosPage() {
           Sugeridos de Compra
         </h1>
         <p className="text-gray-500">
-          Lista de compra: productos con MOQ configurado que requieren
-          reposición urgente.
+          Lista de compra: productos que requieren reposición urgente,
+          considerando órdenes de compra ya en camino.
         </p>
       </div>
 
@@ -446,6 +449,15 @@ export default function SugeridosPage() {
                         <div className="text-[10px] text-gray-400">
                           {item.categoria}
                         </div>
+                        {item.tieneOCPendiente && (
+                          <Badge
+                            variant="outline"
+                            className="mt-1 text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50"
+                            title={`${item.cantidadEnOC} unidades ya ordenadas, aun no recibidas`}
+                          >
+                            OC en camino: {item.cantidadEnOC}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
@@ -479,10 +491,15 @@ export default function SugeridosPage() {
                           <span className="text-blue-700">
                             +{item.cantidadAComprar}
                           </span>
-                        ) : (
-                          <span className="text-amber-600 text-xs font-semibold">
-                            Sin MOQ
+                        ) : item.tieneOCPendiente ? (
+                          <span
+                            className="text-emerald-600 text-xs font-semibold"
+                            title={`Ya hay ${item.cantidadEnOC} unidades en camino (orden de compra confirmada)`}
+                          >
+                            Cubierto por OC
                           </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
                         )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 text-sm">
@@ -609,6 +626,15 @@ export default function SugeridosPage() {
                         <div className="text-[10px] text-gray-400">
                           {item.categoria}
                         </div>
+                        {item.tieneOCPendiente && (
+                          <Badge
+                            variant="outline"
+                            className="mt-1 text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50"
+                            title={`${item.cantidadEnOC} unidades ya ordenadas, aun no recibidas`}
+                          >
+                            OC en camino: {item.cantidadEnOC}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
@@ -656,10 +682,15 @@ export default function SugeridosPage() {
                           <span className="text-blue-700">
                             +{item.cantidadAComprar}
                           </span>
-                        ) : (
-                          <span className="text-amber-600 text-xs font-semibold">
-                            Sin MOQ
+                        ) : item.tieneOCPendiente ? (
+                          <span
+                            className="text-emerald-600 text-xs font-semibold"
+                            title={`Ya hay ${item.cantidadEnOC} unidades en camino (orden de compra confirmada)`}
+                          >
+                            Cubierto por OC
                           </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
                         )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 text-sm">
