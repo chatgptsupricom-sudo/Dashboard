@@ -58,6 +58,8 @@ export default async function middleware(request: NextRequest) {
       const isCxC = userRole === "cuentas por cobrar";
       // Nueva constante para el rol de Diseñador
       const isDisenador = userRole === "diseñador";
+      // Nueva constante para Asistente de Ventas
+      const isAsistenteVentas = userRole === "asistente de ventas";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -80,10 +82,11 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 3. Lógica para Gerente de Ventas
+      // 3. Lógica para Gerente de Ventas (también accede Asistente de Ventas)
       if (
         pathname.includes("/gerente_venta") &&
         !isGerenciaVentas &&
+        !isAsistenteVentas &&
         !isSuperAdmin
       ) {
         return NextResponse.redirect(
