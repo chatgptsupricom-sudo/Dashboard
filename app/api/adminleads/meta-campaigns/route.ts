@@ -364,12 +364,14 @@ export async function GET(request: Request) {
           let projects: any[] = [];
           try {
             const projRes = await fetch(`${baseUrl}/projects`, { headers });
+            const projText = await projRes.text();
+            console.log(`[OpenAI] Projects (${projRes.status}): ${projText.substring(0, 300)}`);
             if (projRes.ok) {
-              const projJson = await projRes.json();
+              const projJson = JSON.parse(projText);
               projects = projJson.data || [];
             }
-          } catch (e) {
-            console.log("[OpenAI] Could not list projects:", e);
+          } catch (e: any) {
+            console.log(`[OpenAI] Projects error: ${e.message}`);
           }
 
           // Step 2: Get org-level completions usage
@@ -419,8 +421,11 @@ export async function GET(request: Request) {
               `${baseUrl}/costs?start_time=${startTsCost}&end_time=${endTsCost}&limit=180`,
               { headers },
             );
+            const costsText = await costsRes.text();
+            console.log(`[OpenAI] Costs (${costsRes.status}): ${costsText.substring(0, 500)}`);
+
             if (costsRes.ok) {
-              const costsJson = await costsRes.json();
+              const costsJson = JSON.parse(costsText);
               const costBuckets = costsJson.data || [];
 
               // Group costs by project_id
