@@ -57,7 +57,7 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
 };
 
 export function esFeriado(fecha: Date): boolean {
-  const str = fecha.toISOString().split("T")[0];
+  const str = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
   const year = fecha.getFullYear();
   const feriados = FERIADOS_VENEZUELA[year] || [];
   return feriados.includes(str);

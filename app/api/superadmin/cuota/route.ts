@@ -28,18 +28,14 @@ export async function GET() {
     `);
     const cuotas = resultCuotas || [];
 
-    const firstDayOfMonth = new Date(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      1,
-    )
-      .toISOString()
-      .split("T")[0];
+    const nowSa = new Date();
+    const firstDayOfMonth = new Date(nowSa.getFullYear(), nowSa.getMonth(), 1);
+    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, "0")}-${String(firstDayOfMonth.getDate()).padStart(2, "0")}`;
 
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDayOfMonth],
+      ["invoice_date", ">=", firstDayStr],
     ];
 
     const allInvoices =

@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const firstDayStr = firstDayOfMonth.toISOString().split("T")[0];
+    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, "0")}-${String(firstDayOfMonth.getDate()).padStart(2, "0")}`;
 
     const odooTotals =
       (await callOdooRPC<any[]>("account.move", "search_read", [
