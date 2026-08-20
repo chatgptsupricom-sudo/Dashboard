@@ -316,11 +316,12 @@ export default function VendedoresPage() {
                   </span>
                 </div>
               </div>
-              {cuota.falta > 0 && (() => {
+              {(() => {
                 const m = calcMetricasFe(cuota.meta || 0, cuota.facturado || 0);
+                const supero150 = (cuota.facturado || 0) >= m.meta150;
                 return (
                   <>
-                    {m.diasHabilesRestantes > 0 && (
+                    {cuota.falta > 0 && m.diasHabilesRestantes > 0 && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
                         <div className="flex items-center gap-2 mb-1">
                           <Calendar size={14} className="text-blue-600" />
@@ -331,13 +332,18 @@ export default function VendedoresPage() {
                         </p>
                       </div>
                     )}
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 sm:p-3">
+                    <div className={`border rounded-lg p-2.5 sm:p-3 ${supero150 ? "bg-emerald-50 border-emerald-200" : "bg-purple-50 border-purple-200"}`}>
                       <div className="flex items-center gap-2 mb-1">
-                        <TrendingUp size={14} className="text-purple-600" />
-                        <span className="text-xs font-bold text-purple-800">Para llegar al 150%</span>
+                        <TrendingUp size={14} className={supero150 ? "text-emerald-600" : "text-purple-600"} />
+                        <span className={`text-xs font-bold ${supero150 ? "text-emerald-800" : "text-purple-800"}`}>
+                          {supero150 ? "Superó 150%" : "Para llegar al 150%"}
+                        </span>
                       </div>
-                      <p className="text-xs text-purple-700">
-                        Faltan <span className="font-bold">${m.faltaPara150.toLocaleString()}</span> para alcanzar ${m.meta150.toLocaleString()} (150% de la cuota)
+                      <p className={`text-xs ${supero150 ? "text-emerald-700" : "text-purple-700"}`}>
+                        {supero150
+                          ? <>Superó el 150% por <span className="font-bold">${((cuota.facturado || 0) - m.meta150).toLocaleString()}</span></>
+                          : <>Faltan <span className="font-bold">${m.faltaPara150.toLocaleString()}</span> para alcanzar ${m.meta150.toLocaleString()} (150% de la cuota)</>
+                        }
                       </p>
                     </div>
                   </>

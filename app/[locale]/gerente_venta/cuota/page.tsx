@@ -211,16 +211,22 @@ function SellerQuotaCard({
             </p>
           </div>
         )}
-        {seller.meta > 0 && (
-          <div className="bg-purple-50 border border-purple-100 p-3 rounded-xl space-y-1">
-            <p className="text-[10px] text-purple-500 font-bold uppercase">
-              Para 150%
-            </p>
-            <p className="text-xs text-purple-700">
-              Faltan <span className="font-black">${metricas.faltaPara150.toLocaleString()}</span> para ${metricas.meta150.toLocaleString()}
-            </p>
-          </div>
-        )}
+        {seller.meta > 0 && (() => {
+          const supero150 = seller.facturado >= metricas.meta150;
+          return (
+            <div className={`border p-3 rounded-xl space-y-1 ${supero150 ? "bg-emerald-50 border-emerald-200" : "bg-purple-50 border-purple-100"}`}>
+              <p className={`text-[10px] font-bold uppercase ${supero150 ? "text-emerald-500" : "text-purple-500"}`}>
+                {supero150 ? "Superó 150%" : "Para 150%"}
+              </p>
+              <p className={`text-xs ${supero150 ? "text-emerald-700" : "text-purple-700"}`}>
+                {supero150
+                  ? <>Superó el 150% por <span className="font-black">${(seller.facturado - metricas.meta150).toLocaleString()}</span></>
+                  : <>Faltan <span className="font-black">${metricas.faltaPara150.toLocaleString()}</span> para ${metricas.meta150.toLocaleString()}</>
+                }
+              </p>
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
