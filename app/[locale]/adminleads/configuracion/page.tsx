@@ -47,6 +47,7 @@ export default function ConfiguracionPage() {
   const [services, setServices] = useState<any[]>([]);
   const [editingService, setEditingService] = useState<number | null>(null);
   const [editServiceCost, setEditServiceCost] = useState("");
+  const [editServiceCurrency, setEditServiceCurrency] = useState("USD");
   const [editServiceDate, setEditServiceDate] = useState("");
   const [savingService, setSavingService] = useState(false);
 
@@ -54,6 +55,7 @@ export default function ConfiguracionPage() {
   const [newSvcName, setNewSvcName] = useState("");
   const [newSvcType, setNewSvcType] = useState<"subscription" | "topup">("subscription");
   const [newSvcCost, setNewSvcCost] = useState("");
+  const [newSvcCurrency, setNewSvcCurrency] = useState("USD");
   const [creatingSvc, setCreatingSvc] = useState(false);
 
   const fetchSellers = () => {
@@ -102,6 +104,7 @@ export default function ConfiguracionPage() {
       body: JSON.stringify({
         id: svc.id,
         monthly_cost: parseFloat(editServiceCost) || 0,
+        currency: editServiceCurrency,
         payment_date: editServiceDate || null,
       }),
     });
@@ -129,11 +132,13 @@ export default function ConfiguracionPage() {
         service_name: newSvcName.trim(),
         cost_type: newSvcType,
         monthly_cost: parseFloat(newSvcCost) || 0,
+        currency: newSvcCurrency,
       }),
     });
     setNewSvcName("");
     setNewSvcType("subscription");
     setNewSvcCost("");
+    setNewSvcCurrency("USD");
     setShowAddSvc(false);
     fetchServices();
     setCreatingSvc(false);
@@ -617,7 +622,7 @@ export default function ConfiguracionPage() {
 
           {showAddSvc && (
             <div className="px-6 py-4 border-b border-zinc-50 bg-blue-50/30">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <input
                   type="text"
                   placeholder="Nombre del servicio"
@@ -633,9 +638,17 @@ export default function ConfiguracionPage() {
                   <option value="subscription">Mensual Fijo</option>
                   <option value="topup">Recarga / Prepago</option>
                 </select>
+                <select
+                  value={newSvcCurrency}
+                  onChange={(e) => setNewSvcCurrency(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="USD">$ USD</option>
+                  <option value="EUR">EUR</option>
+                </select>
                 <input
                   type="number"
-                  placeholder="Costo mensual $"
+                  placeholder="Costo mensual"
                   value={newSvcCost}
                   onChange={(e) => setNewSvcCost(e.target.value)}
                   className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -685,12 +698,20 @@ export default function ConfiguracionPage() {
 
                     {isEditing ? (
                       <div className="flex items-center gap-2">
+                        <select
+                          value={editServiceCurrency}
+                          onChange={(e) => setEditServiceCurrency(e.target.value)}
+                          className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        >
+                          <option value="USD">$ USD</option>
+                          <option value="EUR">EUR</option>
+                        </select>
                         <input
                           type="number"
                           value={editServiceCost}
                           onChange={(e) => setEditServiceCost(e.target.value)}
                           className="w-24 px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                          placeholder="Costo $"
+                          placeholder="Costo"
                         />
                         <input
                           type="date"
@@ -715,7 +736,8 @@ export default function ConfiguracionPage() {
                     ) : (
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-bold text-zinc-800">
-                          ${parseFloat(svc.monthly_cost || 0).toFixed(2)}
+                          {svc.currency === "EUR" ? "\u20AC" : "$"}{parseFloat(svc.monthly_cost || 0).toFixed(2)}
+                          <span className="text-[10px] font-normal text-zinc-400 ml-1">{svc.currency || "USD"}</span>
                         </span>
                         {svc.payment_date && (
                           <span className="text-[10px] text-zinc-400">
@@ -726,6 +748,7 @@ export default function ConfiguracionPage() {
                           onClick={() => {
                             setEditingService(svc.id);
                             setEditServiceCost(String(svc.monthly_cost || 0));
+                            setEditServiceCurrency(svc.currency || "USD");
                             setEditServiceDate(svc.payment_date || "");
                           }}
                           className="text-zinc-300 hover:text-blue-500 transition-colors"

@@ -21,6 +21,7 @@ export async function GET(request: Request) {
         sc.service_name,
         sc.cost_type,
         sc.monthly_cost,
+        sc.currency,
         sc.payment_date,
         sc.is_paid,
         sc.created_at,
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
         ON st.service_name = sc.service_name
         AND st.transaction_date >= DATE_FORMAT(NOW(), '%Y-%m-01')
         AND st.transaction_date <= LAST_DAY(NOW())
-      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, sc.payment_date, sc.is_paid, sc.created_at
+      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, sc.currency, sc.payment_date, sc.is_paid, sc.created_at
       ORDER BY sc.service_name
     `);
 
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     await jwtVerify(token, secret);
 
     const body = await request.json();
-    const { service_name, cost_type, monthly_cost } = body;
+    const { service_name, cost_type, monthly_cost, currency } = body;
 
     if (!service_name || !cost_type) {
       return NextResponse.json(
@@ -85,11 +86,13 @@ export async function POST(request: Request) {
       );
     }
 
+    const cur = ["USD", "EUR"].includes(currency) ? currency : "USD";
+
     await query(
-      `INSERT INTO service_costs (service_name, cost_type, monthly_cost)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE cost_type = VALUES(cost_type), monthly_cost = VALUES(monthly_cost)`,
-      [service_name, cost_type, parseFloat(monthly_cost) || 0],
+      `INSERT INTO service_costs (service_name, cost_type, monthly_cost, currency)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE cost_type = VALUES(cost_type), monthly_cost = VALUES(monthly_cost), currency = VALUES(currency)`,
+      [service_name, cost_type, parseFloat(monthly_cost) || 0, cur],
     );
 
     return NextResponse.json({ ok: true });
@@ -116,7 +119,7 @@ export async function PUT(request: Request) {
     await jwtVerify(token, secret);
 
     const body = await request.json();
-    const { id, monthly_cost, payment_date, is_paid } = body;
+    const { id, monthly_cost, currency, payment_date, is_paid } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id es requerido" }, { status: 400 });
@@ -128,6 +131,10 @@ export async function PUT(request: Request) {
     if (monthly_cost !== undefined) {
       fields.push("monthly_cost = ?");
       params.push(parseFloat(monthly_cost) || 0);
+    }
+    if (currency !== undefined) {
+      fields.push("currency = ?");
+      params.push(["USD", "EUR"].includes(currency) ? currency : "USD");
     }
     if (payment_date !== undefined) {
       fields.push("payment_date = ?");

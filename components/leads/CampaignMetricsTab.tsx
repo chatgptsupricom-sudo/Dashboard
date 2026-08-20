@@ -48,6 +48,7 @@ interface ServiceItem {
   service_name: string;
   cost_type: "subscription" | "topup";
   monthly_cost: number;
+  currency: string;
   total_transactions: number;
   transaction_count: number;
   payment_date: string | null;
@@ -325,7 +326,8 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                   </CardHeader>
                   <CardContent>
                     <div className="text-xl font-bold tracking-tight text-zinc-900 mb-1">
-                      ${displayCost > 0 ? displayCost.toFixed(2) : "0.00"}
+                      {svc.currency === "EUR" ? "\u20AC" : "$"}{displayCost > 0 ? displayCost.toFixed(2) : "0.00"}
+                      <span className="text-[10px] font-normal text-zinc-400 ml-1">{svc.currency || "USD"}</span>
                     </div>
                     <div className="text-[10px] text-zinc-400">
                       {svc.cost_type === "subscription" ? "Mensual fijo" : `${svc.transaction_count || 0} recargas este mes`}
