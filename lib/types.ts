@@ -45,6 +45,8 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads", // Clave para el submenú Monitoreo
       "cierres_adminleads", // Clave para el submenú Cierres
       "stoplight_reports", // Reportes de Stoplight
+      "salud_financiera", // Administración: índice de salud financiera
+      "gastos_presupuesto", // Administración: gastos vs presupuesto
       "users", // Gestión de usuarios
       "reports", // Reportes
       "seller_map", // Para Christian Rodriguez
