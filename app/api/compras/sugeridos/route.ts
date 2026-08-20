@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
+import { getPendingPurchaseQtyByProduct } from "@/lib/compras/purchaseOrders";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -162,7 +163,7 @@ export async function GET(request: NextRequest) {
     }
     if (sedeId) stockQuantDomain.push(["company_id", "=", sedeId]);
 
-    const [productos, stockData] = await Promise.all([
+    const [productos, stockData, pendingPurchaseByProduct] = await Promise.all([
       callOdooRPC<any[]>(
         "product.product",
         "search_read",
@@ -183,6 +184,7 @@ export async function GET(request: NextRequest) {
         limit: 0,
         context: { allowed_company_ids: companies },
       }),
+      getPendingPurchaseQtyByProduct(companies),
     ]);
 
     // Si hay warehouse configurado pero no retorna stock, reportar el problema
@@ -294,8 +296,9 @@ export async function GET(request: NextRequest) {
         const stock = stockMap[pId] || 0;
         const costo = tmplId ? (tmplPriceMap[tmplId] || productPriceFallback[pId] || supplierPriceFallback[tmplId] || 0) : (productPriceFallback[pId] || 0);
         const moqRaw = moqMap.get(codigo);
-        const tieneMoq = moqRaw !== undefined && moqRaw > 0;
-        const moq = tieneMoq ? moqRaw! : 0;
+        // Sin MOQ configurado, se recomienda igual en base a rotacion (default 1),
+        // igual que ya hace /api/compras/quiebre.
+        const moq = moqRaw !== undefined && moqRaw > 0 ? moqRaw : 1;
         const abc = abcMap[pId] || "C";
 
         const diasInvDeseado = abc === "A" ? 60 : abc === "B" ? 45 : 30;
@@ -308,12 +311,13 @@ export async function GET(request: NextRequest) {
         // Excluir productos con stock por encima del punto de reorden
         if (stock > puntoReorden) return null;
 
-        // Calcular cantidad solo si tiene MOQ
+        const cantidadEnOC = pendingPurchaseByProduct[pId] || 0;
+
+        // Se descuenta lo que ya esta en camino (OC confirmada, aun no recibida)
+        // para no duplicar la sugerencia de compra.
         let cantidadAComprar = 0;
-        if (tieneMoq) {
-          const gap = stockObjetivo - stock;
-          if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
-        }
+        const gap = stockObjetivo - stock - cantidadEnOC;
+        if (gap > 0) cantidadAComprar = Math.ceil(gap / moq) * moq;
         const valorAComprar = cantidadAComprar * costo;
 
         return {
@@ -337,6 +341,8 @@ export async function GET(request: NextRequest) {
             diasInvActual >= 999 ? 999 : Number(diasInvActual.toFixed(0)),
           cantidadAComprar,
           valorAComprar: Number(valorAComprar.toFixed(2)),
+          cantidadEnOC,
+          tieneOCPendiente: cantidadEnOC > 0,
           tipo: stock <= 0 ? "quiebre" : "riesgo" as const,
         };
       })
