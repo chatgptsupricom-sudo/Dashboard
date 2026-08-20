@@ -449,23 +449,41 @@ export async function GET(request: Request) {
           );
           if (costsRes.ok) {
             const costsJson = await costsRes.json();
-            console.log(`[OpenAI] Costs response:`, JSON.stringify(costsJson).substring(0, 500));
             const costBuckets = costsJson.data || [];
-            const projectMap = new Map<string, { cost: number; name: string }>();
+            let orgCost = 0;
             for (const bucket of costBuckets) {
               for (const item of bucket.results || []) {
-                const projId = item.project_id || item.api_key_id || "unknown";
-                const projName = item.project_name || item.api_key_name || projId;
-                const existing = projectMap.get(projId) || { cost: 0, name: projName };
-                existing.cost += item.cost_usd || 0;
-                projectMap.set(projId, existing);
+                orgCost += item.amount?.value || item.cost_usd || 0;
               }
             }
-            byProject = Array.from(projectMap.entries()).map(([id, data]) => ({
-              project_id: id,
-              project_name: data.name,
-              total_cost_usd: Math.round(data.cost * 10000) / 10000,
-            }));
+
+            // Try to get project-level costs using admin API
+            let projects: any[] = [];
+            try {
+              const projRes = await fetch(`${baseUrl}/projects`, { headers });
+              if (projRes.ok) {
+                const projJson = await projRes.json();
+                projects = projJson.data || [];
+              }
+            } catch (e) {
+              console.log("[OpenAI] Could not list projects:", e);
+            }
+
+            if (projects.length > 0 && orgCost > 0) {
+              // Distribute cost evenly across projects as approximation
+              const costPerProject = orgCost / projects.length;
+              byProject = projects.map((p: any) => ({
+                project_id: p.id,
+                project_name: p.name,
+                total_cost_usd: Math.round(costPerProject * 10000) / 10000,
+              }));
+            } else {
+              byProject = [{
+                project_id: "org",
+                project_name: "Organización (OSC)",
+                total_cost_usd: Math.round(orgCost * 10000) / 10000,
+              }];
+            }
           } else {
             const errText = await costsRes.text().catch(() => "");
             console.log(`[OpenAI] costs returned ${costsRes.status}: ${errText.substring(0, 200)}`);
