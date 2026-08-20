@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 
 const VIEW_NAME = "adminleads";
 
@@ -20,8 +21,13 @@ async function ensureTable() {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthUser(request);
+    if (!canViewCustomPlan(user)) {
+      return NextResponse.json({ exists: false }, { status: 401 });
+    }
+
     await ensureTable();
 
     const result = await query(

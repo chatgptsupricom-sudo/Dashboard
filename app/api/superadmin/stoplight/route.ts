@@ -512,7 +512,8 @@ export async function GET(request: NextRequest) {
       const sem = margenPorSemana[i];
       if (sem.revenue <= 0) return null;
       const margenActual = ((sem.revenue - sem.costo) / sem.revenue) * 100;
-      const pct = metaMargen > 0 ? Math.round((margenActual / metaMargen) * 100) : 0;
+      if (metaMargen <= 0) return `${Math.round(margenActual)}%`;
+      const pct = Math.round((margenActual / metaMargen) * 100);
       return `${pct}%`;
     });
 
@@ -572,7 +573,8 @@ export async function GET(request: NextRequest) {
       const sem = efectividadPorSemana[i];
       if (sem.total <= 0) return null;
       const efectividadActual = (sem.facturacion / sem.total) * 100;
-      const pct = metaEfectividad > 0 ? Math.round((efectividadActual / metaEfectividad) * 100) : 0;
+      if (metaEfectividad <= 0) return `${Math.round(efectividadActual)}%`;
+      const pct = Math.round((efectividadActual / metaEfectividad) * 100);
       return `${pct}%`;
     });
 
@@ -590,7 +592,8 @@ export async function GET(request: NextRequest) {
       for (const seller of sellers) {
         if (!seller.user_id) continue;
         const norm = normalize(seller.name);
-        if (!sellerAllClients[norm]) continue;
+        const matchedSellerName = normalizedSellerMap[norm];
+        if (!matchedSellerName || !sellerAllClients[matchedSellerName]) continue;
 
         const clients = (await callOdooRPC<any[]>(
           "res.partner",
@@ -605,7 +608,7 @@ export async function GET(request: NextRequest) {
           { fields: ["id"], limit: 10000 }
         )) || [];
 
-        clients.forEach((c: any) => sellerAllClients[norm].add(c.id));
+        clients.forEach((c: any) => sellerAllClients[matchedSellerName].add(c.id));
       }
 
       const invActivacionMap: Record<number, { sellerName: string; partnerId: number; date: Date }> = {};
