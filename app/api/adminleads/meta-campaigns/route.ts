@@ -343,7 +343,7 @@ export async function GET(request: Request) {
       cost_usd: parseFloat(r.total_cost_usd) || 0,
     }));
 
-    // Fetch OpenAI usage from Admin API
+    // Fetch OpenAI usage from Admin API (org-level endpoints)
     let openaiUsage = { total: { cost_usd: 0, tokens: 0, requests: 0 }, by_project: [], by_model: [] };
     try {
       const adminKey = process.env.OPENAI_ADMIN_KEY;
@@ -353,47 +353,93 @@ export async function GET(request: Request) {
         const start = fechaInicio || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
         const end = fechaFin || new Date().toISOString().slice(0, 10);
 
-        const projectsRes = await fetch(`${baseUrl}/projects`, { headers });
-        const projectsJson = await projectsRes.json();
-        const projects = projectsJson.data || [];
-
-        const allUsage: any[] = [];
-        const byProject = [];
-
-        for (const project of projects) {
-          try {
-            const usageRes = await fetch(
-              `${baseUrl}/projects/${project.id}/usage/completions?start_date=${start}&end_date=${end}`,
-              { headers },
-            );
+        // Get completions usage
+        let allUsage: any[] = [];
+        try {
+          const usageRes = await fetch(
+            `${baseUrl}/usage/completions?bucket_width=1d&start_date=${start}&end_date=${end}&limit=500`,
+            { headers },
+          );
+          if (usageRes.ok) {
             const usageJson = await usageRes.json();
-            const items = usageJson.data || [];
-
-            let projectCost = 0;
-            let projectTokens = 0;
-            let projectRequests = 0;
-
-            for (const item of items) {
-              const cost = item.cost_usd || 0;
-              const tokens = (item.input_tokens || 0) + (item.output_tokens || 0);
-              projectCost += cost;
-              projectTokens += tokens;
-              projectRequests += item.num_requests || 0;
-              allUsage.push({ model: item.model || "unknown", cost_usd: cost, tokens, requests: item.num_requests || 0 });
+            const buckets = usageJson.data || [];
+            for (const bucket of buckets) {
+              for (const item of bucket.results || []) {
+                allUsage.push({
+                  model: item.model || "unknown",
+                  cost_usd: item.cost_usd || 0,
+                  tokens: (item.input_tokens || 0) + (item.output_tokens || 0),
+                  requests: item.num_requests || 0,
+                });
+              }
             }
-
-            byProject.push({
-              project_id: project.id,
-              project_name: project.name,
-              total_cost_usd: Math.round(projectCost * 10000) / 10000,
-              total_tokens: projectTokens,
-              total_requests: projectRequests,
-            });
-          } catch (e) {
-            byProject.push({ project_id: project.id, project_name: project.name, total_cost_usd: 0, total_tokens: 0, total_requests: 0 });
+          } else {
+            const errText = await usageRes.text().catch(() => "");
+            console.log(`[OpenAI] completions usage returned ${usageRes.status}: ${errText.substring(0, 200)}`);
           }
+        } catch (e) {
+          console.error("[OpenAI] Error fetching completions usage:", e);
         }
 
+        // Get embeddings usage
+        try {
+          const embRes = await fetch(
+            `${baseUrl}/usage/embeddings?bucket_width=1d&start_date=${start}&end_date=${end}&limit=500`,
+            { headers },
+          );
+          if (embRes.ok) {
+            const embJson = await embRes.json();
+            const buckets = embJson.data || [];
+            for (const bucket of buckets) {
+              for (const item of bucket.results || []) {
+                allUsage.push({
+                  model: item.model || "unknown",
+                  cost_usd: item.cost_usd || 0,
+                  tokens: (item.input_tokens || 0) + (item.output_tokens || 0),
+                  requests: item.num_requests || 0,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[OpenAI] Error fetching embeddings usage:", e);
+        }
+
+        // Get costs for project breakdown
+        let byProject: any[] = [];
+        try {
+          const startTs = Math.floor(new Date(start).getTime() / 1000);
+          const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
+          const costsRes = await fetch(
+            `${baseUrl}/costs?start_time=${startTs}&end_time=${endTs}&limit=500`,
+            { headers },
+          );
+          if (costsRes.ok) {
+            const costsJson = await costsRes.json();
+            const costBuckets = costsJson.data || [];
+            const projectMap = new Map<string, { cost: number; name: string }>();
+            for (const bucket of costBuckets) {
+              for (const item of bucket.results || []) {
+                const projId = item.project_id || "unknown";
+                const existing = projectMap.get(projId) || { cost: 0, name: item.project_name || projId };
+                existing.cost += item.cost_usd || 0;
+                projectMap.set(projId, existing);
+              }
+            }
+            byProject = Array.from(projectMap.entries()).map(([id, data]) => ({
+              project_id: id,
+              project_name: data.name,
+              total_cost_usd: Math.round(data.cost * 10000) / 10000,
+            }));
+          } else {
+            const errText = await costsRes.text().catch(() => "");
+            console.log(`[OpenAI] costs returned ${costsRes.status}: ${errText.substring(0, 200)}`);
+          }
+        } catch (e) {
+          console.error("[OpenAI] Error fetching costs:", e);
+        }
+
+        // Aggregate by model
         const modelMap = new Map();
         for (const u of allUsage) {
           const existing = modelMap.get(u.model) || { tokens: 0, cost_usd: 0, requests: 0 };
@@ -412,6 +458,8 @@ export async function GET(request: Request) {
           by_project: byProject,
           by_model: Array.from(modelMap.entries()).map(([model, data]) => ({ model, ...data })),
         };
+
+        console.log(`[OpenAI] Usage fetched: $${openaiUsage.total.cost_usd}, ${openaiUsage.total.tokens} tokens, ${openaiUsage.by_model.length} models`);
       }
     } catch (err) {
       console.error("Error fetching OpenAI usage:", err);
