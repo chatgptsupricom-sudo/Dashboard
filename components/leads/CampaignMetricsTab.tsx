@@ -271,6 +271,96 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         </div>
       </div>
 
+      {/* Tabla de Campanas Meta */}
+      <Card className="shadow-none border-zinc-200 rounded-2xl">
+        <CardHeader className="pb-3 border-b border-zinc-50">
+          <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+            <Eye className="w-3.5 h-3.5" /> Detalle por Campana
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 overflow-x-auto">
+          {campaigns.length > 0 ? (
+            <table className="w-full text-xs min-w-[1100px]">
+              <thead className="bg-zinc-50/50 text-zinc-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Campana</th>
+                  {isSuperAdmin && <th className="px-4 py-3 text-center">Pais</th>}
+                  <th className="px-4 py-3 text-right">Inversion</th>
+                  <th className="px-4 py-3 text-center">Impresiones</th>
+                  <th className="px-4 py-3 text-center">Clics</th>
+                  <th className="px-4 py-3 text-center">Leads Ads</th>
+                  <th className="px-4 py-3 text-center">Calificados</th>
+                  <th className="px-4 py-3 text-center">No Cal.</th>
+                  <th className="px-4 py-3 text-center">Ventas</th>
+                  <th className="px-4 py-3 text-right">Recaudo</th>
+                  <th className="px-4 py-3 text-right">Costo/Lead Cal.</th>
+                  <th className="px-4 py-3 text-right">ROI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {campaigns.map((c) => (
+                  <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors">
+                    <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap">
+                      {c.campaign_name}
+                    </td>
+                    {isSuperAdmin && (
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        c.pais === "Panama"
+                          ? "bg-blue-50 text-blue-600"
+                          : "bg-amber-50 text-amber-600"
+                      }`}>
+                        {c.pais}
+                      </span>
+                    </td>
+                    )}
+                    <td className="px-4 py-3 text-right font-semibold">
+                      ${c.spend_usd.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-center text-zinc-600">
+                      {c.impressions.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-center text-zinc-600">
+                      {c.clicks.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-center font-medium">
+                      {c.leads_from_ads}
+                    </td>
+                    <td className="px-4 py-3 text-center font-bold text-emerald-600">
+                      {c.calificados}
+                    </td>
+                    <td className="px-4 py-3 text-center font-bold text-red-500">
+                      {c.no_calificados}
+                    </td>
+                    <td className="px-4 py-3 text-center font-bold text-blue-600">
+                      {c.ventas_cerradas}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold">
+                      ${c.recaudo_usd.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right text-zinc-600">
+                      {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "---"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`font-bold ${
+                        c.roi > 0 ? "text-emerald-600" : c.roi < 0 ? "text-red-500" : "text-zinc-400"
+                      }`}>
+                        {c.roi.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
+              <Eye className="w-10 h-10 opacity-20 mb-3" />
+              <p className="text-xs italic">Sin campanas registradas en este periodo.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Gastos Servicios */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
@@ -393,96 +483,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
           </div>
         )}
       </div>
-
-      {/* Tabla de Campanas Meta */}
-      <Card className="shadow-none border-zinc-200 rounded-2xl">
-        <CardHeader className="pb-3 border-b border-zinc-50">
-          <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-            <Eye className="w-3.5 h-3.5" /> Detalle por Campana
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4 overflow-x-auto">
-          {campaigns.length > 0 ? (
-            <table className="w-full text-xs min-w-[1100px]">
-              <thead className="bg-zinc-50/50 text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3 text-left">Campana</th>
-                  {isSuperAdmin && <th className="px-4 py-3 text-center">Pais</th>}
-                  <th className="px-4 py-3 text-right">Inversion</th>
-                  <th className="px-4 py-3 text-center">Impresiones</th>
-                  <th className="px-4 py-3 text-center">Clics</th>
-                  <th className="px-4 py-3 text-center">Leads Ads</th>
-                  <th className="px-4 py-3 text-center">Calificados</th>
-                  <th className="px-4 py-3 text-center">No Cal.</th>
-                  <th className="px-4 py-3 text-center">Ventas</th>
-                  <th className="px-4 py-3 text-right">Recaudo</th>
-                  <th className="px-4 py-3 text-right">Costo/Lead Cal.</th>
-                  <th className="px-4 py-3 text-right">ROI</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {campaigns.map((c) => (
-                  <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap">
-                      {c.campaign_name}
-                    </td>
-                    {isSuperAdmin && (
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        c.pais === "Panama"
-                          ? "bg-blue-50 text-blue-600"
-                          : "bg-amber-50 text-amber-600"
-                      }`}>
-                        {c.pais}
-                      </span>
-                    </td>
-                    )}
-                    <td className="px-4 py-3 text-right font-semibold">
-                      ${c.spend_usd.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center text-zinc-600">
-                      {c.impressions.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center text-zinc-600">
-                      {c.clicks.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center font-medium">
-                      {c.leads_from_ads}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-emerald-600">
-                      {c.calificados}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-red-500">
-                      {c.no_calificados}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-blue-600">
-                      {c.ventas_cerradas}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      ${c.recaudo_usd.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-600">
-                      {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "---"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`font-bold ${
-                        c.roi > 0 ? "text-emerald-600" : c.roi < 0 ? "text-red-500" : "text-zinc-400"
-                      }`}>
-                        {c.roi.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
-              <Eye className="w-10 h-10 opacity-20 mb-3" />
-              <p className="text-xs italic">Sin campanas registradas en este periodo.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
