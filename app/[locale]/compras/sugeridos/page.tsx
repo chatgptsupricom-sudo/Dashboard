@@ -242,8 +242,8 @@ export default function SugeridosPage() {
           Sugeridos de Compra
         </h1>
         <p className="text-gray-500">
-          Lista de compra: productos con MOQ configurado que requieren
-          reposición urgente.
+          Lista de compra: productos que requieren reposición urgente,
+          considerando órdenes de compra ya en camino.
         </p>
       </div>
 
