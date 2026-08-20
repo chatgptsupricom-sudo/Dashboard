@@ -92,6 +92,10 @@ export async function GET() {
       const totalDiasUtilesMes = contarDiasUtiles(firstDay, lastDay);
       const diasTranscurridos = contarDiasUtiles(firstDay, now);
       const diasHabilesRestantes = Math.max(0, totalDiasUtilesMes - diasTranscurridos);
+
+      if (sellers.indexOf(seller) === 0) {
+        console.log(`[CUOTA] Hoy: ${now.toISOString()} | firstDay: ${firstDay.getFullYear()}-${firstDay.getMonth()+1}-${firstDay.getDate()} | lastDay: ${lastDay.getFullYear()}-${lastDay.getMonth()+1}-${lastDay.getDate()} | totalUtiles: ${totalDiasUtilesMes} | transcurridos: ${diasTranscurridos} | restantes: ${diasHabilesRestantes}`);
+      }
       const falta = parseFloat(Math.max(0, meta - facturado).toFixed(2));
       const ventaDiariaNecesaria = diasHabilesRestantes > 0 ? parseFloat((falta / diasHabilesRestantes).toFixed(2)) : 0;
       const meta150 = meta * 1.5;
