@@ -21,6 +21,8 @@ export async function GET(request: Request) {
         sc.service_name,
         sc.cost_type,
         sc.monthly_cost,
+        sc.payment_date,
+        sc.is_paid,
         sc.created_at,
         IFNULL(SUM(st.amount_usd), 0) AS total_transactions,
         COUNT(st.id) AS transaction_count
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
         ON st.service_name = sc.service_name
         AND st.transaction_date >= DATE_FORMAT(NOW(), '%Y-%m-01')
         AND st.transaction_date <= LAST_DAY(NOW())
-      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, sc.created_at
+      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, sc.payment_date, sc.is_paid, sc.created_at
       ORDER BY sc.service_name
     `);
 
@@ -93,6 +95,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     console.error("Error en POST service-costs:", error);
+    return NextResponse.json(
+      { error: error?.message || "Error interno" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const cookieHeader = request.headers.get("cookie");
+    const token = cookieHeader
+      ?.split(";")
+      .find((c) => c.trim().startsWith("token="))
+      ?.split("=")[1];
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    await jwtVerify(token, secret);
+
+    const body = await request.json();
+    const { id, monthly_cost, payment_date, is_paid } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "id es requerido" }, { status: 400 });
+    }
+
+    const fields: string[] = [];
+    const params: any[] = [];
+
+    if (monthly_cost !== undefined) {
+      fields.push("monthly_cost = ?");
+      params.push(parseFloat(monthly_cost) || 0);
+    }
+    if (payment_date !== undefined) {
+      fields.push("payment_date = ?");
+      params.push(payment_date || null);
+    }
+    if (is_paid !== undefined) {
+      fields.push("is_paid = ?");
+      params.push(is_paid ? 1 : 0);
+    }
+
+    if (fields.length === 0) {
+      return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
+    }
+
+    params.push(parseInt(id));
+    await query(`UPDATE service_costs SET ${fields.join(", ")} WHERE id = ?`, params);
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error("Error en PUT service-costs:", error);
     return NextResponse.json(
       { error: error?.message || "Error interno" },
       { status: 500 },

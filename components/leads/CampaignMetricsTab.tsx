@@ -2,6 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  CheckCircle,
+  Circle,
   DollarSign,
   Eye,
   Loader2,
@@ -50,6 +52,8 @@ interface ServiceItem {
   monthly_cost: number;
   total_transactions: number;
   transaction_count: number;
+  payment_date: string | null;
+  is_paid: number;
   created_at: string;
 }
 
@@ -81,6 +85,10 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [txNotes, setTxNotes] = useState("");
   const [savingTx, setSavingTx] = useState(false);
+
+  const [editingCost, setEditingCost] = useState<number | null>(null);
+  const [editCostValue, setEditCostValue] = useState("");
+  const [savingCost, setSavingCost] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -182,6 +190,72 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
     } finally {
       setSavingTx(false);
     }
+  };
+
+  const handleUpdateCost = async (svc: ServiceItem) => {
+    const newCost = parseFloat(editCostValue);
+    if (isNaN(newCost) || newCost < 0) return;
+    setSavingCost(true);
+    try {
+      await fetch("/api/adminleads/service-costs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_name: svc.service_name,
+          cost_type: svc.cost_type,
+          monthly_cost: newCost,
+        }),
+      });
+      setEditingCost(null);
+      fetchServices();
+    } finally {
+      setSavingCost(false);
+    }
+  };
+
+  const handleTogglePaid = async (svc: ServiceItem) => {
+    const newPaid = svc.is_paid ? 0 : 1;
+    setServices((prev) =>
+      prev.map((s) => (s.id === svc.id ? { ...s, is_paid: newPaid } : s))
+    );
+    await fetch("/api/adminleads/service-costs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: svc.id, is_paid: !!newPaid }),
+    });
+  };
+
+  const getPaymentStatus = (svc: ServiceItem) => {
+    if (svc.is_paid) return "paid";
+    if (!svc.payment_date) return "unpaid";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const payDate = new Date(svc.payment_date + "T00:00:00");
+    const diffDays = Math.ceil((payDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 5) return "soon";
+    return "unpaid";
+  };
+
+  const paymentBorderClass: Record<string, string> = {
+    paid: "border-emerald-300 bg-emerald-50/30",
+    unpaid: "border-red-200",
+    overdue: "border-red-300 bg-red-50/30",
+    soon: "border-amber-300 bg-amber-50/30",
+  };
+
+  const paymentLabel: Record<string, string> = {
+    paid: "Pagado",
+    unpaid: "Pendiente",
+    overdue: "Vencido",
+    soon: "Por vencer",
+  };
+
+  const paymentBadgeClass: Record<string, string> = {
+    paid: "bg-emerald-100 text-emerald-600",
+    unpaid: "bg-red-100 text-red-500",
+    overdue: "bg-red-100 text-red-600",
+    soon: "bg-amber-100 text-amber-600",
   };
 
   if (loading) {
@@ -323,13 +397,30 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                   ? parseFloat(String(svc.monthly_cost)) || 0
                   : parseFloat(String(svc.total_transactions)) || 0;
 
+              const status = getPaymentStatus(svc);
+              const borderClass = paymentBorderClass[status] || "border-zinc-200";
+
               return (
-                <Card key={svc.id} className="rounded-2xl border-zinc-200 shadow-none hover:border-blue-200 transition-colors relative group">
+                <Card key={svc.id} className={`rounded-2xl shadow-none transition-colors relative group ${borderClass}`}>
                   <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                     <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                       {svc.service_name}
                     </CardTitle>
                     <div className="flex items-center gap-1">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentBadgeClass[status]}`}>
+                        {paymentLabel[status]}
+                      </span>
+                      <button
+                        onClick={() => handleTogglePaid(svc)}
+                        className="transition-colors"
+                        title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
+                      >
+                        {svc.is_paid ? (
+                          <CheckCircle className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-zinc-300 hover:text-emerald-400" />
+                        )}
+                      </button>
                       {svc.cost_type === "topup" && (
                         <button
                           onClick={() => setShowAddTx(showAddTx === svc.service_name ? null : svc.service_name)}
@@ -355,6 +446,11 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                     <div className="text-[10px] text-zinc-400">
                       {svc.cost_type === "subscription" ? "Mensual fijo" : `${svc.transaction_count || 0} recargas este mes`}
                     </div>
+                    {svc.payment_date && (
+                      <div className="text-[10px] text-zinc-400 mt-0.5">
+                        Vence: {new Date(svc.payment_date + "T00:00:00").toLocaleDateString("es-VE")}
+                      </div>
+                    )}
 
                     {svc.cost_type === "topup" && showAddTx === svc.service_name && (
                       <div className="mt-3 pt-3 border-t border-zinc-100 space-y-2">
