@@ -259,6 +259,8 @@ export function Sidebar({
         return `/${locale}/cuentas-por-cobrar`;
       case "diseñador":
         return `/${locale}/disenador`;
+      case "administración":
+        return `/${locale}/administracion`;
       default:
         return `/${locale}/dashboard`;
     }
