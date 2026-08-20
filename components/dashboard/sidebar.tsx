@@ -245,6 +245,8 @@ export function Sidebar({
       case "gerenciaventas":
       case "gerencia de ventas":
         return `/${locale}/gerente_venta`;
+      case "asistente de ventas":
+        return `/${locale}/gerente_venta`;
       case "gerente_operaciones":
       case "gerencia de operaciones":
       case "gerente de operaciones":
