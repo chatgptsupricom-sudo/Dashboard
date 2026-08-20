@@ -41,7 +41,9 @@ const CHECKS_SCRIPT = `<script>
   var _unloading=false;
   window.addEventListener('beforeunload',function(){_unloading=true;});
 
-  function keyOf(el,selector){
+  // Llave posicional (legacy): se rompe si el elemento cambia de indice
+  // dentro de su contenedor (reordenar, insertar, drag&drop, re-subir HTML).
+  function legacyKeyOf(el,selector){
     var anc=el.parentElement;
     while(anc&&!anc.id)anc=anc.parentElement;
     if(anc&&anc.id){
@@ -50,6 +52,14 @@ const CHECKS_SCRIPT = `<script>
       if(i>=0)return anc.id+'|'+i;
     }
     return 'g|'+Array.from(document.querySelectorAll(selector)).indexOf(el);
+  }
+
+  // Llave estable: usa data-piece (id de contenido, ej. "AUG1") cuando existe,
+  // asi el check sigue a la pieza aunque cambie de posicion en el DOM.
+  function keyOf(el,selector){
+    var dp=el.getAttribute('data-piece');
+    if(dp)return 'dp|'+dp;
+    return legacyKeyOf(el,selector);
   }
 
   function save(){
@@ -75,13 +85,17 @@ const CHECKS_SCRIPT = `<script>
     }
   }
 
+  // Acepta tanto la llave nueva (data-piece) como la vieja (posicional) para
+  // no perder los checks ya guardados antes de este cambio.
   function restore(s){
     isRestoring=true;
     document.querySelectorAll('.piece').forEach(function(el){
-      el.classList.toggle('checked',!!s[keyOf(el,'.piece')]);
+      var checked=!!s[keyOf(el,'.piece')]||!!s[legacyKeyOf(el,'.piece')];
+      el.classList.toggle('checked',checked);
     });
     document.querySelectorAll('.email-card').forEach(function(el){
-      el.classList.toggle('checked',!!s[keyOf(el,'.email-card')]);
+      var checked=!!s[keyOf(el,'.email-card')]||!!s[legacyKeyOf(el,'.email-card')];
+      el.classList.toggle('checked',checked);
     });
     setTimeout(function(){isRestoring=false;},150);
   }
