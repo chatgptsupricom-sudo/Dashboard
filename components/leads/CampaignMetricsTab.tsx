@@ -194,10 +194,20 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
             icon={<Zap className="w-4 h-4" />}
           />
           <MetricCard
-            title="Gasto Bot n8n (n8n auto chat)"
+            title="Gasto Bot n8n"
             value={(() => {
-              const n8nProject = data?.openaiUsage?.by_project?.find?.((p: any) => p.project_name?.toLowerCase().includes("n8n") || p.project_name?.toLowerCase().includes("chat"));
-              return n8nProject?.total_cost_usd > 0 ? `$${n8nProject.total_cost_usd.toFixed(2)}` : null;
+              const n8nProject = data?.openaiUsage?.by_project?.find?.((p: any) => {
+                const name = (p.project_name || "").toLowerCase();
+                return name.includes("n8n") || name.includes("chat") || name.includes("bot") || name.includes("auto");
+              });
+              if (n8nProject?.total_cost_usd > 0) return `$${n8nProject.total_cost_usd.toFixed(2)}`;
+              // If we have 2+ projects and one is Dashboard, the other is likely n8n
+              const projects = data?.openaiUsage?.by_project || [];
+              if (projects.length === 2) {
+                const other = projects.find((p: any) => !(p.project_name || "").toLowerCase().includes("dashboard"));
+                if (other && other.total_cost_usd > 0) return `$${other.total_cost_usd.toFixed(2)}`;
+              }
+              return null;
             })()}
             emptyText="Sin uso registrado"
             icon={<Bot className="w-4 h-4" />}

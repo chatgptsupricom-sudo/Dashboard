@@ -379,10 +379,11 @@ export async function GET(request: Request) {
 
             for (const bucket of buckets) {
               for (const item of bucket.results || []) {
-                const model = item.model || "unknown";
                 const inputTokens = item.input_tokens || 0;
                 const outputTokens = item.output_tokens || 0;
-                const pricing = PRICING[model] || { input: 2.50, output: 10.00 };
+                // OpenAI usage API returns model as null for org-level, default to gpt-4o
+                const model = item.model || (item.service_tier === "flex" ? "gpt-4o (flex)" : "gpt-4o");
+                const pricing = PRICING[item.model] || { input: 2.50, output: 10.00 };
                 const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
 
                 allUsage.push({
