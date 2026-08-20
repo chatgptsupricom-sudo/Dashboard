@@ -440,20 +440,25 @@ export async function GET(request: Request) {
                 }
               }
 
-              // Map project_id to project_name using admin API projects list
-              if (projects.length > 0) {
-                byProject = projects.map((p: any) => ({
-                  project_id: p.id,
-                  project_name: p.name,
-                  total_cost_usd: Math.round((projectCostMap.get(p.id) || 0) * 10000) / 10000,
-                }));
-              } else if (orgTotalCost > 0) {
-                byProject = [{
-                  project_id: "org",
-                  project_name: "Organización",
-                  total_cost_usd: Math.round(orgTotalCost * 10000) / 10000,
-                }];
-              }
+            // Map known project IDs to friendly names
+            const PROJECT_NAMES: Record<string, string> = {
+              "proj_AQAvbt97wLltTNUTMQk1vopO": "Dashboard (Panel)",
+              "proj_oYndr5CRzK6cceAfR2BElEkl": "n8n auto chat (Bot)",
+            };
+
+            if (projects.length > 0) {
+              byProject = projects.map((p: any) => ({
+                project_id: p.id,
+                project_name: PROJECT_NAMES[p.id] || p.name || p.id,
+                total_cost_usd: Math.round((projectCostMap.get(p.id) || 0) * 10000) / 10000,
+              }));
+            } else if (orgTotalCost > 0) {
+              byProject = [{
+                project_id: "org",
+                project_name: "Organización",
+                total_cost_usd: Math.round(orgTotalCost * 10000) / 10000,
+              }];
+            }
             }
           } catch (e) {
             console.error("[OpenAI] Error fetching costs:", e);
