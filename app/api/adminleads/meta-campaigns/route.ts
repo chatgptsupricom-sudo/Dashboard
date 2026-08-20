@@ -353,13 +353,13 @@ export async function GET(request: Request) {
         const start = fechaInicio || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
         const end = fechaFin || new Date().toISOString().slice(0, 10);
 
-        // Get completions usage (needs start_time as Unix timestamp)
+        // Get completions usage (max 31 days per request with bucket_width=1d)
         let allUsage: any[] = [];
         try {
           const startTs = Math.floor(new Date(start).getTime() / 1000);
           const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
           const usageRes = await fetch(
-            `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=180`,
+            `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
             { headers },
           );
           if (usageRes.ok) {
@@ -388,7 +388,7 @@ export async function GET(request: Request) {
           const startTs = Math.floor(new Date(start).getTime() / 1000);
           const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
           const embRes = await fetch(
-            `${baseUrl}/usage/embeddings?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=180`,
+            `${baseUrl}/usage/embeddings?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
             { headers },
           );
           if (embRes.ok) {
