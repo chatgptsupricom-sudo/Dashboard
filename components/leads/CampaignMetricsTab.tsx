@@ -8,8 +8,6 @@ import {
   Eye,
   Loader2,
   Plus,
-  Trash2,
-  X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useCallback, useEffect, useState } from "react";
@@ -74,21 +72,11 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const [totalMonthly, setTotalMonthly] = useState(0);
   const [loadingServices, setLoadingServices] = useState(true);
 
-  const [showAddService, setShowAddService] = useState(false);
-  const [newServiceName, setNewServiceName] = useState("");
-  const [newServiceType, setNewServiceType] = useState<"subscription" | "topup">("subscription");
-  const [newServiceCost, setNewServiceCost] = useState("");
-  const [savingService, setSavingService] = useState(false);
-
   const [showAddTx, setShowAddTx] = useState<string | null>(null);
   const [txAmount, setTxAmount] = useState("");
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [txNotes, setTxNotes] = useState("");
   const [savingTx, setSavingTx] = useState(false);
-
-  const [editingCost, setEditingCost] = useState<number | null>(null);
-  const [editCostValue, setEditCostValue] = useState("");
-  const [savingCost, setSavingCost] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -140,35 +128,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
-  const handleAddService = async () => {
-    if (!newServiceName.trim()) return;
-    setSavingService(true);
-    try {
-      await fetch("/api/adminleads/service-costs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          service_name: newServiceName.trim(),
-          cost_type: newServiceType,
-          monthly_cost: parseFloat(newServiceCost) || 0,
-        }),
-      });
-      setNewServiceName("");
-      setNewServiceType("subscription");
-      setNewServiceCost("");
-      setShowAddService(false);
-      fetchServices();
-    } finally {
-      setSavingService(false);
-    }
-  };
-
-  const handleDeleteService = async (id: number) => {
-    if (!confirm("Eliminar este servicio?")) return;
-    await fetch(`/api/adminleads/service-costs?id=${id}`, { method: "DELETE" });
-    fetchServices();
-  };
-
   const handleAddTx = async (serviceName: string) => {
     if (!txAmount || parseFloat(txAmount) <= 0) return;
     setSavingTx(true);
@@ -189,27 +148,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       fetchServices();
     } finally {
       setSavingTx(false);
-    }
-  };
-
-  const handleUpdateCost = async (svc: ServiceItem) => {
-    const newCost = parseFloat(editCostValue);
-    if (isNaN(newCost) || newCost < 0) return;
-    setSavingCost(true);
-    try {
-      await fetch("/api/adminleads/service-costs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          service_name: svc.service_name,
-          cost_type: svc.cost_type,
-          monthly_cost: newCost,
-        }),
-      });
-      setEditingCost(null);
-      fetchServices();
-    } finally {
-      setSavingCost(false);
     }
   };
 
@@ -333,56 +271,9 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
       {/* Gastos Servicios */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-            Gastos Servicios
-          </h3>
-          <button
-            onClick={() => setShowAddService(!showAddService)}
-            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700 transition-colors"
-          >
-            {showAddService ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-            {showAddService ? "Cancelar" : "Agregar Servicio"}
-          </button>
-        </div>
-
-        {showAddService && (
-          <Card className="mb-4 shadow-none border-blue-200 bg-blue-50/30 rounded-2xl">
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <input
-                  type="text"
-                  placeholder="Nombre del servicio"
-                  value={newServiceName}
-                  onChange={(e) => setNewServiceName(e.target.value)}
-                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <select
-                  value={newServiceType}
-                  onChange={(e) => setNewServiceType(e.target.value as "subscription" | "topup")}
-                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                >
-                  <option value="subscription">Mensual Fijo</option>
-                  <option value="topup">Recarga / Prepago</option>
-                </select>
-                <input
-                  type="number"
-                  placeholder={newServiceType === "subscription" ? "Costo mensual $" : "Monto recarga $"}
-                  value={newServiceCost}
-                  onChange={(e) => setNewServiceCost(e.target.value)}
-                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <button
-                  onClick={handleAddService}
-                  disabled={savingService || !newServiceName.trim()}
-                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {savingService ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
+          Gastos Servicios
+        </h3>
 
         {loadingServices ? (
           <div className="flex items-center justify-center py-8 text-zinc-400">
@@ -430,13 +321,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDeleteService(svc.id)}
-                        className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Eliminar servicio"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   </CardHeader>
                   <CardContent>

@@ -50,6 +50,12 @@ export default function ConfiguracionPage() {
   const [editServiceDate, setEditServiceDate] = useState("");
   const [savingService, setSavingService] = useState(false);
 
+  const [showAddSvc, setShowAddSvc] = useState(false);
+  const [newSvcName, setNewSvcName] = useState("");
+  const [newSvcType, setNewSvcType] = useState<"subscription" | "topup">("subscription");
+  const [newSvcCost, setNewSvcCost] = useState("");
+  const [creatingSvc, setCreatingSvc] = useState(false);
+
   const fetchSellers = () => {
     fetch("/api/adminleads/sellers")
       .then((r) => r.json())
@@ -110,6 +116,32 @@ export default function ConfiguracionPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: svc.id, is_paid: !svc.is_paid }),
     });
+    fetchServices();
+  };
+
+  const handleAddService = async () => {
+    if (!newSvcName.trim()) return;
+    setCreatingSvc(true);
+    await fetch("/api/adminleads/service-costs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_name: newSvcName.trim(),
+        cost_type: newSvcType,
+        monthly_cost: parseFloat(newSvcCost) || 0,
+      }),
+    });
+    setNewSvcName("");
+    setNewSvcType("subscription");
+    setNewSvcCost("");
+    setShowAddSvc(false);
+    fetchServices();
+    setCreatingSvc(false);
+  };
+
+  const handleDeleteService = async (id: number) => {
+    if (!confirm("Eliminar este servicio?")) return;
+    await fetch(`/api/adminleads/service-costs?id=${id}`, { method: "DELETE" });
     fetchServices();
   };
 
@@ -574,7 +606,50 @@ export default function ConfiguracionPage() {
                 Costos fijos mensuales y fechas de pago
               </p>
             </div>
+            <button
+              onClick={() => setShowAddSvc(!showAddSvc)}
+              className="ml-auto flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              {showAddSvc ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+              {showAddSvc ? "Cancelar" : "Agregar Servicio"}
+            </button>
           </div>
+
+          {showAddSvc && (
+            <div className="px-6 py-4 border-b border-zinc-50 bg-blue-50/30">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input
+                  type="text"
+                  placeholder="Nombre del servicio"
+                  value={newSvcName}
+                  onChange={(e) => setNewSvcName(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <select
+                  value={newSvcType}
+                  onChange={(e) => setNewSvcType(e.target.value as "subscription" | "topup")}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="subscription">Mensual Fijo</option>
+                  <option value="topup">Recarga / Prepago</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Costo mensual $"
+                  value={newSvcCost}
+                  onChange={(e) => setNewSvcCost(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <button
+                  onClick={handleAddService}
+                  disabled={creatingSvc || !newSvcName.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {creatingSvc ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {services.length === 0 ? (
             <p className="text-sm text-zinc-300 text-center py-8">
@@ -587,7 +662,7 @@ export default function ConfiguracionPage() {
                 return (
                   <div
                     key={svc.id}
-                    className="flex items-center gap-4 px-6 py-4 hover:bg-zinc-50 transition-colors"
+                    className="flex items-center gap-4 px-6 py-4 hover:bg-zinc-50 transition-colors group"
                   >
                     <button
                       onClick={() => handleTogglePaidService(svc)}
@@ -657,6 +732,13 @@ export default function ConfiguracionPage() {
                           title="Editar"
                         >
                           <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteService(svc.id)}
+                          className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Eliminar servicio"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     )}
