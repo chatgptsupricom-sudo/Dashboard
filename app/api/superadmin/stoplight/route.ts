@@ -346,11 +346,14 @@ export async function GET(request: NextRequest) {
     const semanaClientes = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;
-      if (metaClientesNuevos <= 0) return null;
 
       const newClientsThisWeek = Object.values(clientesNuevosPorSellerPorSemana).reduce(
         (sum, semanaMap) => sum + (semanaMap[i] || 0), 0
       );
+
+      if (metaClientesNuevos <= 0) {
+        return newClientsThisWeek > 0 ? String(newClientsThisWeek) : null;
+      }
 
       const goalThisWeek = metaClientesNuevos * numSellers * (semana.diasUtiles / totalDiasUtilesMes);
       if (goalThisWeek <= 0) return null;
