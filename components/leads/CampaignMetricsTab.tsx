@@ -283,7 +283,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
             <span className="text-xs">Cargando servicios...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {services.map((svc) => {
               const displayCost =
                 svc.cost_type === "subscription"
@@ -292,83 +292,83 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
               const status = getPaymentStatus(svc);
               const borderClass = paymentBorderClass[status] || "border-zinc-200";
+              const isTopup = svc.cost_type === "topup";
 
               return (
-                <Card key={svc.id} className={`rounded-2xl shadow-none transition-colors relative group ${borderClass}`}>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {svc.service_name}
-                    </CardTitle>
-                    <div className="flex items-center gap-1">
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentBadgeClass[status]}`}>
-                        {paymentLabel[status]}
+                <Card key={svc.id} className={`rounded-xl shadow-none transition-colors relative group ${borderClass}`}>
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider truncate max-w-[60%]">
+                        {svc.service_name}
                       </span>
-                      <button
-                        onClick={() => handleTogglePaid(svc)}
-                        className="transition-colors"
-                        title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
-                      >
-                        {svc.is_paid ? (
-                          <CheckCircle className="w-4 h-4 text-emerald-500" />
-                        ) : (
-                          <Circle className="w-4 h-4 text-zinc-300 hover:text-emerald-400" />
+                      <div className="flex items-center gap-1">
+                        {!isTopup && (
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${paymentBadgeClass[status]}`}>
+                            {paymentLabel[status]}
+                          </span>
                         )}
-                      </button>
-                      {svc.cost_type === "topup" && (
-                        <button
-                          onClick={() => setShowAddTx(showAddTx === svc.service_name ? null : svc.service_name)}
-                          className="text-blue-500 hover:text-blue-600 transition-colors"
-                          title="Registrar recarga"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-xl font-bold tracking-tight text-zinc-900 mb-1">
-                      {svc.currency === "EUR" ? "\u20AC" : "$"}{displayCost > 0 ? displayCost.toFixed(2) : "0.00"}
-                      <span className="text-[10px] font-normal text-zinc-400 ml-1">{svc.currency || "USD"}</span>
-                    </div>
-                    <div className="text-[10px] text-zinc-400">
-                      {svc.cost_type === "subscription" ? "Mensual fijo" : `${svc.transaction_count || 0} recargas este mes`}
-                    </div>
-                    {svc.payment_date && (
-                      <div className="text-[10px] text-zinc-400 mt-0.5">
-                        Vence: {new Date(svc.payment_date + "T00:00:00").toLocaleDateString("es-VE")}
+                        {!isTopup ? (
+                          <button
+                            onClick={() => handleTogglePaid(svc)}
+                            className="transition-colors"
+                            title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
+                          >
+                            {svc.is_paid ? (
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                            ) : (
+                              <Circle className="w-3.5 h-3.5 text-zinc-300 hover:text-emerald-400" />
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setShowAddTx(showAddTx === svc.service_name ? null : svc.service_name)}
+                            className="text-blue-500 hover:text-blue-600 transition-colors"
+                            title="Registrar recarga"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-                    )}
+                    </div>
+                    <div className="text-lg font-bold tracking-tight text-zinc-900">
+                      {svc.currency === "EUR" ? "\u20AC" : "$"}{displayCost > 0 ? displayCost.toFixed(2) : "0.00"}
+                      <span className="text-[9px] font-normal text-zinc-400 ml-0.5">{svc.currency || "USD"}</span>
+                    </div>
+                    <div className="text-[9px] text-zinc-400 mt-0.5">
+                      {isTopup ? `${svc.transaction_count || 0} recargas` : "Mensual"}
+                      {svc.payment_date && ` | Vence: ${new Date(svc.payment_date + "T00:00:00").toLocaleDateString("es-VE")}`}
+                    </div>
 
-                    {svc.cost_type === "topup" && showAddTx === svc.service_name && (
-                      <div className="mt-3 pt-3 border-t border-zinc-100 space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
+                    {isTopup && showAddTx === svc.service_name && (
+                      <div className="mt-2 pt-2 border-t border-zinc-100 space-y-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
                           <input
                             type="number"
                             placeholder="Monto $"
                             value={txAmount}
                             onChange={(e) => setTxAmount(e.target.value)}
-                            className="px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            className="px-2 py-1 text-[10px] border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
                           />
                           <input
                             type="date"
                             value={txDate}
                             onChange={(e) => setTxDate(e.target.value)}
-                            className="px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            className="px-2 py-1 text-[10px] border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
                           />
                         </div>
                         <input
                           type="text"
-                          placeholder="Notas (opcional)"
+                          placeholder="Notas"
                           value={txNotes}
                           onChange={(e) => setTxNotes(e.target.value)}
-                          className="w-full px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          className="w-full px-2 py-1 text-[10px] border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
                         />
                         <button
                           onClick={() => handleAddTx(svc.service_name)}
                           disabled={savingTx || !txAmount || parseFloat(txAmount) <= 0}
-                          className="w-full px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                          className="w-full px-2 py-1 text-[10px] font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
                         >
-                          {savingTx ? "Guardando..." : "Registrar Recarga"}
+                          {savingTx ? "..." : "Registrar"}
                         </button>
                       </div>
                     )}
@@ -378,18 +378,16 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
             })}
 
             {/* Tarjeta Total */}
-            <Card className="rounded-2xl border-blue-200 bg-blue-50/30 shadow-none">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
-                  Total Servicios
-                </CardTitle>
-                <DollarSign className="w-4 h-4 text-blue-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold tracking-tight text-blue-700">
+            <Card className="rounded-xl border-blue-200 bg-blue-50/30 shadow-none">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Total</span>
+                  <DollarSign className="w-3.5 h-3.5 text-blue-400" />
+                </div>
+                <div className="text-lg font-bold tracking-tight text-blue-700">
                   ${totalMonthly > 0 ? totalMonthly.toFixed(2) : "0.00"}
                 </div>
-                <div className="text-[10px] text-blue-400 mt-1">Costo total del mes</div>
+                <div className="text-[9px] text-blue-400 mt-0.5">Costo total del mes</div>
               </CardContent>
             </Card>
           </div>
