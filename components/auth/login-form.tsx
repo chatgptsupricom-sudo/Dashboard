@@ -255,6 +255,8 @@ export function LoginForm() {
         router.push(`/${locale}/compras`);
       } else if (role === "cuentas por cobrar") {
         router.push(`/${locale}/cuentas-por-cobrar`);
+      } else if (role === "asistente de ventas") {
+        router.push(`/${locale}/gerente_venta`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);
