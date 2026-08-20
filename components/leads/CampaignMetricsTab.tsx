@@ -320,12 +320,12 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {data.openaiUsage.by_model.map((m: any) => (
+                {(data.openaiUsage.by_model || []).filter((m: any) => m && m.model).map((m: any) => (
                   <tr key={m.model} className="hover:bg-zinc-50/80 transition-colors">
                     <td className="px-6 py-4 font-medium text-zinc-900">{m.model}</td>
-                    <td className="px-6 py-4 text-center">{m.requests}</td>
-                    <td className="px-6 py-4 text-center">{m.tokens.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-semibold">${m.cost_usd.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-center">{m.requests || 0}</td>
+                    <td className="px-6 py-4 text-center">{(m.tokens || 0).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right font-semibold">${(m.cost_usd || 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -353,12 +353,12 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {data.openaiUsage.by_project.map((p: any) => (
+                {(data.openaiUsage.by_project || []).filter((p: any) => p && p.project_id).map((p: any) => (
                   <tr key={p.project_id} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-6 py-4 font-medium text-zinc-900">{p.project_name}</td>
-                    <td className="px-6 py-4 text-center">{p.total_requests}</td>
-                    <td className="px-6 py-4 text-center">{p.total_tokens.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-semibold">${p.total_cost_usd.toFixed(2)}</td>
+                    <td className="px-6 py-4 font-medium text-zinc-900">{p.project_name || "Sin nombre"}</td>
+                    <td className="px-6 py-4 text-center">{p.total_requests || 0}</td>
+                    <td className="px-6 py-4 text-center">{(p.total_tokens || 0).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right font-semibold">${(p.total_cost_usd || 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
