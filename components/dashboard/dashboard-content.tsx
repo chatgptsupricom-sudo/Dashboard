@@ -18,12 +18,33 @@ import {
 export function SuperAdminView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [availableMonths, setAvailableMonths] = useState<{ value: string; label: string }[]>([]);
 
   useEffect(() => {
-    fetch("/api/superadmin/stats")
+    fetch("/api/common/available-months")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.months?.length > 0) {
+          setAvailableMonths(json.data.months);
+          if (!selectedMonth) {
+            const now = new Date();
+            const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            const hasCurrent = json.data.months.some((m: any) => m.value === current);
+            setSelectedMonth(hasCurrent ? current : json.data.months[0].value);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMonth) return;
+    setLoading(true);
+    const params = new URLSearchParams({ month: selectedMonth });
+    fetch(`/api/superadmin/stats?${params}`)
       .then((res) => res.json())
       .then((json) => {
-        // Normalización de datos para evitar errores de undefined
         const sanitizedData = {
           ...json,
           topClients: (json.topClients || []).filter(
@@ -38,7 +59,7 @@ export function SuperAdminView() {
           summary: {
             totalMonth: json.summary?.totalMonth || 0,
             topProductName: json.summary?.topProductName || "N/A",
-            growthRate: json.summary?.growthRate || "0%", // Dato real de Odoo
+            growthRate: json.summary?.growthRate || "0%",
           },
         };
         setData(sanitizedData);
@@ -48,7 +69,7 @@ export function SuperAdminView() {
         console.error("Error fetching Odoo stats:", err);
         setLoading(false);
       });
-  }, []);
+  }, [selectedMonth]);
 
   if (loading)
     return (
@@ -66,6 +87,20 @@ export function SuperAdminView() {
 
   return (
     <div className="space-y-6">
+      {/* Selector de Mes */}
+      {availableMonths.length > 0 && (
+        <div className="flex justify-end">
+          <select
+            className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          >
+            {availableMonths.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
       {/* KPIs Superiores - DATOS PROVENIENTES DE ODOO */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard

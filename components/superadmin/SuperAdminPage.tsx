@@ -396,10 +396,31 @@ export function SuperAdminView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [availableMonths, setAvailableMonths] = useState<{ value: string; label: string }[]>([]);
 
   useEffect(() => {
+    fetch(`/api/common/available-months?company_id=${companyId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.months?.length > 0) {
+          setAvailableMonths(json.data.months);
+          if (!selectedMonth) {
+            const now = new Date();
+            const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            const hasCurrent = json.data.months.some((m: any) => m.value === current);
+            setSelectedMonth(hasCurrent ? current : json.data.months[0].value);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!selectedMonth) return;
     setLoading(true);
-    fetch(`/api/superadmin/stats?company_id=${companyId}`)
+    const params = new URLSearchParams({ company_id: companyId, month: selectedMonth });
+    fetch(`/api/superadmin/stats?${params}`)
       .then((res) => res.json())
       .then((json) => {
         const sanitizedData = {
@@ -426,7 +447,7 @@ export function SuperAdminView() {
         console.error("Error:", err);
         setLoading(false);
       });
-  }, [companyId]);
+  }, [companyId, selectedMonth]);
 
   if (loading)
     return (
@@ -437,8 +458,19 @@ export function SuperAdminView() {
 
   return (
     <div className="space-y-8 bg-slate-50/30 p-4">
-      {/* Selector de Sede */}
-      <div className="flex justify-end">
+      {/* Selectores */}
+      <div className="flex justify-end gap-3">
+        {availableMonths.length > 0 && (
+          <select
+            className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          >
+            {availableMonths.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        )}
         <select
           className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none"
           value={companyId}

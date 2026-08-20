@@ -79,7 +79,18 @@ export default function VendedoresPage() {
   const sellerActivo = (user as any)?.activo;
   const showLeads = sellerActivo !== 0;
 
-  const monthOptions = useMemo(() => getMonthOptions(6), []);
+  const [monthOptions, setMonthOptions] = useState(() => getMonthOptions(6));
+
+  useEffect(() => {
+    fetch("/api/common/available-months")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.months?.length > 0) {
+          setMonthOptions(json.data.months);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
