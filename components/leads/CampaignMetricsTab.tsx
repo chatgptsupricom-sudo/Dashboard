@@ -188,35 +188,22 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <MetricCard
-            title="Gasto Panel (Dashboard)"
-            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : (data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M tokens` : null)}
-            emptyText="Sin uso registrado"
-            icon={<Zap className="w-4 h-4" />}
-          />
-          <MetricCard
-            title="Gasto Bot n8n"
-            value={(() => {
-              const n8nProject = data?.openaiUsage?.by_project?.find?.((p: any) => {
-                const name = (p.project_name || "").toLowerCase();
-                return name.includes("n8n") || name.includes("chat") || name.includes("bot") || name.includes("auto");
-              });
-              if (n8nProject?.total_cost_usd > 0) return `$${n8nProject.total_cost_usd.toFixed(2)}`;
-              // If we have 2+ projects and one is Dashboard, the other is likely n8n
-              const projects = data?.openaiUsage?.by_project || [];
-              if (projects.length === 2) {
-                const other = projects.find((p: any) => !(p.project_name || "").toLowerCase().includes("dashboard"));
-                if (other && other.total_cost_usd > 0) return `$${other.total_cost_usd.toFixed(2)}`;
-              }
-              return null;
-            })()}
-            emptyText="Sin uso registrado"
-            icon={<Bot className="w-4 h-4" />}
-          />
-          <MetricCard
             title="Gasto Total OpenAI"
             value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : (data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M tokens` : null)}
             emptyText="Sin uso registrado"
             icon={<DollarSign className="w-4 h-4" />}
+          />
+          <MetricCard
+            title="Tokens Totales"
+            value={data?.openaiUsage?.total?.tokens > 0 ? data.openaiUsage.total.tokens.toLocaleString() : null}
+            emptyText="Sin datos"
+            icon={<Zap className="w-4 h-4" />}
+          />
+          <MetricCard
+            title="Llamadas Totales"
+            value={data?.openaiUsage?.total?.requests > 0 ? data.openaiUsage.total.requests.toLocaleString() : null}
+            emptyText="Sin datos"
+            icon={<Target className="w-4 h-4" />}
           />
         </div>
       </div>
@@ -333,42 +320,9 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 {(data.openaiUsage.by_model || []).filter((m: any) => m && m.model).map((m: any) => (
                   <tr key={m.model} className="hover:bg-zinc-50/80 transition-colors">
                     <td className="px-6 py-4 font-medium text-zinc-900">{m.model}</td>
-                    <td className="px-6 py-4 text-center">{m.requests || 0}</td>
+                    <td className="px-6 py-4 text-center">{(m.requests || 0).toLocaleString()}</td>
                     <td className="px-6 py-4 text-center">{(m.tokens || 0).toLocaleString()}</td>
                     <td className="px-6 py-4 text-right font-semibold">${(m.cost_usd || 0).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tabla de OpenAI por Proyecto */}
-      {data?.openaiUsage?.by_project && Array.isArray(data.openaiUsage.by_project) && data.openaiUsage.by_project.length > 0 && (
-        <Card className="shadow-none border-zinc-200 rounded-2xl">
-          <CardHeader className="pb-3 border-b border-zinc-50">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5" /> Consumo OpenAI por Proyecto
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <table className="w-full text-xs">
-              <thead className="bg-zinc-50/50 text-zinc-500">
-                <tr>
-                  <th className="px-6 py-3 text-left">Proyecto</th>
-                  <th className="px-6 py-3 text-center">Llamadas</th>
-                  <th className="px-6 py-3 text-center">Tokens</th>
-                  <th className="px-6 py-3 text-right">Costo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {(data.openaiUsage.by_project || []).filter((p: any) => p && p.project_id).map((p: any) => (
-                  <tr key={p.project_id} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-6 py-4 font-medium text-zinc-900">{p.project_name || "Sin nombre"}</td>
-                    <td className="px-6 py-4 text-center">{p.total_requests || 0}</td>
-                    <td className="px-6 py-4 text-center">{(p.total_tokens || 0).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-semibold">${(p.total_cost_usd || 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
