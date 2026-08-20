@@ -189,14 +189,14 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <MetricCard
             title="Gasto Panel (Dashboard)"
-            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : null}
+            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : (data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M tokens` : null)}
             emptyText="Sin uso registrado"
             icon={<Zap className="w-4 h-4" />}
           />
           <MetricCard
             title="Gasto Bot n8n (n8n auto chat)"
             value={(() => {
-              const n8nProject = data?.openaiUsage?.by_project?.find((p: any) => p.project_name?.toLowerCase().includes("n8n") || p.project_name?.toLowerCase().includes("chat"));
+              const n8nProject = data?.openaiUsage?.by_project?.find?.((p: any) => p.project_name?.toLowerCase().includes("n8n") || p.project_name?.toLowerCase().includes("chat"));
               return n8nProject?.total_cost_usd > 0 ? `$${n8nProject.total_cost_usd.toFixed(2)}` : null;
             })()}
             emptyText="Sin uso registrado"
@@ -204,7 +204,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
           />
           <MetricCard
             title="Gasto Total OpenAI"
-            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : null}
+            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : (data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M tokens` : null)}
             emptyText="Sin uso registrado"
             icon={<DollarSign className="w-4 h-4" />}
           />
@@ -302,7 +302,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       </Card>
 
       {/* Tabla de OpenAI por Modelo */}
-      {data?.openaiUsage?.by_model && data.openaiUsage.by_model.length > 0 && (
+      {data?.openaiUsage?.by_model && Array.isArray(data.openaiUsage.by_model) && data.openaiUsage.by_model.length > 0 && (
         <Card className="shadow-none border-zinc-200 rounded-2xl">
           <CardHeader className="pb-3 border-b border-zinc-50">
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
@@ -335,7 +335,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       )}
 
       {/* Tabla de OpenAI por Proyecto */}
-      {data?.openaiUsage?.by_project && data.openaiUsage.by_project.length > 0 && (
+      {data?.openaiUsage?.by_project && Array.isArray(data.openaiUsage.by_project) && data.openaiUsage.by_project.length > 0 && (
         <Card className="shadow-none border-zinc-200 rounded-2xl">
           <CardHeader className="pb-3 border-b border-zinc-50">
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">

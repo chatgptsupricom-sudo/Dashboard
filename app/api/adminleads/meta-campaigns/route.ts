@@ -364,6 +364,8 @@ export async function GET(request: Request) {
           );
           if (usageRes.ok) {
             const usageJson = await usageRes.json();
+            console.log(`[OpenAI] Raw completions response keys:`, Object.keys(usageJson));
+            console.log(`[OpenAI] First bucket sample:`, JSON.stringify(usageJson.data?.[0] || null).substring(0, 500));
             const buckets = usageJson.data || [];
             for (const bucket of buckets) {
               for (const item of bucket.results || []) {
