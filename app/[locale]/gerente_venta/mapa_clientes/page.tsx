@@ -46,15 +46,13 @@ const CID_TO_COUNTRY: Record<number, string> = {
 const MAP_CONFIG: Record<string, any> = {
   VE: {
     name: "venezuela",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson",
+    geoUrl: "/geojson/venezuela.geojson",
     scale: 2800,
     center: [-66.3, 6.6],
   },
   PA: {
     name: "panama",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/panama.geojson",
+    geoUrl: "/geojson/panama.geojson",
     scale: 3000,
     center: [-80.1, 8.6],
   },

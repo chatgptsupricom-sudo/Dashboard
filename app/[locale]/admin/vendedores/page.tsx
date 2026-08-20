@@ -28,22 +28,19 @@ import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 const MAP_CONFIG: Record<string, any> = {
   VE: {
     name: "Venezuela",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson",
+    geoUrl: "/geojson/venezuela.geojson",
     scale: 2800,
     center: [-66.3, 6.6],
   },
   PA: {
     name: "Panamá",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/panama.geojson",
+    geoUrl: "/geojson/panama.geojson",
     scale: 8000,
     center: [-80, 8.5],
   },
   US: {
     name: "EE.UU",
-    geoUrl:
-      "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/usa.geojson",
+    geoUrl: "/geojson/usa.geojson",
     scale: 800,
     center: [-96, 40],
   },

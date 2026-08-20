@@ -7,6 +7,12 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
+const COMPANY_NAMES: Record<number, string> = {
+  7: "Panamá",
+  9: "Valencia",
+  10: "Caracas",
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -20,101 +26,66 @@ export async function GET(request: NextRequest) {
           ? [parseInt(userCidsParam, 10)]
           : [7, 9, 10];
 
-    const moveDomain: any[] = [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
-      ["company_id", "in", companyIds],
-      ["payment_state", "!=", "paid"],
-    ];
-
-    const allInvoices =
-      (await callOdooRPC<any[]>(
-        "account.move",
-        "search_read",
-        [moveDomain],
-        {
-          fields: [
-            "id",
-            "name",
-            "partner_id",
-            "company_id",
-            "move_type",
-            "invoice_date",
-            "invoice_date_due",
-            "payment_state",
-            "amount_untaxed",
-            "amount_total",
-            "amount_residual",
-            "invoice_user_id",
-          ],
-        },
-      )) || [];
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const threeDaysLater = new Date(today);
     threeDaysLater.setDate(threeDaysLater.getDate() + 3);
     threeDaysLater.setHours(23, 59, 59, 999);
 
-    const invoices = allInvoices
-      .filter((inv) => !inv.partner_id?.[1]?.toLowerCase().includes("supricom"))
-      .filter((inv) => {
-        const residual = inv.amount_residual || 0;
-        return residual > 0;
-      })
-      .map((inv) => {
-        const amountTotal =
-          inv.move_type === "out_refund"
-            ? -Math.abs(inv.amount_total || 0)
-            : inv.amount_total || 0;
-        const residual = inv.amount_residual || 0;
-        const dueDateStr = inv.invoice_date_due || null;
-        let agingDays = 0;
+    // Usar digiflex.cxc.report — facturas con saldo pendiente
+    const domain: any[] = [
+      ["company_id", "in", companyIds],
+      ["amount_residual", ">", 0],
+    ];
 
-        if (dueDateStr && residual > 0) {
-          const [y, m, d] = dueDateStr.split(" ")[0].split("-").map(Number);
-          const dueDate = new Date(y, m - 1, d);
-          agingDays = Math.floor(
-            (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
-          );
-        }
+    const records = (await callOdooRPC<any[]>(
+      "digiflex.cxc.report",
+      "search_read",
+      [domain],
+      {
+        fields: [
+          "id", "move_id", "partner_id", "partner_name",
+          "user_id", "user_name", "company_id", "company_name",
+          "invoice_date", "date_maturity", "days_overdue",
+          "amount_residual", "document_number", "transaction_type",
+        ],
+      },
+    )) || [];
+
+    const openInvoices = records
+      .filter((r: any) => !((r.partner_name || "").toLowerCase().includes("supricom")))
+      .map((r: any) => {
+        const residual = Math.abs(r.amount_residual || 0);
+        const dueDateStr = r.date_maturity || null;
+        let agingDays = r.days_overdue || 0;
 
         return {
-          id: inv.id,
-          name: inv.name || "",
-          partnerId: inv.partner_id?.[0] || 0,
-          partnerName: inv.partner_id?.[1] || "Sin cliente",
-          companyId: inv.company_id?.[0] || 0,
-          companyName: inv.company_id?.[1] || "",
-          moveType: inv.move_type,
-          invoiceDate: inv.invoice_date || null,
+          id: r.id,
+          moveId: Array.isArray(r.move_id) ? r.move_id[0] : (typeof r.move_id === "number" ? r.move_id : 0),
+          name: r.document_number || "",
+          partnerId: r.partner_id?.[0] || 0,
+          partnerName: r.partner_name || r.partner_id?.[1] || "Sin cliente",
+          companyId: r.company_id?.[0] || 0,
+          companyName: r.company_name || r.company_id?.[1] || "",
+          invoiceDate: r.invoice_date || null,
           invoiceDateDue: dueDateStr,
-          paymentState: inv.payment_state || "not_paid",
-          amountTotal: amountTotal,
           amountResidual: residual,
-          invoiceUserId: inv.invoice_user_id?.[0] || 0,
-          invoiceUserName: inv.invoice_user_id?.[1] || "Sin asignar",
+          invoiceUserId: r.user_id?.[0] || 0,
+          invoiceUserName: r.user_name || r.user_id?.[1] || "Sin asignar",
           agingDays,
+          transactionType: r.transaction_type || "",
         };
       });
-
-    const openInvoices = invoices;
-
-    const COMPANY_NAMES: Record<number, string> = {
-      7: "Panamá",
-      9: "Valencia",
-      10: "Caracas",
-    };
 
     const facturasPorVencer = openInvoices
       .filter((inv) => {
         if (!inv.invoiceDateDue) return false;
-        const [y, m, d] = inv.invoiceDateDue.split(" ")[0].split("-").map(Number);
+        const [y, m, d] = inv.invoiceDateDue.split("-").map(Number);
         const due = new Date(y, m - 1, d);
         return due >= today && due <= threeDaysLater && inv.agingDays <= 0;
       })
       .map((inv) => {
-        const [y, m, d] = inv.invoiceDateDue!.split(" ")[0].split("-").map(Number);
+        const [y, m, d] = inv.invoiceDateDue!.split("-").map(Number);
         const due = new Date(y, m - 1, d);
         return {
           ...inv,
@@ -126,13 +97,11 @@ export async function GET(request: NextRequest) {
             inv.companyName,
         };
       })
-      .sort(
-        (a, b) => {
-          const [ay, am, ad] = a.invoiceDateDue!.split(" ")[0].split("-").map(Number);
-          const [by, bm, bd] = b.invoiceDateDue!.split(" ")[0].split("-").map(Number);
-          return new Date(ay, am - 1, ad).getTime() - new Date(by, bm - 1, bd).getTime();
-        },
-      );
+      .sort((a, b) => {
+        const [ay, am, ad] = a.invoiceDateDue!.split("-").map(Number);
+        const [by, bm, bd] = b.invoiceDateDue!.split("-").map(Number);
+        return new Date(ay, am - 1, ad).getTime() - new Date(by, bm - 1, bd).getTime();
+      });
 
     const facturasVencidas = openInvoices
       .filter((inv) => inv.agingDays > 0)

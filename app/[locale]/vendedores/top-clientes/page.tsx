@@ -23,7 +23,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
 const MAP_URL =
-  "https://raw.githubusercontent.com/apache/superset/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/venezuela.geojson";
+  "/geojson/venezuela.geojson";
 
 const MAP_CONFIG = { scale: 1150, center: [-66.3, 6.6] };
 

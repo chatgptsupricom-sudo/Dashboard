@@ -4,6 +4,24 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { rolePermissions, UserRole } from "@/lib/types";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+import {
   AlertTriangle,
   Award,
   BarChart3,
@@ -21,6 +39,7 @@ import {
   LayoutDashboard,
   LogOut,
   Map,
+  Megaphone,
   Package,
   PieChart,
   Search,
@@ -38,8 +57,38 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { connectSocket, getSocket } from "@/lib/socket-client";
+
+function SortableItem({ id, isActive, accentColor, bgColor, children }: {
+  id: string;
+  isActive: boolean;
+  accentColor: string;
+  bgColor: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : "auto" as const,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-center gap-1 rounded-xl ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}>
+      <button
+        {...attributes}
+        {...listeners}
+        className="p-1.5 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing flex-shrink-0"
+        tabIndex={-1}
+      >
+        <GripVertical size={14} />
+      </button>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
 
 export function Sidebar({
   open,
@@ -59,6 +108,7 @@ export function Sidebar({
   const [isComprasOpen, setIsComprasOpen] = useState(false);
   const [isVentasOpen, setIsVentasOpen] = useState(false);
   const [isCxCOpen, setIsCxCOpen] = useState(false);
+  const [isMarketingOpen, setIsMarketingOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -75,10 +125,53 @@ export function Sidebar({
     };
   }, [open]);
 
+  const [isEditingSidebar, setIsEditingSidebar] = useState(false);
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  useEffect(() => {
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    fetch(`/api/user/sidebar-order?userId=${uid}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.order?.length > 0) {
+          setSidebarOrder(json.data.order);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    const socket = connectSocket(uid);
+    const handler = (data: { order: string[] }) => setSidebarOrder(data.order);
+    socket.on("sidebar_order_updated", handler);
+    return () => { socket.off("sidebar_order_updated", handler); };
+  }, [user]);
+
   const params = useParams();
   const locale = params?.locale || "es";
   const userName = user?.name || "Usuario";
   const router = useRouter();
+  const navRef = useRef<HTMLElement>(null);
+
+  const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    const atTop = scrollTop === 0 && e.deltaY < 0;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
+    if (!atTop && !atBottom) {
+      e.preventDefault();
+      nav.scrollTop += e.deltaY;
+    }
+  }, []);
 
   // Prevención de renderizado si no hay usuario
   if (!user) return null;
@@ -132,9 +225,9 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
-    { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes", adminLeadsOnly: true },
-    { id: "vista_custom", label: "Plan de Contenido", icon: Globe, slug: "/vista-custom" },
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
   ];
 
@@ -207,6 +300,8 @@ export function Sidebar({
       (item) =>
         allowedSections.includes(item.id) &&
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
+        !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
+        !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
@@ -242,6 +337,40 @@ export function Sidebar({
       };
     });
 
+  const sortedAvailableItems = sidebarOrder.length > 0
+    ? [...availableItems].sort((a, b) => {
+        const aIdx = sidebarOrder.indexOf(a.id);
+        const bIdx = sidebarOrder.indexOf(b.id);
+        const aPos = aIdx >= 0 ? aIdx : availableItems.length;
+        const bPos = bIdx >= 0 ? bIdx : availableItems.length;
+        return aPos - bPos;
+      })
+    : availableItems;
+
+  const saveSidebarOrder = async (newOrder: string[]) => {
+    setSidebarOrder(newOrder);
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    try {
+      await fetch("/api/user/sidebar-order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: uid, order: newOrder }),
+      });
+    } catch (e) {
+      console.error("Error saving sidebar order:", e);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedAvailableItems.findIndex((i) => i.id === active.id);
+    const newIndex = sortedAvailableItems.findIndex((i) => i.id === over.id);
+    const reordered = arrayMove(sortedAvailableItems, oldIndex, newIndex);
+    saveSidebarOrder(reordered.map((i) => i.id));
+  };
+
   const roleAccentColors = {
     superAdmin: "text-blue-400 border-blue-500 bg-blue-500",
     seller: "text-red-400 border-red-500 bg-red-500",
@@ -268,6 +397,7 @@ export function Sidebar({
           exit={{ x: -280 }}
           transition={{ type: "spring", damping: 20, stiffness: 100 }}
           className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-hidden"
+          onWheel={handleSidebarWheel}
         >
           {/* Header */}
           <div className="p-6 flex items-center justify-between flex-shrink-0">
@@ -283,49 +413,66 @@ export function Sidebar({
                 SUPRICOM
               </h2>
             </div>
-            <button
-              onClick={onToggle}
-              className="md:hidden p-2.5 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors"
-              aria-label="Cerrar menú"
-            >
-              <X size={22} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsEditingSidebar(!isEditingSidebar)}
+                className={`p-2 rounded-xl transition-colors ${isEditingSidebar ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                title={isEditingSidebar ? "Guardar orden" : "Editar orden del menú"}
+              >
+                <GripVertical size={18} />
+              </button>
+              <button
+                onClick={onToggle}
+                className="md:hidden p-2.5 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors"
+                aria-label="Cerrar menú"
+              >
+                <X size={22} />
+              </button>
+            </div>
           </div>
 
           {/* Menú de Navegación */}
-          <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
+          <nav ref={navRef} className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto overscroll-contain">
             {/* Renderizado de Opciones Simples */}
-            {availableItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
-
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  onClick={() => {
-                    if (window.matchMedia("(max-width: 767px)").matches)
-                      onToggle();
-                  }}
-                >
-                  <div
-                    className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative ${isActive ? `bg-white/5 ${accentColor} font-semibold` : "hover:bg-slate-800/50 hover:text-white"}`}
+            {isEditingSidebar ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={sortedAvailableItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                  {sortedAvailableItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
+                    return (
+                      <SortableItem key={item.id} id={item.id} isActive={isActive} accentColor={accentColor} bgColor={bgColor}>
+                        <Link href={item.href} onClick={() => { if (window.matchMedia("(max-width: 767px)").matches) onToggle(); }}>
+                          <div className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative ${isActive ? `bg-white/5 ${accentColor} font-semibold` : "hover:bg-slate-800/50 hover:text-white"}`}>
+                            {isActive && <motion.div layoutId="active-pill" className={`absolute left-0 w-1 h-6 ${bgColor} rounded-r-full`} />}
+                            <Icon size={20} className={isActive ? accentColor : "text-slate-400"} />
+                            <span className="text-sm">{item.label}</span>
+                          </div>
+                        </Link>
+                      </SortableItem>
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              sortedAvailableItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    onClick={() => { if (window.matchMedia("(max-width: 767px)").matches) onToggle(); }}
                   >
-                    {isActive && (
-                      <motion.div
-                        layoutId="active-pill"
-                        className={`absolute left-0 w-1 h-6 ${bgColor} rounded-r-full`}
-                      />
-                    )}
-                    <Icon
-                      size={20}
-                      className={isActive ? accentColor : "text-slate-400"}
-                    />
-                    <span className="text-sm">{item.label}</span>
-                  </div>
-                </Link>
-              );
-            })}
+                    <div className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative ${isActive ? `bg-white/5 ${accentColor} font-semibold` : "hover:bg-slate-800/50 hover:text-white"}`}>
+                      {isActive && <motion.div layoutId="active-pill" className={`absolute left-0 w-1 h-6 ${bgColor} rounded-r-full`} />}
+                      <Icon size={20} className={isActive ? accentColor : "text-slate-400"} />
+                      <span className="text-sm">{item.label}</span>
+                    </div>
+                  </Link>
+                );
+              })
+            )}
 
             {/* NUEVO: Submenú Desplegable de LEADS */}
             {hasAdminLeadsPermission && userRole !== "adminLeads" && (
@@ -768,6 +915,58 @@ export function Sidebar({
                                 window.matchMedia("(max-width: 767px)").matches
                               )
                                 onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsMarketingOpen(!isMarketingOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone size={20} className="text-slate-400" />
+                    <span className="text-sm">Marketing</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isMarketingOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isMarketingOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
                             }}
                           >
                             <div

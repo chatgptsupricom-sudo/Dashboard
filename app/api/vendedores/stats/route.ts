@@ -594,6 +594,9 @@ export async function GET(request: Request) {
         )
         .reduce((a, b) => a + signedAmount(b), 0);
     } else {
+      // Comparar mismo día: mes actual (1 até hoy) vs mes anterior (1 até mismo día)
+      const diaActual = hoy.getDate();
+      const mesAnteriorMismoDia = new Date(hoy.getFullYear(), hoy.getMonth() - 1, diaActual);
       vActual = misFacturasC
         .filter(
           (f) => f.invoice_date >= mesActualInicio.toISOString().split("T")[0],
@@ -603,13 +606,16 @@ export async function GET(request: Request) {
         .filter(
           (f) =>
             f.invoice_date >= mesPasadoInicio.toISOString().split("T")[0] &&
-            f.invoice_date < mesActualInicio.toISOString().split("T")[0],
+            f.invoice_date <= mesAnteriorMismoDia.toISOString().split("T")[0],
         )
         .reduce((a, b) => a + signedAmount(b), 0);
+      console.log(`[CRECIMIENTO] Usuario: ${userName} | Periodo: ${mesActualInicio.toISOString().split("T")[0]} → hoy (${hoy.toISOString().split("T")[0]}) = $${vActual.toFixed(2)} | vs ${mesPasadoInicio.toISOString().split("T")[0]} → ${mesAnteriorMismoDia.toISOString().split("T")[0]} = $${vAnterior.toFixed(2)}`);
     }
 
     const crecimiento =
       vAnterior > 0 ? ((vActual - vAnterior) / vAnterior) * 100 : 0;
+
+    console.log(`[CRECIMIENTO] Resultado: ${crecimiento.toFixed(1)}%`);
 
     // Leads cerrados desde la DB de leads (independiente de Odoo)
     let closedLeadsDB = 0;

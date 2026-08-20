@@ -13,10 +13,6 @@ const COMPANY_NAMES: Record<number, string> = {
   10: "Caracas",
 };
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -41,17 +37,15 @@ export async function GET(request: NextRequest) {
           : [7, 9, 10];
 
     const domain: any[] = [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
       ["company_id", "in", companyIds],
+      "|", "|",
+      ["partner_name", "ilike", q],
+      ["user_name", "ilike", q],
+      ["document_number", "ilike", q],
     ];
 
-    if (q) {
-      domain.push("|", "|", ["name", "ilike", q], ["partner_id.name", "ilike", q], ["invoice_user_id.name", "ilike", q]);
-    }
-
     const countResult = await callOdooRPC<any>(
-      "account.move",
+      "digiflex.cxc.report",
       "search_count",
       [domain],
     );
@@ -59,97 +53,78 @@ export async function GET(request: NextRequest) {
 
     const offset = (page - 1) * limit;
 
-    const invoices =
-      (await callOdooRPC<any[]>(
-        "account.move",
-        "search_read",
-        [domain],
-        {
-          fields: [
-            "id",
-            "name",
-            "partner_id",
-            "company_id",
-            "move_type",
-            "invoice_date",
-            "invoice_date_due",
-            "payment_state",
-            "amount_untaxed",
-            "amount_tax",
-            "amount_total",
-            "amount_residual",
-            "invoice_user_id",
-            "invoice_origin",
-          ],
-          limit,
-          offset,
-          order: "invoice_date_due asc",
-        },
-      )) || [];
+    const records = (await callOdooRPC<any[]>(
+      "digiflex.cxc.report",
+      "search_read",
+      [domain],
+      {
+        fields: [
+          "id", "move_id", "partner_id", "partner_name",
+          "user_id", "user_name", "company_id", "company_name",
+          "invoice_date", "date_maturity", "days_overdue",
+          "amount_residual", "document_number", "transaction_type",
+        ],
+        limit,
+        offset,
+        order: "date_maturity asc",
+      },
+    )) || [];
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    function getAgingBand(r: any): string {
+      if (!r.amount_residual || r.amount_residual <= 0) return "corriente";
+      if (r.days_overdue <= 0) return "corriente";
+      if (r.days_overdue <= 30) return "1-30";
+      if (r.days_overdue <= 60) return "31-60";
+      if (r.days_overdue <= 90) return "61-90";
+      return "91+";
+    }
 
-    const results = invoices.map((inv) => {
-      const amount =
-        inv.move_type === "out_refund"
-          ? -Math.abs(inv.amount_untaxed || 0)
-          : inv.amount_untaxed || 0;
-      const amountTotal =
-        inv.move_type === "out_refund"
-          ? -Math.abs(inv.amount_total || 0)
-          : inv.amount_total || 0;
-      const residual = inv.amount_residual || 0;
-
-      function parseLocalDate(dateStr: string | null): Date | null {
-        if (!dateStr) return null;
-        const [y, m, d] = dateStr.split(" ")[0].split("-").map(Number);
-        return new Date(y, m - 1, d);
-      }
-
-      const dueDate = parseLocalDate(inv.invoice_date_due);
-
-      let agingDays = 0;
-      if (dueDate && residual > 0) {
-        agingDays = daysBetween(dueDate, today);
-      }
-
-      let agingBand = "corriente";
-      if (residual > 0 && dueDate) {
-        if (agingDays <= 0) agingBand = "corriente";
-        else if (agingDays <= 15) agingBand = "1-15";
-        else if (agingDays <= 30) agingBand = "16-30";
-        else if (agingDays <= 60) agingBand = "31-60";
-        else if (agingDays <= 90) agingBand = "61-90";
-        else agingBand = "90+";
-      }
-
-      const companyId = inv.company_id?.[0] || 0;
-
+    const results = records.map((r: any) => {
+      const companyId = r.company_id?.[0] || 0;
       return {
-        id: inv.id,
-        name: inv.name || "",
-        partnerId: inv.partner_id?.[0] || 0,
-        partnerName: inv.partner_id?.[1] || "Sin cliente",
+        id: r.id,
+        moveId: Array.isArray(r.move_id) ? r.move_id[0] : (typeof r.move_id === "number" ? r.move_id : 0),
+        name: r.document_number || "",
+        partnerId: r.partner_id?.[0] || 0,
+        partnerName: r.partner_name || r.partner_id?.[1] || "Sin cliente",
         companyId,
         companyName:
           COMPANY_NAMES[companyId as keyof typeof COMPANY_NAMES] ||
-          inv.company_id?.[1] ||
+          r.company_name ||
           "",
-        moveType: inv.move_type,
-        invoiceDate: inv.invoice_date || null,
-        invoiceDateDue: inv.invoice_date_due || null,
-        paymentState: inv.payment_state || "not_paid",
-        amountUntaxed: Math.round(amount * 100) / 100,
-        amountTotal: Math.round(amountTotal * 100) / 100,
-        amountResidual: Math.round(residual * 100) / 100,
-        invoiceUserId: inv.invoice_user_id?.[0] || 0,
-        invoiceUserName: inv.invoice_user_id?.[1] || "Sin asignar",
-        invoiceOrigin: inv.invoice_origin || "",
-        agingDays,
-        agingBand,
+        invoiceDate: r.invoice_date || null,
+        invoiceDateDue: r.date_maturity || null,
+        amountResidual: Math.round(Math.abs(r.amount_residual || 0) * 100) / 100,
+        invoiceUserId: r.user_id?.[0] || 0,
+        invoiceUserName: r.user_name || r.user_id?.[1] || "Sin asignar",
+        agingDays: r.days_overdue || 0,
+        agingBand: getAgingBand(r),
+        transactionType: r.transaction_type || "",
       };
     });
+
+    // Fetch amount_total from account.move for each unique moveId
+    const moveIds = [...new Set(results.map((r) => r.moveId).filter((id) => id > 0))];
+    if (moveIds.length > 0) {
+      try {
+        const moves = await callOdooRPC<any[]>(
+          "account.move", "search_read",
+          [[["id", "in", moveIds]]],
+          { fields: ["id", "amount_total"], limit: moveIds.length },
+        );
+        const moveTotals: Record<number, number> = {};
+        (moves || []).forEach((m: any) => { moveTotals[m.id] = Math.abs(m.amount_total || 0); });
+        results.forEach((r) => {
+          r.amountTotal = r.moveId && moveTotals[r.moveId]
+            ? Math.round(moveTotals[r.moveId] * 100) / 100
+            : 0;
+        });
+      } catch {
+        results.forEach((r) => { r.amountTotal = 0; });
+      }
+    } else {
+      results.forEach((r) => { r.amountTotal = 0; });
+    }
 
     return NextResponse.json({
       success: true,
@@ -158,7 +133,7 @@ export async function GET(request: NextRequest) {
         count: totalCount,
         page,
         totalPages: Math.ceil(totalCount / limit),
-        total: results.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0),
+        total: results.reduce((sum, inv) => sum + inv.amountResidual, 0),
       },
     });
   } catch (error: any) {
