@@ -354,9 +354,25 @@ export async function GET(request: Request) {
         const end = fechaFin || new Date().toISOString().slice(0, 10);
         // Get completions usage (max 31 days per request with bucket_width=1d)
         let allUsage: any[] = [];
+        let byProject: any[] = [];
+
         try {
           const startTs = Math.floor(new Date(start).getTime() / 1000);
           const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
+
+          // Step 1: List projects from admin API
+          let projects: any[] = [];
+          try {
+            const projRes = await fetch(`${baseUrl}/projects`, { headers });
+            if (projRes.ok) {
+              const projJson = await projRes.json();
+              projects = projJson.data || [];
+            }
+          } catch (e) {
+            console.log("[OpenAI] Could not list projects:", e);
+          }
+
+          // Step 2: Get org-level completions usage
           const usageRes = await fetch(
             `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
             { headers },
@@ -381,7 +397,6 @@ export async function GET(request: Request) {
               for (const item of bucket.results || []) {
                 const inputTokens = item.input_tokens || 0;
                 const outputTokens = item.output_tokens || 0;
-                // OpenAI usage API returns model as null for org-level, default to gpt-4o
                 const model = item.model || (item.service_tier === "flex" ? "gpt-4o (flex)" : "gpt-4o");
                 const pricing = PRICING[item.model] || { input: 2.50, output: 10.00 };
                 const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
@@ -394,104 +409,53 @@ export async function GET(request: Request) {
                 });
               }
             }
-          } else {
-            const errText = await usageRes.text().catch(() => "");
-            console.log(`[OpenAI] completions usage returned ${usageRes.status}: ${errText.substring(0, 200)}`);
+          }
+
+          // Step 3: Get per-project costs using costs endpoint
+          try {
+            const startTsCost = Math.floor(new Date(start).getTime() / 1000);
+            const endTsCost = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
+            const costsRes = await fetch(
+              `${baseUrl}/costs?start_time=${startTsCost}&end_time=${endTsCost}&limit=180`,
+              { headers },
+            );
+            if (costsRes.ok) {
+              const costsJson = await costsRes.json();
+              const costBuckets = costsJson.data || [];
+
+              // Group costs by project_id
+              const projectCostMap = new Map<string, number>();
+              let orgTotalCost = 0;
+              for (const bucket of costBuckets) {
+                for (const item of bucket.results || []) {
+                  const cost = item.amount?.value || 0;
+                  orgTotalCost += cost;
+                  const projId = item.project_id || "org";
+                  projectCostMap.set(projId, (projectCostMap.get(projId) || 0) + cost);
+                }
+              }
+
+              // Map project_id to project_name using admin API projects list
+              if (projects.length > 0) {
+                byProject = projects.map((p: any) => ({
+                  project_id: p.id,
+                  project_name: p.name,
+                  total_cost_usd: Math.round((projectCostMap.get(p.id) || 0) * 10000) / 10000,
+                }));
+              } else if (orgTotalCost > 0) {
+                byProject = [{
+                  project_id: "org",
+                  project_name: "Organización",
+                  total_cost_usd: Math.round(orgTotalCost * 10000) / 10000,
+                }];
+              }
+            }
+          } catch (e) {
+            console.error("[OpenAI] Error fetching costs:", e);
           }
         } catch (e) {
           console.error("[OpenAI] Error fetching completions usage:", e);
         }
-
-        // Get embeddings usage
-        try {
-          const startTs = Math.floor(new Date(start).getTime() / 1000);
-          const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
-          const embRes = await fetch(
-            `${baseUrl}/usage/embeddings?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
-            { headers },
-          );
-
-          if (embRes.ok) {
-            const embJson = await embRes.json();
-            const buckets = embJson.data || [];
-            for (const bucket of buckets) {
-              for (const item of bucket.results || []) {
-                const model = item.model || "text-embedding-3-small";
-                const inputTokens = item.input_tokens || 0;
-                const embeddingPricing: Record<string, number> = {
-                  "text-embedding-3-small": 0.02,
-                  "text-embedding-3-large": 0.13,
-                  "text-embedding-ada-002": 0.10,
-                };
-                const pricePerM = embeddingPricing[model] || 0.02;
-                const cost = (inputTokens * pricePerM) / 1_000_000;
-
-                allUsage.push({
-                  model,
-                  cost_usd: cost,
-                  tokens: inputTokens,
-                  requests: item.num_model_requests || 0,
-                });
-              }
-            }
-          }
-        } catch (e) {
-          console.error("[OpenAI] Error fetching embeddings usage:", e);
-        }
-        // Get costs for project breakdown
-        let byProject: any[] = [];
-        try {
-          const startTs = Math.floor(new Date(start).getTime() / 1000);
-          const endTs = Math.floor(new Date(end + "T23:59:59").getTime() / 1000);
-          const costsRes = await fetch(
-            `${baseUrl}/costs?start_time=${startTs}&end_time=${endTs}&limit=180`,
-            { headers },
-          );
-          if (costsRes.ok) {
-            const costsJson = await costsRes.json();
-            const costBuckets = costsJson.data || [];
-            let orgCost = 0;
-            for (const bucket of costBuckets) {
-              for (const item of bucket.results || []) {
-                orgCost += item.amount?.value || item.cost_usd || 0;
-              }
-            }
-
-            // Try to get project-level costs using admin API
-            let projects: any[] = [];
-            try {
-              const projRes = await fetch(`${baseUrl}/projects`, { headers });
-              if (projRes.ok) {
-                const projJson = await projRes.json();
-                projects = projJson.data || [];
-              }
-            } catch (e) {
-              console.log("[OpenAI] Could not list projects:", e);
-            }
-
-            if (projects.length > 0 && orgCost > 0) {
-              // Distribute cost evenly across projects as approximation
-              const costPerProject = orgCost / projects.length;
-              byProject = projects.map((p: any) => ({
-                project_id: p.id,
-                project_name: p.name,
-                total_cost_usd: Math.round(costPerProject * 10000) / 10000,
-              }));
-            } else {
-              byProject = [{
-                project_id: "org",
-                project_name: "Organización (OSC)",
-                total_cost_usd: Math.round(orgCost * 10000) / 10000,
-              }];
-            }
-          } else {
-            const errText = await costsRes.text().catch(() => "");
-            console.log(`[OpenAI] costs returned ${costsRes.status}: ${errText.substring(0, 200)}`);
-          }
-        } catch (e) {
-          console.error("[OpenAI] Error fetching costs:", e);
-        }
-
         // Aggregate by model
         const modelMap = new Map();
         for (const u of allUsage) {
