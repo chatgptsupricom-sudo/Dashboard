@@ -39,6 +39,8 @@ const CHECKS_SCRIPT = `<script>
   var KEY='supricom_checks_al';
   var isRestoring=false;
   var _unloading=false;
+  var lastLocalActionAt=0;
+  var REMOTE_GRACE_MS=2000;
   window.addEventListener('beforeunload',function(){_unloading=true;});
 
   // Llave posicional (legacy): se rompe si el elemento cambia de indice
@@ -136,26 +138,39 @@ const CHECKS_SCRIPT = `<script>
     setTimeout(function(){isRestoring=false;},150);
   }
 
+  // Ignora restauraciones remotas (broadcast/postMessage) si hubo una accion
+  // local hace muy poco: evita que un broadcast en camino, que todavia
+  // refleja el estado justo ANTES del click/drag del usuario, le pise el
+  // cambio que acaba de hacer (check que "no se desmarca", pieza que
+  // "vuelve sola" a donde estaba antes de devolverla a su dia original).
+  function restoreIfNotRecent(checks){
+    if(Date.now()-lastLocalActionAt<REMOTE_GRACE_MS)return;
+    restore(checks||{});
+  }
+
   window.addEventListener('message',function(e){
     if(!e.data||e.data.type!=='SUPRICOM_CHECK_RESTORE')return;
-    restore(e.data.checks||{});
+    restoreIfNotRecent(e.data.checks);
   });
 
   var _orig=window.toggleCheck;
   window.toggleCheck=function(el,e){
+    lastLocalActionAt=Date.now();
     if(_orig)_orig.call(this,el,e);
     setTimeout(save,20);
   };
 
   // Guarda ante CUALQUIER cambio de estado "checked", venga de donde venga:
   // click individual, boton "HECHO" por semana (checkAllWeek/checkAllEmailWeek,
-  // que marcan varias piezas directamente sin pasar por toggleCheck), o
-  // cualquier otra interaccion futura que el HTML agregue. El toggleCheck
-  // de arriba queda como respaldo para que el guardado sea instantaneo en
-  // el click individual; esto cubre todo lo demas.
+  // que marcan varias piezas directamente sin pasar por toggleCheck), drag&drop
+  // entre dias, o cualquier otra interaccion futura que el HTML agregue. El
+  // toggleCheck de arriba queda como respaldo para que el guardado sea
+  // instantaneo en el click individual; esto cubre todo lo demas y ademas
+  // marca "hubo actividad local" para el guard de arriba.
   var saveDebounce=null;
   var observer=new MutationObserver(function(){
     if(isRestoring)return;
+    lastLocalActionAt=Date.now();
     clearTimeout(saveDebounce);
     saveDebounce=setTimeout(save,400);
   });
@@ -176,7 +191,7 @@ const CHECKS_SCRIPT = `<script>
           try{
             var socket=io(socketUrl,{transports:['websocket']});
             socket.on('vista-checks-updated',function(payload){
-              if(payload&&payload.checks)restore(payload.checks);
+              if(payload&&payload.checks)restoreIfNotRecent(payload.checks);
             });
           }catch(e){}
         };
