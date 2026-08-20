@@ -352,7 +352,6 @@ export async function GET(request: Request) {
         const baseUrl = "https://api.openai.com/v1/organization";
         const start = fechaInicio || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
         const end = fechaFin || new Date().toISOString().slice(0, 10);
-
         // Get completions usage (max 31 days per request with bucket_width=1d)
         let allUsage: any[] = [];
         try {
@@ -362,18 +361,35 @@ export async function GET(request: Request) {
             `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
             { headers },
           );
+
           if (usageRes.ok) {
             const usageJson = await usageRes.json();
-            console.log(`[OpenAI] Raw completions response keys:`, Object.keys(usageJson));
-            console.log(`[OpenAI] First bucket sample:`, JSON.stringify(usageJson.data?.[0] || null).substring(0, 500));
             const buckets = usageJson.data || [];
+
+            // OpenAI pricing per 1M tokens (input/output)
+            const PRICING: Record<string, { input: number; output: number }> = {
+              "gpt-4o": { input: 2.50, output: 10.00 },
+              "gpt-4o-mini": { input: 0.15, output: 0.60 },
+              "o3-mini": { input: 1.10, output: 4.40 },
+              "o3": { input: 10.00, output: 40.00 },
+              "o4-mini": { input: 1.10, output: 4.40 },
+              "gpt-4-turbo": { input: 10.00, output: 30.00 },
+              "gpt-3.5-turbo": { input: 0.50, output: 1.50 },
+            };
+
             for (const bucket of buckets) {
               for (const item of bucket.results || []) {
+                const model = item.model || "unknown";
+                const inputTokens = item.input_tokens || 0;
+                const outputTokens = item.output_tokens || 0;
+                const pricing = PRICING[model] || { input: 2.50, output: 10.00 };
+                const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+
                 allUsage.push({
-                  model: item.model || "unknown",
-                  cost_usd: item.cost_usd || 0,
-                  tokens: (item.input_tokens || 0) + (item.output_tokens || 0),
-                  requests: item.num_requests || 0,
+                  model,
+                  cost_usd: cost,
+                  tokens: inputTokens + outputTokens,
+                  requests: item.num_model_requests || 0,
                 });
               }
             }
@@ -393,16 +409,27 @@ export async function GET(request: Request) {
             `${baseUrl}/usage/embeddings?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
             { headers },
           );
+
           if (embRes.ok) {
             const embJson = await embRes.json();
             const buckets = embJson.data || [];
             for (const bucket of buckets) {
               for (const item of bucket.results || []) {
+                const model = item.model || "text-embedding-3-small";
+                const inputTokens = item.input_tokens || 0;
+                const embeddingPricing: Record<string, number> = {
+                  "text-embedding-3-small": 0.02,
+                  "text-embedding-3-large": 0.13,
+                  "text-embedding-ada-002": 0.10,
+                };
+                const pricePerM = embeddingPricing[model] || 0.02;
+                const cost = (inputTokens * pricePerM) / 1_000_000;
+
                 allUsage.push({
-                  model: item.model || "unknown",
-                  cost_usd: item.cost_usd || 0,
-                  tokens: (item.input_tokens || 0) + (item.output_tokens || 0),
-                  requests: item.num_requests || 0,
+                  model,
+                  cost_usd: cost,
+                  tokens: inputTokens,
+                  requests: item.num_model_requests || 0,
                 });
               }
             }
@@ -410,7 +437,6 @@ export async function GET(request: Request) {
         } catch (e) {
           console.error("[OpenAI] Error fetching embeddings usage:", e);
         }
-
         // Get costs for project breakdown
         let byProject: any[] = [];
         try {
