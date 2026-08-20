@@ -394,15 +394,9 @@ export async function GET(request: Request) {
             let projectRequests = 0;
 
             try {
-              // Use OpenAI-Project header to filter by project
-              const projectHeaders = {
-                ...headers,
-                "OpenAI-Project": project.id,
-              };
-
               const usageRes = await fetch(
-                `${baseUrl}/usage/completions?bucket_width=1d&start_time=${startTs}&end_time=${endTs}&limit=31`,
-                { headers: projectHeaders },
+                `${baseUrl}/projects/${project.id}/usage/completions?start_time=${startTs}&end_time=${endTs}&limit=31`,
+                { headers },
               );
 
               if (usageRes.ok) {

@@ -2,7 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Bot,
   DollarSign,
   Eye,
   Loader2,
@@ -342,38 +341,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         </CardContent>
       </Card>
 
-      {/* Tabla de OpenAI por Modelo */}
-      {data?.openaiUsage?.by_model && Array.isArray(data.openaiUsage.by_model) && data.openaiUsage.by_model.length > 0 && (
-        <Card className="shadow-none border-zinc-200 rounded-2xl">
-          <CardHeader className="pb-3 border-b border-zinc-50">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-              <Bot className="w-3.5 h-3.5" /> Consumo OpenAI por Modelo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <table className="w-full text-xs">
-              <thead className="bg-zinc-50/50 text-zinc-500">
-                <tr>
-                  <th className="px-6 py-3 text-left">Modelo</th>
-                  <th className="px-6 py-3 text-center">Llamadas</th>
-                  <th className="px-6 py-3 text-center">Tokens</th>
-                  <th className="px-6 py-3 text-right">Costo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {(data.openaiUsage.by_model || []).filter((m: any) => m && m.model).map((m: any) => (
-                  <tr key={m.model} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-6 py-4 font-medium text-zinc-900">{m.model}</td>
-                    <td className="px-6 py-4 text-center">{(m.requests || 0).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-center">{(m.tokens || 0).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-semibold">${(m.cost_usd || 0).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
