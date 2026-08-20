@@ -424,7 +424,7 @@ function ClientDetail({ partnerId, partnerName }: { partnerId: number; partnerNa
                       </DialogDescription>
                     </DialogHeader>
                     <div className="mt-2 max-h-[70vh] overflow-y-auto pr-2">
-                      <InvoiceDetailView invoiceId={inv.id} />
+                      <InvoiceDetailView invoiceId={inv.moveId || inv.id} />
                     </div>
                   </DialogContent>
                 </Dialog>
