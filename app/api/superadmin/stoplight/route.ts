@@ -592,7 +592,8 @@ export async function GET(request: NextRequest) {
       for (const seller of sellers) {
         if (!seller.user_id) continue;
         const norm = normalize(seller.name);
-        if (!sellerAllClients[norm]) continue;
+        const matchedSellerName = normalizedSellerMap[norm];
+        if (!matchedSellerName || !sellerAllClients[matchedSellerName]) continue;
 
         const clients = (await callOdooRPC<any[]>(
           "res.partner",
@@ -607,7 +608,7 @@ export async function GET(request: NextRequest) {
           { fields: ["id"], limit: 10000 }
         )) || [];
 
-        clients.forEach((c: any) => sellerAllClients[norm].add(c.id));
+        clients.forEach((c: any) => sellerAllClients[matchedSellerName].add(c.id));
       }
 
       const invActivacionMap: Record<number, { sellerName: string; partnerId: number; date: Date }> = {};
