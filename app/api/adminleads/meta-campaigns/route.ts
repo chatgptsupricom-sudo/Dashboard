@@ -179,7 +179,6 @@ export async function GET(request: Request) {
       aiQuery += ` GROUP BY source, model`;
 
       const result: any = await query(aiQuery, aiParams);
-      );
       aiUsageData = result.rows || [];
     } catch {
       console.warn("Tabla ai_usage_logs no disponible aún");
