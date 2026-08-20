@@ -5,6 +5,38 @@ import { Progress } from "@/components/ui/progress";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BarChart3, Calendar, DollarSign, Medal, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+const FERIADOS_FE: Record<number, string[]> = {
+  2024: ["2024-01-01","2024-01-12","2024-02-12","2024-02-13","2024-03-28","2024-03-29","2024-04-19","2024-05-01","2024-06-24","2024-07-05","2024-07-29","2024-10-12","2024-11-25","2024-12-24","2024-12-25","2024-12-31"],
+  2025: ["2025-01-01","2025-01-13","2025-02-17","2025-02-18","2025-04-17","2025-04-18","2025-04-19","2025-05-01","2025-06-24","2025-07-05","2025-07-28","2025-10-12","2025-12-24","2025-12-25","2025-12-31"],
+  2026: ["2026-01-01","2026-01-12","2026-02-09","2026-02-10","2026-04-02","2026-04-03","2026-04-19","2026-05-01","2026-06-24","2026-07-05","2026-07-29","2026-10-12","2026-12-24","2026-12-25","2026-12-31"],
+};
+function contarDiasUtilesFe(inicio: Date, fin: Date): number {
+  let count = 0;
+  const cur = new Date(inicio);
+  while (cur <= fin) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) {
+      const str = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      if (!(FERIADOS_FE[cur.getFullYear()] || []).includes(str)) count++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+function calcMetricasFe(meta: number, facturado: number) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const total = contarDiasUtilesFe(first, last);
+  const trans = contarDiasUtilesFe(first, now);
+  const rest = Math.max(0, total - trans);
+  const falta = Math.max(0, meta - facturado);
+  const ventaDiaria = rest > 0 ? parseFloat((falta / rest).toFixed(2)) : 0;
+  const meta150 = meta * 1.5;
+  const faltaPara150 = parseFloat(Math.max(0, meta150 - facturado).toFixed(2));
+  return { diasHabilesRestantes: rest, ventaDiariaNecesaria: ventaDiaria, meta150, faltaPara150 };
+}
 import {
   Bar,
   BarChart,
@@ -284,28 +316,33 @@ export default function VendedoresPage() {
                   </span>
                 </div>
               </div>
-              {cuota.falta > 0 && cuota.diasHabilesRestantes > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Calendar size={14} className="text-blue-600" />
-                    <span className="text-xs font-bold text-blue-800">Días hábiles restantes: {cuota.diasHabilesRestantes}</span>
-                  </div>
-                  <p className="text-xs text-blue-700">
-                    Debes vender <span className="font-bold">${cuota.ventaDiariaNecesaria.toLocaleString()}</span> por día para cumplir la cuota
-                  </p>
-                </div>
-              )}
-              {cuota.meta > 0 && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 sm:p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <TrendingUp size={14} className="text-purple-600" />
-                    <span className="text-xs font-bold text-purple-800">Para llegar al 150%</span>
-                  </div>
-                  <p className="text-xs text-purple-700">
-                    Faltan <span className="font-bold">${cuota.faltaPara150.toLocaleString()}</span> para alcanzar ${(cuota.meta150 || cuota.meta * 1.5).toLocaleString()} (150% de la cuota)
-                  </p>
-                </div>
-              )}
+              {cuota.falta > 0 && (() => {
+                const m = calcMetricasFe(cuota.meta || 0, cuota.facturado || 0);
+                return (
+                  <>
+                    {m.diasHabilesRestantes > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Calendar size={14} className="text-blue-600" />
+                          <span className="text-xs font-bold text-blue-800">Días hábiles restantes: {m.diasHabilesRestantes}</span>
+                        </div>
+                        <p className="text-xs text-blue-700">
+                          Debes vender <span className="font-bold">${m.ventaDiariaNecesaria.toLocaleString()}</span> por día para cumplir la cuota
+                        </p>
+                      </div>
+                    )}
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 sm:p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp size={14} className="text-purple-600" />
+                        <span className="text-xs font-bold text-purple-800">Para llegar al 150%</span>
+                      </div>
+                      <p className="text-xs text-purple-700">
+                        Faltan <span className="font-bold">${m.faltaPara150.toLocaleString()}</span> para alcanzar ${m.meta150.toLocaleString()} (150% de la cuota)
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
               {cuota.falta > 0 ? (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 sm:p-3 text-center">
                   <p className="text-xs sm:text-sm font-bold text-red-700">

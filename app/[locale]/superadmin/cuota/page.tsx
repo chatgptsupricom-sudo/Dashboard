@@ -15,6 +15,41 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Building2, Edit3, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 
+const FERIADOS_2026: Record<number, string[]> = {
+  2024: ["2024-01-01","2024-01-12","2024-02-12","2024-02-13","2024-03-28","2024-03-29","2024-04-19","2024-05-01","2024-06-24","2024-07-05","2024-07-29","2024-10-12","2024-11-25","2024-12-24","2024-12-25","2024-12-31"],
+  2025: ["2025-01-01","2025-01-13","2025-02-17","2025-02-18","2025-04-17","2025-04-18","2025-04-19","2025-05-01","2025-06-24","2025-07-05","2025-07-28","2025-10-12","2025-12-24","2025-12-25","2025-12-31"],
+  2026: ["2026-01-01","2026-01-12","2026-02-09","2026-02-10","2026-04-02","2026-04-03","2026-04-19","2026-05-01","2026-06-24","2026-07-05","2026-07-29","2026-10-12","2026-12-24","2026-12-25","2026-12-31"],
+};
+
+function contarDiasUtiles(inicio: Date, fin: Date): number {
+  let count = 0;
+  const cur = new Date(inicio);
+  while (cur <= fin) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) {
+      const str = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      const feriados = FERIADOS_2026[cur.getFullYear()] || [];
+      if (!feriados.includes(str)) count++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+function calcularMetricas(meta: number, facturado: number) {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const totalUtiles = contarDiasUtiles(firstDay, lastDay);
+  const transcurridos = contarDiasUtiles(firstDay, now);
+  const restantes = Math.max(0, totalUtiles - transcurridos);
+  const falta = Math.max(0, meta - facturado);
+  const ventaDiaria = restantes > 0 ? parseFloat((falta / restantes).toFixed(2)) : 0;
+  const meta150 = meta * 1.5;
+  const faltaPara150 = parseFloat(Math.max(0, meta150 - facturado).toFixed(2));
+  return { diasHabilesRestantes: restantes, ventaDiariaNecesaria: ventaDiaria, meta150, faltaPara150 };
+}
+
 export default function SuperAdminCuotaPage() {
   const [sucursales, setSucursales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,6 +155,7 @@ function SellerQuotaCard({
   onEdit: () => void;
 }) {
   const isTargetMet = seller.porcentaje >= 100;
+  const metricas = calcularMetricas(seller.meta, seller.facturado);
   return (
     <Card className="rounded-3xl border-zinc-100 shadow-sm hover:shadow-xl transition-all duration-300">
       <CardHeader className="pb-2">
@@ -169,13 +205,13 @@ function SellerQuotaCard({
               : `Faltan $${seller.falta.toLocaleString()}`}
           </span>
         </div>
-        {!isTargetMet && seller.diasHabilesRestantes > 0 && (
+        {!isTargetMet && metricas.diasHabilesRestantes > 0 && (
           <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl space-y-1">
             <p className="text-[10px] text-blue-500 font-bold uppercase">
               Ritmo necesario
             </p>
             <p className="text-xs text-blue-700">
-              <span className="font-black">${seller.ventaDiariaNecesaria.toLocaleString()}</span>/día × {seller.diasHabilesRestantes} días hábiles
+              <span className="font-black">${metricas.ventaDiariaNecesaria.toLocaleString()}</span>/día × {metricas.diasHabilesRestantes} días hábiles
             </p>
           </div>
         )}
@@ -185,7 +221,7 @@ function SellerQuotaCard({
               Para 150%
             </p>
             <p className="text-xs text-purple-700">
-              Faltan <span className="font-black">${seller.faltaPara150.toLocaleString()}</span> para ${(seller.meta150 || seller.meta * 1.5).toLocaleString()}
+              Faltan <span className="font-black">${metricas.faltaPara150.toLocaleString()}</span> para ${metricas.meta150.toLocaleString()}
             </p>
           </div>
         )}
