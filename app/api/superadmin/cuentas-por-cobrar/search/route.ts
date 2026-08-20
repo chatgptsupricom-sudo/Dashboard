@@ -103,6 +103,29 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Fetch amount_total from account.move for each unique moveId
+    const moveIds = [...new Set(results.map((r) => r.moveId).filter((id) => id > 0))];
+    if (moveIds.length > 0) {
+      try {
+        const moves = await callOdooRPC<any[]>(
+          "account.move", "search_read",
+          [[["id", "in", moveIds]]],
+          { fields: ["id", "amount_total"], limit: moveIds.length },
+        );
+        const moveTotals: Record<number, number> = {};
+        (moves || []).forEach((m: any) => { moveTotals[m.id] = Math.abs(m.amount_total || 0); });
+        results.forEach((r) => {
+          r.amountTotal = r.moveId && moveTotals[r.moveId]
+            ? Math.round(moveTotals[r.moveId] * 100) / 100
+            : 0;
+        });
+      } catch {
+        results.forEach((r) => { r.amountTotal = 0; });
+      }
+    } else {
+      results.forEach((r) => { r.amountTotal = 0; });
+    }
+
     return NextResponse.json({
       success: true,
       data: {

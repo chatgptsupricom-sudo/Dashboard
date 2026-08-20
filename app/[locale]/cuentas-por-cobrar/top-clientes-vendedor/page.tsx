@@ -244,7 +244,7 @@ function ClientDetail({ partnerId, partnerName }: { partnerId: number; partnerNa
   const overdue = invoices
     .filter((i) => i.agingDays > 0)
     .reduce((s, i) => s + Math.abs(i.amountResidual), 0);
-  const totalFacturado = invoices.reduce((s, i) => s + Math.abs(i.amountTotal), 0);
+  const totalFacturado = invoices.reduce((s, i) => s + Math.abs(i.amountTotal || 0), 0);
   const companies = [...new Set(invoices.map((i) => i.companyName).filter(Boolean))];
 
   const diasCredito = (() => {
@@ -398,7 +398,7 @@ function ClientDetail({ partnerId, partnerName }: { partnerId: number; partnerNa
                         {formatDDMMYYYY(inv.invoiceDateDue)}
                       </td>
                       <td className="px-3 py-2.5 text-right text-xs font-medium">
-                        {formatCurrency(Math.abs(inv.amountTotal))}
+                        {formatCurrency(Math.abs(inv.amountTotal || 0))}
                       </td>
                       <td className="px-3 py-2.5 text-right text-xs font-bold text-red-600">
                         {formatCurrency(Math.abs(inv.amountResidual))}
