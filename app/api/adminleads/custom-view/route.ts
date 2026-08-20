@@ -160,13 +160,33 @@ const CHECKS_SCRIPT = `<script>
     setTimeout(save,20);
   };
 
+  // checkAllWeek/checkAllEmailWeek ("boton HECHO") marcan las piezas una por
+  // una con un pequeno retraso escalonado (setTimeout(i*80)) para el efecto
+  // visual. En una semana de 10+ piezas eso tarda casi un segundo en
+  // terminar. El guardado por MutationObserver (mas abajo) solo dispara
+  // cuando las mutaciones se "quedan quietas", asi que si el usuario
+  // recarga antes de que termine la animacion completa, el guardado nunca
+  // llega a dispararse. Se envuelven ambas funciones para programar un
+  // guardado a un tiempo fijo, generoso, que cubre la animacion completa
+  // sin depender de que las mutaciones se detengan.
+  var CHECKALL_SAVE_DELAY_MS=2500;
+  ['checkAllWeek','checkAllEmailWeek'].forEach(function(fnName){
+    var origFn=window[fnName];
+    if(typeof origFn!=='function')return;
+    window[fnName]=function(){
+      lastLocalActionAt=Date.now();
+      var result=origFn.apply(this,arguments);
+      setTimeout(save,CHECKALL_SAVE_DELAY_MS);
+      return result;
+    };
+  });
+
   // Guarda ante CUALQUIER cambio de estado "checked", venga de donde venga:
-  // click individual, boton "HECHO" por semana (checkAllWeek/checkAllEmailWeek,
-  // que marcan varias piezas directamente sin pasar por toggleCheck), drag&drop
-  // entre dias, o cualquier otra interaccion futura que el HTML agregue. El
-  // toggleCheck de arriba queda como respaldo para que el guardado sea
-  // instantaneo en el click individual; esto cubre todo lo demas y ademas
-  // marca "hubo actividad local" para el guard de arriba.
+  // click individual, boton "HECHO" por semana, drag&drop entre dias, o
+  // cualquier otra interaccion futura que el HTML agregue. Los wrappers de
+  // arriba son un respaldo con tiempo fijo para checkAllWeek/checkAllEmailWeek
+  // (animacion escalonada larga); esto cubre todo lo demas de forma mas
+  // rapida y ademas marca "hubo actividad local" para el guard de arriba.
   var saveDebounce=null;
   var observer=new MutationObserver(function(){
     if(isRestoring)return;
