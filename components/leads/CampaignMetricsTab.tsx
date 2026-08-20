@@ -80,7 +80,10 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
     if (fechaInicio) params.set("fecha_inicio", fechaInicio);
     if (fechaFin) params.set("fecha_fin", fechaFin);
 
-    fetch(`/api/adminleads/meta-campaigns?${params.toString()}`)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    fetch(`/api/adminleads/meta-campaigns?${params.toString()}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`Error ${res.status}`);
         return res.json();
@@ -90,10 +93,19 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         setData(res);
       })
       .catch((err) => {
-        console.error("Error cargando métricas:", err);
-        setError(err.message || "Error al cargar datos");
+        if (err.name === "AbortError") {
+          setError("Tiempo de espera agotado. Intenta con un rango de fechas menor.");
+        } else {
+          console.error("Error cargando métricas:", err);
+          setError(err.message || "Error al cargar datos");
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
+
+    return () => { controller.abort(); clearTimeout(timeout); };
   }, [sede, fechaInicio, fechaFin]);
 
   if (loading) {
