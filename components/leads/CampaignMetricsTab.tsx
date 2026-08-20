@@ -69,7 +69,6 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const { user } = useAuthStore();
   const isSuperAdmin = user?.role === "superAdmin";
   const [data, setData] = useState<CampaignMetricsResponse | null>(null);
-  const [openaiUsage, setOpenaiUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,27 +80,14 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
     if (fechaInicio) params.set("fecha_inicio", fechaInicio);
     if (fechaFin) params.set("fecha_fin", fechaFin);
 
-    const campaignFetch = fetch(`/api/adminleads/meta-campaigns?${params.toString()}`)
+    fetch(`/api/adminleads/meta-campaigns?${params.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Error ${res.status}`);
         return res.json();
       })
       .then((res) => {
         if (res.error) throw new Error(res.error);
-        return res;
-      });
-
-    const openaiFetch = fetch(`/api/adminleads/openai-usage?${params.toString()}`)
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .catch(() => null);
-
-    Promise.all([campaignFetch, openaiFetch])
-      .then(([campaignData, openaiData]) => {
-        setData(campaignData);
-        setOpenaiUsage(openaiData);
+        setData(res);
       })
       .catch((err) => {
         console.error("Error cargando métricas:", err);
@@ -191,14 +177,14 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <MetricCard
             title="Gasto Panel (Dashboard)"
-            value={openaiUsage?.total?.cost_usd > 0 ? `$${openaiUsage.total.cost_usd.toFixed(2)}` : null}
+            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : null}
             emptyText="Sin uso registrado"
             icon={<Zap className="w-4 h-4" />}
           />
           <MetricCard
             title="Gasto Bot n8n (n8n auto chat)"
             value={(() => {
-              const n8nProject = openaiUsage?.by_project?.find((p: any) => p.project_name?.toLowerCase().includes("n8n") || p.project_name?.toLowerCase().includes("chat"));
+              const n8nProject = data?.openaiUsage?.by_project?.find((p: any) => p.project_name?.toLowerCase().includes("n8n") || p.project_name?.toLowerCase().includes("chat"));
               return n8nProject?.total_cost_usd > 0 ? `$${n8nProject.total_cost_usd.toFixed(2)}` : null;
             })()}
             emptyText="Sin uso registrado"
@@ -206,7 +192,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
           />
           <MetricCard
             title="Gasto Total OpenAI"
-            value={openaiUsage?.total?.cost_usd > 0 ? `$${openaiUsage.total.cost_usd.toFixed(2)}` : null}
+            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : null}
             emptyText="Sin uso registrado"
             icon={<DollarSign className="w-4 h-4" />}
           />
@@ -304,7 +290,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       </Card>
 
       {/* Tabla de OpenAI por Modelo */}
-      {openaiUsage?.by_model && openaiUsage.by_model.length > 0 && (
+      {data?.openaiUsage?.by_model && data.openaiUsage.by_model.length > 0 && (
         <Card className="shadow-none border-zinc-200 rounded-2xl">
           <CardHeader className="pb-3 border-b border-zinc-50">
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
@@ -322,7 +308,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {openaiUsage.by_model.map((m: any) => (
+                {data.openaiUsage.by_model.map((m: any) => (
                   <tr key={m.model} className="hover:bg-zinc-50/80 transition-colors">
                     <td className="px-6 py-4 font-medium text-zinc-900">{m.model}</td>
                     <td className="px-6 py-4 text-center">{m.requests}</td>
@@ -337,7 +323,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       )}
 
       {/* Tabla de OpenAI por Proyecto */}
-      {openaiUsage?.by_project && openaiUsage.by_project.length > 0 && (
+      {data?.openaiUsage?.by_project && data.openaiUsage.by_project.length > 0 && (
         <Card className="shadow-none border-zinc-200 rounded-2xl">
           <CardHeader className="pb-3 border-b border-zinc-50">
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
@@ -355,7 +341,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {openaiUsage.by_project.map((p: any) => (
+                {data.openaiUsage.by_project.map((p: any) => (
                   <tr key={p.project_id} className="hover:bg-zinc-50/80 transition-colors">
                     <td className="px-6 py-4 font-medium text-zinc-900">{p.project_name}</td>
                     <td className="px-6 py-4 text-center">{p.total_requests}</td>
