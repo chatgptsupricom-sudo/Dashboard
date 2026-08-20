@@ -62,11 +62,27 @@ const CHECKS_SCRIPT = `<script>
     return legacyKeyOf(el,selector);
   }
 
+  // Columna (dia) actual de una pieza, usando getColId del HTML original
+  // (dia+fecha, ej. "Mar_4"). data-orig-col-id la fija initDragAndDrop()
+  // con la columna ORIGINAL antes de que restore() mueva nada, asi que
+  // sigue siendo un punto de comparacion valido en cualquier momento.
+  function currentColIdOf(el){
+    if(typeof getColId!=='function')return null;
+    var col=el.closest('.cal-col');
+    return col?getColId(col):null;
+  }
+
   function save(){
     if(isRestoring||_unloading)return;
     var s={};
     document.querySelectorAll('.piece').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.piece')]=1;
+      var dp=el.getAttribute('data-piece');
+      var origCol=el.dataset?el.dataset.origColId:null;
+      var curCol=currentColIdOf(el);
+      if(dp&&origCol&&curCol&&origCol!==curCol){
+        s['move|'+dp]=curCol;
+      }
     });
     document.querySelectorAll('.email-card').forEach(function(el){
       if(el.classList.contains('checked'))s[keyOf(el,'.email-card')]=1;
@@ -97,6 +113,26 @@ const CHECKS_SCRIPT = `<script>
       var checked=!!s[keyOf(el,'.email-card')]||!!s[legacyKeyOf(el,'.email-card')];
       el.classList.toggle('checked',checked);
     });
+
+    // Re-aplicar piezas movidas a otro dia (drag & drop). El HTML servido
+    // siempre trae las piezas en su dia original, asi que hay que moverlas
+    // de nuevo a donde el usuario las dejo la ultima vez.
+    if(typeof getColId==='function'){
+      var cols=Array.from(document.querySelectorAll('.cal-col'));
+      Object.keys(s).forEach(function(k){
+        if(k.indexOf('move|')!==0)return;
+        var dp=k.slice(5);
+        var destColId=s[k];
+        var piece=document.querySelector('.piece[data-piece="'+CSS.escape(dp)+'"]');
+        if(!piece||!destColId)return;
+        var destCol=cols.find(function(c){return getColId(c)===destColId;});
+        if(destCol&&destCol!==piece.closest('.cal-col')){
+          destCol.appendChild(piece);
+          piece.classList.add('piece-moved');
+        }
+      });
+    }
+
     setTimeout(function(){isRestoring=false;},150);
   }
 
