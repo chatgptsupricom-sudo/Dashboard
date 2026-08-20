@@ -5,14 +5,12 @@ import {
   DollarSign,
   Eye,
   Loader2,
-  MousePointerClick,
-  Target,
-  TrendingUp,
-  Users,
-  Zap,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface CampaignRow {
   campaign_name: string;
@@ -31,21 +29,6 @@ interface CampaignRow {
   roi: number;
 }
 
-interface AiUsageDetail {
-  model: string;
-  calls: number;
-  tokens: number;
-  cost_usd: number;
-}
-
-interface ProjectUsageDetail {
-  project_id: string;
-  project_name: string;
-  total_tokens: number;
-  total_requests: number;
-  total_cost_usd: number;
-}
-
 interface CampaignMetricsResponse {
   campaigns: CampaignRow[];
   summary: {
@@ -58,17 +41,16 @@ interface CampaignMetricsResponse {
     costo_por_lead_calificado: number;
     roi_global: number;
   };
-  aiUsage: {
-    panel: { calls: number; cost_usd: number };
-    n8n_bot: { calls: number; cost_usd: number };
-    total_usd: number;
-    by_model: AiUsageDetail[];
-  };
-  openaiUsage: {
-    total: { cost_usd: number; tokens: number; requests: number };
-    by_project: ProjectUsageDetail[];
-    by_model: AiUsageDetail[];
-  };
+}
+
+interface ServiceItem {
+  id: number;
+  service_name: string;
+  cost_type: "subscription" | "topup";
+  monthly_cost: number;
+  total_transactions: number;
+  transaction_count: number;
+  created_at: string;
 }
 
 interface Props {
@@ -83,6 +65,22 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const [data, setData] = useState<CampaignMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [totalMonthly, setTotalMonthly] = useState(0);
+  const [loadingServices, setLoadingServices] = useState(true);
+
+  const [showAddService, setShowAddService] = useState(false);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServiceType, setNewServiceType] = useState<"subscription" | "topup">("subscription");
+  const [newServiceCost, setNewServiceCost] = useState("");
+  const [savingService, setSavingService] = useState(false);
+
+  const [showAddTx, setShowAddTx] = useState<string | null>(null);
+  const [txAmount, setTxAmount] = useState("");
+  const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
+  const [txNotes, setTxNotes] = useState("");
+  const [savingTx, setSavingTx] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -120,11 +118,77 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
     return () => { controller.abort(); clearTimeout(timeout); };
   }, [sede, fechaInicio, fechaFin]);
 
+  const fetchServices = useCallback(() => {
+    setLoadingServices(true);
+    fetch("/api/adminleads/service-costs")
+      .then((r) => r.json())
+      .then((r) => {
+        setServices(r.services || []);
+        setTotalMonthly(r.total_monthly || 0);
+      })
+      .catch((e) => console.error("Error loading services:", e))
+      .finally(() => setLoadingServices(false));
+  }, []);
+
+  useEffect(() => { fetchServices(); }, [fetchServices]);
+
+  const handleAddService = async () => {
+    if (!newServiceName.trim()) return;
+    setSavingService(true);
+    try {
+      await fetch("/api/adminleads/service-costs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_name: newServiceName.trim(),
+          cost_type: newServiceType,
+          monthly_cost: parseFloat(newServiceCost) || 0,
+        }),
+      });
+      setNewServiceName("");
+      setNewServiceType("subscription");
+      setNewServiceCost("");
+      setShowAddService(false);
+      fetchServices();
+    } finally {
+      setSavingService(false);
+    }
+  };
+
+  const handleDeleteService = async (id: number) => {
+    if (!confirm("Eliminar este servicio?")) return;
+    await fetch(`/api/adminleads/service-costs?id=${id}`, { method: "DELETE" });
+    fetchServices();
+  };
+
+  const handleAddTx = async (serviceName: string) => {
+    if (!txAmount || parseFloat(txAmount) <= 0) return;
+    setSavingTx(true);
+    try {
+      await fetch("/api/adminleads/service-transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_name: serviceName,
+          amount_usd: parseFloat(txAmount),
+          transaction_date: txDate,
+          notes: txNotes || null,
+        }),
+      });
+      setTxAmount("");
+      setTxNotes("");
+      setShowAddTx(null);
+      fetchServices();
+    } finally {
+      setSavingTx(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20 text-zinc-400">
         <Loader2 className="w-6 h-6 animate-spin mr-3" />
-        <span className="text-sm">Cargando métricas de campañas...</span>
+        <span className="text-sm">Cargando metricas de campanas...</span>
       </div>
     );
   }
@@ -140,43 +204,43 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
   if (!data) return null;
 
-  const { campaigns, summary, aiUsage } = data;
+  const { campaigns, summary } = data;
 
   return (
     <div className="space-y-8">
-      {/* KPI Cards - Campañas Meta */}
+      {/* KPI Cards - Campanas Meta */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
-          Resumen Campañas Meta
+          Resumen Campanas Meta
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <MetricCard
-            title="Inversión Total"
+            title="Inversion Total"
             value={summary.total_spend > 0 ? `$${summary.total_spend.toLocaleString()}` : null}
-            emptyText="Sin inversión"
+            emptyText="Sin inversion"
             icon={<DollarSign className="w-4 h-4" />}
           />
           <MetricCard
             title="Leads Calificados"
             value={summary.total_calificados > 0 ? summary.total_calificados.toLocaleString() : null}
             emptyText="Sin calificados"
-            icon={<Users className="w-4 h-4" />}
+            icon={<DollarSign className="w-4 h-4" />}
           />
           <MetricCard
             title="Leads No Calificados"
             value={summary.total_no_calificados > 0 ? summary.total_no_calificados.toLocaleString() : null}
             emptyText="Sin datos"
-            icon={<Users className="w-4 h-4" />}
+            icon={<DollarSign className="w-4 h-4" />}
           />
           <MetricCard
-            title="Tasa Calificación"
+            title="Tasa Calificacion"
             value={
               summary.total_calificados + summary.total_no_calificados > 0
                 ? `${((summary.total_calificados / (summary.total_calificados + summary.total_no_calificados)) * 100).toFixed(1)}%`
                 : null
             }
             emptyText="Sin datos"
-            icon={<Target className="w-4 h-4" />}
+            icon={<DollarSign className="w-4 h-4" />}
           />
           <MetricCard
             title="Costo / Lead Cal."
@@ -188,74 +252,172 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
             title="ROI"
             value={summary.roi_global !== 0 ? `${summary.roi_global.toFixed(1)}%` : null}
             emptyText="Sin ROI"
-            icon={<TrendingUp className="w-4 h-4" />}
+            icon={<DollarSign className="w-4 h-4" />}
           />
         </div>
       </div>
 
-      {/* KPI Cards - OpenAI por API */}
+      {/* Gastos Servicios */}
       <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
-          Consumo OpenAI API
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(data?.openaiUsage?.by_project || []).map((proj) => (
-            <Card key={proj.project_id} className="rounded-2xl border-zinc-200 shadow-none hover:border-blue-200 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                  {proj.project_name}
-                </CardTitle>
-                <DollarSign className="w-4 h-4 text-zinc-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold tracking-tight text-zinc-900 mb-3">
-                  ${proj.total_cost_usd > 0 ? proj.total_cost_usd.toFixed(2) : "0.00"}
-                </div>
-                <div className="flex items-center gap-4 text-xs text-zinc-500">
-                  <span className="flex items-center gap-1">
-                    <Zap className="w-3 h-3" />
-                    {proj.total_tokens > 0 ? `${(proj.total_tokens / 1000000).toFixed(1)}M` : "0"} tokens
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Target className="w-3 h-3" />
-                    {(proj.total_requests || 0).toLocaleString()} llamadas
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {/* Tarjeta Total */}
-          <Card className="rounded-2xl border-blue-200 bg-blue-50/30 shadow-none">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
-                Total OpenAI
-              </CardTitle>
-              <DollarSign className="w-4 h-4 text-blue-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold tracking-tight text-blue-700 mb-3">
-                ${data?.openaiUsage?.total?.cost_usd > 0 ? data.openaiUsage.total.cost_usd.toFixed(2) : "0.00"}
-              </div>
-              <div className="flex items-center gap-4 text-xs text-blue-500">
-                <span className="flex items-center gap-1">
-                  <Zap className="w-3 h-3" />
-                  {data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M` : "0"} tokens
-                </span>
-                <span className="flex items-center gap-1">
-                  <Target className="w-3 h-3" />
-                  {(data?.openaiUsage?.total?.requests || 0).toLocaleString()} llamadas
-                </span>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+            Gastos Servicios
+          </h3>
+          <button
+            onClick={() => setShowAddService(!showAddService)}
+            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700 transition-colors"
+          >
+            {showAddService ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+            {showAddService ? "Cancelar" : "Agregar Servicio"}
+          </button>
+        </div>
+
+        {showAddService && (
+          <Card className="mb-4 shadow-none border-blue-200 bg-blue-50/30 rounded-2xl">
+            <CardContent className="pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input
+                  type="text"
+                  placeholder="Nombre del servicio"
+                  value={newServiceName}
+                  onChange={(e) => setNewServiceName(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <select
+                  value={newServiceType}
+                  onChange={(e) => setNewServiceType(e.target.value as "subscription" | "topup")}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="subscription">Mensual Fijo</option>
+                  <option value="topup">Recarga / Prepago</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder={newServiceType === "subscription" ? "Costo mensual $" : "Monto recarga $"}
+                  value={newServiceCost}
+                  onChange={(e) => setNewServiceCost(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <button
+                  onClick={handleAddService}
+                  disabled={savingService || !newServiceName.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingService ? "Guardando..." : "Guardar"}
+                </button>
               </div>
             </CardContent>
           </Card>
-        </div>
+        )}
+
+        {loadingServices ? (
+          <div className="flex items-center justify-center py-8 text-zinc-400">
+            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            <span className="text-xs">Cargando servicios...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {services.map((svc) => {
+              const displayCost =
+                svc.cost_type === "subscription"
+                  ? parseFloat(String(svc.monthly_cost)) || 0
+                  : parseFloat(String(svc.total_transactions)) || 0;
+
+              return (
+                <Card key={svc.id} className="rounded-2xl border-zinc-200 shadow-none hover:border-blue-200 transition-colors relative group">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                    <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      {svc.service_name}
+                    </CardTitle>
+                    <div className="flex items-center gap-1">
+                      {svc.cost_type === "topup" && (
+                        <button
+                          onClick={() => setShowAddTx(showAddTx === svc.service_name ? null : svc.service_name)}
+                          className="text-blue-500 hover:text-blue-600 transition-colors"
+                          title="Registrar recarga"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteService(svc.id)}
+                        className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Eliminar servicio"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold tracking-tight text-zinc-900 mb-1">
+                      ${displayCost > 0 ? displayCost.toFixed(2) : "0.00"}
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      {svc.cost_type === "subscription" ? "Mensual fijo" : `${svc.transaction_count || 0} recargas este mes`}
+                    </div>
+
+                    {svc.cost_type === "topup" && showAddTx === svc.service_name && (
+                      <div className="mt-3 pt-3 border-t border-zinc-100 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="number"
+                            placeholder="Monto $"
+                            value={txAmount}
+                            onChange={(e) => setTxAmount(e.target.value)}
+                            className="px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <input
+                            type="date"
+                            value={txDate}
+                            onChange={(e) => setTxDate(e.target.value)}
+                            className="px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Notas (opcional)"
+                          value={txNotes}
+                          onChange={(e) => setTxNotes(e.target.value)}
+                          className="w-full px-2 py-1.5 text-[11px] border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <button
+                          onClick={() => handleAddTx(svc.service_name)}
+                          disabled={savingTx || !txAmount || parseFloat(txAmount) <= 0}
+                          className="w-full px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                          {savingTx ? "Guardando..." : "Registrar Recarga"}
+                        </button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+
+            {/* Tarjeta Total */}
+            <Card className="rounded-2xl border-blue-200 bg-blue-50/30 shadow-none">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
+                  Total Servicios
+                </CardTitle>
+                <DollarSign className="w-4 h-4 text-blue-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold tracking-tight text-blue-700">
+                  ${totalMonthly > 0 ? totalMonthly.toFixed(2) : "0.00"}
+                </div>
+                <div className="text-[10px] text-blue-400 mt-1">Costo total del mes</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
-      {/* Tabla de Campañas Meta */}
+      {/* Tabla de Campanas Meta */}
       <Card className="shadow-none border-zinc-200 rounded-2xl">
         <CardHeader className="pb-3 border-b border-zinc-50">
           <CardTitle className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-            <Eye className="w-3.5 h-3.5" /> Detalle por Campaña
+            <Eye className="w-3.5 h-3.5" /> Detalle por Campana
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 overflow-x-auto">
@@ -263,9 +425,9 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
             <table className="w-full text-xs min-w-[1100px]">
               <thead className="bg-zinc-50/50 text-zinc-500">
                 <tr>
-                  <th className="px-4 py-3 text-left">Campaña</th>
-                  {isSuperAdmin && <th className="px-4 py-3 text-center">País</th>}
-                  <th className="px-4 py-3 text-right">Inversión</th>
+                  <th className="px-4 py-3 text-left">Campana</th>
+                  {isSuperAdmin && <th className="px-4 py-3 text-center">Pais</th>}
+                  <th className="px-4 py-3 text-right">Inversion</th>
                   <th className="px-4 py-3 text-center">Impresiones</th>
                   <th className="px-4 py-3 text-center">Clics</th>
                   <th className="px-4 py-3 text-center">Leads Ads</th>
@@ -319,7 +481,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                       ${c.recaudo_usd.toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right text-zinc-600">
-                      {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "—"}
+                      {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "---"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={`font-bold ${
@@ -335,12 +497,11 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
               <Eye className="w-10 h-10 opacity-20 mb-3" />
-              <p className="text-xs italic">Sin campañas registradas en este período.</p>
+              <p className="text-xs italic">Sin campanas registradas en este periodo.</p>
             </div>
           )}
         </CardContent>
       </Card>
-
     </div>
   );
 }
