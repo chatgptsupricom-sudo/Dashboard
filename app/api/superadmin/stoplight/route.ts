@@ -512,7 +512,8 @@ export async function GET(request: NextRequest) {
       const sem = margenPorSemana[i];
       if (sem.revenue <= 0) return null;
       const margenActual = ((sem.revenue - sem.costo) / sem.revenue) * 100;
-      const pct = metaMargen > 0 ? Math.round((margenActual / metaMargen) * 100) : 0;
+      if (metaMargen <= 0) return `${Math.round(margenActual)}%`;
+      const pct = Math.round((margenActual / metaMargen) * 100);
       return `${pct}%`;
     });
 
@@ -572,7 +573,8 @@ export async function GET(request: NextRequest) {
       const sem = efectividadPorSemana[i];
       if (sem.total <= 0) return null;
       const efectividadActual = (sem.facturacion / sem.total) * 100;
-      const pct = metaEfectividad > 0 ? Math.round((efectividadActual / metaEfectividad) * 100) : 0;
+      if (metaEfectividad <= 0) return `${Math.round(efectividadActual)}%`;
+      const pct = Math.round((efectividadActual / metaEfectividad) * 100);
       return `${pct}%`;
     });
 

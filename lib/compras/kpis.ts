@@ -193,18 +193,22 @@ export async function computeComprasKpis(
       purchaseAvgByProduct[pId].totalQty += qty;
     });
 
-    let varAcc = 0;
-    let varCount = 0;
+    // Promedio ponderado por gasto de compra: evita que un solo producto con
+    // precio atípico (poco volumen, error de captura) distorsione el KPI completo.
+    let varWeightedAcc = 0;
+    let varWeightTotal = 0;
     Object.keys(purchaseAvgByProduct).forEach((k) => {
       const pId = +k;
-      const avg = purchaseAvgByProduct[pId].totalCost / purchaseAvgByProduct[pId].totalQty;
+      const { totalCost, totalQty } = purchaseAvgByProduct[pId];
+      const avg = totalCost / totalQty;
       const current = priceMap[pId] ?? 0;
       if (avg > 0 && current > 0) {
-        varAcc += ((avg - current) / avg) * 100;
-        varCount++;
+        const variacionPct = ((avg - current) / avg) * 100;
+        varWeightedAcc += variacionPct * totalCost;
+        varWeightTotal += totalCost;
       }
     });
-    const varCosto = varCount > 0 ? Math.round((varAcc / varCount) * 100) : null;
+    const varCosto = varWeightTotal > 0 ? Math.round(varWeightedAcc / varWeightTotal) : null;
 
     // ══════════════════════════════════════════════════════════════
     // KPI 2: Rotación saludable de compras
