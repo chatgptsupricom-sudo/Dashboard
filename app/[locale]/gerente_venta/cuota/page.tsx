@@ -165,6 +165,26 @@ function SellerQuotaCard({
               : `Faltan $${seller.falta.toLocaleString()}`}
           </span>
         </div>
+        {!isTargetMet && seller.diasHabilesRestantes > 0 && (
+          <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl space-y-1">
+            <p className="text-[10px] text-blue-500 font-bold uppercase">
+              Ritmo necesario
+            </p>
+            <p className="text-xs text-blue-700">
+              <span className="font-black">${seller.ventaDiariaNecesaria.toLocaleString()}</span>/día × {seller.diasHabilesRestantes} días hábiles
+            </p>
+          </div>
+        )}
+        {seller.meta > 0 && (
+          <div className="bg-purple-50 border border-purple-100 p-3 rounded-xl space-y-1">
+            <p className="text-[10px] text-purple-500 font-bold uppercase">
+              Para 150%
+            </p>
+            <p className="text-xs text-purple-700">
+              Faltan <span className="font-black">${seller.faltaPara150.toLocaleString()}</span> para ${(seller.meta150 || seller.meta * 1.5).toLocaleString()}
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

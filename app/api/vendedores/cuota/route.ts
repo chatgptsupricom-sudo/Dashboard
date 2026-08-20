@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { contarDiasUtiles } from "@/lib/feriados";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
@@ -34,18 +35,16 @@ export async function GET(req: Request) {
     );
     const meta = resultCuotas?.[0]?.cuota || 0;
 
-    const firstDayOfMonth = new Date(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      1,
-    )
-      .toISOString()
-      .split("T")[0];
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const firstDayStr = firstDayOfMonth.toISOString().split("T")[0];
 
     const odooTotals =
       (await callOdooRPC<any[]>("account.move", "search_read", [
         [
-          ["invoice_date", ">=", firstDayOfMonth],
+          ["invoice_date", ">=", firstDayStr],
           ["state", "=", "posted"],
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["company_id", "=", userCids],
@@ -65,11 +64,24 @@ export async function GET(req: Request) {
     const porcentaje = meta > 0 ? parseFloat(((facturado / meta) * 100).toFixed(2)) : 0;
     const falta = parseFloat(Math.max(0, meta - facturado).toFixed(2));
 
+    const totalDiasUtilesMes = contarDiasUtiles(firstDayOfMonth, lastDayOfMonth);
+    const diasTranscurridos = contarDiasUtiles(firstDayOfMonth, now);
+    const diasHabilesRestantes = Math.max(0, totalDiasUtilesMes - diasTranscurridos);
+    const ventaDiariaNecesaria = diasHabilesRestantes > 0 ? parseFloat((falta / diasHabilesRestantes).toFixed(2)) : 0;
+    const meta150 = meta * 1.5;
+    const faltaPara150 = parseFloat(Math.max(0, meta150 - facturado).toFixed(2));
+
     return NextResponse.json({
       meta,
       facturado,
       porcentaje,
       falta,
+      totalDiasUtilesMes,
+      diasTranscurridos,
+      diasHabilesRestantes,
+      ventaDiariaNecesaria,
+      meta150,
+      faltaPara150,
     });
   } catch (error) {
     return NextResponse.json(null);

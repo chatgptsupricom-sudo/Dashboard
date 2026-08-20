@@ -3,7 +3,7 @@ import { usePresentationMode } from "@/components/presentacion/presentation-mode
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { BarChart3, DollarSign, Medal, TrendingUp, X } from "lucide-react";
+import { BarChart3, Calendar, DollarSign, Medal, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -284,6 +284,28 @@ export default function VendedoresPage() {
                   </span>
                 </div>
               </div>
+              {cuota.falta > 0 && cuota.diasHabilesRestantes > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Calendar size={14} className="text-blue-600" />
+                    <span className="text-xs font-bold text-blue-800">Días hábiles restantes: {cuota.diasHabilesRestantes}</span>
+                  </div>
+                  <p className="text-xs text-blue-700">
+                    Debes vender <span className="font-bold">${cuota.ventaDiariaNecesaria.toLocaleString()}</span> por día para cumplir la cuota
+                  </p>
+                </div>
+              )}
+              {cuota.meta > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 sm:p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp size={14} className="text-purple-600" />
+                    <span className="text-xs font-bold text-purple-800">Para llegar al 150%</span>
+                  </div>
+                  <p className="text-xs text-purple-700">
+                    Faltan <span className="font-bold">${cuota.faltaPara150.toLocaleString()}</span> para alcanzar ${(cuota.meta150 || cuota.meta * 1.5).toLocaleString()} (150% de la cuota)
+                  </p>
+                </div>
+              )}
               {cuota.falta > 0 ? (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 sm:p-3 text-center">
                   <p className="text-xs sm:text-sm font-bold text-red-700">
