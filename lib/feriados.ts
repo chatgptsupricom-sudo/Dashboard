@@ -1,10 +1,11 @@
-// Dias festivos de Venezuela por año
+// Dias festivos de Venezuela por año (Caracas / Valencia)
 // Fuente: Gaceta Oficial de Venezuela
+// Nota: Vacaciones colectivas (ej: 23 DIC - 4 ENE) NO se incluyen aquí,
+//       solo feriados oficiales. Sábados y domingos NO se laboran.
 
 export const FERIADOS_VENEZUELA: Record<number, string[]> = {
   2024: [
     "2024-01-01", // Año Nuevo
-    "2024-01-12", // Día de los Santos Niños Mártires
     "2024-02-12", // Carnaval
     "2024-02-13", // Carnaval
     "2024-03-28", // Jueves Santo
@@ -13,16 +14,14 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
     "2024-05-01", // Día del Trabajador
     "2024-06-24", // Batalla de Carabobo
     "2024-07-05", // Día de la Independencia
-    "2024-07-29", // Natalicio del Libertador
+    "2024-07-24", // Natalicio del Libertador
     "2024-10-12", // Día de la Resistencia Indígena
-    "2024-11-25", // Víspera de Navidad
     "2024-12-24", // Nochebuena
     "2024-12-25", // Navidad
     "2024-12-31", // Fin de año
   ],
   2025: [
     "2025-01-01", // Año Nuevo
-    "2025-01-13", // Día de los Santos Niños Mártires
     "2025-02-17", // Carnaval
     "2025-02-18", // Carnaval
     "2025-04-17", // Jueves Santo
@@ -31,7 +30,7 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
     "2025-05-01", // Día del Trabajador
     "2025-06-24", // Batalla de Carabobo
     "2025-07-05", // Día de la Independencia
-    "2025-07-28", // Natalicio del Libertador
+    "2025-07-24", // Natalicio del Libertador
     "2025-10-12", // Día de la Resistencia Indígena
     "2025-12-24", // Nochebuena
     "2025-12-25", // Navidad
@@ -39,7 +38,6 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
   ],
   2026: [
     "2026-01-01", // Año Nuevo
-    "2026-01-12", // Día de los Santos Niños Mártires
     "2026-02-09", // Carnaval
     "2026-02-10", // Carnaval
     "2026-04-02", // Jueves Santo
@@ -48,7 +46,7 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
     "2026-05-01", // Día del Trabajador
     "2026-06-24", // Batalla de Carabobo
     "2026-07-05", // Día de la Independencia
-    "2026-07-29", // Natalicio del Libertador
+    "2026-07-24", // Natalicio del Libertador
     "2026-10-12", // Día de la Resistencia Indígena
     "2026-12-24", // Nochebuena
     "2026-12-25", // Navidad
