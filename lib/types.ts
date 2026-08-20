@@ -16,6 +16,7 @@ export enum UserRole {
   CUENTAS_POR_COBRAR = "cuentas por cobrar",
   DISENADOR = "diseñador",
   ASISTENTE_VENTAS = "asistente de ventas",
+  ADMINISTRACION = "administración",
 }
 
 // Permisos por rol
@@ -166,6 +167,14 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo"],
+  },
+  [UserRole.ADMINISTRACION]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["dashboard", "salud_financiera", "gastos_presupuesto"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
