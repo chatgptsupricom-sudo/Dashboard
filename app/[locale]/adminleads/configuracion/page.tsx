@@ -14,6 +14,7 @@ import {
   CreditCard,
   CheckCircle,
   Circle,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
