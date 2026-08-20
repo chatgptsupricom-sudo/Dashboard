@@ -449,12 +449,14 @@ export async function GET(request: Request) {
           );
           if (costsRes.ok) {
             const costsJson = await costsRes.json();
+            console.log(`[OpenAI] Costs response:`, JSON.stringify(costsJson).substring(0, 500));
             const costBuckets = costsJson.data || [];
             const projectMap = new Map<string, { cost: number; name: string }>();
             for (const bucket of costBuckets) {
               for (const item of bucket.results || []) {
-                const projId = item.project_id || "unknown";
-                const existing = projectMap.get(projId) || { cost: 0, name: item.project_name || projId };
+                const projId = item.project_id || item.api_key_id || "unknown";
+                const projName = item.project_name || item.api_key_name || projId;
+                const existing = projectMap.get(projId) || { cost: 0, name: projName };
                 existing.cost += item.cost_usd || 0;
                 projectMap.set(projId, existing);
               }
