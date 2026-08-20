@@ -23,20 +23,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const brandFilter = searchParams.get("brand")?.trim().toUpperCase() || "";
+    const categoryFilter = searchParams.get("category")?.trim() || "";
+
     const productDomain = [
       ["active", "=", true],
       ["type", "=", "product"],
     ];
-    const productFields = ["default_code"];
+    const productFields = ["default_code", "name", "categ_id"];
 
-    const productsData = await callOdooRPC<any[]>(
+    const productsData = (await callOdooRPC<any[]>(
       "product.product",
       "search_read",
       [productDomain],
       {
         fields: productFields,
+        limit: 0,
       },
-    );
+    )) || [];
 
     if (!productsData) {
       return NextResponse.json(
@@ -45,11 +50,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Leemos moqs y costo
     const moqsDb = await query("SELECT sku, cantidad, costo FROM moqs");
     const moqMap = new Map(moqsDb.rows.map((row: any) => [row.sku, row]));
 
-    const templateData = productsData
+    const productsWithMeta = productsData
       .filter(
         (p) =>
           p.default_code &&
@@ -58,17 +62,31 @@ export async function GET(request: NextRequest) {
       )
       .map((p) => {
         const sku = p.default_code.trim();
+        const nombre = p.name || "";
+        const marca = nombre ? nombre.split(" ")[0].toUpperCase() : "SIN MARCA";
+        const categoria = p.categ_id ? p.categ_id[1] : "Sin Categoría";
         const registro = moqMap.get(sku);
 
         return {
-          sku: sku,
+          sku,
+          nombre,
+          marca,
+          categoria,
           cantidad: registro?.cantidad ?? "",
           costo: registro?.costo ?? "",
         };
+      })
+      .filter((p) => {
+        if (brandFilter && p.marca !== brandFilter) return false;
+        if (categoryFilter && p.categoria !== categoryFilter) return false;
+        return true;
       });
 
+    const brands = [...new Set(productsWithMeta.map((p) => p.marca))].sort();
+    const categories = [...new Set(productsWithMeta.map((p) => p.categoria))].sort();
+
     return NextResponse.json(
-      { success: true, data: templateData },
+      { success: true, data: productsWithMeta, brands, categories },
       { status: 200 },
     );
   } catch (error: any) {

@@ -58,6 +58,10 @@ export default function MoqConfigPage() {
   const [moqs, setMoqs] = useState<MoqItem[]>([]);
   const [loadingMoqs, setLoadingMoqs] = useState(true);
   const [busqueda, setBusqueda] = useState("");
+  const [templateBrands, setTemplateBrands] = useState<string[]>([]);
+  const [templateCategories, setTemplateCategories] = useState<string[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -76,6 +80,15 @@ export default function MoqConfigPage() {
 
   useEffect(() => {
     fetchMoqs();
+    fetch("/api/compras/moq/template")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setTemplateBrands(json.brands || []);
+          setTemplateCategories(json.categories || []);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const moqsFiltrados = useMemo(() => {
@@ -120,7 +133,11 @@ export default function MoqConfigPage() {
   const handleDownloadTemplate = async () => {
     setIsDownloading(true);
     try {
-      const response = await fetch("/api/compras/moq/template");
+      const params = new URLSearchParams();
+      if (selectedBrand) params.set("brand", selectedBrand);
+      if (selectedCategory) params.set("category", selectedCategory);
+      const qs = params.toString();
+      const response = await fetch(`/api/compras/moq/template${qs ? `?${qs}` : ""}`);
       const contentType = response.headers.get("content-type");
       if (
         !response.ok ||
@@ -133,9 +150,14 @@ export default function MoqConfigPage() {
       if (!result.success) {
         throw new Error(result.error || "Error al obtener SKUs");
       }
+      if (result.brands) setTemplateBrands(result.brands);
+      if (result.categories) setTemplateCategories(result.categories);
+
       const excelData = result.data.map(
-        (item: { sku: string; cantidad: any; costo: any }) => ({
+        (item: { sku: string; nombre: string; categoria: string; cantidad: any; costo: any }) => ({
           SKU: item.sku,
+          NOMBRE: item.nombre,
+          CATEGORIA: item.categoria,
           MOQ: item.cantidad,
           PRECIO: item.costo,
         }),
@@ -149,7 +171,7 @@ export default function MoqConfigPage() {
       );
       toast({
         title: "Plantilla descargada",
-        description: "El archivo está listo para ser modificado.",
+        description: `${excelData.length} productos${selectedBrand ? ` de ${selectedBrand}` : ""}${selectedCategory ? ` en ${selectedCategory}` : ""}.`,
         className: "bg-green-50 border-green-200",
       });
     } catch (error: any) {
@@ -332,9 +354,31 @@ export default function MoqConfigPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-blue-900 flex-1 flex flex-col">
             <p>
-              Descarga la plantilla oficial. Esta contendrá todos los SKUs
-              activos de Odoo listos para ser rellenados.
+              Descarga la plantilla oficial. Puedes filtrar por marca y categoría
+              antes de descargar.
             </p>
+            <div className="flex gap-2">
+              <select
+                value={selectedBrand}
+                onChange={(e) => setSelectedBrand(e.target.value)}
+                className="flex-1 px-3 py-2 text-xs border border-blue-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">Todas las marcas</option>
+                {templateBrands.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="flex-1 px-3 py-2 text-xs border border-blue-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">Todas las categorías</option>
+                {templateCategories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
             <Button
               onClick={handleDownloadTemplate}
               disabled={isDownloading}
