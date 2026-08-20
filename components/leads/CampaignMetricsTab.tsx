@@ -39,6 +39,14 @@ interface AiUsageDetail {
   cost_usd: number;
 }
 
+interface ProjectUsageDetail {
+  project_id: string;
+  project_name: string;
+  total_tokens: number;
+  total_requests: number;
+  total_cost_usd: number;
+}
+
 interface CampaignMetricsResponse {
   campaigns: CampaignRow[];
   summary: {
@@ -55,6 +63,11 @@ interface CampaignMetricsResponse {
     panel: { calls: number; cost_usd: number };
     n8n_bot: { calls: number; cost_usd: number };
     total_usd: number;
+    by_model: AiUsageDetail[];
+  };
+  openaiUsage: {
+    total: { cost_usd: number; tokens: number; requests: number };
+    by_project: ProjectUsageDetail[];
     by_model: AiUsageDetail[];
   };
 }
@@ -181,30 +194,61 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
         </div>
       </div>
 
-      {/* KPI Cards - OpenAI */}
+      {/* KPI Cards - OpenAI por API */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
           Consumo OpenAI API
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <MetricCard
-            title="Gasto Total OpenAI"
-            value={data?.openaiUsage?.total?.cost_usd > 0 ? `$${data.openaiUsage.total.cost_usd.toFixed(2)}` : (data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M tokens` : null)}
-            emptyText="Sin uso registrado"
-            icon={<DollarSign className="w-4 h-4" />}
-          />
-          <MetricCard
-            title="Tokens Totales"
-            value={data?.openaiUsage?.total?.tokens > 0 ? data.openaiUsage.total.tokens.toLocaleString() : null}
-            emptyText="Sin datos"
-            icon={<Zap className="w-4 h-4" />}
-          />
-          <MetricCard
-            title="Llamadas Totales"
-            value={data?.openaiUsage?.total?.requests > 0 ? data.openaiUsage.total.requests.toLocaleString() : null}
-            emptyText="Sin datos"
-            icon={<Target className="w-4 h-4" />}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {(data?.openaiUsage?.by_project || []).map((proj) => (
+            <Card key={proj.project_id} className="rounded-2xl border-zinc-200 shadow-none hover:border-blue-200 transition-colors">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                  {proj.project_name}
+                </CardTitle>
+                <DollarSign className="w-4 h-4 text-zinc-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold tracking-tight text-zinc-900 mb-3">
+                  ${proj.total_cost_usd > 0 ? proj.total_cost_usd.toFixed(2) : "0.00"}
+                </div>
+                <div className="flex items-center gap-4 text-xs text-zinc-500">
+                  <span className="flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    {proj.total_tokens > 0 ? `${(proj.total_tokens / 1000000).toFixed(1)}M` : "0"} tokens
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Target className="w-3 h-3" />
+                    {(proj.total_requests || 0).toLocaleString()} llamadas
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {/* Tarjeta Total */}
+          <Card className="rounded-2xl border-blue-200 bg-blue-50/30 shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
+                Total OpenAI
+              </CardTitle>
+              <DollarSign className="w-4 h-4 text-blue-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold tracking-tight text-blue-700 mb-3">
+                ${data?.openaiUsage?.total?.cost_usd > 0 ? data.openaiUsage.total.cost_usd.toFixed(2) : "0.00"}
+              </div>
+              <div className="flex items-center gap-4 text-xs text-blue-500">
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  {data?.openaiUsage?.total?.tokens > 0 ? `${(data.openaiUsage.total.tokens / 1000000).toFixed(1)}M` : "0"} tokens
+                </span>
+                <span className="flex items-center gap-1">
+                  <Target className="w-3 h-3" />
+                  {(data?.openaiUsage?.total?.requests || 0).toLocaleString()} llamadas
+                </span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
