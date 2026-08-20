@@ -40,8 +40,30 @@ export async function GET(request: Request) {
       callOdooRPC<number>("mail.message", "search_count", [domain]),
     ]);
 
+    const MODEL_LABELS: Record<string, string> = {
+      "sale.order": "Orden de venta",
+      "account.move": "Factura / Asiento contable",
+      "account.payment": "Pago",
+      "stock.picking": "Transferencia",
+      "stock.move": "Movimiento de inventario",
+      "res.partner": "Cliente / Proveedor",
+      "purchase.order": "Orden de compra",
+      "product.product": "Producto",
+      "product.template": "Producto",
+      "crm.lead": "Oportunidad",
+      "hr.employee": "Empleado",
+      "account.move.line": "Línea contable",
+      "account.bank.statement": "Extracto bancario",
+      "account.bank.statement.line": "Línea de extracto",
+      "sale.order.line": "Línea de venta",
+      "purchase.order.line": "Línea de compra",
+      "stock.quant": "Inventario",
+      "ir.sequence": "Secuencia",
+    };
+
     const formattedLogs = logs.map((log) => {
-      const cleanBody = log.body.replace(/<[^>]*>?/gm, "");
+      const rawBody = log.body || "";
+      const cleanBody = rawBody.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
       let level = "INFO";
       if (
         cleanBody.toLowerCase().includes("borró") ||
@@ -51,11 +73,20 @@ export async function GET(request: Request) {
       else if (cleanBody.toLowerCase().includes("creó")) level = "SUCCESS";
       else if (cleanBody.toLowerCase().includes("actualizó")) level = "ACTION";
 
+      let description = cleanBody;
+      if (!description && log.record_name) {
+        const modelLabel = MODEL_LABELS[log.model] || log.model || "";
+        description = modelLabel ? `${modelLabel} ${log.record_name}` : log.record_name;
+      }
+      if (!description && log.model) {
+        description = MODEL_LABELS[log.model] || log.model;
+      }
+
       return {
         id: log.id,
         timestamp: log.date,
         user: log.author_id ? log.author_id[1] : "Sistema",
-        action: cleanBody || "Sin descripción",
+        action: description || "Sin descripción",
         target: log.record_name || log.model,
         level: level,
       };
