@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import {
   Activity,
+  Wallet,
   AlertTriangle,
   Award,
   BarChart3,
@@ -231,6 +232,7 @@ export function Sidebar({
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
     { id: "salud_financiera", label: "Salud Financiera", icon: Activity, slug: "" },
+    { id: "gastos_presupuesto", label: "Gastos y Presupuesto", icon: Wallet, slug: "/gastos" },
   ];
 
   const getBasePath = () => {

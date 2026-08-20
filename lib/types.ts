@@ -174,7 +174,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "salud_financiera"],
+    sections: ["dashboard", "salud_financiera", "gastos_presupuesto"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
