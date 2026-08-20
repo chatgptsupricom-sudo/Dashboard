@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 
 declare global { var io: any; }
 
@@ -123,8 +124,13 @@ const CHECKS_SCRIPT = `<script>
 </script>`;
 
 // GET — serve the stored HTML or a placeholder
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthUser(request);
+    if (!canViewCustomPlan(user)) {
+      return new Response("No autorizado", { status: 401 });
+    }
+
     await ensureTable();
 
     const result = await query(
@@ -159,6 +165,11 @@ export async function GET() {
 // POST — receive and save new HTML file
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthUser(request);
+    if (!canUploadCustomPlan(user)) {
+      return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
+    }
+
     await ensureTable();
 
     const formData = await request.formData();
