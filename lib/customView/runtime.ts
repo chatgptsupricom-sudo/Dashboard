@@ -67,21 +67,6 @@ export const PLAN_RUNTIME_JS = String.raw`
   // el guardado propio las borraria.
   var skippedKeys = Object.create(null);
 
-  // Indice del ultimo computeState, para no recorrer el documento dos veces.
-  var lastLiveIdx = null;
-
-  // Elementos que el usuario de ESTA pestana toco desde el ultimo guardado.
-  // Si toca algo que tenia una edicion remota sin replicar, manda lo suyo: no
-  // tendria sentido revertirle en pantalla lo que acaba de escribir.
-  var dirtyEls = null;
-
-  function markDirty(node) {
-    try {
-      if (!dirtyEls) dirtyEls = new Set();
-      var n = node && node.nodeType === 3 ? node.parentNode : node;
-      while (n && n.nodeType === 1) { dirtyEls.add(n); n = n.parentNode; }
-    } catch (e) {}
-  }
 
   // ---------------------------------------------------------------- utilidades
 
@@ -275,7 +260,6 @@ export const PLAN_RUNTIME_JS = String.raw`
     try { normalize(document.documentElement); } finally { applying--; }
 
     var live = buildIndex(document.documentElement);
-    lastLiveIdx = live;
     var bm = baseIdx.map;
     var inBase = function (k) { return !!bm[k]; };
     var nodes = {};
@@ -689,39 +673,43 @@ export const PLAN_RUNTIME_JS = String.raw`
     saveTimer = setTimeout(function () { doSave(false); }, 700);
   }
 
+  /**
+   * Lo que esta pestana mandaria al servidor: el diff del DOM mas las ediciones
+   * de contenido que llegaron por el socket y no se replicaron en pantalla (no
+   * estan en el DOM, asi que computeState no las ve y guardarlas tal cual las
+   * borraria).
+   *
+   * Se reinyecta SOLO el contenido (sh/bsh), nunca ca/cr/at: esos si estan en el
+   * DOM local, y pisarlos dejaba el marcado de la pieza congelado en el valor
+   * del servidor.
+   *
+   * Si esta pestana tiene su propio cambio de contenido en esa llave, gana el
+   * suyo: no se le revierte en pantalla lo que acaba de escribir.
+   */
+  function estadoParaGuardar() {
+    var state = computeState();
+    try {
+      var ackNodes = (ackState && ackState.nodes) || {};
+      for (var sk in skippedKeys) {
+        var ackNode = ackNodes[sk];
+        if (!ackNode || ackNode.sh === undefined) { delete skippedKeys[sk]; continue; }
+        var mio = state.nodes[sk];
+        if (mio && mio.sh !== undefined) continue;
+        if (!mio) { mio = {}; state.nodes[sk] = mio; }
+        mio.sh = ackNode.sh;
+        if (ackNode.bsh !== undefined) mio.bsh = ackNode.bsh;
+      }
+    } catch (eSk) {}
+    return state;
+  }
+
   function doSave(force, retry) {
     if (!ready || !CAN_EDIT) return;
     clearTimeout(saveTimer);
     if (inFlight) { pendingSave = true; return; }
 
     var state;
-    try { state = computeState(); } catch (e) { status("error"); return; }
-
-    // Lo que llego por el socket y no se replico en pantalla no esta en el DOM,
-    // asi que computeState() no lo ve y guardarlo tal cual lo borraria. Para
-    // esas llaves se conserva lo que tiene el servidor.
-    // Solo se reinyecta el CONTENIDO remoto (sh/bsh). Reinyectar el nodo
-    // entero pisaba tambien ca/cr/at, que si estan en el DOM local: una pieza
-    // con una edicion de texto remota quedaba con su marcado congelado en el
-    // valor del servidor, y marcarla aqui no surtia efecto.
-    try {
-      var ackNodes = (ackState && ackState.nodes) || {};
-      var mapa = (lastLiveIdx && lastLiveIdx.map) || {};
-      for (var sk in skippedKeys) {
-        var ackNode = ackNodes[sk];
-        var elLocal = mapa[sk];
-        var tocadoAqui = !!(elLocal && dirtyEls && dirtyEls.has(elLocal));
-        if (tocadoAqui || !ackNode || ackNode.sh === undefined) {
-          delete skippedKeys[sk];
-          continue;
-        }
-        var mio = state.nodes[sk];
-        if (!mio) { mio = {}; state.nodes[sk] = mio; }
-        mio.sh = ackNode.sh;
-        if (ackNode.bsh !== undefined) mio.bsh = ackNode.bsh;
-      }
-      dirtyEls = null;
-    } catch (eSk) {}
+    try { state = estadoParaGuardar(); } catch (e) { status("error"); return; }
 
     var json = JSON.stringify(state);
     if (json === lastSentJson && !force) { status("saved"); return; }
@@ -897,7 +885,15 @@ export const PLAN_RUNTIME_JS = String.raw`
           // skippedKeys, que es mas barato y no depende del conflicto.
           revision = Number(p.revision) || revision;
           ackState = incoming;
-          lastSentJson = JSON.stringify(incoming);
+
+          // El eco: dejar lastSentJson con el estado ajeno tal cual hacia que
+          // esta pestana lo viera distinto de lo suyo (no replico el contenido)
+          // y guardara de vuelta; la otra hacia lo mismo con este eco, y un solo
+          // clic disparaba una cadena de escrituras. Se fija a lo que esta
+          // pestana mandaria, asi el guardado siguiente se descarta por
+          // identico.
+          try { lastSentJson = JSON.stringify(estadoParaGuardar()); }
+          catch (eEco) { lastSentJson = JSON.stringify(incoming); }
         });
         socket.on("vista-html-updated", function (p) {
           if (p && p.view && p.view !== MY_VIEW) return;
@@ -934,14 +930,12 @@ export const PLAN_RUNTIME_JS = String.raw`
     new MutationObserver(function (records) {
       if (applying > 0) return;
       if (onlyOwnNodes(records)) return;
-      for (var i = 0; i < records.length; i++) markDirty(records[i].target);
       scheduleSave();
     }).observe(document.documentElement, {
       subtree: true, childList: true, attributes: true, characterData: true
     });
-    var alEditar = function (ev) { markDirty(ev && ev.target); scheduleSave(); };
-    document.addEventListener("input", alEditar, true);
-    document.addEventListener("change", alEditar, true);
+    document.addEventListener("input", scheduleSave, true);
+    document.addEventListener("change", scheduleSave, true);
     window.addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState === "hidden") flush();
