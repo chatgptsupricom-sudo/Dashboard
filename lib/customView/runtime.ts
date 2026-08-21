@@ -67,6 +67,22 @@ export const PLAN_RUNTIME_JS = String.raw`
   // el guardado propio las borraria.
   var skippedKeys = Object.create(null);
 
+  // Indice del ultimo computeState, para no recorrer el documento dos veces.
+  var lastLiveIdx = null;
+
+  // Elementos que el usuario de ESTA pestana toco desde el ultimo guardado.
+  // Si toca algo que tenia una edicion remota sin replicar, manda lo suyo: no
+  // tendria sentido revertirle en pantalla lo que acaba de escribir.
+  var dirtyEls = null;
+
+  function markDirty(node) {
+    try {
+      if (!dirtyEls) dirtyEls = new Set();
+      var n = node && node.nodeType === 3 ? node.parentNode : node;
+      while (n && n.nodeType === 1) { dirtyEls.add(n); n = n.parentNode; }
+    } catch (e) {}
+  }
+
   // ---------------------------------------------------------------- utilidades
 
   function esc(s) {
@@ -259,6 +275,7 @@ export const PLAN_RUNTIME_JS = String.raw`
     try { normalize(document.documentElement); } finally { applying--; }
 
     var live = buildIndex(document.documentElement);
+    lastLiveIdx = live;
     var bm = baseIdx.map;
     var inBase = function (k) { return !!bm[k]; };
     var nodes = {};
@@ -683,12 +700,27 @@ export const PLAN_RUNTIME_JS = String.raw`
     // Lo que llego por el socket y no se replico en pantalla no esta en el DOM,
     // asi que computeState() no lo ve y guardarlo tal cual lo borraria. Para
     // esas llaves se conserva lo que tiene el servidor.
+    // Solo se reinyecta el CONTENIDO remoto (sh/bsh). Reinyectar el nodo
+    // entero pisaba tambien ca/cr/at, que si estan en el DOM local: una pieza
+    // con una edicion de texto remota quedaba con su marcado congelado en el
+    // valor del servidor, y marcarla aqui no surtia efecto.
     try {
       var ackNodes = (ackState && ackState.nodes) || {};
+      var mapa = (lastLiveIdx && lastLiveIdx.map) || {};
       for (var sk in skippedKeys) {
-        if (ackNodes[sk]) state.nodes[sk] = ackNodes[sk];
-        else delete state.nodes[sk];
+        var ackNode = ackNodes[sk];
+        var elLocal = mapa[sk];
+        var tocadoAqui = !!(elLocal && dirtyEls && dirtyEls.has(elLocal));
+        if (tocadoAqui || !ackNode || ackNode.sh === undefined) {
+          delete skippedKeys[sk];
+          continue;
+        }
+        var mio = state.nodes[sk];
+        if (!mio) { mio = {}; state.nodes[sk] = mio; }
+        mio.sh = ackNode.sh;
+        if (ackNode.bsh !== undefined) mio.bsh = ackNode.bsh;
       }
+      dirtyEls = null;
     } catch (eSk) {}
 
     var json = JSON.stringify(state);
@@ -902,12 +934,14 @@ export const PLAN_RUNTIME_JS = String.raw`
     new MutationObserver(function (records) {
       if (applying > 0) return;
       if (onlyOwnNodes(records)) return;
+      for (var i = 0; i < records.length; i++) markDirty(records[i].target);
       scheduleSave();
     }).observe(document.documentElement, {
       subtree: true, childList: true, attributes: true, characterData: true
     });
-    document.addEventListener("input", scheduleSave, true);
-    document.addEventListener("change", scheduleSave, true);
+    var alEditar = function (ev) { markDirty(ev && ev.target); scheduleSave(); };
+    document.addEventListener("input", alEditar, true);
+    document.addEventListener("change", alEditar, true);
     window.addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState === "hidden") flush();
