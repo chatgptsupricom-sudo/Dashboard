@@ -23,9 +23,11 @@ import {
   Shuffle,
   Tags,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 export default function InventoryReport() {
+  const t = useTranslations("superadmin.reports_inventory");
   const { user } = useAuthStore();
   const [biData, setBiData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +101,7 @@ export default function InventoryReport() {
       <div className="flex flex-col items-center justify-center p-24 bg-white rounded-2xl border border-slate-100 min-h-[400px] shadow-sm">
         <RefreshCw className="h-8 w-8 text-blue-500 animate-spin mb-3" />
         <p className="text-slate-500 text-sm font-medium">
-          Recalculando reportes y segmentando fechas...
+          {t("recalculando")}
         </p>
       </div>
     );
@@ -110,7 +112,7 @@ export default function InventoryReport() {
       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-red-100 text-center min-h-[350px] shadow-sm">
         <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
         <p className="text-slate-800 font-bold text-sm">
-          Error de sincronización empresarial
+          {t("error_sync")}
         </p>
         <p className="text-slate-500 text-xs mt-1 max-w-sm">{errorMsg}</p>
       </div>
@@ -131,10 +133,10 @@ export default function InventoryReport() {
           </div>
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Control Operativo
+              {t("control_operativo")}
             </h3>
             <p className="text-sm font-bold text-slate-700">
-              Filtro multidimensional síncrono
+              {t("filtro_multidimensional")}
             </p>
           </div>
         </div>
@@ -148,10 +150,10 @@ export default function InventoryReport() {
               onChange={(e) => setSelectedCompany(e.target.value)}
               className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer shadow-sm"
             >
-              <option value="all">🏢 Ver Todas las Empresas</option>
+              <option value="all">{t("ver_todas")}</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
-                  📍 Sede {c.name}
+                  {t("sede")} {c.name}
                 </option>
               ))}
             </select>
@@ -160,7 +162,7 @@ export default function InventoryReport() {
           {/* Fecha Inicio */}
           <div className="w-full sm:w-auto flex items-center bg-slate-50 border border-slate-200 px-3 h-10 rounded-xl gap-2 shadow-sm">
             <span className="text-[10px] font-bold text-slate-400 uppercase">
-              Desde
+              {t("desde")}
             </span>
             <input
               type="date"
@@ -173,7 +175,7 @@ export default function InventoryReport() {
           {/* Fecha Fin */}
           <div className="w-full sm:w-auto flex items-center bg-slate-50 border border-slate-200 px-3 h-10 rounded-xl gap-2 shadow-sm">
             <span className="text-[10px] font-bold text-slate-400 uppercase">
-              Hasta
+              {t("hasta")}
             </span>
             <input
               type="date"
@@ -189,7 +191,7 @@ export default function InventoryReport() {
             disabled={loading}
             className="h-10 px-4 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-500 text-xs font-black uppercase rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
           >
-            Limpiar
+            {t("limpiar")}
           </button>
 
           {/* Botón Aplicar */}
@@ -198,7 +200,7 @@ export default function InventoryReport() {
             disabled={loading}
             className="h-10 px-5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black uppercase rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
           >
-            Aplicar
+            {t("aplicar")}
           </button>
         </div>
       </div>
@@ -208,7 +210,7 @@ export default function InventoryReport() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[160px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              PRODUCTO ESTRELLA
+              {t("producto_estrella")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
               {biData?.masVendidos?.[0]?.name || "N/A"}
@@ -224,7 +226,7 @@ export default function InventoryReport() {
             </div>
             <div className="pt-1">
               <span className="inline-block text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
-                LÍDER
+                {t("lider")}
               </span>
             </div>
           </div>
@@ -236,7 +238,7 @@ export default function InventoryReport() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[160px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              MARCA LÍDER FACTURACIÓN
+              {t("marca_lider")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
               {biData?.porMarca?.[0]?.brand || "N/A"}
@@ -263,7 +265,7 @@ export default function InventoryReport() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[160px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              RIESGO OBSOLESCENCIA
+              {t("riesgo_obsolescencia")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
               {biData?.estancados?.[0]?.name || "Ninguno"}
@@ -273,14 +275,14 @@ export default function InventoryReport() {
                 {biData?.estancados?.[0]
                   ? `${biData.estancados[0].days_inactive}`
                   : "0"}{" "}
-                <span className="text-xs font-medium text-slate-400">
-                  días inactivo
-                </span>
+                  <span className="text-xs font-medium text-slate-400">
+                    {t("dias_inactivo")}
+                  </span>
               </span>
             </div>
             <div className="pt-1">
               <span className="inline-block text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">
-                ALERTA
+                {t("alerta")}
               </span>
             </div>
           </div>
@@ -295,7 +297,7 @@ export default function InventoryReport() {
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between pb-4 gap-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-bold text-slate-800 tracking-tight">
-              Análisis Comercial Cubo Odoo
+              {t("analisis_comercial")}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Exploración segmentada según el filtro corporativo activo.
@@ -308,13 +310,13 @@ export default function InventoryReport() {
                 onClick={() => setReportType("product")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${reportType === "product" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
               >
-                <Package size={14} /> Productos
+                <Package size={14} /> {t("productos")}
               </button>
               <button
                 onClick={() => setReportType("brand")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${reportType === "brand" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
               >
-                <Tags size={14} /> Marcas
+                <Tags size={14} /> {t("marcas")}
               </button>
             </div>
 
@@ -323,13 +325,13 @@ export default function InventoryReport() {
                 onClick={() => setViewMode("table")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
               >
-                <List size={14} /> Tabla
+                <List size={14} /> {t("tabla")}
               </button>
               <button
                 onClick={() => setViewMode("chart")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === "chart" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
               >
-                <LayoutGrid size={14} /> Estadística
+                <LayoutGrid size={14} /> {t("estadistica")}
               </button>
             </div>
 
@@ -378,7 +380,7 @@ export default function InventoryReport() {
                         </TableHead>
                         <TableHead className="text-left py-4 pr-6 w-[25%]">
                           <span className="flex items-center gap-1 pl-4">
-                            <Shuffle size={12} /> Cross-Selling
+                            <Shuffle size={12} />                           {t("cross_selling")}
                           </span>
                         </TableHead>
                       </TableRow>
@@ -393,7 +395,7 @@ export default function InventoryReport() {
                             {item.name}
                           </TableCell>
                           <TableCell className="text-right text-slate-500 text-xs font-medium">
-                            {item.total_qty.toLocaleString()} uds
+                            {item.total_qty.toLocaleString()} {t("uds")}
                           </TableCell>
                           <TableCell className="text-right font-bold text-slate-800">
                             $
@@ -470,11 +472,11 @@ export default function InventoryReport() {
                           </TableCell>
                           <TableCell className="text-center py-4">
                             <span className="inline-block px-2 py-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-md border border-emerald-100 uppercase">
-                              Alta Rotación
+                              {t("alta_rotacion")}
                             </span>
                           </TableCell>
                           <TableCell className="text-right font-bold text-slate-800 text-xs whitespace-nowrap">
-                            {item.total_qty.toLocaleString()} uds
+                            {item.total_qty.toLocaleString()} {t("uds")}
                           </TableCell>
                           <TableCell className="text-right text-slate-500 text-xs pr-6 whitespace-nowrap">
                             $
@@ -490,7 +492,7 @@ export default function InventoryReport() {
               ) : (
                 <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Despacho Físico por Cantidad de Unidades
+                    {t("despacho_fisico")}
                   </div>
                   {biData?.mayorRotacion?.map((item: any, i: number) => {
                     const max = getMaxValue(biData.mayorRotacion, "total_qty");
@@ -499,7 +501,7 @@ export default function InventoryReport() {
                         <div className="flex justify-between text-xs font-semibold text-slate-700">
                           <span className="pr-4 break-words">{item.name}</span>
                           <span className="font-bold whitespace-nowrap">
-                            {item.total_qty.toLocaleString()} uds
+                            {item.total_qty.toLocaleString()} {t("uds")}
                           </span>
                         </div>
                         <div className="w-full h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
@@ -525,13 +527,13 @@ export default function InventoryReport() {
                     <TableHeader className="bg-slate-50/70">
                       <TableRow>
                         <TableHead className="pl-6 py-4 w-[50%]">
-                          Producto Inactivo
+                              {t("producto_inactivo")}
                         </TableHead>
                         <TableHead className="text-center py-4 w-[20%]">
-                          Días sin Transacciones
+                              {t("dias_sin_transacciones")}
                         </TableHead>
                         <TableHead className="text-right pr-6 py-4 w-[30%]">
-                          Acción Estratégica
+                              {t("accion_estrategica")}
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -552,8 +554,8 @@ export default function InventoryReport() {
                               className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-md ${item.days_inactive > 90 ? "bg-red-50 text-red-600 border border-red-100" : "bg-amber-50 text-amber-600 border border-amber-100"}`}
                             >
                               {item.days_inactive > 90
-                                ? "Liquidar Inventario"
-                                : "Revisar Canales"}
+                                ? t("liquidar_inventario")
+                                : t("revisar_canales")}
                             </span>
                           </TableCell>
                         </TableRow>
@@ -564,7 +566,7 @@ export default function InventoryReport() {
               ) : (
                 <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Índice Crítico de Días de Inactividad Comercial
+                    {t("indice_critico")}
                   </div>
                   {biData?.estancados?.map((item: any, i: number) => {
                     const max = getMaxValue(biData.estancados, "days_inactive");
@@ -602,22 +604,22 @@ export default function InventoryReport() {
                   <TableHeader className="bg-slate-50/70 border-b border-slate-100">
                     <TableRow>
                       <TableHead className="pl-6 py-4">
-                        Fabricante / Marca
+                        {t("fabricante_marca")}
                       </TableHead>
                       <TableHead className="text-right">
-                        Volumen Movido
+                        {t("volumen_movido")}
                       </TableHead>
                       <TableHead className="text-right">
-                        Total Facturado
+                        {t("total_facturado")}
                       </TableHead>
                       <TableHead className="pl-8">
-                        Nombre del Cliente (Top Buyer)
+                        {t("top_buyer")}
                       </TableHead>
                       <TableHead className="text-center">
-                        Frecuencia de Compra
+                        {t("frecuencia_compra")}
                       </TableHead>
                       <TableHead className="pr-6">
-                        Vendedor Responsable
+                        {t("vendedor_responsable")}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -646,7 +648,7 @@ export default function InventoryReport() {
                               {item.top_client}
                             </div>
                             <div className="text-[10px] text-slate-400">
-                              Volumen acumulado: $
+                              {t("volumen_acumulado")} $
                               {item.client_amount.toLocaleString()}
                             </div>
                           </div>
@@ -655,7 +657,7 @@ export default function InventoryReport() {
                         <TableCell className="text-center py-4">
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
                             <CalendarDays size={12} /> {item.frequency_monthly}{" "}
-                            facturas en el período
+                            {t("facturas_periodo")}
                           </span>
                         </TableCell>
 

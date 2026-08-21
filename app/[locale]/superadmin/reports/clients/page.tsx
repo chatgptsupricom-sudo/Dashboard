@@ -21,9 +21,11 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 export default function ClientsReportComponent() {
+  const t = useTranslations("superadmin.reports_clients");
   const { user } = useAuthStore();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +81,7 @@ export default function ClientsReportComponent() {
       <div className="flex flex-col items-center justify-center p-24 bg-white rounded-2xl border border-slate-100 min-h-[400px] shadow-sm">
         <RefreshCw className="h-8 w-8 text-blue-500 animate-spin mb-3" />
         <p className="text-slate-500 text-sm font-medium">
-          Analizando cartera de clientes con IA...
+          {t("analizando")}
         </p>
       </div>
     );
@@ -89,7 +91,7 @@ export default function ClientsReportComponent() {
       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-red-100 text-center min-h-[350px] shadow-sm">
         <AlertTriangle className="h-10 w-10 text-red-400 mb-3" />
         <p className="text-slate-800 font-bold text-sm">
-          Error de sincronización
+          {t("error_sync")}
         </p>
         <p className="text-slate-500 text-xs mt-1">{errorMsg}</p>
       </div>
@@ -116,10 +118,10 @@ export default function ClientsReportComponent() {
           </div>
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Segmentación
+              {t("segmentacion")}
             </h3>
             <p className="text-sm font-bold text-slate-700">
-              Cartera de Clientes B2B
+              {t("cartera_b2b")}
             </p>
           </div>
         </div>
@@ -129,16 +131,16 @@ export default function ClientsReportComponent() {
             onChange={(e) => setSelectedCompany(e.target.value)}
             className="w-full sm:w-48 h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer shadow-sm"
           >
-            <option value="all">🏢 Todas las Empresas</option>
+            <option value="all">{t("todas_empresas")}</option>
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
-                📍 Sede {c.name}
+                {t("sede")} {c.name}
               </option>
             ))}
           </select>
           <div className="flex items-center bg-slate-50 border border-slate-200 px-3 h-10 rounded-xl gap-2 shadow-sm">
             <span className="text-[10px] font-bold text-slate-400 uppercase">
-              Desde
+              {t("desde")}
             </span>
             <input
               type="date"
@@ -149,7 +151,7 @@ export default function ClientsReportComponent() {
           </div>
           <div className="flex items-center bg-slate-50 border border-slate-200 px-3 h-10 rounded-xl gap-2 shadow-sm">
             <span className="text-[10px] font-bold text-slate-400 uppercase">
-              Hasta
+              {t("hasta")}
             </span>
             <input
               type="date"
@@ -163,14 +165,14 @@ export default function ClientsReportComponent() {
             disabled={loading}
             className="h-10 px-4 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-500 text-xs font-black uppercase rounded-xl transition-all active:scale-95 whitespace-nowrap"
           >
-            Limpiar
+            {t("limpiar")}
           </button>
           <button
             onClick={() => setApplyTrigger((n) => n + 1)}
             disabled={loading}
             className="h-10 px-5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black uppercase rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
           >
-            Aplicar
+            {t("aplicar")}
           </button>
         </div>
       </div>
@@ -180,7 +182,7 @@ export default function ClientsReportComponent() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[140px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Key Account
+              {t("key_account")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
               {topClients[0]?.name || "N/A"}
@@ -203,13 +205,13 @@ export default function ClientsReportComponent() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[140px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Total Clientes Activos
+              {t("total_clientes_activos")}
             </span>
             <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {allClients.length}
             </div>
             <p className="text-[10px] text-slate-400 font-medium">
-              {inactiveClients.length} con riesgo de churn detectados
+              {inactiveClients.length} {t("riesgo_churn")}
             </p>
           </div>
           <div className="p-4 bg-blue-50 text-blue-500 rounded-2xl flex-shrink-0">
@@ -220,7 +222,7 @@ export default function ClientsReportComponent() {
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between min-h-[140px]">
           <div className="space-y-2 flex-1 pr-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Alerta Churn
+              {t("alerta_churn")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
               {inactiveClients[0]?.name || "Ninguno"}
@@ -228,7 +230,7 @@ export default function ClientsReportComponent() {
             <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {inactiveClients[0]?.days_inactive || 0}{" "}
               <span className="text-xs font-medium text-slate-400">
-                días sin comprar
+                {t("dias_sin_comprar")}
               </span>
             </div>
           </div>
@@ -244,10 +246,10 @@ export default function ClientsReportComponent() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-800">
-                Análisis Comercial de Clientes
+                {t("analisis_comercial")}
               </h3>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                Exploración segmentada según el filtro activo.
+                {t("exploracion_segmentada")}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -299,21 +301,21 @@ export default function ClientsReportComponent() {
                     <TableHeader className="bg-slate-50/70">
                       <TableRow>
                         <TableHead className="pl-6 py-4 w-[4%]">#</TableHead>
-                        <TableHead className="py-4 w-[24%]">Cliente</TableHead>
-                        <TableHead className="py-4 w-[13%]">Vendedor</TableHead>
+                        <TableHead className="py-4 w-[24%]">{t("cliente")}</TableHead>
+                        <TableHead className="py-4 w-[13%]">{t("vendedor")}</TableHead>
                         <TableHead className="py-4 w-[13%]">
-                          Marca Insignia
+                          {t("marca_insignia")}
                         </TableHead>
                         <TableHead className="py-4 w-[18%]">
-                          Producto Insignia
+                          {t("producto_insignia")}
                         </TableHead>
                         <TableHead className="text-right py-4 w-[10%]">
-                          Monto ($)
+                          {t("monto_dolar")}
                         </TableHead>
                         <TableHead className="pl-4 py-4 w-[18%]">
                           <span className="flex items-center gap-1">
                             <Sparkles size={11} className="text-indigo-400" />{" "}
-                            IA Upsell
+                            {t("ia_upsell")}
                           </span>
                         </TableHead>
                       </TableRow>
@@ -435,7 +437,7 @@ export default function ClientsReportComponent() {
                           Producto Insignia
                         </TableHead>
                         <TableHead className="text-right py-4 pr-6 w-[12%]">
-                          Facturas
+                          {t("facturas")}
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -492,7 +494,7 @@ export default function ClientsReportComponent() {
                         </span>
                       </div>
                       <span className="font-black text-slate-800">
-                        {c.orders_count} facturas
+                        {c.orders_count} {t("facturas")}
                       </span>
                     </div>
                     <div className="w-full h-2.5 bg-white rounded-full overflow-hidden border border-slate-100">
@@ -515,10 +517,10 @@ export default function ClientsReportComponent() {
               <div className="rounded-2xl border border-slate-100 p-16 text-center">
                 <Clock size={36} className="text-slate-300 mx-auto mb-3" />
                 <p className="text-sm font-bold text-slate-500">
-                  Sin alertas de churn activas
+                  {t("sin_alertas")}
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Todos los clientes frecuentes están activos.
+                  {t("todos_activos")}
                 </p>
               </div>
             ) : viewMode === "table" ? (
@@ -551,10 +553,10 @@ export default function ClientsReportComponent() {
                                 Producto Insignia
                               </TableHead>
                               <TableHead className="text-center py-4 w-[10%]">
-                                Inactivo
+                                {t("inactivo")}
                               </TableHead>
                               <TableHead className="py-4 w-[9%]">
-                                Riesgo
+                                {t("riesgo")}
                               </TableHead>
                               <TableHead className="pl-4 py-4 w-[18%]">
                                 <span className="flex items-center gap-1">
@@ -562,7 +564,7 @@ export default function ClientsReportComponent() {
                                     size={11}
                                     className="text-indigo-400"
                                   />{" "}
-                                  Reactivación IA
+                                  {t("reactivacion_ia")}
                                 </span>
                               </TableHead>
                             </TableRow>
@@ -649,7 +651,7 @@ export default function ClientsReportComponent() {
                     {alertTotalPages > 1 && (
                       <div className="flex items-center justify-between px-1">
                         <span className="text-[11px] text-slate-400 font-medium">
-                          Página {alertPage + 1} de {alertTotalPages} ·{" "}
+                          {t("pagina")} {alertPage + 1} de {alertTotalPages} ·{" "}
                           {inactiveClients.length} alertas
                         </span>
                         <div className="flex gap-2">
@@ -660,7 +662,7 @@ export default function ClientsReportComponent() {
                             disabled={alertPage === 0}
                             className="h-8 px-4 text-xs font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 rounded-xl transition-all"
                           >
-                            ← Anterior
+                            {t("anterior")}
                           </button>
                           <button
                             onClick={() =>
@@ -671,7 +673,7 @@ export default function ClientsReportComponent() {
                             disabled={alertPage >= alertTotalPages - 1}
                             className="h-8 px-4 text-xs font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 rounded-xl transition-all"
                           >
-                            Siguiente →
+                            {t("siguiente")}
                           </button>
                         </div>
                       </div>
@@ -700,7 +702,7 @@ export default function ClientsReportComponent() {
                         <span
                           className={`font-black ${c.days_inactive > 90 ? "text-red-500" : c.days_inactive > 60 ? "text-orange-500" : "text-amber-500"}`}
                         >
-                          {c.days_inactive} días
+                          {c.days_inactive} {t("dias")}
                         </span>
                       </div>
                       <div className="w-full h-2.5 bg-white rounded-full overflow-hidden border border-slate-100">
@@ -713,7 +715,7 @@ export default function ClientsReportComponent() {
                       </div>
                       {c.upsell_suggestion && (
                         <p className="text-[9px] text-emerald-600 font-bold">
-                          IA sugiere ofrecer: {c.upsell_suggestion}
+                          {t("ia_sugiere")} {c.upsell_suggestion}
                         </p>
                       )}
                     </div>

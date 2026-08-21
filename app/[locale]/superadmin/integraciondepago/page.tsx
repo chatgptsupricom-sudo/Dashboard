@@ -2,10 +2,12 @@
 
 import { DateRangePicker } from "@tremor/react";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx"; // Importa al principio
 
 export default function ComisionesPage() {
+  const t = useTranslations("superadmin.integracion_pago");
   const [data, setData] = useState<any>({ results: [], total_count: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -165,7 +167,7 @@ export default function ComisionesPage() {
             ))
           ) : (
             <option key="loading" value="9">
-              Cargando empresas...
+              {t("cargando")}
             </option>
           )}
         </select>
@@ -178,7 +180,7 @@ export default function ComisionesPage() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Todos los vendedores</option>
+          <option value="all">{t("todos_vendedores")}</option>
           {vendedores.map((v) => (
             <option key={v.id} value={v.id}>
               {v.name}
@@ -203,7 +205,7 @@ export default function ComisionesPage() {
           onClick={handleExportExcel}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest transition-all"
         >
-          Exportar Excel
+          {t("exportar")}
         </button>
       </div>
 
@@ -220,17 +222,17 @@ export default function ComisionesPage() {
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-100 text-center">
                 {[
-                  "F. Contable",
-                  "Doc Abono",
-                  "Status",
-                  "Valor Abono",
-                  "RIF",
-                  "Cliente",
-                  "Factura",
-                  "F. Factura",
-                  "Valor Pagado",
-                  "Vendedor",
-                  "F. Abono",
+                  t("f_contable"),
+                  t("doc_abono"),
+                  t("status"),
+                  t("valor_abono"),
+                  t("rif"),
+                  t("cliente"),
+                  t("factura"),
+                  t("f_factura"),
+                  t("valor_pagado"),
+                  t("vendedor"),
+                  t("f_abono"),
                 ].map((h) => (
                   <th
                     key={h}
@@ -291,7 +293,7 @@ export default function ComisionesPage() {
         {/* PAGINACIÓN */}
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase">
-            Mostrando {showingFrom} - {showingTo} de {data?.total_count || 0}
+            {t("mostrando")} {showingFrom} - {showingTo} de {data?.total_count || 0}
           </div>
           <div className="flex items-center gap-3">
             <button

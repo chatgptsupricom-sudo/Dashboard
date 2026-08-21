@@ -9,9 +9,11 @@ import {
   ShieldCheck,
   Terminal,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 export default function AuditPageClient() {
+  const t = useTranslations("superadmin.auditoria");
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -61,7 +63,7 @@ export default function AuditPageClient() {
               <ShieldCheck className="text-white" size={18} />
             </div>
             <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em]">
-              Monitor de Seguridad
+              {t("badge")}
             </span>
           </div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase italic">
@@ -70,7 +72,7 @@ export default function AuditPageClient() {
           <div className="flex items-center gap-2 mt-2 text-slate-400">
             <Activity size={14} className="text-emerald-500 animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest">
-              Actividad de las últimas 24 horas
+              {t("subtitle")}
             </span>
           </div>
         </div>
@@ -87,7 +89,7 @@ export default function AuditPageClient() {
                 : "group-hover:rotate-180 transition-transform duration-500"
             }
           />
-          Sincronizar Logs
+          {t("sincronizar")}
         </button>
       </div>
 
@@ -118,16 +120,16 @@ export default function AuditPageClient() {
             <thead>
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-6 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Evento
+                  {t("evento")}
                 </th>
                 <th className="px-6 py-6 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Usuario
+                  {t("usuario")}
                 </th>
                 <th className="px-6 py-6 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Objetivo
+                  {t("objetivo")}
                 </th>
                 <th className="px-8 py-6 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Hora
+                  {t("hora")}
                 </th>
               </tr>
             </thead>
@@ -181,7 +183,7 @@ export default function AuditPageClient() {
                           })}
                         </span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                          Hoy
+                          {t("hoy")}
                         </span>
                       </div>
                     </td>
@@ -193,7 +195,7 @@ export default function AuditPageClient() {
                     <div className="flex flex-col items-center opacity-20">
                       <Terminal size={40} />
                       <span className="text-xs font-black uppercase mt-4 tracking-[0.3em]">
-                        No hay registros recientes
+                        {t("no_registros")}
                       </span>
                     </div>
                   </td>
@@ -206,7 +208,7 @@ export default function AuditPageClient() {
         {/* FOOTER */}
         <div className="px-8 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {total} Eventos detectados
+            {total} {t("eventos_detectados")}
           </span>
           <div className="flex items-center gap-2">
             <button

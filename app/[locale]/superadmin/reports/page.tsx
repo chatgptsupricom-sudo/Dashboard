@@ -9,6 +9,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -23,6 +24,7 @@ import {
 const COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
 
 export default function PremiumReports() {
+  const t = useTranslations("superadmin.reports");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCo, setSelectedCo] = useState("all");
@@ -45,7 +47,7 @@ export default function PremiumReports() {
   if (loading)
     return (
       <div className="h-screen flex items-center justify-center font-black text-slate-300">
-        CARGANDO INTELIGENCIA...
+        {t("cargando")}
       </div>
     );
 
@@ -58,7 +60,7 @@ export default function PremiumReports() {
             Executive <span className="text-blue-600">Reports</span>
           </h1>
           <p className="text-slate-500 font-medium">
-            Consolidado operativo y comercial
+            {t("consolidado")}
           </p>
         </div>
         <div className="flex gap-4">
@@ -72,7 +74,7 @@ export default function PremiumReports() {
               onChange={(e) => setSelectedCo(e.target.value)}
               className="pl-10 pr-8 py-3 bg-white border-none rounded-2xl shadow-sm font-bold text-xs focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
             >
-              <option value="all">Todas las Empresas</option>
+              <option value="all">{t("todas_empresas")}</option>
               {/* AÑADE ESTA VERIFICACIÓN */}
               {data?.companies?.map((c: any) => (
                 <option key={c.id} value={c.id}>
@@ -85,7 +87,7 @@ export default function PremiumReports() {
           {/* Botón de Descarga */}
           <button className="group flex items-center gap-2 px-5 py-3 bg-white text-slate-700 rounded-2xl shadow-sm border border-slate-100 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-300 font-bold text-xs uppercase tracking-widest active:scale-95">
             <Download size={16} className="group-hover:animate-bounce" />
-            <span>Exportar</span>
+            <span>{t("exportar")}</span>
           </button>
         </div>
       </div>
@@ -93,7 +95,7 @@ export default function PremiumReports() {
       {/* KPI GRID */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <KPIBox
-          title="Ventas Totales"
+          title={t("ventas_totales")}
           // Usamos ?. para evitar el error y ?? 0 para un valor por defecto
           value={`$${data?.summary?.totalRevenue?.toLocaleString() ?? "0"}`}
           trend="+15%"
@@ -101,28 +103,28 @@ export default function PremiumReports() {
           color="blue"
         />
         <KPIBox
-          title="Vendedores"
+          title={t("vendedores")}
           value={data?.summary?.totalSellers ?? "0"}
-          trend="Activos"
+          trend={t("activos")}
           icon={Users}
           color="purple"
         />
         <KPIBox
-          title="Clientes Nuevos"
+          title={t("clientes_nuevos")}
           value={data?.summary?.newClients ?? "0"}
-          trend="Mes actual"
+          trend={t("mes_actual")}
           icon={UserPlus}
           color="green"
         />
         <KPIBox
-          title="Marcas Top"
+          title={t("marcas_top")}
           value={
             data?.salesByBrand?.length > 0
               ? data.summary.topBrand
-              : "No definido"
+              : t("no_definido")
           }
           trend={
-            data?.salesByBrand?.length > 0 ? "Alta demanda" : "Revise catálogo"
+            data?.salesByBrand?.length > 0 ? t("alta_demanda") : t("revise_catalogo")
           }
           icon={Tag}
           color="orange"
@@ -136,7 +138,7 @@ export default function PremiumReports() {
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md">
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              Ventas por Marca y Estado
+              {t("ventas_por_marca")}
             </h3>
             <div className="flex gap-2">
               {/* Indicador de estado opcional */}
@@ -191,7 +193,7 @@ export default function PremiumReports() {
           ) : (
             <div className="h-[350px] flex flex-col items-center justify-center text-slate-300">
               <p className="text-[10px] font-black uppercase tracking-widest">
-                Sin datos para este periodo
+                {t("sin_datos")}
               </p>
             </div>
           )}
@@ -200,7 +202,7 @@ export default function PremiumReports() {
         {/* Top Vendedores */}
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">
-            Top Vendedores
+            {t("top_vendedores")}
           </h3>
           <div className="space-y-6">
             {data?.salesBySeller?.map((seller: any, i: number) => (

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, Tooltip } from "recharts";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import ComprasDetailModal from "./ComprasDetailModal";
 
 const getCellColor = (value: string) => {
@@ -108,6 +108,7 @@ interface SellerDetail {
 
 export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
+  const locale = useLocale();
   const [activeTab, setActiveTab] = useState("Weekly");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
@@ -671,7 +672,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const submitVisita = async () => {
     if (!visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date) {
-      alert("Completa todos los campos obligatorios");
+      alert(t("completa_campos"));
       return;
     }
     setVisitaFormLoading(true);
@@ -728,14 +729,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   if (loading) {
     return (
       <div className="p-6 bg-white min-h-screen flex items-center justify-center">
-        <div className="text-slate-500">Cargando datos...</div>
+        <div className="text-slate-500">{t("loading")}</div>
       </div>
     );
   }
 
   const mesLabel = (mes: string) => {
     const [y, m] = mes.split("-").map(Number);
-    return new Date(y, m - 1, 1).toLocaleDateString("es-VE", { month: "short", year: "2-digit" });
+    return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: "short", year: "2-digit" });
   };
 
   const getMesOptions = () => {
@@ -743,7 +744,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      opts.push({ value: val, label: d.toLocaleDateString("es-VE", { month: "long", year: "numeric" }) });
+      opts.push({ value: val, label: d.toLocaleDateString(locale, { month: "long", year: "numeric" }) });
     }
     return opts;
   };
@@ -1485,7 +1486,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           <button
             onClick={() => { fetchData(false); fetchMarketingData(); fetchCxCData(); fetchCppData(); }}
             className="p-1.5 border rounded-md hover:bg-slate-50 transition-colors"
-            title="Refrescar datos"
+            title={t("refresh")}
           >
             <RotateCcw size={16} />
           </button>
@@ -1512,15 +1513,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-blue-900">Conecta Google Analytics y Search Console</p>
-              <p className="text-xs text-blue-600">Para ver los KPIs de Marketing y SEO de tus sitios web</p>
+              <p className="text-sm font-medium text-blue-900">{t("google_banner_title")}</p>
+              <p className="text-xs text-blue-600">{t("google_banner_desc")}</p>
             </div>
           </div>
           <a
             href="/api/auth/google"
             className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
           >
-            Conectar Google
+            {t("google_connect")}
           </a>
         </div>
       )}
@@ -1563,7 +1564,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-slate-700 truncate">{kpi.title}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Peso: {kpi.peso} · Meta: {kpi.goalDefault}{kpi.goalSuffix}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
                     <div className={`text-sm font-bold w-20 text-right px-2 py-1 rounded ${getCellColor(kpi.average)}`}>{kpi.average}</div>
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
@@ -1633,7 +1634,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <td className="p-3 border-r text-slate-700 bg-white font-medium">
                           {kpi.title}
                           {kpi.isClickable && (
-                            <span className="ml-2 text-[10px] text-blue-500 font-normal">(Click para ver detalle)</span>
+                            <span className="ml-2 text-[10px] text-blue-500 font-normal">{t("click_detail")}</span>
                           )}
                         </td>
                         <td className="p-3 border-r text-center bg-white">
@@ -1678,7 +1679,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {expandedGroups[group.id] && (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") && (
               monthlyHistLoading ? (
-                <div className="p-8 text-center text-slate-500 text-sm">Cargando datos históricos...</div>
+                <div className="p-8 text-center text-slate-500 text-sm">{t("loading_historical")}</div>
               ) : monthlyHistory.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">Sin datos</div>
               ) : (
@@ -1738,13 +1739,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     onClick={() => setSelectedSeller(null)}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
                   >
-                    <ArrowLeft size={16} /> Volver
+                    <ArrowLeft size={16} /> {t("back")}
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Cumplimiento de Cuota de Ventas</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("modal_cuota_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Detalle por vendedor - {modalData?.mes || modalMes} | Dias utiles: {modalData?.totalDiasUtiles || 0}
+                    {t("modal_cuota_subtitle", { mes: modalData?.mes || modalMes, dias: modalData?.totalDiasUtiles || 0 })}
                   </p>
                 </div>
               </div>
@@ -1769,7 +1770,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     modalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {tab === "resumen" ? "Resumen Vendedores" : tab === "diario" ? "Detalle Diario" : "Detalle Semanal"}
+                  {tab === "resumen" ? t("tab_resumen_vendedores") : tab === "diario" ? t("tab_detalle_diario") : t("tab_detalle_semanal")}
                 </button>
               ))}
             </div>
@@ -1778,11 +1779,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {modalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : !modalData ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  No hay datos disponibles
+                  {t("no_available_data")}
                 </div>
               ) : (
                 <>
@@ -1791,23 +1792,23 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="space-y-4">
                       <div className="grid grid-cols-4 gap-4 mb-6">
                         <div className="bg-blue-50 rounded-xl p-4">
-                          <p className="text-xs text-blue-600 font-medium">Total Vendedores</p>
+                          <p className="text-xs text-blue-600 font-medium">{t("total_vendedores")}</p>
                           <p className="text-2xl font-bold text-blue-700">{modalData.sellers.length}</p>
                         </div>
                         <div className="bg-green-50 rounded-xl p-4">
-                          <p className="text-xs text-green-600 font-medium">Cumplieron</p>
+                          <p className="text-xs text-green-600 font-medium">{t("cumplieron")}</p>
                           <p className="text-2xl font-bold text-green-700">
                             {modalData.sellers.filter((s) => s.cumple).length}
                           </p>
                         </div>
                         <div className="bg-red-50 rounded-xl p-4">
-                          <p className="text-xs text-red-600 font-medium">No Cumplieron</p>
+                          <p className="text-xs text-red-600 font-medium">{t("no_cumplieron")}</p>
                           <p className="text-2xl font-bold text-red-700">
                             {modalData.sellers.filter((s) => !s.cumple).length}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-600 font-medium">Dias Utiles Mes</p>
+                          <p className="text-xs text-slate-600 font-medium">{t("dias_utiles_mes")}</p>
                           <p className="text-2xl font-bold text-slate-700">{modalData.totalDiasUtiles}</p>
                         </div>
                       </div>
@@ -1816,12 +1817,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Cuota Mensual</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Facturado</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Porcentaje</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Accion</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("cuota_mensual")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("facturado")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("porcentaje")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("accion")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1838,17 +1839,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 <td className="p-3 text-center">
                                   {seller.cumple ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                      <Check size={12} /> Cumple
+                                      <Check size={12} /> {t("cumple")}
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                      <X size={12} /> No cumple
+                                      <X size={12} /> {t("no_cumple")}
                                     </span>
                                   )}
                                 </td>
                                 <td className="p-3 text-center">
                                   <span className="text-xs text-blue-600 hover:text-blue-800 underline">
-                                    Ver detalle
+                                    {t("ver_detalle")}
                                   </span>
                                 </td>
                               </tr>
@@ -1864,7 +1865,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle diario:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_diario")}</p>
                           <div className="grid grid-cols-2 gap-3">
                             {modalData.sellers.map((seller) => (
                               <button
@@ -1885,7 +1886,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
                               <button onClick={() => setSelectedSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                                Volver
+                                {t("back")}
                               </button>
                               <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
                               <span className={`text-sm font-bold ${selectedSeller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
@@ -1893,18 +1894,18 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               </span>
                             </div>
                             <span className="text-xs text-slate-400">
-                              Cuota diaria: ${selectedSeller.cuotaDiaria.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                              {t("cuota_diaria", { value: selectedSeller.cuotaDiaria.toLocaleString(locale, { minimumFractionDigits: 2 }) })}
                             </span>
                           </div>
                           <div className="border rounded-xl overflow-hidden">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-2 text-left font-medium text-slate-600">Fecha</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">Dia</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">Cuota</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">Facturado</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">Estado</th>
+                                  <th className="p-2 text-left font-medium text-slate-600">{t("fecha")}</th>
+                                  <th className="p-2 text-center font-medium text-slate-600">{t("dia")}</th>
+                                  <th className="p-2 text-center font-medium text-slate-600">{t("cuota")}</th>
+                                  <th className="p-2 text-center font-medium text-slate-600">{t("facturado")}</th>
+                                  <th className="p-2 text-center font-medium text-slate-600">{t("estado")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1927,8 +1928,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                       {dia.esDiaUtil
                                         ? `$${dia.cuotaDiaria.toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
                                         : dia.esFeriado
-                                          ? "Feriado"
-                                          : "Descanso"}
+                                          ? t("feriado")
+                                          : t("descanso")}
                                     </td>
                                     <td className="p-2 text-center font-medium">
                                       {dia.facturado > 0
@@ -1940,11 +1941,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                         <span className="text-xs text-slate-400">-</span>
                                       ) : dia.cumple ? (
                                         <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                          <Check size={12} /> OK
+                                          <Check size={12} /> {t("ok")}
                                         </span>
                                       ) : (
                                         <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                          <X size={12} /> Falta
+                                          <X size={12} /> {t("falta")}
                                         </span>
                                       )}
                                     </td>
@@ -1963,7 +1964,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
                           <div className="grid grid-cols-2 gap-3">
                             {modalData.sellers.map((seller) => (
                               <button
@@ -1983,7 +1984,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div>
                           <div className="flex items-center gap-3 mb-4">
                             <button onClick={() => setSelectedSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              Volver
+                              {t("back")}
                             </button>
                             <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
                             <span className={`text-sm font-bold ${selectedSeller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
@@ -1994,19 +1995,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Periodo</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Dias Utiles</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Cuota Semanal</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Facturado</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Porcentaje</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("periodo")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("dias_utiles")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("cuota_semanal")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("facturado")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("porcentaje")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {selectedSeller.semanas.map((sem) => (
                                   <tr key={sem.numero} className={`border-b ${sem.porcentaje != null && sem.porcentaje >= 100 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium">Semana {sem.numero}</td>
+                                      <td className="p-3 font-medium">{t("semana_numero", { num: sem.numero })}</td>
                                     <td className="p-3 text-center text-slate-600">{sem.inicio} - {sem.fin}</td>
                                     <td className="p-3 text-center">{sem.diasUtiles}</td>
                                     <td className="p-3 text-center">${sem.cuotaSemanal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
@@ -2024,11 +2025,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                       {sem.porcentaje != null ? (
                                         sem.porcentaje >= 100 ? (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                            <Check size={12} /> Cumple
+                                            <Check size={12} /> {t("cumple")}
                                           </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                            <X size={12} /> No cumple
+                                            <X size={12} /> {t("no_cumple")}
                                           </span>
                                         )
                                       ) : (
@@ -2073,27 +2074,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     }}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
                   >
-                    <ArrowLeft size={16} /> Volver
+                    <ArrowLeft size={16} /> {t("back")}
                   </button>
                 )}
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
                     {selectedInvoice
-                      ? `${selectedInvoice.type === "Nota de credito" ? "Nota de Credito" : "Factura"} ${selectedInvoice.reference}`
+                      ? `${selectedInvoice.type === "Nota de credito" ? t("nota_credito_label") : t("factura")} ${selectedInvoice.reference}`
                       : selectedClientesSeller
                         ? selectedClientesClient
-                          ? `Facturas de ${selectedClientesClient.partnerName}`
-                          : `Clientes Nuevos - ${selectedClientesSeller.nombre}`
-                        : "Clientes Nuevos Captados"}
+                          ? t("facturas_de", { cliente: selectedClientesClient.partnerName })
+                          : t("clientes_nuevos_titulo", { vendedor: selectedClientesSeller.nombre })
+                        : t("clientes_nuevos_title")}
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {selectedInvoice
-                      ? `${selectedInvoice.date} | Total: $${Math.abs(selectedInvoice.amount || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
+                      ? `${selectedInvoice.date} | ${t("total")}: $${Math.abs(selectedInvoice.amount || 0).toLocaleString(locale, { minimumFractionDigits: 2 })}`
                       : selectedClientesSeller
                         ? selectedClientesClient
-                          ? `${selectedMes} | Total: $${(selectedClientesClient.totalFacturado || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
-                          : `${selectedMes} | Nuevos: ${clientesSellerDetail?.totalNuevos || 0}`
-                        : `Detalle por vendedor - ${clientesModalData?.mes || selectedMes} | Meta por vendedor: ${clientesModalData?.metaPerSeller || 0}`}
+                          ? `${selectedMes} | ${t("total")}: $${(selectedClientesClient.totalFacturado || 0).toLocaleString(locale, { minimumFractionDigits: 2 })}`
+                          : `${selectedMes} | ${t("clientes_nuevos_col")}: ${clientesSellerDetail?.totalNuevos || 0}`
+                        : t("clientes_nuevos_subtitle", { mes: clientesModalData?.mes || selectedMes, meta: clientesModalData?.metaPerSeller || 0 })}
                   </p>
                 </div>
               </div>
@@ -2129,7 +2130,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       clientesModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
-                    {tab === "resumen" ? "Resumen Vendedores" : "Detalle Semanal por Vendedor"}
+                    {tab === "resumen" ? t("tab_resumen_vendedores") : t("tab_detalle_semanal_vendedor")}
                   </button>
                 ))}
               </div>
@@ -2139,7 +2140,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             {selectedClientesSeller && (
               <div className="flex gap-2 px-5 pt-3 text-xs text-slate-500">
                 <button onClick={() => { setSelectedClientesSeller(null); setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); setClientesSellerDetail(null); }} className="hover:text-amber-600 transition-colors">
-                  Resumen
+                  {t("resumen")}
                 </button>
                 <span>/</span>
                 <button onClick={() => { setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-amber-600 transition-colors">
@@ -2165,9 +2166,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             {/* Body */}
             <div className="flex-1 overflow-auto p-5">
               {clientesModalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos...</div>
+                <div className="flex items-center justify-center py-20 text-slate-400">{t("loading")}</div>
               ) : !clientesModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+                <div className="flex items-center justify-center py-20 text-slate-400">{t("no_available_data")}</div>
               ) : (
                 <>
                   {/* RESUMEN TAB */}
@@ -2176,19 +2177,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       {/* Summary cards */}
                       <div className="grid grid-cols-4 gap-4 mb-6">
                         <div className="bg-emerald-50 rounded-xl p-4">
-                          <p className="text-xs text-emerald-600 font-medium">Total Clientes Nuevos</p>
+                          <p className="text-xs text-emerald-600 font-medium">{t("total_clientes_nuevos")}</p>
                           <p className="text-2xl font-bold text-emerald-700">{clientesModalData.totalNuevos}</p>
                         </div>
                         <div className="bg-blue-50 rounded-xl p-4">
-                          <p className="text-xs text-blue-600 font-medium">Vendedores</p>
+                          <p className="text-xs text-blue-600 font-medium">{t("vendedores")}</p>
                           <p className="text-2xl font-bold text-blue-700">{clientesModalData.numSellers}</p>
                         </div>
                         <div className="bg-amber-50 rounded-xl p-4">
-                          <p className="text-xs text-amber-600 font-medium">Meta por Vendedor</p>
+                          <p className="text-xs text-amber-600 font-medium">{t("meta_por_vendedor")}</p>
                           <p className="text-2xl font-bold text-amber-700">{clientesModalData.metaPerSeller}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-600 font-medium">Promedio por Vendedor</p>
+                          <p className="text-xs text-slate-600 font-medium">{t("promedio_por_vendedor")}</p>
                           <p className="text-2xl font-bold text-slate-700">
                             {clientesModalData.numSellers > 0
                               ? Math.round((clientesModalData.totalNuevos / clientesModalData.numSellers) * 10) / 10
@@ -2202,11 +2203,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Clientes Nuevos</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Meta</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Porcentaje</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("clientes_nuevos_col")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("meta")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("porcentaje")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2240,7 +2241,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                         </span>
                                       )
                                     ) : (
-                                      <span className="text-xs text-slate-400">Sin meta</span>
+                                      <span className="text-xs text-slate-400">{t("sin_meta")}</span>
                                     )}
                                   </td>
                                 </tr>
@@ -2258,10 +2259,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-slate-50 border-b">
-                            <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                            <th className="p-3 text-center font-medium text-slate-600">Total</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("total")}</th>
                             {clientesModalData.weekHeaders?.map((_: string, i: number) => (
-                              <th key={i} className="p-3 text-center font-medium text-slate-600">Sem {i + 1}</th>
+                              <th key={i} className="p-3 text-center font-medium text-slate-600">{t("sem")} {i + 1}</th>
                             ))}
                           </tr>
                         </thead>
@@ -2293,23 +2294,23 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   {selectedClientesSeller && !selectedClientesClient && (
                     <div className="space-y-4">
                       {clientesSellerLoading ? (
-                        <div className="flex items-center justify-center py-20 text-slate-400">Cargando clientes...</div>
+                        <div className="flex items-center justify-center py-20 text-slate-400">{t("cargando_clientes")}</div>
                       ) : !clientesSellerDetail || clientesSellerDetail.clients.length === 0 ? (
-                        <div className="flex items-center justify-center py-20 text-slate-400">No hay clientes nuevos para este vendedor</div>
+                        <div className="flex items-center justify-center py-20 text-slate-400">{t("no_clientes_vendedor")}</div>
                       ) : (
                         <>
                           <div className="flex items-center gap-3 mb-2">
-                            <span className="text-sm font-medium text-slate-600">Clientes nuevos de {selectedClientesSeller.nombre}:</span>
+                            <span className="text-sm font-medium text-slate-600">{t("clientes_nuevos_de", { vendedor: selectedClientesSeller.nombre })}:</span>
                             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">{clientesSellerDetail.totalNuevos}</span>
                           </div>
                           <div className="border rounded-xl overflow-hidden">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Facturado</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Facturas</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Accion</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("facturado")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("facturas")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("accion")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -2319,7 +2320,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     <td className="p-3 text-center font-bold">${client.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                     <td className="p-3 text-center text-slate-600">{client.invoices.length}</td>
                                     <td className="p-3 text-center">
-                                      <span className="text-xs text-blue-600 underline">Ver facturas</span>
+                                      <span className="text-xs text-blue-600 underline">{t("ver_facturas")}</span>
                                     </td>
                                   </tr>
                                 ))}
@@ -2335,7 +2336,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   {selectedClientesClient && !selectedInvoice && (
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="text-sm font-medium text-slate-600">Facturas de {selectedClientesClient.partnerName}:</span>
+                        <span className="text-sm font-medium text-slate-600">{t("facturas_de", { cliente: selectedClientesClient.partnerName })}:</span>
                         <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
                           Total: ${selectedClientesClient.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                         </span>
@@ -2344,10 +2345,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Referencia</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Fecha</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Tipo</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Monto</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("referencia")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("fecha")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("tipo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("monto")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2382,23 +2383,23 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   {selectedInvoice && (
                     <div className="space-y-4">
                       {invoiceLoading ? (
-                        <div className="flex items-center justify-center py-20 text-slate-400">Cargando detalle...</div>
+                        <div className="flex items-center justify-center py-20 text-slate-400">{t("loading_detail")}</div>
                       ) : !invoiceDetail ? (
-                        <div className="flex items-center justify-center py-20 text-slate-400">No se pudo cargar el detalle</div>
+                        <div className="flex items-center justify-center py-20 text-slate-400">{t("error_loading")}</div>
                       ) : (
                         <>
                           {/* Invoice summary */}
                           <div className="grid grid-cols-3 gap-4 mb-4">
                             <div className="bg-slate-50 rounded-xl p-4">
-                              <p className="text-xs text-slate-500 font-medium">Subtotal</p>
-                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                              <p className="text-xs text-slate-500 font-medium">{t("subtotal")}</p>
+                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.subtotal.toLocaleString(locale, { minimumFractionDigits: 2 })}</p>
                             </div>
                             <div className="bg-slate-50 rounded-xl p-4">
-                              <p className="text-xs text-slate-500 font-medium">Impuestos</p>
-                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                              <p className="text-xs text-slate-500 font-medium">{t("impuestos")}</p>
+                              <p className="text-lg font-bold text-slate-800">${invoiceDetail.tax.toLocaleString(locale, { minimumFractionDigits: 2 })}</p>
                             </div>
                             <div className={`rounded-xl p-4 ${invoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
-                              <p className={`text-xs font-medium ${invoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>Total</p>
+                              <p className={`text-xs font-medium ${invoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>{t("total")}</p>
                               <p className={`text-lg font-bold ${invoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
                                 ${Math.abs(invoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                               </p>
@@ -2410,10 +2411,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Cantidad</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Precio Unitario</th>
-                                  <th className="p-3 text-right font-medium text-slate-600">Subtotal</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("producto")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("cantidad")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("precio_unitario")}</th>
+                                  <th className="p-3 text-right font-medium text-slate-600">{t("subtotal")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -2432,23 +2433,23 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 ))}
                                 {invoiceDetail.lines.length === 0 && (
                                   <tr>
-                                    <td colSpan={4} className="p-6 text-center text-slate-400">Sin lineas de producto</td>
+                                    <td colSpan={4} className="p-6 text-center text-slate-400">{t("sin_lineas")}</td>
                                   </tr>
                                 )}
                               </tbody>
                               <tfoot>
                                 <tr className="bg-slate-50 border-t-2">
-                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Subtotal</td>
-                                  <td className="p-3 text-right font-bold">${invoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">{t("subtotal")}</td>
+                                  <td className="p-3 text-right font-bold">${invoiceDetail.subtotal.toLocaleString(locale, { minimumFractionDigits: 2 })}</td>
                                 </tr>
                                 <tr className="bg-slate-50">
-                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Impuestos</td>
-                                  <td className="p-3 text-right font-bold">${invoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  <td colSpan={3} className="p-3 text-right font-medium text-slate-600">{t("impuestos")}</td>
+                                  <td className="p-3 text-right font-bold">${invoiceDetail.tax.toLocaleString(locale, { minimumFractionDigits: 2 })}</td>
                                 </tr>
                                 <tr className={`border-t-2 ${invoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
-                                  <td colSpan={3} className="p-3 text-right font-bold text-slate-700">Total</td>
+                                  <td colSpan={3} className="p-3 text-right font-bold text-slate-700">{t("total")}</td>
                                   <td className={`p-3 text-right font-bold text-lg ${invoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
-                                    ${Math.abs(invoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                    ${Math.abs(invoiceDetail.total).toLocaleString(locale, { minimumFractionDigits: 2 })}
                                   </td>
                                 </tr>
                               </tfoot>
@@ -2477,13 +2478,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     onClick={() => setSelectedMargenSeller(null)}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
                   >
-                    <ArrowLeft size={16} /> Volver
+                    <ArrowLeft size={16} /> {t("back")}
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Margen Bruto</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("margen_bruto_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Detalle por vendedor y producto - {margenModalData?.mes || modalMes}
+                    {t("margen_bruto_subtitle", { mes: margenModalData?.mes || modalMes })}
                   </p>
                 </div>
               </div>
@@ -2508,7 +2509,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     margenModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {tab === "vendedor" ? "Por Vendedor" : tab === "producto" ? "Por Producto" : "Detalle Semanal"}
+                  {tab === "vendedor" ? t("tab_por_vendedor") : tab === "producto" ? t("tab_por_producto") : t("tab_detalle_semanal")}
                 </button>
               ))}
             </div>
@@ -2517,11 +2518,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {margenModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : !margenModalData ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  No hay datos disponibles
+                  {t("no_available_data")}
                 </div>
               ) : (
                 <>
@@ -2539,25 +2540,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         return (
                           <div className="grid grid-cols-4 gap-4 mb-6">
                             <div className="bg-purple-50 rounded-xl p-4">
-                              <p className="text-xs text-purple-600 font-medium">Revenue Total</p>
+                              <p className="text-xs text-purple-600 font-medium">{t("revenue_total")}</p>
                               <p className="text-2xl font-bold text-purple-700">
-                                ${totalRevenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalRevenue.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-red-50 rounded-xl p-4">
-                              <p className="text-xs text-red-600 font-medium">Costo Total</p>
+                              <p className="text-xs text-red-600 font-medium">{t("costo_total")}</p>
                               <p className="text-2xl font-bold text-red-700">
-                                ${totalCosto.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalCosto.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-green-50 rounded-xl p-4">
-                              <p className="text-xs text-green-600 font-medium">Ganancia Total</p>
+                              <p className="text-xs text-green-600 font-medium">{t("ganancia_total")}</p>
                               <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
-                                ${totalGanancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalGanancia.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-amber-50 rounded-xl p-4">
-                              <p className="text-xs text-amber-600 font-medium">Margen Promedio</p>
+                              <p className="text-xs text-amber-600 font-medium">{t("margen_promedio")}</p>
                               <p className="text-2xl font-bold text-amber-700">{margenPromedio}%</p>
                             </div>
                           </div>
@@ -2569,12 +2570,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2630,25 +2631,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         return (
                           <div className="grid grid-cols-4 gap-4 mb-6">
                             <div className="bg-purple-50 rounded-xl p-4">
-                              <p className="text-xs text-purple-600 font-medium">Revenue Total</p>
+                              <p className="text-xs text-purple-600 font-medium">{t("revenue_total")}</p>
                               <p className="text-2xl font-bold text-purple-700">
-                                ${totalRevenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalRevenue.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-red-50 rounded-xl p-4">
-                              <p className="text-xs text-red-600 font-medium">Costo Total</p>
+                              <p className="text-xs text-red-600 font-medium">{t("costo_total")}</p>
                               <p className="text-2xl font-bold text-red-700">
-                                ${totalCosto.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalCosto.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-green-50 rounded-xl p-4">
-                              <p className="text-xs text-green-600 font-medium">Ganancia Total</p>
+                              <p className="text-xs text-green-600 font-medium">{t("ganancia_total")}</p>
                               <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
-                                ${totalGanancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                ${totalGanancia.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div className="bg-slate-50 rounded-xl p-4">
-                              <p className="text-xs text-slate-600 font-medium">Total Productos</p>
+                              <p className="text-xs text-slate-600 font-medium">{t("total_productos")}</p>
                               <p className="text-2xl font-bold text-slate-700">{totalProductos}</p>
                             </div>
                           </div>
@@ -2660,12 +2661,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Cant. Vendida</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Costo</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("producto")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("cant_vendida")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2698,7 +2699,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedMargenSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_margen")}</p>
                           <div className="grid grid-cols-2 gap-3">
                             {margenModalData.sellers.map((seller: any) => (
                               <button
@@ -2718,7 +2719,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div>
                           <div className="flex items-center gap-3 mb-4">
                             <button onClick={() => setSelectedMargenSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              Volver
+                              {t("back")}
                             </button>
                             <h3 className="font-bold text-slate-800">{selectedMargenSeller.nombre}</h3>
                             <span className={`text-sm font-bold ${selectedMargenSeller.margenMensual >= 15 ? "text-green-600" : "text-red-600"}`}>
@@ -2729,12 +2730,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Revenue</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Costo</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Ganancia</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Margen %</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -2742,7 +2743,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   const ganancia = sem.revenue - sem.costo;
                                   return (
                                     <tr key={sem.numero} className={`border-b ${sem.margen != null && sem.margen >= 15 ? "bg-green-50/30" : ""}`}>
-                                      <td className="p-3 font-medium">Semana {sem.numero}</td>
+                                    <td className="p-3 font-medium">{t("semana_numero", { num: sem.numero })}</td>
                                       <td className="p-3 text-center">${sem.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                       <td className="p-3 text-center text-red-600">${sem.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                                       <td className={`p-3 text-center font-medium ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
@@ -2761,11 +2762,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                         {sem.margen != null ? (
                                           sem.margen >= 15 ? (
                                             <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                              <Check size={12} /> OK
+                                              <Check size={12} /> {t("ok")}
                                             </span>
                                           ) : (
                                             <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                              <X size={12} /> Bajo
+                                              <X size={12} /> {t("bajo")}
                                             </span>
                                           )
                                         ) : (
@@ -2801,13 +2802,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     onClick={() => setSelectedEfectividadSeller(null)}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
                   >
-                    <ArrowLeft size={16} /> Volver
+                    <ArrowLeft size={16} /> {t("back")}
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Tasa de Efectividad de Cierre</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("efectividad_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    {efectividadModalData?.periodoLabel || "Detalle por vendedor"}
+                    {efectividadModalData?.periodoLabel || t("efectividad_subtitle")}
                   </p>
                 </div>
               </div>
@@ -2824,7 +2825,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                    {p === "mes" ? t("periodo_mes") : p === "trimestre" ? t("periodo_trimestre") : p === "anio" ? t("periodo_anio") : t("periodo_todo")}
                   </button>
                 ))}
               </div>
@@ -2846,7 +2847,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     efectividadModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {tab === "vendedor" ? "Por Vendedor" : "Detalle Semanal"}
+                  {tab === "vendedor" ? t("tab_por_vendedor") : t("tab_detalle_semanal")}
                 </button>
               ))}
             </div>
@@ -2855,11 +2856,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {efectividadModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : !efectividadModalData ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  No hay datos disponibles
+                  {t("no_available_data")}
                 </div>
               ) : (
                 <>
@@ -2869,15 +2870,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                        {/* Global Funnel */}
                       {efectividadModalData.global && (
                         <div className="bg-gradient-to-r from-slate-50 to-white rounded-xl p-6 border">
-                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Embbudo Global - {efectividadModalData?.periodoLabel || "Mes"}</h3>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("embudo_global", { periodo: efectividadModalData?.periodoLabel || t("periodo_mes") })}</h3>
                           <div className="flex items-center justify-between gap-4">
                             {/* Ordenes */}
                             <div className="flex-1 text-center">
                               <div className="bg-amber-100 rounded-xl p-4 mb-2">
                                 <p className="text-3xl font-bold text-amber-700">{efectividadModalData.global.ordenes}</p>
                               </div>
-                              <p className="text-xs font-medium text-amber-600">├ôrdenes</p>
-                              <p className="text-[10px] text-slate-400">sale+done (confirmadas)</p>
+                              <p className="text-xs font-medium text-amber-600">{t("ordenes")}</p>
+                              <p className="text-[10px] text-slate-400">{t("ordenenes_confirmadas")}</p>
                             </div>
                             {/* Arrow */}
                             <div className="flex flex-col items-center">
@@ -2888,16 +2889,16 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <div className="bg-green-100 rounded-xl p-4 mb-2">
                                 <p className="text-3xl font-bold text-green-700">{efectividadModalData.global.facturadas}</p>
                               </div>
-                              <p className="text-xs font-medium text-green-600">Facturadas por completo</p>
-                              <p className="text-[10px] text-slate-400">invoice_status = invoiced</p>
+                              <p className="text-xs font-medium text-green-600">{t("facturadas_completo")}</p>
+                              <p className="text-[10px] text-slate-400">{t("invoice_status")}</p>
                             </div>
                             {/* Efectividad */}
                             <div className="flex flex-col items-center ml-4">
                               <div className="bg-purple-100 rounded-xl px-6 py-4 mb-2">
                                 <p className="text-3xl font-bold text-purple-700">{efectividadModalData.global.efectividad}%</p>
                               </div>
-                              <p className="text-xs font-medium text-purple-600">Efectividad</p>
-                              <p className="text-[10px] text-slate-400">facturadas / ordenes</p>
+                              <p className="text-xs font-medium text-purple-600">{t("efectividad")}</p>
+                              <p className="text-[10px] text-slate-400">{t("formula_efectividad")}</p>
                             </div>
                           </div>
                         </div>
@@ -2908,11 +2909,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-center font-medium text-amber-600">├ôrdenes</th>
-                              <th className="p-3 text-center font-medium text-green-600">Facturadas</th>
-                              <th className="p-3 text-center font-medium text-purple-600">Efectividad %</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-amber-600">{t("ordenes")}</th>
+                              <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                              <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2956,7 +2957,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedEfectividadSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
                           <div className="grid grid-cols-2 gap-3">
                             {efectividadModalData.sellers.map((seller: any) => (
                               <button
@@ -2976,7 +2977,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div>
                           <div className="flex items-center gap-3 mb-4">
                             <button onClick={() => setSelectedEfectividadSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              Volver
+                              {t("back")}
                             </button>
                             <h3 className="font-bold text-slate-800">{selectedEfectividadSeller.nombre}</h3>
                             <span className={`text-sm font-bold ${selectedEfectividadSeller.efectividad >= 60 ? "text-green-600" : "text-red-600"}`}>
@@ -2987,17 +2988,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                                  <th className="p-3 text-center font-medium text-amber-600">├ôrdenes</th>
-                                  <th className="p-3 text-center font-medium text-green-600">Facturadas</th>
-                                  <th className="p-3 text-center font-medium text-purple-600">Efectividad %</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                                  <th className="p-3 text-center font-medium text-amber-600">{t("ordenes")}</th>
+                                  <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                                  <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {selectedEfectividadSeller.semanas.map((sem: any) => (
                                   <tr key={sem.numero} className={`border-b ${sem.efectividad != null && sem.efectividad >= 60 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
                                     <td className="p-3 text-center text-amber-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
                                     <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.facturadas : "-"}</td>
                                     <td className="p-3 text-center">
@@ -3013,7 +3014,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                       {sem.efectividad != null ? (
                                         sem.efectividad >= 60 ? (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                            <Check size={12} /> OK
+                                            <Check size={12} /> {t("ok")}
                                           </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
@@ -3051,9 +3052,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <Package size={20} className="text-cyan-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Desempeño por Marca</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("cobertura_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    {coberturaModalData?.periodoLabel || "Detalle de marcas"}
+                    {coberturaModalData?.periodoLabel || t("cobertura_subtitle")}
                   </p>
                 </div>
               </div>
@@ -3070,7 +3071,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                    {p === "mes" ? t("periodo_mes") : p === "trimestre" ? t("periodo_trimestre") : p === "anio" ? t("periodo_anio") : t("periodo_todo")}
                   </button>
                 ))}
               </div>
@@ -3092,7 +3093,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     coberturaModalTab === tab ? "text-cyan-500 border-b-2 border-cyan-500" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {tab === "vendedor" ? "Por Marca" : "Detalle Semanal"}
+                  {tab === "vendedor" ? t("tab_por_marca") : t("tab_detalle_semanal")}
                 </button>
               ))}
             </div>
@@ -3101,11 +3102,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {coberturaModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : !coberturaModalData ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  No hay datos disponibles
+                  {t("no_available_data")}
                 </div>
               ) : (
                 <>
@@ -3115,37 +3116,37 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       {/* Global Summary */}
                       {coberturaModalData.global && (
                         <div className="bg-gradient-to-r from-cyan-50 to-white rounded-xl p-6 border">
-                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Resumen Global - {coberturaModalData.periodoLabel}</h3>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: coberturaModalData.periodoLabel })}</h3>
                           <div className="grid grid-cols-5 gap-4">
                             <div className="text-center">
                               <div className="bg-cyan-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-cyan-700">{coberturaModalData.global.totalMarcas}</p>
                               </div>
-                              <p className="text-xs font-medium text-cyan-600">Marcas</p>
+                              <p className="text-xs font-medium text-cyan-600">{t("marcas")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-green-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-green-700">${coberturaModalData.global.revenue?.toLocaleString()}</p>
                               </div>
-                              <p className="text-xs font-medium text-green-600">Revenue Total</p>
+                              <p className="text-xs font-medium text-green-600">{t("revenue_total")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-red-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-red-700">${coberturaModalData.global.costo?.toLocaleString()}</p>
                               </div>
-                              <p className="text-xs font-medium text-red-600">Costo Total</p>
+                              <p className="text-xs font-medium text-red-600">{t("costo_total")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-purple-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-purple-700">{coberturaModalData.global.margen}%</p>
                               </div>
-                              <p className="text-xs font-medium text-purple-600">Margen Promedio</p>
+                              <p className="text-xs font-medium text-purple-600">{t("margen_promedio")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-amber-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-amber-700">{coberturaModalData.global.totalVendedores}</p>
                               </div>
-                              <p className="text-xs font-medium text-amber-600">Vendedores</p>
+                              <p className="text-xs font-medium text-amber-600">{t("vendedores")}</p>
                             </div>
                           </div>
                         </div>
@@ -3156,13 +3157,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Marca</th>
-                              <th className="p-3 text-right font-medium text-green-600">Revenue</th>
-                              <th className="p-3 text-right font-medium text-red-600">Costo</th>
-                              <th className="p-3 text-right font-medium text-emerald-600">Ganancia</th>
-                              <th className="p-3 text-right font-medium text-amber-600">Cantidad</th>
-                              <th className="p-3 text-right font-medium text-cyan-600">P. Vendidos</th>
-                              <th className="p-3 text-right font-medium text-slate-600">Vendedores</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("marca")}</th>
+                              <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
+                              <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
+                              <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
+                              <th className="p-3 text-right font-medium text-amber-600">{t("cantidad")}</th>
+                              <th className="p-3 text-right font-medium text-cyan-600">{t("p_vendidos")}</th>
+                              <th className="p-3 text-right font-medium text-slate-600">{t("vendedores")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3194,7 +3195,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedCoberturaSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona una marca para ver su detalle semanal:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_marca")}</p>
                           <div className="grid grid-cols-3 gap-3">
                             {coberturaModalData.marcas.map((marca: any) => (
                               <button
@@ -3217,7 +3218,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div>
                           <div className="flex items-center gap-3 mb-4">
                             <button onClick={() => setSelectedCoberturaSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              Volver
+                              {t("back")}
                             </button>
                             <h3 className="font-bold text-slate-800">{selectedCoberturaSeller.marca}</h3>
                             <span className={`text-sm font-bold ${selectedCoberturaSeller.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -3241,17 +3242,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                                  <th className="p-3 text-right font-medium text-green-600">Revenue</th>
-                                  <th className="p-3 text-right font-medium text-red-600">Costo</th>
-                                  <th className="p-3 text-right font-medium text-emerald-600">Ganancia</th>
-                                  <th className="p-3 text-right font-medium text-amber-600">Cantidad</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                                  <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
+                                  <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
+                                  <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
+                                  <th className="p-3 text-right font-medium text-amber-600">{t("cantidad")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {selectedCoberturaSeller.semanas.map((sem: any) => (
                                   <tr key={sem.numero} className={`border-b ${sem.cantidadPct != null && sem.cantidadPct >= 100 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
                                     <td className="p-3 text-right text-green-600 font-bold">${sem.revenue?.toLocaleString()}</td>
                                     <td className="p-3 text-right text-red-600">${sem.costo?.toLocaleString()}</td>
                                     <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -3285,9 +3286,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <UserCheck size={20} className="text-orange-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Activación de Cartera</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("activacion_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    {activacionModalData?.periodoLabel || "Detalle por vendedor"}
+                    {activacionModalData?.periodoLabel || t("activacion_subtitle")}
                   </p>
                 </div>
               </div>
@@ -3304,7 +3305,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {p === "mes" ? "Mes" : p === "trimestre" ? "Trimestre" : p === "anio" ? "Año" : "Todo"}
+                    {p === "mes" ? t("periodo_mes") : p === "trimestre" ? t("periodo_trimestre") : p === "anio" ? t("periodo_anio") : t("periodo_todo")}
                   </button>
                 ))}
               </div>
@@ -3326,7 +3327,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     activacionModalTab === tab ? "text-orange-500 border-b-2 border-orange-500" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {tab === "vendedor" ? "Por Vendedor" : "Detalle Semanal"}
+                  {tab === "vendedor" ? t("tab_por_vendedor") : t("tab_detalle_semanal")}
                 </button>
               ))}
             </div>
@@ -3335,11 +3336,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {activacionModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : !activacionModalData ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  No hay datos disponibles
+                  {t("no_available_data")}
                 </div>
               ) : (
                 <>
@@ -3349,25 +3350,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       {/* Global Summary */}
                       {activacionModalData.global && (
                         <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl p-6 border">
-                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Resumen Global - {activacionModalData.periodoLabel}</h3>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: activacionModalData.periodoLabel })}</h3>
                           <div className="grid grid-cols-3 gap-4">
                             <div className="text-center">
                               <div className="bg-orange-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-orange-700">{activacionModalData.global.totalClientes}</p>
                               </div>
-                              <p className="text-xs font-medium text-orange-600">Total Clientes</p>
+                              <p className="text-xs font-medium text-orange-600">{t("total_clientes")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-green-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-green-700">{activacionModalData.global.clientesActivos}</p>
                               </div>
-                              <p className="text-xs font-medium text-green-600">Clientes Activos</p>
+                              <p className="text-xs font-medium text-green-600">{t("clientes_activos")}</p>
                             </div>
                             <div className="text-center">
                               <div className="bg-purple-100 rounded-xl p-3 mb-2">
                                 <p className="text-2xl font-bold text-purple-700">{activacionModalData.global.activacion}%</p>
                               </div>
-                              <p className="text-xs font-medium text-purple-600">Activación Global</p>
+                              <p className="text-xs font-medium text-purple-600">{t("activacion_global")}</p>
                             </div>
                           </div>
                         </div>
@@ -3378,11 +3379,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-center font-medium text-orange-600">Total Clientes</th>
-                              <th className="p-3 text-center font-medium text-green-600">Clientes Activos</th>
-                              <th className="p-3 text-center font-medium text-purple-600">Activación %</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
+                              <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
+                              <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3426,7 +3427,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div>
                       {!selectedActivacionSeller ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">Selecciona un vendedor para ver su detalle semanal:</p>
+                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_activacion")}</p>
                           <div className="grid grid-cols-2 gap-3">
                             {activacionModalData.sellers.map((seller: any) => (
                               <button
@@ -3436,7 +3437,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               >
                                 <div>
                                   <span className="font-medium text-slate-800">{seller.nombre}</span>
-                                  <p className="text-xs text-slate-500">{seller.clientesActivos}/{seller.totalClientes} clientes activos</p>
+                                  <p className="text-xs text-slate-500">{seller.clientesActivos}/{seller.totalClientes}{t("clientes_activos_suffix")}</p>
                                 </div>
                                 <span className={`text-sm font-bold ${seller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
                                   {seller.activacion}%
@@ -3449,28 +3450,28 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <div>
                           <div className="flex items-center gap-3 mb-4">
                             <button onClick={() => setSelectedActivacionSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              Volver
+                              {t("back")}
                             </button>
                             <h3 className="font-bold text-slate-800">{selectedActivacionSeller.nombre}</h3>
                             <span className={`text-sm font-bold ${selectedActivacionSeller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
-                              {selectedActivacionSeller.activacion}% activación
+                              {selectedActivacionSeller.activacion}%{t("activacion_suffix")}
                             </span>
                           </div>
                           <div className="border rounded-xl overflow-hidden">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                                  <th className="p-3 text-center font-medium text-green-600">Clientes Activos</th>
-                                  <th className="p-3 text-center font-medium text-orange-600">Total Clientes</th>
-                                  <th className="p-3 text-center font-medium text-purple-600">Activación %</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                                  <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
+                                  <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
+                                  <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {selectedActivacionSeller.semanas.map((sem: any) => (
                                   <tr key={sem.numero} className={`border-b ${sem.activacion != null && sem.activacion >= 60 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium text-sm">{sem.label || `Semana ${sem.numero}`}</td>
+                                    <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
                                     <td className="p-3 text-center text-green-600 font-bold">{sem.activos}</td>
                                     <td className="p-3 text-center text-orange-600 font-bold">{sem.total}</td>
                                     <td className="p-3 text-center">
@@ -3486,7 +3487,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                       {sem.activacion != null ? (
                                         sem.activacion >= 60 ? (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                            <Check size={12} /> OK
+                                            <Check size={12} /> {t("ok")}
                                           </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
@@ -3524,9 +3525,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <Calendar size={20} className="text-indigo-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Visitas Semanales</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{t("visitas_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    {kpiData?.sellers?.length || 0} vendedores - {modalMes}
+                    {t("visitas_subtitle", { count: kpiData?.sellers?.length || 0, mes: modalMes })}
                   </p>
                 </div>
               </div>
@@ -3545,7 +3546,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {visitasModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  Cargando datos...
+                  {t("loading")}
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -3556,7 +3557,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Selector de Vendedor */}
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Vendedor *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("vendedor_label")}</label>
                         <select
                           value={visitaForm.seller_name}
                           onChange={(e) => {
@@ -3570,7 +3571,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           }}
                           className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         >
-                          <option value="">Seleccionar vendedor...</option>
+                          <option value="">{t("seleccionar_vendedor")}</option>
                           {visitasVendedores.map((s: any, i: number) => (
                             <option key={`${s.id}-${i}`} value={s.nombre}>{s.nombre}</option>
                           ))}
@@ -3579,13 +3580,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
                       {/* Selector de Cliente / Prospecto */}
                       <div className="relative" data-client-dropdown>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Cliente *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("cliente_label")}</label>
                         {visitaForm.is_prospect ? (
                           <input
                             type="text"
                             value={visitaForm.client_name}
                             onChange={(e) => setVisitaForm({ ...visitaForm, client_name: e.target.value })}
-                            placeholder="Nombre del prospecto..."
+                            placeholder={t("nombre_prospecto")}
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                           />
                         ) : (
@@ -3601,10 +3602,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               onFocus={() => { if (visitaForm.seller_name) setVisitaClientDropdownOpen(true); }}
                               placeholder={
                                 !visitaForm.seller_name
-                                  ? "Selecciona un vendedor primero"
+                                  ? t("selecciona_primero")
                                   : visitasClientesLoading
-                                    ? "Cargando clientes..."
-                                    : "Buscar cliente..."
+                                    ? t("cargando_clientes")
+                                    : t("buscar_cliente")
                               }
                               disabled={!visitaForm.seller_name || visitasClientesLoading}
                               className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
@@ -3614,7 +3615,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 {visitasClientes.filter((c: any) =>
                                   c.name.toLowerCase().includes(visitaClientSearch.toLowerCase())
                                 ).length === 0 ? (
-                                  <div className="px-3 py-2 text-xs text-slate-400">No se encontraron clientes</div>
+                                  <div className="px-3 py-2 text-xs text-slate-400">{t("no_clientes")}</div>
                                 ) : (
                                   visitasClientes
                                     .filter((c: any) => c.name.toLowerCase().includes(visitaClientSearch.toLowerCase()))
@@ -3648,13 +3649,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             }}
                             className="rounded border-slate-300"
                           />
-                          Prospecto de cliente (no existe en sistema)
+                          {t("prospecto")}
                         </label>
                       </div>
 
                       {/* Fecha de Visita */}
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Fecha de Visita *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("fecha_visita")}</label>
                         <input
                           type="date"
                           value={visitaForm.visit_date}
@@ -3665,7 +3666,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
                       {/* Foto (opcional) */}
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Foto (opcional)</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("foto_opcional")}</label>
                         <input
                           type="file"
                           accept="image/*"
@@ -3699,7 +3700,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         disabled={visitaFormLoading || !visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date}
                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        {visitaFormLoading ? "Guardando..." : "Guardar Visita"}
+                        {visitaFormLoading ? t("guardando") : t("guardar_visita")}
                       </button>
                     </div>
                   </div>
@@ -3710,37 +3711,37 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("visitas_registradas", { count: visitasData.length })}</h3>
                     {visitasData.length === 0 ? (
                       <div className="text-center py-10 text-slate-400 text-sm">
-                        No hay visitas registradas este mes
+                        {t("no_visitas")}
                       </div>
                     ) : (
                       <div className="border rounded-xl overflow-hidden">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Fecha</th>
-                              <th className="p-3 text-left font-medium text-slate-600">Vendedor</th>
-                              <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Tipo</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Foto</th>
-                              {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">Acciones</th>}
+                              <th className="p-3 text-left font-medium text-slate-600">{t("fecha")}</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("tipo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("foto")}</th>
+                              {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">{t("acciones")}</th>}
                             </tr>
                           </thead>
                           <tbody>
                             {visitasData.map((visita: any) => (
                               <tr key={visita.id} className="border-b hover:bg-indigo-50/40 transition-colors">
                                 <td className="p-3 text-slate-800">
-                                  {new Date(visita.visit_date).toLocaleDateString("es-VE")}
+                                  {new Date(visita.visit_date).toLocaleDateString(locale)}
                                 </td>
                                 <td className="p-3 font-medium text-slate-800">{visita.seller_name}</td>
                                 <td className="p-3 text-slate-800">{visita.client_name}</td>
                                 <td className="p-3 text-center">
                                   {visita.is_prospect ? (
                                     <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
-                                      Prospecto
+                                      {t("prospecto_label")}
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                      Cliente
+                                      {t("cliente")}
                                     </span>
                                   )}
                                 </td>
@@ -3759,7 +3760,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     onClick={() => deleteVisita(visita.id)}
                                     className="text-red-500 hover:text-red-700 text-xs"
                                   >
-                                    Eliminar
+                                    {t("eliminar")}
                                   </button>
                                   )}
                                 </td>
@@ -3796,22 +3797,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     onClick={() => { setCxcSelectedInvoice(null); setCxcInvoiceDetail(null); }}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
                   >
-                    <ArrowLeft size={16} /> Volver
+                    <ArrowLeft size={16} /> {t("back")}
                   </button>
                 )}
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
                     {cxcSelectedInvoice
                       ? `${cxcSelectedInvoice.name} — ${cxcSelectedInvoice.partnerName}`
-                      : cxcModalKpi === "efectividad_cobranza" ? "Efectividad de Cobranza — Detalle"
-                      : cxcModalKpi === "cartera_vencida" ? "Cartera Vencida — Detalle"
-                      : cxcModalKpi === "recuperacion_vencidos" ? "Recuperación de Cartera Vencida — Detalle"
-                      : "Días Promedio de Cobro (DSO) — Detalle"}
+                      : cxcModalKpi === "efectividad_cobranza" ? t("cxc_efectividad_title")
+                      : cxcModalKpi === "cartera_vencida" ? t("cxc_cartera_title")
+                      : cxcModalKpi === "recuperacion_vencidos" ? t("cxc_recuperacion_title")
+                      : t("cxc_dso_title")}
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {cxcSelectedInvoice
-                      ? `Factura ${cxcSelectedInvoice.invoiceDate || ""} — ${cxcSelectedInvoice.companyName}`
-                      : `Facturas con saldo abierto — ${empresaLabel} | ${selectedMes}`}
+                      ? `${t("factura")} ${cxcSelectedInvoice.invoiceDate || ""} — ${cxcSelectedInvoice.companyName}`
+                      : t("facturas_saldo", { empresa: empresaLabel, mes: selectedMes })}
                   </p>
                 </div>
               </div>
@@ -3826,36 +3827,36 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {cxcModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                  <RefreshCw size={24} className="animate-spin mr-2" /> {t("loading_detail")}
                 </div>
               ) : !cxcModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+                <div className="flex items-center justify-center py-20 text-slate-400">{t("no_available_data")}</div>
               ) : cxcSelectedInvoice ? (
                 <>
                   {cxcInvoiceLoading ? (
                     <div className="flex items-center justify-center py-20 text-slate-400">
-                      <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                      <RefreshCw size={24} className="animate-spin mr-2" /> {t("loading_detail")}
                     </div>
                   ) : !cxcInvoiceDetail ? (
-                    <div className="flex items-center justify-center py-20 text-slate-400">No se pudo cargar el detalle</div>
+                    <div className="flex items-center justify-center py-20 text-slate-400">{t("error_loading")}</div>
                   ) : (
                     <>
                       {cxcInvoiceDetail.lines.some((l: any) => l.productName.includes("SAL_INI") || l.productName.includes("Saldo Inicial")) && (
                         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-                          <strong>Saldo Inicial:</strong> Esta factura fue creada como asiento de apertura al migrar a Odoo. No es una venta real, sino el saldo deudor que la empresa ya tenía antes de la migración.
+                          <strong>{t("saldo_inicial")}</strong> {t("saldo_inicial_desc")}
                         </div>
                       )}
                       <div className="grid grid-cols-3 gap-4 mb-6">
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Subtotal</p>
-                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("subtotal")}</p>
+                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.subtotal.toLocaleString(locale, { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Impuestos</p>
-                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("impuestos")}</p>
+                          <p className="text-lg font-bold text-slate-800">${cxcInvoiceDetail.tax.toLocaleString(locale, { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className={`rounded-xl p-4 ${cxcInvoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
-                          <p className={`text-xs font-medium ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>Total</p>
+                          <p className={`text-xs font-medium ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-600" : "text-green-600"}`}>{t("total")}</p>
                           <p className={`text-lg font-bold ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
                             ${Math.abs(cxcInvoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                           </p>
@@ -3866,10 +3867,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                              <th className="p-3 text-right font-medium text-slate-600">Cantidad</th>
-                              <th className="p-3 text-right font-medium text-slate-600">P. Unitario</th>
-                              <th className="p-3 text-right font-medium text-slate-600">Subtotal</th>
+                              <th className="p-3 text-left font-medium text-slate-600">{t("producto")}</th>
+                              <th className="p-3 text-right font-medium text-slate-600">{t("cantidad")}</th>
+                              <th className="p-3 text-right font-medium text-slate-600">{t("p_unitario")}</th>
+                              <th className="p-3 text-right font-medium text-slate-600">{t("subtotal")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3881,7 +3882,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     {line.productName}
                                     {isSaldoInicial && (
                                       <span className="ml-2 inline-block px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">
-                                        Saldo de migración a Odoo
+                                         {t("saldo_migracion")}
                                       </span>
                                     )}
                                   </td>
@@ -3894,15 +3895,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           </tbody>
                           <tfoot>
                             <tr className="bg-slate-50">
-                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Subtotal</td>
-                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.subtotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">{t("subtotal")}</td>
+                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.subtotal.toLocaleString(locale, { minimumFractionDigits: 2 })}</td>
                             </tr>
                             <tr className="bg-slate-50">
-                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">Impuestos</td>
-                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.tax.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                              <td colSpan={3} className="p-3 text-right font-medium text-slate-600">{t("impuestos")}</td>
+                              <td className="p-3 text-right font-bold">${cxcInvoiceDetail.tax.toLocaleString(locale, { minimumFractionDigits: 2 })}</td>
                             </tr>
                             <tr className={`border-t-2 ${cxcInvoiceDetail.moveType === "Nota de credito" ? "bg-red-50" : "bg-green-50"}`}>
-                              <td colSpan={3} className="p-3 text-right font-bold text-slate-700">Total</td>
+                              <td colSpan={3} className="p-3 text-right font-bold text-slate-700">{t("total")}</td>
                               <td className={`p-3 text-right font-bold text-lg ${cxcInvoiceDetail.moveType === "Nota de credito" ? "text-red-700" : "text-green-700"}`}>
                                 ${Math.abs(cxcInvoiceDetail.total).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                               </td>
@@ -3917,11 +3918,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <>
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div className="bg-slate-50 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 font-medium">Total cartera abierta</p>
+                      <p className="text-xs text-slate-500 font-medium">{t("total_cartera")}</p>
                       <p className="text-lg font-bold text-slate-800">${cxcModalData.total.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                     </div>
                     <div className="bg-slate-50 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 font-medium">Facturas con saldo</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("facturas_con_saldo")}</p>
                       <p className="text-lg font-bold text-slate-800">{cxcModalData.count}</p>
                     </div>
                   </div>
@@ -3930,15 +3931,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">Factura</th>
-                          <th className="p-3 text-left font-medium text-slate-600">Cliente</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Sede</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Fecha factura</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Vencimiento</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Estado</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
-                          <th className="p-3 text-right font-medium text-slate-600">Monto</th>
-                          <th className="p-3 text-right font-medium text-slate-600">Saldo</th>
+                          <th className="p-3 text-left font-medium text-slate-600">{t("factura")}</th>
+                          <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("sede")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("fecha_factura")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("vencimiento")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("dias_vencido")}</th>
+                          <th className="p-3 text-right font-medium text-slate-600">{t("monto")}</th>
+                          <th className="p-3 text-right font-medium text-slate-600">{t("saldo")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3959,9 +3960,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 inv.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
-                                {inv.paymentState === "paid" || inv.paymentState === "reconciled" ? "Pagada" :
-                                 inv.paymentState === "in_payment" ? "En pago" :
-                                 inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                                {inv.paymentState === "paid" || inv.paymentState === "reconciled" ? t("pagada") :
+                                 inv.paymentState === "in_payment" ? t("en_pago") :
+                                 inv.paymentState === "partial" ? t("parcial") : t("pendiente")}
                               </span>
                             </td>
                             <td className="p-3 text-center">
@@ -3995,10 +3996,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  {cppModalKpi === "pagos_a_tiempo" ? "Pagos realizados a tiempo — Detalle"
-                    : cppModalKpi === "cuentas_pagar_vencidas" ? "Cuentas por pagar vencidas — Detalle"
-                    : cppModalKpi === "procesamiento_oportuno" ? "Procesamiento oportuno — Detalle"
-                    : "Días promedio de pago (DPO) — Detalle"}
+                  {cppModalKpi === "pagos_a_tiempo" ? t("cpp_pagos_title")
+                    : cppModalKpi === "cuentas_pagar_vencidas" ? t("cpp_cxpagar_title")
+                    : cppModalKpi === "procesamiento_oportuno" ? t("cpp_procesamiento_title")
+                    : t("cpp_dpo_title")}
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
                   {empresaLabel} | {selectedMes}
@@ -4015,21 +4016,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="flex-1 overflow-auto p-5">
               {cppModalLoading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
-                  <RefreshCw size={24} className="animate-spin mr-2" /> Cargando detalle...
+                  <RefreshCw size={24} className="animate-spin mr-2" /> {t("loading_detail")}
                 </div>
               ) : !cppModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+                <div className="flex items-center justify-center py-20 text-slate-400">{t("no_available_data")}</div>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     {cppModalKpi === "pagos_a_tiempo" && (
                       <>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Total facturas</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("total_facturas")}</p>
                           <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Monto residual</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("monto_residual")}</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="col-span-2 flex gap-2">
@@ -4043,7 +4044,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                               }`}
                             >
-                              {f === "all" ? "Todos" : f === "pagado" ? "Pagado" : "No pagado"}
+                              {f === "all" ? t("todos") : f === "pagado" ? t("pagado") : t("no_pagado")}
                             </button>
                           ))}
                         </div>
@@ -4052,18 +4053,18 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {cppModalKpi === "cuentas_pagar_vencidas" && (
                       <>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Facturas con saldo</p>
+                      <p className="text-xs text-slate-500 font-medium">{t("facturas_con_saldo")}</p>
                           <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Monto vencido</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("monto_vencido")}</p>
                           <p className="text-lg font-bold text-red-600">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                         </div>
                         {cppModalData.agingBuckets && (
                           <div className="col-span-2 grid grid-cols-6 gap-2">
                             {Object.entries(cppModalData.agingBuckets).map(([band, info]: [string, any]) => (
                               <div key={band} className={`rounded-lg p-2 text-center ${band === "corriente" ? "bg-emerald-50" : band === "91+" ? "bg-red-50" : "bg-amber-50"}`}>
-                                <p className="text-[10px] font-medium text-slate-500">{band === "corriente" ? "Corriente" : band}</p>
+                                <p className="text-[10px] font-medium text-slate-500">{band === "corriente" ? t("corriente") : band}</p>
                                 <p className="text-sm font-bold text-slate-800">${info.amount?.toLocaleString("es-VE", { maximumFractionDigits: 0 })}</p>
                               </div>
                             ))}
@@ -4074,11 +4075,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {cppModalKpi === "procesamiento_oportuno" && (
                       <>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Facturas recibidas</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("facturas_recibidas")}</p>
                           <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Monto total</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("monto_total")}</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                         </div>
                       </>
@@ -4086,11 +4087,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     {cppModalKpi === "dpo" && (
                       <>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">CxP abierta (90 días)</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("cxp_abierta")}</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">Compras a crédito (90 días)</p>
+                          <p className="text-xs text-slate-500 font-medium">{t("compras_credito")}</p>
                           <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
                         </div>
                       </>
@@ -4101,24 +4102,24 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">Factura</th>
-                          <th className="p-3 text-left font-medium text-slate-600">Proveedor</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Fecha factura</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Vencimiento</th>
-                          <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                          <th className="p-3 text-left font-medium text-slate-600">{t("factura")}</th>
+                          <th className="p-3 text-left font-medium text-slate-600">{t("proveedor")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("fecha_factura")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("vencimiento")}</th>
+                          <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                           {cppModalKpi === "procesamiento_oportuno" ? (
                             <>
-                              <th className="p-3 text-center font-medium text-slate-600">Días proc.</th>
-                              <th className="p-3 text-center font-medium text-slate-600">SLA</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("dias_proc")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("sla")}</th>
                             </>
                           ) : (
                             <>
-                              <th className="p-3 text-center font-medium text-slate-600">Días vencido</th>
-                              <th className="p-3 text-center font-medium text-slate-600">Banda aging</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("dias_vencido")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("banda_aging")}</th>
                             </>
                           )}
-                          <th className="p-3 text-right font-medium text-slate-600">Monto</th>
-                          <th className="p-3 text-right font-medium text-slate-600">Saldo</th>
+                          <th className="p-3 text-right font-medium text-slate-600">{t("monto")}</th>
+                          <th className="p-3 text-right font-medium text-slate-600">{t("saldo")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4143,10 +4144,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 bill.paymentState === "nota_credito" || bill.isRefund ? "bg-purple-100 text-purple-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
-                                {bill.paymentState === "paid" || bill.paymentState === "reconciled" ? "Pagada" :
-                                 bill.paymentState === "in_payment" ? "En pago" :
-                                 bill.paymentState === "partial" ? "Parcial" :
-                                 bill.paymentState === "nota_credito" || bill.isRefund ? "N. Crédito" : "Pendiente"}
+                                {bill.paymentState === "paid" || bill.paymentState === "reconciled" ? t("pagada") :
+                                 bill.paymentState === "in_payment" ? t("en_pago") :
+                                 bill.paymentState === "partial" ? t("parcial") :
+                                 bill.paymentState === "nota_credito" || bill.isRefund ? t("nc_redito") : t("pendiente")}
                               </span>
                             </td>
                             {cppModalKpi === "procesamiento_oportuno" ? (
@@ -4175,7 +4176,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     bill.agingBand === "91+" ? "bg-red-100 text-red-700" :
                                     "bg-amber-100 text-amber-700"
                                   }`}>
-                                    {bill.agingBand === "corriente" ? "Corriente" : bill.agingBand}
+                                    {bill.agingBand === "corriente" ? t("corriente") : bill.agingBand}
                                   </span>
                                 </td>
                               </>

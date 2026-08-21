@@ -1,9 +1,11 @@
 "use client";
 
 import { Clock, Filter, Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 
 export default function AuditLogsPage() {
+  const t = useTranslations("superadmin.auditoria_panel");
   const [logs, setLogs] = useState<any[]>([]);
   const [filters, setFilters] = useState({ search: "", role: "TODOS" });
 
@@ -27,8 +29,8 @@ export default function AuditLogsPage() {
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">
-          Historial de Auditoría del Panel
+          <h1 className="text-2xl font-bold text-slate-900">
+          {t("title")}
         </h1>
       </div>
 
@@ -38,7 +40,7 @@ export default function AuditLogsPage() {
           <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
           <input
             type="text"
-            placeholder="Buscar por usuario..."
+            placeholder={t("buscar")}
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500"
             onChange={(e) => setFilters({ ...filters, search: e.target.value })}
           />
@@ -49,7 +51,7 @@ export default function AuditLogsPage() {
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500 text-zinc-600 appearance-none"
             onChange={(e) => setFilters({ ...filters, role: e.target.value })}
           >
-            <option value="TODOS">Todos los roles</option>
+            <option value="TODOS">{t("todos_roles")}</option>
             <option value="adminleads">AdminLeads</option>
             <option value="vendedor">Vendedor</option>
           </select>
@@ -61,11 +63,11 @@ export default function AuditLogsPage() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-zinc-100 text-zinc-400 text-[10px] uppercase tracking-widest font-bold bg-zinc-50/50">
-              <th className="px-6 py-4 text-left">Usuario</th>
-              <th className="px-6 py-4 text-left">Rol</th>
-              <th className="px-6 py-4 text-left">Acción</th>
-              <th className="px-6 py-4 text-left">Detalles (JSON)</th>
-              <th className="px-6 py-4 text-right">Fecha</th>
+              <th className="px-6 py-4 text-left">{t("usuario")}</th>
+              <th className="px-6 py-4 text-left">{t("rol")}</th>
+              <th className="px-6 py-4 text-left">{t("accion")}</th>
+              <th className="px-6 py-4 text-left">{t("detalles")}</th>
+              <th className="px-6 py-4 text-right">{t("fecha")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-50">

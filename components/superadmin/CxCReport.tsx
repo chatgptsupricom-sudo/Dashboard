@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import {
   TrendingUp,
   TrendingDown,
@@ -19,17 +20,14 @@ import {
   Calendar,
 } from "lucide-react";
 
-const COMPANY_OPTIONS = [
-  { value: "", label: "Todas las sedes" },
-  { value: "caracas", label: "Caracas" },
-  { value: "valencia", label: "Valencia" },
-  { value: "panama", label: "Panamá" },
-];
-
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
+function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
+  return [
+    { value: "", label: t("todas_sedes") },
+    { value: "caracas", label: "Caracas" },
+    { value: "valencia", label: "Valencia" },
+    { value: "panama", label: "Panamá" },
+  ];
+}
 
 interface KPIs {
   efectividad: { value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number };
@@ -143,12 +141,16 @@ function AgingBar({ label, value, total }: { label: string; value: number; total
 }
 
 export default function CxCReport() {
+  const t = useTranslations("cxc");
   const [data, setData] = useState<CxCData | null>(null);
   const [loading, setLoading] = useState(true);
   const [empresa, setEmpresa] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [expandedCompany, setExpandedCompany] = useState<number | null>(null);
+
+  const COMPANY_OPTIONS = getCompanyOptions(t);
+  const MONTHS = t.raw("meses") as string[];
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -176,10 +178,10 @@ export default function CxCReport() {
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Cuentas por Cobrar</h1>
+          <h1 className="text-2xl font-bold text-slate-800">{t("titulo")}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Supricom — {MONTHS[selectedMonth - 1]} {selectedYear}
-            {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
+            {t("supricom")} — {MONTHS[selectedMonth - 1]} {selectedYear}
+            {data && <span className="ml-2 text-slate-400">| {t("actualizado")}: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -224,7 +226,7 @@ export default function CxCReport() {
             className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            Actualizar
+            {t("actualizar")}
           </button>
         </div>
       </div>
@@ -233,7 +235,7 @@ export default function CxCReport() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <RefreshCw size={32} className="animate-spin text-blue-500 mx-auto mb-2" />
-            <p className="text-slate-500">Cargando datos de cuentas por cobrar...</p>
+            <p className="text-slate-500">{t("cargando_datos")}</p>
           </div>
         </div>
       )}
@@ -242,40 +244,40 @@ export default function CxCReport() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <KPICard
-              title="Efectividad de Cobranza"
+              title={t("efectividad_cobranza")}
               value={`${data.kpis.efectividad.value}%`}
-              meta={`Meta: ${data.kpis.efectividad.meta}%`}
-              subtitle={`Cobrado: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / Exigible: ${formatCurrency(data.kpis.efectividad.exigibleMes)}`}
+              meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
+              subtitle={`${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}`}
               color={getTrafficLight(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               dot={getTrafficDot(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               icon={<TrendingUp size={20} />}
               weight="35%"
             />
             <KPICard
-              title="Cartera Vencida"
+              title={t("cartera_vencida")}
               value={`${data.kpis.carteraVencida.value}%`}
-              meta={`Meta: ≤${data.kpis.carteraVencida.meta}%`}
-              subtitle={`Vencido: ${formatCurrency(data.kpis.carteraVencida.saldoVencido)} / Total: ${formatCurrency(data.kpis.carteraVencida.carteraTotal)}`}
+              meta={`${t("meta")}: ≤${data.kpis.carteraVencida.meta}%`}
+              subtitle={`${t("vencido")}: ${formatCurrency(data.kpis.carteraVencida.saldoVencido)} / ${t("total")}: ${formatCurrency(data.kpis.carteraVencida.carteraTotal)}`}
               color={getTrafficLight(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
               dot={getTrafficDot(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
               icon={<AlertTriangle size={20} />}
               weight="30%"
             />
             <KPICard
-              title="Recuperación de Vencidos"
+              title={t("recuperacion_vencidos")}
               value={`${data.kpis.recuperacion.value}%`}
-              meta={`Meta: ${data.kpis.recuperacion.meta}%`}
-              subtitle={`Inicial: ${formatCurrency(data.kpis.recuperacion.vencidoInicial)} / Restante: ${formatCurrency(data.kpis.recuperacion.vencidoRestante)}`}
+              meta={`${t("meta")}: ${data.kpis.recuperacion.meta}%`}
+              subtitle={`${t("inicial")}: ${formatCurrency(data.kpis.recuperacion.vencidoInicial)} / ${t("restante")}: ${formatCurrency(data.kpis.recuperacion.vencidoRestante)}`}
               color={getTrafficLight(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
               dot={getTrafficDot(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
               icon={<RefreshCw size={20} />}
               weight="25%"
             />
             <KPICard
-              title="DSO (Días de Cobro)"
-              value={`${data.kpis.dso.value} días`}
-              meta={`Meta: ≤${data.kpis.dso.meta} días`}
-              subtitle={`Cartera: ${formatCurrency(data.kpis.dso.carteraAbierta)} / Crédito 90d: ${formatCurrency(data.kpis.dso.ventasCredito90d)}`}
+              title={t("dso")}
+              value={`${data.kpis.dso.value} ${t("dias")}`}
+              meta={`${t("meta")}: ≤${data.kpis.dso.meta} ${t("dias")}`}
+              subtitle={`${t("cartera")}: ${formatCurrency(data.kpis.dso.carteraAbierta)} / ${t("credito_90d")}: ${formatCurrency(data.kpis.dso.ventasCredito90d)}`}
               color={getTrafficLight(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
               dot={getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
               icon={<Clock size={20} />}
@@ -287,23 +289,23 @@ export default function CxCReport() {
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <DollarSign size={16} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Resumen Cartera</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">{t("resumen_cartera")}</h3>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Cartera total abierta</span>
+                  <span className="text-slate-500">{t("cartera_total_abierta")}</span>
                   <span className="font-semibold text-slate-800">{formatCurrency(data.summary.totalReceivable)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Cartera vencida</span>
+                  <span className="text-slate-500">{t("cartera_vencida_label")}</span>
                   <span className="font-semibold text-red-600">{formatCurrency(data.summary.totalOverdue)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Facturas abiertas</span>
+                  <span className="text-slate-500">{t("facturas_abiertas")}</span>
                   <span className="font-semibold text-slate-800">{formatNumber(data.summary.openInvoiceCount)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Facturas vencidas</span>
+                  <span className="text-slate-500">{t("facturas_vencidas")}</span>
                   <span className="font-semibold text-red-600">{formatNumber(data.summary.overdueInvoiceCount)}</span>
                 </div>
               </div>
@@ -312,7 +314,7 @@ export default function CxCReport() {
             <div className="bg-white rounded-xl border border-slate-200 p-4 lg:col-span-2">
               <div className="flex items-center gap-2 mb-3">
                 <BarChart3 size={16} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Antigüedad de Cartera</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">{t("antiguedad_cartera")}</h3>
               </div>
               <div className="space-y-2">
                 {Object.entries(data.agingDistribution).map(([band, value]) => (
@@ -326,17 +328,17 @@ export default function CxCReport() {
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Building2 size={16} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Por Sede</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">{t("por_sede")}</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 text-slate-500 font-medium">Sede</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Cartera</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Efectiv.</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
+                      <th className="text-left py-2 text-slate-500 font-medium">{t("sede")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("cartera")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("efectividad")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("fact")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -365,17 +367,17 @@ export default function CxCReport() {
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Users size={16} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">{t("top_10_deudores")}</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 text-slate-500 font-medium">Cliente</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Total</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Días</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
+                      <th className="text-left py-2 text-slate-500 font-medium">{t("cliente")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("total")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("dias_col")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">{t("fact")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -407,16 +409,16 @@ export default function CxCReport() {
           <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
             <div className="flex items-center gap-2 mb-4">
               <Users size={16} className="text-blue-600" />
-              <h3 className="font-semibold text-slate-700 text-sm">Cartera por Responsable de Cobranza</h3>
+              <h3 className="font-semibold text-slate-700 text-sm">{t("cartera_por_responsable")}</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 text-slate-500 font-medium">Responsable</th>
-                    <th className="text-right py-2 text-slate-500 font-medium">Cartera total</th>
-                    <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
-                    <th className="text-right py-2 text-slate-500 font-medium">Facturas</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">{t("responsable")}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t("cartera_total_label")}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t("facturas")}</th>
                   </tr>
                 </thead>
                 <tbody>
