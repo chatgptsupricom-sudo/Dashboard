@@ -355,7 +355,9 @@ export async function GET(request: NextRequest) {
         .map((k) => ({
           id: `sf-${k.id}`,
           area: cat.categoria,
-          titulo: `${k.nombre}: ${k.valor}${k.unidad} (meta ${k.metaTexto})`,
+          titulo: `${k.nombre}: ${
+            k.unidad === "$" ? money(k.valor ?? 0) : `${k.valor}${k.unidad}`
+          } (meta ${k.metaTexto})`,
           responsable: k.responsable,
           montoAfectado:
             k.id === "cartera_vencida" ? cxc.vencido
