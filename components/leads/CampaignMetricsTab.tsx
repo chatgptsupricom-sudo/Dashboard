@@ -7,7 +7,9 @@ import {
   DollarSign,
   Eye,
   Loader2,
+  Pencil,
   Plus,
+  X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useCallback, useEffect, useState } from "react";
@@ -78,6 +80,10 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [txNotes, setTxNotes] = useState("");
   const [savingTx, setSavingTx] = useState(false);
+
+  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [savingCampaign, setSavingCampaign] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -163,6 +169,49 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
       body: JSON.stringify({ id: svc.id, toggle_paid: makePaid }),
     });
     fetchServices();
+  };
+
+  const startEditCampaign = (c: any) => {
+    setEditingCampaign(c.campaign_name);
+    setEditValues({
+      impressions: String(c.impressions),
+      clicks: String(c.clicks),
+      leads_from_ads: String(c.leads_from_ads),
+      calificados: String(c.calificados),
+      no_calificados: String(c.no_calificados),
+      ventas_cerradas: String(c.ventas_cerradas),
+      recaudo_usd: String(c.recaudo_usd),
+    });
+  };
+
+  const saveCampaign = async () => {
+    if (!editingCampaign) return;
+    setSavingCampaign(true);
+    await fetch("/api/adminleads/meta-campaigns", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campaign_name: editingCampaign,
+        impressions: parseInt(editValues.impressions) || 0,
+        clicks: parseInt(editValues.clicks) || 0,
+        leads_from_ads: parseInt(editValues.leads_from_ads) || 0,
+        calificados: parseInt(editValues.calificados) || 0,
+        no_calificados: parseInt(editValues.no_calificados) || 0,
+        ventas_cerradas: parseInt(editValues.ventas_cerradas) || 0,
+        recaudo_usd: parseFloat(editValues.recaudo_usd) || 0,
+      }),
+    });
+    setEditingCampaign(null);
+    setSavingCampaign(false);
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (sede) params.set("sede", sede);
+    if (fechaInicio) params.set("fecha_inicio", fechaInicio);
+    if (fechaFin) params.set("fecha_fin", fechaFin);
+    fetch(`/api/adminleads/meta-campaigns?${params.toString()}`)
+      .then((r) => r.json())
+      .then((r) => { if (!r.error) setData(r); })
+      .finally(() => setLoading(false));
   };
 
   const getPaymentStatus = (svc: ServiceItem) => {
@@ -298,58 +347,100 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {campaigns.map((c) => (
-                  <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap">
-                      {c.campaign_name}
-                    </td>
-                    {isSuperAdmin && (
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        c.pais === "Panama"
-                          ? "bg-blue-50 text-blue-600"
-                          : "bg-amber-50 text-amber-600"
-                      }`}>
-                        {c.pais}
-                      </span>
-                    </td>
-                    )}
-                    <td className="px-4 py-3 text-right font-semibold">
-                      ${c.spend_usd.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center text-zinc-600">
-                      {c.impressions.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center text-zinc-600">
-                      {c.clicks.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-center font-medium">
-                      {c.leads_from_ads}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-emerald-600">
-                      {c.calificados}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-red-500">
-                      {c.no_calificados}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-blue-600">
-                      {c.ventas_cerradas}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      ${c.recaudo_usd.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-600">
-                      {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "---"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`font-bold ${
-                        c.roi > 0 ? "text-emerald-600" : c.roi < 0 ? "text-red-500" : "text-zinc-400"
-                      }`}>
-                        {c.roi.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {campaigns.map((c) => {
+                  const isEditing = editingCampaign === c.campaign_name;
+                  const inp = (field: string, align = "center") => (
+                    <input
+                      type="number"
+                      value={editValues[field] || ""}
+                      onChange={(e) => setEditValues({ ...editValues, [field]: e.target.value })}
+                      className={`w-20 px-1.5 py-1 text-[11px] border border-blue-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-blue-50/50`}
+                    />
+                  );
+                  return (
+                    <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors group">
+                      <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap max-w-[200px] truncate">
+                        {c.campaign_name}
+                      </td>
+                      {isSuperAdmin && (
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          c.pais === "Panama"
+                            ? "bg-blue-50 text-blue-600"
+                            : "bg-amber-50 text-amber-600"
+                        }`}>
+                          {c.pais}
+                        </span>
+                      </td>
+                      )}
+                      <td className="px-4 py-3 text-right font-semibold">
+                        ${c.spend_usd.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center text-zinc-600">
+                        {isEditing ? inp("impressions") : c.impressions.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center text-zinc-600">
+                        {isEditing ? inp("clicks") : c.clicks.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center font-medium">
+                        {isEditing ? inp("leads_from_ads") : c.leads_from_ads}
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-emerald-600">
+                        {isEditing ? inp("calificados") : c.calificados}
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-red-500">
+                        {isEditing ? inp("no_calificados") : c.no_calificados}
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-blue-600">
+                        {isEditing ? inp("ventas_cerradas") : c.ventas_cerradas}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">
+                        {isEditing ? inp("recaudo_usd") : `$${c.recaudo_usd.toLocaleString()}`}
+                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-600">
+                        {c.costo_por_lead_calificado > 0 ? `$${c.costo_por_lead_calificado.toFixed(2)}` : "---"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={saveCampaign}
+                                disabled={savingCampaign}
+                                className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors"
+                                title="Guardar"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setEditingCampaign(null)}
+                                className="p-1 text-zinc-400 hover:text-red-500 transition-colors"
+                                title="Cancelar"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className={`font-bold ${
+                                c.roi > 0 ? "text-emerald-600" : c.roi < 0 ? "text-red-500" : "text-zinc-400"
+                              }`}>
+                                {c.roi.toFixed(1)}%
+                              </span>
+                              <button
+                                onClick={() => startEditCampaign(c)}
+                                className="p-1 text-zinc-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all"
+                                title="Editar campana"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

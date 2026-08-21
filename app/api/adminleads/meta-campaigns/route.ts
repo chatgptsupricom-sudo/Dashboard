@@ -267,6 +267,33 @@ export async function GET(request: Request) {
       }
     }
 
+    // Apply campaign overrides from DB
+    let overridesData: any[] = [];
+    try {
+      const overrideResult: any = await query("SELECT * FROM campaign_overrides");
+      overridesData = overrideResult.rows || [];
+    } catch {
+      console.warn("Tabla campaign_overrides no disponible aún");
+    }
+
+    const overridesMap = new Map<string, any>();
+    for (const ov of overridesData) {
+      overridesMap.set(ov.campaign_name, ov);
+    }
+
+    for (const [name, c] of campaignMap) {
+      const ov = overridesMap.get(name);
+      if (ov) {
+        if (ov.impressions !== null && ov.impressions !== undefined) c.impressions = parseInt(ov.impressions);
+        if (ov.clicks !== null && ov.clicks !== undefined) c.clicks = parseInt(ov.clicks);
+        if (ov.leads_from_ads !== null && ov.leads_from_ads !== undefined) c.leads_from_ads = parseInt(ov.leads_from_ads);
+        if (ov.calificados !== null && ov.calificados !== undefined) c.calificados = parseInt(ov.calificados);
+        if (ov.no_calificados !== null && ov.no_calificados !== undefined) c.no_calificados = parseInt(ov.no_calificados);
+        if (ov.ventas_cerradas !== null && ov.ventas_cerradas !== undefined) c.ventas_cerradas = parseInt(ov.ventas_cerradas);
+        if (ov.recaudo_usd !== null && ov.recaudo_usd !== undefined) c.recaudo_usd = parseFloat(ov.recaudo_usd);
+      }
+    }
+
     const campaigns = Array.from(campaignMap.values()).map((c) => {
       const costo_por_lead =
         c.total_leads > 0 ? c.spend_usd / c.total_leads : 0;
@@ -360,6 +387,62 @@ export async function GET(request: Request) {
         error: "Error en base de datos",
         detail: error?.message || String(error),
       },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const cookieHeader = request.headers.get("cookie");
+    const token = cookieHeader
+      ?.split(";")
+      .find((c) => c.trim().startsWith("token="))
+      ?.split("=")[1];
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    await jwtVerify(token, secret);
+
+    const body = await request.json();
+    const { campaign_name, impressions, clicks, leads_from_ads, calificados, no_calificados, ventas_cerradas, recaudo_usd } = body;
+
+    if (!campaign_name) {
+      return NextResponse.json({ error: "campaign_name es requerido" }, { status: 400 });
+    }
+
+    const fields: string[] = [];
+    const params: any[] = [];
+
+    if (impressions !== undefined) { fields.push("impressions = ?"); params.push(parseInt(impressions) || 0); }
+    if (clicks !== undefined) { fields.push("clicks = ?"); params.push(parseInt(clicks) || 0); }
+    if (leads_from_ads !== undefined) { fields.push("leads_from_ads = ?"); params.push(parseInt(leads_from_ads) || 0); }
+    if (calificados !== undefined) { fields.push("calificados = ?"); params.push(parseInt(calificados) || 0); }
+    if (no_calificados !== undefined) { fields.push("no_calificados = ?"); params.push(parseInt(no_calificados) || 0); }
+    if (ventas_cerradas !== undefined) { fields.push("ventas_cerradas = ?"); params.push(parseInt(ventas_cerradas) || 0); }
+    if (recaudo_usd !== undefined) { fields.push("recaudo_usd = ?"); params.push(parseFloat(recaudo_usd) || 0); }
+
+    if (fields.length === 0) {
+      return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
+    }
+
+    const colNames = fields.map(f => f.split(' =')[0]);
+    const insertValues = params.slice(0, fields.length);
+    const updateClause = fields.join(', ');
+
+    await query(
+      `INSERT INTO campaign_overrides (campaign_name, ${colNames.join(', ')})
+       VALUES (?, ${colNames.map(() => '?').join(', ')})
+       ON DUPLICATE KEY UPDATE ${updateClause}`,
+      [campaign_name, ...insertValues, ...insertValues],
+    );
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error("Error en PATCH meta-campaigns:", error);
+    return NextResponse.json(
+      { error: error?.message || "Error interno" },
       { status: 500 },
     );
   }
