@@ -2,7 +2,7 @@
 
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { TopBar } from "@/components/dashboard/top-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AdministracionLayout({
   children,
@@ -10,6 +10,14 @@ export default function AdministracionLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // En movil el sidebar se muestra como overlay sobre el contenido, asi que
+  // abrirlo por defecto tapaba toda la pantalla al entrar.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      setSidebarOpen(false);
+    }
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
