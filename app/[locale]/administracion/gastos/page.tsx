@@ -251,11 +251,11 @@ export default function GastosPresupuestoPage() {
             Área 4 del Índice de Salud Administrativa · 15 puntos
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <select
             value={sede}
             onChange={(e) => setSede(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
+            className="border rounded-lg px-3 py-2 text-sm flex-1 sm:flex-none"
           >
             {SEDES.map((s) => (
               <option key={s.id} value={s.id}>
@@ -266,7 +266,7 @@ export default function GastosPresupuestoPage() {
           <select
             value={mes}
             onChange={(e) => setMes(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm capitalize"
+            className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 sm:flex-none"
           >
             {mesesDisponibles().map((m) => (
               <option key={m.value} value={m.value}>
@@ -306,7 +306,7 @@ export default function GastosPresupuestoPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             <Card className="bg-blue-50/50 border-blue-100">
               <CardContent className="p-4">
                 <p className="text-xs text-blue-600 font-medium">
@@ -355,16 +355,18 @@ export default function GastosPresupuestoPage() {
           </div>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <CardTitle className="text-lg">Indicadores (18–22)</CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={descargarPlantilla}
+                  className="flex-1 sm:flex-none"
                 >
-                  <Download className="h-4 w-4 mr-2" />
-                  Plantilla presupuesto
+                  <Download className="h-4 w-4 mr-2 shrink-0" />
+                  <span className="truncate">Plantilla</span>
+                  <span className="hidden md:inline">&nbsp;presupuesto</span>
                 </Button>
                 <input
                   ref={fileRef}
@@ -377,14 +379,15 @@ export default function GastosPresupuestoPage() {
                   size="sm"
                   disabled={uploading}
                   onClick={() => fileRef.current?.click()}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 flex-1 sm:flex-none"
                 >
                   {uploading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin shrink-0" />
                   ) : (
-                    <Upload className="h-4 w-4 mr-2" />
+                    <Upload className="h-4 w-4 mr-2 shrink-0" />
                   )}
-                  Cargar presupuesto
+                  <span className="truncate">Cargar</span>
+                  <span className="hidden md:inline">&nbsp;presupuesto</span>
                 </Button>
               </div>
             </CardHeader>
@@ -392,30 +395,46 @@ export default function GastosPresupuestoPage() {
               <Table>
                 <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead className="w-[50px] px-4">#</TableHead>
+                    <TableHead className="w-[40px] px-2 sm:px-4">#</TableHead>
                     <TableHead>KPI</TableHead>
-                    <TableHead className="text-center">Meta</TableHead>
+                    <TableHead className="text-center hidden md:table-cell">
+                      Meta
+                    </TableHead>
                     <TableHead className="text-center">Valor</TableHead>
-                    <TableHead className="text-center">Semáforo</TableHead>
-                    <TableHead className="text-center">Puntos</TableHead>
+                    <TableHead className="text-center hidden sm:table-cell">
+                      Semáforo
+                    </TableHead>
+                    <TableHead className="text-center hidden lg:table-cell">
+                      Puntos
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.kpis.map((k) => (
                     <TableRow key={k.id}>
-                      <TableCell className="px-4 text-gray-400 text-sm">
+                      <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                         {k.numero}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
+                        <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
                         <div className="font-medium text-sm">{k.nombre}</div>
                         <div className="text-xs text-gray-500">{k.formula}</div>
+                        {/* Meta y semaforo se ocultan como columnas en movil. */}
+                        <div className="text-xs text-gray-500 md:hidden mt-1">
+                          Meta: {k.metaTexto}
+                          <span className="sm:hidden">
+                            {" · "}
+                            {k.semaforo === "sin_datos" ? "sin datos" : k.semaforo}
+                          </span>
+                        </div>
                         {k.detalle && (
                           <div className="text-[11px] text-gray-400 mt-0.5">
                             {k.detalle}
                           </div>
                         )}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-center text-sm text-gray-600">
+                      <TableCell className="text-center text-sm text-gray-600 hidden md:table-cell">
                         {k.metaTexto}
                       </TableCell>
                       <TableCell className="text-center font-bold">
@@ -425,7 +444,7 @@ export default function GastosPresupuestoPage() {
                           `${k.valor}${k.unidad}`
                         )}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center hidden sm:table-cell">
                         <Badge
                           variant="outline"
                           className={`${SEMAFORO_STYLES[k.semaforo]} text-xs capitalize`}
@@ -435,7 +454,7 @@ export default function GastosPresupuestoPage() {
                             : k.semaforo}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center text-sm font-semibold text-gray-700">
+                      <TableCell className="text-center text-sm font-semibold text-gray-700 hidden lg:table-cell">
                         {k.puntos} / {k.puntosMax}
                       </TableCell>
                     </TableRow>
@@ -458,11 +477,17 @@ export default function GastosPresupuestoPage() {
               <Table>
                 <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead className="px-4">Cuenta</TableHead>
+                    <TableHead className="px-2 sm:px-4">Cuenta</TableHead>
                     <TableHead className="text-right">Real</TableHead>
-                    <TableHead className="text-right">Presupuesto</TableHead>
-                    <TableHead className="text-right">Variación</TableHead>
-                    <TableHead className="text-right pr-4">%</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">
+                      Presupuesto
+                    </TableHead>
+                    <TableHead className="text-right hidden lg:table-cell">
+                      Variación
+                    </TableHead>
+                    <TableHead className="text-right pr-4 hidden sm:table-cell">
+                      %
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -488,15 +513,15 @@ export default function GastosPresupuestoPage() {
                             )
                           }
                         >
-                          <TableCell className="px-4">
+                          <TableCell className="px-2 sm:px-4 whitespace-normal">
                             <div className="flex items-center gap-2">
                               {expandida === c.cuentaCodigo ? (
-                                <ChevronDown className="h-4 w-4 text-gray-400" />
+                                <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
                               ) : (
-                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
                               )}
-                              <div>
-                                <div className="font-medium text-sm">
+                              <div className="min-w-0">
+                                <div className="font-medium text-sm break-words">
                                   {c.cuentaNombre}
                                 </div>
                                 <div className="text-xs text-gray-400 font-mono">
@@ -508,11 +533,11 @@ export default function GastosPresupuestoPage() {
                           <TableCell className="text-right font-semibold">
                             {money(c.real)}
                           </TableCell>
-                          <TableCell className="text-right text-gray-600">
+                          <TableCell className="text-right text-gray-600 hidden md:table-cell">
                             {c.presupuesto > 0 ? money(c.presupuesto) : "—"}
                           </TableCell>
                           <TableCell
-                            className={`text-right ${
+                            className={`text-right hidden lg:table-cell ${
                               c.variacionMonto > 0
                                 ? "text-red-600"
                                 : "text-emerald-600"
@@ -520,7 +545,7 @@ export default function GastosPresupuestoPage() {
                           >
                             {c.presupuesto > 0 ? money(c.variacionMonto) : "—"}
                           </TableCell>
-                          <TableCell className="text-right pr-4">
+                          <TableCell className="text-right pr-4 hidden sm:table-cell">
                             {c.variacionPct === null ? (
                               <span className="text-amber-600 text-xs">
                                 Sin presup.
