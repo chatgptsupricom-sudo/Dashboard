@@ -415,7 +415,8 @@ export default function GastosPresupuestoPage() {
                       <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                         {k.numero}
                       </TableCell>
-                      <TableCell className="min-w-[200px]">
+                      <TableCell>
+                        <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
                         <div className="font-medium text-sm">{k.nombre}</div>
                         <div className="text-xs text-gray-500">{k.formula}</div>
                         {/* Meta y semaforo se ocultan como columnas en movil. */}
@@ -431,6 +432,7 @@ export default function GastosPresupuestoPage() {
                             {k.detalle}
                           </div>
                         )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-center text-sm text-gray-600 hidden md:table-cell">
                         {k.metaTexto}
