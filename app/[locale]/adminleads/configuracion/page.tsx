@@ -11,6 +11,10 @@ import {
   Settings2,
   Trash2,
   Users,
+  CreditCard,
+  CheckCircle,
+  Circle,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -41,6 +45,20 @@ export default function ConfiguracionPage() {
   const [sellers, setSellers] = useState<any[]>([]);
   const [toggling, setToggling] = useState<number | null>(null);
 
+  const [services, setServices] = useState<any[]>([]);
+  const [editingService, setEditingService] = useState<number | null>(null);
+  const [editServiceCost, setEditServiceCost] = useState("");
+  const [editServiceCurrency, setEditServiceCurrency] = useState("USD");
+  const [editServiceDate, setEditServiceDate] = useState("");
+  const [savingService, setSavingService] = useState(false);
+
+  const [showAddSvc, setShowAddSvc] = useState(false);
+  const [newSvcName, setNewSvcName] = useState("");
+  const [newSvcType, setNewSvcType] = useState<"subscription" | "topup">("subscription");
+  const [newSvcCost, setNewSvcCost] = useState("");
+  const [newSvcCurrency, setNewSvcCurrency] = useState("USD");
+  const [creatingSvc, setCreatingSvc] = useState(false);
+
   const fetchSellers = () => {
     fetch("/api/adminleads/sellers")
       .then((r) => r.json())
@@ -70,7 +88,68 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     fetchStatuses();
     fetchSellers();
+    fetchServices();
   }, []);
+
+  const fetchServices = () => {
+    fetch("/api/adminleads/service-costs")
+      .then((r) => r.json())
+      .then((data) => Array.isArray(data.services) && setServices(data.services));
+  };
+
+  const handleUpdateService = async (svc: any) => {
+    setSavingService(true);
+    await fetch("/api/adminleads/service-costs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: svc.id,
+        monthly_cost: parseFloat(editServiceCost) || 0,
+        currency: editServiceCurrency,
+        payment_date: editServiceDate || null,
+      }),
+    });
+    setEditingService(null);
+    fetchServices();
+    setSavingService(false);
+  };
+
+  const handleTogglePaidService = async (svc: any) => {
+    await fetch("/api/adminleads/service-costs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: svc.id, toggle_paid: !svc.is_paid }),
+    });
+    fetchServices();
+  };
+
+  const handleAddService = async () => {
+    if (!newSvcName.trim()) return;
+    setCreatingSvc(true);
+    await fetch("/api/adminleads/service-costs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_name: newSvcName.trim(),
+        cost_type: newSvcType,
+        monthly_cost: parseFloat(newSvcCost) || 0,
+        currency: newSvcCurrency,
+      }),
+    });
+    setNewSvcName("");
+    setNewSvcType("subscription");
+    setNewSvcCost("");
+    setNewSvcCurrency("USD");
+    setShowAddSvc(false);
+    fetchServices();
+    setCreatingSvc(false);
+  };
+
+  const handleDeleteService = async (id: number) => {
+    if (!confirm("Eliminar este servicio?")) return;
+    await fetch(`/api/adminleads/service-costs?id=${id}`, { method: "DELETE" });
+    fetchServices();
+  };
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
@@ -469,7 +548,6 @@ export default function ConfiguracionPage() {
                       key={seller.id}
                       className="flex items-center gap-4 px-6 py-3.5 hover:bg-zinc-50 transition-colors"
                     >
-                      {/* Avatar inicial */}
                       <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center shrink-0">
                         <span className="text-xs font-black text-white">
                           {seller.name.charAt(0).toUpperCase()}
@@ -487,7 +565,6 @@ export default function ConfiguracionPage() {
                         )}
                       </div>
 
-                      {/* Badge estado */}
                       <span
                         className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
                           seller.activo
@@ -498,7 +575,6 @@ export default function ConfiguracionPage() {
                         {seller.activo ? "Activo" : "Inactivo"}
                       </span>
 
-                      {/* Toggle switch */}
                       <button
                         onClick={() => handleToggleActivo(seller)}
                         disabled={toggling === seller.id}
@@ -520,6 +596,179 @@ export default function ConfiguracionPage() {
                   ))}
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sección Servicios */}
+        <div className="bg-white rounded-3xl border border-zinc-100 shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-zinc-50 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-xl bg-amber-50 flex items-center justify-center">
+              <CreditCard className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-zinc-800">Servicios</h2>
+              <p className="text-xs text-zinc-400">
+                Costos fijos mensuales y fechas de pago
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddSvc(!showAddSvc)}
+              className="ml-auto flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              {showAddSvc ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+              {showAddSvc ? "Cancelar" : "Agregar Servicio"}
+            </button>
+          </div>
+
+          {showAddSvc && (
+            <div className="px-6 py-4 border-b border-zinc-50 bg-blue-50/30">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <input
+                  type="text"
+                  placeholder="Nombre del servicio"
+                  value={newSvcName}
+                  onChange={(e) => setNewSvcName(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <select
+                  value={newSvcType}
+                  onChange={(e) => setNewSvcType(e.target.value as "subscription" | "topup")}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="subscription">Mensual Fijo</option>
+                  <option value="topup">Recarga / Prepago</option>
+                </select>
+                <select
+                  value={newSvcCurrency}
+                  onChange={(e) => setNewSvcCurrency(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="USD">$ USD</option>
+                  <option value="EUR">EUR</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Costo mensual"
+                  value={newSvcCost}
+                  onChange={(e) => setNewSvcCost(e.target.value)}
+                  className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <button
+                  onClick={handleAddService}
+                  disabled={creatingSvc || !newSvcName.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {creatingSvc ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {services.length === 0 ? (
+            <p className="text-sm text-zinc-300 text-center py-8">
+              No hay servicios registrados
+            </p>
+          ) : (
+            <div className="divide-y divide-zinc-50">
+              {services.map((svc: any) => {
+                const isEditing = editingService === svc.id;
+                return (
+                  <div
+                    key={svc.id}
+                    className="flex items-center gap-4 px-6 py-4 hover:bg-zinc-50 transition-colors group"
+                  >
+                    <button
+                      onClick={() => handleTogglePaidService(svc)}
+                      className="shrink-0"
+                      title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
+                    >
+                      {svc.is_paid ? (
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      ) : (
+                        <Circle className="w-5 h-5 text-zinc-300 hover:text-emerald-400" />
+                      )}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-800">{svc.service_name}</p>
+                      <p className="text-[10px] text-zinc-400">
+                        {svc.cost_type === "subscription" ? "Mensual fijo" : "Recarga / Prepago"}
+                      </p>
+                    </div>
+
+                    {isEditing ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={editServiceCurrency}
+                          onChange={(e) => setEditServiceCurrency(e.target.value)}
+                          className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        >
+                          <option value="USD">$ USD</option>
+                          <option value="EUR">EUR</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={editServiceCost}
+                          onChange={(e) => setEditServiceCost(e.target.value)}
+                          className="w-24 px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          placeholder="Costo"
+                        />
+                        <input
+                          type="date"
+                          value={editServiceDate}
+                          onChange={(e) => setEditServiceDate(e.target.value)}
+                          className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <button
+                          onClick={() => handleUpdateService(svc)}
+                          disabled={savingService}
+                          className="px-3 py-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                          {savingService ? "..." : "Guardar"}
+                        </button>
+                        <button
+                          onClick={() => setEditingService(null)}
+                          className="px-2 py-1.5 text-[10px] font-bold text-zinc-400 hover:text-zinc-600 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold text-zinc-800">
+                          {svc.currency === "EUR" ? "\u20AC" : "$"}{parseFloat(svc.monthly_cost || 0).toFixed(2)}
+                          <span className="text-[10px] font-normal text-zinc-400 ml-1">{svc.currency || "USD"}</span>
+                        </span>
+                        {svc.payment_date && (
+                          <span className="text-[10px] text-zinc-400">
+                            Vence: {new Date(svc.payment_date + "T00:00:00").toLocaleDateString("es-VE")}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => {
+                            setEditingService(svc.id);
+                            setEditServiceCost(String(svc.monthly_cost || 0));
+                            setEditServiceCurrency(svc.currency || "USD");
+                            setEditServiceDate(svc.payment_date || "");
+                          }}
+                          className="text-zinc-300 hover:text-blue-500 transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteService(svc.id)}
+                          className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Eliminar servicio"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
