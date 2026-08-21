@@ -290,8 +290,17 @@ export default function SaludFinancieraPage() {
                     {data.alertas.map((a) => (
                       <TableRow key={a.id}>
                         <TableCell className="px-4">
-                          <div className="font-medium text-sm">{a.titulo}</div>
-                          <div className="text-xs text-gray-500">{a.accion}</div>
+                          {/* El detalle de la alerta puede ser largo; sin un
+                              ancho maximo la tabla se estira y obliga a
+                              scrollear horizontalmente en movil. */}
+                          <div className="max-w-[220px] sm:max-w-[420px] lg:max-w-none">
+                            <div className="font-medium text-sm break-words">
+                              {a.titulo}
+                            </div>
+                            <div className="text-xs text-gray-500 break-words">
+                              {a.accion}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell className="text-sm text-gray-600 hidden md:table-cell">
                           {a.area}
@@ -358,7 +367,8 @@ export default function SaludFinancieraPage() {
                             <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                               {k.numero}
                             </TableCell>
-                            <TableCell className="min-w-[200px]">
+                            <TableCell>
+                              <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
                               <div className="font-medium text-sm">{k.nombre}</div>
                               <div className="text-xs text-gray-500">{k.formula}</div>
                               {/* En movil la meta y el semaforo se ocultan como
@@ -375,6 +385,7 @@ export default function SaludFinancieraPage() {
                                   {k.detalle}
                                 </div>
                               )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-center text-sm text-gray-600 hidden md:table-cell">
                               {k.metaTexto}
