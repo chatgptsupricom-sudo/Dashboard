@@ -60,6 +60,11 @@ export const PLAN_RUNTIME_JS = String.raw`
   var inFlight = false;
   var pendingSave = false;
   var savedOnce = false;
+  // Llaves que llegaron por el socket y NO se replicaron en pantalla (ediciones
+  // de contenido). No estan en el DOM local, asi que al guardar hay que tomarlas
+  // del ultimo estado conocido del servidor en vez de calcularlas del DOM: si no,
+  // el guardado propio las borraria.
+  var skippedKeys = Object.create(null);
 
   // ---------------------------------------------------------------- utilidades
 
@@ -504,6 +509,7 @@ export const PLAN_RUNTIME_JS = String.raw`
   function liveSubset(nodes) {
     var out = {};
     var full = true;
+    var skipped = [];
     var live = buildIndex(document.documentElement);
     for (var k in nodes) {
       var e = nodes[k] || {};
@@ -519,12 +525,13 @@ export const PLAN_RUNTIME_JS = String.raw`
           keep.sh = e.sh;
           if (e.bsh !== undefined) keep.bsh = e.bsh;
         } else {
-          full = false;   // edicion de contenido: no se replica en vivo
+          full = false;          // edicion de contenido: no se replica en vivo
+          skipped.push(k);       // ...pero hay que conservarla al guardar
         }
       }
       if (keep) out[k] = keep;
     }
-    return { nodes: out, full: full };
+    return { nodes: out, full: full, skipped: skipped };
   }
 
   /**
@@ -656,6 +663,18 @@ export const PLAN_RUNTIME_JS = String.raw`
 
     var state;
     try { state = computeState(); } catch (e) { status("error"); return; }
+
+    // Lo que llego por el socket y no se replico en pantalla no esta en el DOM,
+    // asi que computeState() no lo ve y guardarlo tal cual lo borraria. Para
+    // esas llaves se conserva lo que tiene el servidor.
+    try {
+      var ackNodes = (ackState && ackState.nodes) || {};
+      for (var sk in skippedKeys) {
+        if (ackNodes[sk]) state.nodes[sk] = ackNodes[sk];
+        else delete state.nodes[sk];
+      }
+    } catch (eSk) {}
+
     var json = JSON.stringify(state);
     if (json === lastSentJson && !force) { status("saved"); return; }
     lastSentJson = json;
@@ -815,17 +834,19 @@ export const PLAN_RUNTIME_JS = String.raw`
           applyState({ v: 2, nodes: sub.nodes }, true);
           refreshWeekLabels();
 
-          if (sub.full) {
-            // Se replico todo lo entrante: el navegador quedo igual al servidor.
-            revision = Number(p.revision) || revision;
-            ackState = incoming;
-            lastSentJson = JSON.stringify(incoming);
-          }
-          // Si quedo algo sin replicar NO se toca revision ni ackState a
-          // proposito: asi el proximo guardado detecta el conflicto de revision
-          // y pasa por mergeStates, que conserva las piezas que toco el otro.
-          // Avanzar la revision aca haria que el siguiente guardado sobrescriba
-          // su trabajo sin aviso.
+          // Las ediciones que no se replicaron quedan anotadas: no estan en el
+          // DOM local, asi que al guardar se toman de ackState (ver doSave).
+          for (var si = 0; si < sub.skipped.length; si++) skippedKeys[sub.skipped[si]] = 1;
+
+          // La revision se avanza SIEMPRE, aunque no se haya replicado todo.
+          // Una version anterior no lo hacia, para forzar el merge de 3 vias, y
+          // eso dejaba a los dos navegadores en conflicto permanente: cada
+          // guardado chocaba con el del otro y entraban en un bucle que termino
+          // degradando el estado. Lo que no se replica se conserva via
+          // skippedKeys, que es mas barato y no depende del conflicto.
+          revision = Number(p.revision) || revision;
+          ackState = incoming;
+          lastSentJson = JSON.stringify(incoming);
         });
         socket.on("vista-html-updated", function () { location.reload(); });
       } catch (e) {}
