@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { contarDiasUtiles } from "@/lib/feriados";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
@@ -27,18 +28,14 @@ export async function GET() {
     `);
     const cuotas = resultCuotas || [];
 
-    const firstDayOfMonth = new Date(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      1,
-    )
-      .toISOString()
-      .split("T")[0];
+    const nowSa = new Date();
+    const firstDayOfMonth = new Date(nowSa.getFullYear(), nowSa.getMonth(), 1);
+    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, "0")}-${String(firstDayOfMonth.getDate()).padStart(2, "0")}`;
 
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDayOfMonth],
+      ["invoice_date", ">=", firstDayStr],
     ];
 
     const allInvoices =
@@ -89,6 +86,21 @@ export async function GET() {
         ((odooNameMap[sellerKey] ?? odooUserIdMap[seller.user_id] ?? 0)).toFixed(2)
       );
 
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const totalDiasUtilesMes = contarDiasUtiles(firstDay, lastDay);
+      const diasTranscurridos = contarDiasUtiles(firstDay, now);
+      const diasHabilesRestantes = Math.max(0, totalDiasUtilesMes - diasTranscurridos);
+
+      if (sellers.indexOf(seller) === 0) {
+        console.log(`[CUOTA] Hoy: ${now.toISOString()} | firstDay: ${firstDay.getFullYear()}-${firstDay.getMonth()+1}-${firstDay.getDate()} | lastDay: ${lastDay.getFullYear()}-${lastDay.getMonth()+1}-${lastDay.getDate()} | totalUtiles: ${totalDiasUtilesMes} | transcurridos: ${diasTranscurridos} | restantes: ${diasHabilesRestantes}`);
+      }
+      const falta = parseFloat(Math.max(0, meta - facturado).toFixed(2));
+      const ventaDiariaNecesaria = diasHabilesRestantes > 0 ? parseFloat((falta / diasHabilesRestantes).toFixed(2)) : 0;
+      const meta150 = meta * 1.5;
+      const faltaPara150 = parseFloat(Math.max(0, meta150 - facturado).toFixed(2));
+
       grouped[cid].sellers.push({
         id: seller.id,
         name: seller.name,
@@ -96,7 +108,11 @@ export async function GET() {
         meta: parseFloat(meta.toString()),
         facturado,
         porcentaje: meta > 0 ? parseFloat(((facturado / meta) * 100).toFixed(2)) : 0,
-        falta: parseFloat(Math.max(0, meta - facturado).toFixed(2)),
+        falta,
+        diasHabilesRestantes,
+        ventaDiariaNecesaria,
+        meta150,
+        faltaPara150,
       });
     }
 

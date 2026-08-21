@@ -8,9 +8,12 @@ import {
   ChevronDown,
   ChevronUp,
   Trophy,
+  Calendar,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
+
+const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 interface MarcaData {
   nombre: string;
@@ -45,15 +48,35 @@ export default function SpiffPage() {
   const [expandedMarca, setExpandedMarca] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"marcas" | "productos">("marcas");
   const [productMode, setProductMode] = useState<"porProducto" | "acumulado">("porProducto");
+  const [availableMonths, setAvailableMonths] = useState<{ year: number; month: number }[]>([]);
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    fetch("/api/vendedores/spiff", { credentials: "include" })
+    const params = new URLSearchParams({ month: String(selectedMonth), year: String(selectedYear) });
+    fetch(`/api/vendedores/spiff?${params}`, { credentials: "include" })
       .then((res) => res.json())
       .then((json) => setData(json))
       .finally(() => setLoading(false));
+  }, [selectedMonth, selectedYear]);
+
+  const fetchMonths = useCallback(() => {
+    fetch("/api/vendedores/spiff/months", { credentials: "include" })
+      .then((res) => res.json())
+      .then((json) => {
+        const months = json.months || [];
+        setAvailableMonths(months);
+        if (months.length > 0 && !months.some((m: any) => m.year === now.getFullYear() && m.month === now.getMonth() + 1)) {
+          setSelectedMonth(months[0].month);
+          setSelectedYear(months[0].year);
+        }
+      })
+      .catch(() => {});
   }, []);
 
+  useEffect(() => { fetchMonths(); }, [fetchMonths]);
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const marcas: MarcaData[] = data?.marcas || [];
@@ -101,6 +124,31 @@ export default function SpiffPage() {
               </p>
             )}
           </div>
+        </div>
+        {/* Month filter */}
+        <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-sm">
+          <Calendar size={14} className="text-slate-400" />
+          <select
+            value={`${selectedYear}-${selectedMonth}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split("-").map(Number);
+              setSelectedYear(y);
+              setSelectedMonth(m);
+            }}
+            className="text-xs font-bold text-slate-700 bg-transparent border-none focus:outline-none cursor-pointer pr-4"
+          >
+            {availableMonths.length > 0 ? (
+              availableMonths.map((m) => (
+                <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                  {MONTH_NAMES[m.month - 1]} {m.year}
+                </option>
+              ))
+            ) : (
+              <option value={`${now.getFullYear()}-${now.getMonth() + 1}`}>
+                {MONTH_NAMES[now.getMonth()]} {now.getFullYear()}
+              </option>
+            )}
+          </select>
         </div>
       </div>
 

@@ -413,6 +413,8 @@ export function GerenteVentasView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [availableMonths, setAvailableMonths] = useState<{ value: string; label: string }[]>([]);
 
   const [date, setDate] = useState<DateRange | undefined>({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -420,10 +422,34 @@ export function GerenteVentasView() {
   });
 
   useEffect(() => {
+    fetch(`/api/common/available-months`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.months?.length > 0) {
+          setAvailableMonths(json.data.months);
+          if (!selectedMonth) {
+            const now = new Date();
+            const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            const hasCurrent = json.data.months.some((m: any) => m.value === current);
+            setSelectedMonth(hasCurrent ? current : json.data.months[0].value);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMonth) return;
+    const [y, m] = selectedMonth.split("-").map(Number);
+    const from = new Date(y, m - 1, 1);
+    const to = new Date(y, m, 0);
+    setDate({ from, to });
+  }, [selectedMonth]);
+
+  useEffect(() => {
     if (!date?.from) return;
 
     setLoading(true);
-    // Convertimos fechas a formato YYYY-MM-DD
     const start = format(date.from, "yyyy-MM-dd");
     const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
 
@@ -448,8 +474,19 @@ export function GerenteVentasView() {
 
   return (
     <div className="space-y-8 bg-slate-50/30 p-4">
-      {/* Selector de Rango de Fechas */}
-      <div className="flex justify-end">
+      {/* Selectores */}
+      <div className="flex justify-end gap-3">
+        {availableMonths.length > 0 && (
+          <select
+            className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          >
+            {availableMonths.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        )}
         <div className="bg-white border rounded-xl p-2 flex items-center gap-2 shadow-sm">
           <CalendarIcon size={16} className="text-slate-400 ml-2" />
           <input

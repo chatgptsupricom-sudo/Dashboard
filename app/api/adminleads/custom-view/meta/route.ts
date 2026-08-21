@@ -1,47 +1,42 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
+import { ensureTables, getViewMeta, VIEW_NAME } from "@/lib/customView/store";
 
-const VIEW_NAME = "adminleads";
+export const dynamic = "force-dynamic";
 
-async function ensureTable() {
+export async function GET(request: NextRequest) {
   try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS custom_views (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        view_name VARCHAR(100) NOT NULL UNIQUE,
-        html_content LONGTEXT NOT NULL,
-        filename VARCHAR(255),
-        file_size INT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-  } catch (e: any) {
-    console.error("ensureTable failed:", e.message);
-  }
-}
-
-export async function GET() {
-  try {
-    await ensureTable();
-
-    const result = await query(
-      `SELECT filename, file_size, updated_at FROM custom_views WHERE view_name = ?`,
-      [VIEW_NAME]
-    );
-    const row = result.rows?.[0];
-
-    if (!row) {
-      return NextResponse.json({ exists: false });
+    const user = await getAuthUser(request);
+    if (!canViewCustomPlan(user)) {
+      return NextResponse.json({ exists: false }, { status: 401 });
     }
+
+    await ensureTables();
+    const view = await getViewMeta();
+    if (!view) return NextResponse.json({ exists: false });
+
+    const s = await query(
+      `SELECT revision, updated_at, updated_by,
+              (snapshot_html IS NOT NULL AND CHAR_LENGTH(snapshot_html) > 0) AS has_snapshot
+         FROM custom_view_state WHERE view_name = ?`,
+      [VIEW_NAME],
+    );
+    const st = s.rows?.[0];
 
     return NextResponse.json({
       exists: true,
-      filename: row.filename,
-      size: row.file_size,
-      updatedAt: row.updated_at,
+      filename: view.filename,
+      size: view.file_size,
+      updatedAt: view.updated_at,
+      baseRevision: Number(view.base_revision) || 1,
+      revision: Number(st?.revision) || 0,
+      savedAt: st?.updated_at || null,
+      savedBy: st?.updated_by || null,
+      hasSnapshot: !!Number(st?.has_snapshot),
     });
   } catch (error: any) {
-    console.error("GET meta error:", error.message);
+    console.error("custom-view meta GET error:", error?.message);
     return NextResponse.json({ exists: false });
   }
 }

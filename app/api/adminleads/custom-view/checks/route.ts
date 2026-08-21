@@ -1,7 +1,13 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 
-declare global { var io: any; }
+/**
+ * Endpoint HEREDADO. El guardado del Plan de Contenido vive ahora en
+ * /api/adminleads/custom-view/state (overlay de cambios + HTML completo).
+ * Esto solo queda para que una pestana vieja que aun no recargo no reviente,
+ * y para que /state pueda migrar los checks que quedaron en la tabla antigua.
+ */
 
 const ROLE = "adminleads";
 
@@ -15,8 +21,13 @@ async function ensureTable() {
   `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthUser(request);
+    if (!canViewCustomPlan(user)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     await ensureTable();
     const result = await query(
       "SELECT checks_json FROM custom_view_checks WHERE role = ?",
@@ -31,16 +42,19 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthUser(request);
+    if (!canViewCustomPlan(user)) {
+      return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
+    }
+
     await ensureTable();
     const checks = await request.json();
     await query(
       "INSERT INTO custom_view_checks (role, checks_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE checks_json = ?, updated_at = NOW()",
       [ROLE, JSON.stringify(checks), JSON.stringify(checks)]
     );
-    if (global.io) {
-      global.io.emit("vista-checks-updated", { checks });
-    }
-    return NextResponse.json({ success: true });
+    // Ya no se difunde por socket: el sistema nuevo emite "vista-state-updated".
+    return NextResponse.json({ success: true, legacy: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

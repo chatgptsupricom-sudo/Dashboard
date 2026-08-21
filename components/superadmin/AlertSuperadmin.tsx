@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Download,
   RefreshCw,
   RotateCcw,
   TrendingDown,
@@ -23,6 +24,8 @@ import {
 import { useTranslations } from "next-intl";
 import { useState } from "react"; // IMPORTANTE: Agregado para controlar la empresa actual
 import useSWR from "swr";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -507,6 +510,119 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
     { id: "panama", label: "Panamá" },
   ];
 
+  const exportCaidaProductos = async (items: any[]) => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Supricom";
+    wb.created = new Date();
+    const ws = wb.addWorksheet("Caída de Productos", { views: [{ state: "frozen", ySplit: 1 }] });
+
+    ws.columns = [
+      { header: "Producto", key: "name", width: 40 },
+      { header: "Caída %", key: "decline_pct", width: 12 },
+      { header: "Período Anterior (uds)", key: "prior_qty", width: 20 },
+      { header: "Período Actual (uds)", key: "current_qty", width: 20 },
+      { header: "Anterior (USD)", key: "prior_amount", width: 18 },
+      { header: "Actual (USD)", key: "current_amount", width: 18 },
+      { header: "Última Venta", key: "last_sale_date", width: 15 },
+      { header: "Último Cliente", key: "last_client", width: 25 },
+      { header: "Monto Última Venta", key: "last_client_amount", width: 20 },
+      { header: "Mejor Vendedor", key: "top_seller", width: 25 },
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    items.forEach((item) => {
+      ws.addRow({
+        name: item.name || "—",
+        decline_pct: item.decline_pct ?? 0,
+        prior_qty: item.prior_qty ?? 0,
+        current_qty: item.current_qty ?? 0,
+        prior_amount: item.prior_amount ?? 0,
+        current_amount: item.current_amount ?? 0,
+        last_sale_date: item.last_sale_date || "—",
+        last_client: item.last_client || "—",
+        last_client_amount: item.last_client_amount ?? 0,
+        top_seller: item.top_seller || "—",
+      });
+    });
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE5E7EB" } },
+            bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+            left: { style: "thin", color: { argb: "FFE5E7EB" } },
+            right: { style: "thin", color: { argb: "FFE5E7EB" } },
+          };
+          if (colNumber === 2) {
+            cell.font = { bold: true, color: { argb: "FFDC2626" } };
+            cell.numFmt = '0.0"%"';
+          }
+          if (colNumber === 5 || colNumber === 6 || colNumber === 9) {
+            cell.numFmt = '#,##0.00';
+          }
+          if (colNumber === 3 || colNumber === 4) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      }
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const fecha = new Date().toISOString().split("T")[0];
+    saveAs(blob, `Caida_Productos_${empresa}_${fecha}.xlsx`);
+  };
+
+  const [devolucionesPeriodo, setDevolucionesPeriodo] = useState<string>("24h");
+
+  const devolucionesFiltradas = (() => {
+    const raw = data?.alertas?.devoluciones_recientes;
+    if (!Array.isArray(raw)) return [];
+    const now = new Date();
+    if (devolucionesPeriodo === "24h") {
+      const hace24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      return raw.filter((d: any) => d.invoice_date && new Date(d.invoice_date) >= hace24h);
+    }
+    if (devolucionesPeriodo === "7d") {
+      const hace7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return raw.filter((d: any) => d.invoice_date && new Date(d.invoice_date) >= hace7d);
+    }
+    if (devolucionesPeriodo === "30d") {
+      return raw;
+    }
+    if (/^\d{4}-\d{2}$/.test(devolucionesPeriodo)) {
+      return raw.filter((d: any) => d.invoice_date?.startsWith(devolucionesPeriodo));
+    }
+    return raw;
+  })();
+
+  const devolucionesDesc = (() => {
+    if (devolucionesPeriodo === "24h") return "Últimas 24 horas";
+    if (devolucionesPeriodo === "7d") return "Últimos 7 días";
+    if (devolucionesPeriodo === "30d") return "Últimos 30 días";
+    if (/^\d{4}-\d{2}$/.test(devolucionesPeriodo)) {
+      const [y, m] = devolucionesPeriodo.split("-");
+      const meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+      return `${meses[parseInt(m)]} ${y}`;
+    }
+    return "Filtrado";
+  })();
+
+  const devolucionesMeses = (() => {
+    const raw = data?.alertas?.devoluciones_recientes;
+    if (!Array.isArray(raw)) return [];
+    const mesesSet = new Set<string>();
+    raw.forEach((d: any) => {
+      if (d.invoice_date) mesesSet.add(d.invoice_date.substring(0, 7));
+    });
+    return Array.from(mesesSet).sort().reverse();
+  })();
+
   return (
     <div className="space-y-6 p-8 bg-slate-50/50 min-h-screen">
       {/* Encabezado Principal */}
@@ -586,6 +702,7 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
             desc="Productos estrella afectados"
             gradient="from-purple-50 to-white"
             severity={data?.alertas?.productos_alerta?.length}
+            onExport={exportCaidaProductos}
           />
           <AlertCard
             title="Mora Avanzada"
@@ -598,10 +715,39 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
           <AlertCard
             title="Devoluciones Recientes"
             icon={<RotateCcw className="text-orange-500" />}
-            data={data?.alertas?.devoluciones_recientes}
-            desc="Notas de crédito últimas 24h"
+            data={devolucionesFiltradas}
+            desc={devolucionesDesc}
             gradient="from-orange-50 to-white"
-            severity={data?.alertas?.devoluciones_recientes?.length}
+            severity={devolucionesFiltradas.length}
+            filterSlot={
+              <div className="flex flex-wrap items-center gap-2">
+                {["24h", "7d", "30d"].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setDevolucionesPeriodo(p)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
+                      devolucionesPeriodo === p
+                        ? "bg-orange-500 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {p === "24h" ? "24h" : p === "7d" ? "7 días" : "30 días"}
+                  </button>
+                ))}
+                <select
+                  value={["24h", "7d", "30d"].includes(devolucionesPeriodo) ? "" : devolucionesPeriodo}
+                  onChange={(e) => setDevolucionesPeriodo(e.target.value)}
+                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-orange-300 focus:border-orange-400 focus:outline-none transition-colors cursor-pointer"
+                >
+                  <option value="" disabled>Por mes...</option>
+                  {devolucionesMeses.map((m) => {
+                    const [y, mo] = m.split("-");
+                    const meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+                    return <option key={m} value={m}>{meses[parseInt(mo)]} {y}</option>;
+                  })}
+                </select>
+              </div>
+            }
           />
           <AlertCard
             title="Facturas por Debajo del Mínimo"
@@ -788,7 +934,7 @@ function VendedorSinActividadDetailView({ item }: { item: any }) {
   );
 }
 
-function AlertCard({ title, icon, data, desc, gradient, severity = 0 }: any) {
+function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, filterSlot }: any) {
   const list = Array.isArray(data) ? data : [];
 
   const severityLevel = severity > 10 ? "high" : severity > 3 ? "medium" : severity > 0 ? "low" : "none";
@@ -838,11 +984,24 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0 }: any) {
 
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+            {onExport && list.length > 0 && (
+              <button
+                onClick={() => onExport(list)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              >
+                <Download size={14} />
+                Exportar Excel
+              </button>
+            )}
+          </div>
           <DialogDescription className="sr-only">
             Detalle de {title.toLowerCase()} que requieren atención en el sistema.
           </DialogDescription>
         </DialogHeader>
+
+        {filterSlot && <div className="mb-3">{filterSlot}</div>}
 
         <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3 mt-4">
           {list.length > 0 ? (

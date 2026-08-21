@@ -8,29 +8,13 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
-function getMonday(d: Date): Date {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  date.setDate(diff);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
+const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
 function getMonthStart(year: number, month: number): Date {
   return new Date(year, month, 1);
 }
 
-function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-}
-
 async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
-  const { callOdooRPC } = await import("@/lib/odoo");
   let result: any[] = [];
   let offset = 0;
   while (true) {
@@ -82,6 +66,7 @@ export async function GET(request: NextRequest) {
 
     const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
     const companyId = companyIds[0] || 9;
+
     const cxcMetasResult = await query(
       "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso')",
       [companyId, mes]
@@ -89,208 +74,73 @@ export async function GET(request: NextRequest) {
     const cxcMetas: Record<string, number> = {};
     (cxcMetasResult.rows as any[]).forEach((r: any) => { cxcMetas[r.kpi_key] = Number(r.meta_mensual); });
 
-    const moveDomain: any[] = [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
+    // ═══════════════════════════════════════════════════════════════════
+    // FUENTE 1: digiflex.cxc.report — Aging, balances, top deudores
+    // ═══════════════════════════════════════════════════════════════════
+    const reportDomain: any[] = [
       ["company_id", "in", companyIds],
     ];
 
-    const allInvoices = await fetchPaginated(
-      "account.move",
-      moveDomain,
+    const reportData = await fetchPaginated(
+      "digiflex.cxc.report",
+      reportDomain,
       [
-        "id", "name", "partner_id", "company_id", "move_type",
-        "invoice_date", "invoice_date_due", "payment_state",
-        "amount_untaxed", "amount_tax", "amount_total",
-        "amount_residual", "invoice_user_id", "currency_id",
-        "invoice_origin",
+        "id", "move_id", "partner_id", "partner_name",
+        "user_id", "user_name", "company_id", "company_name",
+        "invoice_date", "date_maturity", "days_overdue",
+        "amount_residual", "amount_current",
+        "amount_1_30", "amount_31_60", "amount_61_90", "amount_91_plus",
+        "transaction_type", "document_number",
       ],
     );
 
-    const invoices = allInvoices.map((inv) => {
-      const amount = inv.move_type === "out_refund" ? -Math.abs(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0);
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : (inv.amount_total || 0);
-      const residual = inv.amount_residual || 0;
+    // Filtrar solo facturas (excluir notas de crédito y asientos internos)
+    const reportInvoices = reportData.filter((r: any) =>
+      r.amount_residual > 0 && !((r.partner_name || "").toLowerCase().includes("supricom"))
+    );
 
-      const dueDateStr = inv.invoice_date_due || null;
-      const invoiceDateStr = inv.invoice_date || null;
+    // Aging distribution (rangos del reporte Odoo: corriente, 1-30, 31-60, 61-90, 91+)
+    const agingDistribution: Record<string, number> = {
+      "corriente": 0,
+      "1-30": 0,
+      "31-60": 0,
+      "61-90": 0,
+      "91+": 0,
+    };
 
-      function parseLocalDate(dateStr: string | null): Date | null {
-        if (!dateStr) return null;
-        const [y, m, d] = dateStr.split(" ")[0].split("-").map(Number);
-        return new Date(y, m - 1, d);
-      }
+    let totalReceivable = 0;
+    let totalOverdue = 0;
 
-      const dueDate = parseLocalDate(dueDateStr);
-      const invoiceDate = parseLocalDate(invoiceDateStr);
+    reportInvoices.forEach((r: any) => {
+      const residual = Math.abs(r.amount_residual || 0);
+      totalReceivable += residual;
+      if (r.days_overdue > 0) totalOverdue += residual;
 
-      let agingDays = 0;
-      if (dueDate && residual > 0) {
-        agingDays = daysBetween(dueDate, today);
-      }
-
-      let agingBand = "corriente";
-      if (residual > 0 && dueDate) {
-        if (agingDays <= 0) agingBand = "corriente";
-        else if (agingDays <= 15) agingBand = "1-15";
-        else if (agingDays <= 30) agingBand = "16-30";
-        else if (agingDays <= 60) agingBand = "31-60";
-        else if (agingDays <= 90) agingBand = "61-90";
-        else agingBand = "90+";
-      }
-
-      return {
-        id: inv.id,
-        name: inv.name || "",
-        partnerId: inv.partner_id?.[0] || 0,
-        partnerName: inv.partner_id?.[1] || "Sin cliente",
-        companyId: inv.company_id?.[0] || 0,
-        companyName: inv.company_id?.[1] || "",
-        moveType: inv.move_type,
-        invoiceDate: invoiceDateStr,
-        invoiceDateDue: dueDateStr,
-        paymentState: inv.payment_state || "not_paid",
-        amountUntaxed: amount,
-        amountTotal: amountTotal,
-        amountResidual: residual,
-        invoiceUserId: inv.invoice_user_id?.[0] || 0,
-        invoiceUserName: inv.invoice_user_id?.[1] || "Sin asignar",
-        agingDays,
-        agingBand,
-        invoiceOrigin: inv.invoice_origin || "",
-      };
+      agingDistribution["corriente"] += Math.abs(r.amount_current || 0);
+      agingDistribution["1-30"] += Math.abs(r.amount_1_30 || 0);
+      agingDistribution["31-60"] += Math.abs(r.amount_31_60 || 0);
+      agingDistribution["61-90"] += Math.abs(r.amount_61_90 || 0);
+      agingDistribution["91+"] += Math.abs(r.amount_91_plus || 0);
     });
-
-    const invoicesInMonth = invoices.filter((inv) => {
-      if (!inv.invoiceDate) return false;
-      const [y, m, d] = inv.invoiceDate.split(" ")[0].split("-").map(Number);
-      const dd = new Date(y, m - 1, d);
-      return dd >= monthStart && dd <= monthEnd;
-    });
-
-    const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
-
-    const allOpenInvoices = invoices.filter((inv) => inv.amountResidual > 0 && !inv.partnerName.toLowerCase().includes("supricom"));
-    const overdueInvoices = allOpenInvoices.filter((inv) => inv.agingDays > 0);
-    const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
-    const totalReceivable = allOpenInvoices.reduce((sum, inv) => sum + Math.abs(inv.amountResidual), 0);
-
-    // Efectividad: Monto exigible = facturas con vencimiento en el mes seleccionado
-    const exigibleInvoices = invoices.filter((inv) => {
-      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate >= monthStart && dueDate <= monthEnd && inv.amountResidual >= 0;
-    });
-    const montoExigible = exigibleInvoices.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      return sum + total;
-    }, 0);
-
-    // Monto cobrado = pagos efectivamente conciliados en el período contra facturas exigibles
-    // Usamos la diferencia: lo que se facturó con vencimiento en el período menos lo que aún queda pendiente
-    const cobradoEnPeriodo = exigibleInvoices.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      const pagado = total - Math.abs(inv.amountResidual);
-      return sum + Math.max(pagado, 0);
-    }, 0);
-
-    const efectividad = montoExigible > 0
-      ? Math.round((cobradoEnPeriodo / montoExigible) * 10000) / 100
-      : null;
 
     const carteraVencidaPct = totalReceivable > 0
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
       : null;
 
-    // Recuperación: Cohorte = facturas que ya estaban vencidas al inicio del mes
-    const cohortStart = getMonthStart(currentYear, currentMonth);
-
-    // Todas las facturas vencidas al inicio del mes (incluyendo las que ya se pagaron)
-    const cohortAll = invoices.filter((inv) => {
-      const dueDate = inv.invoiceDateDue ? new Date(inv.invoiceDateDue) : null;
-      return dueDate && dueDate < cohortStart;
-    });
-
-    // Monto original vencido al inicio del mes (amountTotal, no residual)
-    const cohortTotalInicial = cohortAll.reduce((sum, inv) => {
-      const total = inv.moveType === "out_refund" ? -Math.abs(inv.amountTotal || 0) : Math.abs(inv.amountTotal || 0);
-      return sum + total;
-    }, 0);
-
-    // Monto que aún queda por cobrar de esas facturas (residual actual)
-    const cohortRestante = cohortAll.reduce((sum, inv) => sum + Math.abs(inv.amountResidual || 0), 0);
-
-    // Monto recuperado = lo que ya se pagó contra esas facturas
-    const cohortRecovered = cohortTotalInicial - cohortRestante;
-
-    // Solo para referencia: facturas que siguen abiertas (con residual > 0)
-    const cohortOverdue = cohortAll.filter((inv) => inv.amountResidual > 0);
-
-    const totalCreditSales90d = (() => {
-      const d90 = new Date(today);
-      d90.setDate(d90.getDate() - 90);
-      return invoices
-        .filter((inv) => {
-          const d = inv.invoiceDate ? new Date(inv.invoiceDate) : null;
-          return inv.moveType === "out_invoice" && d && d >= d90;
-        })
-        .reduce((sum, inv) => sum + Math.abs(inv.amountUntaxed), 0);
-    })();
-
-    const dso90 = totalCreditSales90d > 0
-      ? Math.round((totalReceivable / totalCreditSales90d) * 90)
-      : null;
-
-    const agingDistribution = {
-      "corriente": 0,
-      "1-15": 0,
-      "16-30": 0,
-      "31-60": 0,
-      "61-90": 0,
-      "90+": 0,
-    };
-    allOpenInvoices.forEach((inv) => {
-      agingDistribution[inv.agingBand as keyof typeof agingDistribution] += Math.abs(inv.amountResidual);
-    });
-
-    const byCompany = companyIds.map((cid) => {
-      const coInvoices = allOpenInvoices.filter((inv) => inv.companyId === cid);
-      const coOverdue = coInvoices.filter((inv) => inv.agingDays > 0);
-      const coTotalReceivable = coInvoices.reduce((s, i) => s + Math.abs(i.amountResidual), 0);
-      const coTotalOverdue = coOverdue.reduce((s, i) => s + Math.abs(i.amountResidual), 0);
-      const coMonthInvoices = invoicesInMonth.filter((i) => i.companyId === cid);
-      const coMonthTotal = coMonthInvoices.reduce((s, i) => s + Math.abs(i.amountUntaxed), 0);
-      const coMonthPaid = coMonthInvoices.filter(
-        (i) => i.paymentState === "paid" || i.paymentState === "in_payment"
-      ).reduce((s, i) => s + Math.abs(i.amountUntaxed), 0);
-
-      return {
-        companyId: cid,
-        companyName: COMPANY_NAMES[cid] || `Sucursal ${cid}`,
-        totalReceivable: Math.round(coTotalReceivable * 100) / 100,
-        totalOverdue: Math.round(coTotalOverdue * 100) / 100,
-        overduePct: coTotalReceivable > 0 ? Math.round((coTotalOverdue / coTotalReceivable) * 10000) / 100 : 0,
-        openInvoices: coInvoices.length,
-        overdueInvoices: coOverdue.length,
-        monthInvoiced: Math.round(coMonthTotal * 100) / 100,
-        monthPaid: Math.round(coMonthPaid * 100) / 100,
-        efectividad: coMonthTotal > 0 ? Math.round((coMonthPaid / coMonthTotal) * 10000) / 100 : 0,
-      };
-    });
-
+    // Top deudores
     const topDebtors = (() => {
       const byClient: Record<number, { name: string; total: number; overdue: number; oldest: number; count: number }> = {};
-      allOpenInvoices.forEach((inv) => {
-        if (!byClient[inv.partnerId]) {
-          byClient[inv.partnerId] = { name: inv.partnerName, total: 0, overdue: 0, oldest: 0, count: 0 };
+      reportInvoices.forEach((r: any) => {
+        const pid = r.partner_id?.[0] || 0;
+        if (!pid) return;
+        if (!byClient[pid]) {
+          byClient[pid] = { name: r.partner_name || r.partner_id?.[1] || "Sin cliente", total: 0, overdue: 0, oldest: 0, count: 0 };
         }
-        byClient[inv.partnerId].total += Math.abs(inv.amountResidual);
-        byClient[inv.partnerId].count++;
-        if (inv.agingDays > 0) {
-          byClient[inv.partnerId].overdue += Math.abs(inv.amountResidual);
-        }
-        if (inv.agingDays > byClient[inv.partnerId].oldest) {
-          byClient[inv.partnerId].oldest = inv.agingDays;
-        }
+        const residual = Math.abs(r.amount_residual || 0);
+        byClient[pid].total += residual;
+        byClient[pid].count++;
+        if (r.days_overdue > 0) byClient[pid].overdue += residual;
+        if ((r.days_overdue || 0) > byClient[pid].oldest) byClient[pid].oldest = r.days_overdue;
       });
       return Object.entries(byClient)
         .map(([id, data]) => ({ partnerId: parseInt(id), ...data }))
@@ -298,24 +148,83 @@ export async function GET(request: NextRequest) {
         .slice(0, 10);
     })();
 
+    // Por vendedor
     const bySalesperson = (() => {
       const byUser: Record<number, { name: string; total: number; overdue: number; count: number }> = {};
-      allOpenInvoices.forEach((inv) => {
-        const uid = inv.invoiceUserId || 0;
+      reportInvoices.forEach((r: any) => {
+        const uid = r.user_id?.[0] || 0;
+        if (!uid) return;
         if (!byUser[uid]) {
-          byUser[uid] = { name: inv.invoiceUserName, total: 0, overdue: 0, count: 0 };
+          byUser[uid] = { name: r.user_name || r.user_id?.[1] || "Sin asignar", total: 0, overdue: 0, count: 0 };
         }
-        byUser[uid].total += Math.abs(inv.amountResidual);
+        const residual = Math.abs(r.amount_residual || 0);
+        byUser[uid].total += residual;
         byUser[uid].count++;
-        if (inv.agingDays > 0) {
-          byUser[uid].overdue += Math.abs(inv.amountResidual);
-        }
+        if (r.days_overdue > 0) byUser[uid].overdue += residual;
       });
       return Object.entries(byUser)
         .map(([id, data]) => ({ userId: parseInt(id), ...data }))
         .sort((a, b) => b.total - a.total);
     })();
 
+    // Por compañía
+    const byCompany = companyIds.map((cid) => {
+      const coRecords = reportInvoices.filter((r: any) => (r.company_id?.[0] || 0) === cid);
+      const coOverdue = coRecords.filter((r: any) => r.days_overdue > 0);
+      const coTotalReceivable = coRecords.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
+      const coTotalOverdue = coOverdue.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
+
+      return {
+        companyId: cid,
+        companyName: COMPANY_NAMES[cid] || `Sucursal ${cid}`,
+        totalReceivable: Math.round(coTotalReceivable * 100) / 100,
+        totalOverdue: Math.round(coTotalOverdue * 100) / 100,
+        overduePct: coTotalReceivable > 0 ? Math.round((coTotalOverdue / coTotalReceivable) * 10000) / 100 : 0,
+        openInvoices: coRecords.length,
+        overdueInvoices: coOverdue.length,
+        aging: {
+          corriente: Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_current || 0), 0) * 100) / 100,
+          "1-30": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_1_30 || 0), 0) * 100) / 100,
+          "31-60": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_31_60 || 0), 0) * 100) / 100,
+          "61-90": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_61_90 || 0), 0) * 100) / 100,
+          "91+": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_91_plus || 0), 0) * 100) / 100,
+        },
+      };
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // KPIs calculados desde digiflex.cxc.report (aging bands)
+    // ═══════════════════════════════════════════════════════════════════
+    const totalCurrent = agingDistribution["corriente"];
+    const total1_30 = agingDistribution["1-30"];
+    const total31_60 = agingDistribution["31-60"];
+    const total61_90 = agingDistribution["61-90"];
+    const total91Plus = agingDistribution["91+"];
+
+    // ── Efectividad Cobranza: % de cartera que está al día (corriente) ──
+    const efectividad = totalReceivable > 0
+      ? Math.round((totalCurrent / totalReceivable) * 10000) / 100
+      : null;
+
+    // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
+
+    // ── Recuperación Vencidos: % de vencido que NO está estancado en 91+ ──
+    const totalOverdueBands = total1_30 + total31_60 + total61_90 + total91Plus;
+    const recuperacion = totalOverdueBands > 0
+      ? Math.round(((totalOverdueBands - total91Plus) / totalOverdueBands) * 10000) / 100
+      : null;
+
+    // ── DSO: días promedio de cobro usando bandas del aging (midpoints) ──
+    // 1-30 → 15d, 31-60 → 45d, 61-90 → 75d, 91+ → 105d
+    const dsoNumerator = (total1_30 * 15) + (total31_60 * 45) + (total61_90 * 75) + (total91Plus * 105);
+    const totalOverdueWeighted = total1_30 + total31_60 + total61_90 + total91Plus;
+    const dso = totalOverdueWeighted > 0
+      ? Math.round(dsoNumerator / totalOverdueWeighted)
+      : null;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Respuesta
+    // ═══════════════════════════════════════════════════════════════════
     return NextResponse.json({
       success: true,
       data: {
@@ -323,9 +232,9 @@ export async function GET(request: NextRequest) {
           efectividad: {
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            cobradoMes: Math.round(cobradoEnPeriodo * 100) / 100,
-            exigibleMes: Math.round(montoExigible * 100) / 100,
-            pendiente: Math.round((montoExigible - cobradoEnPeriodo) * 100) / 100,
+            cobradoMes: Math.round(totalCurrent * 100) / 100,
+            exigibleMes: Math.round(totalReceivable * 100) / 100,
+            pendiente: Math.round(totalOverdue * 100) / 100,
           },
           carteraVencida: {
             value: carteraVencidaPct,
@@ -334,16 +243,16 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: cohortTotalInicial > 0 ? Math.round((cohortRecovered / cohortTotalInicial) * 10000) / 100 : null,
+            value: recuperacion,
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(cohortTotalInicial * 100) / 100,
-            vencidoRestante: Math.round(cohortRestante * 100) / 100,
+            vencidoInicial: Math.round(totalOverdueBands * 100) / 100,
+            vencidoRestante: Math.round(total91Plus * 100) / 100,
           },
           dso: {
-            value: dso90,
+            value: dso,
             meta: cxcMetas["dso"] || 45,
             carteraAbierta: Math.round(totalReceivable * 100) / 100,
-            ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
+            ventasCredito90d: Math.round(totalOverdueWeighted * 100) / 100,
           },
         },
         agingDistribution,
@@ -353,8 +262,8 @@ export async function GET(request: NextRequest) {
         summary: {
           totalReceivable: Math.round(totalReceivable * 100) / 100,
           totalOverdue: Math.round(totalOverdue * 100) / 100,
-          openInvoiceCount: allOpenInvoices.length,
-          overdueInvoiceCount: overdueInvoices.length,
+          openInvoiceCount: reportInvoices.length,
+          overdueInvoiceCount: reportInvoices.filter((r: any) => r.days_overdue > 0).length,
         },
         filters: {
           empresa,

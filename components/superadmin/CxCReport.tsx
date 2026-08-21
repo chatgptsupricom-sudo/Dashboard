@@ -121,12 +121,11 @@ function getTrafficDot(value: number, thresholds: { green: number; yellow: numbe
 function AgingBar({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   const colors: Record<string, string> = {
-    " corriente": "bg-emerald-400",
-    "1-15": "bg-amber-400",
-    "16-30": "bg-orange-400",
-    "31-60": "bg-red-400",
+    "corriente": "bg-emerald-400",
+    "1-30": "bg-amber-400",
+    "31-60": "bg-orange-400",
     "61-90": "bg-red-500",
-    "90+": "bg-red-700",
+    "91+": "bg-red-700",
   };
   return (
     <div className="flex items-center gap-3">

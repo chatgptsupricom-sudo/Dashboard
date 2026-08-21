@@ -55,6 +55,18 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const queryCompanyId = url.searchParams.get("company_id");
+    const monthParam = url.searchParams.get("month");
+    const yearParam = url.searchParams.get("year");
+
+    // Determine selected month/year (default: current month)
+    const now = new Date();
+    const selectedMonth = monthParam ? parseInt(monthParam) : now.getMonth() + 1;
+    const selectedYear = yearParam ? parseInt(yearParam) : now.getFullYear();
+
+    // Compute month date range
+    const monthStart = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
+    const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+    const monthEnd = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
     let rulesCompanyId = userCids;
     if (!rulesCompanyId || rulesCompanyId === 0) {
@@ -65,8 +77,11 @@ export async function GET(request: Request) {
     }
 
     const rulesResult = await query(
-      "SELECT * FROM spiff_rules WHERE company_id = ? AND active = 1",
-      [rulesCompanyId]
+      `SELECT * FROM spiff_rules 
+       WHERE company_id = ? AND active = 1 
+       AND (fecha_inicio IS NULL OR fecha_inicio <= ?)
+       AND (fecha_fin IS NULL OR fecha_fin >= ?)`,
+      [rulesCompanyId, monthEnd, monthStart]
     );
     const allRules: SpiffRuleRow[] = rulesResult.rows;
     const rules = allRules;
@@ -82,32 +97,17 @@ export async function GET(request: Request) {
     const marcaRules = rules.filter((r) => r.tipo === "marca");
     const productoRules = rules.filter((r) => r.tipo === "producto");
 
-    let fechaInicioGlobal: string | null = null;
-    let fechaFinGlobal: string | null = null;
-    rules.forEach((r) => {
-      if (r.fecha_inicio) {
-        if (!fechaInicioGlobal || r.fecha_inicio < fechaInicioGlobal) {
-          fechaInicioGlobal = r.fecha_inicio;
-        }
-      }
-      if (r.fecha_fin) {
-        if (!fechaFinGlobal || r.fecha_fin > fechaFinGlobal) {
-          fechaFinGlobal = r.fecha_fin;
-        }
-      }
-    });
+    // Use selected month range instead of global range from rules
+    const fechaInicioGlobal = monthStart;
+    const fechaFinGlobal = monthEnd;
 
     const domain: any[] = [
       ["move_type", "=", "out_invoice"],
       ["state", "=", "posted"],
       ["company_id", "=", rulesCompanyId],
+      ["invoice_date", ">=", fechaInicioGlobal],
+      ["invoice_date", "<=", fechaFinGlobal],
     ];
-    if (fechaInicioGlobal) {
-      domain.push(["invoice_date", ">=", fechaInicioGlobal]);
-    }
-    if (fechaFinGlobal) {
-      domain.push(["invoice_date", "<=", fechaFinGlobal]);
-    }
 
     const facturas = await callOdooRPC<any[]>(
       "account.move",
@@ -379,6 +379,8 @@ export async function GET(request: Request) {
       fechaInicioGlobal,
       fechaFinGlobal,
       sellerBrandData,
+      selectedMonth,
+      selectedYear,
     });
   } catch (e: any) {
     console.error("Error API spiff:", e);

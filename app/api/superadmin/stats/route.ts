@@ -229,6 +229,7 @@ export async function GET(request: NextRequest) {
     // 1. OBTENER PARÁMETRO DE SEDE
     const { searchParams } = new URL(request.url);
     const companyIdParam = searchParams.get("company_id");
+    const monthParam = searchParams.get("month"); // "YYYY-MM" o null para mes actual
 
     // Lógica de filtro dinámico
     let companyFilter: any[] = [];
@@ -244,9 +245,22 @@ export async function GET(request: NextRequest) {
 
     // 2. CONFIGURACIÓN DE FECHAS
     const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      .toISOString()
-      .split("T")[0];
+    let firstDayOfMonth: string;
+    let lastDayOfMonth: string;
+
+    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      const [y, m] = monthParam.split("-").map(Number);
+      firstDayOfMonth = `${y}-${String(m).padStart(2, "0")}-01`;
+      lastDayOfMonth = new Date(y, m, 0).toISOString().split("T")[0].split("T")[0];
+      const ld = new Date(y, m, 0);
+      lastDayOfMonth = `${ld.getFullYear()}-${String(ld.getMonth() + 1).padStart(2, "0")}-${String(ld.getDate()).padStart(2, "0")}`;
+    } else {
+      const fd = new Date(now.getFullYear(), now.getMonth(), 1);
+      firstDayOfMonth = `${fd.getFullYear()}-${String(fd.getMonth() + 1).padStart(2, "0")}-${String(fd.getDate()).padStart(2, "0")}`;
+      const ld = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      lastDayOfMonth = `${ld.getFullYear()}-${String(ld.getMonth() + 1).padStart(2, "0")}-${String(ld.getDate()).padStart(2, "0")}`;
+    }
+
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
       .toISOString()
       .split("T")[0];
@@ -264,6 +278,7 @@ export async function GET(request: NextRequest) {
     const currentMonthFilters = [
       ...baseFilters,
       ["date", ">=", firstDayOfMonth],
+      ["date", "<=", lastDayOfMonth],
     ];
 
     // 3. OBTENER LÍNEAS DE FACTURACIÓN

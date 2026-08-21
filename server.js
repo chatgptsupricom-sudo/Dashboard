@@ -67,6 +67,12 @@ app.prepare().then(() => {
   io.on("connection", (socket) => {
     console.log(`Cliente conectado: ${socket.id}`);
 
+    socket.on("join_user_room", (userId) => {
+      const room = `user_${userId}`;
+      socket.join(room);
+      console.log(`Socket ${socket.id} unido a sala ${room}`);
+    });
+
     // Manejo de desconexión
     socket.on("disconnect", () => {
       console.log(`Cliente desconectado: ${socket.id}`);

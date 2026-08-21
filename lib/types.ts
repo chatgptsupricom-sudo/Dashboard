@@ -15,6 +15,8 @@ export enum UserRole {
   RMA = "rma",
   CUENTAS_POR_COBRAR = "cuentas por cobrar",
   DISENADOR = "diseñador",
+  ASISTENTE_VENTAS = "asistente de ventas",
+  ADMINISTRACION = "administración",
 }
 
 // Permisos por rol
@@ -43,6 +45,8 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads", // Clave para el submenú Monitoreo
       "cierres_adminleads", // Clave para el submenú Cierres
       "stoplight_reports", // Reportes de Stoplight
+      "salud_financiera", // Administración: índice de salud financiera
+      "gastos_presupuesto", // Administración: gastos vs presupuesto
       "users", // Gestión de usuarios
       "reports", // Reportes
       "seller_map", // Para Christian Rodriguez
@@ -157,6 +161,22 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports"],
+  },
+  [UserRole.ASISTENTE_VENTAS]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo"],
+  },
+  [UserRole.ADMINISTRACION]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["dashboard", "salud_financiera", "gastos_presupuesto"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
