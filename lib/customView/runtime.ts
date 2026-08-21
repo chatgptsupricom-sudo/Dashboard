@@ -542,6 +542,9 @@ export const PLAN_RUNTIME_JS = String.raw`
    * texto.
    */
   function refreshWeekLabels() {
+    // Recalcular las etiquetas tambien muta el DOM: si corre fuera de la
+    // guarda, el observador lo toma como edicion del usuario y guarda.
+    applying++;
     try {
       if (typeof window.updateWeekButton === "function") {
         var semanas = document.querySelectorAll(".week-card");
@@ -551,7 +554,9 @@ export const PLAN_RUNTIME_JS = String.raw`
         var emails = document.querySelectorAll(".em-week");
         for (var j = 0; j < emails.length; j++) window.updateEmailWeekButton(emails[j]);
       }
-    } catch (e) {}
+    } catch (e) {} finally {
+      applying--;
+    }
   }
 
   function applyState(state, noRevert) {
@@ -599,8 +604,18 @@ export const PLAN_RUNTIME_JS = String.raw`
     } finally {
       applying--;
     }
-    try { if (typeof window.initDragAndDrop === "function") window.initDragAndDrop(); } catch (e3) {}
-    try { document.dispatchEvent(new CustomEvent("supricom:plan-applied")); } catch (e4) {}
+    // Estas dos cosas tocan el DOM (initDragAndDrop escribe draggable y
+    // data-orig-* en cada pieza), y estaban FUERA de la guarda: el observador
+    // las leia como un cambio del usuario y disparaba un guardado. Con dos
+    // paneles abiertos eso se realimentaba —guardar, transmitir, aplicar,
+    // guardar— en un bucle sin fin. Van dentro de applying.
+    applying++;
+    try {
+      try { if (typeof window.initDragAndDrop === "function") window.initDragAndDrop(); } catch (e3) {}
+      try { document.dispatchEvent(new CustomEvent("supricom:plan-applied")); } catch (e4) {}
+    } finally {
+      applying--;
+    }
   }
 
   /**
