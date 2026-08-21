@@ -267,7 +267,13 @@ export function Sidebar({
       case "diseñador":
         return `/${locale}/disenador`;
       case "administración":
-        return `/${locale}/administracion`;
+        // El basePath solo lo usa el item "Dashboard", que es la pantalla de
+        // inicio del rol. Salud Financiera y Gastos y Presupuesto apuntan a
+        // /administracion con absoluteHref, asi que no dependen de esto.
+        // Antes basePath era /administracion y colisionaba con Salud
+        // Financiera: ambos items resolvian a la misma URL y el sidebar los
+        // marcaba activos al mismo tiempo.
+        return `/${locale}/dashboard`;
       default:
         return `/${locale}/dashboard`;
     }

@@ -17,7 +17,9 @@ export default function AdministracionLayout({
       <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? "md:pl-72" : "pl-0"}`}>
         <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-8 max-w-[1800px] mx-auto">{children}</div>
+          <div className="p-4 sm:p-6 lg:p-8 max-w-[1800px] mx-auto">
+            {children}
+          </div>
         </main>
       </div>
     </div>
