@@ -1951,8 +1951,7 @@ export default function MonitoringPage() {
               <option value="YA_ES_CLIENTE">Ya es cliente</option>
               <option value="PERDIDO">Cierre perdido</option>
             </select>
-            {(formData.motivo === "GANADO" ||
-              formData.motivo === "YA_ES_CLIENTE") && (
+            {formData.motivo === "GANADO" && (
               <>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase">
@@ -1990,6 +1989,22 @@ export default function MonitoringPage() {
                 />
               </>
             )}
+            {formData.motivo === "YA_ES_CLIENTE" && (
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-500 uppercase">
+                  Fecha de cierre
+                </label>
+                <input
+                  type="date"
+                  required
+                  className="w-full border border-zinc-300 p-2.5 rounded-lg"
+                  value={formData.fecha}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fecha: e.target.value })
+                  }
+                />
+              </div>
+            )}
             {formData.motivo === "PERDIDO" && (
               <>
                 <div className="space-y-1">
@@ -2014,6 +2029,7 @@ export default function MonitoringPage() {
                     </option>
                     <option value="Sin inventario">Sin inventario</option>
                     <option value="Cliente final">Cliente final</option>
+                    <option value="Sin respuesta del cliente">Sin respuesta del cliente</option>
                   </select>
                 </div>
                 {formData.motivoPerdido === "Sin inventario" && (
