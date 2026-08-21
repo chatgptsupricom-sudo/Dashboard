@@ -481,18 +481,87 @@ export const PLAN_RUNTIME_JS = String.raw`
     setShell(el, target, live, imported);
   }
 
-  function applyState(state) {
+  /**
+   * Subconjunto del estado que SI se replica en vivo entre navegadores:
+   *
+   *   - Marcado de piezas: checks individuales y boton "HECHO" por semana.
+   *     Ambos son cambios de clase (ca/cr), mas algun atributo (at).
+   *   - Movimiento de una tarjeta a otro dia: cambia el shell de la columna
+   *     del calendario (.cal-col).
+   *
+   * Todo lo demas —editar el texto de una pieza, agregarla o borrarla— se
+   * sigue guardando igual, pero solo se ve al recargar. Replicarlo en vivo
+   * reescribia la pantalla del otro mientras estaba trabajando, que es lo que
+   * hacia engorroso que dos personas usaran el panel a la vez.
+   *
+   * Devuelve full:false cuando quedo algo sin replicar. Eso es importante:
+   * en ese caso NO hay que avanzar la revision local, para que el proximo
+   * guardado entre por el merge de 3 vias (mergeStates) y no pise el cambio
+   * que no aplicamos.
+   */
+  function liveSubset(nodes) {
+    var out = {};
+    var full = true;
+    var live = buildIndex(document.documentElement);
+    for (var k in nodes) {
+      var e = nodes[k] || {};
+      var keep = null;
+      if (e.ca) { keep = keep || {}; keep.ca = e.ca; }
+      if (e.cr) { keep = keep || {}; keep.cr = e.cr; }
+      if (e.at) { keep = keep || {}; keep.at = e.at; }
+      if (e.sh !== undefined) {
+        var el = live.map[k] || baseIdx.map[k];
+        var esColumna = !!(el && el.classList && el.classList.contains("cal-col"));
+        if (esColumna) {
+          keep = keep || {};
+          keep.sh = e.sh;
+          if (e.bsh !== undefined) keep.bsh = e.bsh;
+        } else {
+          full = false;   // edicion de contenido: no se replica en vivo
+        }
+      }
+      if (keep) out[k] = keep;
+    }
+    return { nodes: out, full: full };
+  }
+
+  /**
+   * Las etiquetas de la semana ("✓ HECHO", "En desarrollo", "8/10 ✓") las
+   * calcula el propio HTML a partir de las piezas marcadas. Tras replicar los
+   * marcados se las recalcula localmente, en vez de sincronizar tambien su
+   * texto.
+   */
+  function refreshWeekLabels() {
+    try {
+      if (typeof window.updateWeekButton === "function") {
+        var semanas = document.querySelectorAll(".week-card");
+        for (var i = 0; i < semanas.length; i++) window.updateWeekButton(semanas[i]);
+      }
+      if (typeof window.updateEmailWeekButton === "function") {
+        var emails = document.querySelectorAll(".em-week");
+        for (var j = 0; j < emails.length; j++) window.updateEmailWeekButton(emails[j]);
+      }
+    } catch (e) {}
+  }
+
+  function applyState(state, noRevert) {
     if (!baseIdx) return;
     var nodes = (state && state.nodes) || {};
     applying++;
     try {
       // Todo lo que hoy difiere de la base y no aparece en el estado entrante
       // debe volver a la base: asi el panel converge exactamente al estado recibido.
+      //
+      // noRevert se usa en la replicacion en vivo: ahi solo llega un subconjunto
+      // del estado (marcados y movimientos), asi que revertir lo que "falta"
+      // borraria el trabajo local del usuario.
       var toRevert = [];
-      try {
-        var localNodes = computeState().nodes;
-        for (var lk in localNodes) if (!nodes[lk]) toRevert.push(lk);
-      } catch (e0) { /* si el diff falla, al menos aplicamos lo entrante */ }
+      if (!noRevert) {
+        try {
+          var localNodes = computeState().nodes;
+          for (var lk in localNodes) if (!nodes[lk]) toRevert.push(lk);
+        } catch (e0) { /* si el diff falla, al menos aplicamos lo entrante */ }
+      }
 
       for (var pass = 0; pass < 2; pass++) {
         var live = buildIndex(document.documentElement);
@@ -724,11 +793,25 @@ export const PLAN_RUNTIME_JS = String.raw`
         socket.on("vista-state-updated", function (p) {
           if (!p || p.clientId === CLIENT_ID) return;
           if (Number(p.baseRevision) !== baseRevision) { location.reload(); return; }
-          revision = Number(p.revision) || revision;
           var incoming = p.state || EMPTY_STATE;
-          ackState = incoming;
-          lastSentJson = JSON.stringify(incoming);
-          applyState(incoming);
+
+          // Solo se replican marcados y movimientos entre dias; el resto se ve
+          // al recargar (ver liveSubset).
+          var sub = liveSubset((incoming && incoming.nodes) || {});
+          applyState({ v: 2, nodes: sub.nodes }, true);
+          refreshWeekLabels();
+
+          if (sub.full) {
+            // Se replico todo lo entrante: el navegador quedo igual al servidor.
+            revision = Number(p.revision) || revision;
+            ackState = incoming;
+            lastSentJson = JSON.stringify(incoming);
+          }
+          // Si quedo algo sin replicar NO se toca revision ni ackState a
+          // proposito: asi el proximo guardado detecta el conflicto de revision
+          // y pasa por mergeStates, que conserva las piezas que toco el otro.
+          // Avanzar la revision aca haria que el siguiente guardado sobrescriba
+          // su trabajo sin aviso.
         });
         socket.on("vista-html-updated", function () { location.reload(); });
       } catch (e) {}
