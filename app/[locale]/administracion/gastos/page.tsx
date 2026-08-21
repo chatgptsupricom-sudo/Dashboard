@@ -415,7 +415,7 @@ export default function GastosPresupuestoPage() {
                       <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                         {k.numero}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
                         <div className="font-medium text-sm">{k.nombre}</div>
                         <div className="text-xs text-gray-500">{k.formula}</div>
