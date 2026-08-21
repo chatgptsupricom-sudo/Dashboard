@@ -177,11 +177,11 @@ export default function SaludFinancieraPage() {
             Índice de Salud Administrativa
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <select
             value={empresa}
             onChange={(e) => setEmpresa(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
+            className="border rounded-lg px-3 py-2 text-sm flex-1 sm:flex-none"
           >
             {SEDES.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
@@ -190,7 +190,7 @@ export default function SaludFinancieraPage() {
           <select
             value={mes}
             onChange={(e) => setMes(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm capitalize"
+            className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 sm:flex-none"
           >
             {meses().map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
@@ -279,8 +279,10 @@ export default function SaludFinancieraPage() {
                   <TableHeader className="bg-slate-50">
                     <TableRow>
                       <TableHead className="px-4">Alerta</TableHead>
-                      <TableHead>Área</TableHead>
-                      <TableHead>Responsable</TableHead>
+                      <TableHead className="hidden md:table-cell">Área</TableHead>
+                      <TableHead className="hidden lg:table-cell">
+                        Responsable
+                      </TableHead>
                       <TableHead className="text-right pr-4">Monto</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -291,8 +293,12 @@ export default function SaludFinancieraPage() {
                           <div className="font-medium text-sm">{a.titulo}</div>
                           <div className="text-xs text-gray-500">{a.accion}</div>
                         </TableCell>
-                        <TableCell className="text-sm text-gray-600">{a.area}</TableCell>
-                        <TableCell className="text-sm text-gray-600">{a.responsable}</TableCell>
+                        <TableCell className="text-sm text-gray-600 hidden md:table-cell">
+                          {a.area}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600 hidden lg:table-cell">
+                          {a.responsable}
+                        </TableCell>
                         <TableCell className="text-right pr-4 font-semibold">
                           {a.montoAfectado ? money(a.montoAfectado) : "—"}
                         </TableCell>
@@ -332,30 +338,45 @@ export default function SaludFinancieraPage() {
                     <Table>
                       <TableHeader className="bg-slate-50">
                         <TableRow>
-                          <TableHead className="w-[50px] px-4">#</TableHead>
+                          <TableHead className="w-[40px] px-2 sm:px-4">#</TableHead>
                           <TableHead>Indicador</TableHead>
-                          <TableHead className="text-center">Meta</TableHead>
+                          <TableHead className="text-center hidden md:table-cell">
+                            Meta
+                          </TableHead>
                           <TableHead className="text-center">Valor</TableHead>
-                          <TableHead className="text-center">Semáforo</TableHead>
-                          <TableHead className="text-center pr-4">Puntos</TableHead>
+                          <TableHead className="text-center hidden sm:table-cell">
+                            Semáforo
+                          </TableHead>
+                          <TableHead className="text-center pr-4 hidden lg:table-cell">
+                            Puntos
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {cat.kpis.map((k) => (
                           <TableRow key={k.id}>
-                            <TableCell className="px-4 text-gray-400 text-sm">
+                            <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                               {k.numero}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="min-w-[200px]">
                               <div className="font-medium text-sm">{k.nombre}</div>
                               <div className="text-xs text-gray-500">{k.formula}</div>
+                              {/* En movil la meta y el semaforo se ocultan como
+                                  columnas, asi que se muestran aca. */}
+                              <div className="text-xs text-gray-500 md:hidden mt-1">
+                                Meta: {k.metaTexto}
+                                <span className="sm:hidden">
+                                  {" · "}
+                                  {k.semaforo === "sin_datos" ? "sin datos" : k.semaforo}
+                                </span>
+                              </div>
                               {k.detalle && (
                                 <div className="text-[11px] text-gray-400 mt-0.5">
                                   {k.detalle}
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-center text-sm text-gray-600">
+                            <TableCell className="text-center text-sm text-gray-600 hidden md:table-cell">
                               {k.metaTexto}
                             </TableCell>
                             <TableCell className="text-center font-bold">
@@ -367,7 +388,7 @@ export default function SaludFinancieraPage() {
                                 `${k.valor}${k.unidad}`
                               )}
                             </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="text-center hidden sm:table-cell">
                               <Badge
                                 variant="outline"
                                 className={`${SEMAFORO[k.semaforo]} text-xs`}
@@ -375,7 +396,7 @@ export default function SaludFinancieraPage() {
                                 {k.semaforo === "sin_datos" ? "sin datos" : k.semaforo}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center pr-4 text-sm font-semibold text-gray-700">
+                            <TableCell className="text-center pr-4 text-sm font-semibold text-gray-700 hidden lg:table-cell">
                               {k.puntos} / {k.puntosMax}
                             </TableCell>
                           </TableRow>
