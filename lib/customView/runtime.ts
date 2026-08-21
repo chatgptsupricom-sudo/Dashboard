@@ -780,7 +780,7 @@ export const PLAN_RUNTIME_JS = String.raw`
     } catch (e) {}
   }
 
-  function finishBoot(needsSave) {
+  function finishBoot(needsSave, merged) {
     reveal();
     ready = true;
     startObserving();
@@ -788,8 +788,16 @@ export const PLAN_RUNTIME_JS = String.raw`
     status(needsSave ? "pending" : "saved");
     // Al re-materializar despues de una subida, varios navegadores pueden
     // llegar a la vez: el desfase evita una rafaga de escrituras identicas.
+    //
+    // Solo se fuerza la escritura cuando hubo un merge real (base nueva o
+    // migracion del formato viejo). Si lo unico "no fresco" era el snapshot,
+    // se guarda sin forzar: doSave descarta la escritura cuando el estado es
+    // identico al ya almacenado, en vez de crear una revision vacia por cada
+    // visita al panel.
     if (needsSave) {
-      setTimeout(function () { if (!savedOnce) doSave(true); }, 250 + Math.floor(Math.random() * 500));
+      setTimeout(function () {
+        if (!savedOnce) doSave(!!merged);
+      }, 250 + Math.floor(Math.random() * 500));
     }
   }
 
@@ -817,6 +825,12 @@ export const PLAN_RUNTIME_JS = String.raw`
         revision = Number(d.revision) || 0;
         var hasState = d.state && d.state.nodes && Object.keys(d.state.nodes).length;
         var needsSave = !d.snapshotFresh;
+        // Distinto de needsSave: aqui si hubo un merge real que hay que
+        // persistir si o si. Un snapshot desactualizado, en cambio, no
+        // justifica forzar una escritura: si el estado es identico al del
+        // servidor, forzarla crea una revision nueva sin ningun cambio y el
+        // contador sube solo con que alguien abra el panel.
+        var merged = false;
 
         if (hasState) {
           ackState = d.state;
@@ -824,12 +838,16 @@ export const PLAN_RUNTIME_JS = String.raw`
           applyState(d.state);
           // Si la base cambio (se subio un HTML nuevo), lo que acabamos de
           // aplicar es el merge: hay que persistirlo sobre la base nueva.
-          if (Number(d.baseRevision) !== baseRevision) needsSave = true;
+          if (Number(d.baseRevision) !== baseRevision) {
+            needsSave = true;
+            merged = true;
+          }
         } else if (d.legacy && Object.keys(d.legacy).length) {
           applyLegacy(d.legacy);
           needsSave = true;
+          merged = true;
         }
-        finishBoot(!!needsSave);
+        finishBoot(!!needsSave, merged);
       })
       .catch(function () { finishBoot(false); });
   }
