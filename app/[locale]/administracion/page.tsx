@@ -289,10 +289,10 @@ export default function SaludFinancieraPage() {
                   <TableBody>
                     {data.alertas.map((a) => (
                       <TableRow key={a.id}>
-                        <TableCell className="px-4">
-                          {/* El detalle de la alerta puede ser largo; sin un
-                              ancho maximo la tabla se estira y obliga a
-                              scrollear horizontalmente en movil. */}
+                        {/* whitespace-normal: TableCell trae whitespace-nowrap
+                            por defecto, asi que sin esto el texto largo de la
+                            alerta no envuelve y estira la tabla. */}
+                        <TableCell className="px-4 whitespace-normal">
                           <div className="max-w-[220px] sm:max-w-[420px] lg:max-w-none">
                             <div className="font-medium text-sm break-words">
                               {a.titulo}
@@ -367,7 +367,7 @@ export default function SaludFinancieraPage() {
                             <TableCell className="px-2 sm:px-4 text-gray-400 text-sm">
                               {k.numero}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="whitespace-normal">
                               <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
                               <div className="font-medium text-sm">{k.nombre}</div>
                               <div className="text-xs text-gray-500">{k.formula}</div>
