@@ -39,6 +39,13 @@ export interface DatosCxP {
   vencidas: FacturaCxP[];
   proximas30: FacturaCxP[];
   montoProximas30: number;
+  /** Facturas pendientes sin condiciones de pago cargadas. Odoo les asigna
+   *  vencimiento = fecha de factura, con lo que nacen "vencidas" y distorsionan
+   *  al alza los indicadores de vencimiento y cobertura. Se expone para poder
+   *  advertirlo en la UI en vez de dejar que se lea como pago tardio. */
+  pendientesSinCondicion: number;
+  pendientesTotal: number;
+  montoSinCondicion: number;
 }
 
 export interface DatosTesoreria {
@@ -213,6 +220,8 @@ export async function fetchCxP(
     ],
     [
       "invoice_date_due",
+      "invoice_date",
+      "invoice_payment_term_id",
       "amount_total",
       "amount_residual",
       "payment_state",
@@ -220,6 +229,10 @@ export async function fetchCxP(
       "name",
     ],
   );
+  const sinCondicionPorId: Record<number, boolean> = {};
+  facturasRaw.forEach((f: any) => {
+    sinCondicionPorId[f.id] = !f.invoice_payment_term_id;
+  });
 
   // Para puntualidad solo interesan las que vencieron dentro del periodo.
   const delPeriodo = facturasRaw.filter(
@@ -255,6 +268,8 @@ export async function fetchCxP(
       f.fechaVencimiento <= hasta30,
   );
 
+  const sinCondicion = pendientes.filter((f) => sinCondicionPorId[f.id]);
+
   return {
     facturas,
     totalCxP: pendientes.reduce((s, f) => s + f.residual, 0),
@@ -262,6 +277,9 @@ export async function fetchCxP(
     vencidas,
     proximas30,
     montoProximas30: proximas30.reduce((s, f) => s + f.residual, 0),
+    pendientesSinCondicion: sinCondicion.length,
+    pendientesTotal: pendientes.length,
+    montoSinCondicion: sinCondicion.reduce((s, f) => s + f.residual, 0),
   };
 }
 

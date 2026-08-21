@@ -104,6 +104,16 @@ export async function GET(request: NextRequest) {
       total > 0 ? Math.round((parte / total) * 1000) / 10 : null;
     const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
+    // Las facturas de proveedor sin condiciones de pago reciben vencimiento =
+    // fecha de factura, por lo que nacen vencidas. Si son una porcion relevante,
+    // los indicadores de vencimiento y cobertura se leen inflados y hay que
+    // advertirlo explicitamente: el problema es de carga, no de pago tardio.
+    const pctSinCondicion = pct(cxp.pendientesSinCondicion, cxp.pendientesTotal);
+    const avisoCondiciones =
+      pctSinCondicion !== null && pctSinCondicion >= 20
+        ? ` Atención: ${cxp.pendientesSinCondicion} de ${cxp.pendientesTotal} facturas pendientes (${money(cxp.montoSinCondicion)}) no tienen condiciones de pago cargadas en Odoo, por lo que figuran vencidas desde su emisión.`
+        : "";
+
     // ───────────────────────────────── Cuentas por cobrar (25 pts)
     const dsoPonderado =
       cxc.vencido > 0
@@ -197,7 +207,7 @@ export async function GET(request: NextRequest) {
           formula: "Fondos disponibles / obligaciones netas 30 días", peso: 6,
           metaTexto: `≥${metas.cobertura_caja_30d}x`, valor: coberturaCaja,
           unidad: "x", frecuencia: "Diaria", responsable: "Tesorería", fuente: "Bancos / Flujo",
-          detalle: `${money(tes.disponible)} disponibles contra ${money(obligaciones30)} de obligaciones`,
+          detalle: `${money(tes.disponible)} disponibles contra ${money(obligaciones30)} de obligaciones.${avisoCondiciones}`,
         },
         { modo: "higher_better", verde: metas.cobertura_caja_30d ?? 1.5, amarillo: 1 },
       ),
@@ -288,7 +298,7 @@ export async function GET(request: NextRequest) {
           formula: "Saldo vencido / total CxP × 100", peso: 4,
           metaTexto: `≤${metas.obligaciones_vencidas}%`, valor: pct(cxp.saldoVencido, cxp.totalCxP),
           unidad: "%", frecuencia: "Diaria", responsable: "Cuentas por Pagar", fuente: "Aging CxP",
-          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas`,
+          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas.${avisoCondiciones}`,
         },
         { modo: "lower_better", verde: metas.obligaciones_vencidas ?? 3, amarillo: 7 },
       ),
