@@ -28,6 +28,8 @@ export const PLAN_RUNTIME_JS = String.raw`
   // Sufijo de vista: en la sandbox de pruebas todas las llamadas deben ir a la
   // misma vista, si no se mezclarian con el plan real.
   var VIEW_QS = CFG.view ? "?view=" + encodeURIComponent(CFG.view) : "";
+  // Interruptor: la replicacion selectiva solo corre en la sandbox de pruebas.
+  var LIVE_SELECTIVO = CFG.view === "adminleads__sandbox";
   var CLIENT_ID = "c" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   // Elementos cuyo CONTENIDO no se compara (pero se conservan en su sitio).
@@ -794,6 +796,18 @@ export const PLAN_RUNTIME_JS = String.raw`
           if (!p || p.clientId === CLIENT_ID) return;
           if (Number(p.baseRevision) !== baseRevision) { location.reload(); return; }
           var incoming = p.state || EMPTY_STATE;
+
+          // La replicacion selectiva esta EN PRUEBAS y solo se activa en la
+          // vista sandbox. En el plan real se sigue aplicando el estado
+          // completo, que es el comportamiento probado: una version anterior de
+          // esto degradaba los marcados cuando habia dos paneles abiertos.
+          if (!LIVE_SELECTIVO) {
+            revision = Number(p.revision) || revision;
+            ackState = incoming;
+            lastSentJson = JSON.stringify(incoming);
+            applyState(incoming);
+            return;
+          }
 
           // Solo se replican marcados y movimientos entre dias; el resto se ve
           // al recargar (ver liveSubset).
