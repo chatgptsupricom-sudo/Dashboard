@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
 
     if (global.io) {
       global.io.emit("vista-state-updated", {
+        view: viewName,
         clientId: null,
         state: state || { v: 2, nodes: {} },
         revision: nextRevision,

@@ -30,6 +30,7 @@ export const PLAN_RUNTIME_JS = String.raw`
   var VIEW_QS = CFG.view ? "?view=" + encodeURIComponent(CFG.view) : "";
   // Interruptor: la replicacion selectiva solo corre en la sandbox de pruebas.
   var LIVE_SELECTIVO = CFG.view === "adminleads__sandbox";
+  var MY_VIEW = CFG.view || "adminleads";
   var CLIENT_ID = "c" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   // Elementos cuyo CONTENIDO no se compara (pero se conservan en su sitio).
@@ -813,6 +814,9 @@ export const PLAN_RUNTIME_JS = String.raw`
         var socket = window.io(url, { transports: ["websocket", "polling"] });
         socket.on("vista-state-updated", function (p) {
           if (!p || p.clientId === CLIENT_ID) return;
+          // El broadcast es global: hay que descartar lo que pertenece a otra
+          // vista, o la sandbox y el plan real se pisan entre si.
+          if (p.view && p.view !== MY_VIEW) return;
           if (Number(p.baseRevision) !== baseRevision) { location.reload(); return; }
           var incoming = p.state || EMPTY_STATE;
 
@@ -848,7 +852,10 @@ export const PLAN_RUNTIME_JS = String.raw`
           ackState = incoming;
           lastSentJson = JSON.stringify(incoming);
         });
-        socket.on("vista-html-updated", function () { location.reload(); });
+        socket.on("vista-html-updated", function (p) {
+          if (p && p.view && p.view !== MY_VIEW) return;
+          location.reload();
+        });
       } catch (e) {}
     };
     document.head.appendChild(s);

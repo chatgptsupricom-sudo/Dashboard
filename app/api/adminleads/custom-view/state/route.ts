@@ -159,6 +159,9 @@ export async function POST(request: NextRequest) {
 
     if (global.io) {
       global.io.emit("vista-state-updated", {
+        // Sin la vista, un guardado de la sandbox llega a los paneles del plan
+        // real (y al reves): recargan o intentan aplicar estado ajeno.
+        view: viewName,
         clientId: body?.clientId || null,
         state,
         revision: nextRevision,
