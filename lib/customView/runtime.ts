@@ -25,6 +25,9 @@ export const PLAN_RUNTIME_JS = String.raw`
   var API = CFG.api || "/api/adminleads/custom-view";
   var SOCKET_URL = CFG.socketUrl || "";
   var CAN_EDIT = CFG.canEdit !== false;
+  // Sufijo de vista: en la sandbox de pruebas todas las llamadas deben ir a la
+  // misma vista, si no se mezclarian con el plan real.
+  var VIEW_QS = CFG.view ? "?view=" + encodeURIComponent(CFG.view) : "";
   var CLIENT_ID = "c" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   // Elementos cuyo CONTENIDO no se compara (pero se conservan en su sitio).
@@ -588,7 +591,7 @@ export const PLAN_RUNTIME_JS = String.raw`
     status("saving");
     inFlight = true;
 
-    fetch(API + "/state", {
+    fetch(API + "/state" + VIEW_QS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -645,7 +648,7 @@ export const PLAN_RUNTIME_JS = String.raw`
     if (json === lastSentJson) return;
     lastSentJson = json;
     try {
-      fetch(API + "/state", {
+      fetch(API + "/state" + VIEW_QS, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -818,7 +821,7 @@ export const PLAN_RUNTIME_JS = String.raw`
       return;
     }
 
-    fetch(API + "/state", { credentials: "same-origin" })
+    fetch(API + "/state" + VIEW_QS, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         d = d || {};
@@ -872,6 +875,8 @@ export function buildInjection(opts: {
   baseRevision: number;
   revision: number;
   canEdit: boolean;
+  /** Vista sobre la que trabaja este panel (produccion o sandbox de pruebas). */
+  view?: string;
 }) {
   const cfg = JSON.stringify({
     api: opts.api,
@@ -879,6 +884,7 @@ export function buildInjection(opts: {
     baseRevision: opts.baseRevision,
     revision: opts.revision,
     canEdit: opts.canEdit,
+    view: opts.view || null,
   }).replace(/</g, "\\u003c");
 
   // El documento arranca oculto para que no se vea el salto entre el HTML base

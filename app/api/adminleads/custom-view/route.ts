@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { addHistory, ensureTables, getState, getView, VIEW_NAME } from "@/lib/customView/store";
+import { addHistory, ensureTables, getState, getView, resolveView } from "@/lib/customView/store";
 import { buildInjection } from "@/lib/customView/runtime";
 
 declare global { var io: any; }
@@ -41,11 +41,12 @@ export async function GET(request: NextRequest) {
     }
 
     await ensureTables();
+    const viewName = resolveView(request.nextUrl.searchParams.get("view"));
     const mode = request.nextUrl.searchParams.get("mode");
 
     if (mode === "snapshot") {
-      const state = await getState();
-      const view = await getView();
+      const state = await getState(viewName);
+      const view = await getView(viewName);
       const html = state?.snapshot_html || view?.html_content || PLACEHOLDER_HTML;
       const download = request.nextUrl.searchParams.get("download") === "1";
       return new Response(html, {
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const view = await getView();
+    const view = await getView(viewName);
     if (!view?.html_content) {
       return new Response(PLACEHOLDER_HTML, { headers: HTML_HEADERS });
     }
@@ -67,13 +68,14 @@ export async function GET(request: NextRequest) {
       return new Response(view.html_content, { headers: HTML_HEADERS });
     }
 
-    const state = await getState();
+    const state = await getState(viewName);
     const injection = buildInjection({
       api: API_BASE,
       socketUrl: SOCKET_URL,
       baseRevision: Number(view.base_revision) || 1,
       revision: Number(state?.revision) || 0,
       canEdit: true,
+      view: viewName,
     });
 
     const html = view.html_content;
@@ -106,6 +108,7 @@ export async function POST(request: NextRequest) {
     }
 
     await ensureTables();
+    const viewName = resolveView(request.nextUrl.searchParams.get("view"));
 
     const formData = await request.formData();
     const file = formData.get("html") as File | null;
@@ -122,13 +125,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const prev = await getView();
-    const prevState = await getState();
+    const prev = await getView(viewName);
+    const prevState = await getState(viewName);
     const nextBaseRevision = (Number(prev?.base_revision) || 0) + 1;
 
     // Antes de pisar nada, se archiva lo que habia: HTML completo + overlay.
     if (prev?.html_content) {
       await addHistory({
+        view: viewName,
         kind: "state",
         label: `Antes de subir ${file.name}`,
         stateJson: prevState?.state_json ?? null,
@@ -148,17 +152,18 @@ export async function POST(request: NextRequest) {
          file_size = VALUES(file_size),
          base_revision = VALUES(base_revision),
          updated_at = NOW()`,
-      [VIEW_NAME, content, file.name, file.size, nextBaseRevision],
+      [viewName, content, file.name, file.size, nextBaseRevision],
     );
 
     // El snapshot anterior corresponde a la base vieja: se marca como no
     // vigente para que el primer panel que cargue re-materialice el merge.
     await query(
       `UPDATE custom_view_state SET snapshot_revision = -1 WHERE view_name = ?`,
-      [VIEW_NAME],
+      [viewName],
     );
 
     await addHistory({
+      view: viewName,
       kind: "upload",
       label: file.name,
       stateJson: prevState?.state_json ?? null,
