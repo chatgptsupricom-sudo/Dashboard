@@ -513,15 +513,15 @@ export default function GastosPresupuestoPage() {
                             )
                           }
                         >
-                          <TableCell className="px-4">
+                          <TableCell className="px-2 sm:px-4 whitespace-normal">
                             <div className="flex items-center gap-2">
                               {expandida === c.cuentaCodigo ? (
-                                <ChevronDown className="h-4 w-4 text-gray-400" />
+                                <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
                               ) : (
-                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
                               )}
-                              <div>
-                                <div className="font-medium text-sm">
+                              <div className="min-w-0">
+                                <div className="font-medium text-sm break-words">
                                   {c.cuentaNombre}
                                 </div>
                                 <div className="text-xs text-gray-400 font-mono">
