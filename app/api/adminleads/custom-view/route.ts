@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (global.io) {
-      global.io.emit("vista-html-updated", { meta });
+      global.io.emit("vista-html-updated", { view: viewName, meta });
     }
 
     return NextResponse.json({ success: true, meta });
