@@ -1,4 +1,4 @@
-import { getConnection } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import {
   buscarFacturaConSeriales,
   type ItemFactura,
@@ -460,7 +460,7 @@ export async function GET(request: NextRequest) {
     // Validamos case_number + invoice_number en una sola consulta para evitar
     // race conditions / enumeration.
     const caseResult = await query(
-      `SELECT case_number, status, hardware, product_code, invoice_number,
+      `SELECT case_number, status, model, hardware, product_code, invoice_number,
               serial, created_at, client_phone
        FROM rma_cases
        WHERE case_number = ? AND invoice_number = ? AND origen = 'portal'
@@ -477,7 +477,7 @@ export async function GET(request: NextRequest) {
 
     // Timeline
     const historyResult = await query(
-      `SELECT from_status, to_status, changed_by, created_at
+      `SELECT from_status, to_status, created_at
        FROM rma_history
        WHERE case_id = (SELECT id FROM rma_cases WHERE case_number = ? AND invoice_number = ? LIMIT 1)
        ORDER BY created_at ASC`,
@@ -490,17 +490,22 @@ export async function GET(request: NextRequest) {
       ticket: {
         case_number: row.case_number,
         status: row.status,
-        product_name: row.hardware || "",
+        // `model` es el nombre del producto y `hardware` la categoría, según la
+        // convención del módulo interno. Mostrar hardware acá le enseñaba al
+        // cliente "IMPRESORA" o "CONSUMIBLES" en vez de su producto.
+        product_name: row.model || row.hardware || "",
         product_code: row.product_code || "",
         invoice_number: row.invoice_number || "",
         serial: row.serial || null,
         client_phone_masked: maskPhoneForResponse(row.client_phone),
         created_at: row.created_at,
         timeline: (Array.isArray(historyRows) ? historyRows : []).map(
+          // Sin `changed_by`: en los cambios de estado posteriores es la
+          // identidad del técnico que lo atendió, y esto es un endpoint
+          // público. El cliente no necesita saber quién tocó su caso.
           (h: any) => ({
             from_status: h.from_status,
             to_status: h.to_status,
-            changed_by: h.changed_by,
             created_at: h.created_at,
           }),
         ),

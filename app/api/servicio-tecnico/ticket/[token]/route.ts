@@ -24,7 +24,6 @@ interface TicketPublic {
     from_status: string | null;
     to_status: string;
     to_status_label: string;
-    changed_by: string;
     created_at: string;
     notes: string | null;
   }>;
@@ -56,7 +55,7 @@ export async function GET(
     // Buscar el caso por tracking_token. Solo Origen='portal' — los tickets
     // internos del panel no deben ser accesibles publicamente.
     const caseResult = await query(
-      `SELECT case_number, status, hardware, product_code, invoice_number,
+      `SELECT case_number, status, model, hardware, product_code, invoice_number,
               serial, created_at, origen
        FROM rma_cases
        WHERE tracking_token = ? AND origen = 'portal'
@@ -73,7 +72,7 @@ export async function GET(
     // El "changed_by" puede contener el nombre del cliente (portal),
     // es OK que lo vea.
     const historyResult = await query(
-      `SELECT from_status, to_status, changed_by, created_at
+      `SELECT from_status, to_status, created_at
        FROM rma_history
        WHERE case_id = (SELECT id FROM rma_cases WHERE tracking_token = ? LIMIT 1)
        ORDER BY created_at ASC`,
@@ -84,7 +83,8 @@ export async function GET(
       case_number: row.case_number,
       status: row.status,
       status_label: row.status, // el front hace el mapeo a texto de cliente
-      product_name: row.hardware || "",
+      // `model` es el nombre del producto; `hardware` es la categoría.
+      product_name: row.model || row.hardware || "",
       product_code: row.product_code || "",
       invoice_number: row.invoice_number || "",
       serial: row.serial || null,
@@ -93,7 +93,6 @@ export async function GET(
         from_status: h.from_status,
         to_status: h.to_status,
         to_status_label: h.to_status, // el front mapea
-        changed_by: h.changed_by,
         created_at: h.created_at,
         notes: null, // no exponer notas internas
       })),

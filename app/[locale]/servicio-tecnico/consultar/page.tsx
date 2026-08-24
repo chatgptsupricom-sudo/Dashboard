@@ -17,7 +17,6 @@ type TicketData = {
   timeline: Array<{
     from_status: string | null;
     to_status: string;
-    changed_by: string;
     created_at: string;
   }>;
 };
