@@ -25,6 +25,10 @@ export const PLAN_RUNTIME_JS = String.raw`
   var API = CFG.api || "/api/adminleads/custom-view";
   var SOCKET_URL = CFG.socketUrl || "";
   var CAN_EDIT = CFG.canEdit !== false;
+  // Sufijo de vista: en la sandbox de pruebas todas las llamadas deben ir a la
+  // misma vista, si no se mezclarian con el plan real.
+  var VIEW_QS = CFG.view ? "?view=" + encodeURIComponent(CFG.view) : "";
+  var MY_VIEW = CFG.view || "adminleads";
   var CLIENT_ID = "c" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   // Elementos cuyo CONTENIDO no se compara (pero se conservan en su sitio).
@@ -38,7 +42,16 @@ export const PLAN_RUNTIME_JS = String.raw`
     "drag-active": 1, "piece-dragging": 1, "sortable-ghost": 1, "sortable-chosen": 1,
     "sortable-drag": 1, "no-transition": 1
   };
-  var TRANSIENT_ATTR = { "aria-grabbed": 1, "data-plan-tmp": 1 };
+  // El atributo style queda FUERA del modelo, ni se lee ni se escribe.
+  //
+  // Es donde el HTML guarda sus animaciones. switchMonth() pone
+  // opacity:0 en el mes activo al arrancar y solo la devuelve a 1 unos 250 ms
+  // despues; como la base se clona dentro de esa ventana, quedaba grabado
+  // "opacity: 0" como si fuera el estado normal del mes. A partir de ahi,
+  // cualquier momento en que se restauraran los atributos de base dejaba el
+  // plan entero invisible: el panel en blanco. Las animaciones son cosa de la
+  // pagina, no del estado compartido.
+  var TRANSIENT_ATTR = { "aria-grabbed": 1, "data-plan-tmp": 1, "style": 1 };
   var EMPTY_STATE = { v: 2, nodes: {} };
   var ROOT_KEY = "#root";
 
@@ -55,6 +68,18 @@ export const PLAN_RUNTIME_JS = String.raw`
   var inFlight = false;
   var pendingSave = false;
   var savedOnce = false;
+  // Llaves que llegaron por el socket y NO se replicaron en pantalla (ediciones
+  // de contenido). No estan en el DOM local, asi que al guardar hay que tomarlas
+  // del ultimo estado conocido del servidor en vez de calcularlas del DOM: si no,
+  // el guardado propio las borraria.
+  var skippedKeys = Object.create(null);
+  // Llaves del ultimo estado que aplicamos nosotros. Solo estas se revierten
+  // cuando dejan de venir en el estado compartido. Revertir "todo lo que
+  // difiere de la base" tomaba tambien lo que la propia pagina genera al
+  // arrancar (cambio de mes, etiquetas de semana, atributos de drag) y podia
+  // devolverle la clase hidden al mes activo: el panel quedaba en blanco.
+  var appliedKeys = [];
+
 
   // ---------------------------------------------------------------- utilidades
 
@@ -478,18 +503,93 @@ export const PLAN_RUNTIME_JS = String.raw`
     setShell(el, target, live, imported);
   }
 
-  function applyState(state) {
+  /**
+   * Subconjunto del estado que SI se replica en vivo entre navegadores:
+   *
+   *   - Marcado de piezas: checks individuales y boton "HECHO" por semana.
+   *     Ambos son cambios de clase (ca/cr), mas algun atributo (at).
+   *   - Movimiento de una tarjeta a otro dia: cambia el shell de la columna
+   *     del calendario (.cal-col).
+   *
+   * Todo lo demas —editar el texto de una pieza, agregarla o borrarla— se
+   * sigue guardando igual, pero solo se ve al recargar. Replicarlo en vivo
+   * reescribia la pantalla del otro mientras estaba trabajando, que es lo que
+   * hacia engorroso que dos personas usaran el panel a la vez.
+   *
+   * Devuelve full:false cuando quedo algo sin replicar. Eso es importante:
+   * en ese caso NO hay que avanzar la revision local, para que el proximo
+   * guardado entre por el merge de 3 vias (mergeStates) y no pise el cambio
+   * que no aplicamos.
+   */
+  function liveSubset(nodes) {
+    var out = {};
+    var full = true;
+    var skipped = [];
+    var live = buildIndex(document.documentElement);
+    for (var k in nodes) {
+      var e = nodes[k] || {};
+      var keep = null;
+      if (e.ca) { keep = keep || {}; keep.ca = e.ca; }
+      if (e.cr) { keep = keep || {}; keep.cr = e.cr; }
+      if (e.at) { keep = keep || {}; keep.at = e.at; }
+      if (e.sh !== undefined) {
+        var el = live.map[k] || baseIdx.map[k];
+        var esColumna = !!(el && el.classList && el.classList.contains("cal-col"));
+        if (esColumna) {
+          keep = keep || {};
+          keep.sh = e.sh;
+          if (e.bsh !== undefined) keep.bsh = e.bsh;
+        } else {
+          full = false;          // edicion de contenido: no se replica en vivo
+          skipped.push(k);       // ...pero hay que conservarla al guardar
+        }
+      }
+      if (keep) out[k] = keep;
+    }
+    return { nodes: out, full: full, skipped: skipped };
+  }
+
+  /**
+   * Las etiquetas de la semana ("✓ HECHO", "En desarrollo", "8/10 ✓") las
+   * calcula el propio HTML a partir de las piezas marcadas. Tras replicar los
+   * marcados se las recalcula localmente, en vez de sincronizar tambien su
+   * texto.
+   */
+  function refreshWeekLabels() {
+    // Recalcular las etiquetas tambien muta el DOM: si corre fuera de la
+    // guarda, el observador lo toma como edicion del usuario y guarda.
+    applying++;
+    try {
+      if (typeof window.updateWeekButton === "function") {
+        var semanas = document.querySelectorAll(".week-card");
+        for (var i = 0; i < semanas.length; i++) window.updateWeekButton(semanas[i]);
+      }
+      if (typeof window.updateEmailWeekButton === "function") {
+        var emails = document.querySelectorAll(".em-week");
+        for (var j = 0; j < emails.length; j++) window.updateEmailWeekButton(emails[j]);
+      }
+    } catch (e) {} finally {
+      applying--;
+    }
+  }
+
+  function applyState(state, noRevert) {
     if (!baseIdx) return;
     var nodes = (state && state.nodes) || {};
     applying++;
     try {
       // Todo lo que hoy difiere de la base y no aparece en el estado entrante
       // debe volver a la base: asi el panel converge exactamente al estado recibido.
+      //
+      // noRevert se usa en la replicacion en vivo: ahi solo llega un subconjunto
+      // del estado (marcados y movimientos), asi que revertir lo que "falta"
+      // borraria el trabajo local del usuario.
       var toRevert = [];
-      try {
-        var localNodes = computeState().nodes;
-        for (var lk in localNodes) if (!nodes[lk]) toRevert.push(lk);
-      } catch (e0) { /* si el diff falla, al menos aplicamos lo entrante */ }
+      if (!noRevert) {
+        for (var a = 0; a < appliedKeys.length; a++) {
+          if (!nodes[appliedKeys[a]]) toRevert.push(appliedKeys[a]);
+        }
+      }
 
       for (var pass = 0; pass < 2; pass++) {
         var live = buildIndex(document.documentElement);
@@ -512,13 +612,24 @@ export const PLAN_RUNTIME_JS = String.raw`
         }
         if (!imported.hit) break;   // segunda pasada solo si hubo nodos re-creados
       }
+      if (!noRevert) appliedKeys = Object.keys(nodes);
     } catch (e) {
       try { console.error("[plan] applyState:", e); } catch (e2) {}
     } finally {
       applying--;
     }
-    try { if (typeof window.initDragAndDrop === "function") window.initDragAndDrop(); } catch (e3) {}
-    try { document.dispatchEvent(new CustomEvent("supricom:plan-applied")); } catch (e4) {}
+    // Estas dos cosas tocan el DOM (initDragAndDrop escribe draggable y
+    // data-orig-* en cada pieza), y estaban FUERA de la guarda: el observador
+    // las leia como un cambio del usuario y disparaba un guardado. Con dos
+    // paneles abiertos eso se realimentaba —guardar, transmitir, aplicar,
+    // guardar— en un bucle sin fin. Van dentro de applying.
+    applying++;
+    try {
+      try { if (typeof window.initDragAndDrop === "function") window.initDragAndDrop(); } catch (e3) {}
+      try { document.dispatchEvent(new CustomEvent("supricom:plan-applied")); } catch (e4) {}
+    } finally {
+      applying--;
+    }
   }
 
   /**
@@ -575,20 +686,51 @@ export const PLAN_RUNTIME_JS = String.raw`
     saveTimer = setTimeout(function () { doSave(false); }, 700);
   }
 
+  /**
+   * Lo que esta pestana mandaria al servidor: el diff del DOM mas las ediciones
+   * de contenido que llegaron por el socket y no se replicaron en pantalla (no
+   * estan en el DOM, asi que computeState no las ve y guardarlas tal cual las
+   * borraria).
+   *
+   * Se reinyecta SOLO el contenido (sh/bsh), nunca ca/cr/at: esos si estan en el
+   * DOM local, y pisarlos dejaba el marcado de la pieza congelado en el valor
+   * del servidor.
+   *
+   * Si esta pestana tiene su propio cambio de contenido en esa llave, gana el
+   * suyo: no se le revierte en pantalla lo que acaba de escribir.
+   */
+  function estadoParaGuardar() {
+    var state = computeState();
+    try {
+      var ackNodes = (ackState && ackState.nodes) || {};
+      for (var sk in skippedKeys) {
+        var ackNode = ackNodes[sk];
+        if (!ackNode || ackNode.sh === undefined) { delete skippedKeys[sk]; continue; }
+        var mio = state.nodes[sk];
+        if (mio && mio.sh !== undefined) continue;
+        if (!mio) { mio = {}; state.nodes[sk] = mio; }
+        mio.sh = ackNode.sh;
+        if (ackNode.bsh !== undefined) mio.bsh = ackNode.bsh;
+      }
+    } catch (eSk) {}
+    return state;
+  }
+
   function doSave(force, retry) {
     if (!ready || !CAN_EDIT) return;
     clearTimeout(saveTimer);
     if (inFlight) { pendingSave = true; return; }
 
     var state;
-    try { state = computeState(); } catch (e) { status("error"); return; }
+    try { state = estadoParaGuardar(); } catch (e) { status("error"); return; }
+
     var json = JSON.stringify(state);
     if (json === lastSentJson && !force) { status("saved"); return; }
     lastSentJson = json;
     status("saving");
     inFlight = true;
 
-    fetch(API + "/state", {
+    fetch(API + "/state" + VIEW_QS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -645,7 +787,7 @@ export const PLAN_RUNTIME_JS = String.raw`
     if (json === lastSentJson) return;
     lastSentJson = json;
     try {
-      fetch(API + "/state", {
+      fetch(API + "/state" + VIEW_QS, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -720,17 +862,137 @@ export const PLAN_RUNTIME_JS = String.raw`
         var socket = window.io(url, { transports: ["websocket", "polling"] });
         socket.on("vista-state-updated", function (p) {
           if (!p || p.clientId === CLIENT_ID) return;
+          // El broadcast es global: hay que descartar lo que pertenece a otra
+          // vista, o la sandbox y el plan real se pisan entre si.
+          if (p.view && p.view !== MY_VIEW) return;
           if (Number(p.baseRevision) !== baseRevision) { location.reload(); return; }
-          revision = Number(p.revision) || revision;
           var incoming = p.state || EMPTY_STATE;
+
+          // Solo se replican marcados y movimientos entre dias; el resto se ve
+          // al recargar (ver liveSubset).
+          var sub = liveSubset((incoming && incoming.nodes) || {});
+          applyState({ v: 2, nodes: sub.nodes }, true);
+          refreshWeekLabels();
+
+          // Las ediciones que no se replicaron quedan anotadas: no estan en el
+          // DOM local, asi que al guardar se toman de ackState (ver doSave).
+          for (var si = 0; si < sub.skipped.length; si++) skippedKeys[sub.skipped[si]] = 1;
+
+          // La revision se avanza SIEMPRE, aunque no se haya replicado todo.
+          // Una version anterior no lo hacia, para forzar el merge de 3 vias, y
+          // eso dejaba a los dos navegadores en conflicto permanente: cada
+          // guardado chocaba con el del otro y entraban en un bucle que termino
+          // degradando el estado. Lo que no se replica se conserva via
+          // skippedKeys, que es mas barato y no depende del conflicto.
+          revision = Number(p.revision) || revision;
           ackState = incoming;
-          lastSentJson = JSON.stringify(incoming);
-          applyState(incoming);
+
+          // El eco: dejar lastSentJson con el estado ajeno tal cual hacia que
+          // esta pestana lo viera distinto de lo suyo (no replico el contenido)
+          // y guardara de vuelta; la otra hacia lo mismo con este eco, y un solo
+          // clic disparaba una cadena de escrituras. Se fija a lo que esta
+          // pestana mandaria, asi el guardado siguiente se descarta por
+          // identico.
+          try { lastSentJson = JSON.stringify(estadoParaGuardar()); }
+          catch (eEco) { lastSentJson = JSON.stringify(incoming); }
         });
-        socket.on("vista-html-updated", function () { location.reload(); });
+        socket.on("vista-html-updated", function (p) {
+          if (p && p.view && p.view !== MY_VIEW) return;
+          location.reload();
+        });
       } catch (e) {}
     };
     document.head.appendChild(s);
+  }
+
+  // --------------------------------------------------- salvaguardas de carga
+
+  /**
+   * Las llaves estructurales ("s:...") son una ruta de indices dentro del
+   * documento: solo significan algo dentro del MISMO HTML. Cuando se sube un
+   * HTML nuevo, esa ruta puede caer sobre otro elemento y se le aplicaria
+   * encima el contenido de otro sitio. En ese caso se conservan unicamente las
+   * llaves identificadas por contenido (p: pieza, i: id, c: dia, k: propia).
+   */
+  function podarLlavesEstructurales(state) {
+    var nodes = (state && state.nodes) || {};
+    var out = {}, descartadas = 0;
+    for (var k in nodes) {
+      if (k.indexOf("s:") === 0 || k === ROOT_KEY) { descartadas++; continue; }
+      out[k] = nodes[k];
+    }
+    if (descartadas) {
+      try { console.info("[plan] HTML nuevo: se descartaron " + descartadas + " llaves posicionales"); } catch (e) {}
+    }
+    return { v: 2, nodes: out };
+  }
+
+  /**
+   * Piezas realmente visibles. Mira tambien opacidad y visibility heredadas:
+   * un contenedor con opacity:0 sigue ocupando sitio y respondiendo a
+   * offsetParent, pero en pantalla no se ve nada.
+   */
+  function piezasVisibles() {
+    var els = document.querySelectorAll(".piece, .email-card");
+    var n = 0;
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.offsetParent === null) continue;
+      var opaca = true;
+      for (var a = el; a && a !== document.documentElement; a = a.parentElement) {
+        var cs = getComputedStyle(a);
+        if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) < 0.05) {
+          opaca = false;
+          break;
+        }
+      }
+      if (opaca) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Red de seguridad definitiva: si aplicar el estado guardado hace
+   * desaparecer el plan de la pantalla, se deshace. Vale mas un panel sin los
+   * ultimos cambios que un panel en blanco.
+   */
+  function aplicarConRescate(state) {
+    var antesPiezas = piezasVisibles();
+    var antesTexto = (document.body.innerText || "").trim().length;
+    if (antesPiezas === 0) { applyState(state); return true; }
+
+    var respaldo = document.body.cloneNode(true);
+    var basura = respaldo.querySelectorAll("[data-plan-ignore]");
+    for (var i = 0; i < basura.length; i++) basura[i].parentNode.removeChild(basura[i]);
+
+    applyState(state);
+
+    var ahoraPiezas = piezasVisibles();
+    var ahoraTexto = (document.body.innerText || "").trim().length;
+    if (ahoraPiezas > 0 && ahoraTexto >= antesTexto * 0.3) return true;
+
+    applying++;
+    try {
+      // Los scripts del runtime se conservan: reinsertar un clon los volveria
+      // a ejecutar.
+      var propios = [];
+      var hijos = document.body.children;
+      for (var j = hijos.length - 1; j >= 0; j--) {
+        if (matches(hijos[j], "[data-plan-ignore]")) propios.push(hijos[j]);
+      }
+      for (var d = 0; d < propios.length; d++) document.body.removeChild(propios[d]);
+      while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
+      while (respaldo.firstChild) document.body.appendChild(respaldo.firstChild);
+      for (var r = propios.length - 1; r >= 0; r--) document.body.appendChild(propios[r]);
+      appliedKeys = [];
+    } catch (e) {} finally {
+      applying--;
+    }
+    try { if (typeof window.initDragAndDrop === "function") window.initDragAndDrop(); } catch (e2) {}
+    try {
+      console.error("[plan] el estado guardado dejaba el panel vacio; se descarto y se muestra el HTML tal cual");
+    } catch (e3) {}
+    return false;
   }
 
   // ---------------------------------------------------------------------- boot
@@ -818,7 +1080,7 @@ export const PLAN_RUNTIME_JS = String.raw`
       return;
     }
 
-    fetch(API + "/state", { credentials: "same-origin" })
+    fetch(API + "/state" + VIEW_QS, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         d = d || {};
@@ -833,12 +1095,17 @@ export const PLAN_RUNTIME_JS = String.raw`
         var merged = false;
 
         if (hasState) {
+          var baseCambio = Number(d.baseRevision) !== baseRevision;
+          // Con un HTML nuevo, las llaves posicionales del estado viejo ya no
+          // apuntan a lo mismo: se aplican solo las identificadas por contenido.
+          var aAplicar = baseCambio ? podarLlavesEstructurales(d.state) : d.state;
           ackState = d.state;
           lastSentJson = JSON.stringify(d.state);
-          applyState(d.state);
+          var ok = aplicarConRescate(aAplicar);
+          if (!ok) { ackState = EMPTY_STATE; lastSentJson = ""; status("error"); }
           // Si la base cambio (se subio un HTML nuevo), lo que acabamos de
           // aplicar es el merge: hay que persistirlo sobre la base nueva.
-          if (Number(d.baseRevision) !== baseRevision) {
+          if (baseCambio && ok) {
             needsSave = true;
             merged = true;
           }
@@ -872,6 +1139,8 @@ export function buildInjection(opts: {
   baseRevision: number;
   revision: number;
   canEdit: boolean;
+  /** Vista sobre la que trabaja este panel (produccion o sandbox de pruebas). */
+  view?: string;
 }) {
   const cfg = JSON.stringify({
     api: opts.api,
@@ -879,15 +1148,15 @@ export function buildInjection(opts: {
     baseRevision: opts.baseRevision,
     revision: opts.revision,
     canEdit: opts.canEdit,
+    view: opts.view || null,
   }).replace(/</g, "\\u003c");
 
-  // El documento arranca oculto para que no se vea el salto entre el HTML base
-  // y el HTML ya con los cambios aplicados. El timeout es la red de seguridad
-  // por si el runtime falla.
+  // El documento NO se oculta mientras carga. Ocultarlo evitaba un parpadeo,
+  // pero convertia cualquier fallo del runtime en un panel completamente en
+  // blanco. Se prefiere ver el plan y que los cambios aparezcan un instante
+  // despues.
   return (
-    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};` +
-    `document.documentElement.style.visibility="hidden";` +
-    `setTimeout(function(){document.documentElement.style.visibility="";},5000);</script>` +
+    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};</script>` +
     `<script id="__plan_rt" data-plan-ignore>${PLAN_RUNTIME_JS}</script>`
   );
 }

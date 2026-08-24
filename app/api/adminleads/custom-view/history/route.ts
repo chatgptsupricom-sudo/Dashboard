@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { ensureTables, getViewMeta, VIEW_NAME } from "@/lib/customView/store";
+import { ensureTables, getViewMeta, resolveView } from "@/lib/customView/store";
 
 declare global { var io: any; }
 
@@ -19,12 +19,13 @@ export async function GET(request: NextRequest) {
     }
 
     await ensureTables();
+    const viewName = resolveView(request.nextUrl.searchParams.get("view"));
     const id = request.nextUrl.searchParams.get("id");
 
     if (id) {
       const r = await query(
         `SELECT snapshot_html, created_at FROM custom_view_history WHERE id = ? AND view_name = ?`,
-        [Number(id), VIEW_NAME],
+        [Number(id), viewName],
       );
       const html = r.rows?.[0]?.snapshot_html;
       if (!html) {
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
         WHERE view_name = ?
         ORDER BY id DESC
         LIMIT 60`,
-      [VIEW_NAME],
+      [viewName],
     );
 
     return NextResponse.json({
@@ -78,12 +79,13 @@ export async function POST(request: NextRequest) {
     }
 
     await ensureTables();
+    const viewName = resolveView(request.nextUrl.searchParams.get("view"));
     const { id } = await request.json();
     if (!id) return NextResponse.json({ success: false, error: "Falta id" }, { status: 400 });
 
     const r = await query(
       `SELECT state_json FROM custom_view_history WHERE id = ? AND view_name = ?`,
-      [Number(id), VIEW_NAME],
+      [Number(id), viewName],
     );
     if (!r.rows?.length) {
       return NextResponse.json({ success: false, error: "Version no encontrada" }, { status: 404 });
@@ -95,9 +97,9 @@ export async function POST(request: NextRequest) {
       try { state = JSON.parse(stateJson); } catch { state = null; }
     }
 
-    const view = await getViewMeta();
+    const view = await getViewMeta(viewName);
     const viewBaseRevision = Number(view?.base_revision) || 1;
-    const cur = await query(`SELECT revision FROM custom_view_state WHERE view_name = ?`, [VIEW_NAME]);
+    const cur = await query(`SELECT revision FROM custom_view_state WHERE view_name = ?`, [viewName]);
     const nextRevision = (Number(cur.rows?.[0]?.revision) || 0) + 1;
 
     // El snapshot queda invalidado a proposito: el primer panel que cargue
@@ -113,18 +115,19 @@ export async function POST(request: NextRequest) {
          snapshot_revision = -1,
          updated_by = VALUES(updated_by),
          updated_at = NOW()`,
-      [VIEW_NAME, stateJson, viewBaseRevision, nextRevision, user?.role || null],
+      [viewName, stateJson, viewBaseRevision, nextRevision, user?.role || null],
     );
 
     await query(
       `INSERT INTO custom_view_history
          (view_name, kind, label, state_json, base_revision, revision, created_by)
        VALUES (?, 'restore', ?, ?, ?, ?, ?)`,
-      [VIEW_NAME, `Restaurada version #${id}`, stateJson, viewBaseRevision, nextRevision, user?.role || null],
+      [viewName, `Restaurada version #${id}`, stateJson, viewBaseRevision, nextRevision, user?.role || null],
     );
 
     if (global.io) {
       global.io.emit("vista-state-updated", {
+        view: viewName,
         clientId: null,
         state: state || { v: 2, nodes: {} },
         revision: nextRevision,

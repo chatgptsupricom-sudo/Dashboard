@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { ensureTables, getViewMeta, VIEW_NAME } from "@/lib/customView/store";
+import { ensureTables, getViewMeta, resolveView } from "@/lib/customView/store";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +13,15 @@ export async function GET(request: NextRequest) {
     }
 
     await ensureTables();
-    const view = await getViewMeta();
+    const viewName = resolveView(new URL(request.url).searchParams.get("view"));
+    const view = await getViewMeta(viewName);
     if (!view) return NextResponse.json({ exists: false });
 
     const s = await query(
       `SELECT revision, updated_at, updated_by,
               (snapshot_html IS NOT NULL AND CHAR_LENGTH(snapshot_html) > 0) AS has_snapshot
          FROM custom_view_state WHERE view_name = ?`,
-      [VIEW_NAME],
+      [viewName],
     );
     const st = s.rows?.[0];
 

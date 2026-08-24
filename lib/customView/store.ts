@@ -6,6 +6,22 @@ import { query } from "@/lib/db";
  */
 export const VIEW_NAME = "adminleads";
 
+/**
+ * Vista de pruebas. Comparte el mismo esquema pero vive en filas aparte, asi
+ * se puede ensayar concurrencia o cambios del runtime sin tocar el plan real
+ * del equipo. El ambiente de test apunta a la misma base que produccion, asi
+ * que sin esto cualquier prueba que escriba datos afecta el plan de verdad.
+ */
+export const SANDBOX_VIEW_NAME = "adminleads__sandbox";
+
+const VISTAS_PERMITIDAS = new Set([VIEW_NAME, SANDBOX_VIEW_NAME]);
+
+/** Lista blanca: nunca se acepta un nombre arbitrario desde la URL. */
+export function resolveView(raw?: string | null): string {
+  const v = String(raw || "").trim();
+  return VISTAS_PERMITIDAS.has(v) ? v : VIEW_NAME;
+}
+
 export interface ViewRow {
   html_content: string | null;
   filename: string | null;
@@ -100,46 +116,46 @@ export async function ensureTables(force = false) {
   tablesReady = true;
 }
 
-export async function getView(): Promise<ViewRow | null> {
+export async function getView(view: string = VIEW_NAME): Promise<ViewRow | null> {
   const r = await query(
     `SELECT html_content, filename, file_size, base_revision, updated_at
        FROM custom_views WHERE view_name = ?`,
-    [VIEW_NAME],
+    [view],
   );
   return (r.rows?.[0] as ViewRow) || null;
 }
 
-export async function getViewMeta(): Promise<Omit<ViewRow, "html_content"> | null> {
+export async function getViewMeta(view: string = VIEW_NAME): Promise<Omit<ViewRow, "html_content"> | null> {
   const r = await query(
     `SELECT filename, file_size, base_revision, updated_at
        FROM custom_views WHERE view_name = ?`,
-    [VIEW_NAME],
+    [view],
   );
   return (r.rows?.[0] as any) || null;
 }
 
-export async function getState(): Promise<StateRow | null> {
+export async function getState(view: string = VIEW_NAME): Promise<StateRow | null> {
   const r = await query(
     `SELECT state_json, snapshot_html, base_revision, revision, snapshot_revision, updated_by, updated_at
        FROM custom_view_state WHERE view_name = ?`,
-    [VIEW_NAME],
+    [view],
   );
   return (r.rows?.[0] as StateRow) || null;
 }
 
-export async function getStateNoSnapshot(): Promise<Omit<StateRow, "snapshot_html"> | null> {
+export async function getStateNoSnapshot(view: string = VIEW_NAME): Promise<Omit<StateRow, "snapshot_html"> | null> {
   const r = await query(
     `SELECT state_json, base_revision, revision, snapshot_revision, updated_by, updated_at
        FROM custom_view_state WHERE view_name = ?`,
-    [VIEW_NAME],
+    [view],
   );
   return (r.rows?.[0] as any) || null;
 }
 
 /** Checks del formato viejo (pre-overlay). Se migran en el primer guardado. */
-export async function getLegacyChecks(): Promise<Record<string, any> | null> {
+export async function getLegacyChecks(view: string = VIEW_NAME): Promise<Record<string, any> | null> {
   try {
-    const r = await query(`SELECT checks_json FROM custom_view_checks WHERE role = ?`, [VIEW_NAME]);
+    const r = await query(`SELECT checks_json FROM custom_view_checks WHERE role = ?`, [view]);
     const raw = r.rows?.[0]?.checks_json;
     if (!raw) return null;
     const parsed = JSON.parse(raw);
@@ -150,6 +166,7 @@ export async function getLegacyChecks(): Promise<Record<string, any> | null> {
 }
 
 export async function addHistory(entry: {
+  view?: string;
   kind: "upload" | "state" | "restore";
   label?: string | null;
   stateJson?: string | null;
@@ -164,7 +181,7 @@ export async function addHistory(entry: {
          (view_name, kind, label, state_json, snapshot_html, base_revision, revision, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        VIEW_NAME,
+        entry.view || VIEW_NAME,
         entry.kind,
         entry.label ?? null,
         entry.stateJson ?? null,
@@ -174,7 +191,7 @@ export async function addHistory(entry: {
         entry.createdBy ?? null,
       ],
     );
-    await pruneHistory();
+    await pruneHistory(entry.view || VIEW_NAME);
   } catch (e: any) {
     console.error("addHistory fallo:", e?.message);
   }
@@ -185,7 +202,7 @@ export async function addHistory(entry: {
  * el HTML completo (el overlay basta para reconstruir); asi el historial no
  * crece sin control pero nunca se pierde el registro de un cambio.
  */
-async function pruneHistory() {
+async function pruneHistory(view: string = VIEW_NAME) {
   try {
     await query(
       `UPDATE custom_view_history h
@@ -197,7 +214,7 @@ async function pruneHistory() {
            ) t
          ) old ON old.id = h.id
           SET h.snapshot_html = NULL`,
-      [VIEW_NAME],
+      [view],
     );
     await query(
       `DELETE FROM custom_view_history
@@ -212,7 +229,7 @@ async function pruneHistory() {
               ) keep
             ) k
           )`,
-      [VIEW_NAME, VIEW_NAME],
+      [view, view],
     );
   } catch (e: any) {
     console.error("pruneHistory fallo:", e?.message);

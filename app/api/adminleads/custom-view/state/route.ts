@@ -6,7 +6,7 @@ import {
   ensureTables,
   getLegacyChecks,
   getViewMeta,
-  VIEW_NAME,
+  resolveView,
 } from "@/lib/customView/store";
 
 declare global { var io: any; }
@@ -23,12 +23,13 @@ export async function GET(request: NextRequest) {
 
     await ensureTables();
 
-    const view = await getViewMeta();
+    const viewName = resolveView(new URL(request.url).searchParams.get("view"));
+    const view = await getViewMeta(viewName);
     const r = await query(
       `SELECT state_json, base_revision, revision, snapshot_revision, updated_by, updated_at,
               (snapshot_html IS NOT NULL AND CHAR_LENGTH(snapshot_html) > 0) AS has_snapshot
          FROM custom_view_state WHERE view_name = ?`,
-      [VIEW_NAME],
+      [viewName],
     );
     const row = r.rows?.[0];
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
       Number(row?.base_revision) === viewBaseRevision;
 
     // Solo se ofrece el formato viejo cuando todavia no hay overlay nuevo.
-    const legacy = state && state.nodes ? null : await getLegacyChecks();
+    const legacy = state && state.nodes ? null : await getLegacyChecks(viewName);
 
     return NextResponse.json({
       state,
@@ -77,7 +78,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Estado invalido" }, { status: 400 });
     }
 
-    const view = await getViewMeta();
+    const viewName = resolveView(new URL(request.url).searchParams.get("view"));
+    const view = await getViewMeta(viewName);
     const viewBaseRevision = Number(view?.base_revision) || 1;
     // El cliente venia trabajando sobre otra base: que recargue en vez de
     // pisar el HTML nuevo con el estado de un documento viejo.
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     const cur = await query(
       `SELECT state_json, revision FROM custom_view_state WHERE view_name = ?`,
-      [VIEW_NAME],
+      [viewName],
     );
     const curRevision = Number(cur.rows?.[0]?.revision) || 0;
 
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
            snapshot_revision = VALUES(snapshot_revision),
            updated_by = VALUES(updated_by),
            updated_at = NOW()`,
-        [VIEW_NAME, stateJson, snapshot, viewBaseRevision, nextRevision, nextRevision, user?.role || null],
+        [viewName, stateJson, snapshot, viewBaseRevision, nextRevision, nextRevision, user?.role || null],
       );
     } else {
       // Envio liviano (al cerrar la pestana): se conserva el snapshot previo
@@ -140,11 +142,12 @@ export async function POST(request: NextRequest) {
            snapshot_revision = -1,
            updated_by = VALUES(updated_by),
            updated_at = NOW()`,
-        [VIEW_NAME, stateJson, viewBaseRevision, nextRevision, -1, user?.role || null],
+        [viewName, stateJson, viewBaseRevision, nextRevision, -1, user?.role || null],
       );
     }
 
     await addHistory({
+      view: viewName,
       kind: "state",
       label: null,
       stateJson,
@@ -156,6 +159,9 @@ export async function POST(request: NextRequest) {
 
     if (global.io) {
       global.io.emit("vista-state-updated", {
+        // Sin la vista, un guardado de la sandbox llega a los paneles del plan
+        // real (y al reves): recargan o intentan aplicar estado ajeno.
+        view: viewName,
         clientId: body?.clientId || null,
         state,
         revision: nextRevision,
