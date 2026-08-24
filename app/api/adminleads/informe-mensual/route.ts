@@ -153,7 +153,11 @@ function criteriosLeads(
     );
     filtroParams.push(parseInt(sede));
   } else if (userCids !== 7) {
-    filtros.push(`${alias}.seller_id IN (SELECT id FROM sellers WHERE cids != 7)`);
+    // `seller_id IN (...)` es NULL para leads sin vendedor asignado, y NULL no
+    // es TRUE: sin el OR explicito esos leads desaparecian del informe.
+    filtros.push(
+      `(${alias}.seller_id IS NULL OR ${alias}.seller_id IN (SELECT id FROM sellers WHERE cids != 7))`,
+    );
   }
 
   // El WHERE trae todo lo que toca el periodo por cualquiera de los dos lados;
@@ -251,16 +255,16 @@ async function getLeadsPorVendedor(
   const result: any = await query(
     `
       SELECT
-        s.name as vendedor,
+        COALESCE(NULLIF(s.name, ''), 'Sin asignar') as vendedor,
         SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as total,
         SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
         SUM(CASE WHEN ${c.entradaEnPeriodo} AND l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 ELSE 0 END) as perdidos,
         SUM(CASE WHEN ${c.entradaEnPeriodo} AND l.status != 'CERRADO' THEN 1 ELSE 0 END) as activos,
         IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo
       FROM leads l
-      INNER JOIN sellers s ON s.id = l.seller_id
+      LEFT JOIN sellers s ON s.id = l.seller_id
       ${c.where}
-      GROUP BY s.id, s.name
+      GROUP BY vendedor
       HAVING total > 0 OR ventas > 0
       ORDER BY recaudo DESC, total DESC
     `,

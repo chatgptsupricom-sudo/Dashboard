@@ -92,7 +92,11 @@ export async function getCampaignMetrics({
     leadConditions.push("seller_id IN (SELECT id FROM sellers WHERE cids = ?)");
     leadParams.push(parseInt(sede));
   } else if (userCids !== 7) {
-    leadConditions.push("seller_id IN (SELECT id FROM sellers WHERE cids != 7)");
+    // NULL IN (...) no es TRUE: sin el OR, los leads sin vendedor asignado
+    // quedaban fuera de las metricas de campanas.
+    leadConditions.push(
+      "(seller_id IS NULL OR seller_id IN (SELECT id FROM sellers WHERE cids != 7))",
+    );
   }
 
   const desde = fechaInicio ? `${fechaInicio} 00:00:00` : null;
