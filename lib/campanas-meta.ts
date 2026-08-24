@@ -75,6 +75,11 @@ export async function getCampaignMetrics({
     console.error("Error fetching Meta campaigns:", err);
   }
 
+  // Criterio de fechas: un lead cuenta como "lead del periodo" por su fecha de
+  // entrada, y como "venta del periodo" por su fecha_venta. Son dos cohortes
+  // distintas: una venta cerrada en agosto de un lead que entro en julio suma
+  // a las ventas de agosto, no a los leads de agosto. Antes se filtraba todo
+  // con COALESCE(fecha_venta, fecha_ingreso, created_at), que mezclaba ambas.
   const leadConditions: string[] = [];
   const leadParams: any[] = [];
 
@@ -90,13 +95,24 @@ export async function getCampaignMetrics({
     leadConditions.push("seller_id IN (SELECT id FROM sellers WHERE cids != 7)");
   }
 
-  if (fechaInicio) {
-    leadConditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
-    leadParams.push(`${fechaInicio} 00:00:00`);
-  }
-  if (fechaFin) {
-    leadConditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) <= ?");
-    leadParams.push(`${fechaFin} 23:59:59`);
+  const desde = fechaInicio ? `${fechaInicio} 00:00:00` : null;
+  const hasta = fechaFin ? `${fechaFin} 23:59:59` : null;
+
+  const ENTRADA = "COALESCE(fecha_ingreso, created_at)";
+  const ES_VENTA =
+    "status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO')";
+
+  // Condiciones reutilizables + sus parametros, en el orden en que se usan.
+  const rango = (expr: string) =>
+    desde && hasta ? `${expr} BETWEEN ? AND ?` : "1=1";
+  const rangoParams = desde && hasta ? [desde, hasta] : [];
+
+  const entradaEnPeriodo = rango(ENTRADA);
+  const ventaEnPeriodo = `${ES_VENTA} AND fecha_venta IS NOT NULL AND ${rango("fecha_venta")}`;
+
+  if (desde && hasta) {
+    leadConditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
+    leadParams.push(...rangoParams, ...rangoParams);
   }
 
   const leadWhere =
@@ -106,14 +122,15 @@ export async function getCampaignMetrics({
     `
       SELECT
         campana,
-        COUNT(*) as total_leads,
-        SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) as ventas_cerradas,
-        IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN monto_cerrado_usd ELSE 0 END), 0) as recaudo_usd
+        SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
+        SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas_cerradas,
+        IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as recaudo_usd
       FROM leads
       ${leadWhere}
       GROUP BY campana
+      HAVING total_leads > 0 OR ventas_cerradas > 0
     `,
-    leadParams,
+    [...rangoParams, ...rangoParams, ...rangoParams, ...leadParams],
   );
 
   const convConditions: string[] = [];

@@ -60,6 +60,10 @@ export interface IgMediaItem {
   timestamp: string;
   like_count: number;
   comments_count: number;
+  /** Metricas de Insights por publicacion; null si la API no las entrego. */
+  views: number | null;
+  reach: number | null;
+  interactions: number | null;
 }
 
 export interface IgContentBreakdown {
@@ -71,8 +75,13 @@ export interface IgContentBreakdown {
     porcentaje: number;
     interacciones: number;
     porcentaje_interacciones: number;
+    visualizaciones: number | null;
+    porcentaje_visualizaciones: number | null;
   }>;
   interacciones_totales: number;
+  visualizaciones_totales: number | null;
+  /** true si las interacciones salen de Insights y no de likes + comentarios. */
+  con_insights: boolean;
 }
 
 function isPermissionError(err: any): boolean {
@@ -289,6 +298,34 @@ const GENERO_LABELS: Record<string, string> = {
   U: "No especificado",
 };
 
+/**
+ * Seguidores ganados en el periodo. La Graph API limita `follower_count` a los
+ * ultimos 30 dias excluyendo el dia actual: para meses anteriores devuelve
+ * available:false y el informe cae al snapshot guardado.
+ */
+export async function fetchIgFollowerGains(
+  igUserId: string,
+  since: string,
+  until: string,
+): Promise<IgBlock<number | null>> {
+  try {
+    const data = await graphGet(`${igUserId}/insights`, {
+      metric: "follower_count",
+      period: "day",
+      since,
+      until,
+    });
+    const values = data.data?.[0]?.values || [];
+    const total = values.reduce(
+      (acc: number, v: any) => acc + (parseInt(v.value) || 0),
+      0,
+    );
+    return { available: values.length > 0, reason: null, data: total };
+  } catch (err: any) {
+    return { available: false, reason: permissionReason(err), data: null };
+  }
+}
+
 function normalizeFormat(media: any): IgMediaItem["format"] {
   const product = media.media_product_type;
   if (product === "REELS") return "REELS";
@@ -339,15 +376,50 @@ export async function fetchIgMedia(
           timestamp: m.timestamp,
           like_count: parseInt(m.like_count) || 0,
           comments_count: parseInt(m.comments_count) || 0,
+          views: null,
+          reach: null,
+          interactions: null,
         });
       }
 
       after = data.paging?.cursors?.after || null;
       if (olderThanRange || !data.paging?.next || !after) break;
     }
+
+    await enrichWithMediaInsights(items);
     return { available: true, reason: null, data: items };
   } catch (err: any) {
     return { available: false, reason: permissionReason(err), data: [] };
+  }
+}
+
+/**
+ * Completa cada publicacion con sus Insights (una llamada por publicacion, en
+ * tandas para no disparar decenas de requests en paralelo). Requiere
+ * `instagram_manage_insights`; si falla, los items quedan con null y el
+ * desglose cae a likes + comentarios.
+ */
+async function enrichWithMediaInsights(items: IgMediaItem[]): Promise<void> {
+  const LOTE = 8;
+  for (let i = 0; i < items.length; i += LOTE) {
+    const lote = items.slice(i, i + LOTE);
+    await Promise.all(
+      lote.map(async (item) => {
+        try {
+          const data = await graphGet(`${item.id}/insights`, {
+            metric: "views,reach,total_interactions",
+          });
+          for (const m of data.data || []) {
+            const value = parseInt(m.values?.[0]?.value) || 0;
+            if (m.name === "views") item.views = value;
+            if (m.name === "reach") item.reach = value;
+            if (m.name === "total_interactions") item.interactions = value;
+          }
+        } catch {
+          // Publicacion sin insights (muy antigua o sin permiso): se ignora.
+        }
+      }),
+    );
   }
 }
 
@@ -373,30 +445,52 @@ export function buildContentBreakdown(
     ) + 1,
   );
 
-  const grupos = new Map<string, { cantidad: number; interacciones: number }>();
+  // Si Insights respondio para al menos una publicacion se usan sus
+  // interacciones (incluyen guardados y compartidos); si no, likes+comentarios.
+  const conInsights = media.some((m) => m.interactions !== null);
+
+  const grupos = new Map<
+    string,
+    { cantidad: number; interacciones: number; visualizaciones: number }
+  >();
   let interaccionesTotales = 0;
+  let visualizacionesTotales = 0;
 
   for (const m of media) {
     const key = FORMAT_LABELS[m.format];
-    const interacciones = m.like_count + m.comments_count;
+    const interacciones = conInsights
+      ? (m.interactions ?? 0)
+      : m.like_count + m.comments_count;
+    const visualizaciones = m.views ?? 0;
     interaccionesTotales += interacciones;
-    const g = grupos.get(key) || { cantidad: 0, interacciones: 0 };
+    visualizacionesTotales += visualizaciones;
+
+    const g = grupos.get(key) || {
+      cantidad: 0,
+      interacciones: 0,
+      visualizaciones: 0,
+    };
     g.cantidad += 1;
     g.interacciones += interacciones;
+    g.visualizaciones += visualizaciones;
     grupos.set(key, g);
   }
 
   const total = media.length;
+  const pct = (parte: number, entero: number) =>
+    entero > 0 ? Math.round((parte / entero) * 1000) / 10 : 0;
+
   const por_formato = Array.from(grupos.entries())
     .map(([formato, g]) => ({
       formato,
       cantidad: g.cantidad,
-      porcentaje: total > 0 ? Math.round((g.cantidad / total) * 1000) / 10 : 0,
+      porcentaje: pct(g.cantidad, total),
       interacciones: g.interacciones,
-      porcentaje_interacciones:
-        interaccionesTotales > 0
-          ? Math.round((g.interacciones / interaccionesTotales) * 1000) / 10
-          : 0,
+      porcentaje_interacciones: pct(g.interacciones, interaccionesTotales),
+      visualizaciones: conInsights ? g.visualizaciones : null,
+      porcentaje_visualizaciones: conInsights
+        ? pct(g.visualizaciones, visualizacionesTotales)
+        : null,
     }))
     .sort((a, b) => b.cantidad - a.cantidad);
 
@@ -405,6 +499,8 @@ export function buildContentBreakdown(
     posts_por_dia: Math.round((total / dias) * 10) / 10,
     por_formato,
     interacciones_totales: interaccionesTotales,
+    visualizaciones_totales: conInsights ? visualizacionesTotales : null,
+    con_insights: conInsights,
   };
 }
 
@@ -414,6 +510,7 @@ export interface IgSnapshot {
   metricas: IgBlock<IgAccountMetrics>;
   demografia: IgBlock<IgDemographics>;
   contenido: IgBlock<IgContentBreakdown>;
+  seguidores_ganados: IgBlock<number | null>;
 }
 
 /** Reune en una sola llamada todo lo que el informe necesita de Instagram. */
@@ -422,11 +519,12 @@ export async function buildIgSnapshot(
   since: string,
   until: string,
 ): Promise<IgSnapshot> {
-  const [perfil, metricas, demografia, media] = await Promise.all([
+  const [perfil, metricas, demografia, media, ganados] = await Promise.all([
     fetchIgProfile(account.ig_user_id),
     fetchIgAccountInsights(account.ig_user_id, since, until),
     fetchIgDemographics(account.ig_user_id),
     fetchIgMedia(account.ig_user_id, since, until),
+    fetchIgFollowerGains(account.ig_user_id, since, until),
   ]);
 
   return {
@@ -443,5 +541,6 @@ export async function buildIgSnapshot(
       reason: media.reason,
       data: buildContentBreakdown(media.data, since, until),
     },
+    seguidores_ganados: ganados,
   };
 }

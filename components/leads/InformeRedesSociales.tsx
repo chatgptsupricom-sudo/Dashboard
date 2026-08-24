@@ -215,7 +215,7 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       <Slide numero="Slide 2" titulo="Producción de contenido y formatos">
         {instagram.contenido_disponible && contenido?.total_publicaciones > 0 ? (
           <>
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-4 gap-3 mb-6">
               <KpiCard
                 label="Publicaciones"
                 value={fmtNum(contenido.total_publicaciones)}
@@ -227,9 +227,18 @@ export default function InformeRedesSociales({ data }: { data: any }) {
                 detalle="Feed + Reels"
               />
               <KpiCard
+                label="Visualizaciones"
+                value={fmtNum(contenido.visualizaciones_totales)}
+                detalle="De estas publicaciones"
+              />
+              <KpiCard
                 label="Interacciones"
                 value={fmtNum(contenido.interacciones_totales)}
-                detalle="Likes + comentarios"
+                detalle={
+                  contenido.con_insights
+                    ? "Incluye guardados y compartidos"
+                    : "Likes + comentarios"
+                }
               />
             </div>
 
@@ -239,6 +248,12 @@ export default function InformeRedesSociales({ data }: { data: any }) {
                   <th className={TH}>Formato</th>
                   <th className={`${TH} text-right`}>Cantidad</th>
                   <th className={`${TH} text-right`}>% publicaciones</th>
+                  {contenido.con_insights && (
+                    <>
+                      <th className={`${TH} text-right`}>Visualizaciones</th>
+                      <th className={`${TH} text-right`}>% visualiz.</th>
+                    </>
+                  )}
                   <th className={`${TH} text-right`}>Interacciones</th>
                   <th className={`${TH} text-right`}>% interacciones</th>
                 </tr>
@@ -249,6 +264,16 @@ export default function InformeRedesSociales({ data }: { data: any }) {
                     <td className={`${TD} font-medium text-zinc-900`}>{f.formato}</td>
                     <td className={`${TD} text-right`}>{fmtNum(f.cantidad)}</td>
                     <td className={`${TD} text-right`}>{fmtPct(f.porcentaje)}</td>
+                    {contenido.con_insights && (
+                      <>
+                        <td className={`${TD} text-right`}>
+                          {fmtNum(f.visualizaciones)}
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          {fmtPct(f.porcentaje_visualizaciones)}
+                        </td>
+                      </>
+                    )}
                     <td className={`${TD} text-right`}>{fmtNum(f.interacciones)}</td>
                     <td className={`${TD} text-right font-bold`}>
                       {fmtPct(f.porcentaje_interacciones)}
@@ -259,9 +284,21 @@ export default function InformeRedesSociales({ data }: { data: any }) {
             </table>
 
             <Nota>
-              Las historias no aparecen en este cuadro: la Graph API sólo expone feed y
-              reels en el listado de publicaciones. Las interacciones son likes +
-              comentarios públicos; guardados y compartidos requieren Insights.
+              {contenido.con_insights ? (
+                <>
+                  Visualizaciones e interacciones salen de los Insights de cada
+                  publicación, así que incluyen guardados y compartidos. Las historias
+                  no entran en el cuadro: la Graph API no las lista junto al resto de
+                  las publicaciones.
+                </>
+              ) : (
+                <>
+                  Las historias no aparecen en este cuadro: la Graph API sólo expone
+                  feed y reels en el listado de publicaciones. Las interacciones son
+                  likes + comentarios públicos, porque no se pudieron leer los Insights
+                  por publicación.
+                </>
+              )}
             </Nota>
           </>
         ) : (
@@ -287,7 +324,13 @@ export default function InformeRedesSociales({ data }: { data: any }) {
                 ? `${canal.seguidores_ganados >= 0 ? "+" : ""}${fmtNum(canal.seguidores_ganados)}`
                 : "—"
             }
-            detalle={`vs. ${comparativo.etiqueta}`}
+            detalle={
+              canal.seguidores_ganados === null
+                ? "Sin dato para este período"
+                : canal.seguidores_ganados_origen === "api"
+                  ? "Nuevos seguidores del período"
+                  : `vs. ${comparativo.etiqueta}`
+            }
           />
           <KpiCard
             label="Publicaciones históricas"
@@ -420,9 +463,17 @@ export default function InformeRedesSociales({ data }: { data: any }) {
         )}
 
         <Nota>
-          La calificación (calificado / no calificado) se registra por campaña en la
-          tabla de conversaciones, que no guarda vendedor: por eso la tasa de
-          calificación es global y la tabla por vendedor muestra tasa de cierre.
+          <span className="font-bold">Criterio de fechas: </span>
+          un lead cuenta en <em>Leads</em> por su fecha de entrada dentro del período,
+          y en <em>Ventas</em> / <em>Recaudo</em> por su fecha de venta dentro del
+          período. Son cohortes distintas: una venta cerrada este mes sobre un lead
+          que entró el mes pasado suma a las ventas de este mes, pero no a sus leads
+          — por eso la tasa de cierre puede superar el 100% en un vendedor puntual.
+          <span className="block mt-2">
+            La calificación (calificado / no calificado) se registra por campaña en la
+            tabla de conversaciones, que no guarda vendedor: por eso la tasa de
+            calificación es global y la tabla por vendedor muestra tasa de cierre.
+          </span>
         </Nota>
       </Slide>
 

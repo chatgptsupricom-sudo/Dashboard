@@ -14,8 +14,10 @@ import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
 import {
   buildIgSnapshot,
+  fetchIgAccountInsights,
   getIgAccounts,
   IG_INSIGHTS_PERMISSION,
+  type IgAccountMetrics,
   type IgSnapshot,
 } from "@/lib/instagram";
 import { filterByCids, getAdAccounts } from "@/lib/meta";
@@ -105,32 +107,61 @@ interface CrmStats {
   tasa_conversion: number;
 }
 
-function condicionesLeads(
+const ENTRADA = "COALESCE(#.fecha_ingreso, #.created_at)";
+const ES_VENTA =
+  "#.status = 'CERRADO' AND #.motivo_cierre IN ('VENTA', 'GANADO')";
+
+/**
+ * Criterio de fechas del informe. Un lead pertenece al periodo por su fecha de
+ * ENTRADA; una venta pertenece al periodo por su FECHA_VENTA. Son dos cohortes
+ * distintas y no se pueden filtrar con un solo rango: una venta cerrada en
+ * agosto sobre un lead que entro en julio es venta de agosto, pero no es lead
+ * de agosto.
+ *
+ * Devuelve las dos expresiones SQL ya resueltas con el alias de tabla, mas los
+ * parametros en el orden en que aparecen.
+ */
+function criteriosLeads(
   userCids: number,
   sede: string | null,
   desde: string,
   hasta: string,
-  alias = "",
-): { where: string; params: any[] } {
-  const p = alias ? `${alias}.` : "";
-  const conditions: string[] = [
-    `${p}canal_origen IN (${CANALES_META.map(() => "?").join(", ")})`,
+  alias = "leads",
+) {
+  const con = (tpl: string) => tpl.replace(/#/g, alias);
+  const d = `${desde} 00:00:00`;
+  const h = `${hasta} 23:59:59`;
+
+  const entradaEnPeriodo = `${con(ENTRADA)} BETWEEN ? AND ?`;
+  const ventaEnPeriodo = `${con(ES_VENTA)} AND ${alias}.fecha_venta IS NOT NULL AND ${alias}.fecha_venta BETWEEN ? AND ?`;
+  const rangoParams = [d, h];
+
+  const filtros: string[] = [
+    `${alias}.canal_origen IN (${CANALES_META.map(() => "?").join(", ")})`,
   ];
-  const params: any[] = [...CANALES_META];
+  const filtroParams: any[] = [...CANALES_META];
 
   if (sede) {
-    conditions.push(`${p}seller_id IN (SELECT id FROM sellers WHERE cids = ?)`);
-    params.push(parseInt(sede));
+    filtros.push(
+      `${alias}.seller_id IN (SELECT id FROM sellers WHERE cids = ?)`,
+    );
+    filtroParams.push(parseInt(sede));
   } else if (userCids !== 7) {
-    conditions.push(`${p}seller_id IN (SELECT id FROM sellers WHERE cids != 7)`);
+    filtros.push(`${alias}.seller_id IN (SELECT id FROM sellers WHERE cids != 7)`);
   }
 
-  conditions.push(
-    `COALESCE(${p}fecha_venta, ${p}fecha_ingreso, ${p}created_at) BETWEEN ? AND ?`,
-  );
-  params.push(`${desde} 00:00:00`, `${hasta} 23:59:59`);
+  // El WHERE trae todo lo que toca el periodo por cualquiera de los dos lados;
+  // el desglose por cohorte se hace despues con SUM(CASE WHEN ...).
+  filtros.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
+  const whereParams = [...filtroParams, ...rangoParams, ...rangoParams];
 
-  return { where: `WHERE ${conditions.join(" AND ")}`, params };
+  return {
+    entradaEnPeriodo,
+    ventaEnPeriodo,
+    rangoParams,
+    where: `WHERE ${filtros.join(" AND ")}`,
+    whereParams,
+  };
 }
 
 async function getCrmStats(
@@ -139,17 +170,22 @@ async function getCrmStats(
   desde: string,
   hasta: string,
 ): Promise<CrmStats> {
-  const { where, params } = condicionesLeads(userCids, sede, desde, hasta);
+  const c = criteriosLeads(userCids, sede, desde, hasta, "leads");
   const result: any = await query(
     `
       SELECT
-        COUNT(*) as total_leads,
-        SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) as ventas,
-        IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN monto_cerrado_usd ELSE 0 END), 0) as recaudo
+        SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
+        SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
+        IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN leads.monto_cerrado_usd ELSE 0 END), 0) as recaudo
       FROM leads
-      ${where}
+      ${c.where}
     `,
-    params,
+    [
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.whereParams,
+    ],
   );
   const row = result.rows?.[0] || {};
   const total_leads = parseInt(row.total_leads) || 0;
@@ -172,24 +208,31 @@ async function getLeadsPorVendedor(
   desde: string,
   hasta: string,
 ) {
-  const { where, params } = condicionesLeads(userCids, sede, desde, hasta, "l");
+  const c = criteriosLeads(userCids, sede, desde, hasta, "l");
   const result: any = await query(
     `
       SELECT
         s.name as vendedor,
-        COUNT(l.id) as total,
-        SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) as ventas,
-        SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 ELSE 0 END) as perdidos,
-        SUM(CASE WHEN l.status != 'CERRADO' THEN 1 ELSE 0 END) as activos,
-        IFNULL(SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo
+        SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as total,
+        SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
+        SUM(CASE WHEN ${c.entradaEnPeriodo} AND l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 ELSE 0 END) as perdidos,
+        SUM(CASE WHEN ${c.entradaEnPeriodo} AND l.status != 'CERRADO' THEN 1 ELSE 0 END) as activos,
+        IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo
       FROM leads l
       INNER JOIN sellers s ON s.id = l.seller_id
-      ${where}
+      ${c.where}
       GROUP BY s.id, s.name
-      HAVING total > 0
+      HAVING total > 0 OR ventas > 0
       ORDER BY recaudo DESC, total DESC
     `,
-    params,
+    [
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.rangoParams,
+      ...c.whereParams,
+    ],
   );
 
   return (result.rows || []).map((r: any) => {
@@ -213,7 +256,8 @@ async function getTopClientes(
   desde: string,
   hasta: string,
 ) {
-  const { where, params } = condicionesLeads(userCids, sede, desde, hasta, "l");
+  const c = criteriosLeads(userCids, sede, desde, hasta, "l");
+  // Solo ventas del periodo: aca la cohorte relevante es fecha_venta.
   const result: any = await query(
     `
       SELECT
@@ -222,14 +266,13 @@ async function getTopClientes(
         IFNULL(SUM(l.monto_cerrado_usd), 0) as monto
       FROM leads l
       LEFT JOIN sellers s ON s.id = l.seller_id
-      ${where}
-        AND l.status = 'CERRADO'
-        AND l.motivo_cierre IN ('VENTA', 'GANADO')
+      ${c.where}
+        AND (${c.ventaEnPeriodo})
       GROUP BY cliente, s.name
       ORDER BY monto DESC
       LIMIT 10
     `,
-    params,
+    [...c.whereParams, ...c.rangoParams],
   );
 
   return (result.rows || []).map((r: any) => ({
@@ -387,12 +430,21 @@ export async function GET(request: Request) {
       ]);
 
     // Instagram: se toma la cuenta del pais que corresponde al usuario.
+    // Los Insights de cuenta si aceptan rangos historicos, asi que el mes de
+    // comparacion se pide a la API en vez de depender del snapshot guardado.
     let igSnapshot: IgSnapshot | null = null;
+    let igMetricasPrevApi: IgAccountMetrics | null = null;
     let igError: string | null = null;
     try {
       const igAccounts = await getIgAccounts(adAccounts);
       if (igAccounts.length > 0) {
-        igSnapshot = await buildIgSnapshot(igAccounts[0], desde, hasta);
+        const cuenta = igAccounts[0];
+        const [actual, previo] = await Promise.all([
+          buildIgSnapshot(cuenta, desde, hasta),
+          fetchIgAccountInsights(cuenta.ig_user_id, prev.desde, prev.hasta),
+        ]);
+        igSnapshot = actual;
+        if (previo.available) igMetricasPrevApi = previo.data;
       } else {
         igError = "No hay cuenta de Instagram Business vinculada a la cuenta publicitaria";
       }
@@ -423,19 +475,32 @@ export async function GET(request: Request) {
           }
         : null;
 
-    const igMetricasPrev = snapPrev
-      ? {
-          views: parseInt(snapPrev.views) || 0,
-          reach: parseInt(snapPrev.reach) || 0,
-          profile_views: parseInt(snapPrev.profile_views) || 0,
-          website_clicks: parseInt(snapPrev.website_clicks) || 0,
-          total_interactions: parseInt(snapPrev.total_interactions) || 0,
-          accounts_engaged: parseInt(snapPrev.accounts_engaged) || 0,
-        }
-      : null;
+    // Prioridad: lo que responde la API para el mes anterior; si no, el snapshot.
+    const igMetricasPrev =
+      igMetricasPrevApi ||
+      (snapPrev
+        ? {
+            views: parseInt(snapPrev.views) || 0,
+            reach: parseInt(snapPrev.reach) || 0,
+            profile_views: parseInt(snapPrev.profile_views) || 0,
+            website_clicks: parseInt(snapPrev.website_clicks) || 0,
+            total_interactions: parseInt(snapPrev.total_interactions) || 0,
+            accounts_engaged: parseInt(snapPrev.accounts_engaged) || 0,
+          }
+        : null);
 
     const seguidoresActual = igSnapshot?.perfil?.followers_count || 0;
     const seguidoresPrev = snapPrev ? parseInt(snapPrev.followers_count) || 0 : 0;
+
+    // Seguidores ganados: `follower_count` solo cubre los ultimos 30 dias, asi
+    // que para meses viejos se cae a la diferencia contra el snapshot.
+    const ganadosApi = igSnapshot?.seguidores_ganados;
+    const seguidoresGanados =
+      ganadosApi?.available && ganadosApi.data !== null
+        ? ganadosApi.data
+        : seguidoresPrev > 0
+          ? seguidoresActual - seguidoresPrev
+          : null;
 
     const metricaIg = (
       etiqueta: string,
@@ -558,7 +623,15 @@ export async function GET(request: Request) {
         pais: igSnapshot?.cuenta?.pais || (userCids === 7 ? "Panama" : "Venezuela"),
         seguidores: seguidoresActual || null,
         seguidores_anterior: seguidoresPrev || null,
-        seguidores_ganados: seguidoresPrev > 0 ? seguidoresActual - seguidoresPrev : null,
+        seguidores_ganados: seguidoresGanados,
+        seguidores_ganados_origen: ganadosApi?.available
+          ? "api"
+          : seguidoresPrev > 0
+            ? "snapshot"
+            : null,
+        seguidores_ganados_motivo: ganadosApi?.available
+          ? null
+          : ganadosApi?.reason || null,
         publicaciones_totales: igSnapshot?.perfil?.media_count || null,
       },
       general,
