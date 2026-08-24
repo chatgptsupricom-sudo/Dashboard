@@ -3,9 +3,12 @@
 -- guardar los ids reales de Odoo (necesarios para que el tecnico navegue a la
 -- factura original sin parsear texto).
 --
--- El ALTER es idempotente: cada ADD COLUMN se intenta por separado y si ya
--- existe la columna, MySQL lanza Duplicate column y lo ignoramos.
--- Patron copiado de sql/alter_*.sql del repo.
+-- MySQL NO soporta "ADD COLUMN IF NOT EXISTS" antes de la 8.0.29. Cada ALTER
+-- va separado: si la columna ya existe, MySQL lanza "Duplicate column" y se
+-- ignora. Patron copiado de los ALTERs idempotentes del repo
+-- (ej. app/api/adminleads/banco-imagenes/route.ts y la migracion de adjuntos).
+-- El endpoint POST /api/servicio-tecnico/ticket corre ensurePortalColumns()
+-- en runtime con el mismo patron, asi que la migracion manual es opcional.
 
 ALTER TABLE rma_cases ADD COLUMN origen ENUM('interno','portal') DEFAULT 'interno';
 ALTER TABLE rma_cases ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL;

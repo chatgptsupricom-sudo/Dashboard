@@ -24,21 +24,36 @@ CREATE TABLE IF NOT EXISTS rma_ticket_adjuntos (
   INDEX idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ALTER para columnas que el issue #22 agregara a rma_cases.
--- Estas columnas son las que usa el endpoint de adjuntos para ligar los archivos
--- al ticket. El ALTER es idempotente.
+-- ALTERs para columnas que el issue #22 agrega a rma_cases.
+-- MySQL NO soporta "ADD COLUMN IF NOT EXISTS" antes de la 8.0.29, asi que cada
+-- ALTER va separado y se ignora el error si la columna ya existe (patron usado
+-- por los otros ALTERs del repo, ej. app/api/adminleads/banco-imagenes/route.ts).
+-- El endpoint ya llama a ensurePortalColumns() en runtime con el mismo patron.
 
-ALTER TABLE rma_cases
-  ADD COLUMN IF NOT EXISTS origen ENUM('interno','portal') DEFAULT 'interno',
-  ADD COLUMN IF NOT EXISTS tracking_token VARCHAR(64) DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS odoo_partner_id INT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS odoo_product_id INT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS serial VARCHAR(100) DEFAULT NULL;
+ALTER TABLE rma_cases ADD COLUMN origen ENUM('interno','portal') DEFAULT 'interno';
+ALTER TABLE rma_cases ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL;
+ALTER TABLE rma_cases ADD COLUMN odoo_partner_id INT DEFAULT NULL;
+ALTER TABLE rma_cases ADD COLUMN odoo_product_id INT DEFAULT NULL;
+ALTER TABLE rma_cases ADD COLUMN serial VARCHAR(100) DEFAULT NULL;
 
--- El FK con ticket_id se agrega cuando la columna exista y sea NOT NULL.
--- En esta migracion ticket_id queda NULL para poder guardar adjuntos antes
--- de que el ticket exista (permite subida en pasos previos del formulario).
+ALTER TABLE rma_cases ADD INDEX idx_origen (origen);
+ALTER TABLE rma_cases ADD UNIQUE INDEX uk_tracking_token (tracking_token);
 
-ALTER TABLE rma_ticket_adjuntos
-  ADD CONSTRAINT fk_adjuntos_ticket
-  FOREIGN KEY (ticket_id) REFERENCES rma_cases(id) ON DELETE CASCADE;
+-- FK con ticket_id. La tabla rma_cases ya existe (sql/rma_cases.sql).
+-- Solo agregar el FK si no existe ya.
+
+SET @fk_exists := (
+  SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE CONSTRAINT_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'rma_ticket_adjuntos'
+    AND CONSTRAINT_NAME = 'fk_adjuntos_ticket'
+);
+
+SET @sql := IF(@fk_exists = 0,
+  'ALTER TABLE rma_ticket_adjuntos ADD CONSTRAINT fk_adjuntos_ticket FOREIGN KEY (ticket_id) REFERENCES rma_cases(id) ON DELETE CASCADE',
+  'SELECT 1'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
