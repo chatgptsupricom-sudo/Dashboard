@@ -436,7 +436,13 @@ export const PLAN_RUNTIME_JS = String.raw`
       if (n === "class" || TRANSIENT_ATTR[n]) continue;
       if (!(n in target)) el.removeAttribute(n);
     }
-    for (var k in target) if (el.getAttribute(k) !== target[k]) el.setAttribute(k, target[k]);
+    for (var k in target) {
+      // Tampoco al escribir: los estados guardados antes de este arreglo
+      // todavia llevan un style con la animacion (opacity: 0) grabada dentro.
+      // Si se aplicara, el panel volveria a quedar invisible.
+      if (k === "class" || TRANSIENT_ATTR[k]) continue;
+      if (el.getAttribute(k) !== target[k]) el.setAttribute(k, target[k]);
+    }
   }
 
   function setShell(el, html, live, imported) {
@@ -487,6 +493,7 @@ export const PLAN_RUNTIME_JS = String.raw`
       var attrs = attrsOf(be);
       if (entry && entry.at) {
         for (var a in entry.at) {
+          if (TRANSIENT_ATTR[a]) continue;
           if (entry.at[a] === null) delete attrs[a]; else attrs[a] = entry.at[a];
         }
       }
@@ -941,7 +948,11 @@ export const PLAN_RUNTIME_JS = String.raw`
       var opaca = true;
       for (var a = el; a && a !== document.documentElement; a = a.parentElement) {
         var cs = getComputedStyle(a);
-        if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) < 0.05) {
+        // El estilo en linea se mira aparte: durante una transicion CSS el
+        // calculado todavia informa el valor anterior y el chequeo se colaba.
+        var enLinea = a.style && a.style.opacity !== "" ? Number(a.style.opacity) : null;
+        if (cs.visibility === "hidden" || cs.display === "none" ||
+            Number(cs.opacity) < 0.05 || (enLinea !== null && enLinea < 0.05)) {
           opaca = false;
           break;
         }
@@ -993,6 +1004,37 @@ export const PLAN_RUNTIME_JS = String.raw`
       console.error("[plan] el estado guardado dejaba el panel vacio; se descarto y se muestra el HTML tal cual");
     } catch (e3) {}
     return false;
+  }
+
+  /**
+   * Primera vez que se usa el panel: el servidor no tiene nada y lo unico que
+   * existe es la copia local del navegador. Se aplica con el propio
+   * loadPlanState() de la pagina y se guarda como estado inicial compartido,
+   * para no perder lo que el equipo ya tenia marcado.
+   */
+  function sembrarDesdeLocal() {
+    var guardado = null;
+    try { guardado = (window.__PLAN_LS__ || {})["supricom_plan_state"]; } catch (e) {}
+    if (!guardado || typeof window.loadPlanState !== "function") return false;
+    applying++;
+    try {
+      window.__planOcultarLocal(false);
+      window.loadPlanState();
+    } catch (e2) {
+      return false;
+    } finally {
+      try { window.__planOcultarLocal(true); } catch (e3) {}
+      applying--;
+    }
+    return true;
+  }
+
+  /**
+   * Deja la copia local de la pagina igual al estado compartido que se acaba
+   * de aplicar. Solo escribe en localStorage, no toca el DOM.
+   */
+  function sincronizarCopiaLocal() {
+    try { if (typeof window.savePlanState === "function") window.savePlanState(); } catch (e) {}
   }
 
   // ---------------------------------------------------------------------- boot
@@ -1102,7 +1144,8 @@ export const PLAN_RUNTIME_JS = String.raw`
           ackState = d.state;
           lastSentJson = JSON.stringify(d.state);
           var ok = aplicarConRescate(aAplicar);
-          if (!ok) { ackState = EMPTY_STATE; lastSentJson = ""; status("error"); }
+          if (ok) sincronizarCopiaLocal();
+          else { ackState = EMPTY_STATE; lastSentJson = ""; status("error"); }
           // Si la base cambio (se subio un HTML nuevo), lo que acabamos de
           // aplicar es el merge: hay que persistirlo sobre la base nueva.
           if (baseCambio && ok) {
@@ -1111,6 +1154,12 @@ export const PLAN_RUNTIME_JS = String.raw`
           }
         } else if (d.legacy && Object.keys(d.legacy).length) {
           applyLegacy(d.legacy);
+          sincronizarCopiaLocal();
+          needsSave = true;
+          merged = true;
+        } else if (sembrarDesdeLocal()) {
+          // Sin estado en el servidor: se toma como punto de partida lo que
+          // este navegador tenia guardado por su cuenta.
           needsSave = true;
           merged = true;
         }
@@ -1132,6 +1181,64 @@ export const PLAN_RUNTIME_JS = String.raw`
   else window.addEventListener("load", function () { setTimeout(boot, 60); });
 })();
 `;
+
+/**
+ * El HTML del plan trae su propio guardado en localStorage
+ * (savePlanState/loadPlanState). loadPlanState() corre 150 ms despues de
+ * DOMContentLoaded y hace classList.remove("checked") y devuelve las piezas a
+ * la columna que tenga guardada ESE navegador. Es decir: pisaba lo que el
+ * runtime acababa de aplicar desde el servidor, y acto seguido el observador
+ * guardaba ese resultado, propagando la copia vieja de un navegador a todo el
+ * equipo. Tras subir un HTML nuevo la divergencia es segura, y por eso se
+ * perdian los marcados.
+ *
+ * Aqui se le devuelve a la pagina un estado VACIO en lugar del suyo: el
+ * estado compartido manda. No se devuelve null a proposito, porque la pagina
+ * usa esa misma clave para decidir si auto-marca las semanas pasadas; con un
+ * objeto vacio esa logica se mantiene igual que antes y loadPlanState no
+ * encuentra ninguna pieza que tocar.
+ *
+ * La escritura no se toca, asi que su copia local se mantiene al dia y el
+ * archivo sigue funcionando por su cuenta fuera del panel. El valor original
+ * queda en window.__PLAN_LS__ para poder sembrarlo si el servidor todavia no
+ * tiene nada guardado.
+ *
+ * Corre en el script de configuracion, que se parsea antes de </body> y por
+ * tanto antes de que se dispare DOMContentLoaded.
+ */
+const LOCAL_SHIM_JS = `(function(){try{var K=["supricom_plan_state"];var VACIO=JSON.stringify({pieces:{}});var ls=window.localStorage;var orig=ls.getItem.bind(ls);window.__PLAN_LS__={};for(var i=0;i<K.length;i++){window.__PLAN_LS__[K[i]]=orig(K[i]);}var oculto=true;window.__planOcultarLocal=function(v){oculto=v!==false;};ls.getItem=function(k){return (oculto&&K.indexOf(k)!==-1)?VACIO:orig(k);};}catch(e){}})();`;
+
+/**
+ * requestAnimationFrame no dispara mientras el documento esta oculto. Este HTML
+ * revela el mes activo asi:
+ *
+ *   c.style.opacity = "0";
+ *   requestAnimationFrame(function(){ c.style.opacity = "1"; });
+ *
+ * Si el panel carga en una pestana en segundo plano, ese callback no corre
+ * nunca y el plan queda invisible —con la cabecera a la vista— hasta que
+ * alguien interactua. Lo mismo pasa con el revelado de la vista de tabla.
+ *
+ * Mientras el documento esta oculto se ejecutan por temporizador; en cuanto se
+ * ve, se vuelve al rAF nativo. Los dos bucles que se reprograman solos en este
+ * HTML estan acotados (el confeti para a los 70 fotogramas y el autoscroll solo
+ * corre mientras se arrastra), asi que esto no deja nada girando en segundo
+ * plano.
+ *
+ * El identificador que devuelve el temporizador va desplazado para poder
+ * distinguirlo en cancelAnimationFrame, que la pagina si usa.
+ */
+const RAF_SHIM_JS = `(function(){try{
+var w=window;var raf=w.requestAnimationFrame;var caf=w.cancelAnimationFrame;
+if(!raf)return;var OFFSET=1e9;
+w.requestAnimationFrame=function(fn){
+if(document.visibilityState==="hidden"){
+return w.setTimeout(function(){try{fn(Date.now());}catch(e){}},16)+OFFSET;}
+return raf.call(w,fn);};
+w.cancelAnimationFrame=function(h){
+if(typeof h==="number"&&h>OFFSET)return w.clearTimeout(h-OFFSET);
+if(caf)return caf.call(w,h);};
+}catch(e){}})();`;
 
 export function buildInjection(opts: {
   api: string;
@@ -1156,7 +1263,7 @@ export function buildInjection(opts: {
   // blanco. Se prefiere ver el plan y que los cambios aparezcan un instante
   // despues.
   return (
-    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};</script>` +
+    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};${RAF_SHIM_JS}${LOCAL_SHIM_JS}</script>` +
     `<script id="__plan_rt" data-plan-ignore>${PLAN_RUNTIME_JS}</script>`
   );
 }
