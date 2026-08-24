@@ -587,5 +587,23 @@
     "soon": "This section is under development. In the meantime, give us a call and we'll gladly help you.",
     "back": "Back",
     "callUs": "Call Supricom"
+  },
+  "portal_rma": {
+    "confirmacion_titulo": "We received your report",
+    "confirmacion_subtitulo": "It will be attended shortly",
+    "ticket_numero": "Ticket number",
+    "copiar": "Copy",
+    "copiado": "Copied",
+    "enlace_consulta": "Link to check status",
+    "copiar_enlace": "Copy link",
+    "resumen": "Report summary",
+    "producto": "Product",
+    "serial": "Serial",
+    "factura": "Invoice number",
+    "telefono": "Contact phone",
+    "que_sigue": "What's next?",
+    "tiempo_respuesta": "Our technical service team will contact you within the next 24-48 business hours.",
+    "contacto_whatsapp": "If you need to contact us before then:",
+    "imprimible": "Screenshot this page or write down your ticket number"
   }
 }

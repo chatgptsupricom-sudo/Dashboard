@@ -20,3 +20,11 @@ export const query = async (sql: string, params?: any[]) => {
     throw error;
   }
 };
+
+// Devuelve una conexion dedicada del pool, para hacer varias queries en una
+// transaccion (commit/rollback) o que comparten estado. El caller es responsable
+// de llamar a conn.close() cuando termine. Patron usado por el endpoint del
+// portal RMA (issue #22) para evitar la condicion de carrera del case_number.
+export const getConnection = async () => {
+  return db.getConnection();
+};

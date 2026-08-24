@@ -589,5 +589,23 @@
     "soon": "Esta sección está en desarrollo. Mientras tanto, comunícate con nosotros por teléfono y con gusto te atendemos.",
     "back": "Volver",
     "callUs": "Llamar a Supricom"
+  },
+  "portal_rma": {
+    "confirmacion_titulo": "Recibimos tu reporte",
+    "confirmacion_subtitulo": "Será atendido en breve",
+    "ticket_numero": "Número de ticket",
+    "copiar": "Copiar",
+    "copiado": "Copiado",
+    "enlace_consulta": "Enlace para consultar el estatus",
+    "copiar_enlace": "Copiar enlace",
+    "resumen": "Resumen de tu reporte",
+    "producto": "Producto",
+    "serial": "Serial",
+    "factura": "Número de factura",
+    "telefono": "Teléfono de contacto",
+    "que_sigue": "¿Qué sigue?",
+    "tiempo_respuesta": "Nuestro equipo de servicio técnico te contactará en las próximas 24-48 horas hábiles.",
+    "contacto_whatsapp": "Si necesitas contactarnos antes:",
+    "imprimible": "Captura esta pantalla o anota tu número de ticket"
   }
 }
