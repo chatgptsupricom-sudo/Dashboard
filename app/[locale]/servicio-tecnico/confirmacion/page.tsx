@@ -1,26 +1,55 @@
 "use client";
 
+import {
+  RESUMEN_KEY,
+  type ResumenReporte,
+} from "@/lib/servicio-tecnico/resumen";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function ConfirmacionPage() {
   const t = useTranslations("portal_rma");
   const params = useSearchParams();
   const caseNumber = params.get("ticket") || "";
   const trackingToken = params.get("token") || "";
-  const invoice = params.get("factura") || "";
-  const product = params.get("producto") || "";
-  const serial = params.get("serial") || "";
-  const phone = params.get("telefono") || "";
+
+  // El resumen NO viaja por la URL. El teléfono del cliente y el serial del
+  // equipo son datos suyos, y esta app carga @vercel/analytics en producción:
+  // todo lo que esté en el query string termina en analítica y en el historial
+  // del navegador. El formulario lo deja en sessionStorage y se lee acá.
+  // Se aceptan igual los parámetros por si alguien llega con un enlace viejo.
+  const [resumen, setResumen] = useState<ResumenReporte>({});
+
+  useEffect(() => {
+    try {
+      const crudo = sessionStorage.getItem(RESUMEN_KEY);
+      if (crudo) setResumen(JSON.parse(crudo) as ResumenReporte);
+    } catch {
+      // sessionStorage puede no estar disponible (modo privado, permisos).
+    }
+  }, []);
+
+  const invoice = resumen.factura || params.get("factura") || "";
+  const product = resumen.producto || params.get("producto") || "";
+  const serial = resumen.serial || params.get("serial") || "";
+  const phone = resumen.telefono || params.get("telefono") || "";
 
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const consultationUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/${window.location.pathname.split("/")[1]}/servicio-tecnico/consultar?token=${trackingToken}`
-      : "";
+  // Se arma después de montar: construirlo con `typeof window !== "undefined"`
+  // hacía que el servidor renderizara "" y el cliente la URL, y el botón salía
+  // deshabilitado en el primer pintado con un error de hidratación.
+  const [consultationUrl, setConsultationUrl] = useState("");
+
+  useEffect(() => {
+    if (!trackingToken) return;
+    const locale = window.location.pathname.split("/")[1];
+    setConsultationUrl(
+      `${window.location.origin}/${locale}/servicio-tecnico/consultar?token=${trackingToken}`,
+    );
+  }, [trackingToken]);
 
   async function copy(value: string, setter: (v: boolean) => void) {
     try {

@@ -125,7 +125,11 @@ export async function POST(request: NextRequest) {
     const clientItemId = String(body.item_id || "").trim();
     // Documento del cliente, opcional, para desambiguar (ver issue #25).
     const clientRif = String(body.rif || "").trim() || undefined;
-    const preTicketId = body.ticket_id ? parseInt(String(body.ticket_id), 10) : null;
+    // Token temporal con el que el formulario subió los adjuntos antes de que
+    // el ticket existiera. Es una cadena (uuid), no un id: la versión anterior
+    // le hacía parseInt y quedaba en NaN, así que el UPDATE de más abajo nunca
+    // corría y los adjuntos se quedaban huérfanos con ticket_id NULL.
+    const uploadToken = String(body.upload_token || body.ticket_id || "").trim();
 
     if (!invoiceNumber || invoiceNumber.length > 100) {
       return NextResponse.json({ error: "Numero de factura invalido" }, { status: 400 });
@@ -290,11 +294,14 @@ export async function POST(request: NextRequest) {
           [caseId, createdBy],
         );
 
-        // Si habia adjuntos pre-subidos (preTicketId), enlazarlos al nuevo caso.
-        if (preTicketId && caseId) {
+        // Enlazar los adjuntos que ya se subieron con el token temporal, y
+        // pasarlos al token definitivo del ticket (que es con el que después
+        // se sirven).
+        if (uploadToken && caseId) {
           await conn.execute(
-            `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ? WHERE tracking_token = ?`,
-            [caseId, trackingToken, preTicketId],
+            `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?
+              WHERE tracking_token = ? AND ticket_id IS NULL`,
+            [caseId, trackingToken, uploadToken],
           );
         }
 

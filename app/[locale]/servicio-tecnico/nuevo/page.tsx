@@ -1,5 +1,4 @@
-import { PortalPlaceholder } from "@/components/servicio-tecnico/portal-placeholder";
-import { getTranslations } from "next-intl/server";
+import { ReporteForm } from "@/components/servicio-tecnico/reporte-form";
 
 export default async function NuevoReportePage({
   params,
@@ -7,18 +6,5 @@ export default async function NuevoReportePage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const t = await getTranslations({
-    locale,
-    namespace: "servicioTecnico",
-  });
-
-  return (
-    <PortalPlaceholder
-      locale={locale}
-      title={t("report.title")}
-      description={t("soon")}
-      backLabel={t("back")}
-      phoneLabel={t("callUs")}
-    />
-  );
+  return <ReporteForm locale={locale} />;
 }
