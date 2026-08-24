@@ -127,6 +127,7 @@ function criteriosLeads(
   desde: string,
   hasta: string,
   alias = "leads",
+  soloCanalMeta = true,
 ) {
   const con = (tpl: string) => tpl.replace(/#/g, alias);
   const d = `${desde} 00:00:00`;
@@ -136,10 +137,15 @@ function criteriosLeads(
   const ventaEnPeriodo = `${con(ES_VENTA)} AND ${alias}.fecha_venta IS NOT NULL AND ${alias}.fecha_venta BETWEEN ? AND ?`;
   const rangoParams = [d, h];
 
-  const filtros: string[] = [
-    `${alias}.canal_origen IN (${CANALES_META.map(() => "?").join(", ")})`,
-  ];
-  const filtroParams: any[] = [...CANALES_META];
+  const filtros: string[] = [];
+  const filtroParams: any[] = [];
+
+  if (soloCanalMeta) {
+    filtros.push(
+      `${alias}.canal_origen IN (${CANALES_META.map(() => "?").join(", ")})`,
+    );
+    filtroParams.push(...CANALES_META);
+  }
 
   if (sede) {
     filtros.push(
@@ -154,14 +160,47 @@ function criteriosLeads(
   // el desglose por cohorte se hace despues con SUM(CASE WHEN ...).
   filtros.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
   const whereParams = [...filtroParams, ...rangoParams, ...rangoParams];
+  const where = `WHERE ${filtros.join(" AND ")}`;
 
-  return {
-    entradaEnPeriodo,
-    ventaEnPeriodo,
-    rangoParams,
-    where: `WHERE ${filtros.join(" AND ")}`,
-    whereParams,
-  };
+  return { entradaEnPeriodo, ventaEnPeriodo, rangoParams, where, whereParams };
+}
+
+/**
+ * Desglose por canal de origen SIN filtrar canal, con el mismo criterio de
+ * fechas del informe. Sirve para conciliar contra el tab General (que cuenta
+ * todos los canales) y para detectar valores de canal_origen que no entran en
+ * CANALES_META por diferencias de texto.
+ */
+async function getCanalesBreakdown(
+  userCids: number,
+  sede: string | null,
+  desde: string,
+  hasta: string,
+) {
+  const c = criteriosLeads(userCids, sede, desde, hasta, "leads", false);
+  const result: any = await query(
+    `
+      SELECT
+        COALESCE(NULLIF(leads.canal_origen, ''), 'Sin canal') as canal,
+        SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as leads,
+        SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
+        IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN leads.monto_cerrado_usd ELSE 0 END), 0) as recaudo
+      FROM leads
+      ${c.where}
+      GROUP BY canal
+      HAVING leads > 0 OR ventas > 0
+      ORDER BY leads DESC, recaudo DESC
+    `,
+    [...c.rangoParams, ...c.rangoParams, ...c.rangoParams, ...c.whereParams],
+  );
+
+  return (result.rows || []).map((r: any) => ({
+    canal: r.canal,
+    leads: parseInt(r.leads) || 0,
+    ventas: parseInt(r.ventas) || 0,
+    recaudo: parseFloat(r.recaudo) || 0,
+    cuenta_como_meta: CANALES_META.includes(r.canal),
+  }));
 }
 
 async function getCrmStats(
@@ -429,6 +468,16 @@ export async function GET(request: Request) {
         getTopClientes(userCids, sede, desde, hasta),
       ]);
 
+    const canales = await getCanalesBreakdown(userCids, sede, desde, hasta);
+    const totalesTodosCanales = canales.reduce(
+      (acc, c) => ({
+        leads: acc.leads + c.leads,
+        ventas: acc.ventas + c.ventas,
+        recaudo: acc.recaudo + c.recaudo,
+      }),
+      { leads: 0, ventas: 0, recaudo: 0 },
+    );
+
     // Instagram: se toma la cuenta del pais que corresponde al usuario.
     // Los Insights de cuenta si aceptan rangos historicos, asi que el mes de
     // comparacion se pide a la API en vez de depender del snapshot guardado.
@@ -670,6 +719,14 @@ export async function GET(request: Request) {
             ? Math.round((totalCalificados / totalConversaciones) * 1000) / 10
             : null,
         por_vendedor: porVendedor,
+        // Conciliacion contra el tab General, que no filtra por canal.
+        por_canal: canales,
+        todos_los_canales: {
+          leads: totalesTodosCanales.leads,
+          ventas: totalesTodosCanales.ventas,
+          recaudo: Math.round(totalesTodosCanales.recaudo * 100) / 100,
+        },
+        canales_meta: CANALES_META,
       },
       inversion: {
         total: Math.round(inversion * 100) / 100,

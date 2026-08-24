@@ -462,13 +462,75 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </p>
         )}
 
+        {leads.por_canal && leads.por_canal.length > 0 && (
+          <div className="mt-6">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+              Conciliación por canal de origen
+            </div>
+            <table className="w-full">
+              <thead className="bg-zinc-50">
+                <tr>
+                  <th className={TH}>Canal de origen</th>
+                  <th className={`${TH} text-center`}>¿Entra en el informe?</th>
+                  <th className={`${TH} text-right`}>Leads</th>
+                  <th className={`${TH} text-right`}>Ventas</th>
+                  <th className={`${TH} text-right`}>Recaudo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {leads.por_canal.map((c: any) => (
+                  <tr key={c.canal} className={c.cuenta_como_meta ? "" : "opacity-60"}>
+                    <td className={`${TD} font-medium text-zinc-900`}>{c.canal}</td>
+                    <td className={`${TD} text-center`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                          c.cuenta_como_meta
+                            ? "bg-emerald-50 text-emerald-600"
+                            : "bg-zinc-100 text-zinc-500"
+                        }`}
+                      >
+                        {c.cuenta_como_meta ? "Sí · canal Meta" : "No"}
+                      </span>
+                    </td>
+                    <td className={`${TD} text-right`}>{fmtNum(c.leads)}</td>
+                    <td className={`${TD} text-right`}>{fmtNum(c.ventas)}</td>
+                    <td className={`${TD} text-right`}>{fmtUsd(c.recaudo)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-zinc-50 font-bold">
+                  <td className={`${TD} font-bold`} colSpan={2}>
+                    TOTAL — todos los canales
+                  </td>
+                  <td className={`${TD} text-right font-bold`}>
+                    {fmtNum(leads.todos_los_canales?.leads)}
+                  </td>
+                  <td className={`${TD} text-right font-bold`}>
+                    {fmtNum(leads.todos_los_canales?.ventas)}
+                  </td>
+                  <td className={`${TD} text-right font-bold`}>
+                    {fmtUsd(leads.todos_los_canales?.recaudo)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <Nota>
-          <span className="font-bold">Criterio de fechas: </span>
+          <span className="font-bold">Alcance del informe: </span>
+          las cifras de arriba cubren sólo los leads cuyo canal de origen es{" "}
+          {(leads.canales_meta || []).join(", ")}. El tab General del panel no filtra
+          por canal, por eso su total es mayor: la tabla de conciliación muestra
+          exactamente dónde está la diferencia. Si algún canal que debería contar
+          aparece como “No”, es que su texto no coincide con la lista.
+          <span className="block mt-2">
+            <span className="font-bold">Criterio de fechas: </span>
           un lead cuenta en <em>Leads</em> por su fecha de entrada dentro del período,
           y en <em>Ventas</em> / <em>Recaudo</em> por su fecha de venta dentro del
           período. Son cohortes distintas: una venta cerrada este mes sobre un lead
           que entró el mes pasado suma a las ventas de este mes, pero no a sus leads
           — por eso la tasa de cierre puede superar el 100% en un vendedor puntual.
+          </span>
           <span className="block mt-2">
             La calificación (calificado / no calificado) se registra por campaña en la
             tabla de conversaciones, que no guarda vendedor: por eso la tasa de
