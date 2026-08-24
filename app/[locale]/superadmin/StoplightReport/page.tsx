@@ -1,10 +1,13 @@
 import StoplightReportSuperadmin from "@/components/superadmin/StoplightReport";
+import { getTranslations } from "next-intl/server";
 
-// Metadatos para el SEO interno y la pestaña del navegador
-export const metadata = {
-  title: "Stoplight Reports | Superadmin",
-  description: "Gestión y evaluación de KPIs estratégicos",
-};
+export async function generateMetadata({ params }: { params: { locale: string } }) {
+  const t = await getTranslations({ locale: params.locale, namespace: "stoplight" });
+  return {
+    title: `${t("page_title")} | Superadmin`,
+    description: t("page_subtitle"),
+  };
+}
 
 export default function StoplightReportPage() {
   return (

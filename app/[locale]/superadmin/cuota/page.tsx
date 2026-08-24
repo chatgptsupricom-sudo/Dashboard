@@ -101,7 +101,7 @@ export default function SuperAdminCuotaPage() {
                     {sucursal.sucursal}
                   </h2>
                   <p className="text-xs text-zinc-400">
-                    {sucursal.sellers.length} {t("vendedores")}{sucursal.sellers.length !== 1 ? "es" : ""}
+                    {sucursal.sellers.length} {sucursal.sellers.length === 1 ? t("vendedor") : t("vendedores")}
                   </p>
                 </div>
                 <div className="flex-1 max-w-md">
@@ -272,7 +272,7 @@ function EditQuotaDialog({ seller, onClose, onSave }: any) {
           <DialogTitle>{t("editar_cuota")} {seller.name}</DialogTitle>
         </DialogHeader>
         <p id="dialog-description" className="sr-only">
-          Formulario para modificar la meta de facturación del vendedor seleccionado.
+          {t("dialog_description")}
         </p>
         <Input
           type="number"

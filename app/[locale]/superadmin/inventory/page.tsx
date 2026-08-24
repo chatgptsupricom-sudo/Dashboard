@@ -114,7 +114,7 @@ export default function InventoryPageClient() {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase">
-          Inven<span className="text-blue-600">tario</span>
+          {t("title")}
         </h1>
       </div>
 
@@ -245,13 +245,13 @@ export default function InventoryPageClient() {
                   {t("nombre")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Marca
+                  {t("marca")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Categoría
+                  {t("categoria")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Almacén
+                  {t("almacen")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
                   {t("stock")}
@@ -289,12 +289,12 @@ export default function InventoryPageClient() {
                   <td className="px-8 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div
-                        className={`w-1.5 h-1.5 rounded-full ${item.status === "Bajo" ? "bg-red-500" : "bg-green-500"}`}
+                        className={`w-1.5 h-1.5 rounded-full ${item.status === t("bajo_stock") ? "bg-red-500" : "bg-green-500"}`}
                       />
                       <span
-                        className={`text-[10px] font-bold ${item.status === "Bajo" ? "text-red-500" : "text-green-500"}`}
+                        className={`text-[10px] font-bold ${item.status === t("bajo_stock") ? "text-red-500" : "text-green-500"}`}
                       >
-                        {item.status === "Bajo" ? t("bajo_stock") : t("activo")}
+                        {item.status === t("bajo_stock") ? t("bajo_stock") : t("activo")}
                       </span>
                     </div>
                   </td>
@@ -307,7 +307,7 @@ export default function InventoryPageClient() {
         {/* FOOTER */}
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {t("mostrando")} {showingFrom} - {showingTo} de {totalItems} Productos
+            {t("mostrando")} {showingFrom} - {showingTo} {t("de")} {totalItems} {t("productos")}
           </div>
 
           <div className="flex items-center gap-3">

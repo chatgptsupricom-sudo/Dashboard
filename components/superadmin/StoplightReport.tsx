@@ -918,7 +918,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "envio_reporte_inv",
       trend: "help",
-      title: "Cumplimiento de Envío de Reporte de Antig├╝edad de Inventario",
+      title: t("logistica_kpi_envio"),
       peso: "25%",
       average: "0%",
       weeks: [null, null, null, null, null],
@@ -928,7 +928,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "nuevos_productos",
       trend: "help",
-      title: "Identificación de Nuevos Productos y Oportunidades de Mercado",
+      title: t("logistica_kpi_nuevos"),
       peso: "25%",
       average: "0%",
       weeks: [null, null, null, null, null],
@@ -938,7 +938,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "antiguedad_inv",
       trend: "help",
-      title: "Antig├╝edad de inventario (Costo)",
+      title: t("logistica_kpi_antiguedad"),
       peso: "25%",
       average: "0%",
       weeks: [null, null, null, null, null],
@@ -948,7 +948,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "activacion_sku",
       trend: "alert",
-      title: "Tasa de Activación de Portafolio de productos (SKU Activos)",
+      title: t("logistica_kpi_activacion_sku"),
       peso: "25%",
       average: "60%",
       weeks: ["50%", "70%", null, null, null],
@@ -1206,7 +1206,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         trend: k.dso.value === null ? "help" : k.dso.value <= 45 ? "success" : k.dso.value <= 60 ? "warning" : "alert",
         title: t("kpi_dso"),
         peso: "10%",
-        average: k.dso.value !== null ? `${k.dso.value} días` : "N/A",
+        average: k.dso.value !== null ? `${k.dso.value}${t("suffix_dias")}` : "N/A",
         weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
         goalDefault: String(k.dso.meta),
         goalSuffix: " días",
@@ -1229,7 +1229,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalDefault: String(metas["pagos_a_tiempo"] ?? 95),
         goalSuffix: "%",
         isClickable: true,
-        subtitle: `Por monto: ${cppData.pagosATiempoPct}% | Por cantidad: ${cppData.pagosATiempoCantidad}%`,
+        subtitle: t("cpp_por_monto", { value: cppData.pagosATiempoPct, value2: cppData.pagosATiempoCantidad }),
         cumple: cppData.pagosATiempoPct >= (metas["pagos_a_tiempo"] ?? 95),
       },
       {
@@ -1242,7 +1242,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalDefault: String(metas["cuentas_pagar_vencidas"] ?? 5),
         goalSuffix: "%",
         isClickable: true,
-        subtitle: `Vencido: $${cppData.totalVencido?.toLocaleString()} / Total abierto: $${cppData.totalCxPOpen?.toLocaleString()}`,
+        subtitle: t("cpp_vencido", { value: cppData.totalVencido?.toLocaleString(), value2: cppData.totalCxPOpen?.toLocaleString() }),
         cumple: cppData.cuentasVencidasPct <= (metas["cuentas_pagar_vencidas"] ?? 5),
       },
       {
@@ -1255,7 +1255,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         goalDefault: String(metas["procesamiento_oportuno"] ?? 95),
         goalSuffix: "%",
         isClickable: true,
-        subtitle: `SLA: ≤3 días con OC, ≤5 días sin OC | Promedio: ${cppData.avgProcessingDays} días`,
+        subtitle: t("cpp_sla", { value: cppData.avgProcessingDays }),
         cumple: cppData.procesamientoOportunoPct >= (metas["procesamiento_oportuno"] ?? 95),
       },
       {
@@ -1263,12 +1263,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         trend: cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
         title: t("kpi_dpo"),
         peso: "15%",
-        average: `${cppData.dpo} días`,
+        average: `${cppData.dpo}${t("suffix_dias")}`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
         goalDefault: String(metas["dpo"] ?? 30),
         goalSuffix: " días",
         isClickable: true,
-        subtitle: `Ventana: 90 días | CxP: $${cppData.dpoCxPTotal?.toLocaleString()} | Compras crédito: $${cppData.dpoComprasCredito?.toLocaleString()}`,
+        subtitle: t("cpp_ventana", { value: cppData.dpoCxPTotal?.toLocaleString(), value2: cppData.dpoComprasCredito?.toLocaleString() }),
         cumple: cppData.dpo <= (metas["dpo"] ?? 30),
       },
     ];
@@ -1340,7 +1340,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
             className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
           >
-            Team: {empresaLabel} <ChevronDown size={14} />
+            {t("team_label")} {empresaLabel} <ChevronDown size={14} />
             {teamDropdownOpen && (
               <div data-dropdown-content className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-50 min-w-[160px]">
                 {empresas.map((emp) => (
@@ -1361,7 +1361,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           </div>
           ) : (
           <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm bg-slate-50 text-slate-600">
-            Team: {empresaLabel}
+            {t("team_label")} {empresaLabel}
           </div>
           )}
           {/* View by */}
@@ -1370,16 +1370,16 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               onClick={() => setViewByOpen(o => !o)}
               className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors"
             >
-              View by: {activeTab === "Monthly" ? "Month" : activeTab === "Quarterly" ? "Quarter" : activeTab === "Annual" ? "Year" : "Week"}
+              View by: {activeTab === "Monthly" ? t("view_month") : activeTab === "Quarterly" ? t("view_quarter") : activeTab === "Annual" ? t("view_year") : t("view_week")}
               <ChevronDown size={14} />
             </button>
             {viewByOpen && (
               <div data-dropdown-content className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-50 min-w-[140px]">
                 {[
-                  { label: "Week", tab: "Weekly" },
-                  { label: "Month", tab: "Monthly" },
-                  { label: "Quarter", tab: "Quarterly" },
-                  { label: "Year", tab: "Annual" },
+                  { label: t("view_week"), tab: "Weekly" },
+                  { label: t("view_month"), tab: "Monthly" },
+                  { label: t("view_quarter"), tab: "Quarterly" },
+                  { label: t("view_year"), tab: "Annual" },
                 ].map(opt => (
                   <button
                     key={opt.tab}
@@ -1408,10 +1408,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             </button>
             {dateRangeOpen && (
               <div data-dropdown-content className="absolute top-full left-0 mt-2 bg-white border rounded-xl shadow-xl z-50 w-72 p-4">
-                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Rango de fechas</p>
+                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">{t("date_range")}</p>
                 <div className="space-y-2 mb-3">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Desde</label>
+                    <label className="text-xs text-slate-500 mb-1 block">{t("date_from")}</label>
                     <input
                       type="date"
                       value={dateInputStart}
@@ -1420,7 +1420,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Hasta</label>
+                    <label className="text-xs text-slate-500 mb-1 block">{t("date_to")}</label>
                     <input
                       type="date"
                       value={dateInputEnd}
@@ -1442,7 +1442,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     disabled={!dateInputStart || !dateInputEnd || dateInputStart > dateInputEnd}
                     className="flex-1 bg-amber-500 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
-                    Aplicar
+                    {t("apply")}
                   </button>
                   <button
                     onClick={() => {
@@ -1455,11 +1455,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     }}
                     className="px-3 py-1.5 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
                   >
-                    Limpiar
+                    {t("clear")}
                   </button>
                 </div>
                 <div className="mt-3 border-t pt-3">
-                  <p className="text-xs font-medium text-slate-500 mb-2">Acceso rápido</p>
+                  <p className="text-xs font-medium text-slate-500 mb-2">{t("quick_access")}</p>
                   <div className="flex flex-wrap gap-1">
                     {getMesOptions().slice(0, 4).map(opt => (
                       <button
@@ -1497,7 +1497,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <Search className="absolute left-2.5 top-2 text-slate-400" size={14} />
             <input
               type="text"
-              placeholder="Search KPIs..."
+              placeholder={t("search_placeholder")}
               className="pl-8 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 w-64 transition-shadow"
             />
           </div>
@@ -1570,7 +1570,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
                       <SparklineBar values={kpi.weeks} />
                     </div>
-                    <div className="text-xs text-slate-400 w-20 text-right">{(group as any).weekHeaders.length} semanas</div>
+                    <div className="text-xs text-slate-400 w-20 text-right">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
                   </div>
                 ))}
               </div>
@@ -1681,14 +1681,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               monthlyHistLoading ? (
                 <div className="p-8 text-center text-slate-500 text-sm">{t("loading_historical")}</div>
               ) : monthlyHistory.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-sm">Sin datos</div>
+                <div className="p-8 text-center text-slate-400 text-sm">{t("no_available_data")}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
                       <tr className="bg-white border-b text-slate-500">
                         <th className="p-3 border-r font-medium min-w-[260px]">KPI</th>
-                        <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">Peso</th>
+                        <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
                         {monthlyHistory.map(h => (
                           <th key={h.mes} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-500 capitalize">
                             {mesLabel(h.mes)}
@@ -2231,13 +2231,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   </td>
                                   <td className="p-3 text-center">
                                     {meta > 0 ? (
-                                      cumple ? (
+                                       cumple ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                          <Check size={12} /> Cumple
+                                          <Check size={12} /> {t("cumple")}
                                         </span>
                                       ) : (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                          <X size={12} /> No cumple
+                                          <X size={12} /> {t("no_cumple")}
                                         </span>
                                       )
                                     ) : (
@@ -2602,11 +2602,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <td className="p-3 text-center">
                                     {cumple ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                        <Check size={12} /> Cumple
+                                        <Check size={12} /> {t("cumple")}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                        <X size={12} /> No cumple
+                                        <X size={12} /> {t("no_cumple")}
                                       </span>
                                     )}
                                   </td>
@@ -2935,11 +2935,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <td className="p-3 text-center">
                                     {cumple ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                        <Check size={12} /> Cumple
+                                        <Check size={12} /> {t("cumple")}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                        <X size={12} /> No cumple
+                                        <X size={12} /> {t("no_cumple")}
                                       </span>
                                     )}
                                   </td>
@@ -3405,11 +3405,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <td className="p-3 text-center">
                                     {cumple ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                        <Check size={12} /> Cumple
+                                        <Check size={12} /> {t("cumple")}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                        <X size={12} /> No cumple
+                                        <X size={12} /> {t("no_cumple")}
                                       </span>
                                     )}
                                   </td>
@@ -4214,56 +4214,56 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <div className="text-sm text-slate-600 leading-relaxed space-y-3">
               {kpiInfoModal.kpiId === "efectividad_cobranza" && (
                 <>
-                  <p><strong>Qué mide:</strong> Cuánto se cobró de todo lo que era exigible durante el período.</p>
-                  <p><strong>Fórmula:</strong> Monto cobrado ÷ Monto exigible × 100</p>
-                  <p><strong>Monto exigible:</strong> Saldo total de facturas cuya fecha de vencimiento es anterior o igual al final del período, incluyendo saldos vencidos anteriores que permanecían abiertos.</p>
-                  <p><strong>Monto cobrado:</strong> Pagos efectivamente conciliados contra facturas incluidas en el monto exigible.</p>
-                  <p><strong>Semáforo:</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
+                  <p><strong>{t("info_que_mide")}</strong> Cuánto se cobró de todo lo que era exigible durante el período.</p>
+                  <p><strong>{t("info_formula")}</strong> Monto cobrado ÷ Monto exigible × 100</p>
+                  <p><strong>{t("info_monto_exigible")}</strong> Saldo total de facturas cuya fecha de vencimiento es anterior o igual al final del período, incluyendo saldos vencidos anteriores que permanecían abiertos.</p>
+                  <p><strong>{t("info_monto_cobrado")}</strong> Pagos efectivamente conciliados contra facturas incluidas en el monto exigible.</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "cartera_vencida" && (
                 <>
-                  <p><strong>Qué mide:</strong> La proporción de cuentas por cobrar que ya superaron su fecha de vencimiento.</p>
-                  <p><strong>Fórmula:</strong> Saldo vencido a la fecha de corte ÷ Cartera total abierta × 100</p>
+                  <p><strong>{t("info_que_mide")}</strong> La proporción de cuentas por cobrar que ya superaron su fecha de vencimiento.</p>
+                  <p><strong>{t("info_formula")}</strong> Saldo vencido a la fecha de corte ÷ Cartera total abierta × 100</p>
                   <p><strong>Saldo vencido:</strong> Suma de saldos residuales de facturas con fecha de vencimiento anterior a hoy.</p>
                   <p><strong>Cartera total:</strong> Suma de todos los saldos residuales de facturas abiertas (con y sin vencer).</p>
-                  <p><strong>Semáforo:</strong> Verde ≤10% | Amarillo 10.01%–20% | Rojo &gt;20%</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≤10% | Amarillo 10.01%–20% | Rojo &gt;20%</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "recuperacion_vencidos" && (
                 <>
-                  <p><strong>Qué mide:</strong> Cuánto de la deuda vencida que existía al inicio del mes se logró recuperar.</p>
-                  <p><strong>Fórmula:</strong> Vencido recuperado ÷ Vencido inicial del mes × 100</p>
+                  <p><strong>{t("info_que_mide")}</strong> Cuánto de la deuda vencida que existía al inicio del mes se logró recuperar.</p>
+                  <p><strong>{t("info_formula")}</strong> Vencido recuperado ÷ Vencido inicial del mes × 100</p>
                   <p><strong>Cohorte (vencido inicial):</strong> Fotografía de las facturas vencidas y sus saldos al inicio del mes. Las facturas que se vencen durante el mes no se incluyen en el denominador.</p>
                   <p><strong>Vencido recuperado:</strong> Diferencia entre el saldo inicial de la cohorte y el saldo restante actual (pagos conciliados + notas de crédito).</p>
-                  <p><strong>Semáforo:</strong> Verde ≥60% | Amarillo 30%–59.99% | Rojo &lt;30%</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≥60% | Amarillo 30%–59.99% | Rojo &lt;30%</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "dso" && (
                 <>
-                  <p><strong>Qué mide:</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
-                  <p><strong>Fórmula:</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
+                  <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
+                  <p><strong>{t("info_formula")}</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
                   <p><strong>Ventas netas a crédito:</strong> Total de facturas tipo "out_invoice" (excluyendo notas de crédito) de los últimos 90 días.</p>
                   <p><strong>Período:</strong> Se usa ventana móvil de 90 días para reducir volatilidad.</p>
-                  <p><strong>Semáforo:</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "cumplimiento_cuota_ventas" && (
                 <>
-                  <p><strong>Qué mide:</strong> Porcentaje de facturado contra la cuota mensual asignada a cada vendedor.</p>
-                  <p><strong>Fórmula:</strong> Facturado del vendedor ÷ Cuota asignada × 100</p>
-                  <p><strong>Semáforo:</strong> Verde ≥100% | Amarillo 70%–99.99% | Rojo &lt;70%</p>
+                  <p><strong>{t("info_que_mide")}</strong> Porcentaje de facturado contra la cuota mensual asignada a cada vendedor.</p>
+                  <p><strong>{t("info_formula")}</strong> Facturado del vendedor ÷ Cuota asignada × 100</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≥100% | Amarillo 70%–99.99% | Rojo &lt;70%</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "clientes_nuevos" && (
                 <>
-                  <p><strong>Qué mide:</strong> Cantidad de clientes nuevos captados por los vendedores en el mes.</p>
+                  <p><strong>{t("info_que_mide")}</strong> Cantidad de clientes nuevos captados por los vendedores en el mes.</p>
                   <p><strong>Definición:</strong> Cliente nuevo = partner cuya primera factura en Odoo es del mes actual.</p>
                   <p><strong>Meta:</strong> Cada vendedor debe captar la cantidad asignada de clientes nuevos al mes.</p>
                 </>
               )}
               {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos"].includes(kpiInfoModal.kpiId) && (
-                <p>Este KPI se calcula automáticamente a partir de los datos de Odoo. Consulte la definición completa en la documentación del dashboard.</p>
+                <p>{t("info_default")}</p>
               )}
             </div>
           </div>

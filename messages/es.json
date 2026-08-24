@@ -583,7 +583,23 @@
     "no_clientes_vendedor": "No hay clientes nuevos para este vendedor",
     "clientes_nuevos_titulo": "Clientes Nuevos - {vendedor}",
     "nota_credito_label": "Nota de Credito",
-    "prospecto_label": "Prospecto"
+    "prospecto_label": "Prospecto",
+    "date_range": "Rango de fechas",
+    "date_from": "Desde",
+    "date_to": "Hasta",
+    "apply": "Aplicar",
+    "clear": "Limpiar",
+    "quick_access": "Acceso rápido",
+    "semanas_count": "semanas",
+    "logistica_kpi_envio": "Cumplimiento de Envío de Reporte de Antigüedad de Inventario",
+    "logistica_kpi_nuevos": "Identificación de Nuevos Productos y Oportunidades de Mercado",
+    "logistica_kpi_antiguedad": "Antigüedad de inventario (Costo)",
+    "logistica_kpi_activacion_sku": "Tasa de Activación de Portafolio de productos (SKU Activos)",
+    "team_label": "Team:",
+    "view_week": "Week",
+    "view_month": "Month",
+    "view_quarter": "Quarter",
+    "view_year": "Year"
   },
   "servicioTecnico": {
     "garantia": {
@@ -1183,7 +1199,8 @@
     "cartera_por_responsable": "Cartera por Responsable de Cobranza",
     "responsable": "Responsable",
     "cartera_total_label": "Cartera total",
-    "facturas": "Facturas"
+    "facturas": "Facturas",
+    "descripcion": "Dashboard de Cuentas por Cobrar - KPIs de cartera"
   },
   "ui": {
     "months": [
@@ -1373,7 +1390,9 @@
       "rol": "Rol",
       "accion": "Acción",
       "detalles": "Detalles (JSON)",
-      "fecha": "Fecha"
+      "fecha": "Fecha",
+      "todos": "TODOS",
+      "vendedor_option": "Vendedor"
     },
     "catalogo": {
       "title": "Catálogo de Productos",
@@ -1410,7 +1429,9 @@
       "editar_cuota": "Editar Cuota:",
       "cancelar": "Cancelar",
       "guardar": "Guardar Registro",
-      "error_guardar": "Error al guardar la cuota"
+      "error_guardar": "Error al guardar la cuota",
+      "vendedor": "vendedor",
+      "dialog_description": "Formulario para modificar la meta de facturación del vendedor seleccionado."
     },
     "inventory": {
       "title": "Inventario",
@@ -1425,7 +1446,12 @@
       "nombre": "Nombre",
       "estado": "Estado",
       "activo": "Activo",
-      "mostrando": "Mostrando"
+      "mostrando": "Mostrando",
+      "almacen": "Almacén",
+      "marca": "Marca",
+      "categoria": "Categoría",
+      "productos": "Productos",
+      "de": "de"
     },
     "integracion_pago": {
       "title": "IntegracionDePago",
@@ -1443,7 +1469,20 @@
       "valor_pagado": "Valor Pagado",
       "vendedor": "Vendedor",
       "f_abono": "F. Abono",
-      "mostrando": "Mostrando"
+      "mostrando": "Mostrando",
+      "vigente": "Vigente",
+      "f_contable_header": "F. CONTABLE",
+      "doc_abono_header": "DOC ABONO",
+      "valor_abono_header": "VALOR ABONO ($)",
+      "cliente_header": "CLIENTE",
+      "factura_header": "FACTURA",
+      "f_factura_header": "F. FACTURA",
+      "valor_pagado_header": "VALOR PAGADO ($)",
+      "vendedor_header": "VENDEDOR",
+      "f_abono_header": "F. ABONO",
+      "comisiones_sheet": "Comisiones",
+      "reporte_prefix": "Reporte_Comisiones_",
+      "de": "de"
     },
     "reports": {
       "cargando": "CARGANDO INTELIGENCIA...",
@@ -1461,7 +1500,8 @@
       "revise_catalogo": "Revise catálogo",
       "ventas_por_marca": "Ventas por Marca y Estado",
       "sin_datos": "Sin datos para este periodo",
-      "top_vendedores": "Top Vendedores"
+      "top_vendedores": "Top Vendedores",
+      "titulo": "Reportes Ejecutivos"
     },
     "reports_inventory": {
       "recalculando": "Recalculando reportes y segmentando fechas...",
@@ -1505,7 +1545,17 @@
       "vendedor_responsable": "Vendedor Responsable",
       "facturas_periodo": "facturas en el período",
       "volumen_acumulado": "Volumen acumulado:",
-      "indice_critico": "Índice Crítico de Días de Inactividad Comercial"
+      "indice_critico": "Índice Crítico de Días de Inactividad Comercial",
+      "error_analitico": "Error al procesar el cubo analítico.",
+      "errorConexionServidor": "Error de conexión con el servidor.",
+      "top_fabricante": "Top Fabricante",
+      "ninguno": "Ninguno",
+      "exploracion_segmentada": "Exploración segmentada según el filtro corporativo activo.",
+      "estatus": "Estatus",
+      "total_unidades": "Total Unidades",
+      "monto_acumulado": "Monto Acumulado",
+      "cantidad": "Cantidad",
+      "monto_total": "Monto Total"
     },
     "reports_clients": {
       "analizando": "Analizando cartera de clientes con IA...",
@@ -1546,7 +1596,13 @@
       "siguiente": "Siguiente →",
       "pagina": "Página",
       "dias": "días",
-      "ia_sugiere": "IA sugiere ofrecer:"
+      "ia_sugiere": "IA sugiere ofrecer:",
+      "errorConexion": "Error de conexión.",
+      "ninguno": "Ninguno",
+      "critico": "Crítico",
+      "alto": "Alto",
+      "medio": "Medio",
+      "alertas_count": "alertas"
     },
     "reports_sellers": {
       "title": "Auditoría y Rendimiento Comercial (Odoo)",
@@ -1571,7 +1627,11 @@
       "alertas_desplome": "Alertas de Desplome detectadas",
       "cross_selling": "Productos a Impulsar (Cross-Selling)",
       "esperando_auditoria": "Esperando Auditoría de Odoo",
-      "sincronizando": "Sincronizando información en tiempo real con Odoo..."
+      "sincronizando": "Sincronizando información en tiempo real con Odoo...",
+      "errorPeticion": "Error en la petición",
+      "cuerpoVacio": "Cuerpo de respuesta vacío",
+      "falloAnalisis": "Fallo en la pasarela de análisis",
+      "esperando_auditoria_detail": "Presiona el botón para mapear los picos de facturación, fallas de cuota y productos rezagados del asesor."
     },
     "compras_detail": {
       "volver": "Volver",
@@ -1756,7 +1816,86 @@
       "filtrado": "Filtrado",
       "dias": "días",
       "vence": "Vence:",
-      "dias_vencido_suffix": "días vencido"
+      "dias_vencido_suffix": "días vencido",
+      "excel_sheet_caida": "Caída de Productos",
+      "excel_col_producto": "Producto",
+      "excel_col_caida_pct": "Caída %",
+      "excel_col_periodo_anterior": "Período Anterior (uds)",
+      "excel_col_periodo_actual": "Período Actual (uds)",
+      "excel_col_anterior_usd": "Anterior (USD)",
+      "excel_col_actual_usd": "Actual (USD)",
+      "excel_col_ultima_venta": "Última Venta",
+      "excel_col_ultimo_cliente": "Último Cliente",
+      "excel_col_monto_ultima_venta": "Monto Última Venta",
+      "excel_col_mejor_vendedor": "Mejor Vendedor"
     }
+  },
+  "spiff": {
+    "title": "Gestión de Spiffs",
+    "subtitle": "Crear, modificar y eliminar reglas de spiff",
+    "confirm_delete": "¿Eliminar esta regla?",
+    "no_end_date": "Sin fin",
+    "all_companies": "Todas las empresas",
+    "new_rule": "Nueva Regla",
+    "edit_rule": "Editar Regla",
+    "new_rule_title": "Nueva Regla de Spiff",
+    "company": "Empresa",
+    "select_company": "Seleccionar empresa...",
+    "rule_type": "Tipo de Regla",
+    "by_brand": "Por Marca",
+    "by_product": "Por Producto",
+    "calc_mode": "Modo de Cálculo",
+    "amount": "Monto",
+    "quantity": "Cantidad",
+    "brand_filter": "Marca (filtro)",
+    "brand": "Marca",
+    "loading_brands": "Cargando marcas...",
+    "select_brand": "Seleccionar marca...",
+    "product": "Producto",
+    "select_brand_first": "Primero selecciona marca...",
+    "loading_products": "Cargando productos...",
+    "select_product": "Seleccionar producto...",
+    "sales_goal_amount": "Meta de Venta ($)",
+    "sales_goal_units": "Meta de Unidades",
+    "spiff_per_goal": "Spiff por Meta ($)",
+    "start_date": "Fecha Inicio",
+    "end_date": "Fecha Fin",
+    "help_amount": "Monto: Se suman las ventas de cada factura para alcanzar la meta.",
+    "help_quantity": "Cantidad: Se suman las unidades de cada factura para alcanzar la meta.",
+    "validity": "Vigencia:",
+    "no_start": "Sin inicio",
+    "no_end": "Sin fin",
+    "no_date_range": "Sin rango de fechas (siempre activo)",
+    "update": "Actualizar",
+    "create": "Crear",
+    "rules_title": "Reglas de Spiff",
+    "loading": "Cargando...",
+    "no_rules": "No hay reglas de spiff configuradas",
+    "rules_count": "reglas",
+    "col_type_name": "Tipo / Nombre",
+    "col_mode": "Modo",
+    "col_goal": "Meta",
+    "col_spiff": "Spiff",
+    "col_validity": "Vigencia",
+    "col_status": "Estado",
+    "col_actions": "Acciones",
+    "ranking_title": "Ranking de Spiff",
+    "loading_ranking": "Cargando ranking...",
+    "no_ranking_data": "No hay datos de ranking",
+    "seller": "Vendedor",
+    "unit": "Unidad",
+    "col_amount": "Monto",
+    "goals": "Metas",
+    "mode_amount": "Monto",
+    "mode_quantity_short": "Cant.",
+    "always": "Siempre"
+  },
+  "roles": {
+    "superAdmin": "Super Admin",
+    "marketingManagement": "Gerencia de Marketing",
+    "brandManagement": "Gerencia de Marca",
+    "marketing": "Mercadeo",
+    "programmers": "Programadores",
+    "audit": "Auditoría"
   }
 }

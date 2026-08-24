@@ -84,11 +84,11 @@ export default function InventoryReport() {
         if (res.ok) {
           setBiData(data);
         } else {
-          setErrorMsg(data.error || "Error al procesar el cubo analítico.");
+          setErrorMsg(data.error || t("error_analitico"));
         }
       } catch (err) {
         console.error(err);
-        setErrorMsg("Error de conexión con el servidor.");
+        setErrorMsg(t("errorConexionServidor"));
       } finally {
         setLoading(false);
       }
@@ -253,7 +253,7 @@ export default function InventoryReport() {
             </div>
             <div className="pt-1">
               <span className="inline-block text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                Top Fabricante
+                {t("top_fabricante")}
               </span>
             </div>
           </div>
@@ -268,7 +268,7 @@ export default function InventoryReport() {
               {t("riesgo_obsolescencia")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
-              {biData?.estancados?.[0]?.name || "Ninguno"}
+              {biData?.estancados?.[0]?.name || t("ninguno")}
             </h3>
             <div className="pt-1">
               <span className="text-2xl font-bold text-slate-900 tracking-tight">
@@ -300,7 +300,7 @@ export default function InventoryReport() {
               {t("analisis_comercial")}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Exploración segmentada según el filtro corporativo activo.
+              {t("exploracion_segmentada")}
             </p>
           </div>
 
@@ -341,19 +341,19 @@ export default function InventoryReport() {
                   value="rentabilidad"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Monto
+                  {t("monto")}
                 </TabsTrigger>
                 <TabsTrigger
                   value="volumen"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Volumen
+                  {t("volumen")}
                 </TabsTrigger>
                 <TabsTrigger
                   value="alertas"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Alertas
+                  {t("alertas")}
                 </TabsTrigger>
               </TabsList>
             )}
@@ -370,13 +370,13 @@ export default function InventoryReport() {
                     <TableHeader className="bg-slate-50/70">
                       <TableRow>
                         <TableHead className="pl-6 py-4 w-[45%]">
-                          Producto
+                          {t("producto")}
                         </TableHead>
                         <TableHead className="text-right py-4 w-[15%]">
-                          Cantidad
+                          {t("cantidad")}
                         </TableHead>
                         <TableHead className="text-right py-4 w-[15%]">
-                          Monto Total
+                          {t("monto_total")}
                         </TableHead>
                         <TableHead className="text-left py-4 pr-6 w-[25%]">
                           <span className="flex items-center gap-1 pl-4">
@@ -448,16 +448,16 @@ export default function InventoryReport() {
                     <TableHeader className="bg-slate-50/70">
                       <TableRow>
                         <TableHead className="pl-6 py-4 w-[50%]">
-                          Producto
+                          {t("producto")}
                         </TableHead>
                         <TableHead className="text-center py-4 w-[20%]">
-                          Estatus
+                          {t("estatus")}
                         </TableHead>
                         <TableHead className="text-right py-4 w-[15%]">
-                          Total Unidades
+                          {t("total_unidades")}
                         </TableHead>
                         <TableHead className="text-right pr-6 py-4 w-[15%]">
-                          Monto Acumulado
+                          {t("monto_acumulado")}
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -547,7 +547,7 @@ export default function InventoryReport() {
                             {item.name}
                           </TableCell>
                           <TableCell className="text-center font-bold text-xs text-slate-700 py-4 whitespace-nowrap">
-                            {item.days_inactive} días
+                            {item.days_inactive} {t("dias")}
                           </TableCell>
                           <TableCell className="text-right pr-6 py-4 whitespace-nowrap">
                             <span
@@ -633,7 +633,7 @@ export default function InventoryReport() {
                           {item.brand}
                         </TableCell>
                         <TableCell className="text-right text-slate-500 text-xs font-medium">
-                          {item.total_qty.toLocaleString()} uds
+                          {item.total_qty.toLocaleString()} {t("uds")}
                         </TableCell>
                         <TableCell className="text-right font-bold text-emerald-600">
                           $

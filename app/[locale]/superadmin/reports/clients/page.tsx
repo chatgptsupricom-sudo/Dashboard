@@ -68,7 +68,7 @@ export default function ClientsReportComponent() {
           setAlertPage(0);
         } else setErrorMsg(resData.error);
       } catch {
-        setErrorMsg("Error de conexión.");
+        setErrorMsg(t("errorConexion"));
       } finally {
         setLoading(false);
       }
@@ -225,7 +225,7 @@ export default function ClientsReportComponent() {
               {t("alerta_churn")}
             </span>
             <h3 className="text-sm font-bold text-slate-700 leading-snug break-words">
-              {inactiveClients[0]?.name || "Ninguno"}
+              {inactiveClients[0]?.name || t("ninguno")}
             </h3>
             <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {inactiveClients[0]?.days_inactive || 0}{" "}
@@ -259,13 +259,13 @@ export default function ClientsReportComponent() {
                   onClick={() => setViewMode("table")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
                 >
-                  <List size={13} /> Tabla
+                  <List size={13} /> {t("tabla")}
                 </button>
                 <button
                   onClick={() => setViewMode("chart")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === "chart" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
                 >
-                  <LayoutGrid size={13} /> Estadística
+                  <LayoutGrid size={13} /> {t("estadistica")}
                 </button>
               </div>
               {/* Sub-tabs */}
@@ -274,19 +274,19 @@ export default function ClientsReportComponent() {
                   value="monto"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Monto
+                  {t("monto")}
                 </TabsTrigger>
                 <TabsTrigger
                   value="volumen"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Volumen
+                  {t("volumen")}
                 </TabsTrigger>
                 <TabsTrigger
                   value="alertas"
                   className="rounded-lg text-xs font-semibold text-slate-500"
                 >
-                  Alertas
+                  {t("alertas")}
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -428,13 +428,13 @@ export default function ClientsReportComponent() {
                     <TableHeader className="bg-slate-50/70">
                       <TableRow>
                         <TableHead className="pl-6 py-4 w-[4%]">#</TableHead>
-                        <TableHead className="py-4 w-[24%]">Cliente</TableHead>
-                        <TableHead className="py-4 w-[15%]">Vendedor</TableHead>
+                        <TableHead className="py-4 w-[24%]">{t("cliente")}</TableHead>
+                        <TableHead className="py-4 w-[15%]">{t("vendedor")}</TableHead>
                         <TableHead className="py-4 w-[13%]">
-                          Marca Insignia
+                          {t("marca_insignia")}
                         </TableHead>
                         <TableHead className="py-4 w-[20%]">
-                          Producto Insignia
+                          {t("producto_insignia")}
                         </TableHead>
                         <TableHead className="text-right py-4 pr-6 w-[12%]">
                           {t("facturas")}
@@ -541,16 +541,16 @@ export default function ClientsReportComponent() {
                           <TableHeader className="bg-slate-50/70">
                             <TableRow>
                               <TableHead className="pl-6 py-4 w-[22%]">
-                                Cliente
+                                {t("cliente")}
                               </TableHead>
                               <TableHead className="py-4 w-[13%]">
-                                Vendedor
+                                {t("vendedor")}
                               </TableHead>
                               <TableHead className="py-4 w-[13%]">
-                                Marca Insignia
+                                {t("marca_insignia")}
                               </TableHead>
                               <TableHead className="py-4 w-[16%]">
-                                Producto Insignia
+                                {t("producto_insignia")}
                               </TableHead>
                               <TableHead className="text-center py-4 w-[10%]">
                                 {t("inactivo")}
@@ -582,10 +582,10 @@ export default function ClientsReportComponent() {
                               const ratio = c.days_inactive / adjustedInterval;
                               const risk =
                                 ratio >= 2.5
-                                  ? "Crítico"
+                                  ? t("critico")
                                   : ratio >= 1.5
-                                    ? "Alto"
-                                    : "Medio";
+                                    ? t("alto")
+                                    : t("medio");
                               const riskColor =
                                 ratio >= 2.5
                                   ? "bg-red-50 text-red-600 border-red-100"
@@ -652,7 +652,7 @@ export default function ClientsReportComponent() {
                       <div className="flex items-center justify-between px-1">
                         <span className="text-[11px] text-slate-400 font-medium">
                           {t("pagina")} {alertPage + 1} de {alertTotalPages} ·{" "}
-                          {inactiveClients.length} alertas
+                          {inactiveClients.length} {t("alertas_count")}
                         </span>
                         <div className="flex gap-2">
                           <button

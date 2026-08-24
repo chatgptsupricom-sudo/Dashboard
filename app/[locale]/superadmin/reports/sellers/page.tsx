@@ -46,7 +46,7 @@ export default function SellerReportPage() {
         );
         if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
         const rawText = await res.text();
-        if (!rawText) throw new Error("Cuerpo de respuesta vacío");
+        if (!rawText) throw new Error(t("cuerpoVacio"));
         const data = JSON.parse(rawText);
         setReportData(data.metrics);
       } catch (error) {
@@ -68,7 +68,7 @@ export default function SellerReportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seller: selectedSeller, metrics: reportData }),
       });
-      if (!res.ok) throw new Error("Fallo en la pasarela de análisis");
+      if (!res.ok) throw new Error(t("falloAnalisis"));
       const data = await res.json();
       setAiAnalysis(data);
     } catch (error: any) {
@@ -337,8 +337,7 @@ export default function SellerReportPage() {
                   {t("esperando_auditoria")}
                 </p>
                 <p className="text-xs text-slate-400 mt-1 max-w-[220px]">
-                  Presiona el botón para mapear los picos de facturación, fallas
-                  de cuota y productos rezagados del asesor.
+                  {t("esperando_auditoria_detail")}
                 </p>
               </div>
             )}

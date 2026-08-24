@@ -57,7 +57,7 @@ export default function PremiumReports() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">
-            Executive <span className="text-blue-600">Reports</span>
+            {t("titulo")}
           </h1>
           <p className="text-slate-500 font-medium">
             {t("consolidado")}

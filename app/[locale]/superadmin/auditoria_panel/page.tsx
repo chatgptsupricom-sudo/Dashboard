@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 export default function AuditLogsPage() {
   const t = useTranslations("superadmin.auditoria_panel");
   const [logs, setLogs] = useState<any[]>([]);
-  const [filters, setFilters] = useState({ search: "", role: "TODOS" });
+  const [filters, setFilters] = useState({ search: "", role: t("todos") });
 
   useEffect(() => {
     // Asegúrate de crear este endpoint que haga un SELECT * FROM audit_logs
@@ -21,7 +21,7 @@ export default function AuditLogsPage() {
       const matchesSearch = log.user_name
         .toLowerCase()
         .includes(filters.search.toLowerCase());
-      const matchesRole = filters.role === "TODOS" || log.role === filters.role;
+      const matchesRole = filters.role === t("todos") || log.role === filters.role;
       return matchesSearch && matchesRole;
     });
   }, [logs, filters]);
@@ -53,7 +53,7 @@ export default function AuditLogsPage() {
           >
             <option value="TODOS">{t("todos_roles")}</option>
             <option value="adminleads">AdminLeads</option>
-            <option value="vendedor">Vendedor</option>
+            <option value="vendedor">{t("vendedor_option")}</option>
           </select>
         </div>
       </div>

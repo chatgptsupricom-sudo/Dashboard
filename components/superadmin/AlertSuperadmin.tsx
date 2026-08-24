@@ -520,19 +520,19 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
     const wb = new ExcelJS.Workbook();
     wb.creator = "Supricom";
     wb.created = new Date();
-    const ws = wb.addWorksheet("Caída de Productos", { views: [{ state: "frozen", ySplit: 1 }] });
+    const ws = wb.addWorksheet(t("excel_sheet_caida"), { views: [{ state: "frozen", ySplit: 1 }] });
 
     ws.columns = [
-      { header: "Producto", key: "name", width: 40 },
-      { header: "Caída %", key: "decline_pct", width: 12 },
-      { header: "Período Anterior (uds)", key: "prior_qty", width: 20 },
-      { header: "Período Actual (uds)", key: "current_qty", width: 20 },
-      { header: "Anterior (USD)", key: "prior_amount", width: 18 },
-      { header: "Actual (USD)", key: "current_amount", width: 18 },
-      { header: "Última Venta", key: "last_sale_date", width: 15 },
-      { header: "Último Cliente", key: "last_client", width: 25 },
-      { header: "Monto Última Venta", key: "last_client_amount", width: 20 },
-      { header: "Mejor Vendedor", key: "top_seller", width: 25 },
+      { header: t("excel_col_producto"), key: "name", width: 40 },
+      { header: t("excel_col_caida_pct"), key: "decline_pct", width: 12 },
+      { header: t("excel_col_periodo_anterior"), key: "prior_qty", width: 20 },
+      { header: t("excel_col_periodo_actual"), key: "current_qty", width: 20 },
+      { header: t("excel_col_anterior_usd"), key: "prior_amount", width: 18 },
+      { header: t("excel_col_actual_usd"), key: "current_amount", width: 18 },
+      { header: t("excel_col_ultima_venta"), key: "last_sale_date", width: 15 },
+      { header: t("excel_col_ultimo_cliente"), key: "last_client", width: 25 },
+      { header: t("excel_col_monto_ultima_venta"), key: "last_client_amount", width: 20 },
+      { header: t("excel_col_mejor_vendedor"), key: "top_seller", width: 25 },
     ];
 
     const headerRow = ws.getRow(1);
@@ -829,7 +829,7 @@ function FacturaBajoMinimoDetailView({ item }: { item: any }) {
           <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-right sm:text-left">{item.invoice_user_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500 font-semibold">Monto Facturado:</span>
+          <span className="text-slate-500 font-semibold">{t("monto_facturado")}</span>
           <span className="font-bold text-amber-600 text-right sm:text-left">{item.amount_total?.toLocaleString() || "0"} $</span>
         </div>
       </div>

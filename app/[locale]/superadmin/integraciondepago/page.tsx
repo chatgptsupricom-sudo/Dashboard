@@ -2,12 +2,13 @@
 
 import { DateRangePicker } from "@tremor/react";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx"; // Importa al principio
 
 export default function ComisionesPage() {
   const t = useTranslations("superadmin.integracion_pago");
+  const locale = useLocale();
   const [data, setData] = useState<any>({ results: [], total_count: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -57,17 +58,17 @@ export default function ComisionesPage() {
 
       // Mapeo profesional: nombres claros y legibles
       const formattedData = json.results.map((r: any) => ({
-        "F. CONTABLE": formatDDMMYYYY(r.fecha_contable),
-        "DOC ABONO": r.doc_abono,
+        [t("f_contable_header")]: formatDDMMYYYY(r.fecha_contable),
+        [t("doc_abono_header")]: r.doc_abono,
         STATUS: r.status,
-        "VALOR ABONO ($)": r.valor_abono,
+        [t("valor_abono_header")]: r.valor_abono,
         RIF: r.nit_cif_ruc,
-        CLIENTE: r.cliente,
-        FACTURA: r.factura,
-        "F. FACTURA": formatDDMMYYYY(r.fecha_factura),
-        "VALOR PAGADO ($)": r.valor_pagado,
-        VENDEDOR: r.vendedor,
-        "F. ABONO": formatDDMMYYYY(r.fecha_abono),
+        [t("cliente_header")]: r.cliente,
+        [t("factura_header")]: r.factura,
+        [t("f_factura_header")]: formatDDMMYYYY(r.fecha_factura),
+        [t("valor_pagado_header")]: r.valor_pagado,
+        [t("vendedor_header")]: r.vendedor,
+        [t("f_abono_header")]: formatDDMMYYYY(r.fecha_abono),
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
@@ -88,11 +89,11 @@ export default function ComisionesPage() {
       ];
 
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Comisiones");
+      XLSX.utils.book_append_sheet(workbook, worksheet, t("comisiones_sheet"));
 
       XLSX.writeFile(
         workbook,
-        `Reporte_Comisiones_${new Date().toLocaleDateString("es-VE")}.xlsx`,
+        `${t("reporte_prefix")}${new Date().toLocaleDateString(locale)}.xlsx`,
       );
     } catch (err) {
       console.error("Error al exportar:", err);
@@ -145,7 +146,7 @@ export default function ComisionesPage() {
     <div className="space-y-6 p-4 md:p-6 bg-slate-50/50 min-h-screen flex flex-col font-sans text-slate-900">
       <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase">
-          Integracion<span className="text-blue-600">DePago</span>
+          {t("title")}
         </h1>
       </div>
 
@@ -257,7 +258,7 @@ export default function ComisionesPage() {
                   </td>
                   <td className="px-3 py-3">
                     <span
-                      className={`px-2 py-0.5 rounded-md font-bold text-[9px] ${row.status === "Vigente" ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}
+                      className={`px-2 py-0.5 rounded-md font-bold text-[9px] ${row.status === t("vigente") ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}
                     >
                       {row.status}
                     </span>
@@ -293,7 +294,7 @@ export default function ComisionesPage() {
         {/* PAGINACIÓN */}
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase">
-            {t("mostrando")} {showingFrom} - {showingTo} de {data?.total_count || 0}
+            {t("mostrando")} {showingFrom} - {showingTo} {t("de")} {data?.total_count || 0}
           </div>
           <div className="flex items-center gap-3">
             <button
