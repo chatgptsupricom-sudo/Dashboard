@@ -1,16 +1,15 @@
 // lib/instagram.ts
 // Integracion con Instagram Graph API para el informe mensual de redes sociales.
 //
-// IMPORTANTE - permisos:
-// El token de sistema actual (app "Gestion Leeds") tiene `instagram_basic`, lo que
-// permite leer el perfil y el listado de publicaciones. Las metricas de Insights
-// (views, reach, profile_views, demografia, insights por publicacion) requieren
-// ademas `instagram_manage_insights`, que hoy NO esta concedido: la API responde
-// "(#10) Application does not have permission for this action".
+// PERMISOS:
+// El perfil y el listado de publicaciones solo necesitan `instagram_basic`.
+// Las metricas de Insights (views, reach, profile_views, website_clicks,
+// demografia) necesitan ademas `instagram_manage_insights`; sin el la API
+// responde "(#10) Application does not have permission for this action".
 //
-// Por eso cada bloque devuelve { available, reason, ... }: el informe se genera
-// igual con lo que si hay y marca lo que falta. Cuando Meta apruebe el permiso,
-// estos mismos bloques empiezan a devolver datos sin tocar el codigo.
+// Cada bloque devuelve { available, reason, ... } en vez de lanzar: si Meta
+// niega o cambia algo, el informe se genera igual con lo que si hay y marca
+// el resto con el motivo exacto que devolvio la API.
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -195,22 +194,21 @@ export async function fetchIgAccountInsights(
   const metrics = { ...EMPTY_METRICS };
   let firstError: any = null;
 
-  // Los dos grupos usan formatos de respuesta distintos en la Graph API:
-  // las metricas de serie temporal traen `values[]`, y las de interaccion
-  // exigen metric_type=total_value y traen `total_value.value`.
+  // La Graph API separa las metricas en dos grupos que NO se pueden pedir
+  // juntos. `reach` es serie temporal y devuelve `values[]` (se suman los dias).
+  // El resto exige metric_type=total_value y devuelve `total_value.value`;
+  // pedirlas sin ese parametro falla con:
+  //   (#100) The following metrics (views,profile_views,website_clicks)
+  //   should be specified with parameter metric_type=total_value
   try {
     const data = await graphGet(`${igUserId}/insights`, {
-      metric: "reach,views,profile_views,website_clicks",
+      metric: "reach",
       period: "day",
       since,
       until,
     });
     for (const m of data.data || []) {
-      const total = sum(m.values);
-      if (m.name === "reach") metrics.reach = total;
-      if (m.name === "views") metrics.views = total;
-      if (m.name === "profile_views") metrics.profile_views = total;
-      if (m.name === "website_clicks") metrics.website_clicks = total;
+      if (m.name === "reach") metrics.reach = sum(m.values);
     }
   } catch (err: any) {
     firstError = err;
@@ -218,7 +216,8 @@ export async function fetchIgAccountInsights(
 
   try {
     const data = await graphGet(`${igUserId}/insights`, {
-      metric: "total_interactions,accounts_engaged",
+      metric:
+        "views,profile_views,website_clicks,total_interactions,accounts_engaged",
       period: "day",
       metric_type: "total_value",
       since,
@@ -226,6 +225,9 @@ export async function fetchIgAccountInsights(
     });
     for (const m of data.data || []) {
       const total = parseInt(m.total_value?.value) || sum(m.values);
+      if (m.name === "views") metrics.views = total;
+      if (m.name === "profile_views") metrics.profile_views = total;
+      if (m.name === "website_clicks") metrics.website_clicks = total;
       if (m.name === "total_interactions") metrics.total_interactions = total;
       if (m.name === "accounts_engaged") metrics.accounts_engaged = total;
     }
@@ -261,10 +263,13 @@ export async function fetchIgDemographics(
       });
       const results = data.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
       result[breakdown] = results
-        .map((r: any) => ({
-          label: (r.dimension_values || [])[0] || "",
-          value: parseInt(r.value) || 0,
-        }))
+        .map((r: any) => {
+          const raw = (r.dimension_values || [])[0] || "";
+          return {
+            label: breakdown === "gender" ? (GENERO_LABELS[raw] ?? raw) : raw,
+            value: parseInt(r.value) || 0,
+          };
+        })
         .sort((a: any, b: any) => b.value - a.value);
     } catch (err: any) {
       firstError = firstError || err;
@@ -276,6 +281,13 @@ export async function fetchIgDemographics(
   }
   return { available: true, reason: null, data: result };
 }
+
+/** La API devuelve el genero como F / M / U (sin especificar). */
+const GENERO_LABELS: Record<string, string> = {
+  F: "Mujeres",
+  M: "Hombres",
+  U: "No especificado",
+};
 
 function normalizeFormat(media: any): IgMediaItem["format"] {
   const product = media.media_product_type;

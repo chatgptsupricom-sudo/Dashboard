@@ -198,9 +198,10 @@ export default function InformeRedesSociales({ data }: { data: any }) {
 
         {!instagram.insights_disponibles && (
           <Aviso>
-            Las métricas de Instagram Insights (visualizaciones, alcance, visitas al
-            perfil, clics en enlace) aparecen vacías porque la app de Meta todavía no
-            tiene el permiso <code className="font-mono">{instagram.permiso_requerido}</code>.
+            No se pudieron leer de la API las métricas de Instagram Insights
+            (visualizaciones, alcance, visitas al perfil, clics en enlace). La causa
+            habitual es que la app de Meta no tenga el permiso{" "}
+            <code className="font-mono">{instagram.permiso_requerido}</code>.
             {instagram.motivo && (
               <span className="block mt-1 text-[10px] opacity-80">
                 Respuesta de la API: {instagram.motivo}
@@ -324,8 +325,14 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </div>
         ) : (
           <Aviso>
-            La demografía de seguidores (género, edad, ciudades) requiere el permiso{" "}
+            No se pudo leer la demografía de seguidores (género, edad, ciudades).
+            Requiere el permiso{" "}
             <code className="font-mono">{instagram.permiso_requerido}</code>.
+            {instagram.demografia_motivo && (
+              <span className="block mt-1 text-[10px] opacity-80">
+                Respuesta de la API: {instagram.demografia_motivo}
+              </span>
+            )}
             {canal.seguidores === null &&
               " Tampoco se pudo leer el total de seguidores de la cuenta."}
           </Aviso>
