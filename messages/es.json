@@ -554,5 +554,40 @@
     "info_semaforo": "Semáforo:",
     "info_default": "Este KPI se calcula automáticamente a partir de los datos de Odoo. Consulte la definición completa en la documentación del dashboard.",
     "completa_campos": "Completa todos los campos obligatorios"
+  },
+  "servicioTecnico": {
+    "metaTitle": "Servicio Técnico | Supricom",
+    "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",
+    "eyebrow": "Servicio Técnico",
+    "title": "¿Tu equipo presenta una falla?",
+    "subtitle": "Repórtala aquí en un par de minutos. Con tu número de factura buscamos tus productos y le pasamos el caso a nuestro equipo técnico.",
+    "report": {
+      "title": "Reportar una falla",
+      "desc": "Cuéntanos qué producto falló y qué le está pasando.",
+      "hint": "Ten a mano tu número de factura.",
+      "cta": "Reportar una falla"
+    },
+    "check": {
+      "title": "Consultar mi reporte",
+      "desc": "Revisa en qué va un reporte que ya nos enviaste.",
+      "hint": "Necesitas tu número de ticket.",
+      "cta": "Consultar mi reporte"
+    },
+    "needs": {
+      "title": "¿Qué necesitas para reportar?",
+      "invoice": "Tu número de factura",
+      "invoiceDesc": "Está en la parte superior de la factura que te entregamos con el producto.",
+      "fault": "Qué le pasa al equipo",
+      "faultDesc": "Descríbelo con tus palabras: qué hace, desde cuándo y si muestra algún código de error.",
+      "media": "Fotos o video (opcional)",
+      "mediaDesc": "Una foto de la falla nos ayuda a resolver mucho más rápido."
+    },
+    "help": {
+      "text": "¿No encuentras tu factura o necesitas ayuda?",
+      "cta": "Llámanos al +58 422 8008204"
+    },
+    "soon": "Esta sección está en desarrollo. Mientras tanto, comunícate con nosotros por teléfono y con gusto te atendemos.",
+    "back": "Volver",
+    "callUs": "Llamar a Supricom"
   }
 }

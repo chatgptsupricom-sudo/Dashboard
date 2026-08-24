@@ -124,3 +124,128 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Portal público de Servicio Técnico (/servicio-tecnico)
+   Tokens sacados de supricom.com.ve para que el portal se sienta parte del
+   sitio y no del panel administrativo. Todo va bajo .portal-supricom para no
+   tocar el resto de la app (incluido el modo oscuro del panel).
+   --------------------------------------------------------------------------- */
+.portal-supricom {
+  --portal-primary: #741dfe;
+  --portal-primary-hover: #5c11d4;
+  --portal-primary-soft: #f3ecff;
+  --portal-ink: #10101a;
+  --portal-muted: #5c5c70;
+  --portal-line: rgba(0, 0, 0, 0.1);
+  --portal-line-strong: rgba(0, 0, 0, 0.15);
+  --portal-surface: #ffffff;
+  --portal-surface-soft: #f7f6fb;
+  --portal-radius: 10px;
+  --portal-field-height: 42px;
+
+  font-family: var(--font-manrope), Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--portal-ink);
+  background-color: var(--portal-surface);
+}
+
+.portal-supricom h1,
+.portal-supricom h2,
+.portal-supricom h3,
+.portal-supricom .portal-display {
+  font-family: var(--font-syne), Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+/* Franja superior: el mismo fondo de papel tapiz que usa la barra del sitio. */
+.portal-topbar {
+  background-image: url("https://supricom.com.ve/wp-content/uploads/2025/06/fondo-de-papel-tapiz-colorido-borroso-vivo-scaled.webp");
+  background-size: cover;
+  background-position: center;
+}
+
+/* Botón primario: morado sólido, Manrope 600, radio 10px. */
+.portal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border-radius: var(--portal-radius);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.portal-btn-primary {
+  background-color: var(--portal-primary);
+  color: #ffffff;
+}
+.portal-btn-primary:hover {
+  background-color: var(--portal-primary-hover);
+}
+
+.portal-btn-outline {
+  border: 1px solid var(--portal-primary);
+  color: var(--portal-primary);
+  background-color: transparent;
+}
+.portal-btn-outline:hover {
+  background-color: var(--portal-primary-soft);
+}
+
+/* Tarjeta de opción de la landing. */
+.portal-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--portal-line);
+  border-radius: var(--portal-radius);
+  background-color: var(--portal-surface);
+  padding: 1.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.portal-card:hover {
+  border-color: var(--portal-primary);
+  box-shadow: 0 12px 32px -18px rgba(116, 29, 254, 0.55);
+}
+@media (hover: hover) {
+  .portal-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* Campos: 42px de alto y los mismos bordes del tema del sitio. */
+.portal-field {
+  height: var(--portal-field-height);
+  width: 100%;
+  padding: 0 0.875rem;
+  border: 1px solid var(--portal-line);
+  border-radius: var(--portal-radius);
+  background-color: transparent;
+  font-size: 1rem;
+}
+.portal-field:focus {
+  outline: none;
+  border-color: var(--portal-primary);
+  box-shadow: 0 0 0 3px rgba(116, 29, 254, 0.15);
+}
+
+.portal-link-underline {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Foco visible y consistente en todo el portal (es una página pública, se
+   navega con teclado más de lo que uno cree). */
+.portal-supricom :is(a, button):focus-visible {
+  outline: 2px solid var(--portal-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

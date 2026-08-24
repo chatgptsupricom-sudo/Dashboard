@@ -552,5 +552,40 @@
     "info_semaforo": "Traffic light:",
     "info_default": "This KPI is automatically calculated from Odoo data. See the full definition in the dashboard documentation.",
     "completa_campos": "Complete all required fields"
+  },
+  "servicioTecnico": {
+    "metaTitle": "Technical Service | Supricom",
+    "metaDescription": "Report a problem with your device or check the status of a report you already sent.",
+    "eyebrow": "Technical Service",
+    "title": "Is your device having a problem?",
+    "subtitle": "Report it here in a couple of minutes. With your invoice number we look up your products and hand the case to our technical team.",
+    "report": {
+      "title": "Report a problem",
+      "desc": "Tell us which product failed and what is happening to it.",
+      "hint": "Have your invoice number ready.",
+      "cta": "Report a problem"
+    },
+    "check": {
+      "title": "Check my report",
+      "desc": "See the status of a report you already sent us.",
+      "hint": "You will need your ticket number.",
+      "cta": "Check my report"
+    },
+    "needs": {
+      "title": "What you need to report",
+      "invoice": "Your invoice number",
+      "invoiceDesc": "You will find it at the top of the invoice we handed you with the product.",
+      "fault": "What is wrong with the device",
+      "faultDesc": "Describe it in your own words: what it does, since when, and whether it shows an error code.",
+      "media": "Photos or video (optional)",
+      "mediaDesc": "A photo of the problem helps us solve it much faster."
+    },
+    "help": {
+      "text": "Can't find your invoice or need a hand?",
+      "cta": "Call us at +58 422 8008204"
+    },
+    "soon": "This section is under development. In the meantime, give us a call and we'll gladly help you.",
+    "back": "Back",
+    "callUs": "Call Supricom"
   }
 }
