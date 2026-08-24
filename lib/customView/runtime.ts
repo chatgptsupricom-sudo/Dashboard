@@ -1208,6 +1208,38 @@ export const PLAN_RUNTIME_JS = String.raw`
  */
 const LOCAL_SHIM_JS = `(function(){try{var K=["supricom_plan_state"];var VACIO=JSON.stringify({pieces:{}});var ls=window.localStorage;var orig=ls.getItem.bind(ls);window.__PLAN_LS__={};for(var i=0;i<K.length;i++){window.__PLAN_LS__[K[i]]=orig(K[i]);}var oculto=true;window.__planOcultarLocal=function(v){oculto=v!==false;};ls.getItem=function(k){return (oculto&&K.indexOf(k)!==-1)?VACIO:orig(k);};}catch(e){}})();`;
 
+/**
+ * requestAnimationFrame no dispara mientras el documento esta oculto. Este HTML
+ * revela el mes activo asi:
+ *
+ *   c.style.opacity = "0";
+ *   requestAnimationFrame(function(){ c.style.opacity = "1"; });
+ *
+ * Si el panel carga en una pestana en segundo plano, ese callback no corre
+ * nunca y el plan queda invisible —con la cabecera a la vista— hasta que
+ * alguien interactua. Lo mismo pasa con el revelado de la vista de tabla.
+ *
+ * Mientras el documento esta oculto se ejecutan por temporizador; en cuanto se
+ * ve, se vuelve al rAF nativo. Los dos bucles que se reprograman solos en este
+ * HTML estan acotados (el confeti para a los 70 fotogramas y el autoscroll solo
+ * corre mientras se arrastra), asi que esto no deja nada girando en segundo
+ * plano.
+ *
+ * El identificador que devuelve el temporizador va desplazado para poder
+ * distinguirlo en cancelAnimationFrame, que la pagina si usa.
+ */
+const RAF_SHIM_JS = `(function(){try{
+var w=window;var raf=w.requestAnimationFrame;var caf=w.cancelAnimationFrame;
+if(!raf)return;var OFFSET=1e9;
+w.requestAnimationFrame=function(fn){
+if(document.visibilityState==="hidden"){
+return w.setTimeout(function(){try{fn(Date.now());}catch(e){}},16)+OFFSET;}
+return raf.call(w,fn);};
+w.cancelAnimationFrame=function(h){
+if(typeof h==="number"&&h>OFFSET)return w.clearTimeout(h-OFFSET);
+if(caf)return caf.call(w,h);};
+}catch(e){}})();`;
+
 export function buildInjection(opts: {
   api: string;
   socketUrl: string;
@@ -1231,7 +1263,7 @@ export function buildInjection(opts: {
   // blanco. Se prefiere ver el plan y que los cambios aparezcan un instante
   // despues.
   return (
-    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};${LOCAL_SHIM_JS}</script>` +
+    `<script id="__plan_cfg" data-plan-ignore>window.__PLAN_CFG__=${cfg};${RAF_SHIM_JS}${LOCAL_SHIM_JS}</script>` +
     `<script id="__plan_rt" data-plan-ignore>${PLAN_RUNTIME_JS}</script>`
   );
 }
