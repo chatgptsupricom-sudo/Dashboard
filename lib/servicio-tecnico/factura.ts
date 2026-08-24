@@ -67,6 +67,12 @@ export interface FacturaConItems {
     telefono: string;
     email: string;
   };
+  /**
+   * Id del partner en Odoo. Lo necesita la creación del ticket para guardar
+   * `odoo_partner_id` y que el técnico pueda navegar al cliente real.
+   * NO se expone en la respuesta pública de `/api/servicio-tecnico/factura`.
+   */
+  partner_id: number | null;
   despachos: string[];
   items: ItemFactura[];
 }
@@ -227,7 +233,14 @@ export async function buscarFacturaConSeriales(
     ...new Set(items.map((i) => i.despacho).filter(Boolean)),
   ];
 
-  return { estado: "ok", factura: resumen(factura), cliente, despachos, items };
+  return {
+    estado: "ok",
+    factura: resumen(factura),
+    cliente,
+    partner_id: m2oId(factura.partner_id),
+    despachos,
+    items,
+  };
 }
 
 async function filtrarPorDocumento(

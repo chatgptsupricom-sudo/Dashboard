@@ -34,6 +34,14 @@ export async function GET(request: Request) {
       return NextResponse.json(resultado, { status: 404 });
     }
 
+    if (resultado.estado === "ok") {
+      // `partner_id` es para uso interno (la creación del ticket lo guarda).
+      // Fuera de la respuesta pública: mientras menos devuelva este endpoint,
+      // menos vale raspar facturas ajenas.
+      const { partner_id: _omitido, ...publico } = resultado;
+      return NextResponse.json(publico);
+    }
+
     return NextResponse.json(resultado);
   } catch (error) {
     // Al cliente nunca le llega el detalle: los mensajes de Odoo describen la

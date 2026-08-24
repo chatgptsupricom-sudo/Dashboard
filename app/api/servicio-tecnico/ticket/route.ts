@@ -1,7 +1,10 @@
-import { query, getConnection } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
+import { getConnection } from "@/lib/db";
+import {
+  buscarFacturaConSeriales,
+  type ItemFactura,
+} from "@/lib/servicio-tecnico/factura";
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -60,130 +63,16 @@ function generateTrackingToken(): string {
   return randomBytes(32).toString("hex");
 }
 
-// Re-resuelve el partner y producto desde Odoo con el numero de factura.
-// Cadena de Odoo (verificada contra produccion en issue #19):
-//   account.move (invoice) -> account.move.line (display_type='product')
-//   -> sale_line_ids -> sale.order.picking_ids (state='done')
-//   -> stock.move.line.lot_id
+// La resolución contra Odoo vive en lib/servicio-tecnico/factura.ts, que es
+// la misma que usa GET /api/servicio-tecnico/factura (issue #19). Es
+// deliberado que sea una sola: si el formulario ofrece un item y este POST lo
+// resuelve con otra lógica, el cliente elige algo válido y el envío falla.
 //
-// Trampas documentadas en #19:
-//   - Formato de numero de factura varia por compania.
-//   - Sin filtrar display_type='product', account.move.line devuelve el triple
-//     de lineas (contrapartidas de costo).
-//   - invoice_origin NO sirve como llave para encontrar el despacho.
-
-interface OdooInvoiceLookup {
-  partner_id: number;
-  partner_name: string;
-  products: Array<{
-    product_id: number;
-    product_code: string;
-    product_name: string;
-    brand: string;
-    model: string;
-    serials: string[];
-    picking_id: number | null;
-  }>;
-}
-
-async function lookupInvoice(
-  invoiceNumber: string,
-  companyId: number,
-): Promise<OdooInvoiceLookup | null> {
-  // 1. Buscar la factura
-  const invoice = (await callOdooRPC<any[]>(
-    "account.move",
-    "search_read",
-    [[["name", "=", invoiceNumber], ["move_type", "=", "out_invoice"]]],
-    { fields: ["id", "partner_id"], limit: 1 },
-  )) as any[];
-
-  if (!invoice || invoice.length === 0) return null;
-
-  const inv = invoice[0];
-  const partnerId = Array.isArray(inv.partner_id) ? inv.partner_id[0] : inv.partner_id;
-  const partnerName = Array.isArray(inv.partner_id) ? inv.partner_id[1] : "";
-
-  // 2. Buscar lineas de producto de esa factura
-  const lines = (await callOdooRPC<any[]>(
-    "account.move.line",
-    "search_read",
-    [[["move_id", "=", inv.id], ["display_type", "=", "product"]]],
-    {
-      fields: ["product_id", "quantity", "sale_line_ids"],
-      limit: 50,
-    },
-  )) as any[];
-
-  if (!lines || lines.length === 0) {
-    return { partner_id: partnerId, partner_name: partnerName, products: [] };
-  }
-
-  // 3. Para cada linea, seguir a sale_line -> stock.move.line -> lot_id
-  const products: OdooInvoiceLookup["products"] = [];
-
-  for (const line of lines) {
-    const productId = Array.isArray(line.product_id) ? line.product_id[0] : line.product_id;
-    const productName = Array.isArray(line.product_id) ? line.product_id[1] : "";
-    const productCode = line.product_id ? "" : "";
-    const saleLineIds: number[] = line.sale_line_ids || [];
-
-    if (saleLineIds.length === 0) continue;
-
-    // Buscar los pickings done de la sale order
-    const pickings = (await callOdooRPC<any[]>(
-      "stock.move",
-      "search_read",
-      [[["sale_line_id", "in", saleLineIds], ["state", "=", "done"]]],
-      { fields: ["id", "picking_id", "product_id"], limit: 1 },
-    )) as any[];
-
-    if (!pickings || pickings.length === 0) continue;
-
-    const pickingId = pickings[0].picking_id
-      ? (Array.isArray(pickings[0].picking_id) ? pickings[0].picking_id[0] : pickings[0].picking_id)
-      : null;
-
-    // Buscar los lots (seriales) del picking
-    const moveLines = (await callOdooRPC<any[]>(
-      "stock.move.line",
-      "search_read",
-      [[["picking_id", "=", pickingId], ["product_id", "=", productId]]],
-      { fields: ["lot_id"], limit: 10 },
-    )) as any[];
-
-    const serials: string[] = [];
-    for (const ml of moveLines || []) {
-      if (ml.lot_id) {
-        const lotName = Array.isArray(ml.lot_id) ? ml.lot_id[1] : "";
-        if (lotName) serials.push(lotName);
-      }
-    }
-
-    // Leer el product_code por separado (display_name ya da nombre, el codigo
-    // interno es default_code)
-    const productInfo = (await callOdooRPC<any[]>(
-      "product.product",
-      "search_read",
-      [[["id", "=", productId]]],
-      { fields: ["default_code", "name"], limit: 1 },
-    )) as any[];
-    const pCode = productInfo?.[0]?.default_code || "";
-    const pName = productInfo?.[0]?.name || productName;
-
-    products.push({
-      product_id: productId,
-      product_code: pCode,
-      product_name: pName,
-      brand: "",
-      model: "",
-      serials,
-      picking_id: pickingId,
-    });
-  }
-
-  return { partner_id: partnerId, partner_name: partnerName, products };
-}
+// Eso pasaba con la versión anterior de este archivo, que reimplementaba la
+// cadena: descartaba las líneas sin despacho hecho (`continue` cuando no había
+// stock.move en estado done), y la factura INV/2026/06384 de Panamá tiene 3
+// productos en esa situación. El cliente los veía en el formulario y acá se
+// llevaba un 400.
 
 // Asegura que las columnas del portal existan (idempotente).
 // Asi el portal funciona aunque no se haya corrido el ALTER manualmente.
@@ -229,10 +118,13 @@ export async function POST(request: NextRequest) {
     const invoiceNumber = String(body.invoice_number || "").trim();
     const reportedFault = String(body.reported_fault || "").trim();
     const clientPhone = String(body.client_phone || "").trim();
-    const companyId = parseInt(String(body.company_id || "9"), 10);
     const clientOdooProductId = body.odoo_product_id ? parseInt(String(body.odoo_product_id), 10) : null;
     const clientProductCode = String(body.product_code || "").trim();
     const clientSerial = String(body.serial || "").trim();
+    // Identificador del item tal como lo devuelve la consulta de factura.
+    const clientItemId = String(body.item_id || "").trim();
+    // Documento del cliente, opcional, para desambiguar (ver issue #25).
+    const clientRif = String(body.rif || "").trim() || undefined;
     const preTicketId = body.ticket_id ? parseInt(String(body.ticket_id), 10) : null;
 
     if (!invoiceNumber || invoiceNumber.length > 100) {
@@ -256,8 +148,9 @@ export async function POST(request: NextRequest) {
 
     // Paso 1: re-resolver contra Odoo. El cliente puede mentir en su navegador,
     // pero no puede mentir contra Odoo.
-    const lookup = await lookupInvoice(invoiceNumber, companyId);
-    if (!lookup) {
+    const resultado = await buscarFacturaConSeriales(invoiceNumber, clientRif);
+
+    if (resultado.estado === "no_encontrada") {
       // Mensaje generico (issue #25: no distinguir entre "no existe" y "no
       // verificaste bien" para no ayudar a enumerar facturas).
       return NextResponse.json(
@@ -266,23 +159,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Paso 2: validar que el producto/serial reportado pertenece a la factura.
-    // Si el cliente mando odoo_product_id y/o serial, validamos contra el lookup.
-    let matchedProduct: OdooInvoiceLookup["products"][number] | null = null;
-
-    if (clientOdooProductId) {
-      matchedProduct = lookup.products.find((p) => p.product_id === clientOdooProductId) || null;
-    } else if (clientProductCode) {
-      matchedProduct = lookup.products.find(
-        (p) => p.product_code.toLowerCase() === clientProductCode.toLowerCase(),
-      ) || null;
+    if (resultado.estado === "ambiguo") {
+      // El formulario manda el numero exacto que devolvio la consulta, asi que
+      // esto solo pasa si alguien llama al endpoint a mano con un numero
+      // parcial. No decimos cuantas ni cuales coinciden.
+      return NextResponse.json(
+        {
+          error:
+            "No pudimos identificar tu factura de forma unica. Vuelve a intentarlo desde el formulario.",
+        },
+        { status: 400 },
+      );
     }
 
-    if (!matchedProduct && lookup.products.length === 1) {
-      matchedProduct = lookup.products[0];
+    // Paso 2: validar que el item reportado pertenece a la factura.
+    //
+    // El identificador bueno es `item_id`, que la consulta ya devuelve por
+    // item ("<linea>:<serial>"): es lo unico que distingue entre dos unidades
+    // del mismo producto con seriales distintos. Se aceptan tambien
+    // odoo_product_id / product_code + serial para no romper a quien ya
+    // estuviera llamando asi.
+    const items = resultado.items;
+    let matched: ItemFactura | null = null;
+
+    if (clientItemId) {
+      matched = items.find((i) => i.id === clientItemId) || null;
+    } else {
+      const candidatos = clientOdooProductId
+        ? items.filter((i) => i.producto_id === clientOdooProductId)
+        : clientProductCode
+          ? items.filter(
+              (i) => i.codigo.toLowerCase() === clientProductCode.toLowerCase(),
+            )
+          : // Sin ningun identificador de producto solo se puede asumir el item
+            // cuando la factura trae uno solo.
+            items.length === 1
+            ? items
+            : [];
+
+      if (clientSerial) {
+        matched = candidatos.find((i) => i.serial === clientSerial) || null;
+      } else if (candidatos.length === 1) {
+        matched = candidatos[0];
+      } else if (candidatos.length > 1) {
+        // Varias unidades del mismo producto con seriales distintos: hay que
+        // saber cual fallo, no se puede elegir por el cliente.
+        return NextResponse.json(
+          { error: "Indica el serial del equipo que presenta la falla." },
+          { status: 400 },
+        );
+      }
     }
 
-    if (!matchedProduct) {
+    if (!matched) {
       return NextResponse.json(
         {
           error:
@@ -290,15 +219,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 },
       );
-    }
-
-    if (clientSerial && matchedProduct.serials.length > 0) {
-      if (!matchedProduct.serials.includes(clientSerial)) {
-        return NextResponse.json(
-          { error: "El serial no corresponde a esta factura." },
-          { status: 400 },
-        );
-      }
     }
 
     // Paso 3: abrir conexion y asegurar schema.
@@ -320,7 +240,7 @@ export async function POST(request: NextRequest) {
         // created_by: nombre del cliente + "(portal)". Asi el tecnico ve de un
         // vistazo quien lo creo. El campo es NOT NULL y VARCHAR(200), asi que
         // nos cabe.
-        const createdBy = `${lookup.partner_name} (portal)`;
+        const createdBy = `${resultado.cliente.nombre} (portal)`;
 
         const insertResult = await conn.execute(
           `INSERT INTO rma_cases (
@@ -331,25 +251,32 @@ export async function POST(request: NextRequest) {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', NULL, ?, ?, 'portal', ?, ?, ?, ?)`,
           [
             caseNumber,
-            matchedProduct.product_code || clientProductCode || null,
-            matchedProduct.product_name || null,
-            matchedProduct.brand || null,
-            matchedProduct.model || null,
-            invoiceNumber,
-            lookup.partner_name,
+            matched.codigo || null,
+            // hardware/brand/model siguen la convencion del modulo interno
+            // (ver app/api/rma/products): hardware es la categoria, model es
+            // el nombre del producto. La version anterior metia el nombre en
+            // `hardware` y dejaba marca y modelo en NULL, y el caso salia
+            // incompleto en el panel del tecnico.
+            matched.categoria || null,
+            matched.marca || null,
+            matched.nombre || null,
+            // El numero canonico de Odoo, no lo que escribio el cliente.
+            resultado.factura.numero,
+            resultado.cliente.nombre,
             clientPhone || null,
-            // serial_quantity es el campo viejo (texto libre). Mantenemos el
-            // serial real en `serial` aparte, y dejamos serial_quantity con
-            // lo que el cliente mando si lo mando (sirve para busqueda en el
-            // modulo interno).
-            clientSerial || matchedProduct.serials[0] || null,
+            // serial_quantity es el campo viejo (texto libre) que usa el
+            // modulo interno para buscar. El serial real va aparte.
+            matched.serial || null,
             reportedFault,
-            companyId,
+            // La compania sale de la factura. Antes venia del body con 9 por
+            // defecto, asi que un reporte de una factura de Caracas quedaba
+            // guardado como Valencia.
+            resultado.factura.compania_id,
             createdBy,
             trackingToken,
-            lookup.partner_id,
-            matchedProduct.product_id,
-            clientSerial || matchedProduct.serials[0] || null,
+            resultado.partner_id,
+            matched.producto_id,
+            matched.serial || null,
           ],
         );
 
