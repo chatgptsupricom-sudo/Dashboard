@@ -22,9 +22,13 @@ export const query = async (sql: string, params?: any[]) => {
 };
 
 // Devuelve una conexion dedicada del pool, para hacer varias queries en una
-// transaccion (commit/rollback) o que comparten estado. El caller es responsable
-// de llamar a conn.close() cuando termine. Patron usado por el endpoint del
-// portal RMA (issue #22) para evitar la condicion de carrera del case_number.
+// transaccion (commit/rollback) o que comparten estado.
+//
+// El caller DEBE llamar a conn.release() en un finally cuando termine. No
+// conn.close() ni conn.end(): en una conexion de pool de mysql2, close() lanza
+// un TypeError y end() esta deprecado. Si la conexion no se libera se agota el
+// pool (connectionLimit 40) y, como waitForConnections es true con la cola sin
+// limite, todas las consultas de la app se quedan esperando indefinidamente.
 export const getConnection = async () => {
   return db.getConnection();
 };

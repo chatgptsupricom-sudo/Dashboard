@@ -393,8 +393,16 @@ export async function POST(request: NextRequest) {
   } finally {
     if (conn) {
       try {
-        await conn.close();
-      } catch {}
+        // release(), NO close(). En una conexión de pool de mysql2, close()
+        // ni siquiera existe en la conexión base: lanza un TypeError que este
+        // catch se tragaba, y la conexión nunca volvía al pool. Con
+        // connectionLimit 40, waitForConnections y queueLimit 0, a los 40
+        // reportes el pool quedaba vacío y CUALQUIER consulta del panel
+        // —no solo las del portal— se quedaba encolada para siempre.
+        conn.release();
+      } catch (e: any) {
+        console.error("[portal-ticket] release:", e?.message);
+      }
     }
   }
 }
