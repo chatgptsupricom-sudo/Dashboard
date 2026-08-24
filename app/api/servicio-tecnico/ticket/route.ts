@@ -1,4 +1,4 @@
-import { getConnection } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import {
   buscarFacturaConSeriales,
   type ItemFactura,
@@ -422,5 +422,97 @@ export async function POST(request: NextRequest) {
         console.error("[portal-ticket] release:", e?.message);
       }
     }
+  }
+}
+
+// GET /api/servicio-tecnico/ticket?numero=...&factura=...
+// Lookup manual para la pantalla de consulta (issue #23).
+// El case_number solo no alcanza: son secuenciales (0001, 0002...) y cualquiera
+// los itera. Por eso pedimos case_number + invoice_number (el segundo dato que
+// solo el cliente que reporto conoce).
+//
+// Privacidad: mismo error generico para "no existe" y "dato de verificacion no
+// coincide" — sin esto se vuelve una forma de enumerar tickets existentes.
+const TICKET_NOT_FOUND = "No encontramos ese reporte";
+
+function maskPhoneForResponse(phone: string | null): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 4) return "****";
+  return `****${digits.slice(-4)}`;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const numero = searchParams.get("numero")?.trim() || "";
+    const factura = searchParams.get("factura")?.trim() || "";
+
+    if (!numero || !factura) {
+      return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 400 });
+    }
+
+    if (numero.length > 20 || factura.length > 100) {
+      return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 400 });
+    }
+
+    // Solo tickets del portal. Los internos no son accesibles publicamente.
+    // Validamos case_number + invoice_number en una sola consulta para evitar
+    // race conditions / enumeration.
+    const caseResult = await query(
+      `SELECT case_number, status, model, hardware, product_code, invoice_number,
+              serial, created_at, client_phone
+       FROM rma_cases
+       WHERE case_number = ? AND invoice_number = ? AND origen = 'portal'
+       LIMIT 1`,
+      [numero, factura],
+    );
+
+    const rows = (caseResult as any).rows ?? caseResult;
+    const row = Array.isArray(rows) ? rows[0] : null;
+
+    if (!row) {
+      return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 404 });
+    }
+
+    // Timeline
+    const historyResult = await query(
+      `SELECT from_status, to_status, created_at
+       FROM rma_history
+       WHERE case_id = (SELECT id FROM rma_cases WHERE case_number = ? AND invoice_number = ? LIMIT 1)
+       ORDER BY created_at ASC`,
+      [numero, factura],
+    );
+    const historyRows = (historyResult as any).rows ?? historyResult;
+
+    return NextResponse.json({
+      success: true,
+      ticket: {
+        case_number: row.case_number,
+        status: row.status,
+        // `model` es el nombre del producto y `hardware` la categoría, según la
+        // convención del módulo interno. Mostrar hardware acá le enseñaba al
+        // cliente "IMPRESORA" o "CONSUMIBLES" en vez de su producto.
+        product_name: row.model || row.hardware || "",
+        product_code: row.product_code || "",
+        invoice_number: row.invoice_number || "",
+        serial: row.serial || null,
+        client_phone_masked: maskPhoneForResponse(row.client_phone),
+        created_at: row.created_at,
+        timeline: (Array.isArray(historyRows) ? historyRows : []).map(
+          // Sin `changed_by`: en los cambios de estado posteriores es la
+          // identidad del técnico que lo atendió, y esto es un endpoint
+          // público. El cliente no necesita saber quién tocó su caso.
+          (h: any) => ({
+            from_status: h.from_status,
+            to_status: h.to_status,
+            created_at: h.created_at,
+          }),
+        ),
+      },
+    });
+  } catch (error: any) {
+    console.error("[portal-ticket] GET error:", error.message);
+    return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 500 });
   }
 }
