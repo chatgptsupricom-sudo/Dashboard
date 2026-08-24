@@ -52,14 +52,27 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+
+// Rutas públicas: las ve un cliente final sin sesión, así que no tiene sentido
+// pedirle /api/auth/verify ni mostrarle el spinner de "sincronizando sesión"
+// mientras esa llamada falla.
+const RUTAS_PUBLICAS = ["/servicio-tecnico"];
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoading, initializeFromToken } = useAuthStore();
+  const pathname = usePathname();
+  const esPublica = RUTAS_PUBLICAS.some((ruta) => pathname?.includes(ruta));
 
   useEffect(() => {
+    if (esPublica) return;
     initializeFromToken();
-  }, [initializeFromToken]);
+  }, [initializeFromToken, esPublica]);
+
+  if (esPublica) {
+    return <>{children}</>;
+  }
 
   if (isLoading) {
     return (
