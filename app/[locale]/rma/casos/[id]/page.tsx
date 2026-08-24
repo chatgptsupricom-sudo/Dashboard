@@ -27,6 +27,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Copy,
   Loader2,
   Printer,
   Save,
@@ -229,7 +230,14 @@ export default function RmaCasoDetailPage() {
               <Wrench className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">RMA N.º {caseData.case_number}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-slate-900">RMA N.º {caseData.case_number}</h1>
+                {caseData.origen === "portal" && (
+                  <Badge className="bg-violet-100 text-violet-700 border-violet-200 text-[11px]">
+                    {t("badge_portal")}
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-slate-500">{caseData.client_name} — {caseData.model || caseData.hardware || ""}</p>
             </div>
           </div>
@@ -408,10 +416,97 @@ export default function RmaCasoDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Adjuntos */}
+          <Card className="rounded-3xl border-none shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg font-semibold text-slate-900">{t("adjuntos")}</CardTitle>
+              <span className="text-xs text-slate-400">{t("adjuntos_count", { count: caseData.adjuntos?.length || 0 })}</span>
+            </CardHeader>
+            <CardContent>
+              {caseData.adjuntos && caseData.adjuntos.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {caseData.adjuntos.map((adj: any, idx: number) => (
+                    <div key={idx} className="space-y-1">
+                      {adj.mime?.startsWith("video/") ? (
+                        <video src={adj.url} controls className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
+                      ) : (
+                        <img src={adj.url} alt={adj.filename} className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
+                      )}
+                      <p className="text-xs text-slate-500 truncate">{adj.filename}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 text-center py-4">{t("sin_adjuntos")}</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Timeline */}
         <div className="space-y-6">
+          {caseData.origen === "portal" && (
+            <Card className="rounded-3xl border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-slate-900">{t("portal_data")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_source")}</Label>
+                  <div className="mt-1">
+                    <Badge className="bg-violet-100 text-violet-700 border-violet-200 text-[11px]">
+                      {t("badge_portal")}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_serial")}</Label>
+                  <p className="text-sm text-slate-700 mt-1 font-mono">{caseData.serial || "—"}</p>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_contact_phone")}</Label>
+                  <p className="text-sm text-slate-700 mt-1">{caseData.client_phone || "—"}</p>
+                </div>
+                <div className="pt-3 border-t border-slate-100">
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("odoo_refs")}</Label>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">{t("odoo_partner")}:</span>
+                      <span className="text-sm font-mono text-slate-700">{caseData.odoo_partner_id || "—"}</span>
+                      {caseData.odoo_partner_id && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => navigator.clipboard.writeText(String(caseData.odoo_partner_id))}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">{t("odoo_product")}:</span>
+                      <span className="text-sm font-mono text-slate-700">{caseData.odoo_product_id || "—"}</span>
+                      {caseData.odoo_product_id && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => navigator.clipboard.writeText(String(caseData.odoo_product_id))}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg font-semibold text-slate-900">{t("timeline")}</CardTitle>

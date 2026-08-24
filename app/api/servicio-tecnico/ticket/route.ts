@@ -329,6 +329,51 @@ export async function POST(request: NextRequest) {
       throw lastError || new Error("No se pudo generar el ticket");
     }
 
+    // Notificar por socket y disparar webhook de n8n (fire-and-forget).
+    // No bloqueamos ni la respuesta ni la liberacion de la conexion: si fallan,
+    // el ticket ya quedo guardado.
+    if (typeof global !== "undefined" && (global as any).io) {
+      try {
+        (global as any).io.emit("rma_ticket_nuevo", {
+          case_id: caseId,
+          case_number: caseNumber,
+          client_name: resultado.cliente.nombre,
+          product: matched.nombre,
+          invoice_number: invoiceNumber,
+          origen: "portal",
+          created_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error("[portal-ticket] socket emit error:", e);
+      }
+    }
+
+    if (process.env.N8N_LEAD_WEBHOOK_URL) {
+      // No bloqueamos la respuesta. Si falla, el ticket ya se guardó.
+      fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evento: "rma_ticket_nuevo",
+          origen: "portal",
+          ticket: {
+            case_id: caseId,
+            case_number: caseNumber,
+            tracking_token: trackingToken,
+            client_name: resultado.cliente.nombre,
+            client_phone: clientPhone,
+            invoice_number: invoiceNumber,
+            product_code: matched.codigo,
+            product_name: matched.nombre,
+            serial: matched.serial || null,
+            reported_fault: reportedFault,
+          },
+        }),
+      }).catch((err) => {
+        console.error("[portal-ticket] n8n webhook error:", err.message);
+      });
+    }
+
     return NextResponse.json(
       {
         success: true,
