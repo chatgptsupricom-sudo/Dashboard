@@ -39,17 +39,22 @@ const MAX_RETRIES = 5;
 // y reintentamos. Esto es preferible a un lock de tabla porque el portal
 // publico va a tener picos de carga impredecibles.
 async function nextCaseNumber(conn: any): Promise<string> {
-  const result = await conn.execute(
+  // conn.execute() devuelve [filas, campos]. Ojo: NO tiene .rows — eso lo pone
+  // el wrapper `query()` de lib/db.ts, que sí desestructura. Leyendo .rows
+  // sobre la conexión cruda sale siempre undefined.
+  const [filas] = (await conn.execute(
     `SELECT case_number FROM rma_cases ORDER BY id DESC LIMIT 1`
-  );
-  const rows = (result.rows as any[]) || [];
+  )) as [any[], any];
+
   let nextNum = 1;
-  if (rows.length > 0) {
-    const lastNum = parseInt(rows[0].case_number, 10);
+  if (filas.length > 0) {
+    const lastNum = parseInt(filas[0].case_number, 10);
     if (!Number.isFinite(lastNum)) {
       // Si el case_number no es numerico (caso legacy), seguimos con count().
-      const countResult = await conn.execute(`SELECT COUNT(*) AS total FROM rma_cases`);
-      nextNum = ((countResult.rows as any[])?.[0]?.total || 0) + 1;
+      const [conteo] = (await conn.execute(
+        `SELECT COUNT(*) AS total FROM rma_cases`
+      )) as [any[], any];
+      nextNum = (conteo?.[0]?.total || 0) + 1;
     } else {
       nextNum = lastNum + 1;
     }
@@ -246,7 +251,7 @@ export async function POST(request: NextRequest) {
         // nos cabe.
         const createdBy = `${resultado.cliente.nombre} (portal)`;
 
-        const insertResult = await conn.execute(
+        const [insertResult] = (await conn.execute(
           `INSERT INTO rma_cases (
             case_number, product_code, hardware, brand, model,
             invoice_number, client_name, client_phone, serial_quantity,
@@ -282,9 +287,13 @@ export async function POST(request: NextRequest) {
             matched.producto_id,
             matched.serial || null,
           ],
-        );
+        )) as [{ insertId: number }, any];
 
-        caseId = (insertResult.rows as any)?.insertId;
+        caseId = insertResult?.insertId;
+
+        if (!caseId) {
+          throw new Error("El INSERT no devolvió insertId");
+        }
 
         // Historial: el modulo interno espera que haya una fila en rma_history
         // al crear el caso, si no aparece sin historial en el panel.
