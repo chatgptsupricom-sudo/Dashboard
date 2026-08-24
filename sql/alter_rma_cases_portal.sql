@@ -10,6 +10,12 @@
 -- El endpoint POST /api/servicio-tecnico/ticket corre ensurePortalColumns()
 -- en runtime con el mismo patron, asi que la migracion manual es opcional.
 
+-- Ojo: client_phone está en sql/rma_cases.sql desde el principio, pero faltaba
+-- en la base del entorno de prueba. El schema del repo y el real divergieron en
+-- algún momento. Si falta, tanto el portal como el módulo interno fallan al
+-- crear un caso con "Unknown column 'client_phone' in 'field list'".
+ALTER TABLE rma_cases ADD COLUMN client_phone VARCHAR(50) DEFAULT NULL AFTER client_name;
+
 ALTER TABLE rma_cases ADD COLUMN origen ENUM('interno','portal') DEFAULT 'interno';
 ALTER TABLE rma_cases ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL;
 ALTER TABLE rma_cases ADD COLUMN odoo_partner_id INT DEFAULT NULL;
