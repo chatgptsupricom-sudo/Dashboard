@@ -83,6 +83,13 @@ function generateTrackingToken(): string {
 // Asi el portal funciona aunque no se haya corrido el ALTER manualmente.
 async function ensurePortalColumns(conn: any) {
   const alters = [
+    // client_phone NO es una columna del portal: está en sql/rma_cases.sql
+    // desde el principio y el módulo RMA interno también inserta en ella. Pero
+    // faltaba en la base del entorno de prueba, así que el schema del repo y el
+    // real habían divergido. Se incluye acá para que cualquier entorno con esa
+    // misma laguna se arregle solo — si falta, no se puede guardar el teléfono
+    // de contacto, que es la mitad del sentido de un reporte.
+    `ALTER TABLE rma_cases ADD COLUMN client_phone VARCHAR(50) DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD COLUMN origen ENUM('interno','portal') DEFAULT 'interno'`,
     `ALTER TABLE rma_cases ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD COLUMN odoo_partner_id INT DEFAULT NULL`,
@@ -279,8 +286,10 @@ export async function POST(request: NextRequest) {
             reportedFault,
             // La compania sale de la factura. Antes venia del body con 9 por
             // defecto, asi que un reporte de una factura de Caracas quedaba
-            // guardado como Valencia.
-            resultado.factura.compania_id,
+            // guardado como Valencia. La columna es NOT NULL con default 9, asi
+            // que si Odoo no la trae caemos en ese mismo default en vez de
+            // reventar el INSERT.
+            resultado.factura.compania_id ?? 9,
             createdBy,
             trackingToken,
             resultado.partner_id,
