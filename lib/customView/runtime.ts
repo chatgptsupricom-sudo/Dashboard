@@ -53,6 +53,29 @@ export const PLAN_RUNTIME_JS = String.raw`
   // pagina, no del estado compartido.
   var TRANSIENT_ATTR = { "aria-grabbed": 1, "data-plan-tmp": 1, "style": 1 };
   var EMPTY_STATE = { v: 2, nodes: {} };
+
+  /**
+   * Lo unico que se replica en vivo entre navegadores.
+   *
+   *   checked      marcar una pieza, y el boton "HECHO" de la semana (que no es
+   *                mas que marcar todas las piezas de esa semana de golpe; la
+   *                etiqueta del boton se recalcula sola en cada pantalla, ver
+   *                refreshWeekLabels).
+   *   piece-moved  marca de que una tarjeta se arrastro a otro dia. El cambio
+   *                de dia en si viaja en el contenido de la columna .cal-col.
+   *
+   * Todo lo demas se guarda igual, pero se ve al recargar. Antes se replicaba
+   * cualquier cambio de clase, asi que abrir una semana se la abria a todo el
+   * mundo y les movia la pantalla mientras trabajaban.
+   */
+  var CLASES_EN_VIVO = { checked: 1, "piece-moved": 1 };
+
+  function filtrarClasesEnVivo(lista) {
+    var out = [];
+    if (!lista) return out;
+    for (var i = 0; i < lista.length; i++) if (CLASES_EN_VIVO[lista[i]]) out.push(lista[i]);
+    return out;
+  }
   var ROOT_KEY = "#root";
 
   var baseRoot = null;        // clon del <html> tal como quedo al cargar (sin overlay)
@@ -292,11 +315,11 @@ export const PLAN_RUNTIME_JS = String.raw`
         if (ad) { entry = entry || {}; entry.at = ad; }
       }
       if (!matches(le, IGNORE_SEL)) {
-        var ls = shellOf(le, live, inBase);
-        var bs = baseShellOf(k);
+        var ls = llaveFiable(k) ? shellOf(le, live, inBase) : null;
+        var bs = llaveFiable(k) ? baseShellOf(k) : null;
         // bsh es la foto de la base con la que se comparo: sin ella no se
         // podria fusionar este cambio contra un HTML nuevo mas adelante.
-        if (ls !== bs) { entry = entry || {}; entry.sh = ls; entry.bsh = bs; }
+        if (ls !== null && ls !== bs) { entry = entry || {}; entry.sh = ls; entry.bsh = bs; }
       }
       if (entry) nodes[k] = entry;
     }
@@ -481,9 +504,40 @@ export const PLAN_RUNTIME_JS = String.raw`
     for (var t = 0; t < keepSkipped.length; t++) el.appendChild(keepSkipped[t]);
   }
 
+  /**
+   * Una llave posicional colgada de la raiz ("s:#root/1.2.3") es una ruta de
+   * indices dentro del documento entero: basta con que la pagina inserte o
+   * quite un elemento para que deje de apuntar a lo mismo. Las que cuelgan de
+   * una pieza o de un id ("s:p:AUG2/0") si son fiables, porque el ancla es
+   * estable. Solo se reescribe contenido de las segundas y de los elementos
+   * identificados por contenido.
+   */
+  function llaveFiable(key) {
+    if (key === ROOT_KEY) return false;
+    if (key.indexOf("s:" + ROOT_KEY + "/") === 0) return false;
+    return true;
+  }
+
+  function contenidoReescribible(key, el) {
+    if (!llaveFiable(key)) return false;
+    return true;
+  }
+
+  /** La llave sigue apuntando al mismo elemento en la base y en el documento. */
+  function mismaIdentidad(el, be) {
+    if (!el || !be) return false;
+    if (el.tagName !== be.tagName) return false;
+    if ((el.getAttribute("id") || "") !== (be.getAttribute("id") || "")) return false;
+    if ((el.getAttribute("data-piece") || "") !== (be.getAttribute("data-piece") || "")) return false;
+    return true;
+  }
+
   function applyEntry(el, key, entry, live, imported) {
     var be = baseIdx.map[key];
     if (!be) return;
+    // Si la llave ya no apunta al mismo elemento, aplicarla escribiria encima
+    // de otra cosa.
+    if (!mismaIdentidad(el, be)) return;
     if (key !== ROOT_KEY) {
       var target = classesOf(be);
       if (entry && entry.cr) target = notIn(target, entry.cr);
@@ -501,9 +555,21 @@ export const PLAN_RUNTIME_JS = String.raw`
     }
     if (matches(el, IGNORE_SEL)) return;
 
+    // El contenido solo se reescribe cuando el estado lo trae (entry.sh) o
+    // cuando se esta revirtiendo esa llave a la base (entry === null).
+    //
+    // Antes se reescribia SIEMPRE, incluso para una entrada que solo cambiaba
+    // una clase: eso devolvia el contenedor a como estaba al arrancar y borraba
+    // lo que la propia pagina hubiera generado despues. Combinado con una
+    // llave que ya no apuntaba al mismo elemento, escribia el contenido de un
+    // sitio dentro de otro y el panel quedaba con bloques sueltos y sin
+    // estilos.
+    if (entry && entry.sh === undefined) return;
+    if (!contenidoReescribible(key, el)) return;
+
     var curBase = baseShellOf(key);
     var target;
-    if (!entry || entry.sh === undefined) target = curBase;
+    if (!entry) target = curBase;
     else if (entry.bsh === undefined || entry.bsh === curBase) target = entry.sh;
     else target = mergeShell(entry.bsh, entry.sh, curBase, el);
 
@@ -536,20 +602,35 @@ export const PLAN_RUNTIME_JS = String.raw`
     for (var k in nodes) {
       var e = nodes[k] || {};
       var keep = null;
-      if (e.ca) { keep = keep || {}; keep.ca = e.ca; }
-      if (e.cr) { keep = keep || {}; keep.cr = e.cr; }
-      if (e.at) { keep = keep || {}; keep.at = e.at; }
+      var algoFuera = false;
+
+      var ca = filtrarClasesEnVivo(e.ca);
+      var cr = filtrarClasesEnVivo(e.cr);
+      if (ca.length) { keep = keep || {}; keep.ca = ca; }
+      if (cr.length) { keep = keep || {}; keep.cr = cr; }
+      if ((e.ca || []).length !== ca.length || (e.cr || []).length !== cr.length) algoFuera = true;
+
+      // Los atributos no se replican: nada de lo que se quiere en vivo depende
+      // de ellos, y replicarlos movia cosas en la pantalla del otro.
+      if (e.at) algoFuera = true;
+
       if (e.sh !== undefined) {
         var el = live.map[k] || baseIdx.map[k];
         var esColumna = !!(el && el.classList && el.classList.contains("cal-col"));
         if (esColumna) {
+          // Mover una tarjeta de un dia a otro cambia el contenido de la
+          // columna: esto es lo que hace que el arrastre se vea en vivo.
           keep = keep || {};
           keep.sh = e.sh;
           if (e.bsh !== undefined) keep.bsh = e.bsh;
         } else {
-          full = false;          // edicion de contenido: no se replica en vivo
-          skipped.push(k);       // ...pero hay que conservarla al guardar
+          algoFuera = true;
         }
+      }
+
+      if (algoFuera) {
+        full = false;            // no se replico todo...
+        skipped.push(k);         // ...pero hay que conservarlo al guardar
       }
       if (keep) out[k] = keep;
     }
