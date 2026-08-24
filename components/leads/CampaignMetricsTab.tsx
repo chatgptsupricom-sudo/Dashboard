@@ -6,9 +6,11 @@ import {
   Circle,
   DollarSign,
   Eye,
+  FileText,
   Loader2,
   Pencil,
   Plus,
+  Target,
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -269,13 +271,34 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
   const { campaigns, summary } = data;
 
+  const abrirInforme = () => {
+    const p = new URLSearchParams();
+    if (sede) p.set("sede", sede);
+    if (fechaInicio) p.set("fecha_inicio", fechaInicio);
+    if (fechaFin) p.set("fecha_fin", fechaFin);
+    // La pagina vive en /<locale>/adminleads/informe: se construye desde el
+    // pathname actual porque una URL relativa reemplazaria el segmento del tab.
+    const base = window.location.pathname.replace(/\/+$/, "");
+    window.open(`${base}/informe?${p.toString()}`, "_blank", "noopener");
+  };
+
   return (
     <div className="space-y-8">
       {/* KPI Cards - Campanas Meta */}
       <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
-          Resumen Campanas Meta
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+            Resumen Campanas Meta
+          </h3>
+          <button
+            onClick={abrirInforme}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
+            title="Genera el informe KPI mensual de redes sociales del periodo seleccionado"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Generar informe
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <MetricCard
             title="Inversion Total"
