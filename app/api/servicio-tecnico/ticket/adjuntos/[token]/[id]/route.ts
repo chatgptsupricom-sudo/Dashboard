@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
 import { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -32,10 +33,17 @@ async function ensureAdjuntosTable() {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   try {
+    // Más alto que los otros: una pantalla con varias fotos hace una petición
+    // por archivo.
+    const bloqueo = aplicarLimites(request, "adjunto-servir", [
+      { max: 60, ventanaSegundos: 60 },
+    ]);
+    if (bloqueo) return bloqueo;
+
     await ensureAdjuntosTable();
     const { token, id } = await params;
 

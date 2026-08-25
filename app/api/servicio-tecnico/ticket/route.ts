@@ -3,6 +3,8 @@ import {
   buscarFacturaConSeriales,
   type ItemFactura,
 } from "@/lib/servicio-tecnico/factura";
+import { verificarCaptcha } from "@/lib/servicio-tecnico/captcha";
+import { aplicarLimites, obtenerIp } from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -121,9 +123,26 @@ async function ensurePortalColumns(conn: any) {
 }
 
 export async function POST(request: NextRequest) {
+  // Un reporte legítimo se hace una vez. 3 por hora deja margen para
+  // reintentos y equivocaciones sin permitir llenar la bandeja del técnico.
+  const bloqueo = aplicarLimites(request, "ticket-crear", [
+    { max: 3, ventanaSegundos: 3600 },
+  ]);
+  if (bloqueo) return bloqueo;
+
   let conn: any;
   try {
-    const body = await request.json();
+    // Igual que en adjuntos: un cuerpo que no es JSON es culpa del que llama,
+    // no un fallo del servidor.
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Peticion invalida" },
+        { status: 400 },
+      );
+    }
 
     // Validacion basica. NO se valida aqui el serial/producto — eso lo hace
     // el cruce con Odoo mas abajo.
@@ -160,6 +179,20 @@ export async function POST(request: NextRequest) {
     }
     if (clientPhone && clientPhone.length > 50) {
       return NextResponse.json({ error: "Telefono demasiado largo" }, { status: 400 });
+    }
+
+    // Captcha. Inerte mientras no haya TURNSTILE_SECRET_KEY configurada, así
+    // que hoy no bloquea a nadie. Va antes de tocar Odoo: si no pasa, no
+    // gastamos llamadas RPC contra producción.
+    const captcha = await verificarCaptcha(
+      typeof body.captcha_token === "string" ? body.captcha_token : undefined,
+      obtenerIp(request),
+    );
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: "No pudimos verificar que eres una persona. Intenta de nuevo." },
+        { status: 400 },
+      );
     }
 
     // Paso 1: re-resolver contra Odoo. El cliente puede mentir en su navegador,
@@ -444,6 +477,11 @@ function maskPhoneForResponse(phone: string | null): string | null {
 
 export async function GET(request: NextRequest) {
   try {
+    const bloqueo = aplicarLimites(request, "ticket-consultar", [
+      { max: 20, ventanaSegundos: 60 },
+    ]);
+    if (bloqueo) return bloqueo;
+
     const { searchParams } = new URL(request.url);
     const numero = searchParams.get("numero")?.trim() || "";
     const factura = searchParams.get("factura")?.trim() || "";

@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -42,10 +43,15 @@ function maskPhone(phone: string | null): string | null {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   try {
+    const bloqueo = aplicarLimites(request, "ticket-token", [
+      { max: 20, ventanaSegundos: 60 },
+    ]);
+    if (bloqueo) return bloqueo;
+
     const { token } = await params;
 
     if (!token || token.length < 16 || token.length > 64) {

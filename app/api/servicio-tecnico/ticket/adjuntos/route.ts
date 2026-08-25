@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -91,10 +92,31 @@ async function ensureAdjuntosTable() {
 // El cliente crea el tracking_token antes de subir (mismo UUID que usara el ticket).
 // Si el ticket no existe todavia, ticket_id queda NULL y se enlaza despues (#22).
 export async function POST(request: NextRequest) {
+  // Este acepta escrituras anónimas en la base sin ninguna identificación: es
+  // almacenamiento gratis para quien lo encuentre. Con 5 archivos por ticket y
+  // 3 tickets por hora, 20 subidas/hora deja holgura para reintentos.
+  const bloqueo = aplicarLimites(request, "adjuntos-subir", [
+    { max: 20, ventanaSegundos: 3600 },
+  ]);
+  if (bloqueo) return bloqueo;
+
   try {
     await ensureAdjuntosTable();
 
-    const formData = await request.formData();
+    // Un POST sin cuerpo multipart hace que formData() lance, y sin esto se
+    // iba por el catch de abajo como un 500. Un 500 en una ruta pública es
+    // ruido en los logs y, para quien esté sondeando, la señal de que algo
+    // reventó por dentro.
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Peticion invalida" },
+        { status: 400 },
+      );
+    }
+
     const trackingToken = formData.get("tracking_token") as string | null;
 
     if (!trackingToken || trackingToken.length < 16 || trackingToken.length > 64) {
@@ -183,6 +205,11 @@ export async function POST(request: NextRequest) {
 // GET: Lista los adjuntos de un tracking_token. Usado por el cliente para verificar
 // que su upload quedo OK, y por el panel interno para mostrar el detalle (#24).
 export async function GET(request: NextRequest) {
+  const bloqueo = aplicarLimites(request, "adjuntos-listar", [
+    { max: 60, ventanaSegundos: 60 },
+  ]);
+  if (bloqueo) return bloqueo;
+
   try {
     await ensureAdjuntosTable();
     const url = new URL(request.url);
