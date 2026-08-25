@@ -702,9 +702,7 @@
     },
     "soon": "This section is under development. In the meantime, give us a call and we'll gladly help you.",
     "back": "Back",
-    "callUs": "Call Supricom"
-  },
-  "portal_rma": {
+    "callUs": "Call Supricom",
     "confirmacion_titulo": "We received your report",
     "confirmacion_subtitulo": "It will be attended shortly",
     "ticket_numero": "Ticket number",

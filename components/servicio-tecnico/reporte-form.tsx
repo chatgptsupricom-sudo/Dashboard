@@ -4,7 +4,7 @@ import { CaptchaTurnstile } from "@/components/servicio-tecnico/captcha-turnstil
 import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
 import AttachmentUploader, {
   type AdjuntoEstado,
-} from "@/components/portal-rma/AttachmentUploader";
+} from "@/components/servicio-tecnico/adjuntos-uploader";
 import {
   AlertCircle,
   ArrowLeft,
