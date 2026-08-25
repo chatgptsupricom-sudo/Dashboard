@@ -58,6 +58,20 @@ export function obtenerIp(request: Request): string {
     parseInt(process.env.PROXY_HOPS_CONFIABLES || "1", 10) || 1,
   );
 
+  // Detrás de Cloudflare, CF-Connecting-IP trae la IP real del cliente y
+  // Cloudflare la SOBRESCRIBE siempre, así que no se puede falsificar. Es más
+  // robusto que contar saltos, que se rompe si mañana cambia la cadena de
+  // proxies.
+  //
+  // Va detrás de una variable a propósito: si la app NO estuviera tras
+  // Cloudflare, cualquiera podría mandar esa cabecera y elegir su propia
+  // identidad para el límite. Solo se confía cuando alguien afirma
+  // explícitamente que Cloudflare está delante.
+  if (process.env.CONFIAR_CF_CONNECTING_IP === "1") {
+    const cf = request.headers.get("cf-connecting-ip");
+    if (cf) return cf.trim();
+  }
+
   const xff = request.headers.get("x-forwarded-for");
   if (xff) {
     const cadena = xff
