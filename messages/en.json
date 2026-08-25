@@ -1945,7 +1945,7 @@
     },
 "construction": {
       "title": "Module complete",
-      "desc": "Intakes, dispatches and ratings are ready (issues #2, #3 and #4 of the plan). Pending: dashboard with KPIs (#5)."
+      "desc": "All plan issues (intakes, dispatches, ratings, and dashboard) are ready. Pending: future optimizations."
     },
       "calificacion": {
         "ingreso_title": "Rate the security guard who received",
@@ -2187,6 +2187,25 @@
       "loading": "Loading...",
       "empty": "No ratings yet. Once a worker is rated, they'll appear here.",
       "calificaciones_count": "{count} ratings"
+    },
+    "dashboard": {
+      "loading": "Loading dashboard...",
+      "error": "Error loading dashboard. Try refreshing the page.",
+      "empty": "No data yet",
+      "kpi": {
+        "ingresos_hoy": "Intakes today",
+        "despachos_hoy": "Dispatches today",
+        "en_taller": "In shop > 7d",
+        "promedio": "Average ★",
+        "total_calif": "{count} ratings this month"
+      },
+      "ingresos_pendientes": "Intakes pending dispatch",
+      "ingresos_recientes": "Recent intakes",
+      "despachos_recientes": "Recent dispatches",
+      "top_almacenistas": "Top warehouse workers this month",
+      "dias_en_taller": "{count}d in shop",
+      "almacenista_stats": "{ingresos} intakes · {despachos} dispatches",
+      "ver_todos": "View all"
     }
   }
 }

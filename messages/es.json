@@ -1934,7 +1934,7 @@
     },
 "construction": {
       "title": "Módulo completo",
-      "desc": "Ingresos, despachos y calificaciones están listos (issues #2, #3 y #4 del plan). Pendiente: dashboard con KPIs (#5)."
+      "desc": "Todos los issues del plan (ingresos, despachos, calificaciones y dashboard) están listos. Pendiente: optimizaciones futuras."
     },
       "calificacion": {
         "ingreso_title": "Califica al Seguridad que recibió",
@@ -2176,6 +2176,25 @@
       "loading": "Cargando...",
       "empty": "Aún no hay calificaciones. Cuando se califique a un almacenista aparecerá aquí.",
       "calificaciones_count": "{count} calificaciones"
+    },
+    "dashboard": {
+      "loading": "Cargando dashboard...",
+      "error": "Error al cargar el dashboard. Intenta recargar la página.",
+      "empty": "Sin datos aún",
+      "kpi": {
+        "ingresos_hoy": "Ingresos hoy",
+        "despachos_hoy": "Despachos hoy",
+        "en_taller": "En taller > 7d",
+        "promedio": "Promedio ★",
+        "total_calif": "{count} calificaciones del mes"
+      },
+      "ingresos_pendientes": "Ingresos pendientes de despacho",
+      "ingresos_recientes": "Ingresos recientes",
+      "despachos_recientes": "Despachos recientes",
+      "top_almacenistas": "Top almacenistas del mes",
+      "dias_en_taller": "{count}d en taller",
+      "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
+      "ver_todos": "Ver todos"
     }
   }
 }
