@@ -29,9 +29,10 @@ export default async function middleware(request: NextRequest) {
   const response = intlMiddleware(request);
   const { pathname } = request.nextUrl;
 
-  // Raíz de un subdominio de clientes -> portal, no login.
   const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+
   if (HOSTS_DEL_PORTAL.includes(host)) {
+    // Raíz de un subdominio de clientes -> portal, no login.
     const esRaiz = pathname === "/" || /^\/(es|en)\/?$/.test(pathname);
     if (esRaiz) {
       const idioma = /^\/(es|en)/.test(pathname)
@@ -40,6 +41,23 @@ export default async function middleware(request: NextRequest) {
       return NextResponse.redirect(
         new URL(`/${idioma}/servicio-tecnico`, request.url),
       );
+    }
+
+    // Fuera del portal, nada más existe en este dominio.
+    //
+    // El panel no queda expuesto —el guard de JWT ya impedía entrar— pero su
+    // pantalla de login se servía completa en la dirección que se publica en
+    // supricom.com.ve. Un cliente curioso llegaba al login de la empresa, y
+    // quien escanee el dominio encontraba el panel.
+    //
+    // Se responde 404 y no 403: un 403 confirmaría que ahí hay algo.
+    //
+    // OJO: esto cubre las páginas. Las rutas de /api quedan fuera del matcher
+    // de este middleware (ver config abajo), así que las APIs del panel siguen
+    // respondiendo en este dominio. El login ya tiene su propio límite de
+    // intentos; el resto sigue igual de alcanzable en panel.supricom.com.ve.
+    if (!pathname.includes("/servicio-tecnico")) {
+      return new NextResponse(null, { status: 404 });
     }
   }
   const token = request.cookies.get("token")?.value;
