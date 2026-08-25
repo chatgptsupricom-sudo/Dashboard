@@ -34,6 +34,7 @@ Gotchas:
 - Varias rutas (inventario ×3, agenteia) hacen `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"` al inicio — quirk de dev, respetarlo.
 - `META_ACCESS_TOKEN` es un token de **system user** con `instagram_basic` pero **sin** `instagram_manage_insights`: perfil y listado de publicaciones de Instagram funcionan, pero Insights (views, reach, profile_views, demografía, insights por publicación) devuelve `(#10) Application does not have permission`. `lib/instagram.ts` degrada por bloque (`{ available, reason }`) en vez de fallar; cuando Meta apruebe el permiso empieza a devolver datos sin cambiar código.
 - La MySQL de producción tiene allowlist por IP: no se puede conectar desde cualquier máquina de desarrollo.
+- `leads.fecha_venta` es en realidad **fecha de cierre**: se puebla en todo lead cerrado, incluidos los `motivo_cierre = 'PERDIDO'`. Para contar ventas hay que filtrar además por `status = 'CERRADO' AND motivo_cierre IN ('VENTA','GANADO')`. Y ojo con `COALESCE(fecha_venta, fecha_ingreso, created_at)` (patrón habitual en `app/api/adminleads/`): cuenta como leads del mes a leads viejos cerrados ese mes. El informe mensual usa el criterio separado — entrada por `COALESCE(fecha_ingreso, created_at)`, ventas por `fecha_venta` — y por eso no coincide con el tab General.
 
 ## Docs
 
