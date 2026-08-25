@@ -2,6 +2,7 @@ import {
   buscarFacturaConSeriales,
   OdooNoDisponibleError,
 } from "@/lib/servicio-tecnico/factura";
+import { aplicarLimites, obtenerIp } from "@/lib/servicio-tecnico/limites";
 import { NextResponse } from "next/server";
 
 /**
@@ -16,6 +17,15 @@ import { NextResponse } from "next/server";
  * el issue #25; hasta que eso exista, este endpoint no debería publicarse.
  */
 export async function GET(request: Request) {
+  // El endpoint más apetecible de todos: con él se enumeran facturas y se
+  // sacan nombres de clientes. Dos ventanas — la corta corta la ráfaga, la
+  // larga el goteo sostenido, que es como se raspa un catálogo sin que se note.
+  const bloqueo = aplicarLimites(request, "factura", [
+    { max: 10, ventanaSegundos: 60 },
+    { max: 50, ventanaSegundos: 3600 },
+  ]);
+  if (bloqueo) return bloqueo;
+
   const { searchParams } = new URL(request.url);
   const numero = searchParams.get("numero") || "";
   const rif = searchParams.get("rif") || undefined;
@@ -29,6 +39,14 @@ export async function GET(request: Request) {
 
   try {
     const resultado = await buscarFacturaConSeriales(numero, rif);
+
+    // Registro para poder detectar que alguien está raspando. Sin esto no hay
+    // forma de enterarse: un raspado sostenido y por debajo del límite se ve
+    // igual que tráfico normal. Se guarda el número consultado y si acertó,
+    // que es lo que dibuja el patrón; no se guardan datos del cliente.
+    console.info(
+      `[factura] ip=${obtenerIp(request)} numero=${numero.slice(0, 32)} resultado=${resultado.estado}`,
+    );
 
     if (resultado.estado === "no_encontrada") {
       return NextResponse.json(resultado, { status: 404 });
