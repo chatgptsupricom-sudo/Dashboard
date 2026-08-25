@@ -111,7 +111,13 @@ export default function ConsultarPage() {
     }
   }
 
-  const statusLabel = ticket ? t(STATUS_LABELS[ticket.status] || "status_recibido") : "";
+  // Traduce cualquier valor del ENUM. La línea de tiempo lo mostraba en crudo
+  // ("recibido", "no_procesado"), que es jerga interna: el issue #23 pide
+  // explícitamente no enseñarle al cliente los valores de la base.
+  const etiquetaEstado = (estado: string) =>
+    STATUS_LABELS[estado] ? t(STATUS_LABELS[estado]) : estado;
+
+  const statusLabel = ticket ? etiquetaEstado(ticket.status) : "";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white px-4 py-10 sm:py-16">
@@ -297,8 +303,8 @@ export default function ConsultarPage() {
                       <div className="pb-4 flex-1">
                         <p className="text-sm font-medium text-slate-700">
                           {h.from_status
-                            ? `${h.from_status} → ${h.to_status}`
-                            : h.to_status}
+                            ? `${etiquetaEstado(h.from_status)} → ${etiquetaEstado(h.to_status)}`
+                            : etiquetaEstado(h.to_status)}
                         </p>
                         <p className="text-xs text-slate-400 mt-1">
                           {new Date(h.created_at).toLocaleString("es-VE")}
