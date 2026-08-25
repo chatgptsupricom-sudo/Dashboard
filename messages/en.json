@@ -1908,5 +1908,39 @@
     "mode_amount": "Amount",
     "mode_quantity_short": "Qty.",
     "always": "Always"
+  },
+  "seguridad": {
+    "module_title": "Security / Warehouse",
+    "module_subtitle": "RMA equipment intake and dispatch",
+    "logged_in_as": "Logged in as",
+    "logout": "Sign out",
+    "welcome": "Hi, {name}",
+    "welcome_desc": "Register intakes and dispatches for the repair shop here.",
+    "actions": {
+      "ingreso": {
+        "title": "Register intake",
+        "desc": "When the customer delivers equipment for repair",
+        "cta": "New intake"
+      },
+      "despacho": {
+        "title": "Register dispatch",
+        "desc": "When the technician returns the repaired equipment",
+        "cta": "New dispatch"
+      },
+      "ingresos_list": {
+        "title": "Recent intakes",
+        "desc": "View all recorded intakes",
+        "cta": "View list"
+      },
+      "calificaciones": {
+        "title": "Ratings",
+        "desc": "Average star rating of the warehouse team",
+        "cta": "View ratings"
+      }
+    },
+    "construction": {
+      "title": "Module under construction",
+      "desc": "This is the skeleton of the Seguridad module. The intake, dispatch and rating forms are in development (issues #2, #3 and #4 of the plan)."
+    }
   }
 }

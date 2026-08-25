@@ -17,6 +17,7 @@ export enum UserRole {
   DISENADOR = "diseñador",
   ASISTENTE_VENTAS = "asistente de ventas",
   ADMINISTRACION = "administración",
+  SEGURIDAD = "seguridad",
 }
 
 // Permisos por rol
@@ -293,6 +294,17 @@ export const rolePermissions: RolePermissions = {
       "vista_custom",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],
+  },
+  // Rol Seguridad: el equipo de almacen/control de acceso de OSC.
+  // NO entra al dashboard del panel: tiene su propia ruta /seguridad.
+  // El sidebar del panel NO debe mostrar este rol (verificar).
+  [UserRole.SEGURIDAD]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [], // intencionalmente vacio: el modulo vive en /seguridad
   },
 };
 

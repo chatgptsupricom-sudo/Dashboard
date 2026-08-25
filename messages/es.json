@@ -1897,5 +1897,39 @@
     "marketing": "Mercadeo",
     "programmers": "Programadores",
     "audit": "Auditoría"
+  },
+  "seguridad": {
+    "module_title": "Seguridad / Almacén",
+    "module_subtitle": "Recepción y despacho de equipo RMA",
+    "logged_in_as": "Sesión iniciada como",
+    "logout": "Cerrar sesión",
+    "welcome": "Hola, {name}",
+    "welcome_desc": "Aquí registras ingresos y despachos del taller.",
+    "actions": {
+      "ingreso": {
+        "title": "Registrar ingreso",
+        "desc": "Cuando el cliente entrega un equipo para reparar",
+        "cta": "Nuevo ingreso"
+      },
+      "despacho": {
+        "title": "Registrar despacho",
+        "desc": "Cuando el técnico devuelve el equipo reparado",
+        "cta": "Nuevo despacho"
+      },
+      "ingresos_list": {
+        "title": "Ingresos recientes",
+        "desc": "Ver todos los ingresos registrados",
+        "cta": "Ver listado"
+      },
+      "calificaciones": {
+        "title": "Calificaciones",
+        "desc": "Promedio de estrellas del equipo de almacén",
+        "cta": "Ver calificaciones"
+      }
+    },
+    "construction": {
+      "title": "Módulo en construcción",
+      "desc": "Este es el esqueleto del módulo Seguridad. Los formularios de ingreso, despacho y calificaciones están en desarrollo (issues #2, #3 y #4 del plan)."
+    }
   }
 }
