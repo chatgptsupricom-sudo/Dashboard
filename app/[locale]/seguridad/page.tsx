@@ -40,7 +40,10 @@ export default function SeguridadDashboard() {
               </p>
             </div>
             <button
-              onClick={() => logout(locale)}
+              onClick={() => {
+                logout();
+                window.location.href = `/${locale}/seguridad/login`;
+              }}
               className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
               title={t("logout")}
             >
@@ -68,7 +71,6 @@ export default function SeguridadDashboard() {
             description={t("actions.ingreso.desc")}
             cta={t("actions.ingreso.cta")}
             variant="primary"
-            disabled
           />
           <ActionCard
             href={`${base}/despacho/nuevo`}
@@ -86,7 +88,6 @@ export default function SeguridadDashboard() {
             description={t("actions.ingresos_list.desc")}
             cta={t("actions.ingresos_list.cta")}
             variant="outline"
-            disabled
           />
           <ActionCard
             href={`${base}/almacenista`}

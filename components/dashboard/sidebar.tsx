@@ -308,7 +308,8 @@ export function Sidebar({
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
 
   const isSellerPausado =
-    (userRole === "seller" || userRole === "vendedor") &&
+    (userRole?.toLowerCase().trim() === "seller" ||
+      userRole?.toLowerCase().trim() === "vendedor") &&
     (user as any).activo === 0;
 
   // Filtramos los items base
