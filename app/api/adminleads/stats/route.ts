@@ -312,7 +312,7 @@ export async function GET(request: Request) {
         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
       LEFT JOIN leads l ON s.id = l.seller_id ${sellerId ? "AND l.seller_id = " + parseInt(sellerId) : ""} ${dateJoinCond}
-      WHERE 1=1 AND s.activo = 1 ${sedeJoin}
+      WHERE (s.activo = 1 OR l.id IS NOT NULL) ${sedeJoin}
       GROUP BY s.id
     `);
 
@@ -346,13 +346,12 @@ export async function GET(request: Request) {
     );
 
     const statsRow = statsResult.rows?.[0] || {};
-    const totalVentas =
-      sellerId || sede
-        ? parseInt(statsRow.total_ventas_filtradas) || 0
-        : vendorResult.rows?.reduce(
-            (acc: number, curr: any) => acc + (curr.ganados || 0),
-            0,
-          ) || 0;
+    // Las ventas salen siempre de la query principal sobre `leads`, igual que
+    // Monto total y Efectividad. Antes, sin sede ni vendedor elegido, se sumaba
+    // vendorResult, que arranca en `sellers` con `activo = 1`: una venta hecha
+    // por un vendedor dado de baja desaparecia de la tarjeta de Cierres aunque
+    // si estuviera contada en el monto y en la efectividad.
+    const totalVentas = parseInt(statsRow.total_ventas_filtradas) || 0;
 
     // 6. Top productos sin stock (motivo_perdido = 'Sin inventario')
     const topProductosSinStockResult: any = await query(`
