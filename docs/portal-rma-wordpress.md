@@ -10,8 +10,7 @@ listo son los snippets HTML/CSS con el estilo Supricom para pegar.
 
 ## TL;DR
 
-- URL pública del portal: `https://servicio.supricom.com.ve/es/servicio-tecnico`
-  (URL final a confirmar — ver "Dominio" abajo)
+- **URL pública del portal: `https://panel.supricom.com.ve/es/servicio-tecnico`**
 - **NO publicar este enlace hasta que el issue de seguridad (#25) esté cerrado**
 - Tres snippets listos para copiar y pegar (topbar / menú / botón principal)
   en `public/wordpress-snippets/` de este proyecto
@@ -19,19 +18,16 @@ listo son los snippets HTML/CSS con el estilo Supricom para pegar.
 
 ## 1. Dominio
 
-**Decisión abierta que hay que tomar antes de publicar.** El portal necesita un
-dominio propio, no la URL interna del panel.
+**Decisión tomada: `panel.supricom.com.ve`.** El portal se publica bajo el
+subdominio `panel.supricom.com.ve` (apuntando al host del panel). NO se usa un
+subdominio dedicado tipo `servicio.supricom.com.ve` — el cliente entra por
+`panel.supricom.com.ve` que es donde vive todo el panel.
 
-| Opción | Ejemplo | Recomendación |
-|---|---|---|
-| Subdominio de Supricom | `servicio.supricom.com.ve` | **Recomendada** — institucional, fácil de recordar |
-| Subdominio alternativo | `soporte.supricom.com.ve` | OK si servicio está tomado |
-| URL actual del panel | lo que tenga el deploy actual | NO recomendado — se ve ajeno |
-
-Si se elige subdominio, hace falta:
-- **DNS**: registro CNAME o A apuntando al host del panel
+Esto requiere:
+- **DNS**: registro CNAME (o A) apuntando `panel.supricom.com.ve` al host del deploy del portal
 - **Certificado TLS**: Let's Encrypt o el proveedor que use Supricom
-- **Coordinación con quien maneje infraestructura** — esto es lo que más tarda
+- **Coordinación con quien maneje infraestructura** — confirmar que el host del
+  panel responde también por ese hostname
 
 ## 2. Dónde poner el enlace
 
@@ -105,7 +101,7 @@ llevar al idioma activo del sitio:
 
 ```html
 <!-- Reemplazar /es/ por el idioma activo del sitio -->
-<a href="https://servicio.supricom.com.ve/es/servicio-tecnico">
+<a href="https://panel.supricom.com.ve/es/servicio-tecnico">
 ```
 
 En WordPress con WPML o Polylang, se usa la función del plugin
@@ -113,7 +109,7 @@ En WordPress con WPML o Polylang, se usa la función del plugin
 
 ## 6. Apertura en nueva pestaña
 
-- Si el portal va en **subdominio propio** (`servicio.supricom.com.ve`): abrir
+- Como el portal va en `panel.supricom.com.ve` (subdominio de Supricom): abrir
   en **la misma pestaña** — no se está abandonando el sitio, solo yendo a
   otro rincón de Supricom
 - Si va en la **URL actual del panel** (no recomendado): en **nueva pestaña**
@@ -163,8 +159,8 @@ Antes de darlo por hecho:
 | `public/wordpress-snippets/servicio-tecnico-topbar.html` | Para agregar al strip de arriba |
 | `public/wordpress-snippets/servicio-tecnico-menu.html` | Ítem para el menú principal |
 
-Todos los snippets usan la URL **placeholder** `https://servicio.supricom.com.ve`
-— reemplazarla por la URL final cuando se decida el dominio.
+Todos los snippets apuntan a **`https://panel.supricom.com.ve/es/servicio-tecnico`**.
+Listos para pegar tal cual, sin reemplazos pendientes.
 
 ## 11. Criterio de aceptación
 
