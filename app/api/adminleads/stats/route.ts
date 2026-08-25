@@ -259,6 +259,10 @@ export async function GET(request: Request) {
 
     const ES_VENTA =
       "status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO')";
+    // Efectividad = conversion de cohorte: de los leads que ENTRARON en el
+    // periodo, cuantos terminaron en venta, sin importar cuando se cerro. Usar
+    // las ventas del periodo como numerador mezclaria leads de meses
+    // anteriores y podria dar mas de 100%.
     const entradaEnPeriodo = conFechas
       ? "COALESCE(fecha_ingreso, created_at) BETWEEN ? AND ?"
       : "1=1";
@@ -280,7 +284,8 @@ export async function GET(request: Request) {
       SELECT
         SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
         IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
-        (SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) /
+        SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) as ventas_del_mes,
+        (SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) /
          NULLIF(SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END), 0)) * 100 as tasa_efectividad,
         SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as total_ventas_filtradas,
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
@@ -289,7 +294,10 @@ export async function GET(request: Request) {
          NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion
       FROM leads ${whereClause}
     `,
-      params,
+      // El SELECT consume el rango 6 veces antes de que el WHERE consuma los
+      // suyos: total_leads, monto, ventas_del_mes, los dos lados de la
+      // efectividad y las ventas del periodo.
+      [...Array(6).fill(rangoParams).flat(), ...params],
     );
 
     // 2. Distribución por etapas

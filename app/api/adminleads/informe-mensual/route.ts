@@ -105,6 +105,8 @@ interface CrmStats {
   recaudo: number;
   ticket_promedio: number;
   tasa_conversion: number;
+  /** Leads que entraron en el periodo y terminaron en venta (cohorte). */
+  ventas_del_mes: number;
 }
 
 const ENTRADA = "COALESCE(#.fecha_ingreso, #.created_at)";
@@ -167,7 +169,7 @@ function criteriosLeads(
   const whereParams = [...filtroParams, ...rangoParams, ...rangoParams];
   const where = `WHERE ${filtros.join(" AND ")}`;
 
-  return { entradaEnPeriodo, ventaEnPeriodo, rangoParams, where, whereParams };
+  return { entradaEnPeriodo, ventaEnPeriodo, esVenta: con(ES_VENTA), rangoParams, where, whereParams };
 }
 
 /**
@@ -220,11 +222,13 @@ async function getCrmStats(
       SELECT
         SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
         SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
+        SUM(CASE WHEN ${c.entradaEnPeriodo} AND ${c.esVenta} THEN 1 ELSE 0 END) as ventas_del_mes,
         IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN leads.monto_cerrado_usd ELSE 0 END), 0) as recaudo
       FROM leads
       ${c.where}
     `,
     [
+      ...c.rangoParams,
       ...c.rangoParams,
       ...c.rangoParams,
       ...c.rangoParams,
@@ -234,15 +238,21 @@ async function getCrmStats(
   const row = result.rows?.[0] || {};
   const total_leads = parseInt(row.total_leads) || 0;
   const ventas = parseInt(row.ventas) || 0;
+  const ventas_del_mes = parseInt(row.ventas_del_mes) || 0;
   const recaudo = parseFloat(row.recaudo) || 0;
 
   return {
     total_leads,
     ventas,
+    ventas_del_mes,
     recaudo,
     ticket_promedio: ventas > 0 ? Math.round((recaudo / ventas) * 100) / 100 : 0,
+    // Conversion de cohorte: de los leads que entraron, cuantos se vendieron.
+    // No se usa `ventas` porque incluye cierres de leads de meses anteriores.
     tasa_conversion:
-      total_leads > 0 ? Math.round((ventas / total_leads) * 1000) / 10 : 0,
+      total_leads > 0
+        ? Math.round((ventas_del_mes / total_leads) * 1000) / 10
+        : 0,
   };
 }
 
@@ -717,6 +727,7 @@ export async function GET(request: Request) {
         recaudo: crmActual.recaudo,
         ticket_promedio: crmActual.ticket_promedio,
         tasa_conversion: crmActual.tasa_conversion,
+        ventas_del_mes: crmActual.ventas_del_mes,
         calificados: totalCalificados,
         no_calificados: totalNoCalificados,
         tasa_calificacion:

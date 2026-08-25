@@ -384,12 +384,17 @@ export default function InformeRedesSociales({ data }: { data: any }) {
 
       {/* 4. LEADS Y CALIDAD */}
       <Slide numero="Slide 4" titulo="Leads y calidad · KPI central">
-        <div className="grid grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-5 gap-3 mb-6">
           <KpiCard label="Leads del canal" value={fmtNum(leads.total)} detalle="Origen Meta" />
           <KpiCard
             label="Leads concretados"
             value={fmtNum(leads.ventas)}
-            detalle={`${fmtPct(leads.tasa_conversion)} de conversión`}
+            detalle={`Ventas cerradas en el período`}
+          />
+          <KpiCard
+            label="Conversión del mes"
+            value={fmtPct(leads.tasa_conversion)}
+            detalle={`${fmtNum(leads.ventas_del_mes)} de ${fmtNum(leads.total)} leads que entraron`}
           />
           <KpiCard
             label="Tasa de calificación"
