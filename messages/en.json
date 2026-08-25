@@ -183,6 +183,13 @@
     "super_admin": "Super Admin"
   },
   "rma": {
+    "portal_warranty": "Warranty when reported",
+    "portal_warranty_until": "Expires on",
+    "portal_warranty_todo": "Undetermined: needs a manual check and the brand filled in on Odoo.",
+    "warranty_en_garantia": "Under warranty",
+    "warranty_vencida": "Expired",
+    "warranty_vida_util": "Lifetime",
+    "warranty_indeterminada": "Undetermined",
     "page_title": "Technical Service / RMA",
     "page_subtitle": "Warranty, repair and product return management.",
     "coming_soon": "Module under development",
@@ -574,6 +581,17 @@
     "completa_campos": "Complete all required fields"
   },
   "servicioTecnico": {
+    "garantia": {
+      "titulo": "Warranty",
+      "en_garantia": "Under warranty",
+      "en_garantia_detalle": "Covered until {fecha}.",
+      "vida_util": "Covered for life",
+      "vida_util_detalle": "This product has a lifetime warranty.",
+      "vencida": "Outside the warranty period",
+      "vencida_detalle": "You can still report it: we'll take a look and send you a quote before doing any work.",
+      "indeterminada": "To be confirmed",
+      "indeterminada_detalle": "We'll confirm it when we review your case and let you know."
+    },
     "form": {
       "step1": "Invoice",
       "step2": "Product",

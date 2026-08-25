@@ -21,6 +21,12 @@ interface TicketPublic {
   invoice_number: string;
   serial: string | null;
   created_at: string;
+  garantia: {
+    estado: string;
+    meses: number | null;
+    vence: string | null;
+    marca: string | null;
+  };
   timeline: Array<{
     from_status: string | null;
     to_status: string;
@@ -62,7 +68,8 @@ export async function GET(
     // internos del panel no deben ser accesibles publicamente.
     const caseResult = await query(
       `SELECT case_number, status, model, hardware, product_code, invoice_number,
-              serial, created_at, origen
+              serial, created_at, origen,
+              garantia_estado, garantia_meses, garantia_vence, garantia_marca
        FROM rma_cases
        WHERE tracking_token = ? AND origen = 'portal'
        LIMIT 1`,
@@ -95,6 +102,13 @@ export async function GET(
       invoice_number: row.invoice_number || "",
       serial: row.serial || null,
       created_at: row.created_at,
+      // Congelada, ver el comentario del otro endpoint.
+      garantia: {
+        estado: row.garantia_estado || "indeterminada",
+        meses: row.garantia_meses ?? null,
+        vence: row.garantia_vence || null,
+        marca: row.garantia_marca || null,
+      },
       timeline: (historyResult.rows || []).map((h: any) => ({
         from_status: h.from_status,
         to_status: h.to_status,

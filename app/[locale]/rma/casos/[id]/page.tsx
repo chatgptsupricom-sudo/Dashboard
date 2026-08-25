@@ -468,6 +468,45 @@ export default function RmaCasoDetailPage() {
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_contact_phone")}</Label>
                   <p className="text-sm text-slate-700 mt-1">{caseData.client_phone || "—"}</p>
                 </div>
+                {/* Garantía CONGELADA del momento del reporte, no recalculada
+                    al abrir esta pantalla. Si el técnico ve un número distinto
+                    al que vio el cliente, no hay conversación posible. */}
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_warranty")}</Label>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <Badge
+                      className={
+                        caseData.garantia_estado === "en_garantia"
+                          ? "bg-emerald-100 text-emerald-700 border-emerald-200 text-[11px]"
+                          : caseData.garantia_estado === "vida_util"
+                            ? "bg-violet-100 text-violet-700 border-violet-200 text-[11px]"
+                            : caseData.garantia_estado === "vencida"
+                              ? "bg-amber-100 text-amber-800 border-amber-200 text-[11px]"
+                              : "bg-slate-100 text-slate-600 border-slate-200 text-[11px]"
+                      }
+                    >
+                      {t(`warranty_${caseData.garantia_estado || "indeterminada"}`)}
+                    </Badge>
+                    {caseData.garantia_marca && (
+                      <span className="text-xs text-slate-500">
+                        {caseData.garantia_marca}
+                        {caseData.garantia_meses ? ` · ${caseData.garantia_meses}m` : ""}
+                      </span>
+                    )}
+                  </div>
+                  {caseData.garantia_vence && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t("portal_warranty_until")}{" "}
+                      {new Date(caseData.garantia_vence).toLocaleDateString("es-VE")}
+                    </p>
+                  )}
+                  {(!caseData.garantia_estado ||
+                    caseData.garantia_estado === "indeterminada") && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      {t("portal_warranty_todo")}
+                    </p>
+                  )}
+                </div>
                 <div className="pt-3 border-t border-slate-100">
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("odoo_refs")}</Label>
                   <div className="mt-2 space-y-2">
