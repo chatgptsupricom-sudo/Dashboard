@@ -2195,6 +2195,13 @@
       "dias_en_taller": "{count}d en taller",
       "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
       "ver_todos": "Ver todos"
+    },
+    "foto_estado": {
+      "label": "Foto del estado del equipo (opcional)",
+      "hint": "JPG, PNG, WebP o HEIC. Máximo 10 MB.",
+      "title": "Foto del estado",
+      "upload_error": "La foto no se pudo subir, pero el ingreso sí quedó registrado. Puedes subirla después.",
+      "click_to_enlarge": "Click para ampliar"
     }
   }
 }

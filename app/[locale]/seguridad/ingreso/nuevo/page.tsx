@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import FileUploadField from "@/components/seguridad/FileUploadField";
 
 function todayISO() {
   const d = new Date();
@@ -90,6 +91,10 @@ export default function NuevoIngresoPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const [foto, setFoto] = useState<File | null>(null);
+  const [fotoError, setFotoError] = useState<string | null>(null);
+  const [uploadingFoto, setUploadingFoto] = useState(false);
 
   useEffect(() => {
     if (user?.name && !form.recibido_por) {
@@ -178,11 +183,31 @@ export default function NuevoIngresoPage() {
       }
 
       const data = await res.json();
-      if (data?.id) {
-        router.push(`${base}/ingreso/${data.id}`);
-      } else {
+      if (!data?.id) {
         router.push(`${base}/ingreso`);
+        return;
       }
+
+      if (foto) {
+        setUploadingFoto(true);
+        const formData = new FormData();
+        formData.append("foto", foto);
+        try {
+          const fotoRes = await fetch(`/api/seguridad/ingreso/${data.id}/foto`, {
+            method: "POST",
+            body: formData,
+          });
+          if (!fotoRes.ok) {
+            setFotoError(t("foto_estado.upload_error"));
+          }
+        } catch {
+          setFotoError(t("foto_estado.upload_error"));
+        } finally {
+          setUploadingFoto(false);
+        }
+      }
+
+      router.push(`${base}/ingreso/${data.id}`);
     } catch (err: any) {
       setSubmitError(err?.message || tf("error_generic"));
       setSubmitting(false);
@@ -457,6 +482,26 @@ export default function NuevoIngresoPage() {
                 onChange={(v) => update("falla_cubierta_garantia", v)}
                 yes={tf("yes")}
                 no={tf("no")}
+              />
+            </div>
+          </section>
+
+          {/* Section C2: Foto del estado (opcional) */}
+          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+            <h2 className="text-sm font-bold text-slate-900 mb-3">
+              {t("foto_estado.title")}
+            </h2>
+            <div>
+              <FileUploadField
+                value={foto}
+                onChange={(file) => {
+                  setFoto(file);
+                  setFotoError(null);
+                }}
+                label={t("foto_estado.label")}
+                hint={t("foto_estado.hint")}
+                error={fotoError}
+                disabled={uploadingFoto}
               />
             </div>
           </section>

@@ -126,6 +126,9 @@ export default function IngresoDetailPage() {
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [ratingSaved, setRatingSaved] = useState(false);
 
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     let cancel = false;
@@ -163,6 +166,27 @@ export default function IngresoDetailPage() {
     run();
     return () => {
       cancel = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelado = false;
+    let url: string | null = null;
+    fetch(`/api/seguridad/ingreso/${id}/foto`)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (cancelado || !blob) return;
+        if (blob.size === 0) return;
+        url = URL.createObjectURL(blob);
+        setFotoUrl(url);
+      })
+      .catch(() => {
+        // ignore — no photo
+      });
+    return () => {
+      cancelado = true;
+      if (url) URL.revokeObjectURL(url);
     };
   }, [id]);
 
@@ -478,6 +502,37 @@ export default function IngresoDetailPage() {
           )}
         </section>
 
+        {/* Foto del estado */}
+        {fotoUrl && (
+          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-500" />
+                {t("foto_estado.title")}
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                {t("foto_estado.click_to_enlarge")}
+              </span>
+            </div>
+            <div
+              className="cursor-zoom-in rounded-[10px] border border-slate-200 bg-slate-50/40 p-2 flex items-center justify-center"
+              onClick={() => setLightboxOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setLightboxOpen(true);
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={fotoUrl}
+                alt="Foto del estado del equipo"
+                className="max-w-full max-h-96 object-contain rounded-lg"
+              />
+            </div>
+          </section>
+        )}
+
         {/* Ticket card (if linked) */}
         {ingreso.rma_case_id && (
           <section className="bg-white border border-violet-200 rounded-[10px] p-5">
@@ -600,6 +655,30 @@ export default function IngresoDetailPage() {
           </section>
         )}
       </main>
+
+      {lightboxOpen && fotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fotoUrl}
+            alt=""
+            className="max-w-full max-h-full object-contain"
+          />
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-10 h-10 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl leading-none"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
