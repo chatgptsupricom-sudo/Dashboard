@@ -156,6 +156,7 @@ function SellerQuotaCard({
   seller: any;
   onEdit: () => void;
 }) {
+  const t = useTranslations("superadmin.cuota");
   const isTargetMet = seller.porcentaje >= 100;
   const metricas = calcularMetricas(seller.meta, seller.facturado);
   return (
@@ -239,6 +240,7 @@ function SellerQuotaCard({
 }
 
 function EditQuotaDialog({ seller, onClose, onSave }: any) {
+  const t = useTranslations("superadmin.cuota");
   const [value, setValue] = useState(seller.meta);
   const { user } = useAuthStore();
 

@@ -165,6 +165,7 @@ export default function CatalogoPage() {
 }
 
 function ProductoCard({ producto, index }: { producto: any; index: number }) {
+  const t = useTranslations("superadmin.catalogo");
   const imagen = producto.image_128
     ? `data:image/png;base64,${producto.image_128}`
     : null;
