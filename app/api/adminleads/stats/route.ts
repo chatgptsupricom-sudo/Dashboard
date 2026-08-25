@@ -246,13 +246,29 @@ export async function GET(request: Request) {
       conditions.push(`${canalNormalizadoSql("canal_origen")} = ?`);
       params.push(canal);
     }
-    if (fechaInicio) {
-      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
-      params.push(`${fechaInicio} 00:00:00`);
-    }
-    if (fechaFin) {
-      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) <= ?");
-      params.push(`${fechaFin} 23:59:59`);
+    // Criterio de fechas, alineado con el informe mensual (ver criteriosLeads
+    // en app/api/adminleads/informe-mensual/route.ts): un lead pertenece al
+    // periodo por su fecha de ENTRADA, y una venta por su FECHA_VENTA. Antes
+    // todo se filtraba con COALESCE(fecha_venta, fecha_ingreso, created_at),
+    // que contaba como lead del mes a cualquier lead viejo cerrado en el mes
+    // — incluidos los PERDIDO, porque fecha_venta se puebla en todo cierre.
+    const conFechas = Boolean(fechaInicio && fechaFin);
+    const rangoParams = conFechas
+      ? [`${fechaInicio} 00:00:00`, `${fechaFin} 23:59:59`]
+      : [];
+
+    const ES_VENTA =
+      "status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO')";
+    const entradaEnPeriodo = conFechas
+      ? "COALESCE(fecha_ingreso, created_at) BETWEEN ? AND ?"
+      : "1=1";
+    const ventaEnPeriodo = conFechas
+      ? `${ES_VENTA} AND fecha_venta IS NOT NULL AND fecha_venta BETWEEN ? AND ?`
+      : ES_VENTA;
+
+    if (conFechas) {
+      conditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
+      params.push(...rangoParams, ...rangoParams);
     }
 
     const whereClause =
@@ -262,10 +278,11 @@ export async function GET(request: Request) {
     const statsResult: any = await query(
       `
       SELECT
-        COUNT(*) as total_leads,
-        IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
-        (SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100 as tasa_efectividad,
-        SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) as total_ventas_filtradas,
+        SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
+        IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
+        (SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) /
+         NULLIF(SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END), 0)) * 100 as tasa_efectividad,
+        SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as total_ventas_filtradas,
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
         IFNULL(AVG(CASE WHEN fecha_venta IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) ELSE NULL END), 0) as avg_tiempo_cierre,
         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
@@ -276,12 +293,14 @@ export async function GET(request: Request) {
     );
 
     // 2. Distribución por etapas
+    // Esta consulta une leads con lead_statuses, asi que toda columna de la
+    // condicion tiene que quedar calificada con el alias `l` o queda ambigua.
+    // El lookbehind evita volver a prefijar lo que ya viene como `l.columna`.
     const stageConditions = conditions.map((c) =>
-      c
-        .replace(/\bseller_id\b/g, "l.seller_id")
-        .replace(/\bfecha_venta\b/g, "l.fecha_venta")
-        .replace(/\bfecha_ingreso\b/g, "l.fecha_ingreso")
-        .replace(/\bcreated_at\b/g, "l.created_at"),
+      c.replace(
+        /(?<![.\w])(seller_id|fecha_venta|fecha_ingreso|created_at|canal_origen|status|motivo_cierre)\b/g,
+        "l.$1",
+      ),
     );
     const stageWhere =
       stageConditions.length > 0
