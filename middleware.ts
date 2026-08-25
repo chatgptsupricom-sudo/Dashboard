@@ -10,9 +10,38 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
 
+/**
+ * Subdominios de cara al cliente. Quien entre por acá va al portal de servicio
+ * técnico, no al login del panel: es la dirección que se publica en
+ * supricom.com.ve y el cliente no tiene nada que hacer en el panel interno.
+ *
+ * Se configura con PORTAL_HOSTS (separados por coma) para no tener que tocar
+ * código al agregar o cambiar un dominio.
+ */
+const HOSTS_DEL_PORTAL = (
+  process.env.PORTAL_HOSTS || "servicio.supricom.com.ve,soporte.supricom.com.ve"
+)
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+
 export default async function middleware(request: NextRequest) {
   const response = intlMiddleware(request);
   const { pathname } = request.nextUrl;
+
+  // Raíz de un subdominio de clientes -> portal, no login.
+  const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+  if (HOSTS_DEL_PORTAL.includes(host)) {
+    const esRaiz = pathname === "/" || /^\/(es|en)\/?$/.test(pathname);
+    if (esRaiz) {
+      const idioma = /^\/(es|en)/.test(pathname)
+        ? pathname.split("/")[1]
+        : "es";
+      return NextResponse.redirect(
+        new URL(`/${idioma}/servicio-tecnico`, request.url),
+      );
+    }
+  }
   const token = request.cookies.get("token")?.value;
   const locale = pathname.split("/")[1] || "es";
 
