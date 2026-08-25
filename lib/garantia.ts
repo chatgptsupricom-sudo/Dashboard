@@ -154,7 +154,25 @@ export async function resolverMarca(
   return null;
 }
 
+/**
+ * Productos ya registrados en esta vida del proceso.
+ *
+ * Sin esto se insertaba una fila por cada producto sin marca en CADA consulta
+ * de factura: una factura con seis productos sin marca eran seis inserciones
+ * cada vez que alguien la abriera. El log es para saber QUÉ productos hay que
+ * arreglar en Odoo, no cuántas veces se consultaron.
+ */
+const yaRegistrados = new Set<string>();
+const MAX_REGISTRADOS = 5_000;
+
 async function loggarMarcaNoResuelta(productoNombre: string) {
+  const clave = productoNombre.slice(0, 200);
+  if (yaRegistrados.has(clave)) return;
+  // Tope para que la memoria no crezca sin límite; al llenarse se vacía y se
+  // vuelve a registrar, que es preferible a retener sin control.
+  if (yaRegistrados.size >= MAX_REGISTRADOS) yaRegistrados.clear();
+  yaRegistrados.add(clave);
+
   try {
     const { query } = await import("./db");
     await query(
