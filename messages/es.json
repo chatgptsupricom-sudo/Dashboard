@@ -684,9 +684,7 @@
     },
     "soon": "Esta sección está en desarrollo. Mientras tanto, comunícate con nosotros por teléfono y con gusto te atendemos.",
     "back": "Volver",
-    "callUs": "Llamar a Supricom"
-  },
-  "portal_rma": {
+    "callUs": "Llamar a Supricom",
     "confirmacion_titulo": "Recibimos tu reporte",
     "confirmacion_subtitulo": "Será atendido en breve",
     "ticket_numero": "Número de ticket",
