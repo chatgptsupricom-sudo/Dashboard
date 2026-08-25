@@ -48,6 +48,22 @@ function maskPhone(phone: string | null): string | null {
   return `****${digits.slice(-4)}`;
 }
 
+/**
+ * mysql2 devuelve las columnas DATE como objeto Date, así que un String(...)
+ * da "Thu Feb 25 2027 ..." y recortarlo a 10 produce basura. Se arma el
+ * YYYY-MM-DD con los componentes UTC, que es como MySQL entregó la fecha.
+ */
+function fechaISO(valor: unknown): string | null {
+  if (!valor) return null;
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return null;
+    return valor.toISOString().slice(0, 10);
+  }
+  const s = String(valor);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m ? m[1] : null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -107,7 +123,7 @@ export async function GET(
         estado: row.garantia_estado || "indeterminada",
         meses: row.garantia_meses ?? null,
         // Fecha de calendario, no instante: se manda YYYY-MM-DD.
-        vence: row.garantia_vence ? String(row.garantia_vence).slice(0, 10) : null,
+        vence: fechaISO(row.garantia_vence),
         marca: row.garantia_marca || null,
       },
       timeline: (historyResult.rows || []).map((h: any) => ({

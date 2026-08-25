@@ -176,6 +176,9 @@ export async function POST(request: NextRequest) {
     const clientOdooProductId = body.odoo_product_id ? parseInt(String(body.odoo_product_id), 10) : null;
     const clientProductCode = String(body.product_code || "").trim();
     const clientSerial = String(body.serial || "").trim();
+    // Serial que el cliente leyó de la etiqueta, cuando el despacho no lo tiene
+    // registrado en Odoo.
+    const serialManual = String(body.serial_manual || "").trim().slice(0, 100);
     // Identificador del item tal como lo devuelve la consulta de factura.
     const clientItemId = String(body.item_id || "").trim();
     // Documento del cliente. Obligatorio, igual que en la consulta de factura:
@@ -302,6 +305,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Si Odoo no tiene serial para esa línea, el cliente debe escribirlo. Se
+    // valida acá y no solo en el navegador: el formulario es sugerencia, esto
+    // es la regla.
+    if (!matched.serial && !serialManual) {
+      return NextResponse.json(
+        { error: "Necesitamos el serial del equipo para identificarlo." },
+        { status: 400 },
+      );
+    }
+
+    // El serial que se guarda: manda SIEMPRE el de Odoo si existe. El escrito
+    // a mano solo rellena el hueco, nunca sustituye al registrado — si no,
+    // cualquiera podría reportar un serial que no le corresponde.
+    const serialFinal = matched.serial || serialManual || null;
+
+    // Al menos un adjunto. Se comprueba contra la base y no contra lo que diga
+    // el navegador: si el archivo no llegó al servidor, para el técnico no
+    // existe.
+    if (!uploadToken) {
+      return NextResponse.json(
+        { error: "Adjunta al menos una foto o un video del equipo." },
+        { status: 400 },
+      );
+    }
+
+    const adjuntos = await query(
+      `SELECT COUNT(*) AS total FROM rma_ticket_adjuntos
+        WHERE tracking_token = ? AND ticket_id IS NULL`,
+      [uploadToken],
+    );
+    const totalAdjuntos = Number((adjuntos.rows as any[])?.[0]?.total || 0);
+    if (totalAdjuntos === 0) {
+      return NextResponse.json(
+        { error: "Adjunta al menos una foto o un video del equipo." },
+        { status: 400 },
+      );
+    }
+
     // Paso 3: abrir conexion y asegurar schema.
     conn = await getConnection();
     await ensurePortalColumns(conn);
@@ -348,7 +389,7 @@ export async function POST(request: NextRequest) {
             clientPhone || null,
             // serial_quantity es el campo viejo (texto libre) que usa el
             // modulo interno para buscar. El serial real va aparte.
-            matched.serial || null,
+            serialFinal,
             reportedFault,
             // La compania sale de la factura. Antes venia del body con 9 por
             // defecto, asi que un reporte de una factura de Caracas quedaba
@@ -360,7 +401,7 @@ export async function POST(request: NextRequest) {
             trackingToken,
             resultado.partner_id,
             matched.producto_id,
-            matched.serial || null,
+            serialFinal,
             // La garantía se congela acá: es la del día en que el cliente
             // reportó, no la que se calcularía al abrir el caso.
             matched.garantia?.estado || null,
@@ -510,6 +551,22 @@ export async function POST(request: NextRequest) {
 //
 // Privacidad: mismo error generico para "no existe" y "dato de verificacion no
 // coincide" — sin esto se vuelve una forma de enumerar tickets existentes.
+/**
+ * mysql2 devuelve las columnas DATE como objeto Date, así que un String(...)
+ * da "Thu Feb 25 2027 ..." y recortarlo a 10 produce basura. Se arma el
+ * YYYY-MM-DD con los componentes UTC, que es como MySQL entregó la fecha.
+ */
+function fechaISO(valor: unknown): string | null {
+  if (!valor) return null;
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return null;
+    return valor.toISOString().slice(0, 10);
+  }
+  const s = String(valor);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m ? m[1] : null;
+}
+
 const TICKET_NOT_FOUND = "No encontramos ese reporte";
 
 function maskPhoneForResponse(phone: string | null): string | null {
@@ -588,7 +645,7 @@ export async function GET(request: NextRequest) {
           estado: row.garantia_estado || "indeterminada",
           meses: row.garantia_meses ?? null,
           // Fecha de calendario, no instante: se manda YYYY-MM-DD.
-          vence: row.garantia_vence ? String(row.garantia_vence).slice(0, 10) : null,
+          vence: fechaISO(row.garantia_vence),
           marca: row.garantia_marca || null,
         },
         created_at: row.created_at,
