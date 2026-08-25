@@ -84,7 +84,11 @@ export default function RmaCasoDetailPage() {
       const res = await fetch(`/api/rma/${caseId}`);
       const data = await res.json();
       if (data.success) {
-        setCaseData(data.case);
+        // La API devuelve `adjuntos` al lado del caso, no dentro, pero toda
+        // esta pantalla los lee como `caseData.adjuntos`. Sin unirlos aquí,
+        // siempre valían undefined y el caso decía "sin adjuntos" aunque el
+        // cliente sí hubiera subido fotos.
+        setCaseData({ ...data.case, adjuntos: data.adjuntos ?? [] });
         setHistory(data.history);
         setEditForm(data.case);
       }
