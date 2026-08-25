@@ -173,8 +173,10 @@ export async function POST(request: NextRequest) {
     const clientSerial = String(body.serial || "").trim();
     // Identificador del item tal como lo devuelve la consulta de factura.
     const clientItemId = String(body.item_id || "").trim();
-    // Documento del cliente, opcional, para desambiguar (ver issue #25).
-    const clientRif = String(body.rif || "").trim() || undefined;
+    // Documento del cliente. Obligatorio, igual que en la consulta de factura:
+    // si aquí no se pidiera, este endpoint sería la puerta de atrás para crear
+    // reportes sobre la factura de otro sin saber de quién es.
+    const clientRif = String(body.rif || "").trim();
     // Token temporal con el que el formulario subió los adjuntos antes de que
     // el ticket existiera. Es una cadena (uuid), no un id: la versión anterior
     // le hacía parseInt y quedaba en NaN, así que el UPDATE de más abajo nunca
@@ -198,6 +200,12 @@ export async function POST(request: NextRequest) {
     }
     if (clientPhone && clientPhone.length > 50) {
       return NextResponse.json({ error: "Telefono demasiado largo" }, { status: 400 });
+    }
+    if (!clientRif) {
+      return NextResponse.json(
+        { error: "Falta el RIF o cedula del cliente de la factura" },
+        { status: 400 },
+      );
     }
 
     // Captcha. Inerte mientras no haya TURNSTILE_SECRET_KEY configurada, así
