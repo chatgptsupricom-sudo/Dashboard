@@ -72,14 +72,13 @@ export default function SeguridadDashboard() {
             cta={t("actions.ingreso.cta")}
             variant="primary"
           />
-          <ActionCard
+<ActionCard
             href={`${base}/despacho/nuevo`}
             icon={<Send className="w-6 h-6" aria-hidden />}
             title={t("actions.despacho.title")}
             description={t("actions.despacho.desc")}
             cta={t("actions.despacho.cta")}
             variant="outline"
-            disabled
           />
           <ActionCard
             href={`${base}/ingreso`}
