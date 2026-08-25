@@ -91,7 +91,17 @@ export interface ResultadoLimite {
   esperaSegundos: number;
 }
 
-export function limitar(llave: string, limite: Limite): ResultadoLimite {
+/**
+ * @param registrar si es false, solo consulta el estado sin gastar cuota.
+ *   Sirve para separar "cuántas veces lo intentó" de "cuántas veces lo logró":
+ *   un cliente que se equivoca escribiendo el número de factura no debería
+ *   quemar la cuota de reportes y quedarse sin poder reportar.
+ */
+export function limitar(
+  llave: string,
+  limite: Limite,
+  registrar = true,
+): ResultadoLimite {
   const ahora = Date.now();
   const desde = ahora - limite.ventanaSegundos * 1000;
 
@@ -106,15 +116,34 @@ export function limitar(llave: string, limite: Limite): ResultadoLimite {
     return { ok: false, restantes: 0, esperaSegundos: Math.max(1, espera) };
   }
 
-  previas.push(ahora);
-  registros.set(llave, previas);
-  podar(ahora);
+  if (registrar) {
+    previas.push(ahora);
+    registros.set(llave, previas);
+    podar(ahora);
+  }
 
   return {
     ok: true,
     restantes: limite.max - previas.length,
     esperaSegundos: 0,
   };
+}
+
+/** Consulta un límite sin consumir cuota. */
+export function consultarLimite(
+  request: Request,
+  nombre: string,
+  limite: Limite,
+): NextResponse | null {
+  const llave = `${nombre}:${limite.ventanaSegundos}:${obtenerIp(request)}`;
+  const r = limitar(llave, limite, false);
+  return r.ok ? null : respuesta429(r.esperaSegundos);
+}
+
+/** Anota una acción consumada (se llama cuando la acción de verdad ocurrió). */
+export function registrarUso(request: Request, nombre: string, limite: Limite) {
+  const llave = `${nombre}:${limite.ventanaSegundos}:${obtenerIp(request)}`;
+  limitar(llave, limite, true);
 }
 
 /**

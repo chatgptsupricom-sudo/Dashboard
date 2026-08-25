@@ -4,7 +4,12 @@ import {
   type ItemFactura,
 } from "@/lib/servicio-tecnico/factura";
 import { verificarCaptcha } from "@/lib/servicio-tecnico/captcha";
-import { aplicarLimites, obtenerIp } from "@/lib/servicio-tecnico/limites";
+import {
+  aplicarLimites,
+  consultarLimite,
+  obtenerIp,
+  registrarUso,
+} from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -123,12 +128,26 @@ async function ensurePortalColumns(conn: any) {
 }
 
 export async function POST(request: NextRequest) {
-  // Un reporte legítimo se hace una vez. 3 por hora deja margen para
-  // reintentos y equivocaciones sin permitir llenar la bandeja del técnico.
-  const bloqueo = aplicarLimites(request, "ticket-crear", [
-    { max: 3, ventanaSegundos: 3600 },
+  // Dos límites distintos, y la diferencia importa.
+  //
+  // El primero es sobre INTENTOS y es holgado: un cliente que se equivoca
+  // escribiendo el número de factura, o que no encuentra su producto a la
+  // primera, no puede quedarse sin poder reportar por eso. Solo frena al que
+  // martillea.
+  const bloqueoIntentos = aplicarLimites(request, "ticket-intentos", [
+    { max: 20, ventanaSegundos: 3600 },
   ]);
-  if (bloqueo) return bloqueo;
+  if (bloqueoIntentos) return bloqueoIntentos;
+
+  // El segundo es sobre tickets REALMENTE CREADOS, y ese sí es estricto: es el
+  // que evita que llenen la bandeja del técnico. Se consulta acá sin gastar
+  // cuota y se anota más abajo, solo si el ticket llegó a existir.
+  //
+  // Ojo con bajarlo: un cliente corporativo sale a internet por una sola IP, y
+  // dos empleados con equipos distintos comparten este contador.
+  const LIMITE_CREADOS = { max: 5, ventanaSegundos: 3600 };
+  const bloqueoCreados = consultarLimite(request, "ticket-creado", LIMITE_CREADOS);
+  if (bloqueoCreados) return bloqueoCreados;
 
   let conn: any;
   try {
@@ -424,6 +443,9 @@ export async function POST(request: NextRequest) {
         console.error("[portal-ticket] n8n webhook error:", err.message);
       });
     }
+
+    // Ahora sí: el ticket existe, se consume la cuota de creación.
+    registrarUso(request, "ticket-creado", LIMITE_CREADOS);
 
     return NextResponse.json(
       {
