@@ -587,7 +587,8 @@ export async function GET(request: NextRequest) {
         garantia: {
           estado: row.garantia_estado || "indeterminada",
           meses: row.garantia_meses ?? null,
-          vence: row.garantia_vence || null,
+          // Fecha de calendario, no instante: se manda YYYY-MM-DD.
+          vence: row.garantia_vence ? String(row.garantia_vence).slice(0, 10) : null,
           marca: row.garantia_marca || null,
         },
         created_at: row.created_at,

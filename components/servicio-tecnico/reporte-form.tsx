@@ -13,6 +13,7 @@ import {
   Phone,
   Search,
 } from "lucide-react";
+import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
 import { RESUMEN_KEY } from "@/lib/servicio-tecnico/resumen";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -101,12 +102,7 @@ export function ReporteForm({ locale }: { locale: string }) {
     const clave = ["en_garantia", "vencida", "vida_util"].includes(estado)
       ? estado
       : "indeterminada";
-    const fecha = g?.fecha_vencimiento
-      ? new Date(g.fecha_vencimiento).toLocaleDateString(
-          locale === "en" ? "en-US" : "es-VE",
-          { day: "numeric", month: "long", year: "numeric" },
-        )
-      : "";
+    const fecha = formatearFechaCalendario(g?.fecha_vencimiento, locale);
     return {
       estado: clave,
       etiqueta: t(`garantia.${clave}`),

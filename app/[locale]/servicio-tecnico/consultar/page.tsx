@@ -2,6 +2,7 @@
 
 import { useSearchParams, useParams } from "next/navigation";
 import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
+import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -134,13 +135,7 @@ export default function ConsultarPage() {
     const estado = ["en_garantia", "vencida", "vida_util"].includes(bruto)
       ? bruto
       : "indeterminada";
-    const fecha = ticket.garantia.vence
-      ? new Date(ticket.garantia.vence).toLocaleDateString("es-VE", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })
-      : "";
+    const fecha = formatearFechaCalendario(ticket.garantia.vence, "es");
     return {
       estado,
       etiqueta: t(`garantia.${estado}`),

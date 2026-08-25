@@ -497,7 +497,7 @@ export default function RmaCasoDetailPage() {
                   {caseData.garantia_vence && (
                     <p className="mt-1 text-xs text-slate-500">
                       {t("portal_warranty_until")}{" "}
-                      {new Date(caseData.garantia_vence).toLocaleDateString("es-VE")}
+                      {String(caseData.garantia_vence).slice(0, 10)}
                     </p>
                   )}
                   {(!caseData.garantia_estado ||
