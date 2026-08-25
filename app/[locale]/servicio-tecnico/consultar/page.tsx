@@ -47,6 +47,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ConsultarPage() {
   const t = useTranslations("portal_rma");
+  // Las etiquetas de garantía viven bajo servicioTecnico, el namespace del
+  // resto del portal, pero esta pantalla usa portal_rma. Con un solo hook, una
+  // llamada como t("garantia.titulo") buscaba portal_rma.garantia.titulo, que
+  // no existe, y next-intl pintaba la ruta de la llave en crudo.
+  const tg = useTranslations("servicioTecnico.garantia");
   const params = useParams();
   const searchParams = useSearchParams();
   const locale = (params?.locale as string) || "es";
@@ -138,11 +143,11 @@ export default function ConsultarPage() {
     const fecha = formatearFechaCalendario(ticket.garantia.vence, "es");
     return {
       estado,
-      etiqueta: t(`garantia.${estado}`),
+      etiqueta: tg(estado),
       detalle:
         estado === "en_garantia" && fecha
-          ? t("garantia.en_garantia_detalle", { fecha })
-          : t(`garantia.${estado}_detalle`),
+          ? tg("en_garantia_detalle", { fecha })
+          : tg(`${estado}_detalle`),
     };
   })();
 
@@ -249,7 +254,7 @@ export default function ConsultarPage() {
             {garantia && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                  {t("garantia.titulo")}
+                  {tg("titulo")}
                 </p>
                 <GarantiaBadge
                   estado={garantia.estado}
