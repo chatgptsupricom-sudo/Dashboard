@@ -10,6 +10,7 @@ export default function AdminCierresPage() {
   const [search, setSearch] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
   const [motivoFilter, setMotivoFilter] = useState("");
+  const [canalFilter, setCanalFilter] = useState("");
 
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
@@ -102,6 +103,8 @@ export default function AdminCierresPage() {
         if (search && !l.name?.toLowerCase().includes(search.toLowerCase()))
           return false;
         if (sellerFilter && String(l.seller_id) !== sellerFilter) return false;
+        if (canalFilter && (l.canal_origen || "Sin canal") !== canalFilter)
+          return false;
         if (motivoFilter) {
           const mc = l.motivo_cierre;
           const isGanado = mc === "GANADO" || mc === "VENTA";
@@ -126,7 +129,21 @@ export default function AdminCierresPage() {
         const db = b.fecha_venta || "";
         return db.localeCompare(da);
       }),
-    [leads, search, sellerFilter, motivoFilter, fechaInicio, fechaFin],
+    [leads, search, sellerFilter, canalFilter, motivoFilter, fechaInicio, fechaFin],
+  );
+
+  // Las opciones salen de los datos, no de una lista fija: si aparece un canal
+  // nuevo en la base, el filtro lo muestra sin tocar codigo.
+  const canales = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          leads
+            .filter((l) => l.status === "CERRADO")
+            .map((l) => l.canal_origen || "Sin canal"),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [leads],
   );
 
   const totalVentas = closedLeads
@@ -166,6 +183,18 @@ export default function AdminCierresPage() {
           {sellers.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="flex-1 py-2 px-3 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500 text-zinc-600"
+          value={canalFilter}
+          onChange={(e) => setCanalFilter(e.target.value)}
+        >
+          <option value="">Todos los canales</option>
+          {canales.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
           ))}
         </select>
@@ -221,6 +250,7 @@ export default function AdminCierresPage() {
                 <th className="px-6 py-4 text-left">Empresa/RIF</th>
                 <th className="px-6 py-4 text-left">Contacto/Tel</th>
                 <th className="px-6 py-4 text-left">Vendedor</th>
+                <th className="px-6 py-4 text-left">Canal</th>
                 <th className="px-6 py-4 text-center">Motivo</th>
                 <th className="px-6 py-4 text-right">Monto USD</th>
                 <th className="px-6 py-4 text-left">Factura</th>
@@ -232,7 +262,7 @@ export default function AdminCierresPage() {
             <tbody className="divide-y divide-zinc-50">
               {closedLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center">
+                  <td colSpan={10} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-zinc-400">
                       <Archive className="w-10 h-10 opacity-20" />
                       <p className="text-xs font-bold">
@@ -265,6 +295,15 @@ export default function AdminCierresPage() {
                     </td>
                     <td className="px-6 py-4 text-xs font-semibold text-zinc-700">
                       {lead.vendedor_nombre || "—"}
+                    </td>
+                    <td className="px-6 py-4">
+                      {lead.canal_origen ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 whitespace-nowrap">
+                          {lead.canal_origen}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-zinc-300">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center">
                       {(() => {

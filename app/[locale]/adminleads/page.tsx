@@ -702,6 +702,10 @@ export default function MetricsDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "campanas">("general");
+  const [canal, setCanal] = useState("");
+  // La lista de canales llega en la respuesta de stats y no se pierde cuando el
+  // filtro deja un solo canal en los datos.
+  const [canales, setCanales] = useState<string[]>([]);
 
   useEffect(() => {
     setError(null);
@@ -711,6 +715,7 @@ export default function MetricsDashboardPage() {
     if (sellerId) params.set("seller_id", sellerId);
     if (fechaInicio) params.set("fecha_inicio", fechaInicio);
     if (fechaFin) params.set("fecha_fin", fechaFin);
+    if (canal) params.set("canal", canal);
     const url = `/api/adminleads/stats${params.toString() ? "?" + params.toString() : ""}`;
     fetch(url)
       .then((res) => {
@@ -720,12 +725,13 @@ export default function MetricsDashboardPage() {
       .then((res) => {
         if (res.error) throw new Error(res.error);
         setData(res);
+        if (Array.isArray(res.canales)) setCanales(res.canales);
       })
       .catch((err) => {
         console.error("Error cargando stats:", err);
         setError(err.message || "No se pudieron cargar los datos");
       });
-  }, [sellerId, sede, fechaInicio, fechaFin]);
+  }, [sellerId, sede, fechaInicio, fechaFin, canal]);
 
   const exportarExcel = async () => {
     setExportando(true);
@@ -735,6 +741,7 @@ export default function MetricsDashboardPage() {
       if (sellerId) params.set("seller_id", sellerId);
       if (fechaInicio) params.set("fecha_inicio", fechaInicio);
       if (fechaFin) params.set("fecha_fin", fechaFin);
+      if (canal) params.set("canal", canal);
       const res = await fetch(`/api/adminleads/export?${params.toString()}`);
       if (!res.ok) {
         const err = await res
@@ -822,6 +829,19 @@ export default function MetricsDashboardPage() {
                 {v.name}
               </option>
             ))}
+          </select>
+          <select
+            className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
+            value={canal}
+            onChange={(e) => setCanal(e.target.value)}
+          >
+            <option value="">Todos los canales</option>
+            {canales.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value="Sin canal">Sin canal</option>
           </select>
             </>
           )}

@@ -202,7 +202,7 @@
 //     );
 //   }
 // }
-import { query } from "@/lib/db";
+import { db, query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 
@@ -217,6 +217,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const sellerId = searchParams.get("seller_id");
+    const canal = searchParams.get("canal");
     let sede = searchParams.get("sede"); // cids value: "9" (Valencia) or "10" (Caracas)
     if (userCids === 7) sede = "7";
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -237,6 +238,15 @@ export async function GET(request: Request) {
     if (sellerId) {
       conditions.push("seller_id = ?");
       params.push(sellerId);
+    }
+    if (canal) {
+      // "Sin canal" agrupa los leads sin origen registrado.
+      if (canal === "Sin canal") {
+        conditions.push("(canal_origen IS NULL OR canal_origen = '')");
+      } else {
+        conditions.push("canal_origen = ?");
+        params.push(canal);
+      }
     }
     if (fechaInicio) {
       conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
@@ -298,9 +308,25 @@ export async function GET(request: Request) {
 
     // 3. Rendimiento por vendedores
     const sedeJoin = sede ? `AND s.cids = ${parseInt(sede)}` : userCids !== 7 ? "AND s.cids != 7" : "";
+    // El canal se valida contra la lista real de la tabla antes de interpolarlo,
+    // porque esta consulta arma el SQL por concatenacion y no por parametros.
+    const canalesResult: any = await query(
+      "SELECT DISTINCT canal_origen FROM leads WHERE canal_origen IS NOT NULL AND canal_origen != ''",
+    );
+    const canalesDisponibles: string[] = (canalesResult.rows || []).map(
+      (r: any) => r.canal_origen,
+    );
+    const canalJoinCond =
+      canal === "Sin canal"
+        ? "AND (l.canal_origen IS NULL OR l.canal_origen = '')"
+        : canal && canalesDisponibles.includes(canal)
+          ? `AND l.canal_origen = ${db.escape(canal)}`
+          : "";
+
     const dateJoinCond = [
       fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
       fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
+      canalJoinCond,
     ].join(" ");
     const vendorResult: any = await query(`
       SELECT
@@ -373,6 +399,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       stats: { ...statsRow, total_ventas: totalVentas },
+      canales: canalesDisponibles,
       stageData: stageResult.rows || [],
       vendorData: vendorResult.rows || [],
       topVendors: topVendorsResult.rows || [],
