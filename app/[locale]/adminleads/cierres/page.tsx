@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizarCanal } from "@/lib/canales";
 import { Archive, Pencil, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -103,7 +104,7 @@ export default function AdminCierresPage() {
         if (search && !l.name?.toLowerCase().includes(search.toLowerCase()))
           return false;
         if (sellerFilter && String(l.seller_id) !== sellerFilter) return false;
-        if (canalFilter && (l.canal_origen || "Sin canal") !== canalFilter)
+        if (canalFilter && normalizarCanal(l.canal_origen) !== canalFilter)
           return false;
         if (motivoFilter) {
           const mc = l.motivo_cierre;
@@ -140,7 +141,7 @@ export default function AdminCierresPage() {
         new Set(
           leads
             .filter((l) => l.status === "CERRADO")
-            .map((l) => l.canal_origen || "Sin canal"),
+            .map((l) => normalizarCanal(l.canal_origen)),
         ),
       ).sort((a, b) => a.localeCompare(b)),
     [leads],
@@ -297,13 +298,16 @@ export default function AdminCierresPage() {
                       {lead.vendedor_nombre || "—"}
                     </td>
                     <td className="px-6 py-4">
-                      {lead.canal_origen ? (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 whitespace-nowrap">
-                          {lead.canal_origen}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-zinc-300">—</span>
-                      )}
+                      {(() => {
+                        const c = normalizarCanal(lead.canal_origen);
+                        return c === "Sin canal" ? (
+                          <span className="text-xs text-zinc-300">—</span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 whitespace-nowrap">
+                            {c}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-center">
                       {(() => {

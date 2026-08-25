@@ -4,6 +4,7 @@
 // tab de Campanas Meta y el informe mensual compartan exactamente los mismos
 // numeros (inversion, CPL, ROI) en vez de recalcularlos por separado.
 
+import { canalNormalizadoSql, CANALES_META } from "@/lib/canales";
 import { query } from "@/lib/db";
 import {
   filterByCids,
@@ -84,7 +85,7 @@ export async function getCampaignMetrics({
   const leadParams: any[] = [];
 
   leadConditions.push(
-    "canal_origen IN ('Facebook Ads', 'Instagram', 'Meta Ads')",
+    `${canalNormalizadoSql("canal_origen")} IN (${CANALES_META.map((c) => `'${c}'`).join(", ")})`,
   );
   leadConditions.push("campana IS NOT NULL AND campana != ''");
 

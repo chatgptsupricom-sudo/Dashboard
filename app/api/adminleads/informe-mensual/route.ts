@@ -10,6 +10,7 @@
 // POST guarda el cierre del mes en instagram_insights_monthly, que es lo que
 // permite la comparacion mes a mes en los informes siguientes.
 
+import { canalNormalizadoSql, CANALES_META } from "@/lib/canales";
 import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
 import {
@@ -25,7 +26,6 @@ import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const CANALES_META = ["Facebook Ads", "Instagram", "Meta Ads"];
 
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -141,8 +141,9 @@ function criteriosLeads(
   const filtroParams: any[] = [];
 
   if (soloCanalMeta) {
+    // Normalizado: un lead cargado como "instagram" o "IG" tambien cuenta.
     filtros.push(
-      `${alias}.canal_origen IN (${CANALES_META.map(() => "?").join(", ")})`,
+      `${canalNormalizadoSql(`${alias}.canal_origen`)} IN (${CANALES_META.map(() => "?").join(", ")})`,
     );
     filtroParams.push(...CANALES_META);
   }
@@ -185,7 +186,7 @@ async function getCanalesBreakdown(
   const result: any = await query(
     `
       SELECT
-        COALESCE(NULLIF(leads.canal_origen, ''), 'Sin canal') as canal,
+        ${canalNormalizadoSql("leads.canal_origen")} as canal,
         SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as leads,
         SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
         IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN leads.monto_cerrado_usd ELSE 0 END), 0) as recaudo

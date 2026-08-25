@@ -202,7 +202,8 @@
 //     );
 //   }
 // }
-import { db, query } from "@/lib/db";
+import { canalNormalizadoSql, SIN_CANAL } from "@/lib/canales";
+import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 
@@ -240,13 +241,10 @@ export async function GET(request: Request) {
       params.push(sellerId);
     }
     if (canal) {
-      // "Sin canal" agrupa los leads sin origen registrado.
-      if (canal === "Sin canal") {
-        conditions.push("(canal_origen IS NULL OR canal_origen = '')");
-      } else {
-        conditions.push("canal_origen = ?");
-        params.push(canal);
-      }
+      // Se compara contra el canal ya normalizado: asi "Whatsaap" cae dentro de
+      // "Whatsapp" y el literal "null" dentro de "Sin canal".
+      conditions.push(`${canalNormalizadoSql("canal_origen")} = ?`);
+      params.push(canal);
     }
     if (fechaInicio) {
       conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
@@ -308,20 +306,21 @@ export async function GET(request: Request) {
 
     // 3. Rendimiento por vendedores
     const sedeJoin = sede ? `AND s.cids = ${parseInt(sede)}` : userCids !== 7 ? "AND s.cids != 7" : "";
-    // El canal se valida contra la lista real de la tabla antes de interpolarlo,
-    // porque esta consulta arma el SQL por concatenacion y no por parametros.
     const canalesResult: any = await query(
-      "SELECT DISTINCT canal_origen FROM leads WHERE canal_origen IS NOT NULL AND canal_origen != ''",
+      `SELECT DISTINCT ${canalNormalizadoSql("canal_origen")} AS canal FROM leads`,
     );
-    const canalesDisponibles: string[] = (canalesResult.rows || []).map(
-      (r: any) => r.canal_origen,
-    );
-    const canalJoinCond =
-      canal === "Sin canal"
-        ? "AND (l.canal_origen IS NULL OR l.canal_origen = '')"
-        : canal && canalesDisponibles.includes(canal)
-          ? `AND l.canal_origen = ${db.escape(canal)}`
-          : "";
+    const canalesDisponibles: string[] = (canalesResult.rows || [])
+      .map((r: any) => r.canal)
+      .filter((c: string) => c && c !== SIN_CANAL)
+      .sort((a: string, b: string) => a.localeCompare(b));
+
+    // Esta consulta arma el SQL por concatenacion: el canal se valida contra la
+    // lista real antes de incrustarlo, nunca se interpola lo que llego crudo.
+    const canalValido =
+      canal === SIN_CANAL || canalesDisponibles.includes(canal || "");
+    const canalJoinCond = canalValido
+      ? `AND ${canalNormalizadoSql("l.canal_origen")} = '${canal!.replace(/'/g, "''")}'`
+      : "";
 
     const dateJoinCond = [
       fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
