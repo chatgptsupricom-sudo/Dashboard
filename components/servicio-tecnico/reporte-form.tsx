@@ -1,5 +1,6 @@
 "use client";
 
+import { CaptchaTurnstile } from "@/components/servicio-tecnico/captcha-turnstile";
 import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
 import AttachmentUploader, {
   type AdjuntoEstado,
@@ -73,6 +74,8 @@ export function ReporteForm({ locale }: { locale: string }) {
   const [telefono, setTelefono] = useState("");
   const [adjuntos, setAdjuntos] = useState<AdjuntoEstado[]>([]);
   const [enviando, setEnviando] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaActivo, setCaptchaActivo] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
   // Token con el que se agrupan los adjuntos antes de que el ticket exista.
@@ -178,6 +181,7 @@ export function ReporteForm({ locale }: { locale: string }) {
           reported_fault: falla.trim(),
           client_phone: telefono.trim(),
           upload_token: uploadToken,
+          captcha_token: captchaToken,
         }),
       });
 
@@ -477,12 +481,26 @@ export function ReporteForm({ locale }: { locale: string }) {
             </div>
           </div>
 
+          <CaptchaTurnstile
+            locale={locale}
+            onToken={setCaptchaToken}
+            onDisponible={setCaptchaActivo}
+          />
+
           {errorEnvio && <Aviso texto={errorEnvio} ayuda={t("form.callInstead")} />}
 
           <button
             type="button"
             className="portal-btn portal-btn-primary mt-6 w-full"
-            disabled={enviando || subiendo || !fallaValida || !telefonoValido}
+            disabled={
+              enviando ||
+              subiendo ||
+              !fallaValida ||
+              !telefonoValido ||
+              // Solo se exige si hay captcha configurado; si no, no se puede
+              // producir un token y bloquearía a todo el mundo.
+              (captchaActivo && !captchaToken)
+            }
             onClick={enviar}
           >
             {enviando ? (
