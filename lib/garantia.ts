@@ -124,13 +124,16 @@ async function cargarGarantias(): Promise<Map<string, GarantiaRow>> {
 export async function resolverMarca(
   marcaOdoo: string | null | undefined,
   productoNombre: string | null | undefined,
+  tabla?: Map<string, GarantiaRow>,
 ): Promise<string | null> {
   const marcaUpper = (marcaOdoo || "").toUpperCase().trim();
   if (marcaUpper) return marcaUpper;
 
   if (!productoNombre) return null;
 
-  const garantias = await cargarGarantias();
+  // Se acepta la tabla ya cargada: calcularGarantia la tiene en la mano y sin
+  // esto se hacía una consulta extra por cada producto de la factura.
+  const garantias = tabla ?? (await cargarGarantias());
   const nombreUpper = productoNombre.toUpperCase();
 
   // Buscar la marca más larga primero (TARGUS antes que T, NVIDIA antes que
@@ -198,15 +201,7 @@ function partesEnCaracas(d: Date = new Date()): {
  * política, seguimos funcionando.
  */
 function inicioDelDiaEnCaracas(y: number, m: number, d: number): Date {
-  // Probar: si en Caracas son las 00:00 del día dado, qué hora UTC es?
-  // Construimos un Date asumiendo UTC y luego corregimos con el offset real.
-  const comoUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-  const offsetMs = comoUtc.getTimezoneOffset() * 60 * 1000;
-  // getTimezoneOffset() devuelve minutos EAST de UTC (positivo para zonas
-  // al oeste). En SSR (Node) el entorno suele ser UTC, donde el offset es 0
-  // y el cálculo degenera. Mejor derivar el offset Caracas usando el formato.
-  const utcMs = medirUtcMsDelWallClock(y, m, d);
-  return new Date(utcMs);
+  return new Date(medirUtcMsDelWallClock(y, m, d));
 }
 
 /**
@@ -280,7 +275,11 @@ export async function calcularGarantia(
 
   // Caso 2: sin marca resuelta. No inventar.
   const garantiasTabla = garantias ?? (await cargarGarantias());
-  const marca = await resolverMarca(input.marcaOdoo, input.productoNombre);
+  const marca = await resolverMarca(
+    input.marcaOdoo,
+    input.productoNombre,
+    garantiasTabla,
+  );
 
   if (!marca) {
     return {
@@ -295,12 +294,15 @@ export async function calcularGarantia(
 
   const fila = garantiasTabla.get(marca);
 
-  // Caso 3: marca resuelta pero no está en la tabla → default.
-  const mesesCubiertos = fila?.meses ?? GARANTIA_DEFAULT_MESES;
-
-  // Caso 4: vida útil (meses NULL). Está cubierto siempre, sin fecha de
-  // vencimiento. El tipo refleja esto devolviendo null.
-  if (mesesCubiertos === null) {
+  // Caso 3: vida útil. Hay que mirarlo ANTES de aplicar el default, y hay que
+  // distinguir "la fila existe con meses NULL" (ASTA, cubierto siempre) de "no
+  // hay fila" (marca desconocida → default).
+  //
+  // Antes esto se resolvía con `fila?.meses ?? GARANTIA_DEFAULT_MESES`, y el
+  // `??` convertía el NULL de vida útil en 12. La rama de vida_util quedaba
+  // inalcanzable y a un cliente con un producto ASTA se le decía que su
+  // garantía venció a los 12 meses.
+  if (fila && fila.meses === null) {
     return {
       estado: "vida_util",
       meses_cubiertos: null,
@@ -309,6 +311,9 @@ export async function calcularGarantia(
       marca_resuelta: marca,
     };
   }
+
+  // Caso 4: marca resuelta pero no está en la tabla → default.
+  const mesesCubiertos = fila?.meses ?? GARANTIA_DEFAULT_MESES;
 
   // Caso 5: cálculo normal.
   const vencimiento = addMonths(fecha, mesesCubiertos);
