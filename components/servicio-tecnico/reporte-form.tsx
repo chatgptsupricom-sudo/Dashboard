@@ -53,6 +53,7 @@ export function ReporteForm({ locale }: { locale: string }) {
 
   // Paso 1
   const [numero, setNumero] = useState("");
+  const [rif, setRif] = useState("");
   const [buscando, setBuscando] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
   const [coincidencias, setCoincidencias] = useState<Coincidencia[] | null>(null);
@@ -94,9 +95,10 @@ export function ReporteForm({ locale }: { locale: string }) {
   );
 
   const buscarFactura = useCallback(
-    async (valor: string) => {
+    async (valor: string, documento: string) => {
       const consulta = valor.trim();
-      if (!consulta) return;
+      const doc = documento.trim();
+      if (!consulta || !doc) return;
 
       setBuscando(true);
       setErrorBusqueda(null);
@@ -104,7 +106,9 @@ export function ReporteForm({ locale }: { locale: string }) {
 
       try {
         const res = await fetch(
-          `/api/servicio-tecnico/factura?numero=${encodeURIComponent(consulta)}`,
+          `/api/servicio-tecnico/factura?numero=${encodeURIComponent(
+            consulta,
+          )}&rif=${encodeURIComponent(doc)}`,
         );
         const data = await res.json();
 
@@ -143,6 +147,7 @@ export function ReporteForm({ locale }: { locale: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invoice_number: factura.factura.numero,
+          rif: rif.trim(),
           item_id: item.id,
           odoo_product_id: item.producto_id,
           serial: item.serial,
@@ -210,7 +215,7 @@ export function ReporteForm({ locale }: { locale: string }) {
             className="mt-6"
             onSubmit={(e) => {
               e.preventDefault();
-              buscarFactura(numero);
+              buscarFactura(numero, rif);
             }}
           >
             <label htmlFor="numero" className="text-sm font-semibold">
@@ -226,10 +231,26 @@ export function ReporteForm({ locale }: { locale: string }) {
               autoFocus
               enterKeyHint="search"
             />
+            <label htmlFor="rif" className="mt-5 block text-sm font-semibold">
+              {t("form.rifLabel")}
+            </label>
+            <input
+              id="rif"
+              className="portal-field mt-2"
+              value={rif}
+              onChange={(e) => setRif(e.target.value)}
+              placeholder={t("form.rifPlaceholder")}
+              autoComplete="off"
+              enterKeyHint="search"
+            />
+            <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
+              {t("form.rifHelp")}
+            </p>
+
             <button
               type="submit"
-              className="portal-btn portal-btn-primary mt-4 w-full"
-              disabled={buscando || !numero.trim()}
+              className="portal-btn portal-btn-primary mt-5 w-full"
+              disabled={buscando || !numero.trim() || !rif.trim()}
             >
               {buscando ? (
                 <>
@@ -258,7 +279,7 @@ export function ReporteForm({ locale }: { locale: string }) {
                       type="button"
                       onClick={() => {
                         setNumero(c.numero);
-                        buscarFactura(c.numero);
+                        buscarFactura(c.numero, rif);
                       }}
                       className="w-full rounded-[10px] border border-[color:var(--portal-line)] px-4 py-3 text-left hover:border-[color:var(--portal-primary)]"
                     >

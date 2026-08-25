@@ -28,11 +28,31 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const numero = searchParams.get("numero") || "";
-  const rif = searchParams.get("rif") || undefined;
+  const rif = searchParams.get("rif") || "";
 
   if (!numero.trim()) {
     return NextResponse.json(
       { estado: "invalida", error: "Falta el número de factura" },
+      { status: 400 },
+    );
+  }
+
+  // El documento del cliente es OBLIGATORIO. Con el número de factura solo,
+  // este endpoint devuelve el nombre del cliente y todo lo que compró, y los
+  // números son cortos y correlativos: cualquiera los itera y se arma una
+  // lista de clientes de Supricom con sus compras.
+  //
+  // El límite por IP frena el raspado automatizado, pero no el caso puntual:
+  // una factura que se filtró en una foto o en un chat seguiría abriendo los
+  // datos de ese cliente a quien la tenga. Pedir el RIF convierte eso en
+  // "además hay que saber quién es", que es justo lo que sabe el dueño de la
+  // factura y no sabe el que la encontró.
+  if (!rif.trim()) {
+    return NextResponse.json(
+      {
+        estado: "invalida",
+        error: "Falta el RIF o cédula del cliente de la factura",
+      },
       { status: 400 },
     );
   }
