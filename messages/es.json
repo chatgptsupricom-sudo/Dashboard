@@ -1932,11 +1932,29 @@
         "cta": "Ver listado"
       }
     },
-    "construction": {
-      "title": "Módulo parcialmente en construcción",
-      "desc": "Ingresos y despachos están listos (issues #2 y #3 del plan). Pendiente: calificaciones (#4)."
+"construction": {
+      "title": "Módulo completo",
+      "desc": "Ingresos, despachos y calificaciones están listos (issues #2, #3 y #4 del plan). Pendiente: dashboard con KPIs (#5)."
     },
-    "ingreso": {
+      "calificacion": {
+        "ingreso_title": "Califica al Seguridad que recibió",
+        "despacho_title": "Califica al Almacenista que entregó",
+        "comment_label": "Comentario (opcional)",
+        "comment_placeholder": "Algo que destacar...",
+        "save": "Guardar calificación",
+        "saving": "Guardando...",
+        "saved": "¡Gracias! Calificación guardada.",
+        "already_rated": "Ya calificado el {date}",
+        "calificado_por": "Calificado por",
+        "rate_as_cliente": "Calificar como cliente",
+        "list_column_rating": "Calificación",
+        "not_rated": "Sin calificar",
+        "error_save": "Error al guardar. Intenta de nuevo.",
+        "min_comment": "Mínimo {min} caracteres",
+        "duplicate_error": "Esta calificación ya fue registrada.",
+        "rate_for": "Calificar a {name}"
+      },
+      "ingreso": {
       "back": "Volver",
       "list_title": "Ingresos",
       "list_subtitle": "Recepción de equipos al taller",
@@ -1984,6 +2002,8 @@
         "col_hardware": "Hardware / Serie",
         "col_checks": "Verificación",
         "col_recibido": "Recibido por",
+        "col_rating": "Calificación",
+        "not_rated": "Sin calificar",
         "col_despachado": "Despachado",
         "col_actions": "Acciones",
         "view": "Ver",
@@ -2076,6 +2096,8 @@
         "col_fecha": "Fecha",
         "col_almacenista": "Almacenista",
         "col_cliente_retira": "Cliente que retira",
+        "col_rating": "Calificación",
+        "not_rated": "Sin calificar",
         "col_facturas_count": "Facturas",
         "col_ingreso": "Vinculado",
         "col_actions": "Acciones",
@@ -2126,6 +2148,34 @@
         "print_signature_cliente": "Firma del cliente",
         "print_signature_almacenista": "Firma del almacenista"
       }
+    },
+    "almacenista": {
+      "title": "Detalle de Almacenista",
+      "volver": "Volver al dashboard",
+      "promedio": "Promedio",
+      "total_calificaciones": "{count} calificaciones",
+      "distribucion": "Distribución de calificaciones",
+      "estrella_5": "5 estrellas",
+      "estrella_4": "4 estrellas",
+      "estrella_3": "3 estrellas",
+      "estrella_2": "2 estrellas",
+      "estrella_1": "1 estrella",
+      "ultimos_comentarios": "Últimos comentarios",
+      "sin_comentarios": "Aún no hay comentarios",
+      "calificado_por": "Calificado por",
+      "en": "en",
+      "ingreso_label": "ingreso",
+      "despacho_label": "despacho",
+      "sin_comentario": "(sin comentario)",
+      "error_not_found": "Almacenista no encontrado",
+      "loading": "Cargando..."
+    },
+    "almacenistas": {
+      "title": "Almacenistas",
+      "back": "Volver al dashboard",
+      "loading": "Cargando...",
+      "empty": "Aún no hay calificaciones. Cuando se califique a un almacenista aparecerá aquí.",
+      "calificaciones_count": "{count} calificaciones"
     }
   }
 }

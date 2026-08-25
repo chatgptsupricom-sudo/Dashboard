@@ -72,7 +72,30 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({ success: true, ingreso, rma_case: rmaCase });
+    let calificacion: any = null;
+    try {
+      const calResult = await query(
+        `SELECT id, calificacion, comentario, calificado_por, created_at
+         FROM seguridad_calificaciones
+         WHERE relacionado_a = 'ingreso' AND relacionado_id = ? AND almacenista_nombre = ?
+         ORDER BY created_at DESC LIMIT 1`,
+        [ingresoId, ingreso.recibido_por],
+      );
+      if (calResult.rows.length > 0) {
+        const row = calResult.rows[0] as any;
+        calificacion = {
+          id: row.id,
+          calificacion: Number(row.calificacion),
+          comentario: row.comentario ?? null,
+          calificado_por: row.calificado_por ?? null,
+          created_at: row.created_at,
+        };
+      }
+    } catch (e: any) {
+      console.warn("seguridad_calificaciones no disponible:", e?.message);
+    }
+
+    return NextResponse.json({ success: true, ingreso, rma_case: rmaCase, calificacion });
   } catch (error: any) {
     console.error("Error obteniendo ingreso:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

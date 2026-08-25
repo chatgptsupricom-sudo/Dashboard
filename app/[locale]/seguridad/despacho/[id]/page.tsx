@@ -9,14 +9,19 @@ import {
   ClipboardList,
   ExternalLink,
   Loader2,
+  MessageSquare,
   PenLine,
   Printer,
   Send,
+  Send as SendIcon,
   ShieldCheck,
+  Star as StarIcon,
   Ticket as TicketIcon,
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 type Despacho = {
   id: number;
@@ -52,6 +57,14 @@ type RmaCase = {
   case_number: string;
   status: string;
   invoice_number: string;
+} | null;
+
+type Calificacion = {
+  id: number;
+  calificacion: number;
+  comentario: string | null;
+  calificado_por: string | null;
+  created_at: string;
 } | null;
 
 function fmtDate(value: string) {
@@ -107,17 +120,27 @@ export default function DespachoDetailPage() {
   const t = useTranslations("seguridad");
   const tf = useTranslations("seguridad.despacho.form");
   const td = useTranslations("seguridad.despacho.detail");
+  const tc = useTranslations("seguridad.calificacion");
   const tfl = useTranslations("seguridad.ingreso.form");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const id = params?.id as string;
   const base = `/${locale}/seguridad`;
 
+  const { user } = useAuthStore();
+
   const [despacho, setDespacho] = useState<Despacho | null>(null);
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
+  const [calificacion, setCalificacion] = useState<Calificacion>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [draftRating, setDraftRating] = useState(0);
+  const [draftComment, setDraftComment] = useState("");
+  const [savingRating, setSavingRating] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+  const [ratingSaved, setRatingSaved] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -137,6 +160,7 @@ export default function DespachoDetailPage() {
         setDespacho(data.despacho);
         setIngreso(data.ingreso);
         setRmaCase(data.rma_case);
+        setCalificacion(data.calificacion ?? null);
       } catch {
         if (!cancel) setError(td("not_found"));
       } finally {
@@ -148,6 +172,62 @@ export default function DespachoDetailPage() {
       cancel = true;
     };
   }, [id]);
+
+  const refetchCalificacion = async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/seguridad/despacho/${id}`);
+      const data = await res.json();
+      if (data.success) {
+        setCalificacion(data.calificacion ?? null);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const submitCalificacion = async () => {
+    if (!despacho || draftRating < 1) return;
+    setSavingRating(true);
+    setRatingError(null);
+    setRatingSaved(false);
+    // NOTE: For now we always use the logged-in user as calificado_por.
+    // Future enhancement: if despacho has firma_url / cliente_retira,
+    // offer a "Calificar como cliente" toggle and pre-fill calificado_por
+    // with cliente_retira instead.
+    const calificadoPor = user?.name || user?.email || "Seguridad";
+    try {
+      const res = await fetch("/api/seguridad/calificar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          almacenista_nombre: despacho.almacenista_nombre,
+          calificacion: draftRating,
+          relacionado_a: "despacho",
+          relacionado_id: despacho.id,
+          comentario: draftComment.trim() || null,
+          calificado_por: calificadoPor,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        if (res.status === 409) {
+          setRatingError(tc("duplicate_error"));
+        } else {
+          setRatingError(data.error || tc("error_save"));
+        }
+        return;
+      }
+      setRatingSaved(true);
+      setDraftRating(0);
+      setDraftComment("");
+      await refetchCalificacion();
+    } catch {
+      setRatingError(tc("error_save"));
+    } finally {
+      setSavingRating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -316,6 +396,108 @@ export default function DespachoDetailPage() {
               {despacho.almacenista_nombre}
             </p>
           </div>
+        </section>
+
+        {/* Calificación card */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
+              <StarIcon className="w-4 h-4 text-[color:var(--portal-primary,#741DFE)]" />
+              {tc("despacho_title")}
+            </h2>
+            <span className="text-xs text-slate-400 hidden sm:inline">
+              {despacho.almacenista_nombre}
+            </span>
+          </div>
+
+          {calificacion ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                <StarRatingDisplay
+                  value={calificacion.calificacion}
+                  size="md"
+                  showValue
+                />
+                <span className="text-[11px] text-slate-500 ml-auto whitespace-nowrap">
+                  {tc("already_rated", {
+                    date: fmtDateTime(calificacion.created_at),
+                  })}
+                </span>
+              </div>
+              {calificacion.comentario && (
+                <div className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1 inline-flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" />
+                    {tc("comment_label")}
+                  </p>
+                  <p className="text-sm text-slate-800 whitespace-pre-wrap">
+                    {calificacion.comentario}
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">
+                {tc("calificado_por")}:{" "}
+                <span className="font-semibold text-slate-700">
+                  {calificacion.calificado_por || "—"}
+                </span>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50/40 px-3 py-4">
+                <StarRating
+                  value={draftRating}
+                  onChange={(v) => {
+                    setDraftRating(v);
+                    setRatingError(null);
+                    setRatingSaved(false);
+                  }}
+                  size="lg"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">
+                  {tc("comment_label")}
+                </label>
+                <textarea
+                  value={draftComment}
+                  onChange={(e) => setDraftComment(e.target.value)}
+                  placeholder={tc("comment_placeholder")}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 resize-none"
+                />
+              </div>
+              {ratingError && (
+                <p className="text-xs font-semibold text-red-600">
+                  {ratingError}
+                </p>
+              )}
+              {ratingSaved && (
+                <p className="text-xs font-semibold text-emerald-600">
+                  {tc("saved")}
+                </p>
+              )}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <p className="text-[11px] text-slate-500 truncate">
+                  {tc("rate_for", { name: despacho.almacenista_nombre })}
+                </p>
+                <button
+                  type="button"
+                  onClick={submitCalificacion}
+                  disabled={savingRating || draftRating < 1}
+                  className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+                >
+                  {savingRating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <SendIcon className="w-4 h-4" />
+                  )}
+                  {savingRating ? tc("saving") : tc("save")}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Firma card */}

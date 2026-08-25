@@ -1943,11 +1943,29 @@
         "cta": "View list"
       }
     },
-    "construction": {
-      "title": "Module partially under construction",
-      "desc": "Intakes and dispatches are ready (issues #2 and #3 of the plan). Pending: ratings (#4)."
+"construction": {
+      "title": "Module complete",
+      "desc": "Intakes, dispatches and ratings are ready (issues #2, #3 and #4 of the plan). Pending: dashboard with KPIs (#5)."
     },
-    "ingreso": {
+      "calificacion": {
+        "ingreso_title": "Rate the security guard who received",
+        "despacho_title": "Rate the warehouse operator who delivered",
+        "comment_label": "Comment (optional)",
+        "comment_placeholder": "Anything to highlight...",
+        "save": "Save rating",
+        "saving": "Saving...",
+        "saved": "Thanks! Rating saved.",
+        "already_rated": "Already rated on {date}",
+        "calificado_por": "Rated by",
+        "rate_as_cliente": "Rate as customer",
+        "list_column_rating": "Rating",
+        "not_rated": "Not rated",
+        "error_save": "Error saving. Please try again.",
+        "min_comment": "Minimum {min} characters",
+        "duplicate_error": "This rating is already registered.",
+        "rate_for": "Rate {name}"
+      },
+      "ingreso": {
       "back": "Back",
       "list_title": "Intakes",
       "list_subtitle": "Equipment reception to the repair shop",
@@ -1995,6 +2013,8 @@
         "col_hardware": "Hardware / Serial",
         "col_checks": "Verification",
         "col_recibido": "Received by",
+        "col_rating": "Rating",
+        "not_rated": "Not rated",
         "col_despachado": "Dispatched",
         "col_actions": "Actions",
         "view": "View",
@@ -2087,6 +2107,8 @@
         "col_fecha": "Date",
         "col_almacenista": "Warehouse operator",
         "col_cliente_retira": "Picking-up client",
+        "col_rating": "Rating",
+        "not_rated": "Not rated",
         "col_facturas_count": "Invoices",
         "col_ingreso": "Linked",
         "col_actions": "Actions",
@@ -2137,6 +2159,34 @@
         "print_signature_cliente": "Client signature",
         "print_signature_almacenista": "Warehouse operator signature"
       }
+    },
+    "almacenista": {
+      "title": "Warehouse worker detail",
+      "volver": "Back to dashboard",
+      "promedio": "Average",
+      "total_calificaciones": "{count} ratings",
+      "distribucion": "Rating distribution",
+      "estrella_5": "5 stars",
+      "estrella_4": "4 stars",
+      "estrella_3": "3 stars",
+      "estrella_2": "2 stars",
+      "estrella_1": "1 star",
+      "ultimos_comentarios": "Recent comments",
+      "sin_comentarios": "No comments yet",
+      "calificado_por": "Rated by",
+      "en": "on",
+      "ingreso_label": "intake",
+      "despacho_label": "dispatch",
+      "sin_comentario": "(no comment)",
+      "error_not_found": "Worker not found",
+      "loading": "Loading..."
+    },
+    "almacenistas": {
+      "title": "Warehouse workers",
+      "back": "Back to dashboard",
+      "loading": "Loading...",
+      "empty": "No ratings yet. Once a worker is rated, they'll appear here.",
+      "calificaciones_count": "{count} ratings"
     }
   }
 }

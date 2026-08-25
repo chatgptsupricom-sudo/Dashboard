@@ -103,7 +103,6 @@ export default function SeguridadDashboard() {
             description={t("actions.calificaciones.desc")}
             cta={t("actions.calificaciones.cta")}
             variant="outline"
-            disabled
           />
         </section>
 

@@ -94,7 +94,14 @@ export async function GET(request: NextRequest) {
     const total = countResult.rows[0]?.total || 0;
 
     const rowsResult = await query(
-      `SELECT * FROM seguridad_ingresos ${where}
+      `SELECT *,
+        (SELECT AVG(c.calificacion)
+         FROM seguridad_calificaciones c
+         WHERE c.relacionado_a = 'ingreso'
+           AND c.relacionado_id = seguridad_ingresos.id
+           AND c.almacenista_nombre = seguridad_ingresos.recibido_por
+        ) AS promedio_calificacion
+       FROM seguridad_ingresos ${where}
        ORDER BY fecha_entrega DESC, created_at DESC
        LIMIT ${limit} OFFSET ${offset}`,
       params,

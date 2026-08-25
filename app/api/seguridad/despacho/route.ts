@@ -115,7 +115,13 @@ export async function GET(request: NextRequest) {
       total = countResult.rows[0]?.total || 0;
 
       const rowsResult = await query(
-        `SELECT d.*, i.cliente_nombre AS cliente_nombre
+        `SELECT d.*, i.cliente_nombre AS cliente_nombre,
+          (SELECT AVG(c.calificacion)
+           FROM seguridad_calificaciones c
+           WHERE c.relacionado_a = 'despacho'
+             AND c.relacionado_id = d.id
+             AND c.almacenista_nombre = d.almacenista_nombre
+          ) AS promedio_calificacion
          FROM seguridad_despachos d
          LEFT JOIN seguridad_ingresos i ON i.id = d.ingreso_id
          ${where}
@@ -133,7 +139,14 @@ export async function GET(request: NextRequest) {
       total = countResult.rows[0]?.total || 0;
 
       const rowsResult = await query(
-        `SELECT * FROM seguridad_despachos ${where}
+        `SELECT *,
+          (SELECT AVG(c.calificacion)
+           FROM seguridad_calificaciones c
+           WHERE c.relacionado_a = 'despacho'
+             AND c.relacionado_id = seguridad_despachos.id
+             AND c.almacenista_nombre = seguridad_despachos.almacenista_nombre
+          ) AS promedio_calificacion
+         FROM seguridad_despachos ${where}
          ORDER BY fecha_despacho DESC, created_at DESC
          LIMIT ${limit} OFFSET ${offset}`,
         params,

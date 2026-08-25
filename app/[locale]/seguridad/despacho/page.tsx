@@ -14,10 +14,12 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Star,
   X,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { StarRatingDisplay } from "@/components/seguridad/StarRating";
 
 type Despacho = {
   id: number;
@@ -27,6 +29,7 @@ type Despacho = {
   cliente_retira: string | null;
   facturas_json: string | null;
   firma_url: string | null;
+  promedio_calificacion: number | null;
   created_at: string;
 };
 
@@ -262,6 +265,9 @@ export default function DespachoListPage() {
                       <th className="px-4 py-3 font-semibold hidden md:table-cell">
                         {tl("col_almacenista")}
                       </th>
+                      <th className="px-4 py-3 font-semibold hidden lg:table-cell">
+                        {tl("col_rating")}
+                      </th>
                       <th className="px-4 py-3 font-semibold">
                         {tl("col_facturas_count")}
                       </th>
@@ -302,6 +308,21 @@ export default function DespachoListPage() {
                             <div className="truncate max-w-[180px]">
                               {d.almacenista_nombre}
                             </div>
+                          </td>
+                          <td className="px-4 py-3 align-top hidden lg:table-cell">
+                            {d.promedio_calificacion !== null &&
+                            d.promedio_calificacion !== undefined ? (
+                              <StarRatingDisplay
+                                value={Number(d.promedio_calificacion)}
+                                size="sm"
+                                showValue
+                              />
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                                <Star className="w-3 h-3" />
+                                {tl("not_rated")}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 align-top">
                             <span className="inline-flex items-center justify-center min-w-[28px] px-2 h-6 text-[11px] font-bold rounded-md border bg-slate-50 text-slate-700 border-slate-200">
