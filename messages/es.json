@@ -183,6 +183,13 @@
     "super_admin": "Super Admin"
   },
   "rma": {
+    "portal_warranty": "Garantía al reportar",
+    "portal_warranty_until": "Vence el",
+    "portal_warranty_todo": "Sin determinar: hay que revisarlo a mano y completar la marca en Odoo.",
+    "warranty_en_garantia": "En garantía",
+    "warranty_vencida": "Vencida",
+    "warranty_vida_util": "Vida útil",
+    "warranty_indeterminada": "Sin determinar",
     "page_title": "Servicio Técnico / RMA",
     "page_subtitle": "Gestión de garantías, reparaciones y devoluciones de productos.",
     "coming_soon": "Módulo en desarrollo",
@@ -576,6 +583,17 @@
     "completa_campos": "Completa todos los campos obligatorios"
   },
   "servicioTecnico": {
+    "garantia": {
+      "titulo": "Garantía",
+      "en_garantia": "En garantía",
+      "en_garantia_detalle": "Cubierta hasta el {fecha}.",
+      "vida_util": "Cubierto de por vida",
+      "vida_util_detalle": "Este producto tiene garantía de vida útil.",
+      "vencida": "Fuera del período de garantía",
+      "vencida_detalle": "Igual puedes reportarlo: lo revisamos y te pasamos un presupuesto antes de hacer cualquier trabajo.",
+      "indeterminada": "Por confirmar",
+      "indeterminada_detalle": "Lo confirmamos al revisar tu caso y te avisamos."
+    },
     "form": {
       "step1": "Factura",
       "step2": "Producto",

@@ -1,3 +1,7 @@
+import {
+  calcularGarantia,
+  type ResultadoGarantia,
+} from "@/lib/garantia";
 import { callOdooRPC } from "@/lib/odoo";
 
 /**
@@ -49,6 +53,8 @@ export interface ItemFactura {
   cantidad: number;
   /** Nombre del despacho, vacío si la línea no llegó a despacharse. */
   despacho: string;
+  /** Estado de garantía al momento de la consulta (issue #29). */
+  garantia: ResultadoGarantia;
 }
 
 export interface FacturaResumen {
@@ -225,7 +231,7 @@ export async function buscarFacturaConSeriales(
   const lineasConProducto = lineas.filter((l) => m2oId(l.product_id) !== null);
 
   const [items, cliente] = await Promise.all([
-    armarItems(lineasConProducto),
+    armarItems(lineasConProducto, factura.invoice_date || null),
     leerCliente(m2oId(factura.partner_id)),
   ]);
 
@@ -280,6 +286,40 @@ async function filtrarPorDocumento(
   return facturas.filter((f) => coincide.has(m2oId(f.partner_id)!));
 }
 
+/**
+ * Garantía de un item, sin poder tumbar la consulta.
+ *
+ * El motor lee la tabla `rma_garantias` de MySQL. Si esa tabla no existe
+ * todavía en el entorno, o la base no responde, esto NO puede reventar la
+ * consulta de factura: el cliente tiene que poder reportar su falla igual.
+ * Ante cualquier problema se devuelve `indeterminada`, que es justamente el
+ * estado que significa "no lo sabemos" y que la UI ya sabe presentar sin
+ * prometer nada.
+ */
+async function garantiaDelItem(
+  marca: string,
+  nombre: string,
+  fechaFactura: string | null,
+): Promise<ResultadoGarantia> {
+  try {
+    return await calcularGarantia({
+      marcaOdoo: marca,
+      productoNombre: nombre,
+      fechaFactura,
+    });
+  } catch (e: any) {
+    console.error("[factura] garantía no calculable:", e?.message);
+    return {
+      estado: "indeterminada",
+      meses_cubiertos: null,
+      fecha_vencimiento: null,
+      dias_restantes: null,
+      marca_resuelta: null,
+      motivo: "error_calculo",
+    };
+  }
+}
+
 async function leerCliente(partnerId: number | null) {
   if (!partnerId) return { nombre: "", telefono: "", email: "" };
 
@@ -300,7 +340,10 @@ async function leerCliente(partnerId: number | null) {
   };
 }
 
-async function armarItems(lineas: any[]): Promise<ItemFactura[]> {
+async function armarItems(
+  lineas: any[],
+  fechaFactura: string | null,
+): Promise<ItemFactura[]> {
   const productoIds = [
     ...new Set(lineas.map((l) => m2oId(l.product_id)!).filter(Boolean)),
   ];
@@ -321,8 +364,15 @@ async function armarItems(lineas: any[]): Promise<ItemFactura[]> {
     const producto = productos.get(productoId);
     const facturado = Number(linea.quantity) || 0;
 
+    const garantia = await garantiaDelItem(
+      producto?.marca ?? "",
+      producto?.nombre ?? m2oNombre(linea.product_id),
+      fechaFactura,
+    );
+
     const base = {
       linea_id: linea.id as number,
+      garantia,
       producto_id: productoId,
       codigo: producto?.codigo ?? "",
       nombre: producto?.nombre ?? m2oNombre(linea.product_id),

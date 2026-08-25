@@ -102,6 +102,11 @@ async function ensurePortalColumns(conn: any) {
     `ALTER TABLE rma_cases ADD COLUMN odoo_partner_id INT DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD COLUMN odoo_product_id INT DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD COLUMN serial VARCHAR(100) DEFAULT NULL`,
+    // Garantía congelada al momento del reporte (issue #29).
+    `ALTER TABLE rma_cases ADD COLUMN garantia_estado VARCHAR(20) DEFAULT NULL`,
+    `ALTER TABLE rma_cases ADD COLUMN garantia_meses INT DEFAULT NULL`,
+    `ALTER TABLE rma_cases ADD COLUMN garantia_vence DATE DEFAULT NULL`,
+    `ALTER TABLE rma_cases ADD COLUMN garantia_marca VARCHAR(100) DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD INDEX idx_origen (origen)`,
   ];
   for (const sql of alters) {
@@ -323,8 +328,9 @@ export async function POST(request: NextRequest) {
             case_number, product_code, hardware, brand, model,
             invoice_number, client_name, client_phone, serial_quantity,
             reported_fault, status, notes, company_id, created_by,
-            origen, tracking_token, odoo_partner_id, odoo_product_id, serial
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', NULL, ?, ?, 'portal', ?, ?, ?, ?)`,
+            origen, tracking_token, odoo_partner_id, odoo_product_id, serial,
+            garantia_estado, garantia_meses, garantia_vence, garantia_marca
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             caseNumber,
             matched.codigo || null,
@@ -355,6 +361,14 @@ export async function POST(request: NextRequest) {
             resultado.partner_id,
             matched.producto_id,
             matched.serial || null,
+            // La garantía se congela acá: es la del día en que el cliente
+            // reportó, no la que se calcularía al abrir el caso.
+            matched.garantia?.estado || null,
+            matched.garantia?.meses_cubiertos ?? null,
+            matched.garantia?.fecha_vencimiento
+              ? matched.garantia.fecha_vencimiento.slice(0, 10)
+              : null,
+            matched.garantia?.marca_resuelta || null,
           ],
         )) as [{ insertId: number }, any];
 
@@ -529,7 +543,8 @@ export async function GET(request: NextRequest) {
     // race conditions / enumeration.
     const caseResult = await query(
       `SELECT case_number, status, model, hardware, product_code, invoice_number,
-              serial, created_at, client_phone
+              serial, created_at, client_phone,
+              garantia_estado, garantia_meses, garantia_vence, garantia_marca
        FROM rma_cases
        WHERE case_number = ? AND invoice_number = ? AND origen = 'portal'
        LIMIT 1`,
@@ -566,6 +581,15 @@ export async function GET(request: NextRequest) {
         invoice_number: row.invoice_number || "",
         serial: row.serial || null,
         client_phone_masked: maskPhoneForResponse(row.client_phone),
+        // La garantía es la CONGELADA del reporte, no una recalculada: si el
+        // cliente ve un número distinto al que le mostramos cuando reportó, no
+        // hay conversación posible.
+        garantia: {
+          estado: row.garantia_estado || "indeterminada",
+          meses: row.garantia_meses ?? null,
+          vence: row.garantia_vence || null,
+          marca: row.garantia_marca || null,
+        },
         created_at: row.created_at,
         timeline: (Array.isArray(historyRows) ? historyRows : []).map(
           // Sin `changed_by`: en los cambios de estado posteriores es la

@@ -1,5 +1,6 @@
 "use client";
 
+import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
 import AttachmentUploader, {
   type AdjuntoEstado,
 } from "@/components/portal-rma/AttachmentUploader";
@@ -30,6 +31,10 @@ type Item = {
   lleva_serial: boolean;
   cantidad: number;
   despacho: string;
+  garantia?: {
+    estado: string;
+    fecha_vencimiento: string | null;
+  };
 };
 
 type Coincidencia = {
@@ -88,6 +93,29 @@ export function ReporteForm({ locale }: { locale: string }) {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [paso]);
+
+  // Traduce el estado de garantía y arma el detalle. Se usa en el paso 2 (por
+  // producto) y en el 3 (el elegido).
+  const textoGarantia = (g?: Item["garantia"]) => {
+    const estado = g?.estado || "indeterminada";
+    const clave = ["en_garantia", "vencida", "vida_util"].includes(estado)
+      ? estado
+      : "indeterminada";
+    const fecha = g?.fecha_vencimiento
+      ? new Date(g.fecha_vencimiento).toLocaleDateString(
+          locale === "en" ? "en-US" : "es-VE",
+          { day: "numeric", month: "long", year: "numeric" },
+        )
+      : "";
+    return {
+      estado: clave,
+      etiqueta: t(`garantia.${clave}`),
+      detalle:
+        clave === "en_garantia" && fecha
+          ? t("garantia.en_garantia_detalle", { fecha })
+          : t(`garantia.${clave}_detalle`),
+    };
+  };
 
   const item = useMemo(
     () => factura?.items.find((i) => i.id === itemId) ?? null,
@@ -334,6 +362,15 @@ export function ReporteForm({ locale }: { locale: string }) {
                     <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">
                       {[i.marca, i.codigo].filter(Boolean).join(" · ")}
                     </span>
+                    {i.garantia && (
+                      <span className="mt-2 block">
+                        <GarantiaBadge
+                          compacto
+                          estado={textoGarantia(i.garantia).estado}
+                          etiqueta={textoGarantia(i.garantia).etiqueta}
+                        />
+                      </span>
+                    )}
                     <span className="mt-1 block text-sm">
                       {i.serial ? (
                         <span className="font-mono text-[color:var(--portal-primary)]">
@@ -379,6 +416,16 @@ export function ReporteForm({ locale }: { locale: string }) {
               </span>
             )}
           </p>
+
+          {item.garantia && (
+            <div className="mt-4">
+              <GarantiaBadge
+                estado={textoGarantia(item.garantia).estado}
+                etiqueta={textoGarantia(item.garantia).etiqueta}
+                detalle={textoGarantia(item.garantia).detalle}
+              />
+            </div>
+          )}
 
           <div className="mt-6">
             <label htmlFor="falla" className="text-sm font-semibold">
