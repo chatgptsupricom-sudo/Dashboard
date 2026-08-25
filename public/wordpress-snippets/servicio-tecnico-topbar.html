@@ -8,20 +8,19 @@
   estilo visual. La topbar es texto plano, no botones, así que este snippet
   es un enlace estilizado (no botón) con underline al hover.
 
-  Reemplazar:
-    - https://servicio.supricom.com.ve  por la URL publica final del portal
-    - /es/                           por el idioma activo del sitio
+  URL publica del portal: https://panel.supricom.com.ve
+  Para pruebas internas usar el host actual del deploy.
 
   Si el sitio usa WPML/Polylang, cambiar el href por la versión del idioma
   activo:
     <?php if (ICL_LANGUAGE_CODE == 'en'): ?>
-      /en/servicio-tecnico
+      https://panel.supricom.com.ve/en/servicio-tecnico
     <?php else: ?>
-      /es/servicio-tecnico
+      https://panel.supricom.com.ve/es/servicio-tecnico
     <?php endif; ?>
 -->
 <a
-  href="https://servicio.supricom.com.ve/es/servicio-tecnico"
+  href="https://panel.supricom.com.ve/es/servicio-tecnico"
   style="
     display: inline-block;
     color: inherit;
