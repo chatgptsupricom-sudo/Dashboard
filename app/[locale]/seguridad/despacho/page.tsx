@@ -9,9 +9,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  PenLine,
   Plus,
   Search,
   Send,
+  ShieldCheck,
   X,
   XCircle,
 } from "lucide-react";
@@ -20,13 +22,11 @@ import { useEffect, useMemo, useState } from "react";
 type Despacho = {
   id: number;
   ingreso_id: number | null;
-  rma_case_id: number | null;
   fecha_despacho: string;
   almacenista_nombre: string;
-  facturas: string[];
   cliente_retira: string | null;
-  accesorios_integros: number;
-  observaciones: string | null;
+  facturas_json: string | null;
+  firma_url: string | null;
   created_at: string;
 };
 
@@ -40,10 +40,19 @@ function fmtDate(value: string) {
   return `${d}/${m}/${y}`;
 }
 
+function parseFacturas(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function DespachoListPage() {
   const t = useTranslations("seguridad");
   const tl = useTranslations("seguridad.despacho.list");
-  const td = useTranslations("seguridad.despacho.detail");
   const params = useParams();
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
@@ -78,14 +87,14 @@ export default function DespachoListPage() {
       setLoading(true);
       try {
         const res = await fetch(`/api/seguridad/despacho?${queryString}`);
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         if (cancel) return;
-        if (res.ok && data.success) {
+        if (data.success) {
           setItems(data.despachos || []);
           setTotal(data.total || 0);
           setTotalPages(data.totalPages || 1);
         }
-      } catch {
+      } catch (e) {
         if (!cancel) {
           setItems([]);
           setTotal(0);
@@ -235,7 +244,7 @@ export default function DespachoListPage() {
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-slate-500 py-16 gap-2">
-              <Send className="w-8 h-8 text-slate-300" />
+              <ShieldCheck className="w-8 h-8 text-slate-300" />
               <p className="text-sm">{tl("no_results")}</p>
             </div>
           ) : (
@@ -244,18 +253,23 @@ export default function DespachoListPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-200">
-                      <th className="px-4 py-3 font-semibold">{tl("col_fecha")}</th>
+                      <th className="px-4 py-3 font-semibold">
+                        {tl("col_fecha")}
+                      </th>
                       <th className="px-4 py-3 font-semibold">
                         {tl("col_cliente_retira")}
                       </th>
-                      <th className="px-4 py-3 font-semibold hidden sm:table-cell">
+                      <th className="px-4 py-3 font-semibold hidden md:table-cell">
                         {tl("col_almacenista")}
                       </th>
-                      <th className="px-4 py-3 font-semibold text-center">
+                      <th className="px-4 py-3 font-semibold">
                         {tl("col_facturas_count")}
                       </th>
-                      <th className="px-4 py-3 font-semibold text-center">
+                      <th className="px-4 py-3 font-semibold">
                         {tl("col_ingreso")}
+                      </th>
+                      <th className="px-4 py-3 font-semibold">
+                        Firma
                       </th>
                       <th className="px-4 py-3 font-semibold text-right">
                         {tl("col_actions")}
@@ -263,57 +277,79 @@ export default function DespachoListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((d) => (
-                      <tr
-                        key={d.id}
-                        onClick={() => router.push(`${base}/despacho/${d.id}`)}
-                        className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 cursor-pointer"
-                      >
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap align-top">
-                          {fmtDate(d.fecha_despacho)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-800 font-medium align-top">
-                          <div className="truncate max-w-[220px]">
-                            {d.cliente_retira || td("no_value")}
-                          </div>
-                          <div className="sm:hidden text-[11px] text-slate-500 truncate max-w-[220px]">
-                            {d.almacenista_nombre}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-700 align-top hidden sm:table-cell">
-                          <div className="truncate max-w-[180px]">
-                            {d.almacenista_nombre}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-top text-center">
-                          <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-md text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200">
-                            {d.facturas?.length ?? 0}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top text-center">
-                          {d.ingreso_id ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-emerald-50 text-emerald-700 border-emerald-200">
-                              <CheckCircle2 className="w-3 h-3" />
-                              {tl("badge_si")}
+                    {items.map((d) => {
+                      const facturas = parseFacturas(d.facturas_json);
+                      const hasFirma = !!d.firma_url;
+                      const linked = !!d.ingreso_id;
+                      return (
+                        <tr
+                          key={d.id}
+                          onClick={() => router.push(`${base}/despacho/${d.id}`)}
+                          className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 cursor-pointer"
+                        >
+                          <td className="px-4 py-3 text-slate-700 whitespace-nowrap align-top">
+                            {fmtDate(d.fecha_despacho)}
+                          </td>
+                          <td className="px-4 py-3 text-slate-800 font-medium align-top">
+                            <div className="truncate max-w-[200px]">
+                              {d.cliente_retira || "—"}
+                            </div>
+                            <div className="md:hidden text-[11px] text-slate-500 truncate max-w-[200px]">
+                              {d.almacenista_nombre}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 align-top hidden md:table-cell">
+                            <div className="truncate max-w-[180px]">
+                              {d.almacenista_nombre}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <span className="inline-flex items-center justify-center min-w-[28px] px-2 h-6 text-[11px] font-bold rounded-md border bg-slate-50 text-slate-700 border-slate-200">
+                              {facturas.length}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">
-                              <XCircle className="w-3 h-3" />
-                              {tl("badge_no")}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right align-top">
-                          <Link
-                            href={`${base}/despacho/${d.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
-                          >
-                            {tl("view")} →
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {linked ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-violet-50 text-violet-700 border-violet-200">
+                                <CheckCircle2 className="w-3 h-3" />
+                                {tl("badge_si")}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">
+                                <XCircle className="w-3 h-3" />
+                                {tl("badge_no")}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {hasFirma ? (
+                              <span
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-md border bg-emerald-50 text-emerald-700 border-emerald-200"
+                                title="Firmado"
+                              >
+                                <PenLine className="w-3.5 h-3.5" />
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-md border bg-slate-50 text-slate-400 border-slate-200"
+                                title="Sin firma"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right align-top">
+                            <Link
+                              href={`${base}/despacho/${d.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+                            >
+                              {tl("view")} →
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

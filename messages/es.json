@@ -1925,6 +1925,11 @@
         "title": "Calificaciones",
         "desc": "Promedio de estrellas del equipo de almacén",
         "cta": "Ver calificaciones"
+      },
+      "despachos_list": {
+        "title": "Despachos recientes",
+        "desc": "Ver todos los despachos registrados",
+        "cta": "Ver listado"
       }
     },
     "construction": {

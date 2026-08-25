@@ -62,8 +62,8 @@ export default function SeguridadDashboard() {
           <p className="text-sm text-slate-500 mt-1">{t("welcome_desc")}</p>
         </section>
 
-        {/* Accesos principales - 4 tarjetas */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Accesos principales - 5 tarjetas */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <ActionCard
             href={`${base}/ingreso/nuevo`}
             icon={<ClipboardList className="w-6 h-6" aria-hidden />}
@@ -86,6 +86,14 @@ export default function SeguridadDashboard() {
             title={t("actions.ingresos_list.title")}
             description={t("actions.ingresos_list.desc")}
             cta={t("actions.ingresos_list.cta")}
+            variant="outline"
+          />
+          <ActionCard
+            href={`${base}/despacho`}
+            icon={<Send className="w-6 h-6" aria-hidden />}
+            title={t("actions.despachos_list.title")}
+            description={t("actions.despachos_list.desc")}
+            cta={t("actions.despachos_list.cta")}
             variant="outline"
           />
           <ActionCard

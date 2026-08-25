@@ -6,11 +6,13 @@ import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
   CheckCircle2,
+  ClipboardList,
   ExternalLink,
-  FileText,
   Loader2,
-  Package,
+  PenLine,
+  Printer,
   Send,
+  ShieldCheck,
   Ticket as TicketIcon,
   XCircle,
 } from "lucide-react";
@@ -22,10 +24,12 @@ type Despacho = {
   rma_case_id: number | null;
   fecha_despacho: string;
   almacenista_nombre: string;
-  facturas: string[];
+  facturas_json: string | null;
   cliente_retira: string | null;
   accesorios_integros: number;
   observaciones: string | null;
+  firma_url: string | null;
+  firma_cliente_nombre: string | null;
   created_at: string;
 };
 
@@ -35,8 +39,13 @@ type Ingreso = {
   cliente_nombre: string;
   hardware: string | null;
   serial: string | null;
+  accesorios_integros: number;
+  sin_manipulacion: number;
+  dentro_de_fecha: number;
+  falla_cubierta_garantia: number;
   recibido_por: string;
-} | null;
+  factura_numero: string | null;
+};
 
 type RmaCase = {
   id: number;
@@ -66,34 +75,46 @@ function fmtDateTime(value: string) {
   });
 }
 
+function parseFacturas(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
+
 const statusLabels: Record<string, string> = {
   recibido: "Recibido",
   reparado: "Reparado",
+  despachado: "Despachado",
   nota_credito: "Nota de Crédito",
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
-  despachado: "Despachado",
 };
 
 const statusColors: Record<string, string> = {
   recibido: "bg-blue-100 text-blue-700 border-blue-200",
   reparado: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  despachado: "bg-violet-100 text-violet-700 border-violet-200",
   nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  despachado: "bg-violet-100 text-violet-700 border-violet-200",
 };
 
 export default function DespachoDetailPage() {
   const t = useTranslations("seguridad");
+  const tf = useTranslations("seguridad.despacho.form");
   const td = useTranslations("seguridad.despacho.detail");
+  const tfl = useTranslations("seguridad.ingreso.form");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const id = params?.id as string;
   const base = `/${locale}/seguridad`;
 
   const [despacho, setDespacho] = useState<Despacho | null>(null);
-  const [ingreso, setIngreso] = useState<Ingreso>(null);
+  const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +127,7 @@ export default function DespachoDetailPage() {
       setError(null);
       try {
         const res = await fetch(`/api/seguridad/despacho/${id}`);
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         if (cancel) return;
         if (!res.ok || !data.success) {
           setError(data.error || td("not_found"));
@@ -114,8 +135,8 @@ export default function DespachoDetailPage() {
           return;
         }
         setDespacho(data.despacho);
-        setIngreso(data.ingreso || null);
-        setRmaCase(data.rma_case || null);
+        setIngreso(data.ingreso);
+        setRmaCase(data.rma_case);
       } catch {
         if (!cancel) setError(td("not_found"));
       } finally {
@@ -161,14 +182,12 @@ export default function DespachoDetailPage() {
     );
   }
 
-  const statusKey = rmaCase?.status
-    ? statusLabels[rmaCase.status] || rmaCase.status
-    : "";
+  const statusKey = rmaCase?.status ? statusLabels[rmaCase.status] || rmaCase.status : "";
   const statusClass = rmaCase?.status
-    ? statusColors[rmaCase.status] ||
-      "bg-slate-100 text-slate-600 border-slate-200"
+    ? statusColors[rmaCase.status] || "bg-slate-100 text-slate-600 border-slate-200"
     : "";
-  const accesoriosOk = despacho.accesorios_integros === 1;
+  const facturas = parseFacturas(despacho.facturas_json);
+  const accesoriosOk = Number(despacho.accesorios_integros) === 1;
 
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
@@ -189,9 +208,21 @@ export default function DespachoDetailPage() {
               <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
                 {td("title", { id: despacho.id })}
               </h1>
-              <p className="text-xs text-slate-500 truncate">{td("subtitle")}</p>
+              <p className="text-xs text-slate-500 truncate">
+                {td("subtitle")}
+              </p>
             </div>
           </div>
+          <a
+            href={`/api/seguridad/despacho/${despacho.id}/comprobante`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-10 px-3 sm:px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
+            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">{td("print")}</span>
+          </a>
         </div>
       </header>
 
@@ -212,7 +243,7 @@ export default function DespachoDetailPage() {
               value={despacho.cliente_retira || td("no_value")}
               full
             />
-            <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2.5 border-slate-200 bg-slate-50/60">
+            <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
               <span className="text-sm font-medium text-slate-700">
                 {td("label_accesorios")}
               </span>
@@ -226,7 +257,7 @@ export default function DespachoDetailPage() {
                 ) : (
                   <XCircle className="w-4 h-4" />
                 )}
-                {accesoriosOk ? td("yes") : td("no")}
+                {accesoriosOk ? tfl("yes") : tfl("no")}
               </span>
             </div>
             <div className="sm:col-span-2">
@@ -250,40 +281,74 @@ export default function DespachoDetailPage() {
 
         {/* Facturas card */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
-              <FileText className="w-4 h-4 text-slate-500" />
-              {td("section_facturas")}
-            </h2>
-            <span className="text-xs text-slate-400">
-              {despacho.facturas?.length || 0}
-            </span>
-          </div>
-          {despacho.facturas && despacho.facturas.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {despacho.facturas.map((f, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md border bg-violet-50 text-violet-700 border-violet-200"
-                >
-                  <FileText className="w-3 h-3" />
-                  {f}
-                </span>
-              ))}
-            </div>
+          <h2 className="text-sm font-bold text-slate-900 mb-3">
+            {td("section_facturas")}
+          </h2>
+          {facturas.length === 0 ? (
+            <p className="text-sm text-slate-500">{td("no_facturas")}</p>
           ) : (
-            <p className="text-sm text-slate-500 text-center py-3">
-              {td("no_facturas")}
-            </p>
+            <ul className="divide-y divide-slate-100 border border-slate-200 rounded-[10px] overflow-hidden">
+              {facturas.map((f, idx) => (
+                <li
+                  key={idx}
+                  className="flex items-center gap-3 px-3 py-2.5 bg-white"
+                >
+                  <span className="text-[11px] font-mono text-slate-400 w-6 text-right">
+                    {idx + 1}.
+                  </span>
+                  <span className="text-sm font-mono text-slate-800">{f}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
-        {/* Ingreso card */}
-        {despacho.ingreso_id && (
+        {/* Almacenista card */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-3">
+            {td("label_almacenista")}
+          </h2>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-violet-100 shrink-0">
+              <ShieldCheck className="w-4 h-4 text-violet-600" />
+            </div>
+            <p className="text-sm text-slate-800 font-medium">
+              {despacho.almacenista_nombre}
+            </p>
+          </div>
+        </section>
+
+        {/* Firma card */}
+        {(despacho.firma_url || despacho.firma_cliente_nombre) && (
           <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+            <h2 className="text-sm font-bold text-slate-900 mb-3 inline-flex items-center gap-2">
+              <PenLine className="w-4 h-4 text-slate-500" />
+              Firma del cliente
+            </h2>
+            {despacho.firma_url ? (
+              <div className="rounded-[10px] border border-slate-200 bg-slate-50/60 p-3 flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={despacho.firma_url}
+                  alt="Firma del cliente"
+                  className="max-h-40 object-contain"
+                />
+              </div>
+            ) : null}
+            {despacho.firma_cliente_nombre && (
+              <p className="text-sm text-slate-800 font-medium mt-3">
+                {despacho.firma_cliente_nombre}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Ingreso vinculado card */}
+        {despacho.ingreso_id && (
+          <section className="bg-white border border-violet-200 rounded-[10px] p-5">
             <div className="flex items-center justify-between gap-2 mb-4">
               <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
-                <Package className="w-4 h-4 text-slate-500" />
+                <ClipboardList className="w-4 h-4 text-violet-600" />
                 {td("section_ingreso")}
               </h2>
               {ingreso && (
@@ -297,7 +362,7 @@ export default function DespachoDetailPage() {
               )}
             </div>
             {ingreso ? (
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <DataField
                   label={td("ingreso_label_fecha")}
                   value={fmtDate(ingreso.fecha_entrega)}
@@ -315,11 +380,42 @@ export default function DespachoDetailPage() {
                   value={ingreso.serial || td("no_value")}
                   mono
                 />
-                <div className="sm:col-span-2">
-                  <DataField
-                    label={td("ingreso_label_recibido")}
-                    value={ingreso.recibido_por}
-                  />
+                <div className="col-span-2 pt-2 border-t border-slate-100">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">
+                    Verificación de estado
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <CheckField
+                      label={tfl("check_accesorios")}
+                      value={ingreso.accesorios_integros}
+                      yes={tfl("yes")}
+                      no={tfl("no")}
+                    />
+                    <CheckField
+                      label={tfl("check_manipulacion")}
+                      value={ingreso.sin_manipulacion}
+                      yes={tfl("yes")}
+                      no={tfl("no")}
+                    />
+                    <CheckField
+                      label={tfl("check_fecha")}
+                      value={ingreso.dentro_de_fecha}
+                      yes={tfl("yes")}
+                      no={tfl("no")}
+                    />
+                    <CheckField
+                      label={tfl("check_garantia")}
+                      value={ingreso.falla_cubierta_garantia}
+                      yes={tfl("yes")}
+                      no={tfl("no")}
+                    />
+                  </div>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-slate-100">
+                  <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+                    {td("ingreso_label_recibido")}
+                  </dt>
+                  <dd className="mt-1 text-slate-800">{ingreso.recibido_por}</dd>
                 </div>
               </dl>
             ) : (
@@ -328,7 +424,7 @@ export default function DespachoDetailPage() {
           </section>
         )}
 
-        {/* RMA case card */}
+        {/* Ticket card */}
         {despacho.rma_case_id && (
           <section className="bg-white border border-violet-200 rounded-[10px] p-5">
             <div className="flex items-center justify-between gap-2 mb-4">
@@ -347,7 +443,7 @@ export default function DespachoDetailPage() {
               )}
             </div>
             {rmaCase ? (
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <DataField
                   label={td("ticket_case")}
                   value={`#${rmaCase.case_number}`}
@@ -365,12 +461,10 @@ export default function DespachoDetailPage() {
                     </span>
                   </dd>
                 </div>
-                <div className="sm:col-span-2">
-                  <DataField
-                    label={td("ticket_invoice")}
-                    value={rmaCase.invoice_number || td("no_value")}
-                  />
-                </div>
+                <DataField
+                  label={td("ticket_invoice")}
+                  value={rmaCase.invoice_number || td("no_value")}
+                />
               </dl>
             ) : (
               <p className="text-sm text-slate-500">{td("no_ticket")}</p>
@@ -403,6 +497,43 @@ function DataField({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+function CheckField({
+  label,
+  value,
+  yes,
+  no,
+}: {
+  label: string;
+  value: number | boolean;
+  yes: string;
+  no: string;
+}) {
+  const ok = value === 1 || value === true;
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 ${
+        ok
+          ? "border-emerald-200 bg-emerald-50/50"
+          : "border-red-200 bg-red-50/50"
+      }`}
+    >
+      <span className="text-xs font-medium text-slate-700">{label}</span>
+      <span
+        className={`inline-flex items-center gap-1 text-[11px] font-bold ${
+          ok ? "text-emerald-700" : "text-red-600"
+        }`}
+      >
+        {ok ? (
+          <CheckCircle2 className="w-3.5 h-3.5" />
+        ) : (
+          <XCircle className="w-3.5 h-3.5" />
+        )}
+        {ok ? yes : no}
+      </span>
     </div>
   );
 }

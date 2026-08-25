@@ -63,10 +63,17 @@ export async function GET(request: NextRequest) {
     let where = "WHERE 1=1";
     const params: any[] = [];
 
+    const almacenista = (searchParams.get("almacenista") || "").trim();
+
     if (search) {
-      where += " AND (cliente_retira LIKE ? OR almacenista_nombre LIKE ?)";
+      where += " AND (cliente_retira LIKE ? OR almacenista_nombre LIKE ? OR facturas_json LIKE ?)";
       const s = `%${search}%`;
-      params.push(s, s);
+      params.push(s, s, s);
+    }
+
+    if (almacenista) {
+      where += " AND almacenista_nombre = ?";
+      params.push(almacenista);
     }
 
     if (desde) {
@@ -194,17 +201,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (ingresoId !== null) {
-      try {
-        const exists = await query("SELECT id FROM seguridad_ingresos WHERE id = ?", [ingresoId]);
-        if (exists.rows.length === 0) {
-          errors.push("ingreso_id no existe");
-        }
-      } catch (e: any) {
-        console.warn("seguridad_ingresos no disponible:", e?.message);
-      }
-    }
-
     let rmaCaseId: number | null = null;
     if (body.rma_case_id !== undefined && body.rma_case_id !== null && body.rma_case_id !== "") {
       const parsed = parseInt(String(body.rma_case_id), 10);
@@ -212,6 +208,25 @@ export async function POST(request: NextRequest) {
         errors.push("rma_case_id invalido");
       } else {
         rmaCaseId = parsed;
+      }
+    }
+
+    if (ingresoId !== null) {
+      try {
+        const ingresoLookup = await query(
+          "SELECT id, rma_case_id FROM seguridad_ingresos WHERE id = ?",
+          [ingresoId],
+        );
+        if (ingresoLookup.rows.length === 0) {
+          errors.push("ingreso_id no existe");
+        } else if (rmaCaseId === null) {
+          const linked = ingresoLookup.rows[0]?.rma_case_id;
+          if (linked !== null && linked !== undefined) {
+            rmaCaseId = parseInt(String(linked), 10) || null;
+          }
+        }
+      } catch (e: any) {
+        console.warn("seguridad_ingresos no disponible:", e?.message);
       }
     }
 

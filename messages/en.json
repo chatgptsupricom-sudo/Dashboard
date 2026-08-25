@@ -1936,6 +1936,11 @@
         "title": "Ratings",
         "desc": "Average star rating of the warehouse team",
         "cta": "View ratings"
+      },
+      "despachos_list": {
+        "title": "Recent dispatches",
+        "desc": "View all recorded dispatches",
+        "cta": "View list"
       }
     },
     "construction": {
