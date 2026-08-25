@@ -643,6 +643,8 @@
       "serialManualLabel": "Device serial number",
       "serialManualPlaceholder": "Type it exactly as shown on the label",
       "serialManualHelp": "We don't have it on record for this delivery. You'll find it on the label attached to the device or its box.",
+      "serialManualLabelOpcional": "Serial or product code (optional)",
+      "serialManualHelpOpcional": "This product has no factory serial. If its packaging shows a code, type it; otherwise leave it blank.",
       "serialManualRequired": "We need the serial number to identify your device.",
       "attachmentsLabelRequired": "Photos or video of the device",
       "attachmentsRequired": "Attach at least one photo or video of the device.",

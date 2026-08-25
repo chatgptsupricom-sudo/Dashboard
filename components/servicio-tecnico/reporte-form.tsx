@@ -466,7 +466,9 @@ export function ReporteForm({ locale }: { locale: string }) {
           {!item.serial && (
             <div className="mt-5">
               <label htmlFor="serialManual" className="text-sm font-semibold">
-                {t("form.serialManualLabel")}
+                {item.lleva_serial
+                  ? t("form.serialManualLabel")
+                  : t("form.serialManualLabelOpcional")}
               </label>
               <input
                 id="serialManual"
@@ -484,7 +486,9 @@ export function ReporteForm({ locale }: { locale: string }) {
                 <MensajeError id="serialManual-error" texto={errores.serialManual} />
               )}
               <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-                {t("form.serialManualHelp")}
+                {item.lleva_serial
+                  ? t("form.serialManualHelp")
+                  : t("form.serialManualHelpOpcional")}
               </p>
             </div>
           )}
@@ -574,9 +578,13 @@ export function ReporteForm({ locale }: { locale: string }) {
             disabled={enviando || subiendo}
             onClick={() => {
               const faltan: Record<string, string> = {};
-              // Serial: si Odoo no lo tiene registrado, lo escribe el cliente
-              // leyéndolo de la etiqueta del equipo.
-              if (!item.serial && !serialManual.trim())
+              // Serial obligatorio solo cuando el producto SÍ lleva serial de
+              // fábrica y el despacho no lo registró: ahí el cliente puede
+              // leerlo de la etiqueta. En consumibles, cables y accesorios
+              // —que Odoo marca como no rastreados— no existe ningún serial
+              // que escribir, y exigirlo dejaría esos productos sin poder
+              // reportarse.
+              if (item.lleva_serial && !item.serial && !serialManual.trim())
                 faltan.serialManual = t("form.serialManualRequired");
               if (!fallaValida) faltan.falla = t("form.faultTooShort");
               if (!telefonoValido) faltan.telefono = t("form.phoneRequired");

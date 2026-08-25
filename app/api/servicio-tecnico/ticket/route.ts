@@ -308,7 +308,11 @@ export async function POST(request: NextRequest) {
     // Si Odoo no tiene serial para esa línea, el cliente debe escribirlo. Se
     // valida acá y no solo en el navegador: el formulario es sugerencia, esto
     // es la regla.
-    if (!matched.serial && !serialManual) {
+    //
+    // Solo se exige en productos que SÍ llevan serial de fábrica
+    // (tracking = 'serial' en Odoo). En consumibles y accesorios no existe
+    // ningún serial que escribir, y exigirlo los dejaría sin poder reportarse.
+    if (matched.lleva_serial && !matched.serial && !serialManual) {
       return NextResponse.json(
         { error: "Necesitamos el serial del equipo para identificarlo." },
         { status: 400 },

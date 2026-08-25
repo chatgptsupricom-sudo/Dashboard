@@ -625,6 +625,8 @@
       "serialManualLabel": "Serial del equipo",
       "serialManualPlaceholder": "Escríbelo tal como aparece en la etiqueta",
       "serialManualHelp": "No lo tenemos registrado en el despacho. Está en la etiqueta pegada al equipo o a su caja.",
+      "serialManualLabelOpcional": "Serial o código del producto (opcional)",
+      "serialManualHelpOpcional": "Este producto no lleva serial de fábrica. Si su empaque trae algún código, escríbelo; si no, déjalo vacío.",
       "serialManualRequired": "Necesitamos el serial para identificar tu equipo.",
       "attachmentsLabelRequired": "Fotos o video del equipo",
       "attachmentsRequired": "Adjunta al menos una foto o un video del equipo.",
