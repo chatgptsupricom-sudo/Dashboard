@@ -1,7 +1,7 @@
 -- Issue #30 [Seguridad 1/5] Rol Seguridad - base
 -- Tablas iniciales del modulo Seguridad (Almacen / Control de acceso).
--- Los detalles funcionales viven en issues #2 (ingreso),),
-#3 (despacho) y #4 (calificacion).
+-- Los detalles funcionales viven en los issues #31 (ingreso), #32 (despacho)
+-- y #33 (calificacion).
 
 CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   id INT AUTO_INCREMENT PRIMARY KEY,

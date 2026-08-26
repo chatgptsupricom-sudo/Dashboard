@@ -22,3 +22,8 @@ export function promedioTexto(valor: number | null | undefined): string {
 export function tienePromedio(valor: number | null | undefined): boolean {
   return valor !== null && valor !== undefined && !Number.isNaN(Number(valor));
 }
+
+// El formateo de fechas de calendario vive en `lib/fecha.ts`, porque tambien
+// lo usan las pantallas de RMA y el portal publico. Se re-exporta para no
+// romper lo que ya importaba desde aqui.
+export { fechaCorta, fechaLarga } from "@/lib/fecha";

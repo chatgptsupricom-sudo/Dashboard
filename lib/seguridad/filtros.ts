@@ -46,6 +46,15 @@ export function filtroIngresos(sp: URLSearchParams): Filtro {
     params.push(rmaCaseId);
   }
 
+  // "Solo pendientes de despacho": equipo que sigue fisicamente en el taller.
+  // Va aca y no filtrando en el cliente para que el total y la paginacion del
+  // listado cuadren, y para que el Excel exporte lo mismo que se ve.
+  if (texto(sp, "solo_pendientes") === "1") {
+    where += ` AND NOT EXISTS (
+      SELECT 1 FROM seguridad_despachos d WHERE d.ingreso_id = seguridad_ingresos.id
+    )`;
+  }
+
   return { where, params };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { promedioTexto } from "@/lib/seguridad/formato";
+import { fechaCorta, promedioTexto } from "@/lib/seguridad/formato";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -14,6 +14,7 @@ import {
   Package,
   Send,
   ShieldCheck,
+  Smartphone,
   Star,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -26,7 +27,9 @@ type DashboardData = {
     despachos_hoy: number;
     despachos_hoy_delta: number;
     en_taller_mas_7d: number;
-    promedio_calificacion: number;
+    // null mientras no haya ninguna calificacion en 30 dias: el AVG de MySQL
+    // devuelve NULL y el endpoint lo pasa tal cual.
+    promedio_calificacion: number | null;
     total_calificaciones_mes: number;
     ingresos_pendientes_despacho: number;
   };
@@ -170,6 +173,17 @@ export default function SeguridadDashboard() {
             <Send className="w-4 h-4" />
             {t("actions.despacho.title")}
           </Link>
+          {/* Entrada al mostrador (#39). Desde que Seguridad se llega por el
+              sidebar del panel (#30) y no por su propio subdominio, esta es la
+              puerta a la vista de telefono: se abre una vez desde el panel y se
+              guarda en la pantalla de inicio. */}
+          <Link
+            href={`${base}/mostrador`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Smartphone className="w-4 h-4" />
+            {t("mostrador.abrir")}
+          </Link>
         </section>
 
         {loading ? (
@@ -251,7 +265,7 @@ export default function SeguridadDashboard() {
                       className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
                     >
                       <div className="text-xs text-slate-500 w-16">
-                        {i.fecha_entrega}
+                        {fechaCorta(i.fecha_entrega)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-900 truncate">
@@ -335,7 +349,7 @@ export default function SeguridadDashboard() {
                             {i.cliente_nombre}
                           </p>
                           <span className="text-xs text-slate-400 tabular-nums">
-                            {i.fecha_entrega}
+                            {fechaCorta(i.fecha_entrega)}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
@@ -368,7 +382,7 @@ export default function SeguridadDashboard() {
                             {d.almacenista_nombre}
                           </p>
                           <span className="text-xs text-slate-400 tabular-nums">
-                            {d.fecha_despacho}
+                            {fechaCorta(d.fecha_despacho)}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">

@@ -2,15 +2,42 @@ import { query } from "@/lib/db";
 import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
-
-
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    // El mostrador (#39) solo muestra los 3 contadores del dia y se abre desde
+    // el telefono en el almacen. Pedirle las 14 consultas del dashboard para
+    // pintar 3 numeros es lo que hace que tarde en 4G, asi que ese modo corta
+    // por aqui. Vive en esta ruta y no en una nueva a proposito: cada ruta
+    // nueva es un sitio mas donde olvidar el guard, que fue justo lo que paso
+    // con /api/seguridad/almacenistas.
+    if (new URL(request.url).searchParams.get("resumen") === "1") {
+      const [ingresosHoyRes, despachosHoyRes, pendientesRes] = await Promise.all([
+        query(
+          "SELECT COUNT(*) AS total FROM seguridad_ingresos WHERE fecha_entrega = CURDATE()",
+        ),
+        query(
+          "SELECT COUNT(*) AS total FROM seguridad_despachos WHERE fecha_despacho = CURDATE()",
+        ),
+        query(
+          `SELECT COUNT(*) AS total
+           FROM seguridad_ingresos i
+           LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+           WHERE d.id IS NULL`,
+        ),
+      ]);
+
+      const resumen = NextResponse.json({
+        success: true,
+        ingresos_hoy: Number(ingresosHoyRes.rows[0]?.total || 0),
+        despachos_hoy: Number(despachosHoyRes.rows[0]?.total || 0),
+        pendientes: Number(pendientesRes.rows[0]?.total || 0),
+      });
+      resumen.headers.set("Cache-Control", "no-store");
+      return resumen;
+    }
 
     const [
       ingresosHoyRes,
@@ -75,7 +102,9 @@ export async function GET(request: NextRequest) {
          LIMIT 10`,
       ),
       query(
-        `SELECT i.*
+        // DATEDIFF explicito: el front pinta el badge "N dias en taller" y con
+        // `SELECT i.*` ese campo no existia, asi que el badge salia vacio.
+        `SELECT i.*, DATEDIFF(CURDATE(), i.fecha_entrega) AS dias_en_taller
          FROM seguridad_ingresos i
          LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
          WHERE d.id IS NULL
@@ -178,7 +207,12 @@ export async function GET(request: NextRequest) {
       alertas,
     });
 
-    response.headers.set("Cache-Control", "private, max-age=300");
+    // no-store y no `max-age=300`: con la cache de 5 minutos, el almacenista
+    // registraba un ingreso y el panel le seguia mostrando los numeros de
+    // antes, porque el navegador servia la respuesta guardada sin volver a
+    // preguntar. En una pantalla cuyo uso es registrar y comprobar en el acto,
+    // ese retraso se lee como que el registro no se guardo.
+    response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error: any) {
     console.error("Error cargando dashboard de seguridad:", error);
