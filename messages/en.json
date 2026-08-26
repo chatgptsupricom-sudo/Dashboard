@@ -2017,7 +2017,8 @@
         "submitting": "Registering...",
         "error_required": "Fill in the required fields",
         "error_checks_requeridos": "Answer all four reception checks before continuing.",
-        "error_generic": "Could not register the intake"
+        "error_generic": "Could not register the intake",
+        "opcional": "optional"
       },
       "list": {
         "search_placeholder": "Search customer, serial or invoice...",

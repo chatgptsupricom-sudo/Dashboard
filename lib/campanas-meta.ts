@@ -17,9 +17,16 @@ import {
 export interface CampaignAggregate {
   campaign_name: string;
   pais: string;
+  objetivo: string;
   spend_usd: number;
   impressions: number;
+  reach: number;
+  frequency: number;
+  cpm: number;
+  reproducciones: number;
   clicks: number;
+  /** Facturas distintas de las ventas del periodo, para el costo por cierre. */
+  facturas: number;
   leads_from_ads: number;
   total_leads: number;
   ventas_cerradas: number;
@@ -129,13 +136,20 @@ export async function getCampaignMetrics({
         campana,
         SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
         SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas_cerradas,
+        COUNT(DISTINCT CASE WHEN ${ventaEnPeriodo} AND num_factura IS NOT NULL AND num_factura != '' THEN num_factura END) as facturas,
         IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as recaudo_usd
       FROM leads
       ${leadWhere}
       GROUP BY campana
       HAVING total_leads > 0 OR ventas_cerradas > 0
     `,
-    [...rangoParams, ...rangoParams, ...rangoParams, ...leadParams],
+    [
+      ...rangoParams,
+      ...rangoParams,
+      ...rangoParams,
+      ...rangoParams,
+      ...leadParams,
+    ],
   );
 
   const convConditions: string[] = [];
@@ -211,9 +225,15 @@ export async function getCampaignMetrics({
     campaignMap.set(mc.campaign_name, {
       campaign_name: mc.campaign_name,
       pais: mc.pais,
+      objetivo: mc.objetivo,
       spend_usd: mc.spend_usd,
       impressions: mc.impressions,
+      reach: mc.reach,
+      frequency: mc.frequency,
+      cpm: mc.cpm,
+      reproducciones: mc.reproducciones,
       clicks: mc.clicks,
+      facturas: 0,
       leads_from_ads: mc.leads_from_ads,
       total_leads: 0,
       ventas_cerradas: 0,
@@ -229,14 +249,21 @@ export async function getCampaignMetrics({
       const c = campaignMap.get(key)!;
       c.total_leads = parseInt(row.total_leads) || 0;
       c.ventas_cerradas = parseInt(row.ventas_cerradas) || 0;
+      c.facturas = parseInt(row.facturas) || 0;
       c.recaudo_usd = parseFloat(row.recaudo_usd) || 0;
     } else {
       campaignMap.set(key, {
         campaign_name: key,
         pais: userCids === 7 ? "Panama" : "Venezuela",
+        objetivo: "Sin datos de Meta",
         spend_usd: 0,
         impressions: 0,
+        reach: 0,
+        frequency: 0,
+        cpm: 0,
+        reproducciones: 0,
         clicks: 0,
+        facturas: parseInt(row.facturas) || 0,
         leads_from_ads: 0,
         total_leads: parseInt(row.total_leads) || 0,
         ventas_cerradas: parseInt(row.ventas_cerradas) || 0,
@@ -257,9 +284,15 @@ export async function getCampaignMetrics({
       campaignMap.set(key, {
         campaign_name: key,
         pais: row.pais || (userCids === 7 ? "Panama" : "Venezuela"),
+        objetivo: "Sin datos de Meta",
         spend_usd: 0,
         impressions: 0,
+        reach: 0,
+        frequency: 0,
+        cpm: 0,
+        reproducciones: 0,
         clicks: 0,
+        facturas: 0,
         leads_from_ads: 0,
         total_leads: 0,
         ventas_cerradas: 0,

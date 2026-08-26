@@ -72,3 +72,36 @@ export async function ingresosPendientes(
     dias_en_taller: Number(r.dias_en_taller || 0),
   }));
 }
+
+/**
+ * Conteos crudos de las dos tablas, solo para el dry run.
+ *
+ * Un `checked: 0` no distingue "no hay equipos vencidos" de "la consulta no ve
+ * nada", y las dos cosas se ven igual desde afuera. Con los totales al lado se
+ * separan: si hay ingresos y ninguno sin despacho, la alerta esta bien y no
+ * tiene con que dispararse; si no hay ingresos, la base esta vacia; si hay
+ * ingresos sin despacho pero `checked` sigue en 0, ahi si el problema es la
+ * consulta.
+ */
+export async function conteosDiagnostico(): Promise<{
+  total_ingresos: number;
+  total_despachos: number;
+  ingresos_sin_despacho: number;
+}> {
+  const [ing, desp, sinDesp] = await Promise.all([
+    query(`SELECT COUNT(*) AS n FROM seguridad_ingresos`),
+    query(`SELECT COUNT(*) AS n FROM seguridad_despachos`),
+    query(
+      `SELECT COUNT(*) AS n
+         FROM seguridad_ingresos i
+         LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+        WHERE d.id IS NULL`,
+    ),
+  ]);
+
+  return {
+    total_ingresos: Number(ing.rows[0]?.n || 0),
+    total_despachos: Number(desp.rows[0]?.n || 0),
+    ingresos_sin_despacho: Number(sinDesp.rows[0]?.n || 0),
+  };
+}

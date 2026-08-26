@@ -38,4 +38,4 @@ Gotchas:
 
 ## Docs
 
-`SETUP.md` y `PROYECTO_COMPLETADO.md` están **desactualizados** (describen Next 15, `proxy.ts` y auth solo-Odoo). No guiarse por ellos; confiar en el código. `sql/` tiene DDL de tablas (`kpi_targets`, `kpi_weekly_data`) — schema de referencia de la MySQL local.
+`SETUP.md` está **desactualizado** (describe Next 15, `proxy.ts` y auth solo-Odoo). No guiarse por él; confiar en el código. `sql/` tiene DDL de tablas (`kpi_targets`, `kpi_weekly_data`) — schema de referencia de la MySQL local.

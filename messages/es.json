@@ -2006,7 +2006,8 @@
         "submitting": "Registrando...",
         "error_required": "Completa los campos obligatorios",
         "error_checks_requeridos": "Responde los cuatro controles de recepción antes de continuar.",
-        "error_generic": "No se pudo registrar el ingreso"
+        "error_generic": "No se pudo registrar el ingreso",
+        "opcional": "opcional"
       },
       "list": {
         "search_placeholder": "Buscar cliente, serial o factura...",

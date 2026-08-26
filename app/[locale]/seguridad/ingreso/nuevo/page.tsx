@@ -395,7 +395,7 @@ export default function NuevoIngresoPage() {
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 {tf("field_factura")}{" "}
                 <span className="text-slate-400 font-normal">
-                  ({tf("check_garantia") ? "" : ""})
+                  ({tf("opcional")})
                 </span>
               </label>
               <input

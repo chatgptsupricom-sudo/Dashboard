@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { diasUmbral, ingresosPendientes } from "@/lib/seguridad/pendientes";
+import {
+  conteosDiagnostico,
+  diasUmbral,
+  ingresosPendientes,
+} from "@/lib/seguridad/pendientes";
 import { NextResponse } from "next/server";
 
 /**
@@ -22,6 +26,12 @@ import { NextResponse } from "next/server";
  * emite ni llama a n8n. Existe porque la única forma de probar esto contra
  * datos reales era mandarle un WhatsApp de verdad a los técnicos, y una
  * prueba no puede costar eso.
+ *
+ * En dry run se acepta además `?dias=N`, que pisa el umbral. Sirve para
+ * distinguir "no hay equipos vencidos" de "la consulta no ve nada": con un
+ * umbral de 1 día tiene que aparecer cualquier ingreso sin despachar. Solo en
+ * dry run, a propósito — si `dias` valiera en el modo real, cualquiera con el
+ * secreto podria forzar una alerta masiva bajando el umbral a 1.
  */
 
 export async function GET(request: Request) {
@@ -39,7 +49,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const dias = diasUmbral();
+    const dias = dryRun ? diasSolicitados(request) ?? diasUmbral() : diasUmbral();
     const pendientes = await ingresosPendientes(dias);
 
     if (pendientes.length === 0) {
@@ -48,7 +58,16 @@ export async function GET(request: Request) {
         checked: 0,
         alerts_sent: 0,
         dias_umbral: dias,
-        ...(dryRun ? { dry_run: true } : {}),
+        ...(dryRun
+          ? {
+              dry_run: true,
+              diagnostico: await conteosDiagnostico(),
+              // Sin pendientes no se llega a resolverlos, pero saber si hay
+              // alguien con rol `rma` no depende de que haya ingresos: si no
+              // hay nadie, la alerta queda inerte el dia que haya datos.
+              destinatarios: await tecnicosANotificar(),
+            }
+          : {}),
       });
     }
 
@@ -85,6 +104,7 @@ export async function GET(request: Request) {
         would_alert: tecnicos.length,
         dias_umbral: dias,
         oldest_days: oldestDays,
+        diagnostico: await conteosDiagnostico(),
         socket_disponible: Boolean((global as any).io),
         n8n_configurado: Boolean(process.env.N8N_LEAD_WEBHOOK_URL),
         destinatarios: tecnicos,
@@ -172,4 +192,14 @@ async function tecnicosANotificar(): Promise<
       WHERE LOWER(TRIM(r.name)) = 'rma'`,
   );
   return rows as any[];
+}
+
+/** `?dias=N` del dry run. Devuelve null si no vino o si no es un entero sano. */
+function diasSolicitados(request: Request): number | null {
+  const crudo = new URL(request.url).searchParams.get("dias");
+  if (crudo === null) return null;
+  const n = parseInt(crudo, 10);
+  // Mismo acotado que el umbral de verdad: se interpola en el SQL.
+  if (!Number.isFinite(n) || n < 0 || n > 365) return null;
+  return n;
 }
