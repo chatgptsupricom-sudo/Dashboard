@@ -20,6 +20,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import {
+  activarSincronizacionAutomatica,
+  alCambiarCola,
+  cuantosFallidos,
+  cuantosPendientes,
+  sincronizar,
+} from "@/lib/seguridad/cola-offline";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 // Mostrador del almacen (#39).
@@ -94,9 +101,10 @@ function diasEnTaller(p: Pendiente): number {
  * pedir al servidor. Si la petición falla, se queda lo guardado y se avisa
  * desde cuándo es.
  *
- * ALCANCE: esto es solo lectura. Registrar un ingreso sigue necesitando
- * conexión — una cola de escritura offline con sincronización es otra cosa y
- * no está hecha.
+ * ALCANCE: esto es solo la mitad de LECTURA. La de escritura —registrar un
+ * ingreso sin conexión y que salga solo al volver la señal— vive aparte, en
+ * `lib/seguridad/cola-offline.ts`, porque necesita IndexedDB para guardar la
+ * foto del equipo: es un Blob de varios MB y no cabe en `localStorage`.
  */
 const CACHE_KEY = "seguridad:mostrador";
 
@@ -349,6 +357,13 @@ function Home({
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-500 px-1 pb-1">{tm("prompt")}</p>
+
+      {/* Ingresos guardados en el telefono y todavia sin enviar (#39).
+          Va arriba del todo y no escondido en un contador: el almacenista ya
+          le dijo al cliente que su equipo quedo registrado, y mientras esto
+          no salga solo existe en este telefono. Si alguien cierra sesion o
+          limpia el navegador, se pierde el acta. */}
+      <AvisoCola tm={tm} />
 
       <BotonAccion
         as="link"
@@ -619,6 +634,81 @@ function Buscar({
           >
             {tm("usar_ticket")}
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Estado de la cola offline (#39).
+ *
+ * No se pinta nada mientras no haya nada encolado: en un dia normal con señal
+ * el mostrador se ve igual que antes.
+ */
+function AvisoCola({ tm }: { tm: any }) {
+  const [pendientes, setPendientes] = useState(0);
+  const [fallidos, setFallidos] = useState(0);
+  const [reintentando, setReintentando] = useState(false);
+
+  const refrescar = useCallback(async () => {
+    setPendientes(await cuantosPendientes());
+    setFallidos(await cuantosFallidos());
+  }, []);
+
+  useEffect(() => {
+    void refrescar();
+    // El vaciado corre solo al volver la conexion; esto solo repinta el
+    // contador cuando la cola cambia.
+    const soltar = alCambiarCola(() => void refrescar());
+    const pararAuto = activarSincronizacionAutomatica();
+    return () => {
+      soltar();
+      pararAuto();
+    };
+  }, [refrescar]);
+
+  if (pendientes === 0 && fallidos === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {pendientes > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-amber-900">
+            <WifiOff className="w-4 h-4 shrink-0" />
+            <span className="text-[11px] font-bold uppercase tracking-wider">
+              {tm("cola_pendientes")}
+            </span>
+          </div>
+          <p className="text-sm font-semibold text-amber-900 mt-1">
+            {tm("cola_pendientes_desc", { count: pendientes })}
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              setReintentando(true);
+              try {
+                await sincronizar();
+              } finally {
+                setReintentando(false);
+                void refrescar();
+              }
+            }}
+            disabled={reintentando}
+            className="mt-2 inline-flex items-center justify-center min-h-[44px] px-4 rounded-xl text-sm font-semibold bg-white border border-amber-300 text-amber-900 disabled:opacity-50"
+          >
+            {reintentando ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              tm("cola_reintentar")
+            )}
+          </button>
+        </div>
+      )}
+
+      {fallidos > 0 && (
+        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+          {tm("cola_fallidos", { count: fallidos })}
         </div>
       )}
     </div>

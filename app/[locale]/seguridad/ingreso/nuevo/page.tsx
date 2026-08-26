@@ -10,11 +10,13 @@ import {
   Loader2,
   Search,
   ShieldCheck,
+  WifiOff,
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import FileUploadField from "@/components/seguridad/FileUploadField";
+import { encolar, hayCola } from "@/lib/seguridad/cola-offline";
 
 function todayISO() {
   const d = new Date();
@@ -91,6 +93,8 @@ export default function NuevoIngresoPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // El ingreso quedo guardado en el telefono y sale solo al volver la señal.
+  const [encolado, setEncolado] = useState(false);
 
   const [foto, setFoto] = useState<File | null>(null);
   const [fotoError, setFotoError] = useState<string | null>(null);
@@ -181,22 +185,39 @@ export default function NuevoIngresoPage() {
     }
 
     setSubmitting(true);
+
+    // Fuera del try: el catch tambien lo necesita para poder encolarlo cuando
+    // el envio se cae por red.
+    const payload: Record<string, unknown> = {
+      fecha_entrega: form.fecha_entrega,
+      factura_numero: form.factura_numero.trim() || undefined,
+      cliente_nombre: form.cliente_nombre.trim().slice(0, MAX.cliente_nombre),
+      hardware: form.hardware.trim() || undefined,
+      serial: form.serial.trim() || undefined,
+      descripcion_falla: form.descripcion_falla.trim() || undefined,
+      accesorios_integros: form.accesorios_integros,
+      sin_manipulacion: form.sin_manipulacion,
+      dentro_de_fecha: form.dentro_de_fecha,
+      falla_cubierta_garantia: form.falla_cubierta_garantia,
+      recibido_por: form.recibido_por.trim().slice(0, 200),
+    };
+    if (ticket?.id) {
+      payload.rma_case_id = ticket.id;
+    }
+
     try {
-      const payload: Record<string, unknown> = {
-        fecha_entrega: form.fecha_entrega,
-        factura_numero: form.factura_numero.trim() || undefined,
-        cliente_nombre: form.cliente_nombre.trim().slice(0, MAX.cliente_nombre),
-        hardware: form.hardware.trim() || undefined,
-        serial: form.serial.trim() || undefined,
-        descripcion_falla: form.descripcion_falla.trim() || undefined,
-        accesorios_integros: form.accesorios_integros,
-        sin_manipulacion: form.sin_manipulacion,
-        dentro_de_fecha: form.dentro_de_fecha,
-        falla_cubierta_garantia: form.falla_cubierta_garantia,
-        recibido_por: form.recibido_por.trim().slice(0, 200),
-      };
-      if (ticket?.id) {
-        payload.rma_case_id = ticket.id;
+      // Sin conexion se encola y se sale (issue #39). El almacenista esta de
+      // pie con el cliente delante: hacerle repetir la planilla cuando vuelva
+      // la señal es lo mismo que no tener el modulo.
+      //
+      // Se comprueba antes de intentar el fetch, no en el catch, para no
+      // encolar por error un fallo que no sea de red — un 400 de validacion
+      // tiene que verse ahora, no dentro de media hora.
+      if (hayCola() && typeof navigator !== "undefined" && !navigator.onLine) {
+        await encolar(payload, foto);
+        setEncolado(true);
+        setSubmitting(false);
+        return;
       }
 
       const res = await fetch("/api/seguridad/ingreso", {
@@ -237,6 +258,25 @@ export default function NuevoIngresoPage() {
 
       router.push(`${base}/ingreso/${data.id}`);
     } catch (err: any) {
+      // `navigator.onLine` miente a menudo: en el almacen hay wifi asociado
+      // pero sin salida, y ahi el fetch revienta con TypeError aunque el
+      // navegador se crea conectado. Ese es el caso comun, no el corte limpio.
+      //
+      // Solo se encola el fallo de red. Un error que vino del servidor —un 400
+      // de validacion— es un Error normal y se enseña, porque encolarlo seria
+      // prometerle al almacenista que algo se guardo cuando el servidor ya
+      // dijo que no.
+      if (err instanceof TypeError && hayCola()) {
+        try {
+          await encolar(payload, foto);
+          setEncolado(true);
+          setSubmitting(false);
+          return;
+        } catch {
+          // Si ni encolar se puede (modo privado, sin cuota), cae al error
+          // normal: mejor que crea que no se guardo, porque no se guardo.
+        }
+      }
       setSubmitError(err?.message || tf("error_generic"));
       setSubmitting(false);
     }
@@ -558,6 +598,28 @@ export default function NuevoIngresoPage() {
               </div>
             </div>
           </section>
+
+          {/* Quedo encolado: hay que decirlo con todas las letras. El
+              almacenista acaba de decirle al cliente que su equipo quedo
+              registrado, y no es lo mismo "esta en el servidor" que "esta en
+              este telefono y saldra cuando haya señal". Si se apaga el
+              telefono antes de que salga, alguien tiene que saberlo. */}
+          {encolado && (
+            <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start gap-2">
+              <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="space-y-2">
+                <p className="font-semibold">{tf("encolado_titulo")}</p>
+                <p className="text-amber-800">{tf("encolado_desc")}</p>
+                <Link
+                  href={`${base}/mostrador`}
+                  className="inline-flex items-center justify-center h-11 px-4 rounded-[10px] text-sm font-semibold text-white"
+                  style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+                >
+                  {tf("encolado_volver")}
+                </Link>
+              </div>
+            </div>
+          )}
 
           {submitError && (
             <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">

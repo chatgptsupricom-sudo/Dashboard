@@ -2007,7 +2007,10 @@
         "error_required": "Completa los campos obligatorios",
         "error_checks_requeridos": "Responde los cuatro controles de recepción antes de continuar.",
         "error_generic": "No se pudo registrar el ingreso",
-        "opcional": "opcional"
+        "opcional": "opcional",
+        "encolado_titulo": "Guardado en este teléfono, todavía sin enviar",
+        "encolado_desc": "No hay conexión. El ingreso sale solo en cuanto vuelva la señal. No cierres sesión ni borres los datos del navegador hasta que salga.",
+        "encolado_volver": "Volver al mostrador"
       },
       "list": {
         "search_placeholder": "Buscar cliente, serial o factura...",
@@ -2264,7 +2267,11 @@
       "sin_esperando": "No hay reportes del portal pendientes de recibir.",
       "nuevo_reporte": "Nuevo reporte del portal",
       "ver": "Ver",
-      "sin_conexion": "Sin conexión — mostrando los datos de las {hora}"
+      "sin_conexion": "Sin conexión — mostrando los datos de las {hora}",
+      "cola_pendientes": "Sin enviar",
+      "cola_pendientes_desc": "{count, plural, =1 {# ingreso espera señal} other {# ingresos esperan señal}}",
+      "cola_fallidos": "{count, plural, =1 {# ingreso no se pudo enviar} other {# ingresos no se pudieron enviar}}",
+      "cola_reintentar": "Reintentar ahora"
     },
     "back": "Volver"
   }

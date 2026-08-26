@@ -2018,7 +2018,10 @@
         "error_required": "Fill in the required fields",
         "error_checks_requeridos": "Answer all four reception checks before continuing.",
         "error_generic": "Could not register the intake",
-        "opcional": "optional"
+        "opcional": "optional",
+        "encolado_titulo": "Saved on this phone, not sent yet",
+        "encolado_desc": "No connection. The intake will be sent as soon as the signal is back. Do not log out or clear browser data until it is sent.",
+        "encolado_volver": "Back to the counter"
       },
       "list": {
         "search_placeholder": "Search customer, serial or invoice...",
@@ -2275,7 +2278,11 @@
       "sin_esperando": "No portal reports waiting to be received.",
       "nuevo_reporte": "New portal report",
       "ver": "View",
-      "sin_conexion": "Offline — showing data from {hora}"
+      "sin_conexion": "Offline — showing data from {hora}",
+      "cola_pendientes": "Not sent",
+      "cola_pendientes_desc": "{count, plural, =1 {# intake waiting for signal} other {# intakes waiting for signal}}",
+      "cola_fallidos": "{count, plural, =1 {# intake could not be sent} other {# intakes could not be sent}}",
+      "cola_reintentar": "Retry now"
     },
     "back": "Back"
   }
