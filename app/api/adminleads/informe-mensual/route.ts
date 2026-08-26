@@ -435,6 +435,87 @@ function construirDiagnostico(datos: {
   return { logros, atencion };
 }
 
+/**
+ * Prioridades para el mes siguiente. El PDF original las escribia a mano; acá
+ * se derivan de los mismos numeros del informe, para que sean accionables y no
+ * frases genericas. Solo se emite la recomendacion si el dato la respalda.
+ */
+function construirPrioridades(datos: {
+  contenido: IgSnapshot["contenido"];
+  audiencia: { alcance: Array<{ tipo: string; porcentaje: number }> } | null;
+  horarios: { picos: Array<{ hora: number }> } | null;
+  concentracionTop2: number;
+  porVendedor: Array<{ vendedor: string; total: number; ventas: number }>;
+  roas: number;
+  inversion: number;
+}): Array<{ titulo: string; detalle: string }> {
+  const p: Array<{ titulo: string; detalle: string }> = [];
+  const c = datos.contenido.data;
+
+  if (datos.contenido.available && c.total_publicaciones > 0) {
+    const feed = c.por_formato.find((f) => f.formato.startsWith("Publicaciones"));
+    const reels = c.por_formato.find((f) => f.formato === "Reels");
+    if (feed && reels) {
+      const mejor =
+        feed.porcentaje_interacciones >= reels.porcentaje_interacciones
+          ? feed
+          : reels;
+      p.push({
+        titulo: `Reforzar ${mejor.formato}`,
+        detalle: `Concentra ${mejor.porcentaje_interacciones}% de las interacciones con ${mejor.porcentaje}% de las publicaciones.`,
+      });
+    }
+    p.push({
+      titulo: "Sostener el ritmo de publicación",
+      detalle: `El período cerró en ${c.posts_por_dia} publicaciones por día.`,
+    });
+  }
+
+  if (datos.horarios && datos.horarios.picos.length > 0) {
+    const horas = datos.horarios.picos
+      .map((h) => `${String(h.hora).padStart(2, "0")}h`)
+      .join(", ");
+    p.push({
+      titulo: "Publicar en las ventanas de mayor audiencia",
+      detalle: `Los picos de seguidores conectados del período fueron ${horas}.`,
+    });
+  }
+
+  const noSeguidores = datos.audiencia?.alcance.find(
+    (a) => a.tipo === "No seguidores",
+  );
+  if (noSeguidores && noSeguidores.porcentaje >= 50) {
+    p.push({
+      titulo: "Convertir alcance nuevo en comunidad",
+      detalle: `${noSeguidores.porcentaje}% del alcance vino de cuentas que aún no siguen la marca: hay margen para captar seguidores con llamados a la acción.`,
+    });
+  }
+
+  if (datos.concentracionTop2 > 50) {
+    p.push({
+      titulo: "Diversificar la cartera",
+      detalle: `Los 2 clientes principales concentran ${datos.concentracionTop2}% de la facturación.`,
+    });
+  }
+
+  const sinVentas = datos.porVendedor.filter((v) => v.total > 0 && v.ventas === 0);
+  if (sinVentas.length > 0) {
+    p.push({
+      titulo: "Activar vendedores sin cierres",
+      detalle: `${sinVentas.map((v) => v.vendedor).join(", ")} recibieron leads del canal y no concretaron ventas en el período.`,
+    });
+  }
+
+  if (datos.inversion > 0 && datos.roas > 1) {
+    p.push({
+      titulo: "Escalar la pauta que rinde",
+      detalle: `Con un ROAS de ${datos.roas.toFixed(1)}x, cada dólar adicional bien segmentado tiene margen para multiplicarse.`,
+    });
+  }
+
+  return p;
+}
+
 export async function GET(request: Request) {
   try {
     const userCids = await getUserCids(request);
@@ -659,6 +740,31 @@ export async function GET(request: Request) {
       .slice(0, 2)
       .reduce((s: number, c: { monto: number }) => s + c.monto, 0);
 
+    const prioridades = construirPrioridades({
+      contenido:
+        igSnapshot?.contenido ||
+        ({
+          available: false,
+          reason: igError,
+          data: {
+            total_publicaciones: 0,
+            posts_por_dia: 0,
+            por_formato: [],
+            interacciones_totales: 0,
+            interacciones_desglose: null,
+            visualizaciones_totales: null,
+            con_insights: false,
+          },
+        } as IgSnapshot["contenido"]),
+      audiencia: igSnapshot?.audiencia.available ? igSnapshot.audiencia.data : null,
+      horarios: igSnapshot?.horarios.available ? igSnapshot.horarios.data : null,
+      concentracionTop2:
+        recaudoTotal > 0 ? Math.round((top2 / recaudoTotal) * 1000) / 10 : 0,
+      porVendedor,
+      roas,
+      inversion,
+    });
+
     const diagnostico = construirDiagnostico({
       actual: crmActual,
       anterior: crmPrev,
@@ -737,6 +843,12 @@ export async function GET(request: Request) {
               : snapActual.demografia
             : null,
         demografia_motivo: igSnapshot?.demografia.reason || null,
+        audiencia: igSnapshot?.audiencia.available
+          ? igSnapshot.audiencia.data
+          : null,
+        audiencia_motivo: igSnapshot?.audiencia.reason || null,
+        horarios: igSnapshot?.horarios.available ? igSnapshot.horarios.data : null,
+        horarios_motivo: igSnapshot?.horarios.reason || null,
         contenido: igSnapshot?.contenido.data || null,
         contenido_disponible: igSnapshot?.contenido.available ?? false,
         contenido_motivo: igSnapshot?.contenido.reason || igError,
@@ -789,6 +901,7 @@ export async function GET(request: Request) {
         vendedores_activos: porVendedor.length,
       },
       diagnostico,
+      prioridades,
       fuentes: [
         "Meta Marketing API (campañas y pauta)",
         igSnapshot?.metricas.available
