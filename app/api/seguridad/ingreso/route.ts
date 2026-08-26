@@ -16,6 +16,7 @@ const MAX = {
   descripcion_falla: 5000,
   recibido_por: 200,
   foto_estado_url: 500,
+  idempotency_key: 64,
 };
 
 function truncate(value: any, max: number): string | null {
@@ -154,16 +155,52 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Clave de idempotencia de la cola offline del mostrador (#39). Opcional:
+    // los envios con conexion no la mandan.
+    const idempotencyKey = truncate(body.idempotency_key, MAX.idempotency_key);
+    if (idempotencyKey !== null && !/^[A-Za-z0-9_-]{8,64}$/.test(idempotencyKey)) {
+      errors.push("idempotency_key invalido");
+    }
+
     if (errors.length > 0) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
+    }
+
+    // Si esta clave ya se registro, devolver aquel ingreso en vez de crear otro.
+    //
+    // Esto es lo que hace segura la cola offline: cuando el telefono manda el
+    // ingreso y la respuesta se pierde de vuelta, la cola no puede distinguir
+    // "no llego" de "llego y no me entere", asi que reintenta. Sin esto,
+    // quedarian dos actas de recepcion del mismo equipo y nadie sabria cual es
+    // la buena.
+    //
+    // Se responde 200 y no 201 para que el cliente sepa que no creo nada nuevo.
+    if (idempotencyKey !== null) {
+      try {
+        const yaExiste = await query(
+          "SELECT id FROM seguridad_ingresos WHERE idempotency_key = ? LIMIT 1",
+          [idempotencyKey],
+        );
+        if (yaExiste.rows.length > 0) {
+          return NextResponse.json(
+            { success: true, id: yaExiste.rows[0].id, duplicado: true },
+            { status: 200 },
+          );
+        }
+      } catch (e: any) {
+        // Si la columna todavia no existe en esta base, se sigue adelante: es
+        // preferible registrar el ingreso que rechazarlo por no poder
+        // comprobar la clave.
+        console.warn("idempotency_key no disponible:", e?.message);
+      }
     }
 
     const result = await query(
       `INSERT INTO seguridad_ingresos
         (rma_case_id, fecha_entrega, factura_numero, cliente_nombre, hardware, serial,
          descripcion_falla, accesorios_integros, sin_manipulacion, dentro_de_fecha,
-         falla_cubierta_garantia, recibido_por, foto_estado_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         falla_cubierta_garantia, recibido_por, foto_estado_url, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rmaCaseId,
         fechaEntrega,
@@ -178,6 +215,7 @@ export async function POST(request: NextRequest) {
         body.falla_cubierta_garantia ? 1 : 0,
         recibidoPor,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
+        idempotencyKey,
       ],
     );
 

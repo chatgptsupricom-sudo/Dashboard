@@ -24,7 +24,13 @@ CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   falla_cubierta_garantia TINYINT(1) NOT NULL,
   recibido_por VARCHAR(200) NOT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
+  -- Clave de idempotencia de la cola offline del mostrador (#39). La genera el
+  -- navegador antes del primer intento y la reusa al reintentar, para que un
+  -- envio que se corta despues de guardar no cree un segundo ingreso del mismo
+  -- equipo. NULL en todo lo que se registra con conexion.
+  idempotency_key VARCHAR(64) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX uq_idempotency_key (idempotency_key),
   INDEX idx_fecha (fecha_entrega),
   INDEX idx_cliente (cliente_nombre),
   INDEX idx_rma_case (rma_case_id),
