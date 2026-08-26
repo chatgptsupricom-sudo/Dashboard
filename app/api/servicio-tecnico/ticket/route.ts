@@ -604,7 +604,7 @@ export async function GET(request: NextRequest) {
     // race conditions / enumeration.
     const caseResult = await query(
       `SELECT case_number, status, model, hardware, product_code, invoice_number,
-              serial, created_at, client_phone,
+              serial, created_at, client_phone, despachado_at,
               garantia_estado, garantia_meses, garantia_vence, garantia_marca
        FROM rma_cases
        WHERE case_number = ? AND invoice_number = ? AND origen = 'portal'
@@ -653,6 +653,11 @@ export async function GET(request: NextRequest) {
           marca: row.garantia_marca || null,
         },
         created_at: row.created_at,
+        // Fecha en que Seguridad le entrego el equipo (issue #32). Va aparte
+        // del `status` a proposito: el estado dice como se resolvio el caso
+        // —reparado, nota de credito— y esto dice que ademas ya se retiro.
+        // Fecha de calendario, no instante: se manda YYYY-MM-DD.
+        despachado_at: fechaISO(row.despachado_at),
         timeline: (Array.isArray(historyRows) ? historyRows : []).map(
           // Sin `changed_by`: en los cambios de estado posteriores es la
           // identidad del técnico que lo atendió, y esto es un endpoint

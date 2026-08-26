@@ -14,12 +14,31 @@ type TicketData = {
   serial: string | null;
   client_phone_masked: string | null;
   created_at: string;
+  // Fecha de entrega del equipo (issue #32), o null si sigue en el taller.
+  // Es independiente de `status`: un caso resuelto con nota de credito
+  // tambien se entrega.
+  despachado_at: string | null;
   timeline: Array<{
     from_status: string | null;
     to_status: string;
     created_at: string;
   }>;
 };
+
+/**
+ * Formatea una fecha de calendario (YYYY-MM-DD) sin pasar por `new Date`.
+ *
+ * `new Date("2026-08-26")` se interpreta como medianoche UTC, que en Venezuela
+ * (UTC-4) cae el dia 25: al cliente le apareceria que su equipo se entrego un
+ * dia antes de lo que dice el acta. Los timestamps del resto de la pantalla si
+ * pueden usar Date, porque llevan hora real.
+ */
+function fechaLegible(valor: string): string {
+  const m = valor.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return valor;
+  const [, año, mes, dia] = m;
+  return `${dia}/${mes}/${año}`;
+}
 
 const STATUS_LABELS: Record<string, string> = {
   recibido: "status_recibido",
@@ -118,7 +137,16 @@ export default function ConsultarPage() {
   const etiquetaEstado = (estado: string) =>
     STATUS_LABELS[estado] ? t(STATUS_LABELS[estado]) : estado;
 
-  const statusLabel = ticket ? etiquetaEstado(ticket.status) : "";
+  // "Reparado" lleva pegado un "listo para retirar / entregar" que deja de ser
+  // cierto en cuanto el equipo se entrega: quedaba diciendole al cliente que
+  // pasara a buscar algo que ya tiene en la mano, justo encima del aviso de
+  // entrega. Los demas estados son desenlaces neutros y conviven bien con el
+  // aviso, asi que solo se cambia este.
+  const statusLabel = !ticket
+    ? ""
+    : ticket.despachado_at && ticket.status === "reparado"
+      ? t("status_reparado_entregado")
+      : etiquetaEstado(ticket.status);
 
 
   return (
@@ -218,6 +246,34 @@ export default function ConsultarPage() {
               >
                 {statusLabel}
               </div>
+
+              {/* Entrega del equipo (issue #32).
+                  Se muestra ADEMAS del estado, no en su lugar: el cliente
+                  necesita las dos cosas —como se resolvio su caso y si ya
+                  puede dejar de esperar el equipo. */}
+              {ticket.despachado_at && (
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <svg
+                    className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    {t("consultar_entregado", {
+                      fecha: fechaLegible(ticket.despachado_at),
+                    })}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Datos del reporte */}

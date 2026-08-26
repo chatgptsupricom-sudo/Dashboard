@@ -229,6 +229,35 @@ export async function POST(request: NextRequest) {
     );
 
     const insertId = (result.rows as any)?.insertId;
+
+    // Marcar en el ticket del portal que el equipo ya se entrego (issue #32).
+    //
+    // Se escribe `despachado_at` y NO se toca `status`: el estado guarda el
+    // desenlace del caso —reparado, nota de credito, no procesado— y la
+    // entrega le ocurre a cualquiera de ellos. Pisarlo con "despachado"
+    // borraria el motivo por el que el caso se cerro, que es justo lo que el
+    // cliente consulta en el portal.
+    //
+    // `IS NULL` para que un segundo despacho del mismo caso (un reingreso que
+    // se vuelve a entregar) no mueva la fecha de la primera entrega.
+    //
+    // Va en su propio try: si esto falla, el despacho ya quedo registrado y no
+    // se puede perder por no haber podido anotar la fecha en el ticket.
+    if (rmaCaseId !== null) {
+      try {
+        await query(
+          `UPDATE rma_cases SET despachado_at = ?
+           WHERE id = ? AND despachado_at IS NULL`,
+          [fechaDespacho, rmaCaseId],
+        );
+      } catch (e: any) {
+        console.warn(
+          `[despacho ${insertId}] no se pudo marcar despachado_at en rma_cases ${rmaCaseId}:`,
+          e?.message,
+        );
+      }
+    }
+
     return NextResponse.json({ success: true, id: insertId }, { status: 201 });
   } catch (error: any) {
     console.error("Error creando despacho:", error);

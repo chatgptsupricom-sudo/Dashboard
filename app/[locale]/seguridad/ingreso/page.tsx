@@ -36,6 +36,9 @@ type Ingreso = {
   falla_cubierta_garantia: number;
   recibido_por: string;
   promedio_calificacion: number | null;
+  // null mientras el equipo siga en el taller; el id del despacho cuando ya
+  // se entrego.
+  despacho_id: number | null;
   created_at: string;
 };
 
@@ -77,10 +80,13 @@ export default function IngresoListPage() {
     if (appliedSearch) sp.set("search", appliedSearch);
     if (appliedDesde) sp.set("desde", appliedDesde);
     if (appliedHasta) sp.set("hasta", appliedHasta);
+    // El filtro va al servidor: filtrarlo aca dejaba el total y la paginacion
+    // contando las filas que se acababan de ocultar.
+    if (onlyPending) sp.set("solo_pendientes", "1");
     sp.set("page", String(page));
     sp.set("limit", String(PAGE_SIZE));
     return sp.toString();
-  }, [appliedSearch, appliedDesde, appliedHasta, page]);
+  }, [appliedSearch, appliedDesde, appliedHasta, onlyPending, page]);
 
   // Export a Excel (issue #38). Reusa los MISMOS filtros aplicados, menos la
   // paginación: se exporta todo lo filtrado, no la página que se está viendo.
@@ -119,7 +125,7 @@ export default function IngresoListPage() {
     };
   }, [queryString]);
 
-  const visible = onlyPending ? items : items;
+  const visible = items;
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
 
@@ -402,10 +408,17 @@ export default function IngresoListPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">
-                            <XCircle className="w-3 h-3" />
-                            {tf("no")}
-                          </span>
+                          {ing.despacho_id ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {tf("yes")}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">
+                              <XCircle className="w-3 h-3" />
+                              {tf("no")}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right align-top">
                           <Link

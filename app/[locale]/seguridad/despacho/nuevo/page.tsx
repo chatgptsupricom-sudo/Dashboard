@@ -517,15 +517,16 @@ export default function NuevoDespachoPage() {
               <span className="text-sm font-medium text-slate-700">
                 {tf("field_accesorios")}
               </span>
+              {/* h-12: mismo criterio de 48px que el formulario de ingreso. */}
               <div
                 role="group"
-                className="inline-flex rounded-[10px] border border-slate-200 overflow-hidden text-xs font-semibold"
+                className="inline-flex shrink-0 rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold"
               >
                 <button
                   type="button"
                   onClick={() => update("accesorios_integros", true)}
                   aria-pressed={form.accesorios_integros === true}
-                  className={`px-3 h-8 transition-colors ${
+                  className={`min-w-[56px] px-4 h-12 transition-colors ${
                     form.accesorios_integros
                       ? "bg-emerald-500 text-white"
                       : "bg-white text-slate-500 hover:bg-slate-50"
@@ -537,7 +538,7 @@ export default function NuevoDespachoPage() {
                   type="button"
                   onClick={() => update("accesorios_integros", false)}
                   aria-pressed={form.accesorios_integros === false}
-                  className={`px-3 h-8 border-l border-slate-200 transition-colors ${
+                  className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
                     !form.accesorios_integros
                       ? "bg-red-500 text-white"
                       : "bg-white text-slate-500 hover:bg-slate-50"

@@ -47,13 +47,21 @@ export async function GET(request: NextRequest) {
     const total = countResult.rows[0]?.total || 0;
 
     const rowsResult = await query(
+      // despacho_id: el listado tiene una columna "Despachado" y el filtro de
+      // pendientes, y este SELECT no traia el dato, asi que la pantalla pintaba
+      // "No" en todas las filas —incluido el equipo ya entregado al cliente.
       `SELECT *,
         (SELECT AVG(c.calificacion)
          FROM seguridad_calificaciones c
          WHERE c.relacionado_a = 'ingreso'
            AND c.relacionado_id = seguridad_ingresos.id
            AND c.almacenista_nombre = seguridad_ingresos.recibido_por
-        ) AS promedio_calificacion
+        ) AS promedio_calificacion,
+        (SELECT d.id
+         FROM seguridad_despachos d
+         WHERE d.ingreso_id = seguridad_ingresos.id
+         ORDER BY d.id DESC LIMIT 1
+        ) AS despacho_id
        FROM seguridad_ingresos ${where}
        ORDER BY fecha_entrega DESC, created_at DESC
        LIMIT ${limit} OFFSET ${offset}`,
