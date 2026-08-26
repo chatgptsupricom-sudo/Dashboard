@@ -59,7 +59,14 @@ export async function GET(request: Request) {
         alerts_sent: 0,
         dias_umbral: dias,
         ...(dryRun
-          ? { dry_run: true, diagnostico: await conteosDiagnostico() }
+          ? {
+              dry_run: true,
+              diagnostico: await conteosDiagnostico(),
+              // Sin pendientes no se llega a resolverlos, pero saber si hay
+              // alguien con rol `rma` no depende de que haya ingresos: si no
+              // hay nadie, la alerta queda inerte el dia que haya datos.
+              destinatarios: await tecnicosANotificar(),
+            }
           : {}),
       });
     }
