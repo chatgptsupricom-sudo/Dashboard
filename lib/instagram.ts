@@ -54,6 +54,19 @@ export interface IgDemographics {
   city: Array<{ label: string; value: number }>;
 }
 
+export interface IgAudiencia {
+  /** Alcance y visualizaciones partidos entre seguidores y no seguidores. */
+  alcance: Array<{ tipo: string; valor: number; porcentaje: number }>;
+  visualizaciones: Array<{ tipo: string; valor: number; porcentaje: number }>;
+}
+
+export interface IgHorarios {
+  /** Promedio de seguidores en linea por hora del dia (0-23). */
+  por_hora: Array<{ hora: number; seguidores: number }>;
+  /** Las horas con mas audiencia conectada, de mayor a menor. */
+  picos: Array<{ hora: number; seguidores: number }>;
+}
+
 export interface IgMediaItem {
   id: string;
   format: "FEED" | "REELS" | "STORY" | "OTRO";
@@ -337,6 +350,119 @@ export async function fetchIgFollowerGains(
   }
 }
 
+const FOLLOW_TYPE_LABELS: Record<string, string> = {
+  FOLLOWER: "Seguidores",
+  NON_FOLLOWER: "No seguidores",
+  UNKNOWN: "Sin determinar",
+};
+
+/**
+ * Alcance y visualizaciones partidos entre seguidores y no seguidores.
+ * Es el hallazgo central del informe: que porcentaje del alcance viene de
+ * cuentas que todavia no siguen la marca.
+ */
+export async function fetchIgAudiencia(
+  igUserId: string,
+  since: string,
+  until: string,
+): Promise<IgBlock<IgAudiencia>> {
+  const vacio: IgAudiencia = { alcance: [], visualizaciones: [] };
+  const resultado: IgAudiencia = { alcance: [], visualizaciones: [] };
+  let firstError: any = null;
+
+  for (const [metric, destino] of [
+    ["reach", "alcance"],
+    ["views", "visualizaciones"],
+  ] as const) {
+    try {
+      const data = await graphGet(`${igUserId}/insights`, {
+        metric,
+        period: "day",
+        metric_type: "total_value",
+        breakdown: "follow_type",
+        since,
+        until,
+      });
+      const results =
+        data.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
+      const filas = results.map((r: any) => ({
+        tipo: FOLLOW_TYPE_LABELS[(r.dimension_values || [])[0]] ?? "Otro",
+        valor: parseInt(r.value) || 0,
+      }));
+      const total = filas.reduce((acc: number, f: any) => acc + f.valor, 0);
+      resultado[destino] = filas
+        .map((f: any) => ({
+          ...f,
+          porcentaje: total > 0 ? Math.round((f.valor / total) * 1000) / 10 : 0,
+        }))
+        .sort((a: any, b: any) => b.valor - a.valor);
+    } catch (err: any) {
+      firstError = firstError || err;
+    }
+  }
+
+  if (firstError && resultado.alcance.length === 0) {
+    return { available: false, reason: permissionReason(firstError), data: vacio };
+  }
+  return { available: true, reason: null, data: resultado };
+}
+
+/**
+ * Seguidores conectados por hora, promediados sobre el periodo. La API limita
+ * `online_followers` a los ultimos 30 dias, asi que para meses viejos devuelve
+ * available:false y el informe omite el bloque de horarios.
+ */
+export async function fetchIgHorarios(
+  igUserId: string,
+  since: string,
+  until: string,
+): Promise<IgBlock<IgHorarios>> {
+  const vacio: IgHorarios = { por_hora: [], picos: [] };
+  try {
+    const data = await graphGet(`${igUserId}/insights`, {
+      metric: "online_followers",
+      period: "lifetime",
+      since,
+      until,
+    });
+    const values = data.data?.[0]?.values || [];
+    if (values.length === 0) {
+      return { available: false, reason: "Sin datos de horarios en el periodo", data: vacio };
+    }
+
+    // Cada entrada es un dia con un mapa hora -> seguidores; se promedia.
+    const suma = new Array(24).fill(0);
+    const cuenta = new Array(24).fill(0);
+    for (const v of values) {
+      for (const [hora, cant] of Object.entries(v.value || {})) {
+        const h = parseInt(hora);
+        if (h >= 0 && h < 24) {
+          suma[h] += parseInt(String(cant)) || 0;
+          cuenta[h] += 1;
+        }
+      }
+    }
+
+    const por_hora = suma.map((total, hora) => ({
+      hora,
+      seguidores: cuenta[hora] > 0 ? Math.round(total / cuenta[hora]) : 0,
+    }));
+
+    return {
+      available: true,
+      reason: null,
+      data: {
+        por_hora,
+        picos: [...por_hora]
+          .sort((a, b) => b.seguidores - a.seguidores)
+          .slice(0, 4),
+      },
+    };
+  } catch (err: any) {
+    return { available: false, reason: permissionReason(err), data: vacio };
+  }
+}
+
 function normalizeFormat(media: any): IgMediaItem["format"] {
   const product = media.media_product_type;
   if (product === "REELS") return "REELS";
@@ -544,6 +670,8 @@ export interface IgSnapshot {
   demografia: IgBlock<IgDemographics>;
   contenido: IgBlock<IgContentBreakdown>;
   seguidores_ganados: IgBlock<number | null>;
+  audiencia: IgBlock<IgAudiencia>;
+  horarios: IgBlock<IgHorarios>;
 }
 
 /** Reune en una sola llamada todo lo que el informe necesita de Instagram. */
@@ -554,13 +682,16 @@ export async function buildIgSnapshot(
   /** Dias transcurridos del periodo; por defecto, el largo del rango. */
   dias?: number,
 ): Promise<IgSnapshot> {
-  const [perfil, metricas, demografia, media, ganados] = await Promise.all([
-    fetchIgProfile(account.ig_user_id),
-    fetchIgAccountInsights(account.ig_user_id, since, until),
-    fetchIgDemographics(account.ig_user_id),
-    fetchIgMedia(account.ig_user_id, since, until),
-    fetchIgFollowerGains(account.ig_user_id, since, until),
-  ]);
+  const [perfil, metricas, demografia, media, ganados, audiencia, horarios] =
+    await Promise.all([
+      fetchIgProfile(account.ig_user_id),
+      fetchIgAccountInsights(account.ig_user_id, since, until),
+      fetchIgDemographics(account.ig_user_id),
+      fetchIgMedia(account.ig_user_id, since, until),
+      fetchIgFollowerGains(account.ig_user_id, since, until),
+      fetchIgAudiencia(account.ig_user_id, since, until),
+      fetchIgHorarios(account.ig_user_id, since, until),
+    ]);
 
   return {
     cuenta: {
@@ -585,5 +716,7 @@ export async function buildIgSnapshot(
       ),
     },
     seguidores_ganados: ganados,
+    audiencia,
+    horarios,
   };
 }
