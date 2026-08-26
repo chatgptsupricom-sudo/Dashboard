@@ -1,8 +1,6 @@
 "use client";
 
 import { useSearchParams, useParams } from "next/navigation";
-import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
-import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -16,12 +14,6 @@ type TicketData = {
   serial: string | null;
   client_phone_masked: string | null;
   created_at: string;
-  garantia?: {
-    estado: string;
-    meses: number | null;
-    vence: string | null;
-    marca: string | null;
-  };
   timeline: Array<{
     from_status: string | null;
     to_status: string;
@@ -46,12 +38,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function ConsultarPage() {
-  const t = useTranslations("portal_rma");
-  // Las etiquetas de garantía viven bajo servicioTecnico, el namespace del
-  // resto del portal, pero esta pantalla usa portal_rma. Con un solo hook, una
-  // llamada como t("garantia.titulo") buscaba portal_rma.garantia.titulo, que
-  // no existe, y next-intl pintaba la ruta de la llave en crudo.
-  const tg = useTranslations("servicioTecnico.garantia");
+  const t = useTranslations("servicioTecnico");
+
   const params = useParams();
   const searchParams = useSearchParams();
   const locale = (params?.locale as string) || "es";
@@ -132,24 +120,6 @@ export default function ConsultarPage() {
 
   const statusLabel = ticket ? etiquetaEstado(ticket.status) : "";
 
-  // Garantía CONGELADA del reporte: la misma que se le mostró al cliente
-  // cuando reportó, leída de lo guardado. No se recalcula.
-  const garantia = (() => {
-    if (!ticket?.garantia) return null;
-    const bruto = ticket.garantia.estado || "indeterminada";
-    const estado = ["en_garantia", "vencida", "vida_util"].includes(bruto)
-      ? bruto
-      : "indeterminada";
-    const fecha = formatearFechaCalendario(ticket.garantia.vence, "es");
-    return {
-      estado,
-      etiqueta: tg(estado),
-      detalle:
-        estado === "en_garantia" && fecha
-          ? tg("en_garantia_detalle", { fecha })
-          : tg(`${estado}_detalle`),
-    };
-  })();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white px-4 py-10 sm:py-16">
@@ -251,18 +221,6 @@ export default function ConsultarPage() {
             </div>
 
             {/* Datos del reporte */}
-            {garantia && (
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                  {tg("titulo")}
-                </p>
-                <GarantiaBadge
-                  estado={garantia.estado}
-                  etiqueta={garantia.etiqueta}
-                  detalle={garantia.detalle}
-                />
-              </div>
-            )}
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">

@@ -9,7 +9,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 export default function ConfirmacionPage() {
-  const t = useTranslations("portal_rma");
+  const t = useTranslations("servicioTecnico");
   const params = useSearchParams();
   const caseNumber = params.get("ticket") || "";
   const trackingToken = params.get("token") || "";

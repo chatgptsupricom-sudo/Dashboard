@@ -1,15 +1,48 @@
 import { query } from "@/lib/db";
 import { generateToken } from "@/lib/jwt";
 import { authenticateWithOdoo, callOdooRPC } from "@/lib/odoo";
+import {
+  aplicarLimites,
+  consultarLimite,
+  obtenerIp,
+  registrarUso,
+} from "@/lib/servicio-tecnico/limites";
 import { NextResponse } from "next/server";
 
+/**
+ * Intentos FALLIDOS permitidos por IP. Solo se consumen cuando las
+ * credenciales no sirven: quien entra bien no gasta cuota, así que a un
+ * usuario legítimo esto no le existe.
+ *
+ * 10 por hora deja margen de sobra para equivocarse escribiendo la contraseña
+ * y frena en seco el probar contraseñas a ciegas.
+ *
+ * Ojo con bajarlo: toda una oficina sale a internet por una sola IP.
+ */
+const FALLOS = { max: 10, ventanaSegundos: 3600 };
+
 export async function POST(req: Request) {
+  // Este endpoint autentica contra Odoo y está publicado en tres dominios,
+  // uno de los cuales va a aparecer en supricom.com.ve. Sin límite, cualquiera
+  // puede probar contraseñas contra las cuentas del equipo a la velocidad que
+  // quiera, y cada intento además golpea el Odoo de producción.
+  const rafaga = aplicarLimites(req, "login-intentos", [
+    { max: 20, ventanaSegundos: 60 },
+  ]);
+  if (rafaga) return rafaga;
+
+  const bloqueoFallos = consultarLimite(req, "login-fallos", FALLOS);
+  if (bloqueoFallos) return bloqueoFallos;
+
   try {
     const { email, password } = await req.json();
 
     // 1. Autenticación en Odoo
     const odooUid = await authenticateWithOdoo(email, password);
     if (!odooUid) {
+      // Solo los fallos consumen cuota.
+      registrarUso(req, "login-fallos", FALLOS);
+      console.warn(`[login] credenciales inválidas desde ${obtenerIp(req)}`);
       return NextResponse.json(
         { error: "Credenciales inválidas" },
         { status: 401 },

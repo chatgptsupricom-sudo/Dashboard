@@ -4,7 +4,7 @@ import { CaptchaTurnstile } from "@/components/servicio-tecnico/captcha-turnstil
 import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
 import AttachmentUploader, {
   type AdjuntoEstado,
-} from "@/components/portal-rma/AttachmentUploader";
+} from "@/components/servicio-tecnico/adjuntos-uploader";
 import {
   AlertCircle,
   ArrowLeft,
@@ -61,6 +61,10 @@ export function ReporteForm({ locale }: { locale: string }) {
   // Paso 1
   const [numero, setNumero] = useState("");
   const [rif, setRif] = useState("");
+  // Errores por campo. Los botones se dejan habilitados a propósito: uno
+  // deshabilitado no explica por qué, y en móvil apenas se distingue. El
+  // cliente toca, no pasa nada, y se queda sin saber qué le falta.
+  const [errores, setErrores] = useState<Record<string, string>>({});
   const [buscando, setBuscando] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
   const [coincidencias, setCoincidencias] = useState<Coincidencia[] | null>(null);
@@ -70,6 +74,7 @@ export function ReporteForm({ locale }: { locale: string }) {
   const [itemId, setItemId] = useState("");
 
   // Paso 3
+  const [serialManual, setSerialManual] = useState("");
   const [falla, setFalla] = useState("");
   const [telefono, setTelefono] = useState("");
   const [adjuntos, setAdjuntos] = useState<AdjuntoEstado[]>([]);
@@ -110,11 +115,20 @@ export function ReporteForm({ locale }: { locale: string }) {
       estado: clave,
       etiqueta: t(`garantia.${clave}`),
       detalle:
-        clave === "en_garantia" && fecha
-          ? t("garantia.en_garantia_detalle", { fecha })
+        clave === "en_garantia"
+          ? fecha
+            ? t("garantia.en_garantia_detalle", { fecha })
+            : t("garantia.en_garantia_sin_fecha")
           : t(`garantia.${clave}_detalle`),
     };
   };
+
+  // Si cambia el producto elegido, lo que se escribió para el anterior deja de
+  // aplicar.
+  useEffect(() => {
+    setSerialManual("");
+    setErrores((p) => ({ ...p, serialManual: "" }));
+  }, [itemId]);
 
   const item = useMemo(
     () => factura?.items.find((i) => i.id === itemId) ?? null,
@@ -175,6 +189,7 @@ export function ReporteForm({ locale }: { locale: string }) {
         body: JSON.stringify({
           invoice_number: factura.factura.numero,
           rif: rif.trim(),
+          serial_manual: serialManual.trim(),
           item_id: item.id,
           odoo_product_id: item.producto_id,
           serial: item.serial,
@@ -243,6 +258,14 @@ export function ReporteForm({ locale }: { locale: string }) {
             className="mt-6"
             onSubmit={(e) => {
               e.preventDefault();
+              const faltan: Record<string, string> = {};
+              if (!numero.trim()) faltan.numero = t("form.required");
+              if (!rif.trim()) faltan.rif = t("form.required");
+              setErrores(faltan);
+              if (Object.keys(faltan).length) {
+                document.getElementById(Object.keys(faltan)[0])?.focus();
+                return;
+              }
               buscarFactura(numero, rif);
             }}
           >
@@ -253,12 +276,19 @@ export function ReporteForm({ locale }: { locale: string }) {
               id="numero"
               className="portal-field mt-2"
               value={numero}
-              onChange={(e) => setNumero(e.target.value)}
+              onChange={(e) => {
+                setNumero(e.target.value);
+                setErrores((p) => ({ ...p, numero: "" }));
+              }}
+              aria-invalid={!!errores.numero}
+              aria-describedby={errores.numero ? "numero-error" : undefined}
               placeholder={t("form.invoicePlaceholder")}
               autoComplete="off"
               autoFocus
               enterKeyHint="search"
             />
+            {errores.numero && <MensajeError id="numero-error" texto={errores.numero} />}
+
             <label htmlFor="rif" className="mt-5 block text-sm font-semibold">
               {t("form.rifLabel")}
             </label>
@@ -266,11 +296,17 @@ export function ReporteForm({ locale }: { locale: string }) {
               id="rif"
               className="portal-field mt-2"
               value={rif}
-              onChange={(e) => setRif(e.target.value)}
+              onChange={(e) => {
+                setRif(e.target.value);
+                setErrores((p) => ({ ...p, rif: "" }));
+              }}
+              aria-invalid={!!errores.rif}
+              aria-describedby={errores.rif ? "rif-error" : undefined}
               placeholder={t("form.rifPlaceholder")}
               autoComplete="off"
               enterKeyHint="search"
             />
+            {errores.rif && <MensajeError id="rif-error" texto={errores.rif} />}
             <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
               {t("form.rifHelp")}
             </p>
@@ -278,7 +314,7 @@ export function ReporteForm({ locale }: { locale: string }) {
             <button
               type="submit"
               className="portal-btn portal-btn-primary mt-5 w-full"
-              disabled={buscando || !numero.trim() || !rif.trim()}
+              disabled={buscando}
             >
               {buscando ? (
                 <>
@@ -427,6 +463,36 @@ export function ReporteForm({ locale }: { locale: string }) {
             </div>
           )}
 
+          {!item.serial && (
+            <div className="mt-5">
+              <label htmlFor="serialManual" className="text-sm font-semibold">
+                {item.lleva_serial
+                  ? t("form.serialManualLabel")
+                  : t("form.serialManualLabelOpcional")}
+              </label>
+              <input
+                id="serialManual"
+                className="portal-field mt-2 font-mono"
+                value={serialManual}
+                onChange={(e) => {
+                  setSerialManual(e.target.value);
+                  setErrores((p) => ({ ...p, serialManual: "" }));
+                }}
+                placeholder={t("form.serialManualPlaceholder")}
+                autoComplete="off"
+                aria-invalid={!!errores.serialManual}
+              />
+              {errores.serialManual && (
+                <MensajeError id="serialManual-error" texto={errores.serialManual} />
+              )}
+              <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
+                {item.lleva_serial
+                  ? t("form.serialManualHelp")
+                  : t("form.serialManualHelpOpcional")}
+              </p>
+            </div>
+          )}
+
           <div className="mt-6">
             <label htmlFor="falla" className="text-sm font-semibold">
               {t("form.faultLabel")}
@@ -436,14 +502,15 @@ export function ReporteForm({ locale }: { locale: string }) {
               rows={5}
               className="mt-2 w-full rounded-[10px] border border-[color:var(--portal-line)] p-3 focus:border-[color:var(--portal-primary)] focus:outline-none"
               value={falla}
-              onChange={(e) => setFalla(e.target.value)}
+              onChange={(e) => {
+                setFalla(e.target.value);
+                setErrores((p) => ({ ...p, falla: "" }));
+              }}
               placeholder={t("form.faultPlaceholder")}
               maxLength={5000}
             />
-            {falla.length > 0 && !fallaValida && (
-              <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-                {t("form.faultTooShort")}
-              </p>
+            {(errores.falla || (falla.length > 0 && !fallaValida)) && (
+              <MensajeError id="falla-error" texto={t("form.faultTooShort")} />
             )}
           </div>
 
@@ -457,9 +524,18 @@ export function ReporteForm({ locale }: { locale: string }) {
               inputMode="tel"
               className="portal-field mt-2"
               value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
+              onChange={(e) => {
+                setTelefono(e.target.value);
+                setErrores((p) => ({ ...p, telefono: "" }));
+              }}
               placeholder="0414 1234567"
             />
+            {errores.telefono && (
+              <MensajeError id="telefono-error" texto={errores.telefono} />
+            )}
+            {errores.captcha && (
+              <MensajeError id="captcha-error" texto={errores.captcha} />
+            )}
             {factura.cliente.telefono && (
               <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
                 {t("form.phoneOnFile", { telefono: factura.cliente.telefono })}
@@ -468,7 +544,7 @@ export function ReporteForm({ locale }: { locale: string }) {
           </div>
 
           <div className="mt-6">
-            <p className="text-sm font-semibold">{t("form.attachmentsLabel")}</p>
+            <p className="text-sm font-semibold">{t("form.attachmentsLabelRequired")}</p>
             <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
               {t("form.attachmentsHelp")}
             </p>
@@ -481,6 +557,10 @@ export function ReporteForm({ locale }: { locale: string }) {
             </div>
           </div>
 
+          {errores.adjuntos && (
+            <MensajeError id="adjuntos-error" texto={errores.adjuntos} />
+          )}
+
           <CaptchaTurnstile
             locale={locale}
             onToken={setCaptchaToken}
@@ -492,16 +572,37 @@ export function ReporteForm({ locale }: { locale: string }) {
           <button
             type="button"
             className="portal-btn portal-btn-primary mt-6 w-full"
-            disabled={
-              enviando ||
-              subiendo ||
-              !fallaValida ||
-              !telefonoValido ||
-              // Solo se exige si hay captcha configurado; si no, no se puede
+            // Se deshabilita solo mientras hay algo en curso. Lo que falte por
+            // llenar se avisa con un mensaje al tocar, no dejando el botón
+            // muerto sin explicación.
+            disabled={enviando || subiendo}
+            onClick={() => {
+              const faltan: Record<string, string> = {};
+              // Serial obligatorio solo cuando el producto SÍ lleva serial de
+              // fábrica y el despacho no lo registró: ahí el cliente puede
+              // leerlo de la etiqueta. En consumibles, cables y accesorios
+              // —que Odoo marca como no rastreados— no existe ningún serial
+              // que escribir, y exigirlo dejaría esos productos sin poder
+              // reportarse.
+              if (item.lleva_serial && !item.serial && !serialManual.trim())
+                faltan.serialManual = t("form.serialManualRequired");
+              if (!fallaValida) faltan.falla = t("form.faultTooShort");
+              if (!telefonoValido) faltan.telefono = t("form.phoneRequired");
+              // Solo se exige captcha si está configurado; si no, no se puede
               // producir un token y bloquearía a todo el mundo.
-              (captchaActivo && !captchaToken)
-            }
-            onClick={enviar}
+              if (captchaActivo && !captchaToken)
+                faltan.captcha = t("form.captchaRequired");
+              // Al menos una foto o video, ya subido. Los que fallaron no
+              // cuentan: el servidor solo ve los que llegaron.
+              if (!adjuntos.some((a) => a.status === "done"))
+                faltan.adjuntos = t("form.attachmentsRequired");
+              setErrores(faltan);
+              if (Object.keys(faltan).length) {
+                document.getElementById(Object.keys(faltan)[0])?.focus();
+                return;
+              }
+              enviar();
+            }}
           >
             {enviando ? (
               <>
@@ -520,6 +621,15 @@ export function ReporteForm({ locale }: { locale: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+function MensajeError({ id, texto }: { id: string; texto: string }) {
+  return (
+    <p id={id} role="alert" className="mt-1.5 flex items-start gap-1.5 text-sm text-[#b42318]">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      {texto}
+    </p>
   );
 }
 
