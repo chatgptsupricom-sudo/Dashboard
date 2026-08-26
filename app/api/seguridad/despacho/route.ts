@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { filtroDespachos } from "@/lib/seguridad/filtros";
 import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -37,47 +38,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const offset = (page - 1) * limit;
 
-    let where = "WHERE 1=1";
-    const params: any[] = [];
-
-    const almacenista = (searchParams.get("almacenista") || "").trim();
-
-    if (search) {
-      where += " AND (cliente_retira LIKE ? OR almacenista_nombre LIKE ? OR facturas_json LIKE ?)";
-      const s = `%${search}%`;
-      params.push(s, s, s);
-    }
-
-    if (almacenista) {
-      where += " AND almacenista_nombre = ?";
-      params.push(almacenista);
-    }
-
-    if (desde) {
-      where += " AND fecha_despacho >= ?";
-      params.push(desde);
-    }
-
-    if (hasta) {
-      where += " AND fecha_despacho <= ?";
-      params.push(hasta);
-    }
-
-    if (ingresoIdParam) {
-      const parsed = parseInt(ingresoIdParam, 10);
-      if (!isNaN(parsed)) {
-        where += " AND ingreso_id = ?";
-        params.push(parsed);
-      }
-    }
-
-    if (rmaCaseIdParam) {
-      const parsed = parseInt(rmaCaseIdParam, 10);
-      if (!isNaN(parsed)) {
-        where += " AND rma_case_id = ?";
-        params.push(parsed);
-      }
-    }
+    const { where, params } = filtroDespachos(searchParams);
 
     let total = 0;
     let rows: any[];

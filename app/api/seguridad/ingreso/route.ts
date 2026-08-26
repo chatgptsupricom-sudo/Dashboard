@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -37,32 +38,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const offset = (page - 1) * limit;
 
-    let where = "WHERE 1=1";
-    const params: any[] = [];
-
-    if (search) {
-      where += " AND (cliente_nombre LIKE ? OR serial LIKE ? OR factura_numero LIKE ?)";
-      const s = `%${search}%`;
-      params.push(s, s, s);
-    }
-
-    if (desde) {
-      where += " AND fecha_entrega >= ?";
-      params.push(desde);
-    }
-
-    if (hasta) {
-      where += " AND fecha_entrega <= ?";
-      params.push(hasta);
-    }
-
-    if (rmaCaseIdParam) {
-      const rmaId = parseInt(rmaCaseIdParam, 10);
-      if (!isNaN(rmaId)) {
-        where += " AND rma_case_id = ?";
-        params.push(rmaId);
-      }
-    }
+    const { where, params } = filtroIngresos(searchParams);
 
     const countResult = await query(
       `SELECT COUNT(*) as total FROM seguridad_ingresos ${where}`,

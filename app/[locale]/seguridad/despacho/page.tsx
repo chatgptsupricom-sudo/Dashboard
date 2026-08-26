@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Loader2,
   PenLine,
+  Download,
   Plus,
   Search,
   Send,
@@ -84,6 +85,15 @@ export default function DespachoListPage() {
     return sp.toString();
   }, [appliedSearch, appliedDesde, appliedHasta, page]);
 
+  // Export a Excel (issue #38). Reusa los MISMOS filtros aplicados, menos la
+  // paginación: se exporta todo lo filtrado, no la página que se está viendo.
+  const exportarExcel = () => {
+    const sp = new URLSearchParams(queryString);
+    sp.delete("page");
+    sp.delete("limit");
+    window.location.href = `/api/seguridad/despacho/export?${sp.toString()}`;
+  };
+
   useEffect(() => {
     let cancel = false;
     const run = async () => {
@@ -156,6 +166,16 @@ export default function DespachoListPage() {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportarExcel}
+              className="h-10 px-3 inline-flex items-center gap-2 rounded-[10px] border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              title={tl("export_excel")}
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">{tl("export_excel")}</span>
+            </button>
           <Link
             href={`${base}/despacho/nuevo`}
             className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
@@ -165,6 +185,7 @@ export default function DespachoListPage() {
             <span className="hidden sm:inline">{tl("new_despacho")}</span>
             <span className="sm:hidden">+</span>
           </Link>
+        </div>
         </div>
       </header>
 

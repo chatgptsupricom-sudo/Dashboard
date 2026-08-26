@@ -1943,33 +1943,30 @@
         "cta": "Ver listado"
       }
     },
-"construction": {
+    "construction": {
       "title": "Módulo completo",
       "desc": "Todos los issues del plan (ingresos, despachos, calificaciones y dashboard) están listos. Pendiente: optimizaciones futuras."
     },
-      "calificacion": {
-        "ingreso_title": "Califica al Seguridad que recibió",
-        "despacho_title": "Califica al Almacenista que entregó",
-        "comment_label": "Comentario (opcional)",
-        "comment_placeholder": "Algo que destacar...",
-        "save": "Guardar calificación",
-        "saving": "Guardando...",
-        "saved": "¡Gracias! Calificación guardada.",
-        "already_rated": "Ya calificado el {date}",
-        "calificado_por": "Calificado por",
-        "rate_as_cliente": "Calificar como cliente",
-        "list_column_rating": "Calificación",
-        "not_rated": "Sin calificar",
-        "error_save": "Error al guardar. Intenta de nuevo.",
-        "min_comment": "Mínimo {min} caracteres",
-        "duplicate_error": "Esta calificación ya fue registrada.",
-        "rate_for": "Calificar a {name}"
-      },
-      "ingreso": {
+    "calificacion": {
+      "ingreso_title": "Califica al Seguridad que recibió",
+      "despacho_title": "Califica al Almacenista que entregó",
+      "comment_label": "Comentario (opcional)",
+      "comment_placeholder": "Algo que destacar...",
+      "save": "Guardar calificación",
+      "saving": "Guardando...",
+      "saved": "¡Gracias! Calificación guardada.",
+      "already_rated": "Ya calificado el {date}",
+      "calificado_por": "Calificado por",
+      "rate_as_cliente": "Calificar como cliente",
+      "list_column_rating": "Calificación",
+      "not_rated": "Sin calificar",
+      "error_save": "Error al guardar. Intenta de nuevo.",
+      "min_comment": "Mínimo {min} caracteres",
+      "duplicate_error": "Esta calificación ya fue registrada.",
+      "rate_for": "Calificar a {name}"
+    },
+    "ingreso": {
       "back": "Volver",
-      "list_title": "Ingresos",
-      "list_subtitle": "Recepción de equipos al taller",
-      "new_ingreso": "Nuevo ingreso",
       "form": {
         "title": "Registrar ingreso",
         "subtitle": "Completa la planilla de recepción del equipo",
@@ -2023,7 +2020,11 @@
         "of": "de",
         "prev": "Anterior",
         "next": "Siguiente",
-        "showing": "Mostrando {from}–{to} de {total}"
+        "showing": "Mostrando {from}–{to} de {total}",
+        "export_excel": "Exportar Excel",
+        "list_title": "Ingresos",
+        "list_subtitle": "Recepción de equipos al taller",
+        "new_ingreso": "Nuevo ingreso"
       },
       "detail": {
         "title": "Ingreso #{id}",
@@ -2060,9 +2061,6 @@
       }
     },
     "despacho": {
-      "list_title": "Despachos",
-      "list_subtitle": "Entregas de equipo reparado al cliente",
-      "new_despacho": "Nuevo despacho",
       "form": {
         "title": "Registrar despacho",
         "subtitle": "Egreso de equipo reparado del taller",
@@ -2122,7 +2120,11 @@
         "of": "de",
         "prev": "Anterior",
         "next": "Siguiente",
-        "showing": "Mostrando {from}–{to} de {total}"
+        "showing": "Mostrando {from}–{to} de {total}",
+        "export_excel": "Exportar Excel",
+        "list_title": "Despachos",
+        "list_subtitle": "Entregas de equipo reparado al cliente",
+        "new_despacho": "Nuevo despacho"
       },
       "detail": {
         "title": "Despacho #{id}",
@@ -2223,6 +2225,7 @@
       "clear": "Limpiar",
       "hint": "Pide al cliente que firme con el dedo o el mouse.",
       "saved": "Firma guardada"
-    }
+    },
+    "back": "Volver"
   }
 }

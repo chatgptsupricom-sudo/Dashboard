@@ -1954,33 +1954,30 @@
         "cta": "View list"
       }
     },
-"construction": {
+    "construction": {
       "title": "Module complete",
       "desc": "All plan issues (intakes, dispatches, ratings, and dashboard) are ready. Pending: future optimizations."
     },
-      "calificacion": {
-        "ingreso_title": "Rate the security guard who received",
-        "despacho_title": "Rate the warehouse operator who delivered",
-        "comment_label": "Comment (optional)",
-        "comment_placeholder": "Anything to highlight...",
-        "save": "Save rating",
-        "saving": "Saving...",
-        "saved": "Thanks! Rating saved.",
-        "already_rated": "Already rated on {date}",
-        "calificado_por": "Rated by",
-        "rate_as_cliente": "Rate as customer",
-        "list_column_rating": "Rating",
-        "not_rated": "Not rated",
-        "error_save": "Error saving. Please try again.",
-        "min_comment": "Minimum {min} characters",
-        "duplicate_error": "This rating is already registered.",
-        "rate_for": "Rate {name}"
-      },
-      "ingreso": {
+    "calificacion": {
+      "ingreso_title": "Rate the security guard who received",
+      "despacho_title": "Rate the warehouse operator who delivered",
+      "comment_label": "Comment (optional)",
+      "comment_placeholder": "Anything to highlight...",
+      "save": "Save rating",
+      "saving": "Saving...",
+      "saved": "Thanks! Rating saved.",
+      "already_rated": "Already rated on {date}",
+      "calificado_por": "Rated by",
+      "rate_as_cliente": "Rate as customer",
+      "list_column_rating": "Rating",
+      "not_rated": "Not rated",
+      "error_save": "Error saving. Please try again.",
+      "min_comment": "Minimum {min} characters",
+      "duplicate_error": "This rating is already registered.",
+      "rate_for": "Rate {name}"
+    },
+    "ingreso": {
       "back": "Back",
-      "list_title": "Intakes",
-      "list_subtitle": "Equipment reception to the repair shop",
-      "new_ingreso": "New intake",
       "form": {
         "title": "Register intake",
         "subtitle": "Fill out the equipment reception form",
@@ -2034,7 +2031,11 @@
         "of": "of",
         "prev": "Previous",
         "next": "Next",
-        "showing": "Showing {from}–{to} of {total}"
+        "showing": "Showing {from}–{to} of {total}",
+        "export_excel": "Export to Excel",
+        "list_title": "Intakes",
+        "list_subtitle": "Equipment reception to the repair shop",
+        "new_ingreso": "New intake"
       },
       "detail": {
         "title": "Intake #{id}",
@@ -2071,9 +2072,6 @@
       }
     },
     "despacho": {
-      "list_title": "Dispatches",
-      "list_subtitle": "Repaired equipment deliveries to customers",
-      "new_despacho": "New dispatch",
       "form": {
         "title": "Register dispatch",
         "subtitle": "Repaired equipment exit from the workshop",
@@ -2133,7 +2131,11 @@
         "of": "of",
         "prev": "Previous",
         "next": "Next",
-        "showing": "Showing {from}–{to} of {total}"
+        "showing": "Showing {from}–{to} of {total}",
+        "export_excel": "Export to Excel",
+        "list_title": "Dispatches",
+        "list_subtitle": "Repaired equipment deliveries to customers",
+        "new_despacho": "New dispatch"
       },
       "detail": {
         "title": "Dispatch #{id}",
@@ -2234,6 +2236,7 @@
       "clear": "Clear",
       "hint": "Ask the customer to sign with their finger or mouse.",
       "saved": "Signature saved"
-    }
+    },
+    "back": "Back"
   }
 }
