@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { promedioTexto } from "@/lib/seguridad/formato";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -135,7 +136,7 @@ export default function SeguridadDashboard() {
             <button
               onClick={() => {
                 logout();
-                window.location.href = `/${locale}/seguridad/login`;
+                window.location.href = `/${locale}/login`;
               }}
               className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
               title={t("logout")}
@@ -221,11 +222,7 @@ export default function SeguridadDashboard() {
               />
               <KPI
                 label={t("dashboard.kpi.promedio")}
-                value={
-                  data.kpis.promedio_calificacion === null
-                    ? "—"
-                    : data.kpis.promedio_calificacion.toFixed(1)
-                }
+                value={promedioTexto(data.kpis.promedio_calificacion)}
                 icon={<Star className="w-4 h-4" />}
                 accent="violet"
                 subtitle={t("dashboard.kpi.total_calif", {
@@ -316,7 +313,7 @@ export default function SeguridadDashboard() {
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
                         <span className="font-bold text-violet-700 tabular-nums">
-                          {a.promedio.toFixed(1)}
+                          {promedioTexto(a.promedio)}
                         </span>
                       </div>
                       <span className="text-xs text-slate-400 w-12 text-right tabular-nums">

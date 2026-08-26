@@ -209,8 +209,81 @@ export default function InformeRedesSociales({ data }: { data: any }) {
         )}
       </Slide>
 
-      {/* 2. PRODUCCION DE CONTENIDO */}
-      <Slide numero="Slide 2" titulo="Producción de contenido y formatos">
+      {/* 2. INTERACCION Y TRAFICO CALIFICADO */}
+      {instagram.audiencia && (
+        <Slide numero="Slide 2" titulo="Interacción y tráfico calificado">
+          <div className="grid grid-cols-2 gap-6">
+            {([
+              ["Alcance", instagram.audiencia.alcance],
+              ["Visualizaciones", instagram.audiencia.visualizaciones],
+            ] as const).map(([titulo, filas]) => (
+              <div key={titulo}>
+                <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                  {titulo} por tipo de cuenta
+                </div>
+                <table className="w-full">
+                  <thead className="bg-zinc-50">
+                    <tr>
+                      <th className={TH}>Tipo</th>
+                      <th className={`${TH} text-right`}>Valor</th>
+                      <th className={`${TH} text-right`}>%</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {(filas || []).map((f: any) => (
+                      <tr key={f.tipo}>
+                        <td className={`${TD} font-medium text-zinc-900`}>{f.tipo}</td>
+                        <td className={`${TD} text-right`}>{fmtNum(f.valor)}</td>
+                        <td className={`${TD} text-right font-bold`}>
+                          {fmtPct(f.porcentaje)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mt-6 mb-2">
+            Tráfico calificado al perfil
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <KpiCard
+              label="Visitas al perfil"
+              value={fmtNum(instagram.metricas?.profile_views)}
+            />
+            <KpiCard
+              label="Clics en enlace"
+              value={fmtNum(instagram.metricas?.website_clicks)}
+            />
+            <KpiCard
+              label="Cuentas con interacciones"
+              value={fmtNum(instagram.metricas?.accounts_engaged)}
+            />
+          </div>
+
+          {(() => {
+            const nf = instagram.audiencia.alcance?.find(
+              (a: any) => a.tipo === "No seguidores",
+            );
+            if (!nf) return null;
+            return (
+              <Nota>
+                El {fmtPct(nf.porcentaje)} del alcance vino de cuentas que todavía
+                no siguen la marca. Es expansión orgánica: el contenido está
+                llegando a audiencia nueva, no sólo a la comunidad ya formada.
+              </Nota>
+            );
+          })()}
+        </Slide>
+      )}
+
+      {/* 3. PRODUCCION DE CONTENIDO */}
+      <Slide
+        numero={instagram.audiencia ? "Slide 3" : "Slide 2"}
+        titulo="Producción de contenido y formatos"
+      >
         {instagram.contenido_disponible && contenido?.total_publicaciones > 0 ? (
           <>
             <div className="grid grid-cols-4 gap-3 mb-6">
@@ -344,7 +417,10 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       </Slide>
 
       {/* 3. COMUNIDAD */}
-      <Slide numero="Slide 3" titulo="Crecimiento de comunidad y audiencia">
+      <Slide
+        numero={instagram.audiencia ? "Slide 4" : "Slide 3"}
+        titulo="Crecimiento de comunidad y audiencia"
+      >
         <div className="grid grid-cols-3 gap-3">
           <KpiCard
             label="Seguidores totales"
@@ -372,6 +448,28 @@ export default function InformeRedesSociales({ data }: { data: any }) {
             detalle="Total de la cuenta"
           />
         </div>
+
+        {instagram.horarios && instagram.horarios.picos.length > 0 && (
+          <div className="mt-6">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+              Horarios de mayor audiencia conectada
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              {instagram.horarios.picos.map((h: any) => (
+                <KpiCard
+                  key={h.hora}
+                  label={`${String(h.hora).padStart(2, "0")}:00 h`}
+                  value={fmtNum(h.seguidores)}
+                  detalle="Seguidores en línea"
+                />
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-400 mt-2">
+              Promedio de seguidores conectados por hora durante el período. Son las
+              ventanas óptimas para publicar y para programar pauta.
+            </p>
+          </div>
+        )}
 
         {instagram.demografia ? (
           <div className="grid grid-cols-3 gap-6 mt-6">
@@ -417,7 +515,10 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       </Slide>
 
       {/* 4. LEADS Y CALIDAD */}
-      <Slide numero="Slide 4" titulo="Leads y calidad · KPI central">
+      <Slide
+        numero={instagram.audiencia ? "Slide 5" : "Slide 4"}
+        titulo="Leads y calidad · KPI central"
+      >
         <div className="grid grid-cols-5 gap-3 mb-6">
           <KpiCard label="Leads del canal" value={fmtNum(leads.total)} detalle="Origen Meta" />
           <KpiCard
@@ -501,30 +602,13 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </p>
         )}
 
-        <Nota>
-          <span className="font-bold">Alcance del informe: </span>
-          las cifras de arriba cubren sólo los leads cuyo canal de origen es{" "}
-          {(leads.canales_meta || []).join(", ")}. El tab General del panel no filtra
-          por canal, por eso su total es mayor; para ver el resto de los canales,
-          usá el filtro de canal del propio panel.
-          <span className="block mt-2">
-            <span className="font-bold">Criterio de fechas: </span>
-          un lead cuenta en <em>Leads</em> por su fecha de entrada dentro del período,
-          y en <em>Ventas</em> / <em>Recaudo</em> por su fecha de venta dentro del
-          período. Son cohortes distintas: una venta cerrada este mes sobre un lead
-          que entró el mes pasado suma a las ventas de este mes, pero no a sus leads
-          — por eso la tasa de cierre puede superar el 100% en un vendedor puntual.
-          </span>
-          <span className="block mt-2">
-            La calificación (calificado / no calificado) se registra por campaña en la
-            tabla de conversaciones, que no guarda vendedor: por eso la tasa de
-            calificación es global y la tabla por vendedor muestra tasa de cierre.
-          </span>
-        </Nota>
       </Slide>
 
       {/* 5. INVERSION EN PAUTA */}
-      <Slide numero="Slide 5" titulo="Inversión en pauta · Meta Ads">
+      <Slide
+        numero={instagram.audiencia ? "Slide 6" : "Slide 5"}
+        titulo="Inversión en pauta · Meta Ads"
+      >
         <div className="grid grid-cols-5 gap-3 mb-6">
           <KpiCard
             label="Inversión"
@@ -643,7 +727,10 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       </Slide>
 
       {/* 6. PIPELINE Y VENTAS */}
-      <Slide numero="Slide 6" titulo="Pipeline activo y ventas cerradas">
+      <Slide
+        numero={instagram.audiencia ? "Slide 7" : "Slide 6"}
+        titulo="Pipeline activo y ventas cerradas"
+      >
         <div className="grid grid-cols-4 gap-3 mb-6">
           <KpiCard
             label="Pipeline activo"
@@ -734,7 +821,10 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       </Slide>
 
       {/* 7. DIAGNOSTICO */}
-      <Slide numero="Slide 7" titulo="Diagnóstico estratégico del período">
+      <Slide
+        numero={instagram.audiencia ? "Slide 8" : "Slide 7"}
+        titulo="Diagnóstico estratégico del período"
+      >
         <div className="grid grid-cols-2 gap-6">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-3">
@@ -776,6 +866,27 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </div>
         </div>
 
+        {data.prioridades && data.prioridades.length > 0 && (
+          <div className="mt-8 pt-5 border-t border-zinc-100">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-blue-600 mb-3">
+              Prioridades para el período siguiente
+            </div>
+            <ol className="space-y-2">
+              {data.prioridades.map((p: any, i: number) => (
+                <li key={i} className="flex gap-3 text-[11px] leading-relaxed">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-50 text-blue-600 font-bold flex items-center justify-center text-[9px]">
+                    {i + 1}
+                  </span>
+                  <span>
+                    <span className="font-bold text-zinc-900">{p.titulo}. </span>
+                    <span className="text-zinc-600">{p.detalle}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         <div className="mt-8 pt-5 border-t border-zinc-100">
           <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-3">
             Resumen ejecutivo
@@ -789,6 +900,36 @@ export default function InformeRedesSociales({ data }: { data: any }) {
               value={inversion.roas > 0 ? `${pf.format(inversion.roas)}x` : "—"}
             />
           </div>
+        </div>
+
+        {/* Metodologia al pie: disponible para quien cuestione un numero, sin
+            competirle atencion a los KPIs de los slides anteriores. */}
+        <div className="mt-8 pt-5 border-t border-zinc-100">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+            Notas metodológicas
+          </div>
+          <ul className="space-y-1 text-[9px] leading-relaxed text-zinc-400">
+            <li>
+              <span className="font-bold">Alcance:</span> sólo leads de canal{" "}
+              {(leads.canales_meta || []).join(", ")}. El tab General del panel no
+              filtra por canal, por eso su total es mayor.
+            </li>
+            <li>
+              <span className="font-bold">Fechas:</span> un lead cuenta por su fecha
+              de entrada; una venta, por su fecha de venta. Por eso una venta de este
+              mes sobre un lead del mes pasado suma a las ventas pero no a los leads.
+            </li>
+            <li>
+              <span className="font-bold">Conversión del mes:</span> de los leads que
+              entraron en el período, cuántos terminaron en venta. No coincide con
+              Leads concretados, que son las ventas cerradas en el período.
+            </li>
+            <li>
+              <span className="font-bold">Calificación:</span> se registra por campaña
+              en la tabla de conversaciones, que no guarda vendedor; por eso la tasa
+              es global y la tabla por vendedor muestra tasa de cierre.
+            </li>
+          </ul>
         </div>
 
         <div className="mt-8 text-center text-[10px] text-zinc-400">

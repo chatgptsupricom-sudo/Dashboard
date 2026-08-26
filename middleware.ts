@@ -217,9 +217,13 @@ export default async function middleware(request: NextRequest) {
       // 11. Lógica para Seguridad (Almacén / Control de acceso)
       // El modulo vive en /seguridad y NO en el dashboard principal.
       // Por eso redirigimos al login del modulo (no al /dashboard comun).
-      if (pathname.includes("/seguridad") && !pathname.includes("/seguridad/login") && !isSeguridad && !isSuperAdmin) {
+      // Al integrarse al panel hay un solo login: /es/login. El
+      // /seguridad/login dedicado se eliminó — con el módulo protegido, esa
+      // ruta nunca llegaba a renderizarse (el guard de arriba redirige antes
+      // de alcanzar la excepción), así que era código muerto.
+      if (pathname.includes("/seguridad") && !isSeguridad && !isSuperAdmin) {
         return NextResponse.redirect(
-          new URL(`/${locale}/seguridad/login`, request.url),
+          new URL(`/${locale}/login`, request.url),
         );
       }
       // Ademas, si el Seguridad esta logueado e intenta entrar al /dashboard
