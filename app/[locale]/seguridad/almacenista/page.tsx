@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { promedioTexto } from "@/lib/seguridad/formato";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -94,7 +95,7 @@ export default function AlmacenistasIndice() {
                   <div className="flex items-center gap-2">
                     <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
                     <span className="font-bold text-violet-700 tabular-nums">
-                      {row.promedio.toFixed(1)}
+                      {promedioTexto(row.promedio)}
                     </span>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
                   </div>

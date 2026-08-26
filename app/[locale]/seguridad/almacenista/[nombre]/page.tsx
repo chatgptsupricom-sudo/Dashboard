@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { promedioTexto } from "@/lib/seguridad/formato";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -42,9 +43,11 @@ function fmtDate(value: string | null) {
   return `${d}/${m}/${y}`;
 }
 
-function formatPromedio(value: number) {
-  if (!value || Number.isNaN(value)) return "0.0";
-  return value.toFixed(1);
+// Devolvía "0.0" cuando no había calificaciones, que es peor que romperse:
+// mostraba al almacenista con la peor nota posible en vez de decir que aún no
+// lo han calificado.
+function formatPromedio(value: number | null | undefined) {
+  return promedioTexto(value);
 }
 
 export default function AlmacenistaDetailPage() {
