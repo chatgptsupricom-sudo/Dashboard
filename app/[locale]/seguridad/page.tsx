@@ -132,7 +132,7 @@ export default function SeguridadDashboard() {
             <button
               onClick={() => {
                 logout();
-                window.location.href = `/${locale}/seguridad/login`;
+                window.location.href = `/${locale}/login`;
               }}
               className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
               title={t("logout")}
