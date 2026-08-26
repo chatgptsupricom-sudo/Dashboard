@@ -63,7 +63,7 @@ export default async function middleware(request: NextRequest) {
   const token = request.cookies.get("token")?.value;
   const locale = pathname.split("/")[1] || "es";
 
-  // Agregamos /recursos_humanos y /compras a las rutas protegidas
+  // Agregamos /recursos_humanos, /compras y /seguridad a las rutas protegidas
   const isProtectedPath =
     pathname.includes("/dashboard") ||
     pathname.includes("/superadmin") ||
@@ -75,7 +75,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
-    pathname.includes("/administracion");
+    pathname.includes("/administracion") ||
+    pathname.includes("/seguridad");
 
   if (isProtectedPath) {
     if (!token) {
@@ -110,6 +111,8 @@ export default async function middleware(request: NextRequest) {
       const isAsistenteVentas = userRole === "asistente de ventas";
       // Nueva constante para Administración
       const isAdministracion = userRole === "administración";
+      // Nueva constante para el rol de Seguridad (Almacén / Control de acceso)
+      const isSeguridad = userRole === "seguridad";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -208,6 +211,26 @@ export default async function middleware(request: NextRequest) {
       if (pathname.includes("/administracion") && !isAdministracion && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 11. Lógica para Seguridad (Almacén / Control de acceso)
+      // El modulo vive en /seguridad y NO en el dashboard principal.
+      // Por eso redirigimos al login del modulo (no al /dashboard comun).
+      // Al integrarse al panel hay un solo login: /es/login. El
+      // /seguridad/login dedicado se eliminó — con el módulo protegido, esa
+      // ruta nunca llegaba a renderizarse (el guard de arriba redirige antes
+      // de alcanzar la excepción), así que era código muerto.
+      if (pathname.includes("/seguridad") && !isSeguridad && !isSuperAdmin) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/login`, request.url),
+        );
+      }
+      // Ademas, si el Seguridad esta logueado e intenta entrar al /dashboard
+      // comun, lo devolvemos a su modulo (no tiene nada que hacer ahi).
+      if (pathname.includes("/dashboard") && isSeguridad) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/seguridad`, request.url),
         );
       }
     } catch (e) {
