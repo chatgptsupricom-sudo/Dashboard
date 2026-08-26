@@ -3,6 +3,18 @@ import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   // 1. Verificación de Seguridad
+  //
+  // El chequeo de CRON_SECRET va primero y aparte a propósito. Sin la variable
+  // configurada, la comparación de abajo queda contra la cadena literal
+  // "Bearer undefined", que es un header que cualquiera puede mandar: el
+  // endpoint quedaba abierto a internet y con él el recálculo de KPIs contra
+  // Odoo. Pasó de verdad en el entorno de prueba, que respondía 200 a
+  // `Authorization: Bearer undefined`. Mejor no arrancar que arrancar abierto.
+  if (!process.env.CRON_SECRET) {
+    console.error("[cron-kpis] CRON_SECRET no está configurado");
+    return new NextResponse("Cron no configurado", { status: 500 });
+  }
+
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse("No autorizado", { status: 401 });
