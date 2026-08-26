@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Widget de Cloudflare Turnstile para el envío del reporte (issue #25).
@@ -40,6 +40,7 @@ export function CaptchaTurnstile({
 }) {
   const contenedor = useRef<HTMLDivElement>(null);
   const idWidget = useRef<string | null>(null);
+  const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
   // La prop manda: llega del servidor en ejecución. La variable incrustada
   // queda de respaldo por si algún día se renderiza sin pasarla.
   const siteKey = siteKeyProp || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
@@ -60,7 +61,16 @@ export function CaptchaTurnstile({
         // Si el token vence o falla, se limpia: el formulario vuelve a exigirlo
         // en vez de mandar uno que el servidor va a rechazar.
         "expired-callback": () => onToken(""),
-        "error-callback": () => onToken(""),
+        // Se guarda el código y se muestra. Antes se descartaba en silencio: el
+        // cliente veía un recuadro que no funcionaba y no había forma de saber
+        // por qué. Turnstile devuelve códigos concretos —110200 es dominio no
+        // autorizado, 110100 clave inválida— y sin ellos esto es adivinar.
+        "error-callback": (codigo: string) => {
+          console.error("[turnstile] error", codigo);
+          setErrorCodigo(String(codigo || "desconocido"));
+          onToken("");
+          return true;
+        },
       });
     };
 
@@ -88,5 +98,15 @@ export function CaptchaTurnstile({
   }, [siteKey, locale, onToken, onDisponible]);
 
   if (!siteKey) return null;
-  return <div ref={contenedor} className="mt-4" />;
+  return (
+    <div className="mt-4">
+      <div ref={contenedor} />
+      {errorCodigo && (
+        <p className="mt-1.5 text-sm text-[#b42318]">
+          No pudimos cargar la verificación (código {errorCodigo}). Escríbenos y
+          te ayudamos a registrar tu reporte.
+        </p>
+      )}
+    </div>
+  );
 }
