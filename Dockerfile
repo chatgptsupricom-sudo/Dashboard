@@ -75,10 +75,18 @@ COPY . .
 ARG OPENAI_API_KEY
 ARG JWT_SECRET
 ARG NEXT_PUBLIC_ODOO_URL
+# Las NEXT_PUBLIC_* se INCRUSTAN en el bundle durante `next build`; no se leen
+# en ejecucion. Si no estan declaradas aqui, ponerlas en el entorno de EasyPanel
+# no sirve: el navegador nunca las ve y la funcionalidad queda muda, sin error.
+# Cada NEXT_PUBLIC_ nueva hay que agregarla a este bloque.
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ARG NEXT_PUBLIC_SOCKET_URL
 
 ENV OPENAI_API_KEY=$OPENAI_API_KEY
 ENV JWT_SECRET=$JWT_SECRET
 ENV NEXT_PUBLIC_ODOO_URL=$NEXT_PUBLIC_ODOO_URL
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm run build
