@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { diasUmbral, ingresosPendientes } from "@/lib/seguridad/pendientes";
+import {
+  conteosDiagnostico,
+  diasUmbral,
+  ingresosPendientes,
+} from "@/lib/seguridad/pendientes";
 import { NextResponse } from "next/server";
 
 /**
@@ -54,7 +58,9 @@ export async function GET(request: Request) {
         checked: 0,
         alerts_sent: 0,
         dias_umbral: dias,
-        ...(dryRun ? { dry_run: true } : {}),
+        ...(dryRun
+          ? { dry_run: true, diagnostico: await conteosDiagnostico() }
+          : {}),
       });
     }
 
@@ -91,6 +97,7 @@ export async function GET(request: Request) {
         would_alert: tecnicos.length,
         dias_umbral: dias,
         oldest_days: oldestDays,
+        diagnostico: await conteosDiagnostico(),
         socket_disponible: Boolean((global as any).io),
         n8n_configurado: Boolean(process.env.N8N_LEAD_WEBHOOK_URL),
         destinatarios: tecnicos,
