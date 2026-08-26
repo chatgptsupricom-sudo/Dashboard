@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CheckCircle,
+  Calculator,
   Circle,
   DollarSign,
   Eye,
@@ -313,6 +314,15 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
     window.open(`${base}/informe?${p.toString()}`, "_blank", "noopener");
   };
 
+  const abrirReporteCampanas = () => {
+    const p = new URLSearchParams();
+    if (sede) p.set("sede", sede);
+    if (fechaInicio) p.set("fecha_inicio", fechaInicio);
+    if (fechaFin) p.set("fecha_fin", fechaFin);
+    const base = window.location.pathname.replace(/\/+$/, "");
+    window.open(`${base}/reporte-campanas?${p.toString()}`, "_blank", "noopener");
+  };
+
   return (
     <div className="space-y-8">
       {/* KPI Cards - Campanas Meta */}
@@ -329,6 +339,14 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
           >
             <FileText className="w-3.5 h-3.5" />
             Generar informe
+          </button>
+          <button
+            onClick={abrirReporteCampanas}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 text-blue-600 text-xs font-bold hover:bg-blue-50 transition-colors"
+            title="Economia por campana: costo por lead, por cierre, CPM, ROI y ROAS con las formulas desarrolladas"
+          >
+            <Calculator className="w-3.5 h-3.5" />
+            Reporte por campaña
           </button>
           <button
             onClick={guardarCierre}
