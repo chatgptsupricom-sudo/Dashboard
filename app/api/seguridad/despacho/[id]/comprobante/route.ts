@@ -97,6 +97,31 @@ export async function GET(
 
   const accesoriosOk = d.accesorios_integros === 1 || d.accesorios_integros === true;
 
+  let firmaDataUrl: string | null = null;
+  try {
+    const firmaFlagResult = await query(
+      `SELECT firma_data IS NOT NULL AS has_firma FROM seguridad_despachos WHERE id = ?`,
+      [despachoId],
+    );
+    const hasFirma = firmaFlagResult.rows?.[0]?.has_firma || false;
+    if (hasFirma) {
+      const firmaDataResult = await query(
+        `SELECT firma_data, firma_mime FROM seguridad_despachos WHERE id = ?`,
+        [despachoId],
+      );
+      const firmaBuffer = firmaDataResult.rows?.[0]?.firma_data;
+      const firmaMime = firmaDataResult.rows?.[0]?.firma_mime || "image/png";
+      if (firmaBuffer) {
+        const base64 = Buffer.isBuffer(firmaBuffer)
+          ? firmaBuffer.toString("base64")
+          : Buffer.from(firmaBuffer as any).toString("base64");
+        firmaDataUrl = `data:${firmaMime};base64,${base64}`;
+      }
+    }
+  } catch {
+    firmaDataUrl = null;
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -294,10 +319,10 @@ export async function GET(
   </div>
   ` : ""}
 
-  ${d.firma_url ? `
+  ${firmaDataUrl ? `
   <div class="section">
     <h2>Firma del cliente</h2>
-    <img class="firma-img" src="${esc(d.firma_url)}" alt="Firma del cliente">
+    <img class="firma-img" src="${firmaDataUrl}" alt="Firma del cliente">
   </div>
   ` : ""}
 

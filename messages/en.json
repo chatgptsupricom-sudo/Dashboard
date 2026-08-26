@@ -2084,6 +2084,8 @@
         "field_cliente_retira": "Picking-up client",
         "field_observaciones": "Observations",
         "field_accesorios": "Accessories intact",
+        "field_firma_nombre": "Name of person signing",
+        "firma_nombre_placeholder": "Name of the person signing",
         "almacenista_help": "Your name appears by default",
         "factura_placeholder": "Invoice #",
         "factura_add": "Add another",
@@ -2213,6 +2215,13 @@
       "title": "Condition photo",
       "upload_error": "The photo couldn't be uploaded, but the intake was saved. You can upload it later.",
       "click_to_enlarge": "Click to enlarge"
+    },
+    "firma_digital": {
+      "label": "Customer signature (optional)",
+      "placeholder": "Sign here",
+      "clear": "Clear",
+      "hint": "Ask the customer to sign with their finger or mouse.",
+      "saved": "Signature saved"
     }
   }
 }

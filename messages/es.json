@@ -2073,6 +2073,8 @@
         "field_cliente_retira": "Cliente que retira",
         "field_observaciones": "Observaciones",
         "field_accesorios": "Accesorios íntegros",
+        "field_firma_nombre": "Nombre del cliente que retira",
+        "firma_nombre_placeholder": "Nombre de quien firma",
         "almacenista_help": "Tu nombre aparece por defecto",
         "factura_placeholder": "N° de factura",
         "factura_add": "Agregar otra",
@@ -2202,6 +2204,13 @@
       "title": "Foto del estado",
       "upload_error": "La foto no se pudo subir, pero el ingreso sí quedó registrado. Puedes subirla después.",
       "click_to_enlarge": "Click para ampliar"
+    },
+    "firma_digital": {
+      "label": "Firma del cliente (opcional)",
+      "placeholder": "Firma aquí",
+      "clear": "Limpiar",
+      "hint": "Pide al cliente que firme con el dedo o el mouse.",
+      "saved": "Firma guardada"
     }
   }
 }

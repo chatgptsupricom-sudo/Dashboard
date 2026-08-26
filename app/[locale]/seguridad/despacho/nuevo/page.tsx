@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import SignaturePad from "@/components/seguridad/SignaturePad";
 
 function todayISO() {
   const d = new Date();
@@ -86,6 +87,7 @@ export default function NuevoDespachoPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [firmaDataUrl, setFirmaDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.name && !form.almacenista_nombre) {
@@ -209,6 +211,17 @@ export default function NuevoDespachoPage() {
       }
 
       const data = await res.json();
+      if (data?.id && firmaDataUrl) {
+        try {
+          await fetch(`/api/seguridad/despacho/${data.id}/firma`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ firma_data_url: firmaDataUrl }),
+          });
+        } catch {
+          // non-fatal
+        }
+      }
       if (data?.id) {
         router.push(`${base}/despacho/${data.id}`);
       } else {
@@ -562,7 +575,7 @@ export default function NuevoDespachoPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                Firma del cliente
+                {tf("field_firma_nombre")}
               </label>
               <input
                 type="text"
@@ -573,18 +586,20 @@ export default function NuevoDespachoPage() {
                     e.target.value.slice(0, MAX.firma_cliente_nombre),
                   )
                 }
-                placeholder="Nombre del cliente que retira"
+                placeholder={tf("firma_nombre_placeholder")}
                 className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
                 maxLength={MAX.firma_cliente_nombre}
               />
-              <button
-                type="button"
-                disabled
-                title="Próximamente"
-                className="mt-2 w-full h-10 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-slate-400 border border-dashed border-slate-300 cursor-not-allowed"
-              >
-                Capturar firma — Próximamente
-              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                {t("firma_digital.label")}
+              </label>
+              <SignaturePad
+                onChange={setFirmaDataUrl}
+                label={t("firma_digital.label")}
+              />
             </div>
           </section>
 
