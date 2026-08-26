@@ -393,7 +393,7 @@ export default function RmaNotaCreditoPage() {
 
           {/* Actions */}
           <div className="flex justify-between">
-            <Button variant="outline" onClick={() => { setCaseData(null); setSearched(false); setSaved(false); setDetail(""); setObservations(""); setImages([]); }}>
+            <Button variant="outline" onClick={() => { setCaseData(null); setSearched(false); setSaved(false); setObservations(""); setImages([]); }}>
               {t("back_to_search")}
             </Button>
             <div className="flex gap-3">

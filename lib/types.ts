@@ -17,6 +17,7 @@ export enum UserRole {
   DISENADOR = "diseñador",
   ASISTENTE_VENTAS = "asistente de ventas",
   ADMINISTRACION = "administración",
+  SEGURIDAD = "seguridad",
 }
 
 // Permisos por rol
@@ -45,6 +46,7 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads", // Clave para el submenú Monitoreo
       "cierres_adminleads", // Clave para el submenú Cierres
       "stoplight_reports", // Reportes de Stoplight
+      "seguridad", // Recepción y despacho de RMA (el módulo vive en /seguridad)
       "salud_financiera", // Administración: índice de salud financiera
       "gastos_presupuesto", // Administración: gastos vs presupuesto
       "users", // Gestión de usuarios
@@ -293,6 +295,24 @@ export const rolePermissions: RolePermissions = {
       "vista_custom",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],
+  },
+    // Rol Seguridad: el equipo de almacen/control de acceso de OSC.
+    //
+    // El modulo vive en /seguridad, fuera del dashboard, pero SI se llega
+    // desde el sidebar del panel: se decidio integrarlo en vez de publicarlo
+    // en un subdominio propio. Tres dominios sirviendo la misma aplicacion
+    // eran tres despliegues que mantener sincronizados y tres logins
+    // expuestos — y uno se quedo atras, sin limite de intentos en el login.
+    //
+    // `sections` sigue vacio porque este rol usa el layout de /seguridad, no
+    // el sidebar del panel.
+  [UserRole.SEGURIDAD]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [], // intencionalmente vacio: el modulo vive en /seguridad
   },
 };
 

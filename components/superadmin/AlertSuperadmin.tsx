@@ -31,30 +31,31 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 function ProductDeclineDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   return (
     <div className="space-y-4">
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Caída de Ventas
+          {t("caida_ventas")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Caída estimada:</span>
+          <span className="text-slate-500">{t("caida_estimada")}</span>
           <span className="font-mono font-bold text-red-600 text-right sm:text-left">
             {item.decline_pct}%
           </span>
 
-          <span className="text-slate-500">Período anterior (uds):</span>
+          <span className="text-slate-500">{t("periodo_anterior")}</span>
           <span className="font-mono text-right sm:text-left">{item.prior_qty}</span>
 
-          <span className="text-slate-500">Período actual (uds):</span>
+          <span className="text-slate-500">{t("periodo_actual")}</span>
           <span className="font-mono text-right sm:text-left">{item.current_qty}</span>
 
-          <span className="text-slate-500">Anterior (USD):</span>
+          <span className="text-slate-500">{t("anterior_usd")}</span>
           <span className="font-mono text-right sm:text-left">
             {item.prior_amount?.toLocaleString() || "0"} $
           </span>
 
-          <span className="text-slate-500">Actual (USD):</span>
+          <span className="text-slate-500">{t("actual_usd")}</span>
           <span className="font-mono text-right sm:text-left">
             {item.current_amount?.toLocaleString() || "0"} $
           </span>
@@ -63,25 +64,25 @@ function ProductDeclineDetailView({ item }: { item: any }) {
 
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Última Venta
+          {t("ultima_venta")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Fecha:</span>
+          <span className="text-slate-500">{t("fecha")}</span>
           <span className="font-mono font-medium text-right sm:text-left">
             {item.last_sale_date || "—"}
           </span>
 
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">
             {item.last_client || "—"}
           </span>
 
-          <span className="text-slate-500">Monto facturado:</span>
+          <span className="text-slate-500">{t("monto_facturado")}</span>
           <span className="font-mono font-bold text-right sm:text-left">
             {item.last_client_amount?.toLocaleString() || "0"} $
           </span>
 
-          <span className="text-slate-500">Mejor vendedor:</span>
+          <span className="text-slate-500">{t("mejor_vendedor")}</span>
           <span className="font-medium text-right sm:text-left">
             {item.top_seller || "—"}
           </span>
@@ -92,6 +93,7 @@ function ProductDeclineDetailView({ item }: { item: any }) {
 }
 
 function ProductDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   return (
     <div className="space-y-4">
       <img
@@ -101,14 +103,14 @@ function ProductDetailView({ item }: { item: any }) {
       />
       <div className="bg-slate-50 p-4 rounded-lg space-y-2">
         <h4 className="font-bold text-slate-800 text-sm uppercase">
-          Trazabilidad
+          {t("trazabilidad")}
         </h4>
         <div className="flex justify-between text-sm">
-          <span className="text-slate-500">Stock Actual:</span>
+          <span className="text-slate-500">{t("stock_actual")}</span>
           <span className="font-mono font-bold">{item.qty_available}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-slate-500">Última caída:</span>
+          <span className="text-slate-500">{t("ultima_caida")}</span>
           <span className="font-mono font-bold">
             {item.last_drop_date || "N/A"}
           </span>
@@ -119,6 +121,7 @@ function ProductDetailView({ item }: { item: any }) {
 }
 
 function MoraAvanzadaDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   const diasVencido = item.invoice_date_due
     ? Math.floor((Date.now() - new Date(item.invoice_date_due).getTime()) / (1000 * 60 * 60 * 24))
     : 0;
@@ -126,47 +129,47 @@ function MoraAvanzadaDetailView({ item }: { item: any }) {
     <div className="space-y-4">
       <div className="bg-slate-50 p-4 rounded-xl border border-red-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Mora Avanzada
+          {t("mora_avanzada")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">{item.partner_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500">Factura:</span>
+          <span className="text-slate-500">{t("factura")}</span>
           <span className="font-mono text-right sm:text-left">{item.name || "—"}</span>
 
-          <span className="text-slate-500">Vencimiento:</span>
+          <span className="text-slate-500">{t("vencimiento")}</span>
           <span className="font-mono text-red-600 font-semibold text-right sm:text-left">{item.invoice_date_due}</span>
 
-          <span className="text-slate-500">Días vencido:</span>
-          <span className="font-mono font-bold text-red-600 text-right sm:text-left">{diasVencido} días</span>
+          <span className="text-slate-500">{t("dias_vencido")}</span>
+          <span className="font-mono font-bold text-red-600 text-right sm:text-left">{diasVencido} {t("dias")}</span>
 
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-right sm:text-left">{item.invoice_user_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500 font-semibold">Monto Adeudado:</span>
+          <span className="text-slate-500 font-semibold">{t("monto_adeudado")}</span>
           <span className="font-bold text-slate-900 text-right sm:text-left">{item.amount_total?.toLocaleString() || "0"} $</span>
         </div>
       </div>
       {Array.isArray(item.invoice_line_ids) && item.invoice_line_ids.length > 0 && (
         <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <div className="bg-slate-100/70 px-4 py-2 border-b border-slate-200">
-            <h5 className="font-bold text-slate-700 text-xs uppercase">Productos</h5>
+            <h5 className="font-bold text-slate-700 text-xs uppercase">{t("productos_label")}</h5>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b text-slate-400 text-xs font-semibold uppercase">
-                  <th className="p-3 pl-4">Producto</th>
-                  <th className="p-3 text-center">Cant.</th>
-                  <th className="p-3 text-right pr-4">Monto</th>
+                  <th className="p-3 pl-4">{t("producto")}</th>
+                  <th className="p-3 text-center">{t("cant")}</th>
+                  <th className="p-3 text-right pr-4">{t("monto")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {item.invoice_line_ids.map((line: any, idx: number) => (
                   <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3 pl-4 font-medium max-w-[200px] truncate">
-                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || "Producto"}
+                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || t("producto")}
                     </td>
                     <td className="p-3 text-center font-mono font-medium">{line.quantity || 0}</td>
                     <td className="p-3 text-right pr-4 font-mono font-bold">{line.price_subtotal?.toFixed(2) || "0.00"} $</td>
@@ -182,48 +185,49 @@ function MoraAvanzadaDetailView({ item }: { item: any }) {
 }
 
 function DevolucionDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   return (
     <div className="space-y-4">
       <div className="bg-slate-50 p-4 rounded-xl border border-orange-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Nota de Crédito
+          {t("nota_credito")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">{item.partner_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500">Documento:</span>
+          <span className="text-slate-500">{t("documento")}</span>
           <span className="font-mono text-right sm:text-left">{item.name || "—"}</span>
 
-          <span className="text-slate-500">Fecha:</span>
+          <span className="text-slate-500">{t("fecha")}</span>
           <span className="font-mono text-right sm:text-left">{item.invoice_date || "—"}</span>
 
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-right sm:text-left">{item.invoice_user_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500 font-semibold">Monto:</span>
+          <span className="text-slate-500 font-semibold">{t("monto")}</span>
           <span className="font-bold text-orange-600 text-right sm:text-left">{item.amount_total?.toLocaleString() || "0"} $</span>
         </div>
       </div>
       {Array.isArray(item.invoice_line_ids) && item.invoice_line_ids.length > 0 && (
         <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <div className="bg-slate-100/70 px-4 py-2 border-b border-slate-200">
-            <h5 className="font-bold text-slate-700 text-xs uppercase">Productos Devueltos</h5>
+            <h5 className="font-bold text-slate-700 text-xs uppercase">{t("productos_devueltos")}</h5>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b text-slate-400 text-xs font-semibold uppercase">
-                  <th className="p-3 pl-4">Producto</th>
-                  <th className="p-3 text-center">Cant.</th>
-                  <th className="p-3 text-right pr-4">Monto</th>
+                  <th className="p-3 pl-4">{t("producto")}</th>
+                  <th className="p-3 text-center">{t("cant")}</th>
+                  <th className="p-3 text-right pr-4">{t("monto")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {item.invoice_line_ids.map((line: any, idx: number) => (
                   <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3 pl-4 font-medium max-w-[200px] truncate">
-                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || "Producto"}
+                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || t("producto")}
                     </td>
                     <td className="p-3 text-center font-mono font-medium">{line.quantity || 0}</td>
                     <td className="p-3 text-right pr-4 font-mono font-bold">{line.price_subtotal?.toFixed(2) || "0.00"} $</td>
@@ -239,6 +243,7 @@ function DevolucionDetailView({ item }: { item: any }) {
 }
 
 function VendedorCuotaAlertaDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   const deficitPct = item.falta_pct || 0;
   const progressPct = item.cuota > 0 ? Math.round((item.facturado / item.expected) * 100) : 0;
   return (
@@ -246,39 +251,39 @@ function VendedorCuotaAlertaDetailView({ item }: { item: any }) {
       <div className="bg-slate-50 p-4 rounded-xl border border-red-100 space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-            Incumplimiento de Cuota Diaria
+            {t("incumplimiento_cuota")}
           </h4>
           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-            Déficit {deficitPct}%
+            {t("deficit")} {deficitPct}%
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-semibold text-right sm:text-left">{item.name}</span>
 
-          <span className="text-slate-500">Sucursal:</span>
+          <span className="text-slate-500">{t("sucursal")}</span>
           <span className="font-medium text-right sm:text-left">{item.sucursal}</span>
 
-          <span className="text-slate-500">Cuota mensual:</span>
+          <span className="text-slate-500">{t("cuota_mensual")}</span>
           <span className="font-mono font-bold text-right sm:text-left">{item.cuota?.toLocaleString()} $</span>
 
-          <span className="text-slate-500">Mínimo diario:</span>
+          <span className="text-slate-500">{t("minimo_diario")}</span>
           <span className="font-mono text-right sm:text-left">{item.daily_min?.toLocaleString()} $/día</span>
 
-          <span className="text-slate-500">Esperado al día de hoy:</span>
+          <span className="text-slate-500">{t("esperado_hoy")}</span>
           <span className="font-mono font-semibold text-right sm:text-left">{item.expected?.toLocaleString()} $</span>
 
-          <span className="text-slate-500">Facturado real:</span>
+          <span className="text-slate-500">{t("facturado_real")}</span>
           <span className="font-mono font-bold text-red-600 text-right sm:text-left">{item.facturado?.toLocaleString()} $</span>
 
-          <span className="text-slate-500">Déficit:</span>
+          <span className="text-slate-500">{t("deficit")}</span>
           <span className="font-mono font-bold text-red-600 text-right sm:text-left">-{item.falta?.toLocaleString()} $</span>
         </div>
 
         <div className="pt-2">
           <div className="flex justify-between text-xs text-slate-400 mb-1">
-            <span>Progreso vs esperado</span>
+            <span>{t("progreso_esperado")}</span>
             <span className="font-bold text-slate-700">{progressPct}%</span>
           </div>
           <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden shadow-inner">
@@ -295,10 +300,10 @@ function VendedorCuotaAlertaDetailView({ item }: { item: any }) {
 
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
           <p className="text-sm font-bold text-red-700">
-            Faltan {item.falta?.toLocaleString()} $ para alcanzar la cuota diaria
+            {t("faltan_cuota_diaria", { amount: item.falta?.toLocaleString() || "0" })}
           </p>
           <p className="text-xs text-red-600 mt-0.5">
-            Necesita facturar al menos {item.daily_min?.toLocaleString()} $/día para cumplir la meta mensual
+            {t("necesita_facturar", { amount: item.daily_min?.toLocaleString() || "0" })}
           </p>
         </div>
       </div>
@@ -307,6 +312,7 @@ function VendedorCuotaAlertaDetailView({ item }: { item: any }) {
 }
 
 function InactiveClientDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   const riskColor =
     item.risk === "Crítico"
       ? "text-red-600 bg-red-50 border-red-200"
@@ -320,52 +326,52 @@ function InactiveClientDetailView({ item }: { item: any }) {
     <div className="space-y-4">
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Información del Cliente
+          {t("informacion_cliente")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">{item.name}</span>
 
-          <span className="text-slate-500">Estado:</span>
+          <span className="text-slate-500">{t("estado")}</span>
           <span className="text-right sm:text-left">
             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${riskColor}`}>
-              {item.risk || "Inactivo"}
+              {item.risk || t("inactivo")}
             </span>
           </span>
 
-          <span className="text-slate-500">Días sin comprar:</span>
+          <span className="text-slate-500">{t("dias_sin_comprar")}</span>
           <span className="font-mono font-bold text-right sm:text-left text-red-600">
-            {item.days_inactive} días
+            {item.days_inactive} {t("dias")}
           </span>
         </div>
       </div>
 
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Última Compra
+          {t("ultima_compra")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Fecha:</span>
+          <span className="text-slate-500">{t("fecha")}</span>
           <span className="font-mono font-medium text-right sm:text-left">
             {item.last_sale_date || "N/A"}
           </span>
 
-          <span className="text-slate-500">Factura / Ref:</span>
+          <span className="text-slate-500">{t("factura_ref")}</span>
           <span className="font-mono text-right sm:text-left">
             {item.last_order_ref || "N/A"}
           </span>
 
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-right sm:text-left">
-            {item.salesperson || "No asignado"}
+            {item.salesperson || t("no_asignado")}
           </span>
 
-          <span className="text-slate-500">Producto:</span>
+          <span className="text-slate-500">{t("producto_detalle")}</span>
           <span className="font-medium text-right sm:text-left">
             {item.top_product || "—"}
           </span>
 
-          <span className="text-slate-500 font-semibold">Monto Facturado:</span>
+          <span className="text-slate-500 font-semibold">{t("monto_facturado")}</span>
           <span className="font-bold text-slate-900 text-right sm:text-left">
             {item.last_order_amount?.toLocaleString() || "0"} $
           </span>
@@ -375,22 +381,22 @@ function InactiveClientDetailView({ item }: { item: any }) {
       {!item.single_order && (
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
           <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-            Historial General
+            {t("historial_general")}
           </h4>
           <div className="grid grid-cols-2 gap-y-1 text-sm">
-            <span className="text-slate-500">Promedio por compra:</span>
+            <span className="text-slate-500">{t("promedio_compra")}</span>
             <span className="font-mono font-medium text-right sm:text-left">
               {item.avg_order_amount?.toLocaleString() || "—"} $
             </span>
 
-            <span className="text-slate-500">Total facturado:</span>
+            <span className="text-slate-500">{t("total_facturado_label")}</span>
             <span className="font-mono font-bold text-right sm:text-left">
               {item.total_spent?.toLocaleString() || "0"} $
             </span>
 
-            <span className="text-slate-500">Umbral de alerta:</span>
+            <span className="text-slate-500">{t("umbral_alerta")}</span>
             <span className="font-mono text-right sm:text-left">
-              {item.threshold || "—"} días
+              {item.threshold || "—"} {t("dias")}
             </span>
           </div>
         </div>
@@ -400,6 +406,7 @@ function InactiveClientDetailView({ item }: { item: any }) {
 }
 
 function InvoiceDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   // Aseguramos que las líneas sean un array válido para iterar
   const lineas = Array.isArray(item.invoice_line_ids)
     ? item.invoice_line_ids
@@ -410,25 +417,25 @@ function InvoiceDetailView({ item }: { item: any }) {
       {/* Información General de la Factura */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Detalles de Factura
+          {t("detalles_factura")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">
-            {item.partner_id?.[1] || "Sin cliente"}
+            {item.partner_id?.[1] || t("sin_cliente")}
           </span>
 
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-slate-700 text-right sm:text-left">
-            {item.invoice_user_id?.[1] || "No asignado"}
+            {item.invoice_user_id?.[1] || t("no_asignado")}
           </span>
 
-          <span className="text-slate-500">Vencimiento:</span>
+          <span className="text-slate-500">{t("vencimiento")}</span>
           <span className="font-mono text-right sm:text-left">
             {item.invoice_date_due}
           </span>
 
-          <span className="text-slate-500 font-semibold">Total Facturado:</span>
+          <span className="text-slate-500 font-semibold">{t("monto_facturado")}</span>
           <span className="font-bold text-slate-900 text-right sm:text-left">
             {item.amount_total} $
           </span>
@@ -439,7 +446,7 @@ function InvoiceDetailView({ item }: { item: any }) {
       <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
         <div className="bg-slate-100/70 px-4 py-2 border-b border-slate-200">
           <h5 className="font-bold text-slate-700 text-xs uppercase tracking-wider">
-            Productos Facturados
+            {t("productos_facturados_label")}
           </h5>
         </div>
 
@@ -448,9 +455,9 @@ function InvoiceDetailView({ item }: { item: any }) {
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-150 text-slate-400 text-xs font-semibold uppercase">
-                  <th className="p-3 pl-4">Producto</th>
-                  <th className="p-3 text-center">Cant.</th>
-                  <th className="p-3 text-right pr-4">Monto</th>
+                  <th className="p-3 pl-4">{t("producto")}</th>
+                  <th className="p-3 text-center">{t("cant")}</th>
+                  <th className="p-3 text-right pr-4">{t("monto")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -463,7 +470,7 @@ function InvoiceDetailView({ item }: { item: any }) {
                     <td className="p-3 pl-4 font-medium max-w-[200px] truncate">
                       {Array.isArray(line.product_id)
                         ? line.product_id[1]
-                        : line.name || "Producto"}
+                        : line.name || t("producto")}
                     </td>
                     <td className="p-3 text-center font-mono font-medium text-slate-600">
                       {line.quantity || 0}
@@ -478,8 +485,7 @@ function InvoiceDetailView({ item }: { item: any }) {
           </div>
         ) : (
           <div className="p-4 text-center text-xs text-slate-400 italic">
-            No hay líneas de detalle disponibles o requieres cargar el modelo
-            "account.move.line".
+            {t("lineas_detalle")}
           </div>
         )}
       </div>
@@ -488,7 +494,7 @@ function InvoiceDetailView({ item }: { item: any }) {
 }
 
 export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: boolean } = {}) {
-  const t = useTranslations("userManagement");
+  const t = useTranslations("superadmin.alert");
   const { user } = useAuthStore();
 
   // Controlamos la empresa seleccionada (por defecto 'valencia')
@@ -514,19 +520,19 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
     const wb = new ExcelJS.Workbook();
     wb.creator = "Supricom";
     wb.created = new Date();
-    const ws = wb.addWorksheet("Caída de Productos", { views: [{ state: "frozen", ySplit: 1 }] });
+    const ws = wb.addWorksheet(t("excel_sheet_caida"), { views: [{ state: "frozen", ySplit: 1 }] });
 
     ws.columns = [
-      { header: "Producto", key: "name", width: 40 },
-      { header: "Caída %", key: "decline_pct", width: 12 },
-      { header: "Período Anterior (uds)", key: "prior_qty", width: 20 },
-      { header: "Período Actual (uds)", key: "current_qty", width: 20 },
-      { header: "Anterior (USD)", key: "prior_amount", width: 18 },
-      { header: "Actual (USD)", key: "current_amount", width: 18 },
-      { header: "Última Venta", key: "last_sale_date", width: 15 },
-      { header: "Último Cliente", key: "last_client", width: 25 },
-      { header: "Monto Última Venta", key: "last_client_amount", width: 20 },
-      { header: "Mejor Vendedor", key: "top_seller", width: 25 },
+      { header: t("excel_col_producto"), key: "name", width: 40 },
+      { header: t("excel_col_caida_pct"), key: "decline_pct", width: 12 },
+      { header: t("excel_col_periodo_anterior"), key: "prior_qty", width: 20 },
+      { header: t("excel_col_periodo_actual"), key: "current_qty", width: 20 },
+      { header: t("excel_col_anterior_usd"), key: "prior_amount", width: 18 },
+      { header: t("excel_col_actual_usd"), key: "current_amount", width: 18 },
+      { header: t("excel_col_ultima_venta"), key: "last_sale_date", width: 15 },
+      { header: t("excel_col_ultimo_cliente"), key: "last_client", width: 25 },
+      { header: t("excel_col_monto_ultima_venta"), key: "last_client_amount", width: 20 },
+      { header: t("excel_col_mejor_vendedor"), key: "top_seller", width: 25 },
     ];
 
     const headerRow = ws.getRow(1);
@@ -602,15 +608,15 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
   })();
 
   const devolucionesDesc = (() => {
-    if (devolucionesPeriodo === "24h") return "Últimas 24 horas";
-    if (devolucionesPeriodo === "7d") return "Últimos 7 días";
-    if (devolucionesPeriodo === "30d") return "Últimos 30 días";
+    if (devolucionesPeriodo === "24h") return t("horas");
+    if (devolucionesPeriodo === "7d") return t("dias_7");
+    if (devolucionesPeriodo === "30d") return t("dias_30");
     if (/^\d{4}-\d{2}$/.test(devolucionesPeriodo)) {
       const [y, m] = devolucionesPeriodo.split("-");
-      const meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+      const meses = t.raw("meses") as string[];
       return `${meses[parseInt(m)]} ${y}`;
     }
-    return "Filtrado";
+    return t("filtrado");
   })();
 
   const devolucionesMeses = (() => {
@@ -629,10 +635,10 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-            Centro de Control
+            {t("centro_control")}
           </h2>
           <p className="text-slate-500">
-            Monitoreo de métricas críticas en tiempo real
+            {t("monitoreo")}
           </p>
         </div>
         <button
@@ -640,7 +646,7 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
           className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all font-medium text-sm self-stretch sm:self-auto justify-center"
         >
           <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />{" "}
-          Actualizar
+          {t("actualizar")}
         </button>
       </div>
 
@@ -667,53 +673,53 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
       {/* Contenido / Estado de Carga */}
       {isLoading ? (
         <div className="p-20 text-center font-bold text-slate-400 uppercase animate-pulse tracking-wider">
-          {t("loading.alert")}
+          {t("loading")}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <AlertCard
-            title="Clientes Inactivos"
+            title={t("clientes_inactivos")}
             icon={<Users className="text-blue-500" />}
             data={data?.alertas?.inactividad_clientes}
-            desc="Más de 30-90 días sin compra"
+            desc={t("mas_30_90")}
             gradient="from-blue-50 to-white"
             severity={data?.alertas?.inactividad_clientes?.length}
           />
           <AlertCard
-            title="Facturas por Vencer"
+            title={t("facturas_vencer")}
             icon={<Clock className="text-amber-500" />}
             data={data?.alertas?.vencimiento_facturas}
-            desc="Próximos 3 días"
+            desc={t("proximos_3")}
             gradient="from-amber-50 to-white"
             severity={data?.alertas?.vencimiento_facturas?.length}
           />
           <AlertCard
-            title="Vendedores sin Actividad"
+            title={t("vendedores_sin_actividad")}
             icon={<AlertCircle className="text-red-500" />}
             data={data?.alertas?.vendedores_inactivos}
-            desc="Sin facturas hoy"
+            desc={t("sin_facturas_hoy")}
             gradient="from-red-50 to-white"
             severity={data?.alertas?.vendedores_inactivos?.length}
           />
           <AlertCard
-            title="Caída de Productos"
+            title={t("caida_productos")}
             icon={<TrendingDown className="text-purple-500" />}
             data={data?.alertas?.productos_alerta}
-            desc="Productos estrella afectados"
+            desc={t("productos_estrella")}
             gradient="from-purple-50 to-white"
             severity={data?.alertas?.productos_alerta?.length}
             onExport={exportCaidaProductos}
           />
           <AlertCard
-            title="Mora Avanzada"
+            title={t("mora_avanzada")}
             icon={<ArrowDown className="text-red-500" />}
             data={data?.alertas?.mora_avanzada}
-            desc="Facturas +30 días vencidas"
+            desc={t("facturas_30")}
             gradient="from-red-50 to-white"
             severity={data?.alertas?.mora_avanzada?.length}
           />
           <AlertCard
-            title="Devoluciones Recientes"
+            title={t("devoluciones")}
             icon={<RotateCcw className="text-orange-500" />}
             data={devolucionesFiltradas}
             desc={devolucionesDesc}
@@ -731,7 +737,7 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {p === "24h" ? "24h" : p === "7d" ? "7 días" : "30 días"}
+                    {p === "24h" ? "24h" : p === "7d" ? t("dias_7") : t("dias_30")}
                   </button>
                 ))}
                 <select
@@ -739,10 +745,10 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
                   onChange={(e) => setDevolucionesPeriodo(e.target.value)}
                   className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-orange-300 focus:border-orange-400 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value="" disabled>Por mes...</option>
+                  <option value="" disabled>{t("por_mes")}</option>
                   {devolucionesMeses.map((m) => {
                     const [y, mo] = m.split("-");
-                    const meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+                    const meses = t.raw("meses") as string[];
                     return <option key={m} value={m}>{meses[parseInt(mo)]} {y}</option>;
                   })}
                 </select>
@@ -750,18 +756,18 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
             }
           />
           <AlertCard
-            title="Facturas por Debajo del Mínimo"
+            title={t("facturas_debajo_minimo")}
             icon={<DollarSign className="text-amber-500" />}
             data={data?.alertas?.facturas_bajo_minimo}
-            desc="Menos de $200 facturados"
+            desc={t("menos_200")}
             gradient="from-amber-50 to-white"
             severity={data?.alertas?.facturas_bajo_minimo?.length}
           />
           <AlertCard
-            title="Vendedores por Debajo de Cuota"
+            title={t("vendedores_cuota")}
             icon={<TrendingUp className="text-red-500" />}
             data={data?.alertas?.vendedores_cuota_alerta}
-            desc="No alcanzan el mínimo diario"
+            desc={t("no_alcanzan")}
             gradient="from-red-50 to-white"
             severity={data?.alertas?.vendedores_cuota_alerta?.length}
           />
@@ -802,27 +808,28 @@ function MiniBarChart({ data, color = "#3b82f6" }: { data: number[]; color?: str
 }
 
 function FacturaBajoMinimoDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   const lineas = Array.isArray(item.invoice_line_ids) ? item.invoice_line_ids : [];
   return (
     <div className="space-y-4">
       <div className="bg-slate-50 p-4 rounded-xl border border-amber-100 space-y-2">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1">
-          Factura por Debajo del Mínimo
+          {t("facturas_debajo_minimo")}
         </h4>
         <div className="grid grid-cols-2 gap-y-1 text-sm">
-          <span className="text-slate-500">Cliente:</span>
+          <span className="text-slate-500">{t("cliente_label")}</span>
           <span className="font-medium text-right sm:text-left">{item.partner_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500">Factura:</span>
+          <span className="text-slate-500">{t("factura")}</span>
           <span className="font-mono text-right sm:text-left">{item.name || "—"}</span>
 
-          <span className="text-slate-500">Fecha:</span>
+          <span className="text-slate-500">{t("fecha")}</span>
           <span className="font-mono text-right sm:text-left">{item.invoice_date || "—"}</span>
 
-          <span className="text-slate-500">Vendedor:</span>
+          <span className="text-slate-500">{t("vendedor")}</span>
           <span className="font-medium text-right sm:text-left">{item.invoice_user_id?.[1] || "—"}</span>
 
-          <span className="text-slate-500 font-semibold">Monto Facturado:</span>
+          <span className="text-slate-500 font-semibold">{t("monto_facturado")}</span>
           <span className="font-bold text-amber-600 text-right sm:text-left">{item.amount_total?.toLocaleString() || "0"} $</span>
         </div>
       </div>
@@ -830,22 +837,22 @@ function FacturaBajoMinimoDetailView({ item }: { item: any }) {
       {lineas.length > 0 && (
         <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <div className="bg-slate-100/70 px-4 py-2 border-b border-slate-200">
-            <h5 className="font-bold text-slate-700 text-xs uppercase">Productos Facturados</h5>
+            <h5 className="font-bold text-slate-700 text-xs uppercase">{t("productos_facturados_label")}</h5>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b text-slate-400 text-xs font-semibold uppercase">
-                  <th className="p-3 pl-4">Producto</th>
-                  <th className="p-3 text-center">Cant.</th>
-                  <th className="p-3 text-right pr-4">Monto</th>
+                  <th className="p-3 pl-4">{t("producto")}</th>
+                  <th className="p-3 text-center">{t("cant")}</th>
+                  <th className="p-3 text-right pr-4">{t("monto")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {lineas.map((line: any, idx: number) => (
                   <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3 pl-4 font-medium max-w-[200px] truncate">
-                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || "Producto"}
+                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || t("producto")}
                     </td>
                     <td className="p-3 text-center font-mono font-medium">{line.quantity || 0}</td>
                     <td className="p-3 text-right pr-4 font-mono font-bold">{line.price_subtotal?.toFixed(2) || "0.00"} $</td>
@@ -862,17 +869,18 @@ function FacturaBajoMinimoDetailView({ item }: { item: any }) {
 
 // ── Detalle vendedor sin actividad ──
 function VendedorSinActividadDetailView({ item }: { item: any }) {
+  const t = useTranslations("superadmin.alert");
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-4">
         <div className="p-4 bg-white rounded-xl border border-slate-100">
-          <p className="text-xs text-slate-500 mb-1">Facturado en el mes</p>
+          <p className="text-xs text-slate-500 mb-1">{t("facturado_mes")}</p>
           <p className="text-2xl font-bold text-slate-900">
             {item.amount_this_month?.toLocaleString()} $
           </p>
         </div>
         <div className="p-4 bg-white rounded-xl border border-slate-100">
-          <p className="text-xs text-slate-500 mb-1">Última factura</p>
+          <p className="text-xs text-slate-500 mb-1">{t("ultima_factura")}</p>
           <p className="text-sm font-semibold text-slate-700">
             {item.last_invoice_date || "—"}
           </p>
@@ -880,42 +888,41 @@ function VendedorSinActividadDetailView({ item }: { item: any }) {
       </div>
       <div className="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
         <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-          Detalles de la última factura
+          {t("detalles_ultima")}
         </h4>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-500">Cliente</span>
+          <span className="text-slate-500">{t("cliente")}</span>
           <span className="font-semibold text-slate-700">{item.last_invoice_client || "—"}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-500">Monto</span>
+          <span className="text-slate-500">{t("monto")}</span>
           <span className="font-mono font-bold text-slate-700">
             {item.last_invoice_amount?.toLocaleString()} $
           </span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-500">Mejor cliente del mes</span>
+          <span className="text-slate-500">{t("mejor_cliente")}</span>
           <span className="font-semibold text-slate-700">{item.top_client || "—"}</span>
         </div>
       </div>
       {item.last_sale_lines && item.last_sale_lines.length > 0 && (
         <div className="p-4 bg-white rounded-xl border border-slate-100">
           <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-            Productos facturados
-          </h4>
+            {t("productos_facturados")}</h4>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-400 text-xs">
-                  <th className="p-2 pl-0 text-left font-medium">Producto</th>
-                  <th className="p-2 text-center font-medium">Cant.</th>
-                  <th className="p-2 pr-0 text-right font-medium">Monto</th>
+                  <th className="p-2 pl-0 text-left font-medium">{t("producto")}</th>
+                  <th className="p-2 text-center font-medium">{t("cant")}</th>
+                  <th className="p-2 pr-0 text-right font-medium">{t("monto")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {item.last_sale_lines.map((line: any, idx: number) => (
                   <tr key={idx} className="hover:bg-slate-50/80">
                     <td className="p-2 pl-0 font-medium text-slate-700 truncate max-w-[180px]">
-                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || "Producto"}
+                      {Array.isArray(line.product_id) ? line.product_id[1] : line.name || t("producto")}
                     </td>
                     <td className="p-2 text-center font-mono text-slate-600">
                       {line.quantity || 0}
@@ -935,6 +942,7 @@ function VendedorSinActividadDetailView({ item }: { item: any }) {
 }
 
 function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, filterSlot }: any) {
+  const t = useTranslations("superadmin.alert");
   const list = Array.isArray(data) ? data : [];
 
   const severityLevel = severity > 10 ? "high" : severity > 3 ? "medium" : severity > 0 ? "low" : "none";
@@ -970,7 +978,7 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
           <p className="text-xs text-slate-400 mt-1">{desc}</p>
           <div className="mt-4 flex items-center justify-between">
             <span className="flex items-center text-xs font-semibold text-slate-600 group-hover:translate-x-1 transition-transform">
-              Ver detalle <ChevronRight size={14} className="ml-1" />
+              {t("ver_detalle")} <ChevronRight size={14} className="ml-1" />
             </span>
             {list.length > 3 && (
               <MiniBarChart
@@ -992,12 +1000,12 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
               >
                 <Download size={14} />
-                Exportar Excel
+                {t("exportar_excel")}
               </button>
             )}
           </div>
           <DialogDescription className="sr-only">
-            Detalle de {title.toLowerCase()} que requieren atención en el sistema.
+            {t("detalle_title", { title: title.toLowerCase() })}
           </DialogDescription>
         </DialogHeader>
 
@@ -1015,7 +1023,7 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
                       </span>
                       {item.days_inactive !== undefined && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span>{item.days_inactive} días</span>
+                          <span>{item.days_inactive} {t("dias")}</span>
                           {item.salesperson && <span>• {item.salesperson}</span>}
                           {item.risk && (
                             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -1041,10 +1049,10 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
                       )}
                       {item.invoice_date_due && item.days_inactive === undefined && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span>Vence: {item.invoice_date_due}</span>
+                          <span>{t("vence")} {item.invoice_date_due}</span>
                           <span className="text-red-500 font-semibold">
                             {Math.floor((Date.now() - new Date(item.invoice_date_due).getTime()) / (1000 * 60 * 60 * 24)) > 0
-                              ? `• ${Math.floor((Date.now() - new Date(item.invoice_date_due).getTime()) / (1000 * 60 * 60 * 24))} días vencido`
+                              ? `• ${Math.floor((Date.now() - new Date(item.invoice_date_due).getTime()) / (1000 * 60 * 60 * 24))} ${t("dias_vencido_suffix")}`
                               : ""}
                           </span>
                           {item.invoice_user_id?.[1] && <span>• {item.invoice_user_id[1]}</span>}
@@ -1070,7 +1078,7 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
                       )}
                       {item._tipo === "sin_actividad" && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span>Últ. factura: {item.last_invoice_date || "—"}</span>
+                          <span>{t("ult_factura")} {item.last_invoice_date || "—"}</span>
                           <span>• {Math.round(item.last_invoice_amount || 0).toLocaleString()} $</span>
                           {item.last_invoice_client && <span>• {item.last_invoice_client}</span>}
                         </div>
@@ -1098,7 +1106,7 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
                   <DialogHeader>
                     <DialogTitle>{item.name || item.partner_id?.[1] || "—"}</DialogTitle>
                     <DialogDescription className="sr-only">
-                      Detalle profundo
+                      {t("detalle_profundo")}
                     </DialogDescription>
                   </DialogHeader>
 
@@ -1137,8 +1145,8 @@ function AlertCard({ title, icon, data, desc, gradient, severity = 0, onExport, 
               <div className="p-4 bg-slate-100 rounded-full mb-4">
                 {icon}
               </div>
-              <p className="text-sm font-semibold">Todo en orden</p>
-              <p className="text-xs mt-1">No hay {title.toLowerCase()} para mostrar.</p>
+              <p className="text-sm font-semibold">{t("todo_orden")}</p>
+              <p className="text-xs mt-1">{t("no_datos_title", { title: title.toLowerCase() })}</p>
             </div>
           )}
         </div>

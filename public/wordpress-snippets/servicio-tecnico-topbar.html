@@ -1,0 +1,38 @@
+<!--
+  Enlace para la barra superior (topbar) de supricom.com.ve.
+
+  La topbar actual dice:
+    "Somos tu mayorista de confianza · Solicitud para crear cuenta · Teléfono:..."
+
+  Agregar este enlace al lado de "Solicitud para crear cuenta" en el mismo
+  estilo visual. La topbar es texto plano, no botones, así que este snippet
+  es un enlace estilizado (no botón) con underline al hover.
+
+  URL publica del portal: https://panel.supricom.com.ve
+  Para pruebas internas usar el host actual del deploy.
+
+  Si el sitio usa WPML/Polylang, cambiar el href por la versión del idioma
+  activo:
+    <?php if (ICL_LANGUAGE_CODE == 'en'): ?>
+      https://panel.supricom.com.ve/en/servicio-tecnico
+    <?php else: ?>
+      https://panel.supricom.com.ve/es/servicio-tecnico
+    <?php endif; ?>
+-->
+<a
+  href="https://panel.supricom.com.ve/es/servicio-tecnico"
+  style="
+    display: inline-block;
+    color: inherit;
+    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  "
+  onmouseover="this.style.borderBottomColor='#741DFE'; this.style.color='#741DFE';"
+  onmouseout="this.style.borderBottomColor='transparent'; this.style.color='inherit';"
+>
+  Servicio Técnico
+</a>

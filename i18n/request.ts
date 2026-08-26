@@ -1,12 +1,16 @@
 import { getRequestConfig } from "next-intl/server";
 import { routing } from "../i18n.config";
 
-export default getRequestConfig(async ({ locale }) => {
-  // Si el locale es undefined, usamos el por defecto para evitar que la app explote
-  const targetLocale = locale || routing.defaultLocale;
+export default getRequestConfig(async ({ requestLocale }) => {
+  let locale = await requestLocale;
+
+  // Validar que el locale sea válido
+  if (!locale || !routing.locales.includes(locale as any)) {
+    locale = routing.defaultLocale;
+  }
 
   return {
-    locale: targetLocale,
-    messages: (await import(`../messages/${targetLocale}.json`)).default,
+    locale,
+    messages: (await import(`../messages/${locale}.json`)).default,
   };
 });

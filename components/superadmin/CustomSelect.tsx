@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,6 +13,7 @@ export function CustomSelect({
   onSelect,
   searchable = false,
 }: any) {
+  const t = useTranslations("ui");
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,7 +80,7 @@ export function CustomSelect({
                   <input
                     autoFocus
                     className="w-full bg-transparent text-xs font-bold outline-none"
-                    placeholder="Buscar..."
+                    placeholder={t("searchPlaceholder")}
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </div>

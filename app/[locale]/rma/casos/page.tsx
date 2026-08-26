@@ -51,6 +51,7 @@ export default function RmaCasosPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [origenFilter, setOrigenFilter] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -59,7 +60,7 @@ export default function RmaCasosPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, origenFilter]);
 
   const fetchCases = async () => {
     try {
@@ -70,6 +71,7 @@ export default function RmaCasosPage() {
       });
       if (search) params.set("search", search);
       if (statusFilter) params.set("status", statusFilter);
+      if (origenFilter) params.set("origen", origenFilter);
 
       const res = await fetch(`/api/rma?${params}`);
       const data = await res.json();
@@ -160,6 +162,16 @@ export default function RmaCasosPage() {
                 <SelectItem value="reingresado">{statusLabels.reingresado}</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={origenFilter} onValueChange={(v) => { setOrigenFilter(v === "all" ? "" : v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder={t("all_origen")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("all_origen")}</SelectItem>
+                <SelectItem value="interno">{t("origen_interno")}</SelectItem>
+                <SelectItem value="portal">{t("origen_portal")}</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline" onClick={handleSearch}>
               <Search className="w-4 h-4 mr-2" />
               {t("search")}
@@ -198,7 +210,14 @@ export default function RmaCasosPage() {
                   {cases.map((c) => (
                     <tr key={c.id} className="border-b last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => router.push(`/${locale}/rma/casos/${c.id}`)}>
                       <td className="p-4">
-                        <span className="text-blue-600 font-medium">{c.case_number}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-600 font-medium">{c.case_number}</span>
+                          {c.origen === "portal" && (
+                            <Badge className="bg-violet-100 text-violet-700 border-violet-200 border text-[11px]">
+                              {t("badge_portal")}
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-slate-700">{c.client_name}</td>
                       <td className="p-4 text-slate-700">{c.model || c.product_code || "—"}</td>

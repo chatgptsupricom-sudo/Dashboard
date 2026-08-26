@@ -24,10 +24,35 @@ export async function GET(
       [caseData.id]
     );
 
+    let adjuntos: any[] = [];
+    try {
+      const adjuntosResult = await query(
+        `SELECT id, filename, mime, size, created_at, tracking_token
+         FROM rma_ticket_adjuntos
+         WHERE ticket_id = ?
+         ORDER BY created_at ASC`,
+        [caseData.id]
+      );
+      adjuntos = adjuntosResult.rows.map((row: any) => ({
+        id: row.id,
+        filename: row.filename,
+        mime: row.mime,
+        size: row.size,
+        created_at: row.created_at,
+        url: row.tracking_token
+          ? `/api/servicio-tecnico/ticket/adjuntos/${row.tracking_token}/${row.id}`
+          : null,
+      }));
+    } catch (adjErr: any) {
+      console.warn("rma_ticket_adjuntos no disponible:", adjErr?.message);
+      adjuntos = [];
+    }
+
     return NextResponse.json({
       success: true,
       case: caseData,
       history: historyResult.rows,
+      adjuntos,
     });
   } catch (error: any) {
     console.error("Error fetching RMA case:", error);

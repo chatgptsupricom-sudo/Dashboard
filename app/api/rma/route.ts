@@ -7,6 +7,7 @@ export async function GET(request: Request) {
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
     const companyId = searchParams.get("company_id") || "";
+    const origen = searchParams.get("origen") || "";
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const offset = (page - 1) * limit;
@@ -28,6 +29,11 @@ export async function GET(request: Request) {
     if (companyId) {
       where += " AND c.company_id = ?";
       params.push(parseInt(companyId, 10));
+    }
+
+    if (origen) {
+      where += " AND c.origen = ?";
+      params.push(origen);
     }
 
     const countResult = await query(`SELECT COUNT(*) as total FROM rma_cases c ${where}`, params);

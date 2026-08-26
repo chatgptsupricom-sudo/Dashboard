@@ -1,0 +1,88 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+
+/**
+ * Widget de Cloudflare Turnstile para el envío del reporte (issue #25).
+ *
+ * Mientras NEXT_PUBLIC_TURNSTILE_SITE_KEY no esté configurada esto no pinta
+ * nada y avisa al padre con `onDisponible(false)`, para que el formulario no
+ * exija un token que nadie puede producir. Así el portal sigue funcionando
+ * hasta que alguien cree el sitio en Cloudflare.
+ *
+ * La verificación de verdad ocurre en el servidor (lib/servicio-tecnico/
+ * captcha.ts). Este widget solo consigue el token: confiar en el widget sería
+ * como poner el candado por dentro.
+ */
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opciones: Record<string, unknown>) => string;
+      remove: (id: string) => void;
+    };
+    onTurnstileListo?: () => void;
+  }
+}
+
+const SRC =
+  "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileListo&render=explicit";
+
+export function CaptchaTurnstile({
+  onToken,
+  onDisponible,
+  locale,
+}: {
+  onToken: (token: string) => void;
+  onDisponible: (disponible: boolean) => void;
+  locale: string;
+}) {
+  const contenedor = useRef<HTMLDivElement>(null);
+  const idWidget = useRef<string | null>(null);
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+  useEffect(() => {
+    if (!siteKey) {
+      onDisponible(false);
+      return;
+    }
+    onDisponible(true);
+
+    const pintar = () => {
+      if (!contenedor.current || !window.turnstile || idWidget.current) return;
+      idWidget.current = window.turnstile.render(contenedor.current, {
+        sitekey: siteKey,
+        language: locale === "en" ? "en" : "es",
+        callback: (token: string) => onToken(token),
+        // Si el token vence o falla, se limpia: el formulario vuelve a exigirlo
+        // en vez de mandar uno que el servidor va a rechazar.
+        "expired-callback": () => onToken(""),
+        "error-callback": () => onToken(""),
+      });
+    };
+
+    if (window.turnstile) {
+      pintar();
+    } else if (!document.querySelector(`script[src="${SRC}"]`)) {
+      window.onTurnstileListo = pintar;
+      const s = document.createElement("script");
+      s.src = SRC;
+      s.async = true;
+      s.defer = true;
+      document.head.appendChild(s);
+    } else {
+      window.onTurnstileListo = pintar;
+    }
+
+    return () => {
+      if (idWidget.current && window.turnstile) {
+        try {
+          window.turnstile.remove(idWidget.current);
+        } catch {}
+        idWidget.current = null;
+      }
+    };
+  }, [siteKey, locale, onToken, onDisponible]);
+
+  if (!siteKey) return null;
+  return <div ref={contenedor} className="mt-4" />;
+}

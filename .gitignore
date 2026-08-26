@@ -4,3 +4,5 @@
 *.log
 .turbopack/
 uploads/custom-views/
+.env.local
+.env*.local

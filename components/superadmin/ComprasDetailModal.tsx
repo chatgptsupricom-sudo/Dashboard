@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { X, ArrowLeft, Check, AlertTriangle, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ComprasDetailModalProps {
@@ -31,6 +32,8 @@ export default function ComprasDetailModal({
   const [editingWeek, setEditingWeek] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+
+  const t = useTranslations("superadmin.compras_detail");
 
   useEffect(() => {
     if (!isOpen || !kpiType) return;
@@ -192,13 +195,13 @@ export default function ComprasDetailModal({
                 onClick={() => setSelectedItem(null)}
                 className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
               >
-                <ArrowLeft size={16} /> Volver
+                <ArrowLeft size={16} /> {t("volver")}
               </button>
             )}
             <div>
               <h2 className="text-xl font-bold text-slate-900">{kpiTitle}</h2>
               <p className="text-sm text-slate-500 mt-1">
-                {data?.resumen ? getResumenText(kpiType, data.resumen) : "Cargando..."}
+                {data?.resumen ? getResumenText(kpiType, data.resumen, t) : t("cargando")}
               </p>
             </div>
           </div>
@@ -225,22 +228,22 @@ export default function ComprasDetailModal({
         {/* Body */}
         <div className="flex-1 overflow-auto p-5">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos...</div>
+            <div className="flex items-center justify-center py-20 text-slate-400">{t("cargando_datos")}</div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <AlertTriangle size={40} className="text-amber-400 mb-3" />
               <p className="text-sm">{error}</p>
             </div>
           ) : !data ? (
-            <div className="flex items-center justify-center py-20 text-slate-400">No hay datos disponibles</div>
+            <div className="flex items-center justify-center py-20 text-slate-400">{t("no_datos")}</div>
           ) : kpiType === "forecast" ? (
             editingWeek !== null ? (
               <div className="space-y-4">
                 <button onClick={() => setEditingWeek(null)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-                  <ArrowLeft size={16} /> Volver a la lista
+                  <ArrowLeft size={16} /> {t("volver_lista")}
                 </button>
-                <h3 className="text-lg font-bold text-slate-900">Semana {editingWeek + 1} — Checklist del Forecast</h3>
-                <p className="text-sm text-slate-500">Marca los puntos completados. Cada punto vale 25% del score semanal.</p>
+                <h3 className="text-lg font-bold text-slate-900">{t("semana_checklist", { num: editingWeek + 1 })}</h3>
+                <p className="text-sm text-slate-500">{t("marca_puntos")}</p>
                 <div className="space-y-3">
                   {forecastComponents.map((comp: any) => (
                     <label key={comp.key} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
@@ -252,21 +255,21 @@ export default function ComprasDetailModal({
                       />
                       <div>
                         <p className="font-medium text-slate-800">{comp.label}</p>
-                        <p className="text-xs text-slate-500">Peso: {comp.peso}%</p>
+                        <p className="text-xs text-slate-500">{t("peso")}: {comp.peso}%</p>
                       </div>
                     </label>
                   ))}
                 </div>
                 <div className="flex items-center gap-3 pt-4">
                   <div className="text-lg font-bold text-slate-800">
-                    Score: {Math.round((Object.values(editForm).filter(Boolean).length / 4) * 100)}%
+                    {t("score")}: {Math.round((Object.values(editForm).filter(Boolean).length / 4) * 100)}%
                   </div>
                   <button
                     onClick={saveForecastWeek}
                     disabled={saving}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
-                    {saving ? "Guardando..." : "Guardar"}
+                    {saving ? t("guardando") : t("guardar")}
                   </button>
                 </div>
               </div>
@@ -274,15 +277,15 @@ export default function ComprasDetailModal({
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xs text-slate-500 font-medium">Score promedio</p>
+                    <p className="text-xs text-slate-500 font-medium">{t("score_promedio")}</p>
                     <p className="text-2xl font-bold text-slate-800">{data.forecastScore ?? 0}%</p>
                   </div>
                   <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xs text-slate-500 font-medium">Semanas con datos</p>
+                    <p className="text-xs text-slate-500 font-medium">{t("semanas_datos")}</p>
                     <p className="text-2xl font-bold text-slate-800">{forecastRows.length}</p>
                   </div>
                   <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xs text-slate-500 font-medium">Componentes</p>
+                    <p className="text-xs text-slate-500 font-medium">{t("componentes")}</p>
                     <p className="text-2xl font-bold text-slate-800">{forecastComponents.length}</p>
                   </div>
                 </div>
@@ -291,23 +294,23 @@ export default function ComprasDetailModal({
           <table className="w-full text-sm min-w-[1000px]">
                     <thead>
                       <tr className="bg-slate-50 border-b">
-                        <th className="p-3 text-left font-medium text-slate-600">Semana</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Reunión</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Forecast</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Quiebres</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Decisiones</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Score</th>
-                        <th className="p-3 text-center font-medium text-slate-600">Acción</th>
+                        <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("reunion")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("forecast")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("quiebres")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("decisiones")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("score")}</th>
+                        <th className="p-3 text-center font-medium text-slate-600">{t("accion")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {forecastRows.length === 0 ? (
-                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">No hay datos disponibles.</td></tr>
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">{t("no_datos_kpi")}</td></tr>
                       ) : (
                         forecastRows.map((row: any) => (
                           <tr key={row.semanaIndex} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => startEditWeek(row)}>
                             <td className="p-3 font-medium text-slate-800">
-                              Semana {row.semanaIndex + 1}
+                              {t("semana")} {row.semanaIndex + 1}
                               {row.semanaLabel && <span className="text-xs text-slate-400 ml-2">({row.semanaLabel})</span>}
                             </td>
                             <td className="p-3 text-center">{row.reunionRealizada ? <Check size={18} className="text-green-600 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
@@ -320,7 +323,7 @@ export default function ComprasDetailModal({
                               </span>
                             </td>
                             <td className="p-3 text-center">
-                              <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">{row.score > 0 ? "Editar" : "Registrar"}</button>
+                              <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">{row.score > 0 ? t("editar") : t("registrar")}</button>
                             </td>
                           </tr>
                         ))
@@ -329,13 +332,13 @@ export default function ComprasDetailModal({
           </table>
           </div>
         </div>
-                <p className="text-xs text-slate-400 mt-2">Haz clic en una semana vacía o en "Editar" para registrar el checklist semanal.</p>
+                <p className="text-xs text-slate-400 mt-2">{t("haz_clic")}</p>
               </div>
             )
           ) : selectedItem ? (
-            renderDetail(kpiType, selectedItem, fmt)
+            renderDetail(kpiType, selectedItem, fmt, t)
           ) : (
-            renderList(kpiType, data, setSelectedItem, fmt)
+            renderList(kpiType, data, setSelectedItem, fmt, t)
           )}
         </div>
       </div>
@@ -343,20 +346,20 @@ export default function ComprasDetailModal({
   );
 }
 
-function getResumenText(kpi: string, r: any): string {
+function getResumenText(kpi: string, r: any, t: any): string {
   if (!r) return "";
   try {
     switch (kpi) {
       case "variacion_costo":
-        return `${r.totalProductos ?? 0} productos | Var. promedio: ${r.promedioVariacion ?? 0}% | Ahorro: $${(r.ahorroTotalEstimado ?? 0).toLocaleString("es-VE")}`;
+        return `${r.totalProductos ?? 0} ${t("productos_label")} | ${t("var_promedio")}: ${r.promedioVariacion ?? 0}% | ${t("ahorro")}: $${(r.ahorroTotalEstimado ?? 0).toLocaleString("es-VE")}`;
       case "rotacion":
-        return `${r.totalConStock ?? 0} con stock | Sell-through: ${r.sellThroughGeneral ?? 0}% | ${r.saludables ?? 0} saludables`;
+        return `${r.totalConStock ?? 0} ${t("con_stock")} | ${t("sell_through")}: ${r.sellThroughGeneral ?? 0}% | ${r.saludables ?? 0} ${t("saludables")}`;
       case "quiebre":
-        return `${r.totalConDemanda ?? 0} elegibles | ${r.enQuiebre ?? 0} quiebre | ${r.enRiesgo ?? 0} riesgo | ${r.porcentaje ?? 0}% SKU-días`;
+        return `${r.totalConDemanda ?? 0} ${t("elegibles")} | ${r.enQuiebre ?? 0} ${t("quiebre_label")} | ${r.enRiesgo ?? 0} ${t("riesgo_label")} | ${r.porcentaje ?? 0}% ${t("sku_dias")}`;
       case "inventario_90":
-        return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} +90d | ${r.porcentaje ?? 0}% valor ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
+        return `${r.productosEstancados ?? 0} de ${r.totalProductos ?? 0} ${t("mas_90d")} | ${r.porcentaje ?? 0}% ${t("valor_label")} ($${(r.valorEstancado ?? 0).toLocaleString("es-VE")})`;
       case "forecast":
-        return `Score promedio: ${r.forecastScore ?? 0}% | Semáforo: ${r.forecastScore >= 100 ? "Verde" : r.forecastScore >= 75 ? "Amarillo" : "Rojo"}`;
+        return `${t("score_label")}: ${r.forecastScore ?? 0}% | ${t("semaforo")}: ${r.forecastScore >= 100 ? t("verde") : r.forecastScore >= 75 ? t("amarillo") : t("rojo")}`;
       default:
         return "";
     }
@@ -365,10 +368,10 @@ function getResumenText(kpi: string, r: any): string {
   }
 }
 
-function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: (n: number | undefined | null) => string) {
+function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: (n: number | undefined | null) => string, t: any) {
   const items = data?.items;
   if (!items || items.length === 0) {
-    return <div className="flex items-center justify-center py-20 text-slate-400">Sin datos para este KPI</div>;
+    return <div className="flex items-center justify-center py-20 text-slate-400">{t("no_datos")}</div>;
   }
 
   if (kpi === "variacion_costo") {
@@ -379,14 +382,14 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
-                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-                <th className="p-3 text-center font-medium text-slate-600">Costo Base (3m)</th>
-                <th className="p-3 text-center font-medium text-slate-600">Costo Actual</th>
-                <th className="p-3 text-center font-medium text-slate-600">Variación</th>
-                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Ahorro Unit.</th>
-                <th className="p-3 text-center font-medium text-slate-600">Última Compra</th>
+                <th className="p-3 text-left font-medium text-slate-600">{t("productos_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("categoria")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("costo_base")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("costo_actual")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("variacion")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("stock_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("ahorro_unit")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("ultima_compra")}</th>
               </tr>
             </thead>
             <tbody>
@@ -437,14 +440,14 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
-                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Valor Stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Ventas</th>
-                <th className="p-3 text-center font-medium text-slate-600">Sell-through</th>
-                <th className="p-3 text-center font-medium text-slate-600">Últ. Recepción</th>
-                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                <th className="p-3 text-left font-medium text-slate-600">{t("productos_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("categoria")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("stock_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("valor_stock")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("ventas_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("sell_through_dias")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("ult_recepcion")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("estado_label")}</th>
               </tr>
             </thead>
             <tbody>
@@ -464,11 +467,11 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
                   <td className="p-3 text-center">
                     {item.rotaSaludablemente ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                        <Check size={12} /> Saludable
+                        <Check size={12} /> {t("saludable")}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                        <AlertTriangle size={12} /> Baja rotación
+                        <AlertTriangle size={12} /> {t("baja_rotacion")}
                       </span>
                     )}
                   </td>
@@ -490,14 +493,14 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
-                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Demanda/mes</th>
-                <th className="p-3 text-center font-medium text-slate-600">Demanda/día</th>
-                <th className="p-3 text-center font-medium text-slate-600">Días p/quiebre</th>
-                <th className="p-3 text-center font-medium text-slate-600">Días sin stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                <th className="p-3 text-left font-medium text-slate-600">{t("productos_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("categoria")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("stock_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("demanda_mes")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("demanda_dia")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("dias_quiebre")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("dias_sin_stock")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("estado_label")}</th>
               </tr>
             </thead>
             <tbody>
@@ -527,11 +530,11 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
                   <td className="p-3 text-center">
                     {item.estado === "QUIEBRE TOTAL" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                        <AlertTriangle size={12} /> Quiebre
+                        <AlertTriangle size={12} /> {t("quiebre_label")}
                       </span>
                     ) : item.estado === "RIESGO ALTO" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                        <AlertTriangle size={12} /> Riesgo
+                        <AlertTriangle size={12} /> {t("riesgo_label2")}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
@@ -570,15 +573,15 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
           <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b">
-                <th className="p-3 text-left font-medium text-slate-600">Producto</th>
-                <th className="p-3 text-center font-medium text-slate-600">Categoría</th>
-                <th className="p-3 text-center font-medium text-slate-600">Stock</th>
-                <th className="p-3 text-center font-medium text-slate-600">Costo</th>
-                <th className="p-3 text-center font-medium text-slate-600">Valor Inventario</th>
-                <th className="p-3 text-center font-medium text-slate-600">Banda</th>
-                <th className="p-3 text-center font-medium text-slate-600">Últ. Recepción</th>
-                <th className="p-3 text-center font-medium text-slate-600">Días</th>
-                <th className="p-3 text-center font-medium text-slate-600">Estado</th>
+                <th className="p-3 text-left font-medium text-slate-600">{t("productos_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("categoria")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("stock_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("costo_label")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("valor_inventario")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("banda")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("ult_recepcion")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("dias_col")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("estado_label")}</th>
               </tr>
             </thead>
             <tbody>
@@ -620,21 +623,21 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
   return null;
 }
 
-function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null) => string) {
+function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null) => string, t: any) {
   if (kpi === "variacion_costo") {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-xs text-slate-500 font-medium">{t("sku")}</p>
             <p className="text-lg font-bold text-slate-800">{item.sku}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-xs text-slate-500 font-medium">{t("categoria")}</p>
             <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.variacion > 0 ? "bg-green-50" : "bg-red-50"}`}>
-            <p className={`text-xs font-medium ${item.variacion > 0 ? "text-green-600" : "text-red-600"}`}>Variación</p>
+            <p className={`text-xs font-medium ${item.variacion > 0 ? "text-green-600" : "text-red-600"}`}>{t("variacion_label")}</p>
             <p className={`text-lg font-bold ${item.variacion > 0 ? "text-green-700" : "text-red-700"}`}>
               {item.variacion > 0 ? "+" : ""}{item.variacion}%
             </p>
@@ -642,19 +645,19 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
         </div>
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Costo Base (3m)</p>
+            <p className="text-xs text-blue-600 font-medium">{t("costo_base")}</p>
             <p className="text-xl font-bold text-blue-700">${fmt(item.costoBase)}</p>
           </div>
           <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Costo Actual</p>
+            <p className="text-xs text-amber-600 font-medium">{t("costo_actual")}</p>
             <p className="text-xl font-bold text-amber-700">${fmt(item.costoActual)}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Stock</p>
+            <p className="text-xs text-slate-500 font-medium">{t("stock_label")}</p>
             <p className="text-xl font-bold text-slate-700">{item.stock}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.ahorroUnitario > 0 ? "bg-green-50" : "bg-red-50"}`}>
-            <p className={`text-xs font-medium ${item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}`}>Ahorro/Sobrecosto Unit.</p>
+            <p className={`text-xs font-medium ${item.ahorroUnitario > 0 ? "text-green-600" : "text-red-600"}`}>{t("ahorro_sobrecosto")}</p>
             <p className={`text-xl font-bold ${item.ahorroUnitario > 0 ? "text-green-700" : "text-red-700"}`}>
               {item.ahorroUnitario > 0 ? "+" : ""}${fmt(item.ahorroUnitario)}
             </p>
@@ -675,35 +678,35 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-xs text-slate-500 font-medium">{t("sku")}</p>
             <p className="text-lg font-bold text-slate-800">{item.sku}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-xs text-slate-500 font-medium">{t("categoria")}</p>
             <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Stock</p>
+            <p className="text-xs text-blue-600 font-medium">{t("stock_label")}</p>
             <p className="text-xl font-bold text-blue-700">{item.stock}</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Valor Stock</p>
+            <p className="text-xs text-blue-600 font-medium">{t("valor_stock")}</p>
             <p className="text-xl font-bold text-blue-700">${fmt(item.valorStock)}</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-green-50 rounded-xl p-4">
-            <p className="text-xs text-green-600 font-medium">Ventas totales</p>
+            <p className="text-xs text-green-600 font-medium">{t("ventas_label")}</p>
             <p className="text-xl font-bold text-green-700">{item.ventasTotales}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.sellThrough >= 70 ? "bg-green-50" : item.sellThrough >= 40 ? "bg-yellow-50" : "bg-red-50"}`}>
-            <p className={`text-xs font-medium ${item.sellThrough >= 70 ? "text-green-600" : item.sellThrough >= 40 ? "text-yellow-600" : "text-red-600"}`}>Sell-through</p>
+            <p className={`text-xs font-medium ${item.sellThrough >= 70 ? "text-green-600" : item.sellThrough >= 40 ? "text-yellow-600" : "text-red-600"}`}>{t("sell_through_dias")}</p>
             <p className={`text-xl font-bold ${item.sellThrough >= 70 ? "text-green-700" : item.sellThrough >= 40 ? "text-yellow-700" : "text-red-700"}`}>
               {item.sellThrough}%
             </p>
           </div>
           <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Última recepción</p>
+            <p className="text-xs text-amber-600 font-medium">{t("ultima_compra")}</p>
             <p className="text-xl font-bold text-amber-700">{item.ultimaRecepcion}</p>
           </div>
         </div>
@@ -716,37 +719,37 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-xs text-slate-500 font-medium">{t("sku")}</p>
             <p className="text-lg font-bold text-slate-800">{item.sku}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-xs text-slate-500 font-medium">{t("categoria")}</p>
             <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.estado === "OK" ? "bg-green-50" : item.estado === "RIESGO ALTO" ? "bg-yellow-50" : "bg-red-50"}`}>
-            <p className={`text-xs font-medium ${item.estado === "OK" ? "text-green-600" : item.estado === "RIESGO ALTO" ? "text-yellow-600" : "text-red-600"}`}>Estado</p>
+            <p className={`text-xs font-medium ${item.estado === "OK" ? "text-green-600" : item.estado === "RIESGO ALTO" ? "text-yellow-600" : "text-red-600"}`}>{t("estado_label")}</p>
             <p className={`text-lg font-bold ${item.estado === "OK" ? "text-green-700" : item.estado === "RIESGO ALTO" ? "text-yellow-700" : "text-red-700"}`}>{item.estado}</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Stock actual</p>
+            <p className="text-xs text-blue-600 font-medium">{t("stock_label")}</p>
             <p className="text-xl font-bold text-blue-700">{item.stock}</p>
           </div>
         </div>
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Demanda mensual</p>
+            <p className="text-xs text-slate-500 font-medium">{t("demanda_mes")}</p>
             <p className="text-lg font-bold text-slate-700">{item.demandaMensual}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Demanda/día</p>
+            <p className="text-xs text-slate-500 font-medium">{t("demanda_dia")}</p>
             <p className="text-lg font-bold text-slate-700">{item.demandaDiaria}</p>
           </div>
           <div className="bg-red-50 rounded-xl p-4">
-            <p className="text-xs text-red-600 font-medium">Días p/quiebre</p>
+            <p className="text-xs text-red-600 font-medium">{t("dias_quiebre")}</p>
             <p className="text-xl font-bold text-red-700">{item.diasHastaQuiebre}</p>
           </div>
           <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Días sin stock (estimado)</p>
+            <p className="text-xs text-amber-600 font-medium">{t("dias_sin_stock_est")}</p>
             <p className="text-xl font-bold text-amber-700">{item.diasSinStockEstimado}</p>
           </div>
         </div>
@@ -759,33 +762,33 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">SKU</p>
+            <p className="text-xs text-slate-500 font-medium">{t("sku")}</p>
             <p className="text-lg font-bold text-slate-800">{item.sku}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Categoría</p>
+            <p className="text-xs text-slate-500 font-medium">{t("categoria")}</p>
             <p className="text-lg font-bold text-slate-800">{item.categoria}</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-xs text-blue-600 font-medium">Stock</p>
+            <p className="text-xs text-blue-600 font-medium">{t("stock_label")}</p>
             <p className="text-xl font-bold text-blue-700">{item.stock}</p>
           </div>
           <div className={`rounded-xl p-4 ${item.esEstancado ? "bg-red-50" : "bg-green-50"}`}>
-            <p className={`text-xs font-medium ${item.esEstancado ? "text-red-600" : "text-green-600"}`}>Banda</p>
+            <p className={`text-xs font-medium ${item.esEstancado ? "text-red-600" : "text-green-600"}`}>{t("banda")}</p>
             <p className={`text-lg font-bold ${item.esEstancado ? "text-red-700" : "text-green-700"}`}>{item.banda}</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-amber-50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">Costo unitario</p>
+            <p className="text-xs text-amber-600 font-medium">{t("costo_unitario")}</p>
             <p className="text-xl font-bold text-amber-700">${fmt(item.costo)}</p>
           </div>
           <div className="bg-red-50 rounded-xl p-4">
-            <p className="text-xs text-red-600 font-medium">Valor inmovilizado</p>
+            <p className="text-xs text-red-600 font-medium">{t("valor_inmovilizado")}</p>
             <p className="text-xl font-bold text-red-700">${fmt(item.valorInventario)}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Última recepción</p>
+            <p className="text-xs text-slate-500 font-medium">{t("ultima_compra")}</p>
             <p className="text-xl font-bold text-slate-700">{item.ultimoMovimiento}</p>
           </div>
         </div>

@@ -9,9 +9,11 @@ import {
   Search,
   Tag,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 
 export default function CatalogoPage() {
+  const t = useTranslations("superadmin.catalogo");
   const [productos, setProductos] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [categoria, setCategoria] = useState("todas");
@@ -33,7 +35,7 @@ export default function CatalogoPage() {
           setError(data.error);
         }
       })
-      .catch(() => setError("Error al cargar el catálogo"))
+      .catch(() => setError(t("error_cargar")))
       .finally(() => setCargando(false));
   }, []);
 
@@ -70,11 +72,11 @@ export default function CatalogoPage() {
             <Boxes className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-zinc-900">Catálogo de Productos</h1>
+            <h1 className="text-2xl font-black text-zinc-900">{t("title")}</h1>
             <p className="text-sm text-zinc-500">
               {cargando
-                ? "Cargando..."
-                : `${productosFiltrados.length} de ${productos.length} productos`}
+                ? t("cargando")
+                : `${productosFiltrados.length} de ${productos.length} ${t("productos")}`}
             </p>
           </div>
         </div>
@@ -84,7 +86,7 @@ export default function CatalogoPage() {
           <Search className="absolute left-3 top-3.5 text-zinc-400" size={18} />
           <input
             type="text"
-            placeholder="Buscar por nombre, código o código de barras..."
+            placeholder={t("buscar")}
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className="w-full pl-10 pr-4 py-3 rounded-2xl border border-zinc-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -103,7 +105,7 @@ export default function CatalogoPage() {
                 : "bg-white text-zinc-500 border border-zinc-200 hover:border-zinc-300"
             }`}
           >
-            Todas
+            {t("todas")}
           </button>
           {categorias.map((cat) => (
             <button
@@ -146,7 +148,7 @@ export default function CatalogoPage() {
       {!cargando && !error && productosFiltrados.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-300">
           <PackageX className="w-12 h-12 mb-3" />
-          <p className="text-sm font-medium">No se encontraron productos</p>
+          <p className="text-sm font-medium">{t("no_resultados")}</p>
         </div>
       )}
 
@@ -163,6 +165,7 @@ export default function CatalogoPage() {
 }
 
 function ProductoCard({ producto, index }: { producto: any; index: number }) {
+  const t = useTranslations("superadmin.catalogo");
   const imagen = producto.image_128
     ? `data:image/png;base64,${producto.image_128}`
     : null;
@@ -200,7 +203,7 @@ function ProductoCard({ producto, index }: { producto: any; index: number }) {
                   : "bg-red-100 text-red-600"
               }`}
             >
-              {stock > 0 ? `${stock} disp.` : "Sin stock"}
+              {stock > 0 ? `${stock} ${t("disp")}` : t("sin_stock")}
             </span>
           </div>
 

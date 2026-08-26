@@ -6,9 +6,12 @@ import {
   Circle,
   DollarSign,
   Eye,
+  FileText,
   Loader2,
   Pencil,
   Plus,
+  Save,
+  Target,
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -84,6 +87,9 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
   const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [savingCampaign, setSavingCampaign] = useState(false);
+
+  const [guardandoCierre, setGuardandoCierre] = useState(false);
+  const [cierreMsg, setCierreMsg] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -269,13 +275,79 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
 
   const { campaigns, summary } = data;
 
+  // El periodo del snapshot sale del rango elegido; si no hay rango, el mes en
+  // curso. Solo se guarda el mes completo (YYYY-MM), que es la granularidad de
+  // instagram_insights_monthly.
+  const periodoSnapshot = (fechaInicio || new Date().toISOString()).slice(0, 7);
+
+  const guardarCierre = async () => {
+    setGuardandoCierre(true);
+    setCierreMsg(null);
+    try {
+      const res = await fetch("/api/adminleads/informe-mensual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ periodo: periodoSnapshot }),
+      });
+      const r = await res.json();
+      setCierreMsg(
+        res.ok && r.ok
+          ? `Cierre de ${periodoSnapshot} guardado (origen: ${r.origen}).`
+          : r.error || "No se pudo guardar el cierre.",
+      );
+    } catch (e: any) {
+      setCierreMsg(e?.message || "No se pudo guardar el cierre.");
+    } finally {
+      setGuardandoCierre(false);
+    }
+  };
+
+  const abrirInforme = () => {
+    const p = new URLSearchParams();
+    if (sede) p.set("sede", sede);
+    if (fechaInicio) p.set("fecha_inicio", fechaInicio);
+    if (fechaFin) p.set("fecha_fin", fechaFin);
+    // La pagina vive en /<locale>/adminleads/informe: se construye desde el
+    // pathname actual porque una URL relativa reemplazaria el segmento del tab.
+    const base = window.location.pathname.replace(/\/+$/, "");
+    window.open(`${base}/informe?${p.toString()}`, "_blank", "noopener");
+  };
+
   return (
     <div className="space-y-8">
       {/* KPI Cards - Campanas Meta */}
       <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
-          Resumen Campanas Meta
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+            Resumen Campanas Meta
+          </h3>
+          <div className="flex items-center gap-2">
+          <button
+            onClick={abrirInforme}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
+            title="Genera el informe KPI mensual de redes sociales del periodo seleccionado"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Generar informe
+          </button>
+          <button
+            onClick={guardarCierre}
+            disabled={guardandoCierre}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 text-zinc-600 text-xs font-bold hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            title={`Guarda las metricas de Instagram de ${periodoSnapshot} para poder compararlas en informes futuros`}
+          >
+            {guardandoCierre ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
+            Guardar cierre de {periodoSnapshot}
+          </button>
+          </div>
+        </div>
+        {cierreMsg && (
+          <p className="text-[11px] text-zinc-500 mb-3 -mt-2">{cierreMsg}</p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <MetricCard
             title="Inversion Total"

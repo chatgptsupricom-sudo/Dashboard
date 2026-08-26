@@ -1,9 +1,13 @@
 import CxCReport from "@/components/superadmin/CxCReport";
+import { getTranslations } from "next-intl/server";
 
-export const metadata = {
-  title: "Cuentas por Cobrar | Dashboard",
-  description: "Dashboard de Cuentas por Cobrar - KPIs de cartera",
-};
+export async function generateMetadata({ params }: { params: { locale: string } }) {
+  const t = await getTranslations({ locale: params.locale, namespace: "cxc" });
+  return {
+    title: `${t("titulo")} | Dashboard`,
+    description: t("descripcion"),
+  };
+}
 
 export default function CuentasPorCobrarPage() {
   return (

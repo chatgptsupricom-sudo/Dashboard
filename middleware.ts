@@ -10,13 +10,60 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
 
+/**
+ * Subdominios de cara al cliente. Quien entre por acá va al portal de servicio
+ * técnico, no al login del panel: es la dirección que se publica en
+ * supricom.com.ve y el cliente no tiene nada que hacer en el panel interno.
+ *
+ * Se configura con PORTAL_HOSTS (separados por coma) para no tener que tocar
+ * código al agregar o cambiar un dominio.
+ */
+const HOSTS_DEL_PORTAL = (
+  process.env.PORTAL_HOSTS || "servicio.supricom.com.ve,soporte.supricom.com.ve"
+)
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+
 export default async function middleware(request: NextRequest) {
   const response = intlMiddleware(request);
   const { pathname } = request.nextUrl;
+
+  const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+
+  if (HOSTS_DEL_PORTAL.includes(host)) {
+    // Raíz de un subdominio de clientes -> portal, no login.
+    const esRaiz = pathname === "/" || /^\/(es|en)\/?$/.test(pathname);
+    if (esRaiz) {
+      const idioma = /^\/(es|en)/.test(pathname)
+        ? pathname.split("/")[1]
+        : "es";
+      return NextResponse.redirect(
+        new URL(`/${idioma}/servicio-tecnico`, request.url),
+      );
+    }
+
+    // Fuera del portal, nada más existe en este dominio.
+    //
+    // El panel no queda expuesto —el guard de JWT ya impedía entrar— pero su
+    // pantalla de login se servía completa en la dirección que se publica en
+    // supricom.com.ve. Un cliente curioso llegaba al login de la empresa, y
+    // quien escanee el dominio encontraba el panel.
+    //
+    // Se responde 404 y no 403: un 403 confirmaría que ahí hay algo.
+    //
+    // OJO: esto cubre las páginas. Las rutas de /api quedan fuera del matcher
+    // de este middleware (ver config abajo), así que las APIs del panel siguen
+    // respondiendo en este dominio. El login ya tiene su propio límite de
+    // intentos; el resto sigue igual de alcanzable en panel.supricom.com.ve.
+    if (!pathname.includes("/servicio-tecnico")) {
+      return new NextResponse(null, { status: 404 });
+    }
+  }
   const token = request.cookies.get("token")?.value;
   const locale = pathname.split("/")[1] || "es";
 
-  // Agregamos /recursos_humanos y /compras a las rutas protegidas
+  // Agregamos /recursos_humanos, /compras y /seguridad a las rutas protegidas
   const isProtectedPath =
     pathname.includes("/dashboard") ||
     pathname.includes("/superadmin") ||
@@ -28,7 +75,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
-    pathname.includes("/administracion");
+    pathname.includes("/administracion") ||
+    pathname.includes("/seguridad");
 
   if (isProtectedPath) {
     if (!token) {
@@ -63,6 +111,8 @@ export default async function middleware(request: NextRequest) {
       const isAsistenteVentas = userRole === "asistente de ventas";
       // Nueva constante para Administración
       const isAdministracion = userRole === "administración";
+      // Nueva constante para el rol de Seguridad (Almacén / Control de acceso)
+      const isSeguridad = userRole === "seguridad";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -161,6 +211,26 @@ export default async function middleware(request: NextRequest) {
       if (pathname.includes("/administracion") && !isAdministracion && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 11. Lógica para Seguridad (Almacén / Control de acceso)
+      // El modulo vive en /seguridad y NO en el dashboard principal.
+      // Por eso redirigimos al login del modulo (no al /dashboard comun).
+      // Al integrarse al panel hay un solo login: /es/login. El
+      // /seguridad/login dedicado se eliminó — con el módulo protegido, esa
+      // ruta nunca llegaba a renderizarse (el guard de arriba redirige antes
+      // de alcanzar la excepción), así que era código muerto.
+      if (pathname.includes("/seguridad") && !isSeguridad && !isSuperAdmin) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/login`, request.url),
+        );
+      }
+      // Ademas, si el Seguridad esta logueado e intenta entrar al /dashboard
+      // comun, lo devolvemos a su modulo (no tiene nada que hacer ahi).
+      if (pathname.includes("/dashboard") && isSeguridad) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/seguridad`, request.url),
         );
       }
     } catch (e) {

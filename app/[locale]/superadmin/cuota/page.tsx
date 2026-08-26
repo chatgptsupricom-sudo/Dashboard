@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Building2, Edit3, TrendingUp } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 const FERIADOS_2026: Record<number, string[]> = {
@@ -51,6 +52,7 @@ function calcularMetricas(meta: number, facturado: number) {
 }
 
 export default function SuperAdminCuotaPage() {
+  const t = useTranslations("superadmin.cuota");
   const [sucursales, setSucursales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSeller, setEditingSeller] = useState<any>(null);
@@ -76,16 +78,16 @@ export default function SuperAdminCuotaPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-zinc-900">
-            Cuotas de Vendedores
+            {t("title")}
           </h1>
           <p className="text-sm text-zinc-500">
-            {totalVendedores} vendedores en todas las sucursales
+            {totalVendedores} {t("subtitle")}
           </p>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-20 text-zinc-400">Cargando...</div>
+        <div className="text-center py-20 text-zinc-400">{t("cargando")}</div>
       ) : (
         <div className="space-y-10">
           {sucursales.map((sucursal) => (
@@ -99,7 +101,7 @@ export default function SuperAdminCuotaPage() {
                     {sucursal.sucursal}
                   </h2>
                   <p className="text-xs text-zinc-400">
-                    {sucursal.sellers.length} vendedor{sucursal.sellers.length !== 1 ? "es" : ""}
+                    {sucursal.sellers.length} {sucursal.sellers.length === 1 ? t("vendedor") : t("vendedores")}
                   </p>
                 </div>
                 <div className="flex-1 max-w-md">
@@ -110,10 +112,10 @@ export default function SuperAdminCuotaPage() {
                   <Progress value={Math.min(sucursal.porcentaje || 0, 100)} className="h-2.5" />
                   <div className="flex justify-between mt-1.5">
                     <span className="text-xs text-zinc-500">
-                      Meta: <span className="font-bold text-zinc-700">${sucursal.totalMeta?.toLocaleString()}</span>
+                      {t("meta")}: <span className="font-bold text-zinc-700">${sucursal.totalMeta?.toLocaleString()}</span>
                     </span>
                     <span className="text-xs text-emerald-600 font-bold">
-                      Facturado: ${sucursal.totalFacturado?.toLocaleString()}
+                      {t("facturado")}: ${sucursal.totalFacturado?.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -154,6 +156,7 @@ function SellerQuotaCard({
   seller: any;
   onEdit: () => void;
 }) {
+  const t = useTranslations("superadmin.cuota");
   const isTargetMet = seller.porcentaje >= 100;
   const metricas = calcularMetricas(seller.meta, seller.facturado);
   return (
@@ -172,7 +175,7 @@ function SellerQuotaCard({
       <CardContent className="space-y-4">
         <div className="space-y-1">
           <div className="flex justify-between text-xs font-bold text-zinc-500">
-            <span>Progreso</span>
+            <span>{t("progreso")}</span>
             <span>{seller.porcentaje.toFixed(0)}%</span>
           </div>
           <Progress value={Math.min(seller.porcentaje, 100)} className="h-2" />
@@ -180,7 +183,7 @@ function SellerQuotaCard({
         <div className="grid grid-cols-2 gap-4 pt-2">
           <div className="bg-zinc-50 p-3 rounded-2xl">
             <p className="text-[10px] text-zinc-400 font-bold uppercase">
-              Meta
+              {t("meta")}
             </p>
             <p className="text-sm font-black text-zinc-900">
               ${seller.meta.toLocaleString()}
@@ -188,7 +191,7 @@ function SellerQuotaCard({
           </div>
           <div className="bg-zinc-50 p-3 rounded-2xl">
             <p className="text-[10px] text-zinc-400 font-bold uppercase">
-              Facturado
+              {t("facturado")}
             </p>
             <p className="text-sm font-black text-emerald-600">
               ${seller.facturado.toLocaleString()}
@@ -201,17 +204,17 @@ function SellerQuotaCard({
           {isTargetMet ? <TrendingUp size={14} /> : <AlertCircle size={14} />}
           <span>
             {isTargetMet
-              ? `Superó meta por $${(seller.facturado - seller.meta).toLocaleString()}`
-              : `Faltan $${seller.falta.toLocaleString()}`}
+              ? `${t("supero_meta")} $${(seller.facturado - seller.meta).toLocaleString()}`
+              : `${t("faltan")} $${seller.falta.toLocaleString()}`}
           </span>
         </div>
         {!isTargetMet && metricas.diasHabilesRestantes > 0 && (
           <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl space-y-1">
             <p className="text-[10px] text-blue-500 font-bold uppercase">
-              Ritmo necesario
+              {t("ritmo_necesario")}
             </p>
             <p className="text-xs text-blue-700">
-              <span className="font-black">${metricas.ventaDiariaNecesaria.toLocaleString()}</span>/día × {metricas.diasHabilesRestantes} días hábiles
+              <span className="font-black">${metricas.ventaDiariaNecesaria.toLocaleString()}</span>/día × {metricas.diasHabilesRestantes} {t("dias_habiles")}
             </p>
           </div>
         )}
@@ -220,12 +223,12 @@ function SellerQuotaCard({
           return (
             <div className={`border p-3 rounded-xl space-y-1 ${supero150 ? "bg-emerald-50 border-emerald-200" : "bg-purple-50 border-purple-100"}`}>
               <p className={`text-[10px] font-bold uppercase ${supero150 ? "text-emerald-500" : "text-purple-500"}`}>
-                {supero150 ? "Superó 150%" : "Para 150%"}
+                {supero150 ? t("supero_150") : t("para_150")}
               </p>
               <p className={`text-xs ${supero150 ? "text-emerald-700" : "text-purple-700"}`}>
                 {supero150
-                  ? <>Superó el 150% por <span className="font-black">${(seller.facturado - metricas.meta150).toLocaleString()}</span></>
-                  : <>Faltan <span className="font-black">${metricas.faltaPara150.toLocaleString()}</span> para ${metricas.meta150.toLocaleString()}</>
+                  ? <>{t("supero_150_por")} <span className="font-black">${(seller.facturado - metricas.meta150).toLocaleString()}</span></>
+                  : <>{t("faltan")} <span className="font-black">${metricas.faltaPara150.toLocaleString()}</span> {t("faltan_para")} ${metricas.meta150.toLocaleString()}</>
                 }
               </p>
             </div>
@@ -237,6 +240,7 @@ function SellerQuotaCard({
 }
 
 function EditQuotaDialog({ seller, onClose, onSave }: any) {
+  const t = useTranslations("superadmin.cuota");
   const [value, setValue] = useState(seller.meta);
   const { user } = useAuthStore();
 
@@ -254,7 +258,7 @@ function EditQuotaDialog({ seller, onClose, onSave }: any) {
 
       if (!res.ok) {
         const err = await res.json();
-        alert(err.error || "Error al guardar la cuota");
+        alert(err.error || t("error_guardar"));
         return;
       }
       onSave();
@@ -267,10 +271,10 @@ function EditQuotaDialog({ seller, onClose, onSave }: any) {
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Editar Cuota: {seller.name}</DialogTitle>
+          <DialogTitle>{t("editar_cuota")} {seller.name}</DialogTitle>
         </DialogHeader>
         <p id="dialog-description" className="sr-only">
-          Formulario para modificar la meta de facturación del vendedor seleccionado.
+          {t("dialog_description")}
         </p>
         <Input
           type="number"
@@ -279,9 +283,9 @@ function EditQuotaDialog({ seller, onClose, onSave }: any) {
         />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancelar
+            {t("cancelar")}
           </Button>
-          <Button onClick={handleSave}>Guardar Registro</Button>
+          <Button onClick={handleSave}>{t("guardar")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

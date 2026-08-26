@@ -7,9 +7,11 @@ import {
   RefreshCcw,
   Search,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 export default function InventoryPageClient() {
+  const t = useTranslations("superadmin.inventory");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -112,7 +114,7 @@ export default function InventoryPageClient() {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase">
-          Inven<span className="text-blue-600">tario</span>
+          {t("title")}
         </h1>
       </div>
 
@@ -126,7 +128,7 @@ export default function InventoryPageClient() {
           />
           <input
             type="text"
-            placeholder="Buscar productos..."
+            placeholder={t("buscar")}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
             value={search}
             onChange={(e) => {
@@ -148,7 +150,7 @@ export default function InventoryPageClient() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Todas las Empresas</option>
+          <option value="all">{t("todas_empresas")}</option>
           {data?.filters?.companies?.map((c: any) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -165,7 +167,7 @@ export default function InventoryPageClient() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Marcas</option>
+          <option value="all">{t("marcas")}</option>
           {data?.filters?.brands?.map((b: string) => (
             <option key={b} value={b}>
               {b}
@@ -182,7 +184,7 @@ export default function InventoryPageClient() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Categorías</option>
+          <option value="all">{t("categorias")}</option>
           {data?.filters?.categories?.map((c: string) => (
             <option key={c} value={c}>
               {c}
@@ -199,7 +201,7 @@ export default function InventoryPageClient() {
             setCurrentPage(1); // Importante
           }}
         >
-          <option value="all">Almacenes</option>
+          <option value="all">{t("almacenes")}</option>
           {data?.filters?.warehouses?.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -220,7 +222,7 @@ export default function InventoryPageClient() {
           }`}
         >
           <Filter size={14} />
-          {onlyLowStock ? "Bajo Stock" : "Stock"}
+          {onlyLowStock ? t("bajo_stock") : t("stock")}
         </button>
       </div>
 
@@ -230,7 +232,7 @@ export default function InventoryPageClient() {
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[2px] z-10">
             <RefreshCcw className="animate-spin text-blue-600 mb-4" size={40} />
             <h2 className="text-slate-400 font-black tracking-widest uppercase text-xs animate-pulse">
-              Sincronizando...
+              {t("sincronizando")}
             </h2>
           </div>
         )}
@@ -240,22 +242,22 @@ export default function InventoryPageClient() {
             <thead>
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Nombre
+                  {t("nombre")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Marca
+                  {t("marca")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Categoría
+                  {t("categoria")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Almacén
+                  {t("almacen")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
-                  Stock
+                  {t("stock")}
                 </th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-right">
-                  Estado
+                  {t("estado")}
                 </th>
               </tr>
             </thead>
@@ -287,12 +289,12 @@ export default function InventoryPageClient() {
                   <td className="px-8 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div
-                        className={`w-1.5 h-1.5 rounded-full ${item.status === "Bajo" ? "bg-red-500" : "bg-green-500"}`}
+                        className={`w-1.5 h-1.5 rounded-full ${item.status === t("bajo_stock") ? "bg-red-500" : "bg-green-500"}`}
                       />
                       <span
-                        className={`text-[10px] font-bold ${item.status === "Bajo" ? "text-red-500" : "text-green-500"}`}
+                        className={`text-[10px] font-bold ${item.status === t("bajo_stock") ? "text-red-500" : "text-green-500"}`}
                       >
-                        {item.status === "Bajo" ? "Bajo Stock" : "Activo"}
+                        {item.status === t("bajo_stock") ? t("bajo_stock") : t("activo")}
                       </span>
                     </div>
                   </td>
@@ -305,7 +307,7 @@ export default function InventoryPageClient() {
         {/* FOOTER */}
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            Mostrando {showingFrom} - {showingTo} de {totalItems} Productos
+            {t("mostrando")} {showingFrom} - {showingTo} {t("de")} {totalItems} {t("productos")}
           </div>
 
           <div className="flex items-center gap-3">

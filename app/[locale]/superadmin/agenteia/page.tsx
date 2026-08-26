@@ -22,6 +22,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
 interface AttachedFile {
@@ -70,6 +71,7 @@ function persistChats(chats: Chat[]) {
 }
 
 export default function AgenteIAPage() {
+  const t = useTranslations("superadmin.agente_ia");
   const { user } = useAuthStore();
 
   const [chats, setChats] = useState<Chat[]>([]);
@@ -129,7 +131,7 @@ export default function AgenteIAPage() {
         // Auto-title from first user message
         const firstUser = newMsgs.find((m) => m.role === "user");
         const title =
-          c.title === "Nueva conversación" && firstUser
+          c.title === t("nueva_conversacion") && firstUser
             ? firstUser.content.slice(0, 45) +
               (firstUser.content.length > 45 ? "…" : "")
             : c.title;
@@ -286,7 +288,7 @@ export default function AgenteIAPage() {
         rec.onerror = (event: any) => {
           console.warn("⚠️ SR error:", event.error);
           if (event.error === "not-allowed") {
-            alert("Permiso denegado para usar el micrófono.");
+            alert(t("permiso_microfono"));
             setIsConversationMode(false);
           }
           setIsListening(false);
@@ -344,7 +346,7 @@ export default function AgenteIAPage() {
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert("Tu navegador no soporta entrada de voz directa.");
+      alert(t("navegador_voz"));
       return;
     }
     setIsConversationMode(false);
@@ -418,7 +420,7 @@ export default function AgenteIAPage() {
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
         setLastFailedMessage({ text: messageText, type: messageType });
-        throw new Error(errBody?.error ?? "Error en comunicación.");
+        throw new Error(errBody?.error ?? t("error_respuesta"));
       }
       setLastFailedMessage(null);
       if (!response.body) return;
@@ -445,9 +447,9 @@ export default function AgenteIAPage() {
         speakText(accumulated.replace(/\*/g, ""));
     } catch (err: any) {
       const errorMsg =
-        err?.message && err.message !== "Error en comunicación."
+        err?.message && err.message !== t("error_respuesta")
           ? `⚠️ ${err.message}`
-          : "⚠️ Ocurrió una interrupción al generar la respuesta. Puedes reintentar con el botón de abajo.";
+          : t("error_respuesta");
       setMessages((prev) => {
         const next = [...prev];
         const last = next.length - 1;
@@ -476,7 +478,7 @@ export default function AgenteIAPage() {
     if (!targetChatId) {
       const newChat: Chat = {
         id: genId(),
-        title: "Nueva conversación",
+        title: t("nueva_conversacion"),
         messages: [],
         createdAt: Date.now(),
       };
@@ -499,7 +501,7 @@ export default function AgenteIAPage() {
   };
 
   const clearActiveChat = () => {
-    if (window.confirm("¿Deseas vaciar esta conversación?")) {
+    if (window.confirm(t("vaciar_confirm"))) {
       setMessages([]);
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       setIsConversationMode(false);
@@ -572,7 +574,7 @@ export default function AgenteIAPage() {
                 className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-sm"
               >
                 <MessageSquarePlus size={14} />
-                Nuevo chat
+                {t("nuevo_chat")}
               </button>
             </div>
 
@@ -580,7 +582,7 @@ export default function AgenteIAPage() {
             <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
               {chats.length === 0 ? (
                 <p className="text-[10px] text-slate-400 text-center py-4 px-3">
-                  No hay conversaciones aún.
+                  {t("sin_conversaciones")}
                 </p>
               ) : (
                 chats.map((chat) => (
@@ -628,7 +630,7 @@ export default function AgenteIAPage() {
                               : "text-slate-300"
                           }`}
                           role="button"
-                          title="Renombrar chat"
+                          title={t("renombrar")}
                         >
                           <Pencil size={11} />
                         </span>
@@ -640,7 +642,7 @@ export default function AgenteIAPage() {
                               : "text-slate-300"
                           }`}
                           role="button"
-                          title="Eliminar chat"
+                          title={t("eliminar_chat")}
                         >
                           <Trash2 size={11} />
                         </span>
@@ -679,7 +681,7 @@ export default function AgenteIAPage() {
                 Supri <span className="text-blue-600">AI</span>
               </Title>
               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest hidden sm:block">
-                {activeChat?.title ?? "Inteligencia Corporativa Supricom"}
+                {activeChat?.title ?? t("titulo")}
               </p>
             </div>
           </div>
@@ -695,7 +697,7 @@ export default function AgenteIAPage() {
             >
               <Headphones size={13} />
               <span className="hidden sm:inline">
-                {isConversationMode ? "Voz activa" : "Activar voz"}
+                {isConversationMode ? t("voz_activa") : t("activar_voz")}
               </span>
             </button>
           </div>
@@ -716,21 +718,21 @@ export default function AgenteIAPage() {
                     <>
                       <Volume2 size={13} className="animate-pulse" />
                       <span className="text-[10px] font-bold uppercase tracking-wider">
-                        Supri Hablando...
+                        {t("supri_hablando")}
                       </span>
                     </>
                   ) : isGenerating ? (
                     <>
                       <BrainCircuit size={13} className="animate-spin" />
                       <span className="text-[10px] font-bold uppercase tracking-wider">
-                        Pensando...
+                        {t("pensando")}
                       </span>
                     </>
                   ) : (
                     <>
                       <Mic size={13} className="animate-bounce" />
                       <span className="text-[10px] font-bold uppercase tracking-wider">
-                        Te escucho...
+                        {t("escuchando")}
                       </span>
                     </>
                   )}
@@ -782,12 +784,10 @@ export default function AgenteIAPage() {
                     </div>
                     <div className="space-y-1">
                       <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-                        Estoy listo para ayudarte
+                        {t("listo_ayudar")}
                       </h3>
                       <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                        Escribe un mensaje o haz clic en{" "}
-                        <strong>"Activar voz"</strong> para interactuar a manos
-                        libres.
+                        {t("escribe_mensaje")}
                       </p>
                     </div>
                   </motion.div>
@@ -827,7 +827,7 @@ export default function AgenteIAPage() {
                                 size={14}
                               />
                               <span className="text-[10px] font-black uppercase tracking-wider">
-                                Pensando...
+                                {t("pensando")}
                               </span>
                             </div>
                           ) : (
@@ -859,7 +859,7 @@ export default function AgenteIAPage() {
                         <span
                           className={`text-[9px] font-black uppercase tracking-wider text-slate-400 px-2 ${msg.role === "user" ? "text-right" : "text-left"}`}
                         >
-                          {msg.role === "user" ? "Tú" : "Supri"}
+                          {msg.role === "user" ? t("tu") : t("supri")}
                         </span>
                       </div>
                       {msg.role === "user" && (
@@ -899,7 +899,7 @@ export default function AgenteIAPage() {
                   className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg transition-colors"
                 >
                   <Loader2 size={11} />
-                  Reintentar
+                  {t("reintentar")}
                 </button>
               </div>
             )}
@@ -972,10 +972,10 @@ export default function AgenteIAPage() {
                   type="text"
                   placeholder={
                     isConversationMode
-                      ? "Habla y espera 5s..."
+                      ? t("habla_espera")
                       : isListening
-                        ? "Dictando..."
-                        : "Mensaje..."
+                        ? t("dictando")
+                        : t("mensaje_placeholder")
                   }
                   className="w-full bg-transparent border-none outline-none py-3 md:py-4 px-1 md:px-2 text-xs font-semibold text-slate-700"
                   value={input}

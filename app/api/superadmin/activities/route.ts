@@ -34,7 +34,7 @@ export async function GET(req: Request) {
                  FROM activities WHERE 1=1`;
     let params: any[] = [];
 
-    if (userSession.role === "superadmin") {
+    if (userSession.role?.toString().toLowerCase().trim() === "superadmin") {
       if (targetEmail) {
         query += " AND user_email = ?";
         params.push(targetEmail);

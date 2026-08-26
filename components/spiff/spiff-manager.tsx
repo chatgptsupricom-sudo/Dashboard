@@ -14,6 +14,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations, useLocale } from "next-intl";
 
 interface SpiffRule {
   id: number;
@@ -65,9 +66,11 @@ const emptyForm = {
 export default function SpiffManager({
   companyId,
   showCompanyFilter = false,
-  title = "Gestión de Spiffs",
-  subtitle = "Crear, modificar y eliminar reglas de spiff",
+  title = "",
+  subtitle = "",
 }: SpiffManagerProps) {
+  const t = useTranslations("spiff");
+  const locale = useLocale();
   const [rules, setRules] = useState<SpiffRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -172,7 +175,7 @@ export default function SpiffManager({
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Eliminar esta regla?")) return;
+    if (!confirm(t("confirm_delete"))) return;
     await fetch("/api/spiff/rules", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -210,11 +213,11 @@ export default function SpiffManager({
   };
 
   const formatDate = (d: string | null) => {
-    if (!d) return "Sin fin";
+    if (!d) return t("no_end_date");
     const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!match) return d;
     const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-    return date.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
+    return date.toLocaleDateString(locale, { day: "2-digit", month: "short" });
   };
 
   const getCompanyName = (companyId: number) => {
@@ -280,8 +283,8 @@ export default function SpiffManager({
             <Award size={28} className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900">{title}</h1>
-            <p className="text-sm text-slate-400 font-medium">{subtitle}</p>
+            <h1 className="text-3xl font-black text-slate-900">{title || t("title")}</h1>
+            <p className="text-sm text-slate-400 font-medium">{subtitle || t("subtitle")}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -291,7 +294,7 @@ export default function SpiffManager({
               onChange={(e) => setFilterCompany(e.target.value)}
               className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
             >
-              <option value="">Todas las empresas</option>
+              <option value="">{t("all_companies")}</option>
               {companies.map((c) => (
                 <option key={c.cid} value={c.cid}>{c.name}</option>
               ))}
@@ -301,7 +304,7 @@ export default function SpiffManager({
             onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
           >
-            <Plus size={16} /> Nueva Regla
+            <Plus size={16} /> {t("new_rule")}
           </button>
         </div>
       </div>
@@ -310,20 +313,20 @@ export default function SpiffManager({
         <Card className="rounded-2xl border border-amber-200 shadow-sm bg-amber-50/50">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-slate-700">{editingRule ? "Editar Regla" : "Nueva Regla de Spiff"}</h3>
+              <h3 className="text-sm font-black text-slate-700">{editingRule ? t("edit_rule") : t("new_rule_title")}</h3>
               <button onClick={() => setShowForm(false)} className="p-1 hover:bg-slate-200 rounded-lg"><X size={16} /></button>
             </div>
 
             {/* Row 0: Empresa (superAdmin only) */}
             {showCompanyFilter && (
               <div className="mb-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Empresa</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("company")}</label>
                 <select
                   value={form.company_id}
                   onChange={(e) => setForm({ ...form, company_id: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
                 >
-                  <option value="">Seleccionar empresa...</option>
+                  <option value="">{t("select_company")}</option>
                   {companies.map((c) => (
                     <option key={c.cid} value={c.cid}>{c.name}</option>
                   ))}
@@ -334,36 +337,36 @@ export default function SpiffManager({
             {/* Row 1: Tipo + Modo */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Tipo de Regla</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("rule_type")}</label>
                 <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-0.5">
                   <button
                     onClick={() => setForm({ ...form, tipo: "marca", product_name: "", product_id: null })}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.tipo === "marca" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Por Marca
+                    {t("by_brand")}
                   </button>
                   <button
                     onClick={() => setForm({ ...form, tipo: "producto" })}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.tipo === "producto" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Por Producto
+                    {t("by_product")}
                   </button>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Modo de Cálculo</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("calc_mode")}</label>
                 <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-0.5">
                   <button
                     onClick={() => setForm({ ...form, modo: "monto" })}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "monto" ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Monto
+                    {t("amount")}
                   </button>
                   <button
                     onClick={() => setForm({ ...form, modo: "cantidad" })}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "cantidad" ? "bg-blue-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                   >
-                    Cantidad
+                    {t("quantity")}
                   </button>
                 </div>
               </div>
@@ -373,14 +376,14 @@ export default function SpiffManager({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
-                  {form.tipo === "producto" ? "Marca (filtro)" : "Marca"}
+                  {form.tipo === "producto" ? t("brand_filter") : t("brand")}
                 </label>
                 <select
                   value={form.brand_name}
                   onChange={(e) => setForm({ ...form, brand_name: e.target.value, product_name: "", product_id: null })}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
                 >
-                  <option value="">{brandsLoading ? "Cargando marcas..." : "Seleccionar marca..."}</option>
+                  <option value="">{brandsLoading ? t("loading_brands") : t("select_brand")}</option>
                   {brands.map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
@@ -388,7 +391,7 @@ export default function SpiffManager({
               </div>
               {form.tipo === "producto" && (
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Producto</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("product")}</label>
                   <select
                     value={form.product_id || ""}
                     onChange={(e) => {
@@ -401,7 +404,7 @@ export default function SpiffManager({
                     }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
                   >
-                    <option value="">{!form.brand_name ? "Primero selecciona marca..." : products.length === 0 ? "Cargando productos..." : "Seleccionar producto..."}</option>
+                    <option value="">{!form.brand_name ? t("select_brand_first") : products.length === 0 ? t("loading_products") : t("select_product")}</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
@@ -410,7 +413,7 @@ export default function SpiffManager({
               )}
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
-                  {isMontoMode ? "Meta de Venta ($)" : "Meta de Unidades"}
+                  {isMontoMode ? t("sales_goal_amount") : t("sales_goal_units")}
                 </label>
                 <input
                   type="number"
@@ -425,7 +428,7 @@ export default function SpiffManager({
             {/* Row 3: Spiff + Fechas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Spiff por Meta ($)</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("spiff_per_goal")}</label>
                 <input
                   type="number"
                   value={form.spiff_amount}
@@ -435,7 +438,7 @@ export default function SpiffManager({
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Fecha Inicio</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("start_date")}</label>
                 <input
                   type="date"
                   value={form.fecha_inicio}
@@ -444,7 +447,7 @@ export default function SpiffManager({
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Fecha Fin</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("end_date")}</label>
                 <input
                   type="date"
                   value={form.fecha_fin}
@@ -457,9 +460,9 @@ export default function SpiffManager({
             <div className="mt-3 p-2.5 bg-white rounded-xl border border-slate-100">
               <p className="text-[10px] text-slate-400 font-medium">
                 {isMontoMode
-                  ? "Monto: Se suman las ventas ($) de la marca/producto y se calcula el spiff cuando el total supera la meta."
-                  : "Cantidad: Se suman las unidades vendidas y se calcula el spiff cuando se alcanza la meta de unidades."}
-                {form.fecha_inicio || form.fecha_fin ? ` | Vigencia: ${form.fecha_inicio || "Sin inicio"} → ${form.fecha_fin || "Sin fin"}` : " | Sin rango de fechas (siempre activo)"}
+                  ? t("help_amount")
+                  : t("help_quantity")}
+                {form.fecha_inicio || form.fecha_fin ? ` | ${t("validity")} ${form.fecha_inicio || t("no_start")} → ${form.fecha_fin || t("no_end")}` : ` | ${t("no_date_range")}`}
               </p>
             </div>
 
@@ -468,7 +471,7 @@ export default function SpiffManager({
                 onClick={handleSave}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
               >
-                <Save size={14} /> {editingRule ? "Actualizar" : "Crear"}
+                <Save size={14} /> {editingRule ? t("update") : t("create")}
               </button>
             </div>
           </CardContent>
@@ -478,16 +481,16 @@ export default function SpiffManager({
       <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <Award size={16} className="text-amber-500" /> Reglas de Spiff
+            <Award size={16} className="text-amber-500" /> {t("rules_title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="py-12 text-center text-slate-400 font-medium">Cargando...</div>
+            <div className="py-12 text-center text-slate-400 font-medium">{t("loading")}</div>
           ) : rules.length === 0 ? (
             <div className="py-12 text-center">
               <Award size={40} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400 font-medium">No hay reglas de spiff configuradas</p>
+              <p className="text-sm text-slate-400 font-medium">{t("no_rules")}</p>
             </div>
           ) : showCompanyFilter && groupedRules ? (
             <div className="flex flex-col">
@@ -498,7 +501,7 @@ export default function SpiffManager({
                     <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-50 border-b border-slate-100">
                       <Building2 size={14} className="text-slate-400" />
                       <span className="text-xs font-black text-slate-600 uppercase">{getCompanyName(parseInt(companyIdStr))}</span>
-                      <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md">{groupRules.length} reglas</span>
+                      <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md">{groupRules.length} {t("rules_count")}</span>
                     </div>
                     {groupRules.map((rule) => (
                       <RuleRow
@@ -517,13 +520,13 @@ export default function SpiffManager({
           ) : (
             <div className="flex flex-col">
               <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                <span className="flex-1">Tipo / Nombre</span>
-                <span className="w-16 text-center">Modo</span>
-                <span className="w-24 text-center">Meta</span>
-                <span className="w-20 text-center">Spiff</span>
-                <span className="w-24 text-center">Vigencia</span>
-                <span className="w-16 text-center">Estado</span>
-                <span className="w-20 text-center">Acciones</span>
+                <span className="flex-1">{t("col_type_name")}</span>
+                <span className="w-16 text-center">{t("col_mode")}</span>
+                <span className="w-24 text-center">{t("col_goal")}</span>
+                <span className="w-20 text-center">{t("col_spiff")}</span>
+                <span className="w-24 text-center">{t("col_validity")}</span>
+                <span className="w-16 text-center">{t("col_status")}</span>
+                <span className="w-20 text-center">{t("col_actions")}</span>
               </div>
               {rules.map((rule) => (
                 <RuleRow
@@ -557,7 +560,7 @@ export default function SpiffManager({
                   <Trophy size={20} className="text-amber-600" />
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-slate-800">Ranking de Spiff</h2>
+                  <h2 className="text-base font-black text-slate-800">{t("ranking_title")}</h2>
                   <p className="text-[11px] text-slate-400 font-medium">{rankingModal.rule.brand_name}</p>
                 </div>
               </div>
@@ -570,11 +573,11 @@ export default function SpiffManager({
             </div>
             <div className="overflow-y-auto max-h-[calc(80vh-80px)]">
               {rankingModal.loading ? (
-                <div className="py-12 text-center text-slate-400 font-medium">Cargando ranking...</div>
+                <div className="py-12 text-center text-slate-400 font-medium">{t("loading_ranking")}</div>
               ) : rankingModal.data.length === 0 ? (
                 <div className="py-12 text-center">
                   <Trophy size={36} className="mx-auto text-slate-200 mb-3" />
-                  <p className="text-sm text-slate-400">No hay datos de ranking</p>
+                  <p className="text-sm text-slate-400">{t("no_ranking_data")}</p>
                 </div>
               ) : (
                 <div className="flex flex-col max-h-[50vh] overflow-y-auto">
@@ -582,11 +585,11 @@ export default function SpiffManager({
                     <thead className="sticky top-0 bg-slate-50 z-10">
                       <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
                         <th className="w-10 py-2 text-center">#</th>
-                        <th className="py-2 text-left px-3">Vendedor</th>
-                        <th className="w-16 py-2 text-center">Unidad</th>
-                        <th className="w-24 py-2 text-center">Monto</th>
-                        <th className="w-16 py-2 text-center">Metas</th>
-                        <th className="w-20 py-2 text-center">Spiff</th>
+                        <th className="py-2 text-left px-3">{t("seller")}</th>
+                        <th className="w-16 py-2 text-center">{t("unit")}</th>
+                        <th className="w-24 py-2 text-center">{t("col_amount")}</th>
+                        <th className="w-16 py-2 text-center">{t("goals")}</th>
+                        <th className="w-20 py-2 text-center">{t("col_spiff")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -648,6 +651,7 @@ function RuleRow({
   onViewRanking: (rule: SpiffRule) => void;
   formatDate: (d: string | null) => string;
 }) {
+  const t = useTranslations("spiff");
   return (
     <div
       className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 cursor-pointer transition-all"
@@ -668,7 +672,7 @@ function RuleRow({
       </div>
       <div className="w-16 text-center">
         <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-          {rule.modo === "monto" ? "Monto" : "Cant."}
+          {rule.modo === "monto" ? t("mode_amount") : t("mode_quantity_short")}
         </span>
       </div>
       <div className="w-24 text-center">
@@ -681,7 +685,7 @@ function RuleRow({
       </div>
       <div className="w-24 text-center">
         <span className="text-[9px] font-bold text-slate-500">
-          {rule.fecha_inicio || rule.fecha_fin ? `${formatDate(rule.fecha_inicio)} → ${formatDate(rule.fecha_fin)}` : "Siempre"}
+          {rule.fecha_inicio || rule.fecha_fin ? `${formatDate(rule.fecha_inicio)} → ${formatDate(rule.fecha_fin)}` : t("always")}
         </span>
       </div>
       <div className="w-16 text-center">

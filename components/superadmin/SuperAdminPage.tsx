@@ -663,7 +663,7 @@ export function SuperAdminView() {
                   })}
                 </p>
                 <p className="text-[10px] text-slate-400 font-medium uppercase">
-                  Total Facturado
+                  {t("total_invoiced")}
                 </p>
               </div>
             </div>
@@ -678,6 +678,7 @@ export function SuperAdminView() {
 // COMPONENTE RANKTABLE ACTUALIZADO CON TOOLTIP Y TOGGLE DE CANTIDAD/$
 // =====================================================================
 function RankTable({ title, data, icon: Icon, color }: any) {
+  const t = useTranslations("userManagement");
   // Estado local para alternar entre monto y cantidad
   const [displayMode, setDisplayMode] = useState<"monto" | "cantidad">("monto");
 
@@ -780,7 +781,7 @@ function RankTable({ title, data, icon: Icon, color }: any) {
               ))
             ) : (
               <p className="text-[11px] text-slate-400 text-center py-4">
-                Sin registros
+                {t("no_records")}
               </p>
             )}
           </div>

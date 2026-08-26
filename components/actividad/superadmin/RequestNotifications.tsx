@@ -5,10 +5,23 @@ import useSWR from "swr";
 export function RequestNotifications() {
   const { data: requests, mutate } = useSWR("/api/superadmin/requests");
 
-  const handleApprove = async (requestId, activityId, newStatus) => {
+  // OJO: este componente está a medio hacer. No se importa en ningún lado y
+  // /api/activities/move no existe. Se deja compilando —el `JSON.stringify(...)`
+  // que tenía era un error de sintaxis, y con un error de sintaxis tsc deja de
+  // hacer el chequeo semántico del proyecto ENTERO: `npx tsc --noEmit` no
+  // reportaba ni un solo error de tipos en todo el repo.
+  // Hay que terminarlo o borrarlo.
+  const handleApprove = async (
+    requestId: number,
+    activityId: number,
+    newStatus: string,
+  ) => {
     // 1. Aprobar solicitud
     // 2. Mover la actividad al nuevo estado
-    await fetch("/api/activities/move", { method: 'POST', body: JSON.stringify(...) });
+    await fetch("/api/activities/move", {
+      method: "POST",
+      body: JSON.stringify({ requestId, activityId, newStatus }),
+    });
     mutate();
   };
 

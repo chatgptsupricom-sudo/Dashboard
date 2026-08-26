@@ -25,6 +25,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
 
   // Filtros Generales
+  const todosLabel = t("all_statuses");
   const [searchTerm, setSearchTerm] = useState("");
   const [odooRoleFilter, setOdooRoleFilter] = useState("Todos");
   const [panelRoleFilter, setPanelRoleFilter] = useState("Todos");
@@ -66,20 +67,17 @@ export default function UserManagement() {
   };
 
   // Mapeo de roles técnicos a etiquetas legibles, usando el namespace "roles" para traducciones específicas de roles
-  const roleMap: Record<string, { es: string; en: string }> = {
-    superAdmin: { es: "Super Admin", en: "Super Admin" },
-    marketingManagement: {
-      es: "Gerencia de Marketing",
-      en: "Marketing Management",
-    },
-    brandManagement: { es: "Gerencia de Marca", en: "Brand Management" },
-    marketing: { es: "Mercadeo", en: "Marketing" },
-    programmers: { es: "Programadores", en: "Programmers" },
-    audit: { es: "Auditoría", en: "Audit" },
+  const roleMap: Record<string, string> = {
+    superAdmin: tRoles("superAdmin"),
+    marketingManagement: tRoles("marketingManagement"),
+    brandManagement: tRoles("brandManagement"),
+    marketing: tRoles("marketing"),
+    programmers: tRoles("programmers"),
+    audit: tRoles("audit"),
   };
   // Función para traducir roles de Odoo a etiquetas legibles, usando el namespace "data_labels" para valores dinámicos
   const getTranslatedRole = (name: string, displayName: string) => {
-    return roleMap[name]?.[locale as "es" | "en"] || displayName || name;
+    return roleMap[name] || displayName || name;
   };
   // Función para traducir estado de usuarios, usando el namespace "data_labels" para valores dinámicos
   const getOdooRoleLabel = (role: string) => {
@@ -355,13 +353,13 @@ export default function UserManagement() {
                   <td className="px-6 py-4 flex justify-center">
                     <span
                       className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase shadow-sm border ${
-                        user.panelRole === "Sin Acceso"
+                        user.panelRole === t("no_access")
                           ? roleStyles.noAccess
                           : roleStyles[user.panelRoleName] ||
                             "bg-slate-50 text-slate-600 border-slate-200"
                       }`}
                     >
-                      {user.panelRole === "Sin Acceso"
+                      {user.panelRole === t("no_access")
                         ? t("no_access")
                         : user.panelRole}
                     </span>
@@ -379,7 +377,7 @@ export default function UserManagement() {
                   </td>
 
                   <td className="px-6 py-4 text-slate-400 text-[11px] italic text-center">
-                    {user.lastLogin === "Nunca" ? t("never") : user.lastLogin}
+                    {user.lastLogin === t("never") ? t("never") : user.lastLogin}
                   </td>
 
                   {/* STATUS (Centrado) */}
@@ -387,7 +385,7 @@ export default function UserManagement() {
                     <div className="flex justify-center">
                       <span
                         className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase shadow-sm border ${
-                          user.odooStatus === "Activo"
+                          user.odooStatus === t("active")
                             ? "bg-green-100 text-green-800 border-green-200"
                             : "bg-red-100 text-red-800 border-red-200"
                         }`}
@@ -520,7 +518,7 @@ export default function UserManagement() {
                           setSelectedCids(val);
                         }}
                       >
-                        <option value="">Seleccionar ciudad...</option>
+                        <option value="">{t("modal.select_city")}</option>
                         <option value="10">Caracas</option>
                         <option value="9">Valencia</option>
                         <option value="7">Panamá</option>
