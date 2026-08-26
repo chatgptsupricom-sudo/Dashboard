@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { getSocket } from "@/lib/socket-client";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
   ChevronRight,
   ClipboardList,
+  Inbox,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -14,6 +16,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  WifiOff,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -56,10 +59,22 @@ type Ticket = {
   reported_fault: string;
 };
 
-type Vista = "home" | "pendientes" | "buscar";
+type Vista = "home" | "pendientes" | "buscar" | "esperando";
 
 // Dias en taller: el endpoint de pendientes no trae el campo calculado, asi
 // que se deriva de la fecha. Si viene del servidor, ese valor manda.
+/** Ticket del portal que todavía no tiene ingreso registrado (issue #40). */
+type TicketEsperando = {
+  id: number;
+  case_number: string;
+  cliente: string;
+  producto: string;
+  marca: string;
+  serial: string | null;
+  factura: string;
+  reportado_at: string;
+};
+
 function diasEnTaller(p: Pendiente): number {
   if (typeof p.dias_en_taller === "number") return p.dias_en_taller;
   const entrega = new Date(p.fecha_entrega);
@@ -67,6 +82,55 @@ function diasEnTaller(p: Pendiente): number {
   const ms = Date.now() - entrega.getTime();
   return Math.max(0, Math.floor(ms / 86400000));
 }
+
+/**
+ * Caché de los datos del día en el propio navegador (issue #39).
+ *
+ * El mostrador se usa de pie, con el equipo en la mano y con la señal que haya
+ * en el almacén. Sin esto, un corte deja la pantalla en blanco y el Seguridad
+ * no puede ni consultar qué tiene pendiente.
+ *
+ * Guarda lo último que se leyó bien y lo vuelve a pintar al abrir, antes de
+ * pedir al servidor. Si la petición falla, se queda lo guardado y se avisa
+ * desde cuándo es.
+ *
+ * ALCANCE: esto es solo lectura. Registrar un ingreso sigue necesitando
+ * conexión — una cola de escritura offline con sincronización es otra cosa y
+ * no está hecha.
+ */
+const CACHE_KEY = "seguridad:mostrador";
+
+type Cacheado = { resumen: Resumen | null; esperando: TicketEsperando[]; at: number };
+
+function leerCache(): Cacheado | null {
+  try {
+    const crudo = localStorage.getItem(CACHE_KEY);
+    return crudo ? (JSON.parse(crudo) as Cacheado) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fusiona con lo que ya había: el resumen y la lista de tickets se cargan por
+ * separado, así que guardar uno no puede borrar el otro.
+ */
+function guardarCache(parcial: Partial<Omit<Cacheado, "at">>) {
+  try {
+    const previo = leerCache();
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({
+        resumen: parcial.resumen ?? previo?.resumen ?? null,
+        esperando: parcial.esperando ?? previo?.esperando ?? [],
+        at: Date.now(),
+      }),
+    );
+  } catch {
+    // Modo privado o cuota llena: se sigue sin caché.
+  }
+}
+
 
 export default function MostradorPage() {
   const t = useTranslations("seguridad");
@@ -80,6 +144,71 @@ export default function MostradorPage() {
 
   const [vista, setVista] = useState<Vista>("home");
   const [resumen, setResumen] = useState<Resumen | null>(null);
+
+  // Tickets del portal sin ingreso (issue #40). Es el hueco que cerraba este
+  // issue: un cliente reportaba desde supricom.com.ve y en el almacén nadie se
+  // enteraba hasta que aparecía con el equipo.
+  const [esperando, setEsperando] = useState<TicketEsperando[]>([]);
+  const [aviso, setAviso] = useState<string | null>(null);
+  // Momento del último dato bueno; se muestra cuando estamos sirviendo caché.
+  const [desconectadoDesde, setDesconectadoDesde] = useState<number | null>(null);
+
+  // Al abrir se pinta lo último que se leyó bien, antes de pedir nada.
+  useEffect(() => {
+    const c = leerCache();
+    if (!c) return;
+    if (c.resumen) setResumen(c.resumen);
+    if (c.esperando?.length) setEsperando(c.esperando);
+    setDesconectadoDesde(c.at);
+  }, []);
+
+  const cargarEsperando = useCallback(async () => {
+    try {
+      const res = await fetch("/api/seguridad/tickets-sin-ingreso");
+      if (!res.ok) return;
+      const json = await res.json();
+      const tickets = json.tickets || [];
+      setEsperando(tickets);
+      setDesconectadoDesde(null);
+      guardarCache({ esperando: tickets });
+    } catch {
+      // Sin conexión no se toca lo que ya está en pantalla: lo viejo es más
+      // útil que una lista vacía.
+      setDesconectadoDesde((prev) => prev ?? Date.now());
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarEsperando();
+    // Refresco cada 30s: el criterio del issue. Un mostrador queda abierto
+    // toda la jornada y nadie va a recargarlo a mano.
+    const id = setInterval(cargarEsperando, 30_000);
+    return () => clearInterval(id);
+  }, [cargarEsperando]);
+
+  // Aviso en vivo cuando entra un reporte por el portal. El servidor ya emitía
+  // `rma_ticket_nuevo` desde que se creó el ticket (issue #24); acá se escucha.
+  useEffect(() => {
+    let socket: any;
+    try {
+      socket = getSocket();
+      socket.on("rma_ticket_nuevo", (datos: any) => {
+        setAviso(
+          `${datos?.case_number ?? ""} · ${datos?.client_name ?? ""}`.trim(),
+        );
+        cargarEsperando();
+        // El aviso se va solo: esta pantalla se mira de reojo, no se cierra.
+        setTimeout(() => setAviso(null), 12_000);
+      });
+    } catch {
+      // Sin socket el panel sigue funcionando con el refresco de 30s.
+    }
+    return () => {
+      try {
+        socket?.off("rma_ticket_nuevo");
+      } catch {}
+    };
+  }, [cargarEsperando]);
 
   useEffect(() => {
     let cancelado = false;
@@ -147,10 +276,48 @@ export default function MostradorPage() {
       </header>
 
       <main className="mx-auto w-full max-w-md px-4 py-5">
+        {desconectadoDesde !== null && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <WifiOff className="w-4 h-4 shrink-0" />
+            <span>
+              {tm("sin_conexion", {
+                hora: new Date(desconectadoDesde).toLocaleTimeString("es-VE", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              })}
+            </span>
+          </div>
+        )}
+
+        {aviso && (
+          <div
+            role="status"
+            className="fixed inset-x-3 bottom-3 z-50 flex items-center gap-3 rounded-2xl px-4 py-3 text-white shadow-lg"
+            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+          >
+            <Inbox className="w-5 h-5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">{tm("nuevo_reporte")}</p>
+              <p className="text-xs opacity-90 truncate">{aviso}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setAviso(null); setVista("esperando"); }}
+              className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold active:bg-white/30"
+            >
+              {tm("ver")}
+            </button>
+          </div>
+        )}
+
         {vista === "home" && (
-          <Home base={base} resumen={resumen} setVista={setVista} tm={tm} />
+          <Home base={base} esperando={esperando.length} resumen={resumen} setVista={setVista} tm={tm} />
         )}
         {vista === "pendientes" && <Pendientes base={base} tm={tm} />}
+        {vista === "esperando" && (
+          <Esperando items={esperando} base={base} tm={tm} />
+        )}
         {vista === "buscar" && (
           <Buscar
             tm={tm}
@@ -168,12 +335,14 @@ export default function MostradorPage() {
 
 function Home({
   base,
+  esperando,
   resumen,
   setVista,
   tm,
 }: {
   base: string;
   resumen: Resumen | null;
+  esperando: number;
   setVista: (v: Vista) => void;
   tm: any;
 }) {
@@ -200,6 +369,13 @@ function Home({
         icon={<Package className="w-6 h-6" />}
         label={tm("ver_pendientes")}
         badge={resumen?.pendientes}
+      />
+      <BotonAccion
+        as="button"
+        onClick={() => setVista("esperando")}
+        icon={<Inbox className="w-6 h-6" />}
+        label={tm("esperando_equipo")}
+        badge={esperando || undefined}
       />
       <BotonAccion
         as="button"
@@ -301,6 +477,48 @@ function Pendientes({ base, tm }: { base: string; tm: any }) {
     </div>
   );
 }
+
+
+function Esperando({
+  items,
+  base,
+  tm,
+}: {
+  items: TicketEsperando[];
+  base: string;
+  tm: any;
+}) {
+  if (items.length === 0) return <Aviso>{tm("sin_esperando")}</Aviso>;
+
+  return (
+    <div className="space-y-2">
+      {items.map((tk) => (
+        // El enlace lleva al alta con el ticket ya puesto: el Seguridad no
+        // tiene que copiar el número a mano con el cliente delante.
+        <Link
+          key={tk.id}
+          href={`${base}/ingreso/nuevo?ticket=${encodeURIComponent(tk.case_number)}`}
+          className="flex items-center gap-3 min-h-[64px] rounded-xl border border-slate-200 bg-white px-4 py-3 active:bg-slate-50 transition-colors"
+        >
+          <span className="shrink-0 rounded-lg bg-violet-100 px-2 py-1 text-[11px] font-bold text-violet-700 tabular-nums">
+            {tk.case_number}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900 truncate">
+              {tk.cliente}
+            </p>
+            <p className="text-xs text-slate-500 truncate">
+              {tk.producto || "—"}
+              {tk.serial ? ` · ${tk.serial}` : ""}
+            </p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 
 function Buscar({
   tm,
