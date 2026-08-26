@@ -15,6 +15,38 @@ import { NextResponse } from "next/server";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+const toIso = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Es un reporte MENSUAL: sin rango explicito toma el mes en curso, no el
+ * historico. Antes caia al arranque de ano de getCampaignMetrics y traia todas
+ * las campanas del ano en un solo documento.
+ */
+function periodoPorDefecto(): { desde: string; hasta: string } {
+  const hoy = new Date();
+  const inicio = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
+  const fin = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 0));
+  return { desde: toIso(inicio), hasta: toIso(fin) };
+}
+
+/** "AGOSTO 2026" si el rango cae dentro de un mes; si no, las dos fechas. */
+function etiquetaPeriodo(desde: string, hasta: string): string {
+  const d = new Date(`${desde}T00:00:00Z`);
+  const h = new Date(`${hasta}T00:00:00Z`);
+  if (
+    d.getUTCFullYear() === h.getUTCFullYear() &&
+    d.getUTCMonth() === h.getUTCMonth()
+  ) {
+    return `${MESES[d.getUTCMonth()]} ${d.getUTCFullYear()}`.toUpperCase();
+  }
+  return `${desde} al ${hasta}`;
+}
+
 /** Margen bruto por defecto para el ROAS ajustado; se puede pasar por query. */
 const MARGEN_DEFECTO = 10;
 
@@ -159,12 +191,13 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const sede = searchParams.get("sede");
+    const pordefecto = periodoPorDefecto();
     const fechaInicio = DATE_REGEX.test(searchParams.get("fecha_inicio") || "")
       ? searchParams.get("fecha_inicio")!
-      : null;
+      : pordefecto.desde;
     const fechaFin = DATE_REGEX.test(searchParams.get("fecha_fin") || "")
       ? searchParams.get("fecha_fin")!
-      : null;
+      : pordefecto.hasta;
 
     const margenParam = parseFloat(searchParams.get("margen") || "");
     const margenPct =
@@ -279,10 +312,8 @@ export async function GET(request: Request) {
       periodo: {
         desde: fechaInicio,
         hasta: fechaFin,
-        etiqueta:
-          fechaInicio && fechaFin
-            ? `${fechaInicio} al ${fechaFin}`
-            : "Todo el histórico",
+        etiqueta: etiquetaPeriodo(fechaInicio, fechaFin),
+        rango: `${fechaInicio} al ${fechaFin}`,
       },
       detalle,
       consolidado,
