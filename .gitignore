@@ -6,3 +6,4 @@
 uploads/custom-views/
 .env.local
 .env*.local
+.DS_Store
