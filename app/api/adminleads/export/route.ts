@@ -43,28 +43,44 @@ export async function GET(request: Request) {
       conditions.push(`${canalNormalizadoSql("canal_origen")} = ?`);
       params.push(canal);
     }
-    if (fechaInicio) {
-      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) >= ?");
-      params.push(`${fechaInicio} 00:00:00`);
-    }
-    if (fechaFin) {
-      conditions.push("COALESCE(fecha_venta, fecha_ingreso, created_at) <= ?");
-      params.push(`${fechaFin} 23:59:59`);
+    // Mismo criterio que el Panel de Metricas (ver app/api/adminleads/stats):
+    // los leads pertenecen al periodo por su fecha de ENTRADA y las ventas por
+    // su FECHA_VENTA. Si el export usara otro criterio, el Excel no cuadraria
+    // con las tarjetas desde las que se exporta.
+    const conFechas = Boolean(fechaInicio && fechaFin);
+    const rangoParams = conFechas
+      ? [`${fechaInicio} 00:00:00`, `${fechaFin} 23:59:59`]
+      : [];
+
+    const ES_VENTA =
+      "status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO')";
+    const entradaEnPeriodo = conFechas
+      ? "COALESCE(fecha_ingreso, created_at) BETWEEN ? AND ?"
+      : "1=1";
+    const ventaEnPeriodo = conFechas
+      ? `${ES_VENTA} AND fecha_venta IS NOT NULL AND fecha_venta BETWEEN ? AND ?`
+      : ES_VENTA;
+
+    if (conFechas) {
+      conditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
+      params.push(...rangoParams, ...rangoParams);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const statsResult: any = await query(`
       SELECT
-        IFNULL(SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
-        (SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100 as tasa_efectividad,
-        SUM(CASE WHEN status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO') THEN 1 ELSE 0 END) as total_ventas,
+        SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
+        IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
+        (SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) /
+         NULLIF(SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END), 0)) * 100 as tasa_efectividad,
+        SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as total_ventas,
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
         IFNULL(AVG(CASE WHEN fecha_venta IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) ELSE NULL END), 0) as avg_tiempo_cierre,
         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
          NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion
       FROM leads ${whereClause}
-    `, params);
+    `, [...Array(5).fill(rangoParams).flat(), ...params]);
 
     const sedeJoin = sede ? `AND s.cids = ${parseInt(sede)}` : userCids !== 7 ? "AND s.cids != 7" : "";
     // Esta consulta arma el SQL por concatenacion: el canal se valida contra la
@@ -158,6 +174,7 @@ export async function GET(request: Request) {
     };
 
     const kpis = [
+      ["Total Leads", Number(statsRow.total_leads || 0)],
       ["Monto Total (USD)", Number(statsRow.monto_total || 0)],
       ["Tasa de Efectividad (%)", Number(statsRow.tasa_efectividad || 0).toFixed(1) + "%"],
       ["Total Ventas", Number(statsRow.total_ventas || 0)],
