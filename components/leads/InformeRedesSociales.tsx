@@ -501,26 +501,6 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </p>
         )}
 
-        <Nota>
-          <span className="font-bold">Alcance del informe: </span>
-          las cifras de arriba cubren sólo los leads cuyo canal de origen es{" "}
-          {(leads.canales_meta || []).join(", ")}. El tab General del panel no filtra
-          por canal, por eso su total es mayor; para ver el resto de los canales,
-          usá el filtro de canal del propio panel.
-          <span className="block mt-2">
-            <span className="font-bold">Criterio de fechas: </span>
-          un lead cuenta en <em>Leads</em> por su fecha de entrada dentro del período,
-          y en <em>Ventas</em> / <em>Recaudo</em> por su fecha de venta dentro del
-          período. Son cohortes distintas: una venta cerrada este mes sobre un lead
-          que entró el mes pasado suma a las ventas de este mes, pero no a sus leads
-          — por eso la tasa de cierre puede superar el 100% en un vendedor puntual.
-          </span>
-          <span className="block mt-2">
-            La calificación (calificado / no calificado) se registra por campaña en la
-            tabla de conversaciones, que no guarda vendedor: por eso la tasa de
-            calificación es global y la tabla por vendedor muestra tasa de cierre.
-          </span>
-        </Nota>
       </Slide>
 
       {/* 5. INVERSION EN PAUTA */}
@@ -789,6 +769,36 @@ export default function InformeRedesSociales({ data }: { data: any }) {
               value={inversion.roas > 0 ? `${pf.format(inversion.roas)}x` : "—"}
             />
           </div>
+        </div>
+
+        {/* Metodologia al pie: disponible para quien cuestione un numero, sin
+            competirle atencion a los KPIs de los slides anteriores. */}
+        <div className="mt-8 pt-5 border-t border-zinc-100">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+            Notas metodológicas
+          </div>
+          <ul className="space-y-1 text-[9px] leading-relaxed text-zinc-400">
+            <li>
+              <span className="font-bold">Alcance:</span> sólo leads de canal{" "}
+              {(leads.canales_meta || []).join(", ")}. El tab General del panel no
+              filtra por canal, por eso su total es mayor.
+            </li>
+            <li>
+              <span className="font-bold">Fechas:</span> un lead cuenta por su fecha
+              de entrada; una venta, por su fecha de venta. Por eso una venta de este
+              mes sobre un lead del mes pasado suma a las ventas pero no a los leads.
+            </li>
+            <li>
+              <span className="font-bold">Conversión del mes:</span> de los leads que
+              entraron en el período, cuántos terminaron en venta. No coincide con
+              Leads concretados, que son las ventas cerradas en el período.
+            </li>
+            <li>
+              <span className="font-bold">Calificación:</span> se registra por campaña
+              en la tabla de conversaciones, que no guarda vendedor; por eso la tasa
+              es global y la tabla por vendedor muestra tasa de cierre.
+            </li>
+          </ul>
         </div>
 
         <div className="mt-8 text-center text-[10px] text-zinc-400">
