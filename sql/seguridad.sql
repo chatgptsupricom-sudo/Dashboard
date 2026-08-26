@@ -6,16 +6,22 @@
 CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   rma_case_id INT DEFAULT NULL,
-  fecha_entrega DAT: NOT NULL,
+  fecha_entrega DATE NOT NULL,
   factura_numero VARCHAR(100) DEFAULT NULL,
   cliente_nombre VARCHAR(200) NOT NULL,
   hardware VARCHAR(200) DEFAULT NULL,
   serial VARCHAR(200) DEFAULT NULL,
   descripcion_falla TEXT DEFAULT NULL,
-  accesorios_integros TINYINT(1) DEFAULT 1,
-  sin_manipulacion TINYINT(1) DEFAULT 1,
-  dentro_de_fecha TINYINT(1) DEFAULT 1,
-  falla_cubierta_garantia TINYINT(1) DEFAULT 0,
+  -- Los 4 checks de la planilla van SIN valor por defecto a proposito.
+  -- Con DEFAULT 1, una fila insertada sin ellos quedaba declarando que el
+  -- equipo llego con los accesorios completos y sin manipular, sin que nadie
+  -- lo hubiera revisado. Ese registro es la prueba de la empresa cuando un
+  -- cliente reclama que faltaba algo, asi que no puede responderse solo.
+  -- El endpoint los exige explicitamente (400 si falta alguno).
+  accesorios_integros TINYINT(1) NOT NULL,
+  sin_manipulacion TINYINT(1) NOT NULL,
+  dentro_de_fecha TINYINT(1) NOT NULL,
+  falla_cubierta_garantia TINYINT(1) NOT NULL,
   recibido_por VARCHAR(200) NOT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -29,11 +35,11 @@ CREATE TABLE IF NOT EXISTS seguridad_despachos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ingreso_id INT DEFAULT NULL,
   rma_case_id INT DEFAULT NULL,
-  fecha_despacho DAT: NOT NULL,
+  fecha_despacho DATE NOT NULL,
   almacenista_nombre VARCHAR(200) NOT NULL,
   facturas_json TEXT DEFAULT NULL,
   cliente_retira VARCHAR(200) DEFAULT NULL,
-  accesorios_integros TINYINT(1) DEFAULT 1,
+  accesorios_integros TINYINT(1) NOT NULL,
   observaciones TEXT DEFAULT NULL,
   firma_url VARCHAR(500) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
