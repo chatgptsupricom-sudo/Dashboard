@@ -64,6 +64,10 @@ export interface IgMediaItem {
   views: number | null;
   reach: number | null;
   interactions: number | null;
+  likes: number | null;
+  comments: number | null;
+  saved: number | null;
+  shares: number | null;
 }
 
 export interface IgContentBreakdown {
@@ -79,6 +83,13 @@ export interface IgContentBreakdown {
     porcentaje_visualizaciones: number | null;
   }>;
   interacciones_totales: number;
+  /** Desglose de las interacciones; null si Insights no las entrego. */
+  interacciones_desglose: {
+    likes: number;
+    comentarios: number;
+    guardados: number;
+    compartidos: number;
+  } | null;
   visualizaciones_totales: number | null;
   /** true si las interacciones salen de Insights y no de likes + comentarios. */
   con_insights: boolean;
@@ -379,6 +390,10 @@ export async function fetchIgMedia(
           views: null,
           reach: null,
           interactions: null,
+          likes: null,
+          comments: null,
+          saved: null,
+          shares: null,
         });
       }
 
@@ -405,18 +420,30 @@ async function enrichWithMediaInsights(items: IgMediaItem[]): Promise<void> {
     const lote = items.slice(i, i + LOTE);
     await Promise.all(
       lote.map(async (item) => {
-        try {
-          const data = await graphGet(`${item.id}/insights`, {
-            metric: "views,reach,total_interactions",
-          });
-          for (const m of data.data || []) {
-            const value = parseInt(m.values?.[0]?.value) || 0;
-            if (m.name === "views") item.views = value;
-            if (m.name === "reach") item.reach = value;
-            if (m.name === "total_interactions") item.interactions = value;
+        // No todos los formatos aceptan el mismo juego de metricas, asi que se
+        // prueba del set completo al minimo y se usa el primero que responda.
+        const SETS = [
+          "views,reach,total_interactions,likes,comments,saved,shares",
+          "views,reach,total_interactions",
+          "reach",
+        ];
+        for (const metric of SETS) {
+          try {
+            const data = await graphGet(`${item.id}/insights`, { metric });
+            for (const m of data.data || []) {
+              const value = parseInt(m.values?.[0]?.value) || 0;
+              if (m.name === "views") item.views = value;
+              if (m.name === "reach") item.reach = value;
+              if (m.name === "total_interactions") item.interactions = value;
+              if (m.name === "likes") item.likes = value;
+              if (m.name === "comments") item.comments = value;
+              if (m.name === "saved") item.saved = value;
+              if (m.name === "shares") item.shares = value;
+            }
+            break;
+          } catch {
+            // Se prueba el set siguiente; si ninguno responde queda en null.
           }
-        } catch {
-          // Publicacion sin insights (muy antigua o sin permiso): se ignora.
         }
       }),
     );
@@ -433,17 +460,9 @@ const FORMAT_LABELS: Record<IgMediaItem["format"], string> = {
 /** Agrupa las publicaciones por formato y calcula el ritmo de publicacion. */
 export function buildContentBreakdown(
   media: IgMediaItem[],
-  since: string,
-  until: string,
+  dias: number,
 ): IgContentBreakdown {
-  const dias = Math.max(
-    1,
-    Math.round(
-      (new Date(`${until}T00:00:00Z`).getTime() -
-        new Date(`${since}T00:00:00Z`).getTime()) /
-        86400000,
-    ) + 1,
-  );
+  const diasEfectivos = Math.max(1, dias);
 
   // Si Insights respondio para al menos una publicacion se usan sus
   // interacciones (incluyen guardados y compartidos); si no, likes+comentarios.
@@ -476,6 +495,19 @@ export function buildContentBreakdown(
     grupos.set(key, g);
   }
 
+  // Desglose: solo tiene sentido si Insights respondio al menos una vez.
+  const sumar = (campo: "likes" | "comments" | "saved" | "shares") =>
+    media.reduce((acc, m) => acc + (m[campo] ?? 0), 0);
+  const hayDesglose = media.some((m) => m.likes !== null);
+  const interacciones_desglose = hayDesglose
+    ? {
+        likes: sumar("likes"),
+        comentarios: sumar("comments"),
+        guardados: sumar("saved"),
+        compartidos: sumar("shares"),
+      }
+    : null;
+
   const total = media.length;
   const pct = (parte: number, entero: number) =>
     entero > 0 ? Math.round((parte / entero) * 1000) / 10 : 0;
@@ -496,9 +528,10 @@ export function buildContentBreakdown(
 
   return {
     total_publicaciones: total,
-    posts_por_dia: Math.round((total / dias) * 10) / 10,
+    posts_por_dia: Math.round((total / diasEfectivos) * 10) / 10,
     por_formato,
     interacciones_totales: interaccionesTotales,
+    interacciones_desglose,
     visualizaciones_totales: conInsights ? visualizacionesTotales : null,
     con_insights: conInsights,
   };
@@ -518,6 +551,8 @@ export async function buildIgSnapshot(
   account: IgAccount,
   since: string,
   until: string,
+  /** Dias transcurridos del periodo; por defecto, el largo del rango. */
+  dias?: number,
 ): Promise<IgSnapshot> {
   const [perfil, metricas, demografia, media, ganados] = await Promise.all([
     fetchIgProfile(account.ig_user_id),
@@ -539,7 +574,15 @@ export async function buildIgSnapshot(
     contenido: {
       available: media.available,
       reason: media.reason,
-      data: buildContentBreakdown(media.data, since, until),
+      data: buildContentBreakdown(
+        media.data,
+        dias ??
+          Math.round(
+            (new Date(`${until}T00:00:00Z`).getTime() -
+              new Date(`${since}T00:00:00Z`).getTime()) /
+              86400000,
+          ) + 1,
+      ),
     },
     seguidores_ganados: ganados,
   };

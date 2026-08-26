@@ -174,7 +174,6 @@ export default function InformeRedesSociales({ data }: { data: any }) {
               <th className={`${TH} text-right`}>{comparativo.etiqueta}</th>
               <th className={`${TH} text-right`}>{periodo.etiqueta}</th>
               <th className={`${TH} text-right`}>Variación</th>
-              <th className={TH}>Fuente</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -190,7 +189,6 @@ export default function InformeRedesSociales({ data }: { data: any }) {
                 <td className={`${TD} text-right`}>
                   <Variacion value={m.variacion_pct} />
                 </td>
-                <td className={`${TD} text-zinc-400 text-[10px]`}>{m.fuente}</td>
               </tr>
             ))}
           </tbody>
@@ -219,12 +217,16 @@ export default function InformeRedesSociales({ data }: { data: any }) {
               <KpiCard
                 label="Publicaciones"
                 value={fmtNum(contenido.total_publicaciones)}
-                detalle={`En ${periodo.dias} días`}
+                detalle={
+                  periodo.en_curso
+                    ? `En ${periodo.dias_transcurridos} días (mes en curso)`
+                    : `En ${periodo.dias} días`
+                }
               />
               <KpiCard
                 label="Ritmo"
                 value={`${pf.format(contenido.posts_por_dia)}/día`}
-                detalle="Feed + Reels"
+                detalle={`Sobre ${periodo.dias_transcurridos ?? periodo.dias} días`}
               />
               <KpiCard
                 label="Visualizaciones"
@@ -283,13 +285,45 @@ export default function InformeRedesSociales({ data }: { data: any }) {
               </tbody>
             </table>
 
+            {contenido.interacciones_desglose && (
+              <div className="mt-6">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                  Desglose de interacciones
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    ["Me gusta", contenido.interacciones_desglose.likes],
+                    ["Comentarios", contenido.interacciones_desglose.comentarios],
+                    ["Guardados", contenido.interacciones_desglose.guardados],
+                    ["Compartidos", contenido.interacciones_desglose.compartidos],
+                  ].map(([label, valor]: any) => (
+                    <KpiCard
+                      key={label}
+                      label={label}
+                      value={fmtNum(valor)}
+                      detalle={
+                        contenido.interacciones_totales > 0
+                          ? `${fmtPct((valor / contenido.interacciones_totales) * 100)} del total`
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Nota>
               {contenido.con_insights ? (
                 <>
                   Visualizaciones e interacciones salen de los Insights de cada
-                  publicación, así que incluyen guardados y compartidos. Las historias
-                  no entran en el cuadro: la Graph API no las lista junto al resto de
-                  las publicaciones.
+                  publicación.
+                  <span className="block mt-2">
+                    <span className="font-bold">Las historias no figuran acá.</span>{" "}
+                    La Graph API sólo devuelve las historias activas de las últimas
+                    24 horas, así que no hay forma de recuperar las de un mes ya
+                    cerrado. Sus visualizaciones sí están incluidas en el total de
+                    la cuenta del Slide 1.
+                  </span>
                 </>
               ) : (
                 <>
@@ -467,67 +501,12 @@ export default function InformeRedesSociales({ data }: { data: any }) {
           </p>
         )}
 
-        {leads.por_canal && leads.por_canal.length > 0 && (
-          <div className="mt-6">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
-              Conciliación por canal de origen
-            </div>
-            <table className="w-full">
-              <thead className="bg-zinc-50">
-                <tr>
-                  <th className={TH}>Canal de origen</th>
-                  <th className={`${TH} text-center`}>¿Entra en el informe?</th>
-                  <th className={`${TH} text-right`}>Leads</th>
-                  <th className={`${TH} text-right`}>Ventas</th>
-                  <th className={`${TH} text-right`}>Recaudo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {leads.por_canal.map((c: any) => (
-                  <tr key={c.canal} className={c.cuenta_como_meta ? "" : "opacity-60"}>
-                    <td className={`${TD} font-medium text-zinc-900`}>{c.canal}</td>
-                    <td className={`${TD} text-center`}>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                          c.cuenta_como_meta
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-zinc-100 text-zinc-500"
-                        }`}
-                      >
-                        {c.cuenta_como_meta ? "Sí · canal Meta" : "No"}
-                      </span>
-                    </td>
-                    <td className={`${TD} text-right`}>{fmtNum(c.leads)}</td>
-                    <td className={`${TD} text-right`}>{fmtNum(c.ventas)}</td>
-                    <td className={`${TD} text-right`}>{fmtUsd(c.recaudo)}</td>
-                  </tr>
-                ))}
-                <tr className="bg-zinc-50 font-bold">
-                  <td className={`${TD} font-bold`} colSpan={2}>
-                    TOTAL — todos los canales
-                  </td>
-                  <td className={`${TD} text-right font-bold`}>
-                    {fmtNum(leads.todos_los_canales?.leads)}
-                  </td>
-                  <td className={`${TD} text-right font-bold`}>
-                    {fmtNum(leads.todos_los_canales?.ventas)}
-                  </td>
-                  <td className={`${TD} text-right font-bold`}>
-                    {fmtUsd(leads.todos_los_canales?.recaudo)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-
         <Nota>
           <span className="font-bold">Alcance del informe: </span>
           las cifras de arriba cubren sólo los leads cuyo canal de origen es{" "}
           {(leads.canales_meta || []).join(", ")}. El tab General del panel no filtra
-          por canal, por eso su total es mayor: la tabla de conciliación muestra
-          exactamente dónde está la diferencia. Si algún canal que debería contar
-          aparece como “No”, es que su texto no coincide con la lista.
+          por canal, por eso su total es mayor; para ver el resto de los canales,
+          usá el filtro de canal del propio panel.
           <span className="block mt-2">
             <span className="font-bold">Criterio de fechas: </span>
           un lead cuenta en <em>Leads</em> por su fecha de entrada dentro del período,
@@ -666,6 +645,11 @@ export default function InformeRedesSociales({ data }: { data: any }) {
       {/* 6. PIPELINE Y VENTAS */}
       <Slide numero="Slide 6" titulo="Pipeline activo y ventas cerradas">
         <div className="grid grid-cols-4 gap-3 mb-6">
+          <KpiCard
+            label="Pipeline activo"
+            value={fmtNum(data.pipeline.total_activos)}
+            detalle="Leads del período aún abiertos"
+          />
           <KpiCard label="Ventas cerradas" value={fmtNum(data.pipeline.total_ventas)} />
           <KpiCard label="Facturación" value={fmtUsd(data.pipeline.total_recaudo)} />
           <KpiCard
@@ -673,12 +657,48 @@ export default function InformeRedesSociales({ data }: { data: any }) {
             value={fmtPct(data.pipeline.concentracion_top2_pct)}
             detalle="Del total facturado"
           />
-          <KpiCard
-            label="Vendedores activos"
-            value={fmtNum(data.pipeline.vendedores_activos)}
-          />
         </div>
 
+        {data.pipeline.activo && data.pipeline.activo.length > 0 && (
+          <div className="mb-6">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+              Pipeline activo por etapa
+            </div>
+            <table className="w-full">
+              <thead className="bg-zinc-50">
+                <tr>
+                  <th className={TH}>Etapa</th>
+                  <th className={`${TH} text-right`}>Leads</th>
+                  <th className={`${TH} text-right`}>% del pipeline</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {data.pipeline.activo.map((e: any) => (
+                  <tr key={e.etapa}>
+                    <td className={`${TD} font-medium text-zinc-900`}>{e.etapa}</td>
+                    <td className={`${TD} text-right`}>{fmtNum(e.leads)}</td>
+                    <td className={`${TD} text-right`}>
+                      {data.pipeline.total_activos > 0
+                        ? fmtPct((e.leads / data.pipeline.total_activos) * 100)
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-zinc-50 font-bold">
+                  <td className={`${TD} font-bold`}>TOTAL ABIERTOS</td>
+                  <td className={`${TD} text-right font-bold`}>
+                    {fmtNum(data.pipeline.total_activos)}
+                  </td>
+                  <td className={`${TD} text-right font-bold`}>100,0%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+          Ventas cerradas en el período
+        </div>
         {data.pipeline.top_clientes.length > 0 ? (
           <table className="w-full">
             <thead className="bg-zinc-50">

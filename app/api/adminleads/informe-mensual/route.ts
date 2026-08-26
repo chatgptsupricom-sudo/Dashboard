@@ -173,40 +173,39 @@ function criteriosLeads(
 }
 
 /**
- * Desglose por canal de origen SIN filtrar canal, con el mismo criterio de
- * fechas del informe. Sirve para conciliar contra el tab General (que cuenta
- * todos los canales) y para detectar valores de canal_origen que no entran en
- * CANALES_META por diferencias de texto.
+ * Pipeline activo: leads del periodo que siguen abiertos, agrupados por etapa.
+ * Es la otra mitad del slide de pipeline, que hasta ahora solo mostraba los
+ * cierres. Se ordena por el order_index de lead_statuses para que las etapas
+ * salgan en el orden real del embudo.
  */
-async function getCanalesBreakdown(
+async function getPipelineActivo(
   userCids: number,
   sede: string | null,
   desde: string,
   hasta: string,
 ) {
-  const c = criteriosLeads(userCids, sede, desde, hasta, "leads", false);
+  const c = criteriosLeads(userCids, sede, desde, hasta, "l");
   const result: any = await query(
     `
       SELECT
-        ${canalNormalizadoSql("leads.canal_origen")} as canal,
-        SUM(CASE WHEN ${c.entradaEnPeriodo} THEN 1 ELSE 0 END) as leads,
-        SUM(CASE WHEN ${c.ventaEnPeriodo} THEN 1 ELSE 0 END) as ventas,
-        IFNULL(SUM(CASE WHEN ${c.ventaEnPeriodo} THEN leads.monto_cerrado_usd ELSE 0 END), 0) as recaudo
-      FROM leads
+        l.status as etapa,
+        COUNT(*) as leads,
+        COALESCE(ls.order_index, 9999) as orden
+      FROM leads l
+      LEFT JOIN lead_statuses ls
+        ON l.status COLLATE utf8mb4_unicode_ci = ls.name COLLATE utf8mb4_unicode_ci
       ${c.where}
-      GROUP BY canal
-      HAVING leads > 0 OR ventas > 0
-      ORDER BY leads DESC, recaudo DESC
+        AND (${c.entradaEnPeriodo})
+        AND l.status != 'CERRADO'
+      GROUP BY l.status, ls.order_index
+      ORDER BY orden ASC
     `,
-    [...c.rangoParams, ...c.rangoParams, ...c.rangoParams, ...c.whereParams],
+    [...c.whereParams, ...c.rangoParams],
   );
 
   return (result.rows || []).map((r: any) => ({
-    canal: r.canal,
+    etapa: r.etapa || "Sin etapa",
     leads: parseInt(r.leads) || 0,
-    ventas: parseInt(r.ventas) || 0,
-    recaudo: parseFloat(r.recaudo) || 0,
-    cuenta_como_meta: CANALES_META.includes(r.canal),
   }));
 }
 
@@ -466,6 +465,18 @@ export async function GET(request: Request) {
     const dias =
       Math.round((toDate(hasta).getTime() - toDate(desde).getTime()) / 86400000) + 1;
 
+    // Si el rango llega hasta fin de mes pero el informe se saca antes, el
+    // ritmo de publicacion se calcula sobre los dias que de verdad pasaron.
+    const hoyIso = toIso(new Date());
+    const cierreEfectivo = hasta > hoyIso ? hoyIso : hasta;
+    const diasTranscurridos = Math.max(
+      1,
+      Math.round(
+        (toDate(cierreEfectivo).getTime() - toDate(desde).getTime()) / 86400000,
+      ) + 1,
+    );
+    const periodoEnCurso = cierreEfectivo !== hasta;
+
     const adAccounts = filterByCids(getAdAccounts(), userCids);
 
     const [campanasActual, campanasPrev, crmActual, crmPrev, porVendedor, topClientes] =
@@ -483,15 +494,7 @@ export async function GET(request: Request) {
         getTopClientes(userCids, sede, desde, hasta),
       ]);
 
-    const canales = await getCanalesBreakdown(userCids, sede, desde, hasta);
-    const totalesTodosCanales = canales.reduce(
-      (acc, c) => ({
-        leads: acc.leads + c.leads,
-        ventas: acc.ventas + c.ventas,
-        recaudo: acc.recaudo + c.recaudo,
-      }),
-      { leads: 0, ventas: 0, recaudo: 0 },
-    );
+    const pipelineActivo = await getPipelineActivo(userCids, sede, desde, hasta);
 
     // Instagram: se toma la cuenta del pais que corresponde al usuario.
     // Los Insights de cuenta si aceptan rangos historicos, asi que el mes de
@@ -504,7 +507,7 @@ export async function GET(request: Request) {
       if (igAccounts.length > 0) {
         const cuenta = igAccounts[0];
         const [actual, previo] = await Promise.all([
-          buildIgSnapshot(cuenta, desde, hasta),
+          buildIgSnapshot(cuenta, desde, hasta, diasTranscurridos),
           fetchIgAccountInsights(cuenta.ig_user_id, prev.desde, prev.hasta),
         ]);
         igSnapshot = actual;
@@ -652,7 +655,9 @@ export async function GET(request: Request) {
     };
 
     const recaudoTotal = crmActual.recaudo;
-    const top2 = topClientes.slice(0, 2).reduce((s, c) => s + c.monto, 0);
+    const top2 = topClientes
+      .slice(0, 2)
+      .reduce((s: number, c: { monto: number }) => s + c.monto, 0);
 
     const diagnostico = construirDiagnostico({
       actual: crmActual,
@@ -663,7 +668,19 @@ export async function GET(request: Request) {
       porVendedor,
       contenido:
         igSnapshot?.contenido ||
-        ({ available: false, reason: igError, data: { total_publicaciones: 0, posts_por_dia: 0, por_formato: [], interacciones_totales: 0 } } as IgSnapshot["contenido"]),
+        ({
+          available: false,
+          reason: igError,
+          data: {
+            total_publicaciones: 0,
+            posts_por_dia: 0,
+            por_formato: [],
+            interacciones_totales: 0,
+            interacciones_desglose: null,
+            visualizaciones_totales: null,
+            con_insights: false,
+          },
+        } as IgSnapshot["contenido"]),
       igDisponible: igMetricas !== null,
     });
 
@@ -672,6 +689,9 @@ export async function GET(request: Request) {
         desde,
         hasta,
         dias,
+        dias_transcurridos: diasTranscurridos,
+        en_curso: periodoEnCurso,
+        cierre_efectivo: cierreEfectivo,
         etiqueta: etiquetaPeriodo(desde, hasta),
         mes_key: mesActualKey,
       },
@@ -735,13 +755,6 @@ export async function GET(request: Request) {
             ? Math.round((totalCalificados / totalConversaciones) * 1000) / 10
             : null,
         por_vendedor: porVendedor,
-        // Conciliacion contra el tab General, que no filtra por canal.
-        por_canal: canales,
-        todos_los_canales: {
-          leads: totalesTodosCanales.leads,
-          ventas: totalesTodosCanales.ventas,
-          recaudo: Math.round(totalesTodosCanales.recaudo * 100) / 100,
-        },
         canales_meta: CANALES_META,
       },
       inversion: {
@@ -763,6 +776,11 @@ export async function GET(request: Request) {
       campanas: campanasActual.campaigns,
       destacadas,
       pipeline: {
+        activo: pipelineActivo,
+        total_activos: pipelineActivo.reduce(
+          (s: number, e: { leads: number }) => s + e.leads,
+          0,
+        ),
         top_clientes: topClientes,
         concentracion_top2_pct:
           recaudoTotal > 0 ? Math.round((top2 / recaudoTotal) * 1000) / 10 : 0,
