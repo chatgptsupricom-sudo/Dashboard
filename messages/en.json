@@ -2270,7 +2270,12 @@
       "cliente": "Customer",
       "hardware": "Device",
       "serial": "Serial",
-      "falla": "Fault"
+      "falla": "Fault",
+      "esperando_equipo": "Devices on the way",
+      "sin_esperando": "No portal reports waiting to be received.",
+      "nuevo_reporte": "New portal report",
+      "ver": "View",
+      "sin_conexion": "Offline — showing data from {hora}"
     },
     "back": "Back"
   }

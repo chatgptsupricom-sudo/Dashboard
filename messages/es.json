@@ -2259,7 +2259,12 @@
       "cliente": "Cliente",
       "hardware": "Equipo",
       "serial": "Serial",
-      "falla": "Falla"
+      "falla": "Falla",
+      "esperando_equipo": "Equipos por llegar",
+      "sin_esperando": "No hay reportes del portal pendientes de recibir.",
+      "nuevo_reporte": "Nuevo reporte del portal",
+      "ver": "Ver",
+      "sin_conexion": "Sin conexión — mostrando los datos de las {hora}"
     },
     "back": "Volver"
   }

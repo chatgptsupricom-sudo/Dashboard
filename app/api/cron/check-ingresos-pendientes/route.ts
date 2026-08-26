@@ -82,7 +82,7 @@ export async function GET(request: Request) {
       dias_umbral: dias,
       generado_en: new Date().toISOString(),
       // Al socket va lo justo para pintar el aviso; el detalle completo lo pide
-      // la pantalla a /api/rma/ingresos-pendientes cuando el técnico hace clic.
+      // la pantalla a /api/seguridad/ingresos-pendientes-mios cuando hace clic.
       ingresos: pendientes.slice(0, 50).map((i) => ({
         id: i.id,
         dias_en_taller: i.dias_en_taller,

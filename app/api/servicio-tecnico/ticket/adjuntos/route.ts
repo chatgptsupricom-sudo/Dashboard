@@ -182,13 +182,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Si no se guardo ni uno, esto es un fallo, no un exito parcial. Devolvia
+    // 201 con success:true y `saved` vacio incluso cuando la base estaba caida,
+    // asi que el cliente tenia que adivinar mirando dentro del cuerpo. Con la
+    // base sin responder eso se traducia en tickets enviados sin una sola foto.
+    if (saved.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          saved,
+          errors,
+          error: errors[0]?.reason || "No se pudo guardar ningun archivo",
+        },
+        { status: 502 },
+      );
+    }
+
     return NextResponse.json(
       {
         success: true,
         saved,
         errors,
-        // Importante: aunque algunos fallen, devolvemos success:true si al menos
-        // uno se guardo. El cliente decide que hacer con los errores parciales.
+        // Aunque alguno falle, devolvemos success:true si al menos uno se
+        // guardo. El cliente decide que hacer con los errores parciales.
       },
       { status: 201 }
     );

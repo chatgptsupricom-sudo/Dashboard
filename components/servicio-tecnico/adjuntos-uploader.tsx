@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/heic,video/mp4,video/quicktime";
@@ -80,9 +80,32 @@ export default function AttachmentUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrs = useRef<Map<string, XMLHttpRequest>>(new Map());
 
-  function update(next: AdjuntoEstado[]) {
-    setFiles(next);
-    onChange?.(next);
+  // Todo cambio de estado pasa por la forma funcional de setFiles.
+  //
+  // La version anterior hacia `setFiles(files.map(...))` leyendo `files` del
+  // closure del render, y ahi estaba el fallo: addFiles metia los archivos al
+  // estado y acto seguido llamaba a upload(), que los buscaba en el `files`
+  // viejo — el que todavia no los tenia —, no encontraba nada y salia sin
+  // enviar. Los adjuntos se quedaban en "pending" para siempre: sin barra de
+  // progreso, sin error, sin peticion en la red. Solo el contador decia
+  // "0 de N adjuntos subidos" y el formulario rechazaba el envio.
+  const alCambiar = useRef(onChange);
+  alCambiar.current = onChange;
+
+  const primerRender = useRef(true);
+  useEffect(() => {
+    // El primer efecto notificaria un array vacio sin que haya pasado nada.
+    if (primerRender.current) {
+      primerRender.current = false;
+      return;
+    }
+    alCambiar.current?.(files);
+  }, [files]);
+
+  function parchear(localFileId: string, cambios: Partial<AdjuntoEstado>) {
+    setFiles((prev) =>
+      prev.map((f) => (f.id === localFileId ? { ...f, ...cambios } : f))
+    );
   }
 
   function localId() {
@@ -142,99 +165,90 @@ export default function AttachmentUploader({
       });
     }
 
-    update([...files, ...accepted]);
-    // Disparar upload de los que quedaron pending.
+    setFiles((prev) => [...prev, ...accepted]);
+    // Disparar upload de los que quedaron pending. Se les pasa el objeto
+    // entero, no el id: el estado todavia no se ha aplicado.
     accepted.forEach((a) => {
-      if (a.status === "pending") upload(a.id);
+      if (a.status === "pending") upload(a);
     });
   }
 
-  function upload(localFileId: string) {
-    const target = files.find((f) => f.id === localFileId);
-    if (!target || target.status === "uploading" || target.status === "done") return;
+  function upload(item: AdjuntoEstado) {
+    if (item.status === "uploading" || item.status === "done") return;
 
-    // Marcar uploading
-    update(
-      files.map((f) =>
-        f.id === localFileId ? { ...f, status: "uploading", progress: 0 } : f
-      )
-    );
+    parchear(item.id, { status: "uploading", progress: 0, error: undefined });
 
     const formData = new FormData();
     formData.append("tracking_token", trackingToken);
-    formData.append("files", target.file);
+    formData.append("files", item.file);
 
     const xhr = new XMLHttpRequest();
-    xhrs.current.set(localFileId, xhr);
+    xhrs.current.set(item.id, xhr);
 
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
-      const pct = Math.round((e.loaded / e.total) * 100);
-      setFiles((prev) =>
-        prev.map((f) => (f.id === localFileId ? { ...f, progress: pct } : f))
-      );
+      parchear(item.id, { progress: Math.round((e.loaded / e.total) * 100) });
     };
 
     xhr.onload = () => {
-      xhrs.current.delete(localFileId);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          // El endpoint devuelve { saved: [{ id, filename, mime, size }], errors: [] }
-          // Buscamos el adjunto guardado que coincida con nuestro filename.
-          const saved =
-            (data.saved || []).find(
-              (s: any) => s.filename === target.file.name
-            ) || data.saved?.[0];
-          update(
-            files.map((f) =>
-              f.id === localFileId
-                ? {
-                    ...f,
-                    status: "done",
-                    progress: 100,
-                    serverId: saved?.id,
-                    serverUrl: saved
-                      ? `/api/servicio-tecnico/ticket/adjuntos/${trackingToken}/${saved.id}`
-                      : undefined,
-                  }
-                : f
-            )
-          );
-        } catch {
-          update(
-            files.map((f) =>
-              f.id === localFileId
-                ? { ...f, status: "error", error: "Respuesta invalida" }
-                : f
-            )
-          );
-        }
-      } else {
+      xhrs.current.delete(item.id);
+
+      if (xhr.status < 200 || xhr.status >= 300) {
         let reason = "Error al subir";
         try {
-          const d = JSON.parse(xhr.responseText);
-          reason = d.error || reason;
+          reason = JSON.parse(xhr.responseText).error || reason;
         } catch {}
-        update(
-          files.map((f) =>
-            f.id === localFileId
-              ? { ...f, status: "error", error: reason }
-              : f
-          )
-        );
+        parchear(item.id, { status: "error", progress: 0, error: reason });
+        return;
       }
+
+      let data: any;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        parchear(item.id, {
+          status: "error",
+          progress: 0,
+          error: "Respuesta invalida",
+        });
+        return;
+      }
+
+      // El endpoint devuelve 201 con success:true aunque el archivo haya sido
+      // rechazado (tipo no permitido, error al guardar): lo que decide es que
+      // venga en `saved`. Sin este chequeo el adjunto se marcaba como subido
+      // y el ticket se enviaba sin foto.
+      const saved =
+        (data.saved || []).find((s: any) => s.filename === item.file.name) ||
+        data.saved?.[0];
+
+      if (!saved?.id) {
+        const motivo =
+          (data.errors || []).find(
+            (e: any) => e.filename === item.file.name
+          )?.reason ||
+          data.errors?.[0]?.reason ||
+          "El servidor no guardo el archivo";
+        parchear(item.id, { status: "error", progress: 0, error: motivo });
+        return;
+      }
+
+      parchear(item.id, {
+        status: "done",
+        progress: 100,
+        error: undefined,
+        serverId: saved.id,
+        serverUrl: `/api/servicio-tecnico/ticket/adjuntos/${trackingToken}/${saved.id}`,
+      });
     };
 
     xhr.onerror = () => {
-      xhrs.current.delete(localFileId);
-      update(
-        files.map((f) =>
-          f.id === localFileId
-            ? { ...f, status: "error", error: "Error de red" }
-            : f
-        )
-      );
+      xhrs.current.delete(item.id);
+      parchear(item.id, {
+        status: "error",
+        progress: 0,
+        error: "Error de red",
+      });
     };
 
     xhr.open("POST", endpoint);
@@ -247,18 +261,13 @@ export default function AttachmentUploader({
     xhrs.current.delete(localFileId);
     const target = files.find((f) => f.id === localFileId);
     if (target?.preview) URL.revokeObjectURL(target.preview);
-    update(files.filter((f) => f.id !== localFileId));
+    setFiles((prev) => prev.filter((f) => f.id !== localFileId));
   }
 
   function retry(localFileId: string) {
-    update(
-      files.map((f) =>
-        f.id === localFileId
-          ? { ...f, status: "pending", progress: 0, error: undefined }
-          : f
-      )
-    );
-    upload(localFileId);
+    const target = files.find((f) => f.id === localFileId);
+    if (!target) return;
+    upload({ ...target, status: "pending", progress: 0, error: undefined });
   }
 
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {

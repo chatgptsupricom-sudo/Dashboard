@@ -52,7 +52,13 @@ type Factura = {
   items: Item[];
 };
 
-export function ReporteForm({ locale }: { locale: string }) {
+export function ReporteForm({
+  locale,
+  turnstileSiteKey = "",
+}: {
+  locale: string;
+  turnstileSiteKey?: string;
+}) {
   const t = useTranslations("servicioTecnico");
   const router = useRouter();
 
@@ -562,6 +568,7 @@ export function ReporteForm({ locale }: { locale: string }) {
           )}
 
           <CaptchaTurnstile
+            siteKey={turnstileSiteKey}
             locale={locale}
             onToken={setCaptchaToken}
             onDisponible={setCaptchaActivo}
