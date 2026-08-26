@@ -22,6 +22,12 @@ import { NextResponse } from "next/server";
  * emite ni llama a n8n. Existe porque la única forma de probar esto contra
  * datos reales era mandarle un WhatsApp de verdad a los técnicos, y una
  * prueba no puede costar eso.
+ *
+ * En dry run se acepta además `?dias=N`, que pisa el umbral. Sirve para
+ * distinguir "no hay equipos vencidos" de "la consulta no ve nada": con un
+ * umbral de 1 día tiene que aparecer cualquier ingreso sin despachar. Solo en
+ * dry run, a propósito — si `dias` valiera en el modo real, cualquiera con el
+ * secreto podria forzar una alerta masiva bajando el umbral a 1.
  */
 
 export async function GET(request: Request) {
@@ -39,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const dias = diasUmbral();
+    const dias = dryRun ? diasSolicitados(request) ?? diasUmbral() : diasUmbral();
     const pendientes = await ingresosPendientes(dias);
 
     if (pendientes.length === 0) {
@@ -172,4 +178,14 @@ async function tecnicosANotificar(): Promise<
       WHERE LOWER(TRIM(r.name)) = 'rma'`,
   );
   return rows as any[];
+}
+
+/** `?dias=N` del dry run. Devuelve null si no vino o si no es un entero sano. */
+function diasSolicitados(request: Request): number | null {
+  const crudo = new URL(request.url).searchParams.get("dias");
+  if (crudo === null) return null;
+  const n = parseInt(crudo, 10);
+  // Mismo acotado que el umbral de verdad: se interpola en el SQL.
+  if (!Number.isFinite(n) || n < 0 || n > 365) return null;
+  return n;
 }
