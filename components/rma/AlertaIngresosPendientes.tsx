@@ -47,7 +47,7 @@ export function AlertaIngresosPendientes() {
   useEffect(() => {
     let vigente = true;
 
-    fetch("/api/rma/ingresos-pendientes")
+    fetch("/api/seguridad/ingresos-pendientes-mios")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (!vigente || !json?.success || json.count === 0) return;
