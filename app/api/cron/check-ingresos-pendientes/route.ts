@@ -17,9 +17,15 @@ import { NextResponse } from "next/server";
  * `rma`, que es el equipo técnico tal como está modelado hoy. Cuando exista la
  * asignación, lo único que cambia es la función `tecnicosANotificar` de abajo:
  * el resto del flujo ya reparte por sala de usuario, no en broadcast.
+ *
+ * `?dry=1` calcula todo y devuelve exactamente lo que se mandaría, pero no
+ * emite ni llama a n8n. Existe porque la única forma de probar esto contra
+ * datos reales era mandarle un WhatsApp de verdad a los técnicos, y una
+ * prueba no puede costar eso.
  */
 
 export async function GET(request: Request) {
+  const dryRun = new URL(request.url).searchParams.get("dry") === "1";
   // Sin CRON_SECRET configurado, `Bearer undefined` haría de contraseña.
   // Mejor no arrancar que arrancar abierto.
   if (!process.env.CRON_SECRET) {
@@ -38,7 +44,12 @@ export async function GET(request: Request) {
 
     if (pendientes.length === 0) {
       console.log(`[cron-pendientes] sin ingresos de más de ${dias} días`);
-      return NextResponse.json({ checked: 0, alerts_sent: 0, dias_umbral: dias });
+      return NextResponse.json({
+        checked: 0,
+        alerts_sent: 0,
+        dias_umbral: dias,
+        ...(dryRun ? { dry_run: true } : {}),
+      });
     }
 
     // Vienen ordenados de más viejo a más nuevo.
@@ -62,6 +73,24 @@ export async function GET(request: Request) {
         case_number: i.case_number,
       })),
     };
+
+    if (dryRun) {
+      console.log(
+        `[cron-pendientes] DRY RUN: ${pendientes.length} pendientes, ` +
+          `se le avisaria a ${tecnicos.length} tecnicos`,
+      );
+      return NextResponse.json({
+        dry_run: true,
+        checked: pendientes.length,
+        would_alert: tecnicos.length,
+        dias_umbral: dias,
+        oldest_days: oldestDays,
+        socket_disponible: Boolean((global as any).io),
+        n8n_configurado: Boolean(process.env.N8N_LEAD_WEBHOOK_URL),
+        destinatarios: tecnicos,
+        payload,
+      });
+    }
 
     let enviados = 0;
     const io = (global as any).io;
