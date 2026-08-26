@@ -104,8 +104,7 @@ export default function ReporteCampanas({ data }: { data: any }) {
     <div className="max-w-[1100px] mx-auto px-6 py-8 print:px-0 print:py-0 print:max-w-none">
       <div className="no-print flex items-center justify-between mb-6">
         <div className="text-xs text-zinc-500">
-          {periodo.etiqueta} · {detalle.length}{" "}
-          {detalle.length === 1 ? "campaña" : "campañas"} con inversión
+          {periodo.etiqueta} · {detalle.length} campañas con inversión
         </div>
         <div className="flex gap-2">
           <button
@@ -131,15 +130,12 @@ export default function ReporteCampanas({ data }: { data: any }) {
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900 mt-3 leading-tight">
           Reporte KPI de campañas
           <br />
-          <span className="text-blue-600">{periodo.etiqueta}</span>
+          <span className="text-blue-600">Instagram · Facebook</span>
         </h1>
-        <div className="text-[11px] text-zinc-400 mt-2">
-          Instagram · Facebook — Meta Ads
-        </div>
         <dl className="mt-8 space-y-2 text-[12px] text-zinc-600">
           <div>
             <span className="font-bold text-zinc-800">Período: </span>
-            {periodo.rango || periodo.etiqueta}
+            {periodo.etiqueta}
           </div>
           <div>
             <span className="font-bold text-zinc-800">Campañas analizadas: </span>
@@ -163,8 +159,8 @@ export default function ReporteCampanas({ data }: { data: any }) {
       {data.sin_campanas ? (
         <Pagina etiqueta="Sin datos" titulo="No hay campañas con inversión">
           <p className="text-[11px] text-zinc-500">
-            En {periodo.etiqueta} ninguna campaña registra gasto en Meta Ads. El
-            reporte cubre el mes en curso salvo que elijas otro rango en el panel.
+            En el período seleccionado ninguna campaña registra gasto en Meta Ads.
+            Probá con un rango de fechas que incluya campañas activas.
           </p>
         </Pagina>
       ) : (
@@ -214,10 +210,7 @@ export default function ReporteCampanas({ data }: { data: any }) {
 
       {/* CONSOLIDADO */}
       {!data.sin_campanas && (
-        <Pagina
-          etiqueta="Consolidado"
-          titulo={`Todas las campañas de ${periodo.etiqueta}`}
-        >
+        <Pagina etiqueta="Consolidado" titulo="Todas las campañas del período">
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
               ["Inversión total", fmtUsd(consolidado.inversion)],
