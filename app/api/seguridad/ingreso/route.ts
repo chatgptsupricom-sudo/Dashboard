@@ -1,34 +1,11 @@
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
+import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
 );
 
-async function requireSeguridad(request: NextRequest) {
-  const token = request.cookies.get("token")?.value;
-  if (!token) {
-    return { error: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
-  }
-
-  let payload: any;
-  try {
-    const result = await jwtVerify(token, JWT_SECRET);
-    payload = result.payload;
-  } catch {
-    return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };
-  }
-
-  const userRole = ((payload.role as string) || "").toLowerCase().trim();
-  if (userRole !== "seguridad" && userRole !== "superadmin") {
-    return {
-      error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }),
-    };
-  }
-
-  return { payload };
-}
 
 const MAX = {
   factura_numero: 100,
@@ -171,6 +148,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Los 4 checks de la planilla son OBLIGATORIOS y hay que declararlos
+    // explícitamente, uno por uno.
+    //
+    // Antes se guardaban con `body.x === false ? 0 : 1`, así que un campo
+    // ausente quedaba registrado como "sí". Eso es grave justo en el sentido
+    // contrario al que protege: si el Seguridad no marca "accesorios
+    // íntegros", el sistema declaraba por su cuenta que el equipo llegó
+    // completo. Cuando un cliente reclame que faltaba algo, ese registro es la
+    // prueba de la empresa — y decía que sí sin que nadie lo hubiera revisado.
+    const CHECKS = [
+      "accesorios_integros",
+      "sin_manipulacion",
+      "dentro_de_fecha",
+      "falla_cubierta_garantia",
+    ] as const;
+
+    for (const campo of CHECKS) {
+      if (typeof body[campo] !== "boolean") {
+        errors.push(`${campo} es obligatorio (true o false)`);
+      }
+    }
+
     if (errors.length > 0) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
@@ -189,10 +188,10 @@ export async function POST(request: NextRequest) {
         truncate(body.hardware, MAX.hardware),
         truncate(body.serial, MAX.serial),
         descripcionFalla,
-        body.accesorios_integros === false ? 0 : 1,
-        body.sin_manipulacion === false ? 0 : 1,
-        body.dentro_de_fecha === false ? 0 : 1,
-        body.falla_cubierta_garantia === true ? 1 : 0,
+        body.accesorios_integros ? 1 : 0,
+        body.sin_manipulacion ? 1 : 0,
+        body.dentro_de_fecha ? 1 : 0,
+        body.falla_cubierta_garantia ? 1 : 0,
         recibidoPor,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
       ],

@@ -1999,6 +1999,7 @@
         "submit": "Register intake",
         "submitting": "Registering...",
         "error_required": "Fill in the required fields",
+        "error_checks_requeridos": "Answer all four reception checks before continuing.",
         "error_generic": "Could not register the intake"
       },
       "list": {

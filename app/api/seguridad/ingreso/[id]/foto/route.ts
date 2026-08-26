@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
+import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -37,29 +37,6 @@ function detectImageMime(buf: Buffer): string | null {
   return null;
 }
 
-async function requireSeguridad(request: NextRequest) {
-  const token = request.cookies.get("token")?.value;
-  if (!token) {
-    return { error: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
-  }
-
-  let payload: any;
-  try {
-    const result = await jwtVerify(token, JWT_SECRET);
-    payload = result.payload;
-  } catch {
-    return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };
-  }
-
-  const userRole = ((payload.role as string) || "").toLowerCase().trim();
-  if (userRole !== "seguridad" && userRole !== "superadmin") {
-    return {
-      error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }),
-    };
-  }
-
-  return { payload };
-}
 
 async function ensureFotoColumns() {
   try {

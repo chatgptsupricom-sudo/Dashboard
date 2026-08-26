@@ -41,10 +41,10 @@ type FormState = {
   hardware: string;
   serial: string;
   descripcion_falla: string;
-  accesorios_integros: boolean;
-  sin_manipulacion: boolean;
-  dentro_de_fecha: boolean;
-  falla_cubierta_garantia: boolean;
+  accesorios_integros: boolean | null;
+  sin_manipulacion: boolean | null;
+  dentro_de_fecha: boolean | null;
+  falla_cubierta_garantia: boolean | null;
   recibido_por: string;
 };
 
@@ -77,10 +77,10 @@ export default function NuevoIngresoPage() {
     hardware: "",
     serial: "",
     descripcion_falla: "",
-    accesorios_integros: true,
-    sin_manipulacion: true,
-    dentro_de_fecha: true,
-    falla_cubierta_garantia: true,
+    accesorios_integros: null,
+    sin_manipulacion: null,
+    dentro_de_fecha: null,
+    falla_cubierta_garantia: null,
     recibido_por: user?.name || "",
   });
 
@@ -149,6 +149,21 @@ export default function NuevoIngresoPage() {
 
     if (!form.cliente_nombre.trim() || !form.recibido_por.trim()) {
       setSubmitError(tf("error_required"));
+      return;
+    }
+
+    // Los 4 checks de la planilla exigen respuesta explícita. Antes venían
+    // pre-marcados en "sí", así que se podía enviar el ingreso sin haber
+    // revisado nada y quedaba registrado que el equipo llegó completo.
+    const sinResponder = [
+      form.accesorios_integros,
+      form.sin_manipulacion,
+      form.dentro_de_fecha,
+      form.falla_cubierta_garantia,
+    ].some((v) => v === null);
+
+    if (sinResponder) {
+      setSubmitError(tf("error_checks_requeridos"));
       return;
     }
 
@@ -573,13 +588,17 @@ function CheckRow({
   no,
 }: {
   label: string;
-  value: boolean;
+  value: boolean | null;
   onChange: (v: boolean) => void;
   yes: string;
   no: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
+    <div
+      className={`flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2.5 ${
+        value === null ? "border-amber-300 bg-amber-50" : "border-slate-200"
+      }`}
+    >
       <span className="text-sm font-medium text-slate-700">{label}</span>
       <div
         role="group"
@@ -590,7 +609,7 @@ function CheckRow({
           onClick={() => onChange(true)}
           aria-pressed={value === true}
           className={`px-3 h-8 transition-colors ${
-            value
+            value === true
               ? "bg-emerald-500 text-white"
               : "bg-white text-slate-500 hover:bg-slate-50"
           }`}
@@ -602,7 +621,9 @@ function CheckRow({
           onClick={() => onChange(false)}
           aria-pressed={value === false}
           className={`px-3 h-8 border-l border-slate-200 transition-colors ${
-            !value
+            // `value === false`, no `!value`: con null ninguno va resaltado, que
+            // es la señal de que falta responder.
+            value === false
               ? "bg-red-500 text-white"
               : "bg-white text-slate-500 hover:bg-slate-50"
           }`}
