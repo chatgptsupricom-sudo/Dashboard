@@ -28,17 +28,21 @@ const SRC =
   "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileListo&render=explicit";
 
 export function CaptchaTurnstile({
+  siteKey: siteKeyProp,
   onToken,
   onDisponible,
   locale,
 }: {
+  siteKey?: string;
   onToken: (token: string) => void;
   onDisponible: (disponible: boolean) => void;
   locale: string;
 }) {
   const contenedor = useRef<HTMLDivElement>(null);
   const idWidget = useRef<string | null>(null);
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  // La prop manda: llega del servidor en ejecución. La variable incrustada
+  // queda de respaldo por si algún día se renderiza sin pasarla.
+  const siteKey = siteKeyProp || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     if (!siteKey) {
