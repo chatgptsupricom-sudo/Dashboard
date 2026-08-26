@@ -266,6 +266,7 @@
     "cancel": "Cancel",
     "case_info": "Case Information",
     "diagnosis": "Diagnosis",
+    "despachado_at": "Device delivered on",
     "change_status": "Change Status",
     "change_status_desc": "Select the new case status",
     "new_status": "New Status",
@@ -750,6 +751,7 @@
     "consultar_error_no_encontrado": "We couldn't find that report. Check the data and try again.",
     "consultar_status_titulo": "Report status",
     "consultar_status_label": "Current status",
+    "consultar_entregado": "Device delivered on {fecha}",
     "consultar_timeline_titulo": "Timeline",
     "consultar_datos_reporte": "Report details",
     "consultar_producto": "Product",
@@ -762,6 +764,7 @@
     "consultar_link_nuevo_reporte": "Report a new failure",
     "status_recibido": "Received — we are reviewing it",
     "status_reparado": "Repaired — ready for pickup / delivery",
+    "status_reparado_entregado": "Repaired",
     "status_nota_credito": "Credit note approved",
     "status_no_procesado": "Requires your attention (contact Supricom)",
     "status_reingresado": "Re-entered for review"

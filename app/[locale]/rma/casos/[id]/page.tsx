@@ -1,5 +1,6 @@
 "use client";
 
+import { fechaCorta } from "@/lib/fecha";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -410,6 +411,20 @@ export default function RmaCasoDetailPage() {
                   <p className="text-sm text-slate-700 mt-1">{caseData.diagnosis || "—"}</p>
                 )}
               </div>
+              {/* Entrega del equipo (issue #32). Solo lectura: lo escribe
+                  Seguridad al registrar el despacho, no se edita desde aca.
+                  Sin esto el tecnico no tiene forma de saber, desde su propia
+                  pantalla, si el equipo sigue en el taller o ya se lo llevaron. */}
+              {caseData.despachado_at && (
+                <div>
+                  <Label className="text-xs font-medium text-slate-400 uppercase">
+                    {t("despachado_at")}
+                  </Label>
+                  <p className="text-sm font-semibold text-emerald-700 mt-1">
+                    {fechaCorta(caseData.despachado_at)}
+                  </p>
+                </div>
+              )}
               {editing && (
                 <div className="flex justify-end">
                   <Button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">

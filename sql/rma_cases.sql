@@ -16,11 +16,20 @@ CREATE TABLE IF NOT EXISTS rma_cases (
   status ENUM('recibido','reparado','nota_credito','no_procesado','reingresado') NOT NULL DEFAULT 'recibido',
   diagnosis TEXT DEFAULT NULL,
   notes TEXT DEFAULT NULL,
+  -- Fecha en que Seguridad entrego el equipo al cliente (issue #32).
+  --
+  -- Va como columna aparte y NO como un valor mas del ENUM de `status`: el
+  -- estado guarda el DESENLACE del caso (reparado, nota de credito, no
+  -- procesado) y la entrega es un hecho distinto que le ocurre a cualquiera
+  -- de ellos. Un equipo con nota de credito tambien se entrega, y si el
+  -- despacho pisara el estado se perderia el motivo por el que se cerro.
+  despachado_at DATE DEFAULT NULL,
   company_id INT DEFAULT NULL,
   created_by VARCHAR(200) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_status (status),
+  INDEX idx_despachado (despachado_at),
   INDEX idx_company (company_id),
   INDEX idx_created (created_at),
   INDEX idx_case_number (case_number)
