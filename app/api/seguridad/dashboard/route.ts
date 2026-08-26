@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         despachos_hoy: Number(despachosHoyRes.rows[0]?.total || 0),
         pendientes: Number(pendientesRes.rows[0]?.total || 0),
       });
-      resumen.headers.set("Cache-Control", "private, max-age=60");
+      resumen.headers.set("Cache-Control", "no-store");
       return resumen;
     }
 
@@ -207,7 +207,12 @@ export async function GET(request: NextRequest) {
       alertas,
     });
 
-    response.headers.set("Cache-Control", "private, max-age=300");
+    // no-store y no `max-age=300`: con la cache de 5 minutos, el almacenista
+    // registraba un ingreso y el panel le seguia mostrando los numeros de
+    // antes, porque el navegador servia la respuesta guardada sin volver a
+    // preguntar. En una pantalla cuyo uso es registrar y comprobar en el acto,
+    // ese retraso se lee como que el registro no se guardo.
+    response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error: any) {
     console.error("Error cargando dashboard de seguridad:", error);

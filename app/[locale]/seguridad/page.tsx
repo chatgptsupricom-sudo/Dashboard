@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { promedioTexto } from "@/lib/seguridad/formato";
+import { fechaCorta, promedioTexto } from "@/lib/seguridad/formato";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -265,7 +265,7 @@ export default function SeguridadDashboard() {
                       className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
                     >
                       <div className="text-xs text-slate-500 w-16">
-                        {i.fecha_entrega}
+                        {fechaCorta(i.fecha_entrega)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-900 truncate">
@@ -349,7 +349,7 @@ export default function SeguridadDashboard() {
                             {i.cliente_nombre}
                           </p>
                           <span className="text-xs text-slate-400 tabular-nums">
-                            {i.fecha_entrega}
+                            {fechaCorta(i.fecha_entrega)}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
@@ -382,7 +382,7 @@ export default function SeguridadDashboard() {
                             {d.almacenista_nombre}
                           </p>
                           <span className="text-xs text-slate-400 tabular-nums">
-                            {d.fecha_despacho}
+                            {fechaCorta(d.fecha_despacho)}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
