@@ -349,19 +349,32 @@ export async function GET(request: Request) {
       ? `AND ${canalNormalizadoSql("l.canal_origen")} = '${canal!.replace(/'/g, "''")}'`
       : "";
 
+    // Mismo criterio de cohortes que las tarjetas, pero con el alias `l` y por
+    // concatenacion, porque esta consulta no usa parametros. Las fechas ya
+    // pasaron por DATE_REGEX, asi que no hay interpolacion de entrada cruda.
+    const ES_VENTA_L =
+      "l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO')";
+    const entradaEnPeriodoL = conFechas
+      ? `COALESCE(l.fecha_ingreso, l.created_at) BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'`
+      : "1=1";
+    const ventaEnPeriodoL = conFechas
+      ? `${ES_VENTA_L} AND l.fecha_venta IS NOT NULL AND l.fecha_venta BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'`
+      : ES_VENTA_L;
+
     const dateJoinCond = [
-      fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : "",
-      fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : "",
+      conFechas ? `AND ((${entradaEnPeriodoL}) OR (${ventaEnPeriodoL}))` : "",
       canalJoinCond,
     ].join(" ");
     const vendorResult: any = await query(`
       SELECT
         s.id, s.name,
-        COUNT(CASE WHEN l.status != 'CERRADO' THEN 1 END) as activos,
-        COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) as ganados,
-        COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 END) as perdidos,
-        IFNULL(SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
-        IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
+        SUM(CASE WHEN ${entradaEnPeriodoL} THEN 1 ELSE 0 END) as leads,
+        SUM(CASE WHEN ${entradaEnPeriodoL} AND l.status != 'CERRADO' THEN 1 ELSE 0 END) as activos,
+        SUM(CASE WHEN ${ventaEnPeriodoL} THEN 1 ELSE 0 END) as ganados,
+        SUM(CASE WHEN ${entradaEnPeriodoL} AND l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 ELSE 0 END) as perdidos,
+        IFNULL(SUM(CASE WHEN ${ventaEnPeriodoL} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
+        IFNULL((SUM(CASE WHEN ${entradaEnPeriodoL} AND ${ES_VENTA_L} THEN 1 ELSE 0 END) /
+                NULLIF(SUM(CASE WHEN ${entradaEnPeriodoL} THEN 1 ELSE 0 END), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
       LEFT JOIN leads l ON s.id = l.seller_id ${sellerId ? "AND l.seller_id = " + parseInt(sellerId) : ""} ${dateJoinCond}
       WHERE (s.activo = 1 OR l.id IS NOT NULL) ${sedeJoin}
@@ -377,8 +390,7 @@ export async function GET(request: Request) {
       AND l.motivo_cierre IN ('VENTA', 'GANADO')
       AND s.activo = 1
       ${sede ? `AND s.cids = ${parseInt(sede)}` : ""}
-      ${fechaInicio ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) >= '${fechaInicio} 00:00:00'` : ""}
-      ${fechaFin ? `AND COALESCE(l.fecha_venta, l.fecha_ingreso, l.created_at) <= '${fechaFin} 23:59:59'` : ""}
+      ${conFechas ? `AND l.fecha_venta IS NOT NULL AND l.fecha_venta BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'` : ""}
       GROUP BY s.id, s.name
       ORDER BY total_ventas DESC
       LIMIT 5
@@ -416,8 +428,7 @@ export async function GET(request: Request) {
         AND producto_perdido != ''
         AND producto_perdido != 'OTRO'
         ${sede ? `AND seller_id IN (SELECT id FROM sellers WHERE cids = ${parseInt(sede)})` : ""}
-        ${fechaInicio ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) >= '${fechaInicio} 00:00:00'` : ""}
-        ${fechaFin ? `AND COALESCE(fecha_venta, fecha_ingreso, created_at) <= '${fechaFin} 23:59:59'` : ""}
+        ${conFechas ? `AND fecha_venta IS NOT NULL AND fecha_venta BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'` : ""}
       GROUP BY producto_perdido
       ORDER BY total DESC
       LIMIT 10
