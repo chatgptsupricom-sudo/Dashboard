@@ -47,6 +47,7 @@ import {
   Search,
   Settings2,
   Shield,
+  ShieldCheck,
   Target,
   TrendingDown,
   TrendingUp,
@@ -219,6 +220,9 @@ export function Sidebar({
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
+    // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
+    // llega desde el panel en vez de por un subdominio propio.
+    { id: "seguridad", label: t("seguridad"), icon: ShieldCheck, slug: "/seguridad", absoluteHref: true },
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
     { id: "rma_salida", label: t("salida_rma"), icon: Truck, slug: "/rma/salida", absoluteHref: true },
     { id: "sales_dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "/dashboard" },

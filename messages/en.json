@@ -189,6 +189,7 @@
     "ventas": "Sales",
     "compras": "Purchases",
     "rma": "Technical Service",
+    "seguridad": "Security",
     "nota_credito": "Credit Note",
     "salida_rma": "Merchandise Exit",
     "reportes": "Reports",
