@@ -1,3 +1,4 @@
+import { normalizarCanal, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
@@ -220,6 +221,12 @@ export async function POST(request: Request) {
       crearNuevo,
     } = body;
 
+    // `canal_origen` es texto libre y de ahi salen las variantes sucias
+    // ("Whatsaap", el string "null"): se normaliza antes de insertar para no
+    // seguir generando valores nuevos que despues haya que limpiar.
+    const canalNormalizado = normalizarCanal(canalOrigen);
+    const canalGuardado = canalNormalizado === SIN_CANAL ? null : canalNormalizado;
+
     if (crearNuevo) {
       // Creación manual de lead desde el admin
       await query(
@@ -234,7 +241,7 @@ export async function POST(request: Request) {
           rif ?? "",
           ubicacionEstado ?? "",
           ubicacionDetalle ?? "",
-          canalOrigen ?? "",
+          canalGuardado,
           campana ?? "",
           seller_id ?? null,
           status ?? "NUEVO",
@@ -295,7 +302,7 @@ export async function POST(request: Request) {
           rif ?? "",
           ubicacionEstado ?? "",
           ubicacionDetalle ?? "",
-          canalOrigen ?? "",
+          canalGuardado,
           campana ?? "",
           seller_id ?? null,
           status ?? "CERRADO",

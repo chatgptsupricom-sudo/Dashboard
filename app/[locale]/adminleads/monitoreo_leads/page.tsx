@@ -748,6 +748,7 @@
 // }
 "use client";
 
+import { normalizarCanal, SIN_CANAL } from "@/lib/canales";
 import { KanbanColumn } from "@/components/leads/KanbanColumn";
 import { LeadCard } from "@/components/leads/LeadCard";
 import { minutosLaborales } from "@/lib/leads/businessHours";
@@ -935,6 +936,8 @@ export default function MonitoringPage() {
     status: "NUEVO",
   });
 
+  const [canalOtro, setCanalOtro] = useState(false);
+
   const fetchData = async () => {
     const [leadsRes, sellersRes, statusesRes] = await Promise.all([
       fetch("/api/adminleads/leads").then((r) => r.json()),
@@ -1033,6 +1036,21 @@ export default function MonitoringPage() {
       Array.from(
         new Set(leads.map((l) => l.ubicacionEstado).filter(Boolean)),
       ).sort(),
+    [leads],
+  );
+
+  // Canales ya usados, normalizados: el campo era texto libre y de ahi salian
+  // las variantes ("Whatsaap", "Whatsapp " con espacio). Se elige de la lista y
+  // solo se escribe a mano al dar de alta un canal nuevo.
+  const canalOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          leads
+            .map((l) => normalizarCanal(l.canalOrigen))
+            .filter((c) => c !== SIN_CANAL),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
     [leads],
   );
 
@@ -1294,6 +1312,7 @@ export default function MonitoringPage() {
       });
       if (!res.ok) throw new Error("Error al crear lead");
       setShowCreateModal(false);
+      setCanalOtro(false);
       setCreateForm({
         nombre: "",
         empresa: "",
@@ -2274,13 +2293,37 @@ export default function MonitoringPage() {
               <label className="text-xs font-bold text-zinc-500 uppercase">
                 Canal de Origen
               </label>
-              <input
-                className="w-full border border-zinc-300 p-2.5 rounded-lg text-sm"
-                value={createForm.canalOrigen}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, canalOrigen: e.target.value })
-                }
-              />
+              <select
+                className="w-full border border-zinc-300 p-2.5 rounded-lg text-sm bg-white"
+                value={canalOtro ? "__otro__" : createForm.canalOrigen}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCanalOtro(v === "__otro__");
+                  setCreateForm({
+                    ...createForm,
+                    canalOrigen: v === "__otro__" ? "" : v,
+                  });
+                }}
+              >
+                <option value="">Sin canal</option>
+                {canalOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value="__otro__">Otro (especificar)…</option>
+              </select>
+              {canalOtro && (
+                <input
+                  autoFocus
+                  placeholder="Nombre del canal nuevo"
+                  className="w-full border border-zinc-300 p-2.5 rounded-lg text-sm mt-1"
+                  value={createForm.canalOrigen}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, canalOrigen: e.target.value })
+                  }
+                />
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold text-zinc-500 uppercase">
