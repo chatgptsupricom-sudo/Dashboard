@@ -2,11 +2,6 @@ import { query } from "@/lib/db";
 import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
-
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ case_number: string }> },

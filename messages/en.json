@@ -2237,6 +2237,31 @@
       "hint": "Ask the customer to sign with their finger or mouse.",
       "saved": "Signature saved"
     },
+    "mostrador": {
+      "title": "Counter",
+      "abrir": "Counter (mobile)",
+      "prompt": "What do you need to do?",
+      "nuevo_ingreso": "New intake",
+      "nuevo_despacho": "New dispatch",
+      "ver_pendientes": "View pending",
+      "buscar_ticket": "Search by ticket",
+      "pendientes": "Pending dispatch",
+      "buscar": "Search",
+      "hoy": "Today",
+      "ingresos": "Intakes",
+      "despachos": "Dispatches",
+      "ir_al_panel": "Go to full panel",
+      "dias": "{count, plural, one {# day} other {# days}}",
+      "sin_pendientes": "No equipment pending dispatch.",
+      "error": "Could not load. Check your connection.",
+      "ticket_placeholder": "Ticket number (e.g. 0042)",
+      "no_encontrado": "We couldn't find that ticket.",
+      "usar_ticket": "Use this ticket",
+      "cliente": "Customer",
+      "hardware": "Device",
+      "serial": "Serial",
+      "falla": "Fault"
+    },
     "back": "Back"
   }
 }

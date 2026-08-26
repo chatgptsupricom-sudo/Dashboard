@@ -1,12 +1,12 @@
 -- Issue #30 [Seguridad 1/5] Rol Seguridad - base
 -- Tablas iniciales del modulo Seguridad (Almacen / Control de acceso).
--- Los detalles funcionales viven en issues #2 (ingreso),),
-#3 (despacho) y #4 (calificacion).
+-- Los detalles funcionales viven en los issues #31 (ingreso), #32 (despacho)
+-- y #33 (calificacion).
 
 CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   rma_case_id INT DEFAULT NULL,
-  fecha_entrega DAT: NOT NULL,
+  fecha_entrega DATE NOT NULL,
   factura_numero VARCHAR(100) DEFAULT NULL,
   cliente_nombre VARCHAR(200) NOT NULL,
   hardware VARCHAR(200) DEFAULT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS seguridad_despachos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ingreso_id INT DEFAULT NULL,
   rma_case_id INT DEFAULT NULL,
-  fecha_despacho DAT: NOT NULL,
+  fecha_despacho DATE NOT NULL,
   almacenista_nombre VARCHAR(200) NOT NULL,
   facturas_json TEXT DEFAULT NULL,
   cliente_retira VARCHAR(200) DEFAULT NULL,

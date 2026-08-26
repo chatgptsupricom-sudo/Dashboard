@@ -13,6 +13,7 @@ import {
   Package,
   Send,
   ShieldCheck,
+  Smartphone,
   Star,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,7 +26,9 @@ type DashboardData = {
     despachos_hoy: number;
     despachos_hoy_delta: number;
     en_taller_mas_7d: number;
-    promedio_calificacion: number;
+    // null mientras no haya ninguna calificacion en 30 dias: el AVG de MySQL
+    // devuelve NULL y el endpoint lo pasa tal cual.
+    promedio_calificacion: number | null;
     total_calificaciones_mes: number;
     ingresos_pendientes_despacho: number;
   };
@@ -169,6 +172,17 @@ export default function SeguridadDashboard() {
             <Send className="w-4 h-4" />
             {t("actions.despacho.title")}
           </Link>
+          {/* Entrada al mostrador (#39). Desde que Seguridad se llega por el
+              sidebar del panel (#30) y no por su propio subdominio, esta es la
+              puerta a la vista de telefono: se abre una vez desde el panel y se
+              guarda en la pantalla de inicio. */}
+          <Link
+            href={`${base}/mostrador`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Smartphone className="w-4 h-4" />
+            {t("mostrador.abrir")}
+          </Link>
         </section>
 
         {loading ? (
@@ -207,7 +221,11 @@ export default function SeguridadDashboard() {
               />
               <KPI
                 label={t("dashboard.kpi.promedio")}
-                value={data.kpis.promedio_calificacion.toFixed(1)}
+                value={
+                  data.kpis.promedio_calificacion === null
+                    ? "—"
+                    : data.kpis.promedio_calificacion.toFixed(1)
+                }
                 icon={<Star className="w-4 h-4" />}
                 accent="violet"
                 subtitle={t("dashboard.kpi.total_calif", {

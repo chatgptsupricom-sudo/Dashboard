@@ -2226,6 +2226,31 @@
       "hint": "Pide al cliente que firme con el dedo o el mouse.",
       "saved": "Firma guardada"
     },
+    "mostrador": {
+      "title": "Mostrador",
+      "abrir": "Mostrador (móvil)",
+      "prompt": "¿Qué quieres hacer?",
+      "nuevo_ingreso": "Nuevo ingreso",
+      "nuevo_despacho": "Nuevo despacho",
+      "ver_pendientes": "Ver pendientes",
+      "buscar_ticket": "Buscar por ticket",
+      "pendientes": "Pendientes de despacho",
+      "buscar": "Buscar",
+      "hoy": "Hoy",
+      "ingresos": "Ingresos",
+      "despachos": "Despachos",
+      "ir_al_panel": "Ir al panel completo",
+      "dias": "{count, plural, one {# día} other {# días}}",
+      "sin_pendientes": "No hay equipos pendientes de despacho.",
+      "error": "No se pudo cargar. Revisa la conexión.",
+      "ticket_placeholder": "Número de ticket (ej: 0042)",
+      "no_encontrado": "No encontramos ese ticket.",
+      "usar_ticket": "Usar este ticket",
+      "cliente": "Cliente",
+      "hardware": "Equipo",
+      "serial": "Serial",
+      "falla": "Falla"
+    },
     "back": "Volver"
   }
 }

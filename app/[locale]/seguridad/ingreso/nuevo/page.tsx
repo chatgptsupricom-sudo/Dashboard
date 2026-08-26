@@ -102,12 +102,25 @@ export default function NuevoIngresoPage() {
     }
   }, [user?.name]);
 
+  // El mostrador (#39) manda aqui con ?ticket=0042 despues de buscarlo, para
+  // que el almacenista no tenga que teclear el numero dos veces. Se lee de
+  // window y no con useSearchParams para no arrastrar el Suspense que este
+  // pide en build.
+  useEffect(() => {
+    const desdeUrl = new URLSearchParams(window.location.search)
+      .get("ticket")
+      ?.trim();
+    if (!desdeUrl) return;
+    setTicketQuery(desdeUrl);
+    searchTicket(desdeUrl);
+  }, []);
+
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const searchTicket = async () => {
-    const value = ticketQuery.trim();
+  const searchTicket = async (valor?: string) => {
+    const value = (valor ?? ticketQuery).trim();
     if (!value) return;
     setSearchingTicket(true);
     setTicketError(null);
@@ -283,7 +296,7 @@ export default function NuevoIngresoPage() {
               />
               <button
                 type="button"
-                onClick={searchTicket}
+                onClick={() => searchTicket()}
                 disabled={searchingTicket || !ticketQuery.trim()}
                 className="h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
                 style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
@@ -600,15 +613,17 @@ function CheckRow({
       }`}
     >
       <span className="text-sm font-medium text-slate-700">{label}</span>
+      {/* h-12 y no h-8: son los controles mas tocados del formulario y se usan
+          de pie con el telefono en una mano. El criterio de #39 pide 48px. */}
       <div
         role="group"
-        className="inline-flex rounded-[10px] border border-slate-200 overflow-hidden text-xs font-semibold"
+        className="inline-flex shrink-0 rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold"
       >
         <button
           type="button"
           onClick={() => onChange(true)}
           aria-pressed={value === true}
-          className={`px-3 h-8 transition-colors ${
+          className={`min-w-[56px] px-4 h-12 transition-colors ${
             value === true
               ? "bg-emerald-500 text-white"
               : "bg-white text-slate-500 hover:bg-slate-50"
@@ -620,7 +635,7 @@ function CheckRow({
           type="button"
           onClick={() => onChange(false)}
           aria-pressed={value === false}
-          className={`px-3 h-8 border-l border-slate-200 transition-colors ${
+          className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
             // `value === false`, no `!value`: con null ninguno va resaltado, que
             // es la señal de que falta responder.
             value === false
