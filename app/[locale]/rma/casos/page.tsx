@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertaIngresosPendientes } from "@/components/rma/AlertaIngresosPendientes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,6 +135,8 @@ export default function RmaCasosPage() {
           </Button>
         </Link>
       </div>
+
+      <AlertaIngresosPendientes />
 
       {/* Filters */}
       <Card className="rounded-3xl border-none shadow-sm">

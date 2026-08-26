@@ -131,6 +131,52 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // ALERTA DE EQUIPOS PENDIENTES DE DESPACHO (CRON) - issue #37
+  // ==========================================
+
+  // Todos los dias habiles a las 10:00. Diario alcanza: el umbral se mide en
+  // dias, revisarlo mas seguido solo repetiria el mismo aviso. Y de lunes a
+  // viernes porque el almacen no despacha el fin de semana, asi que avisar
+  // sabado y domingo seria ruido que ademas ensena a ignorar la alerta.
+  cron.schedule(
+    "0 10 * * 1-5",
+    async () => {
+      console.log(
+        `[${new Date().toISOString()}] Revisando ingresos pendientes de despacho...`,
+      );
+
+      try {
+        const response = await fetch(
+          `http://localhost:${PORT}/api/cron/check-ingresos-pendientes`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${process.env.CRON_SECRET}`,
+            },
+          },
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          console.log("Revision de pendientes lista:", data);
+        } else {
+          console.error("Fallo la revision de pendientes:", data);
+        }
+      } catch (error) {
+        console.error(
+          "Error de red al revisar ingresos pendientes:",
+          error.message,
+        );
+      }
+    },
+    {
+      scheduled: true,
+      timezone: "America/Caracas",
+    },
+  );
+
+  // ==========================================
   // INICIO DEL SERVIDOR
   // ==========================================
   httpServer.listen(PORT, (err) => {
@@ -138,6 +184,9 @@ app.prepare().then(() => {
     console.log(`> Servidor listo en http://localhost:${PORT}`);
     console.log(
       `> Cron programado: Miércoles y Viernes a las 8:00 PM (America/Caracas)`,
+    );
+    console.log(
+      `> Cron programado: alerta de pendientes de despacho, L-V 10:00 AM (America/Caracas)`,
     );
   });
 });
