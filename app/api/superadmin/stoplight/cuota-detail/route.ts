@@ -3,10 +3,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { esDiaUtil, contarDiasUtiles, esFeriado } from "@/lib/feriados";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +12,7 @@ export async function GET(request: NextRequest) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
 
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");

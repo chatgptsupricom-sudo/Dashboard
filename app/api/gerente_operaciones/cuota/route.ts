@@ -2,10 +2,8 @@ import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 export async function GET(req: Request) {
   try {
@@ -14,7 +12,7 @@ export async function GET(req: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const userCids = payload.cids as number;
 
     // 1. Obtener vendedores de la DB local
@@ -100,7 +98,7 @@ export async function POST(req: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const { seller_id, cuota } = await req.json();
 
     const firstDayOfMonth = new Date(

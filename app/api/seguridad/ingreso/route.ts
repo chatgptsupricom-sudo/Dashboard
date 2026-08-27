@@ -2,10 +2,8 @@ import { query } from "@/lib/db";
 import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 
 const MAX = {

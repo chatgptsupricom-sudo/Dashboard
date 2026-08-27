@@ -2,10 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 const detailCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
@@ -32,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && userRole !== "gerente de operaciones") {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });

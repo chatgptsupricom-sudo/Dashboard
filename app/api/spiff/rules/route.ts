@@ -2,10 +2,8 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 async function getUserFromRequest(request: Request) {
   const token = request.headers
@@ -15,7 +13,7 @@ async function getUserFromRequest(request: Request) {
     ?.split("=")[1];
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET, { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(token, jwtSecretBytes(), { algorithms: ["HS256"] });
     return payload;
   } catch {
     return null;

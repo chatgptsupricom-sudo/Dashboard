@@ -2,10 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 interface SpiffRuleRow {
   id: number;
@@ -41,7 +39,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET, {
+    const { payload } = await jwtVerify(token, jwtSecretBytes(), {
       algorithms: ["HS256"],
     });
     const uid = parseInt(payload.uid as string);

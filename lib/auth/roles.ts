@@ -1,5 +1,6 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
 /**
  * Guard genérico por rol para las rutas de API.
@@ -14,9 +15,6 @@ import { NextRequest, NextResponse } from "next/server";
  * `middleware.ts`, porque los strings de `UserRole` tienen casing
  * inconsistente. `superadmin` entra siempre.
  */
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 export async function requireRoles(
   request: NextRequest,
@@ -29,7 +27,7 @@ export async function requireRoles(
 
   let payload: any;
   try {
-    const result = await jwtVerify(token, JWT_SECRET);
+    const result = await jwtVerify(token, jwtSecretBytes());
     payload = result.payload;
   } catch {
     return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };

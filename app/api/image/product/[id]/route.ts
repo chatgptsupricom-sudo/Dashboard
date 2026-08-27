@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { odooApiKey } from "@/lib/env";
 
 export const runtime = "nodejs";
 
@@ -6,8 +7,6 @@ const ODOO_URL = (
   process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com"
 ).replace(/\/$/, "");
 const ODOO_DB = process.env.ODOO_DB || "";
-const ODOO_API_KEY =
-  process.env.ODOO_API_KEY || "47d01399e318452857e554e82184aaf4745b47a1";
 
 export async function GET(
   _req: Request,
@@ -27,7 +26,7 @@ export async function GET(
         args: [
           ODOO_DB,
           388,
-          ODOO_API_KEY,
+          odooApiKey(),
           "product.product",
           "read",
           [[id]],

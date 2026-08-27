@@ -3,10 +3,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -146,7 +144,7 @@ export async function POST(req: NextRequest) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const { seller_id, cuota } = await req.json();
 
     const [seller]: any = await db.query(

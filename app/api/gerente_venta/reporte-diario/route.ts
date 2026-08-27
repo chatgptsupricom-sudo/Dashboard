@@ -2,10 +2,8 @@ import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 const COMPANY_IDS_ALL = [9, 10, 7];
 const COMPANY_NAME_MAP: Record<number, string> = {
@@ -56,7 +54,7 @@ export async function GET(req: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const userCids = payload.cids as number;
 

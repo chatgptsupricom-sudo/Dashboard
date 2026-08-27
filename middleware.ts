@@ -3,12 +3,10 @@ import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { routing } from "./i18n.config";
+import { jwtSecretBytes } from "@/lib/env";
 
 const intlMiddleware = createMiddleware(routing);
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 /**
  * Subdominios de cara al cliente. Quien entre por acá va al portal de servicio
@@ -84,7 +82,7 @@ export default async function middleware(request: NextRequest) {
     }
 
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, jwtSecretBytes());
 
       // Aseguramos que sea string y normalizamos
       const userRole = ((payload.role as string) || "").toLowerCase().trim();

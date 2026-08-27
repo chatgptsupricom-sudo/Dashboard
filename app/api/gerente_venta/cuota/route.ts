@@ -3,10 +3,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 export async function GET(req: Request) {
   try {
@@ -15,7 +13,7 @@ export async function GET(req: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
     const userCids = payload.cids as number;
     const sellerCidsFilter = userCids ? [userCids] : isSuperAdmin ? [9, 10, 7] : null;
@@ -146,7 +144,7 @@ export async function POST(req: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const { seller_id, cuota } = await req.json();
 
     const nowPost = new Date();

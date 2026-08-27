@@ -1,9 +1,7 @@
 import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
+import { jwtSecretBytes } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
 export interface AuthUser {
   role: string;
@@ -16,7 +14,7 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
   try {
     const token = request.cookies.get("token")?.value;
     if (!token) return null;
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const role = ((payload.role as string) || "").toLowerCase().trim();
     const cids = Number(payload.cids);
     return { role, cids };

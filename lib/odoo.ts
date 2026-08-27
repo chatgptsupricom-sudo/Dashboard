@@ -1,4 +1,5 @@
 import axios from "axios";
+import { odooApiKey } from "./env";
 
 export interface OdooUser {
   id: number;
@@ -12,8 +13,6 @@ const RAW_URL =
   process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com";
 const ODOO_URL = RAW_URL.replace(/\/$/, "");
 const ODOO_DB = process.env.ODOO_DB || "";
-const ODOO_API_KEY =
-  process.env.ODOO_API_KEY || "47d01399e318452857e554e82184aaf4745b47a1";
 
 /**
  * Función base para llamadas RPC a Odoo (JSON-RPC 2.0)
@@ -61,7 +60,7 @@ export async function callOdooRPC<T>(
         args: [
           ODOO_DB,
           388,
-          ODOO_API_KEY,
+          odooApiKey(),
           model,
           method,
           args, // Esto debe ser una lista: [[filtro, op, valor]]

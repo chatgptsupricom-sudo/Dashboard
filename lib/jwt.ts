@@ -1,14 +1,13 @@
 import jwt from "jsonwebtoken";
 import type { JWTPayload } from "./types";
+import { jwtSecret } from "./env";
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=";
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION || "7d";
 
 export function generateToken(
   payload: Omit<JWTPayload, "iat" | "exp">,
 ): string {
-  return jwt.sign(payload, JWT_SECRET, {
+  return jwt.sign(payload, jwtSecret(), {
     expiresIn: JWT_EXPIRATION,
   });
 }
@@ -21,7 +20,7 @@ export function verifyToken(token: string | undefined): JWTPayload | null {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(token, jwtSecret()) as JWTPayload;
     return decoded;
   } catch (error) {
     // Aquí puedes registrar el error si lo necesitas
