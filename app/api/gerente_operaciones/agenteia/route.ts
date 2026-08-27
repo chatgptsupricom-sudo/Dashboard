@@ -18,10 +18,18 @@ const pdf = require("pdf-parse");
 // 🔐 BYPASS SSL PARA ENTORNO DE PRUEBAS / ODOO SH DEV
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: "https://api.openai-proxy.com/v1",
-});
+// El cliente se crea al atender la peticion, no al importar el modulo.
+// Construirlo aqui arriba obligaba a que OPENAI_API_KEY estuviera presente
+// durante `next build`: al recolectar los datos de esta ruta, Next evalua el
+// modulo y el SDK lanza "Missing credentials" si falta la clave. Eso forzaba a
+// pasar la clave como build-arg de Docker, donde EasyPanel la imprime en el
+// log de cada build. Las otras dos rutas que usan OpenAI ya lo hacian asi.
+function getOpenAI() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: "https://api.openai-proxy.com/v1",
+  });
+}
 
 // 🛠️ HERRAMIENTAS BLINDADAS: PARÁMETROS EXPLÍCITOS PARA EVITAR TYPE ERRORS DE PYTHON
 const agentTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -254,7 +262,7 @@ export async function POST(request: Request) {
     const apiMessages = [contextPrompt, ...cleanedMessages];
 
     // 1. Primera llamada cognitiva
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: aiModel,
       messages: apiMessages,
       tools: agentTools,
@@ -265,7 +273,7 @@ export async function POST(request: Request) {
     const toolCalls = responseMessage.tool_calls;
 
     if (!toolCalls) {
-      const directStream = await openai.chat.completions.create({
+      const directStream = await getOpenAI().chat.completions.create({
         model: aiModel,
         messages: apiMessages,
         stream: true,
@@ -531,7 +539,7 @@ export async function POST(request: Request) {
     }
 
     // 3. Segunda llamada streaming
-    const finalStream = await openai.chat.completions.create({
+    const finalStream = await getOpenAI().chat.completions.create({
       model: aiModel,
       messages: apiMessages,
       stream: true,

@@ -81,19 +81,23 @@ RUN npm install -g pnpm@10.34.5
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Variables de entorno
-ARG OPENAI_API_KEY
-ARG JWT_SECRET
-ARG NEXT_PUBLIC_ODOO_URL
+# SOLO variables NEXT_PUBLIC_* aqui. Nada de secretos.
+#
 # Las NEXT_PUBLIC_* se INCRUSTAN en el bundle durante `next build`; no se leen
 # en ejecucion. Si no estan declaradas aqui, ponerlas en el entorno de EasyPanel
 # no sirve: el navegador nunca las ve y la funcionalidad queda muda, sin error.
 # Cada NEXT_PUBLIC_ nueva hay que agregarla a este bloque.
+#
+# El resto (JWT_SECRET, DB_PASSWORD, ODOO_API_KEY, OPENAI_API_KEY, tokens de
+# Meta, CRON_SECRET, WEBHOOK_SECRET, TURNSTILE_SECRET_KEY...) se lee en
+# EJECUCION con process.env y NO debe declararse como ARG: un ARG se convierte
+# en build-arg de Docker, y EasyPanel imprime la linea completa de
+# `docker buildx build` en el log de cada build fallido, secretos incluidos.
+# Verificado: `next build` completa sin ninguna de esas variables presentes.
+ARG NEXT_PUBLIC_ODOO_URL
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ARG NEXT_PUBLIC_SOCKET_URL
 
-ENV OPENAI_API_KEY=$OPENAI_API_KEY
-ENV JWT_SECRET=$JWT_SECRET
 ENV NEXT_PUBLIC_ODOO_URL=$NEXT_PUBLIC_ODOO_URL
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
