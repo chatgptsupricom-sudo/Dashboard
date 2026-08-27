@@ -61,9 +61,15 @@ export function desvioContraUmbral(
 ): number | null {
   if (valor === null || !Number.isFinite(valor)) return null;
 
-  // Una meta de 0 no admite desvio relativo (dividiria por cero). En esos
-  // casos el KPI ya viene expresado en %, asi que la diferencia absoluta es
-  // directamente comparable.
+  // Una meta de 0 no admite desvio relativo (dividiria por cero), asi que se
+  // cae a la diferencia absoluta. OJO: eso devuelve el numero en la unidad del
+  // KPI, no en %, y hoy hay dos casos con meta 0 que no son comparables entre
+  // si: variacion_mensual_gasto (ya es un %) y flujo_proyectado_30d (dolares,
+  // asi que un flujo de -$1,4MM entra como desvio 1441844 y satura la escala
+  // de severidad). El orden que sale es razonable —un flujo proyectado muy
+  // negativo es critico— pero es una coincidencia de magnitudes, no una
+  // medida comparable. Si se le quiere dar una meta real al flujo (p.ej. un
+  // saldo minimo operativo), este caso desaparece.
   const relativo = (exceso: number, meta: number) =>
     meta === 0
       ? Math.abs(exceso)
