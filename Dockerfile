@@ -58,7 +58,12 @@
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-RUN npm install -g pnpm
+# pnpm fijado a proposito: `npm install -g pnpm` sin version instalaba la
+# ultima publicada, y pnpm 11 exige Node >=22.13 mientras estas etapas corren
+# sobre node:20-alpine. El dia que salio pnpm 11 el build empezo a fallar solo,
+# sin que cambiara nada del repo. La 10.34.5 es la ultima que soporta Node 20 y
+# escribe el mismo lockfileVersion 9.0 que tiene pnpm-lock.yaml.
+RUN npm install -g pnpm@10.34.5
 
 COPY package.json pnpm-lock.yaml* ./
 # Asegúrate de instalar todo, incluyendo las nuevas dependencias (socket.io, express)
@@ -67,7 +72,12 @@ RUN pnpm install --no-frozen-lockfile
 # Etapa 2: Construcción
 FROM node:20-alpine AS builder
 WORKDIR /app
-RUN npm install -g pnpm
+# pnpm fijado a proposito: `npm install -g pnpm` sin version instalaba la
+# ultima publicada, y pnpm 11 exige Node >=22.13 mientras estas etapas corren
+# sobre node:20-alpine. El dia que salio pnpm 11 el build empezo a fallar solo,
+# sin que cambiara nada del repo. La 10.34.5 es la ultima que soporta Node 20 y
+# escribe el mismo lockfileVersion 9.0 que tiene pnpm-lock.yaml.
+RUN npm install -g pnpm@10.34.5
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -95,7 +105,12 @@ RUN pnpm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-RUN npm install -g pnpm
+# pnpm fijado a proposito: `npm install -g pnpm` sin version instalaba la
+# ultima publicada, y pnpm 11 exige Node >=22.13 mientras estas etapas corren
+# sobre node:20-alpine. El dia que salio pnpm 11 el build empezo a fallar solo,
+# sin que cambiara nada del repo. La 10.34.5 es la ultima que soporta Node 20 y
+# escribe el mismo lockfileVersion 9.0 que tiene pnpm-lock.yaml.
+RUN npm install -g pnpm@10.34.5
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
