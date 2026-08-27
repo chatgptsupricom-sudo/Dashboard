@@ -199,7 +199,13 @@
     "por_vendedor": "By Seller",
     "por_cliente": "By Client",
     "cerrar_sesion": "Sign Out",
-    "super_admin": "Super Admin"
+    "super_admin": "Super Admin",
+    "seguridad_ingresos": "RMA intakes",
+    "seguridad_despachos": "RMA dispatches",
+    "seguridad_por_llegar": "Devices on the way",
+    "seguridad_mercancia_ingreso": "Merchandise: inbound",
+    "seguridad_mercancia_egreso": "Merchandise: outbound",
+    "seguridad_almacenistas": "Warehouse staff"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",

@@ -47,6 +47,10 @@ import {
   Search,
   Settings2,
   Shield,
+  Send,
+  Inbox,
+  PackageCheck,
+  Star,
   ShieldCheck,
   Target,
   TrendingDown,
@@ -222,7 +226,18 @@ export function Sidebar({
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.
+    //
+    // Sus pantallas se listan una a una y no detras de una sola entrada: el
+    // modulo tiene dos flujos distintos —RMA y Mercancia— y esconderlos tras
+    // "Seguridad" obligaba a entrar y navegar por dentro para llegar a
+    // cualquiera de ellos.
     { id: "seguridad", label: t("seguridad"), icon: ShieldCheck, slug: "/seguridad", absoluteHref: true },
+    { id: "seguridad_ingresos", label: t("seguridad_ingresos"), icon: ClipboardList, slug: "/seguridad/ingreso", absoluteHref: true },
+    { id: "seguridad_despachos", label: t("seguridad_despachos"), icon: Send, slug: "/seguridad/despacho", absoluteHref: true },
+    { id: "seguridad_por_llegar", label: t("seguridad_por_llegar"), icon: Inbox, slug: "/seguridad/por-llegar", absoluteHref: true },
+    { id: "seguridad_mercancia_ingreso", label: t("seguridad_mercancia_ingreso"), icon: PackageCheck, slug: "/seguridad/mercancia/ingreso", absoluteHref: true },
+    { id: "seguridad_mercancia_egreso", label: t("seguridad_mercancia_egreso"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
+    { id: "seguridad_almacenistas", label: t("seguridad_almacenistas"), icon: Star, slug: "/seguridad/almacenista", absoluteHref: true },
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
     { id: "rma_salida", label: t("salida_rma"), icon: Truck, slug: "/rma/salida", absoluteHref: true },
     { id: "sales_dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "/dashboard" },

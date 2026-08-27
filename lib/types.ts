@@ -312,7 +312,20 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: [], // intencionalmente vacio: el modulo vive en /seguridad
+    // El modulo se unifico con el panel: usa el mismo layout oscuro y el mismo
+    // sidebar que los demas roles. Antes tenia `sections: []` y una estetica
+    // propia, heredada de cuando iba a vivir en su propio subdominio — esa
+    // decision se revirtio y la apariencia se habia quedado atras.
+    sections: [
+      "dashboard",
+      "seguridad",
+      "seguridad_ingresos",
+      "seguridad_despachos",
+      "seguridad_por_llegar",
+      "seguridad_mercancia_ingreso",
+      "seguridad_mercancia_egreso",
+      "seguridad_almacenistas",
+    ],
   },
 };
 

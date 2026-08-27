@@ -181,7 +181,13 @@
     "por_vendedor": "Por Vendedor",
     "por_cliente": "Por Cliente",
     "cerrar_sesion": "Cerrar Sesión",
-    "super_admin": "Super Admin"
+    "super_admin": "Super Admin",
+    "seguridad_ingresos": "Ingresos RMA",
+    "seguridad_despachos": "Despachos RMA",
+    "seguridad_por_llegar": "Equipos por llegar",
+    "seguridad_mercancia_ingreso": "Mercancía: ingresos",
+    "seguridad_mercancia_egreso": "Mercancía: egresos",
+    "seguridad_almacenistas": "Almacenistas"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",

@@ -65,7 +65,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
     <div className="min-h-screen bg-slate-50/50 font-sans">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <div className="min-w-0 flex-1 pl-12 lg:pl-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
               {tm(tipo === "ingreso" ? "ingreso_titulo" : "egreso_titulo")}
             </h1>

@@ -2,14 +2,20 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n.config";
-import LayoutConSidebar from "./LayoutConSidebar";
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 
-// Layout dedicado del modulo Seguridad.
-// NO usa el DashboardLayout del dashboard: este modulo vive aparte, con su
-// propio header, sin sidebar del panel principal.
+// Layout del modulo Seguridad.
 //
-// Estetica consistente con el portal publico de servicio tecnico:
-// morado #741DFE, Manrope 600, radio 10px, mobile-first.
+// Usa el MISMO DashboardLayout y el mismo sidebar que el resto del panel.
+//
+// Antes tenia layout y paleta propios —morado sobre fondo claro, como el
+// portal publico— porque el modulo iba a vivir en su propio subdominio,
+// seguridad.supricom.com.ve. Esa decision se revirtio en el issue #30: ahora
+// se llega desde el panel. La apariencia se habia quedado atras, asi que
+// entrar al modulo parecia salir a otra aplicacion.
+//
+// Se conservan las variables --portal-* porque las pantallas las usan para el
+// morado de sus botones y acentos. Son un color de marca, no un layout.
 
 export default async function SeguridadLayout({
   children,
@@ -29,7 +35,6 @@ export default async function SeguridadLayout({
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
       <div
-        className="min-h-screen bg-slate-50/50"
         style={
           {
             "--portal-primary": "#741DFE",
@@ -40,7 +45,7 @@ export default async function SeguridadLayout({
           } as React.CSSProperties
         }
       >
-        <LayoutConSidebar>{children}</LayoutConSidebar>
+        <DashboardLayout>{children}</DashboardLayout>
       </div>
     </NextIntlClientProvider>
   );

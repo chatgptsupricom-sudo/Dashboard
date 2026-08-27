@@ -174,7 +174,7 @@ export default function MercanciaDetalle({
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 pl-14 lg:pl-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <Link
             href={base}
             className="p-2 rounded-[10px] text-slate-500 hover:bg-slate-100"
@@ -314,7 +314,7 @@ export default function MercanciaDetalle({
         )}
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur lg:pl-60">
+      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
           <button
             type="button"
