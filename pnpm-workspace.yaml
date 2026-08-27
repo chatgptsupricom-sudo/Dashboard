@@ -1,3 +1,13 @@
+# Esto NO es un monorepo: el archivo existe solo para dar permiso de build a
+# las dependencias que traen script de instalacion.
+#
+# Sin estos permisos, pnpm 10+ se niega a ejecutar esos scripts y aborta con
+# ERR_PNPM_IGNORED_BUILDS. El Dockerfile TIENE que copiar este archivo antes
+# de `pnpm install`: estuvo en el repo sin copiarse y el despliegue fallaba
+# ahi, con el arreglo delante y fuera de la imagen.
+#
+# La lista no va en el campo `pnpm` de package.json: pnpm 11 ya no lo lee y
+# avisa de que lo ignora.
 allowBuilds:
   '@firebase/util': true
   '@parcel/watcher': true

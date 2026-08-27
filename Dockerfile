@@ -60,7 +60,11 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 RUN npm install -g pnpm
 
-COPY package.json pnpm-lock.yaml* ./
+# pnpm-workspace.yaml lleva los permisos de build de las dependencias con
+# script de instalacion (sharp, @swc/core...). Sin el, pnpm 10+ se niega a
+# ejecutarlos y aborta con ERR_PNPM_IGNORED_BUILDS, que es lo que rompia el
+# despliegue: el archivo estaba en el repo pero nunca entraba en la imagen.
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 # Asegúrate de instalar todo, incluyendo las nuevas dependencias (socket.io, express)
 RUN pnpm install --no-frozen-lockfile
 
