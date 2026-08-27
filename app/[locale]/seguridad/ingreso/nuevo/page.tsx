@@ -37,6 +37,7 @@ type Ticket = {
 };
 
 type FormState = {
+  nd_numero: string;
   fecha_entrega: string;
   factura_numero: string;
   cliente_nombre: string;
@@ -51,6 +52,7 @@ type FormState = {
 };
 
 const MAX = {
+  nd_numero: 50,
   factura_numero: 100,
   cliente_nombre: 200,
   hardware: 200,
@@ -73,6 +75,7 @@ export default function NuevoIngresoPage() {
     `/api/seguridad/buscar-ticket/${encodeURIComponent(caseNumber.trim())}`;
 
   const [form, setForm] = useState<FormState>({
+    nd_numero: "",
     fecha_entrega: todayISO(),
     factura_numero: "",
     cliente_nombre: "",
@@ -189,6 +192,7 @@ export default function NuevoIngresoPage() {
     // Fuera del try: el catch tambien lo necesita para poder encolarlo cuando
     // el envio se cae por red.
     const payload: Record<string, unknown> = {
+      nd_numero: form.nd_numero.trim() || undefined,
       fecha_entrega: form.fecha_entrega,
       factura_numero: form.factura_numero.trim() || undefined,
       cliente_nombre: form.cliente_nombre.trim().slice(0, MAX.cliente_nombre),
@@ -417,6 +421,25 @@ export default function NuevoIngresoPage() {
             <h2 className="text-sm font-bold text-slate-900">
               {tf("section_data")}
             </h2>
+
+            {/* Numero ND del encabezado de la planilla. Es el correlativo que
+                el almacen lleva a mano en el papel, y sirve para cruzar un
+                acta del sistema con la carpeta de papeles viejos. */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                {tf("field_nd")}
+              </label>
+              <input
+                type="text"
+                value={form.nd_numero}
+                onChange={(e) =>
+                  update("nd_numero", e.target.value.slice(0, MAX.nd_numero))
+                }
+                placeholder={tf("field_nd_placeholder")}
+                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                maxLength={MAX.nd_numero}
+              />
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">

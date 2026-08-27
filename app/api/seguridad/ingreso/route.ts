@@ -17,6 +17,7 @@ const MAX = {
   recibido_por: 200,
   foto_estado_url: 500,
   idempotency_key: 64,
+  nd_numero: 50,
 };
 
 function truncate(value: any, max: number): string | null {
@@ -199,8 +200,9 @@ export async function POST(request: NextRequest) {
       `INSERT INTO seguridad_ingresos
         (rma_case_id, fecha_entrega, factura_numero, cliente_nombre, hardware, serial,
          descripcion_falla, accesorios_integros, sin_manipulacion, dentro_de_fecha,
-         falla_cubierta_garantia, recibido_por, foto_estado_url, idempotency_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         falla_cubierta_garantia, recibido_por, foto_estado_url, idempotency_key,
+         nd_numero)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rmaCaseId,
         fechaEntrega,
@@ -216,6 +218,8 @@ export async function POST(request: NextRequest) {
         recibidoPor,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
+        // Correlativo que el almacen lleva a mano en la planilla de papel.
+        truncate(body.nd_numero, MAX.nd_numero),
       ],
     );
 

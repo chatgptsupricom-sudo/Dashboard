@@ -2021,7 +2021,9 @@
         "opcional": "optional",
         "encolado_titulo": "Saved on this phone, not sent yet",
         "encolado_desc": "No connection. The intake will be sent as soon as the signal is back. Do not log out or clear browser data until it is sent.",
-        "encolado_volver": "Back to the counter"
+        "encolado_volver": "Back to the counter",
+        "field_nd": "ND no. (paper form)",
+        "field_nd_placeholder": "e.g. 1234"
       },
       "list": {
         "search_placeholder": "Search customer, serial or invoice...",
@@ -2082,7 +2084,8 @@
         "case_number": "Case #",
         "adjunto_imagen": "Image",
         "adjunto_video": "Video",
-        "print": "Print record"
+        "print": "Print record",
+        "label_nd": "ND no."
       }
     },
     "despacho": {
@@ -2122,7 +2125,9 @@
         "submitting": "Registering...",
         "error_required": "Fill in the required fields",
         "error_one_factura": "Add at least one invoice",
-        "error_generic": "Could not register the dispatch"
+        "error_generic": "Could not register the dispatch",
+        "field_nd": "ND no. (paper form)",
+        "field_nd_placeholder": "e.g. 1234"
       },
       "list": {
         "search_placeholder": "Search client, operator or invoice...",
@@ -2187,7 +2192,8 @@
         "ingreso_label_recibido": "Received by",
         "print_header": "Supricom — Dispatch receipt",
         "print_signature_cliente": "Client signature",
-        "print_signature_almacenista": "Warehouse operator signature"
+        "print_signature_almacenista": "Warehouse operator signature",
+        "label_nd": "ND no."
       }
     },
     "almacenista": {

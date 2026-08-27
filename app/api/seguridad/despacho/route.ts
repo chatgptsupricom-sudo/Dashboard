@@ -15,6 +15,7 @@ const MAX = {
   observaciones: 5000,
   firma_url: 500,
   max_facturas: 50,
+  nd_numero: 50,
 };
 
 function truncate(value: any, max: number): string | null {
@@ -213,8 +214,8 @@ export async function POST(request: NextRequest) {
     const result = await query(
       `INSERT INTO seguridad_despachos
         (ingreso_id, rma_case_id, fecha_despacho, almacenista_nombre, facturas_json,
-         cliente_retira, accesorios_integros, observaciones, firma_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ingresoId,
         rmaCaseId,
@@ -225,6 +226,8 @@ export async function POST(request: NextRequest) {
         body.accesorios_integros === false ? 0 : 1,
         truncate(body.observaciones, MAX.observaciones),
         truncate(body.firma_url, MAX.firma_url),
+        // Correlativo que el almacen lleva a mano en la planilla de papel.
+        truncate(body.nd_numero, MAX.nd_numero),
       ],
     );
 

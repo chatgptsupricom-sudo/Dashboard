@@ -2010,7 +2010,9 @@
         "opcional": "opcional",
         "encolado_titulo": "Guardado en este teléfono, todavía sin enviar",
         "encolado_desc": "No hay conexión. El ingreso sale solo en cuanto vuelva la señal. No cierres sesión ni borres los datos del navegador hasta que salga.",
-        "encolado_volver": "Volver al mostrador"
+        "encolado_volver": "Volver al mostrador",
+        "field_nd": "N.º ND (planilla)",
+        "field_nd_placeholder": "Ej: 1234"
       },
       "list": {
         "search_placeholder": "Buscar cliente, serial o factura...",
@@ -2071,7 +2073,8 @@
         "case_number": "N° de caso",
         "adjunto_imagen": "Imagen",
         "adjunto_video": "Video",
-        "print": "Imprimir acta"
+        "print": "Imprimir acta",
+        "label_nd": "N.º ND"
       }
     },
     "despacho": {
@@ -2111,7 +2114,9 @@
         "submitting": "Registrando...",
         "error_required": "Completa los campos obligatorios",
         "error_one_factura": "Agrega al menos una factura",
-        "error_generic": "No se pudo registrar el despacho"
+        "error_generic": "No se pudo registrar el despacho",
+        "field_nd": "N.º ND (planilla)",
+        "field_nd_placeholder": "Ej: 1234"
       },
       "list": {
         "search_placeholder": "Buscar cliente, almacenista o factura...",
@@ -2176,7 +2181,8 @@
         "ingreso_label_recibido": "Recibido por",
         "print_header": "Supricom — Comprobante de despacho",
         "print_signature_cliente": "Firma del cliente",
-        "print_signature_almacenista": "Firma del almacenista"
+        "print_signature_almacenista": "Firma del almacenista",
+        "label_nd": "N.º ND"
       }
     },
     "almacenista": {

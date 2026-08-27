@@ -38,6 +38,7 @@ type Ingreso = {
   dentro_de_fecha: number;
   falla_cubierta_garantia: number;
   recibido_por: string;
+  nd_numero: string | null;
   foto_estado_url: string | null;
   created_at: string;
 };
@@ -339,6 +340,10 @@ export default function IngresoDetailPage() {
           </h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <DataField label={td("label_fecha")} value={fmtDate(ingreso.fecha_entrega)} />
+            <DataField
+              label={td("label_nd")}
+              value={ingreso.nd_numero || td("no_value")}
+            />
             <DataField
               label={td("label_factura")}
               value={ingreso.factura_numero || td("no_value")}

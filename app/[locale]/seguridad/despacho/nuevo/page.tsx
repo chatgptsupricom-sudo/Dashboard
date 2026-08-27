@@ -37,6 +37,7 @@ type Ingreso = {
 };
 
 type FormState = {
+  nd_numero: string;
   fecha_despacho: string;
   almacenista_nombre: string;
   cliente_retira: string;
@@ -46,6 +47,7 @@ type FormState = {
 };
 
 const MAX = {
+  nd_numero: 50,
   almacenista_nombre: 200,
   cliente_retira: 200,
   observaciones: 5000,
@@ -68,6 +70,7 @@ export default function NuevoDespachoPage() {
   const base = `/${locale}/seguridad`;
 
   const [form, setForm] = useState<FormState>({
+    nd_numero: "",
     fecha_despacho: todayISO(),
     almacenista_nombre: user?.name || "",
     cliente_retira: "",
@@ -181,6 +184,7 @@ export default function NuevoDespachoPage() {
         .filter((f) => f.length > 0);
 
       const payload: Record<string, unknown> = {
+        nd_numero: form.nd_numero.trim() || undefined,
         fecha_despacho: form.fecha_despacho,
         almacenista_nombre: form.almacenista_nombre
           .trim()
@@ -415,6 +419,24 @@ export default function NuevoDespachoPage() {
             <h2 className="text-sm font-bold text-slate-900">
               {tf("section_data")}
             </h2>
+
+            {/* Numero ND del encabezado de la planilla: el correlativo que
+                el almacen lleva a mano en el papel. */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                {tf("field_nd")}
+              </label>
+              <input
+                type="text"
+                value={form.nd_numero}
+                onChange={(e) =>
+                  update("nd_numero", e.target.value.slice(0, MAX.nd_numero))
+                }
+                placeholder={tf("field_nd_placeholder")}
+                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                maxLength={MAX.nd_numero}
+              />
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">

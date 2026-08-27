@@ -32,6 +32,7 @@ type Despacho = {
   almacenista_nombre: string;
   facturas_json: string | null;
   cliente_retira: string | null;
+  nd_numero: string | null;
   accesorios_integros: number;
   observaciones: string | null;
   firma_url: string | null;
@@ -324,6 +325,10 @@ export default function DespachoDetailPage() {
           </h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <DataField label={td("label_fecha")} value={fmtDate(despacho.fecha_despacho)} />
+            <DataField
+              label={td("label_nd")}
+              value={despacho.nd_numero || td("no_value")}
+            />
             <DataField
               label={td("label_almacenista")}
               value={despacho.almacenista_nombre}
