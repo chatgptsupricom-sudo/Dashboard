@@ -33,6 +33,19 @@ function fmtFechaHora(value: any): string {
   });
 }
 
+/**
+ * Numero ND para imprimir bajo el titulo.
+ *
+ * La plantilla ya pone el rotulo "ND -", asi que se le quita al valor el
+ * prefijo si lo trae: en el almacen unos escriben "9045" y otros "ND-9045",
+ * y sin esto el papel sale con "ND - ND-9045".
+ */
+function ndParaImprimir(valor: any): string {
+  const s = String(valor ?? "").trim();
+  if (!s) return "";
+  return s.replace(/^ND\s*[-–:]?\s*/i, "").trim() || s;
+}
+
 function esc(value: any): string {
   if (value === null || value === undefined) return "";
   return String(value)
@@ -168,7 +181,7 @@ export async function GET(
   </div>
 
   <h1>Recepci&oacute;n y Despacho de RMA</h1>
-  <div class="nd">ND - ${esc(i.nd_numero) || "&nbsp;"}</div>
+  <div class="nd">ND - ${esc(ndParaImprimir(i.nd_numero)) || "&nbsp;"}</div>
 
   <table>
     <tr><th>Fecha de entrega (almac&eacute;n)</th><td>${fechaLarga(i.fecha_entrega)}</td></tr>

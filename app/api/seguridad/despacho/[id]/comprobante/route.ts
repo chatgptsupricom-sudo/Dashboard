@@ -26,6 +26,19 @@ function fmtFechaHora(value: any): string {
   });
 }
 
+/**
+ * Numero ND para imprimir bajo el titulo.
+ *
+ * La plantilla ya pone el rotulo "ND -", asi que se le quita al valor el
+ * prefijo si lo trae: en el almacen unos escriben "9045" y otros "ND-9045",
+ * y sin esto el papel sale con "ND - ND-9045".
+ */
+function ndParaImprimir(valor: any): string {
+  const s = String(valor ?? "").trim();
+  if (!s) return "";
+  return s.replace(/^ND\s*[-–:]?\s*/i, "").trim() || s;
+}
+
 function esc(value: any): string {
   if (value === null || value === undefined) return "";
   return String(value)
@@ -72,7 +85,7 @@ export async function GET(
   if (d.ingreso_id) {
     try {
       const r = await query(
-        `SELECT cliente_nombre, hardware, serial, fecha_entrega
+        `SELECT cliente_nombre, hardware, serial, fecha_entrega, nd_numero
          FROM seguridad_ingresos WHERE id = ?`,
         [d.ingreso_id],
       );
@@ -92,6 +105,14 @@ export async function GET(
   }
 
   const accesoriosOk = d.accesorios_integros === 1 || d.accesorios_integros === true;
+
+  // Numero ND del encabezado de la planilla.
+  //
+  // Si el despacho no lo trae, se hereda del ingreso: en el papel, recepcion y
+  // despacho son UNA hoja con un solo ND, asi que las dos actas del sistema
+  // tienen que llevar el mismo numero. Sin esto, el papel de salida no se
+  // puede cruzar con el de entrada en la carpeta del almacen.
+  const ndNumero = d.nd_numero || ingreso?.nd_numero || "";
 
   // Las 4 firmas de la planilla: tecnico, almacen, seguridad y quien retira.
   // Antes salia solo la del cliente, asi que el papel impreso no probaba que
@@ -160,6 +181,15 @@ export async function GET(
     margin: 0 0 4px;
     font-size: 20px;
     text-align: center;
+  }
+  /* Mismo tratamiento que en el acta de recepcion: el ND es lo que permite
+     cruzar los dos papeles en la carpeta, asi que se lee de un vistazo. */
+  .nd {
+    text-align: center;
+    font-size: 13px;
+    color: #b00;
+    font-weight: 700;
+    margin-bottom: 4px;
   }
   .sub {
     text-align: center;
@@ -263,6 +293,7 @@ export async function GET(
   </div>
 
   <h1>Comprobante de Despacho</h1>
+  <div class="nd">ND - ${esc(ndParaImprimir(ndNumero)) || "&nbsp;"}</div>
   <div class="sub">Despacho #${esc(d.id)} &middot; Generado ${esc(new Date().toLocaleString("es-VE"))}</div>
 
   <div class="grid">
