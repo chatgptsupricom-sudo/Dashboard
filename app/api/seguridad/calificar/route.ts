@@ -91,9 +91,14 @@ export async function POST(request: NextRequest) {
     const calificadoPor = truncate(body.calificado_por, MAX.calificado_por);
     if (!calificadoPor) errors.push("calificado_por es obligatorio");
 
+    // 'mercancia' entro con la seccion de carga de camiones: ahi tambien se
+    // califica, al almacenista que carga. La columna del ENUM ya lo admitia,
+    // pero esta validacion se quedo con los dos originales y rechazaba la
+    // calificacion con un 400 que no explicaba nada.
+    const RELACIONADOS = ["ingreso", "despacho", "mercancia"];
     const relacionadoARaw = typeof body.relacionado_a === "string" ? body.relacionado_a.trim() : "";
-    if (relacionadoARaw !== "ingreso" && relacionadoARaw !== "despacho") {
-      errors.push("relacionado_a debe ser 'ingreso' o 'despacho'");
+    if (!RELACIONADOS.includes(relacionadoARaw)) {
+      errors.push(`relacionado_a debe ser ${RELACIONADOS.join(", ")}`);
     }
 
     const relacionadoIdRaw = body.relacionado_id;
