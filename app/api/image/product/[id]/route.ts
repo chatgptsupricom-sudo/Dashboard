@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { odooApiKey } from "@/lib/secretos";
 
 export const runtime = "nodejs";
 
@@ -7,7 +8,7 @@ const ODOO_URL = (
 ).replace(/\/$/, "");
 const ODOO_DB = process.env.ODOO_DB || "";
 const ODOO_API_KEY =
-  process.env.ODOO_API_KEY || "47d01399e318452857e554e82184aaf4745b47a1";
+  odooApiKey();
 
 export async function GET(
   _req: Request,

@@ -3,10 +3,9 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
+import { jwtSecretBytes } from "@/lib/secretos";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
+const JWT_SECRET = jwtSecretBytes();
 
 export async function GET(req: Request) {
   try {

@@ -4,10 +4,9 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { computeComprasKpis } from "@/lib/compras/kpis";
+import { jwtSecretBytes } from "@/lib/secretos";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
+const JWT_SECRET = jwtSecretBytes();
 
 function normalize(str: string): string {
   return str

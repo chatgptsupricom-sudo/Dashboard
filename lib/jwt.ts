@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
 import type { JWTPayload } from "./types";
+import { jwtSecretString } from "@/lib/secretos";
 
 const JWT_SECRET =
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=";
+  jwtSecretString();
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION || "7d";
 
 export function generateToken(

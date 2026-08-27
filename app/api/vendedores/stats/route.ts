@@ -1,9 +1,10 @@
 // // import { callOdooRPC } from "@/lib/odoo";
+import { jwtSecretBytes, jwtSecretString } from "@/lib/secretos";
 // // import { jwtVerify } from "jose";
 // // import { NextResponse } from "next/server";
 
 // // const JWT_SECRET = new TextEncoder().encode(
-// //   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
+// //   jwtSecretString(),
 // // );
 
 // // export async function GET(request: Request) {
@@ -144,7 +145,7 @@
 // import { NextResponse } from "next/server";
 
 // const JWT_SECRET = new TextEncoder().encode(
-//   process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
+//   jwtSecretString(),
 // );
 
 // export async function GET(request: Request) {
@@ -307,9 +308,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
+const JWT_SECRET = jwtSecretBytes();
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

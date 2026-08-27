@@ -3,12 +3,11 @@ import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { routing } from "./i18n.config";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 const intlMiddleware = createMiddleware(routing);
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
+const JWT_SECRET = jwtSecretBytes();
 
 /**
  * Subdominios de cara al cliente. Quien entre por acá va al portal de servicio

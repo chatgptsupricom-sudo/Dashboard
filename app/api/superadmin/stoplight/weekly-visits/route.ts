@@ -4,10 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
+import { jwtSecretBytes } from "@/lib/secretos";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
+const JWT_SECRET = jwtSecretBytes();
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "visitas");
 
