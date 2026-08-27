@@ -64,14 +64,18 @@ async function fetchPaginado(
 }
 
 export async function fetchCuentasGasto(
-  companyId: number,
+  companyIds: number[],
 ): Promise<CuentaGasto[]> {
   const cuentas = await fetchPaginado(
     "account.account",
     [["account_type", "=", TIPO_CUENTA_GASTO]],
     ["id", "code", "name"],
-    { allowed_company_ids: [companyId] },
+    { allowed_company_ids: companyIds },
   );
+  // Se devuelven TODAS las cuentas, sin deduplicar: con varias sedes el mismo
+  // codigo contable puede existir como un registro por empresa, y filtrar el
+  // gasto real necesita todos esos ids. Para listas de cuentas (plantilla de
+  // presupuesto) usar dedupPorCodigo().
   return (cuentas || [])
     .filter((c: any) => c.code)
     .map((c: any) => ({
@@ -83,12 +87,22 @@ export async function fetchCuentasGasto(
     .sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 
+/** Una fila por codigo contable, para listados y plantillas. */
+export function dedupPorCodigo(cuentas: CuentaGasto[]): CuentaGasto[] {
+  const vistos = new Set<string>();
+  return cuentas.filter((c) => {
+    if (vistos.has(c.codigo)) return false;
+    vistos.add(c.codigo);
+    return true;
+  });
+}
+
 /**
  * Gasto real por cuenta en un rango. Incluye notas de credito de proveedor
  * (`in_refund`), cuyo balance negativo descuenta correctamente del gasto.
  */
 export async function fetchGastoReal(
-  companyId: number,
+  companyIds: number[],
   desde: string,
   hasta: string,
   cuentas: CuentaGasto[],
@@ -109,11 +123,11 @@ export async function fetchGastoReal(
       ["move_id.state", "=", "posted"],
       ["move_id.invoice_date", ">=", desde],
       ["move_id.invoice_date", "<=", hasta],
-      ["move_id.company_id", "=", companyId],
+      ["move_id.company_id", "in", companyIds],
       ["account_id", "in", cuentas.map((c) => c.id)],
     ],
     ["account_id", "balance", "move_id", "partner_id", "date"],
-    { allowed_company_ids: [companyId] },
+    { allowed_company_ids: companyIds },
   );
 
   (lineas || []).forEach((l: any) => {

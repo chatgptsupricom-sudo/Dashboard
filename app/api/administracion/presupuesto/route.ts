@@ -6,7 +6,7 @@ import {
   canViewAdministracion,
   getAdminUser,
 } from "@/lib/administracion/auth";
-import { fetchCuentasGasto } from "@/lib/administracion/gastos";
+import { dedupPorCodigo, fetchCuentasGasto } from "@/lib/administracion/gastos";
 
 async function ensureTable() {
   await query(`
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const cuentas = await fetchCuentasGasto(companyId);
+    const cuentas = dedupPorCodigo(await fetchCuentasGasto([companyId]));
     const rows = await query(
       "SELECT cuenta_codigo, monto FROM presupuesto_gastos WHERE company_id = ? AND mes = ?",
       [companyId, mes],

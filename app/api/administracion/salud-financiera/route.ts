@@ -17,12 +17,7 @@ import {
   construirTopAlertas,
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
-
-const COMPANY_MAP: Record<string, number> = {
-  valencia: 9,
-  caracas: 10,
-  panama: 7,
-};
+import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
 
 const SIN_DATOS = {
   promesas_pago:
@@ -49,9 +44,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const empresa = (searchParams.get("empresa") || "").toLowerCase();
-    const companyIds =
-      empresa && COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : [9, 10, 7];
+    const empresa = (searchParams.get("empresa") || "").toLowerCase().trim();
+    const companyIds = companyIdsDeEmpresa(empresa);
     const metas = await cargarMetas(companyIds[0]);
 
     const hoyDate = new Date();
@@ -379,7 +373,10 @@ export async function GET(request: NextRequest) {
       empresa: empresa || "todas",
       indice: { valor: indice, puntos, puntosMax, puntosEvaluables, clasificacion },
       categorias,
-      alertas: construirTopAlertas(alertasPorArea, 10),
+      // Se devuelven todas las alertas candidatas ya ordenadas, no solo 10: la
+      // pagina las mezcla con las de Gastos y descarta las que Administracion
+      // marco como cerradas, y recortar aqui a 10 dejaria el Top final corto.
+      alertas: construirTopAlertas(alertasPorArea, 100),
       detalle: {
         cxc: {
           totalCartera: cxc.totalCartera,

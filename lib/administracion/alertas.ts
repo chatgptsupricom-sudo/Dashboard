@@ -25,6 +25,69 @@ export interface AlertaAdmin {
   severidad: number;
   /** Ruta opcional para el drill-down al origen del dato. */
   enlace?: string;
+  /** Nota de seguimiento que escribio Administracion. */
+  nota?: string | null;
+  /** Quien actualizo el seguimiento por ultima vez, y cuando. */
+  actualizadoPor?: string | null;
+  actualizadoEn?: string | null;
+}
+
+/**
+ * Seguimiento que Administracion le pone a una alerta (tabla
+ * `alertas_admin_seguimiento`).
+ *
+ * Las alertas se recalculan en cada carga a partir de los KPIs, asi que la
+ * fecha compromiso y el estatus no pueden vivir en el calculo: se guardan
+ * aparte y se cruzan por `id` de alerta. Por eso los ids que genera cada area
+ * tienen que ser estables entre ejecuciones (van derivados del id del KPI o
+ * del codigo de cuenta, nunca de un indice o un timestamp).
+ */
+export interface SeguimientoAlerta {
+  alertaId: string;
+  estatus: EstatusAlerta;
+  fechaCompromiso: string | null;
+  responsable: string | null;
+  nota: string | null;
+  actualizadoPor: string | null;
+  actualizadoEn: string | null;
+}
+
+/**
+ * Cruza las alertas recien calculadas con su seguimiento guardado.
+ *
+ * Se aplica ANTES de construirTopAlertas() a proposito: asi una alerta que
+ * Administracion ya cerro sale del Top 10 y deja su lugar a la siguiente en
+ * severidad, en vez de ocupar una fila que ya no acciona a nadie.
+ */
+export function aplicarSeguimiento(
+  alertas: AlertaAdmin[],
+  seguimientos: Record<string, SeguimientoAlerta>,
+): AlertaAdmin[] {
+  return alertas.map((a) => {
+    const s = seguimientos[a.id];
+    if (!s) return a;
+    return {
+      ...a,
+      estatus: s.estatus,
+      fechaCompromiso: s.fechaCompromiso,
+      // El responsable calculado es el area dueña del KPI; si Administracion
+      // asigno a una persona concreta, esa manda.
+      responsable: s.responsable || a.responsable,
+      nota: s.nota,
+      actualizadoPor: s.actualizadoPor,
+      actualizadoEn: s.actualizadoEn,
+    };
+  });
+}
+
+export const ESTATUS_VALIDOS: EstatusAlerta[] = [
+  "abierta",
+  "en_proceso",
+  "cerrada",
+];
+
+export function esEstatusValido(v: unknown): v is EstatusAlerta {
+  return typeof v === "string" && ESTATUS_VALIDOS.includes(v as EstatusAlerta);
 }
 
 /**

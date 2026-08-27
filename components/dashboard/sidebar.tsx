@@ -238,7 +238,9 @@ export function Sidebar({
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
     // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
     // /superadmin y generaria enlaces rotos con slugs relativos.
-    { id: "salud_financiera", label: "Salud Financiera", icon: Activity, slug: "/administracion", absoluteHref: true },
+    // El id se mantiene ("salud_financiera") porque es la clave de permiso en
+    // lib/types.ts; solo cambia la etiqueta, que ahora cubre el indice completo.
+    { id: "salud_financiera", label: "Salud Administrativa", icon: Activity, slug: "/administracion", absoluteHref: true },
     { id: "gastos_presupuesto", label: "Gastos y Presupuesto", icon: Wallet, slug: "/administracion/gastos", absoluteHref: true },
   ];
 
