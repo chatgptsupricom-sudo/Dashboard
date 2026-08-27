@@ -11,7 +11,9 @@ import {
   Menu,
   Send,
   ShieldCheck,
-  Smartphone,
+  Inbox,
+  PackageCheck,
+  Truck,
   Star,
   X,
 } from "lucide-react";
@@ -25,9 +27,7 @@ import { useAuthStore } from "@/lib/stores/auth.store";
  * mantiene `sections: []` en lib/types.ts.
  *
  * En movil no ocupa sitio: se abre desde el boton del header y se cierra al
- * navegar. El mostrador (/seguridad/mostrador) se queda sin sidebar a
- * proposito — es la pantalla de estar de pie con el equipo en la mano, y ahi
- * cada pixel cuenta.
+ * navegar.
  */
 
 type Entrada = {
@@ -49,32 +49,60 @@ export default function SidebarSeguridad() {
 
   const base = `/${locale}/seguridad`;
 
-  const entradas: Entrada[] = [
+  // Dos secciones: RMA (el equipo de un cliente que entra a reparacion) y
+  // Mercancia (la carga de un camion). Son flujos distintos y agruparlos en
+  // una lista plana obligaba a leer cinco entradas para encontrar una.
+  const grupos: Array<{ titulo: string; entradas: Entrada[] }> = [
     {
-      href: base,
-      label: tn("dashboard"),
-      icon: <LayoutDashboard className="w-4 h-4" />,
-      exacta: true,
+      titulo: tn("grupo_rma"),
+      entradas: [
+        {
+          href: `${base}/ingreso`,
+          label: tn("ingresos"),
+          icon: <ClipboardList className="w-4 h-4" />,
+        },
+        {
+          href: `${base}/despacho`,
+          label: tn("despachos"),
+          icon: <Send className="w-4 h-4" />,
+        },
+        {
+          href: `${base}/por-llegar`,
+          label: tn("por_llegar"),
+          icon: <Inbox className="w-4 h-4" />,
+        },
+      ],
     },
     {
-      href: `${base}/ingreso`,
-      label: tn("ingresos"),
-      icon: <ClipboardList className="w-4 h-4" />,
+      titulo: tn("grupo_mercancia"),
+      entradas: [
+        {
+          href: `${base}/mercancia/ingreso`,
+          label: tn("mercancia_ingresos"),
+          icon: <PackageCheck className="w-4 h-4" />,
+        },
+        {
+          href: `${base}/mercancia/egreso`,
+          label: tn("mercancia_egresos"),
+          icon: <Truck className="w-4 h-4" />,
+        },
+      ],
     },
     {
-      href: `${base}/despacho`,
-      label: tn("despachos"),
-      icon: <Send className="w-4 h-4" />,
-    },
-    {
-      href: `${base}/almacenista`,
-      label: tn("almacenistas"),
-      icon: <Star className="w-4 h-4" />,
-    },
-    {
-      href: `${base}/mostrador`,
-      label: tn("mostrador"),
-      icon: <Smartphone className="w-4 h-4" />,
+      titulo: tn("grupo_general"),
+      entradas: [
+        {
+          href: base,
+          label: tn("dashboard"),
+          icon: <LayoutDashboard className="w-4 h-4" />,
+          exacta: true,
+        },
+        {
+          href: `${base}/almacenista`,
+          label: tn("almacenistas"),
+          icon: <Star className="w-4 h-4" />,
+        },
+      ],
     },
   ];
 
@@ -97,26 +125,33 @@ export default function SidebarSeguridad() {
         </div>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
-        {entradas.map((e) => (
-          <Link
-            key={e.href}
-            href={e.href}
-            onClick={() => setAbierto(false)}
-            className={`flex items-center gap-3 min-h-[44px] px-3 rounded-[10px] text-sm font-semibold transition-colors ${
-              activa(e)
-                ? "text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            }`}
-            style={
-              activa(e)
-                ? { backgroundColor: "var(--portal-primary,#741DFE)" }
-                : undefined
-            }
-          >
-            {e.icon}
-            {e.label}
-          </Link>
+      <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+        {grupos.map((g) => (
+          <div key={g.titulo} className="space-y-1">
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {g.titulo}
+            </p>
+            {g.entradas.map((e) => (
+              <Link
+                key={e.href}
+                href={e.href}
+                onClick={() => setAbierto(false)}
+                className={`flex items-center gap-3 min-h-[44px] px-3 rounded-[10px] text-sm font-semibold transition-colors ${
+                  activa(e)
+                    ? "text-white"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+                style={
+                  activa(e)
+                    ? { backgroundColor: "var(--portal-primary,#741DFE)" }
+                    : undefined
+                }
+              >
+                {e.icon}
+                {e.label}
+              </Link>
+            ))}
+          </div>
         ))}
       </nav>
 

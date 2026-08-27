@@ -14,7 +14,6 @@ import {
   Package,
   Send,
   ShieldCheck,
-  Smartphone,
   Star,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -172,17 +171,6 @@ export default function SeguridadDashboard() {
           >
             <Send className="w-4 h-4" />
             {t("actions.despacho.title")}
-          </Link>
-          {/* Entrada al mostrador (#39). Desde que Seguridad se llega por el
-              sidebar del panel (#30) y no por su propio subdominio, esta es la
-              puerta a la vista de telefono: se abre una vez desde el panel y se
-              guarda en la pantalla de inicio. */}
-          <Link
-            href={`${base}/mostrador`}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Smartphone className="w-4 h-4" />
-            {t("mostrador.abrir")}
           </Link>
         </section>
 
