@@ -2314,6 +2314,15 @@
         "seguridad": "OSC Security",
         "cliente": "Receives / Delivers"
       }
+    },
+    "nav": {
+      "dashboard": "Dashboard",
+      "ingresos": "Intakes",
+      "despachos": "Dispatches",
+      "almacenistas": "Warehouse staff",
+      "mostrador": "Counter",
+      "abrir_menu": "Open menu",
+      "cerrar_menu": "Close menu"
     }
   }
 }

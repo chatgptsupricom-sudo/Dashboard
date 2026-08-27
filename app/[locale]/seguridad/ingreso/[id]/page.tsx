@@ -381,6 +381,21 @@ export default function IngresoDetailPage() {
           </dl>
         </section>
 
+        {/* Las 4 firmas de la planilla, arriba del todo y no al final.
+            Es lo que hay que hacer AHORA, con el cliente todavia en el
+            mostrador: enterrado bajo la foto, el ticket y los adjuntos, en un
+            telefono no lo ve nadie. */}
+        <FirmasActa
+          tipo="ingreso"
+          actaId={ingreso.id}
+          nombresSugeridos={{
+            tecnico: tecnico?.nombre,
+            almacen: ingreso.recibido_por,
+            seguridad: user?.name,
+            cliente: ingreso.cliente_nombre,
+          }}
+        />
+
         {/* Checks card */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-4">
@@ -684,19 +699,6 @@ export default function IngresoDetailPage() {
           </section>
         )}
 
-        {/* Las 4 firmas de la planilla. En el ingreso son las que faltaban:
-            los 4 checks de estado se respondian sin que nadie reconociera en
-            que condicion se entrego el equipo. */}
-        <FirmasActa
-          tipo="ingreso"
-          actaId={ingreso.id}
-          nombresSugeridos={{
-            tecnico: tecnico?.nombre,
-            almacen: ingreso.recibido_por,
-            seguridad: user?.name,
-            cliente: ingreso.cliente_nombre,
-          }}
-        />
       </main>
 
       {lightboxOpen && fotoUrl && (

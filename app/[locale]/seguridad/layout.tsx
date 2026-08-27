@@ -2,6 +2,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n.config";
+import LayoutConSidebar from "./LayoutConSidebar";
 
 // Layout dedicado del modulo Seguridad.
 // NO usa el DashboardLayout del dashboard: este modulo vive aparte, con su
@@ -39,7 +40,7 @@ export default async function SeguridadLayout({
           } as React.CSSProperties
         }
       >
-        {children}
+        <LayoutConSidebar>{children}</LayoutConSidebar>
       </div>
     </NextIntlClientProvider>
   );

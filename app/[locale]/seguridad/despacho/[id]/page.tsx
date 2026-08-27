@@ -374,6 +374,19 @@ export default function DespachoDetailPage() {
           </dl>
         </section>
 
+        {/* Las 4 firmas de la planilla, arriba y no al final: es lo que hay
+            que hacer con el cliente todavia en el mostrador. */}
+        <FirmasActa
+          tipo="despacho"
+          actaId={despacho.id}
+          nombresSugeridos={{
+            tecnico: tecnico?.nombre,
+            almacen: despacho.almacenista_nombre,
+            seguridad: user?.name,
+            cliente: despacho.cliente_retira || undefined,
+          }}
+        />
+
         {/* Facturas card */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-3">
@@ -669,19 +682,6 @@ export default function DespachoDetailPage() {
           </section>
         )}
 
-        {/* Las 4 firmas de la planilla. Sustituyen a la firma unica del
-            cliente que habia antes, que dejaba fuera al tecnico, al almacen
-            y al de Seguridad. */}
-        <FirmasActa
-          tipo="despacho"
-          actaId={despacho.id}
-          nombresSugeridos={{
-            tecnico: tecnico?.nombre,
-            almacen: despacho.almacenista_nombre,
-            seguridad: user?.name,
-            cliente: despacho.cliente_retira || undefined,
-          }}
-        />
       </main>
     </div>
   );

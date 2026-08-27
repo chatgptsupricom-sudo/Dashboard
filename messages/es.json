@@ -2303,6 +2303,15 @@
         "seguridad": "Seguridad de OSC",
         "cliente": "Recibe / Entrega"
       }
+    },
+    "nav": {
+      "dashboard": "Panel",
+      "ingresos": "Ingresos",
+      "despachos": "Despachos",
+      "almacenistas": "Almacenistas",
+      "mostrador": "Mostrador",
+      "abrir_menu": "Abrir menú",
+      "cerrar_menu": "Cerrar menú"
     }
   }
 }
