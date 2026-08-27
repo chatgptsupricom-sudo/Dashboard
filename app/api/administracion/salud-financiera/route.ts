@@ -362,7 +362,7 @@ export async function GET(request: NextRequest) {
           accion: k.detalle || "Revisar indicador",
           fechaCompromiso: null,
           estatus: "abierta" as const,
-          severidad: severidadDesdeDesvio(k.semaforo, k.valor ?? 0),
+          severidad: severidadDesdeDesvio(k.semaforo, k.desvio ?? 0),
           enlace: "/administracion",
         })),
     );

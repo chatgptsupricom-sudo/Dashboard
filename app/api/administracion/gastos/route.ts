@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
         accion: "Revisar ejecución del gasto contra presupuesto",
         fechaCompromiso: null,
         estatus: "abierta",
-        severidad: severidadDesdeDesvio(k.semaforo, k.valor ?? 0),
+        severidad: severidadDesdeDesvio(k.semaforo, k.desvio ?? 0),
         enlace: "/administracion/gastos",
       });
     });

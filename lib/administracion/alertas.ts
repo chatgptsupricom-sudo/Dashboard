@@ -90,10 +90,24 @@ export function esEstatusValido(v: unknown): v is EstatusAlerta {
   return typeof v === "string" && ESTATUS_VALIDOS.includes(v as EstatusAlerta);
 }
 
+/** Desvio (en % sobre la meta) al que la escala de severidad ya satura. */
+const DESVIO_MAXIMO = 1000;
+
 /**
  * Severidad sugerida a partir del semaforo del KPI que la origina, ajustada
  * por que tan lejos esta de la meta. Mantener el calculo en un solo lugar
  * evita que cada area invente su propia escala y el Top 10 quede sesgado.
+ *
+ * `desvioRelativo` es el % en que el valor se pasa del umbral verde
+ * (KpiAdmin.desvio), NO el valor crudo del KPI: comparar "56%" contra "84
+ * dias" no significa nada sin su meta al lado.
+ *
+ * La escala es logaritmica porque los desvios reales abarcan varios ordenes
+ * de magnitud (una cartera vencida al 56% con meta 10% se pasa un 461%, y
+ * unas obligaciones vencidas al 73% con meta 3% se pasan un 2300%). Con una
+ * escala lineal cualquier desvio grande topaba el maximo y casi todas las
+ * alertas empataban en 100, dejando el orden del Top 10 en manos del
+ * desempate por monto.
  */
 export function severidadDesdeDesvio(
   semaforo: "verde" | "amarillo" | "rojo" | "sin_datos",
@@ -101,9 +115,16 @@ export function severidadDesdeDesvio(
 ): number {
   if (semaforo === "verde" || semaforo === "sin_datos") return 0;
   const base = semaforo === "rojo" ? 60 : 30;
-  // El desvio aporta hasta 40 puntos extra; se satura para que un outlier
-  // enorme no desplace a todo lo demas del Top 10.
-  const extra = Math.min(40, Math.abs(desvioRelativo));
+  const d = Math.abs(desvioRelativo);
+  // El desvio aporta hasta 40 puntos extra; satura en DESVIO_MAXIMO para que
+  // un outlier enorme no desplace a todo lo demas del Top 10.
+  const extra =
+    d <= 0
+      ? 0
+      : Math.min(
+          40,
+          (40 * Math.log10(1 + d)) / Math.log10(1 + DESVIO_MAXIMO),
+        );
   return Math.min(100, Math.round(base + extra));
 }
 

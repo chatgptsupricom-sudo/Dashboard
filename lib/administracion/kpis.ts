@@ -38,6 +38,55 @@ export interface KpiAdmin {
   fuente: string;
   /** Explica de donde sale el numero, para no dar cifras sin contexto. */
   detalle?: string;
+  /**
+   * Cuanto se pasa el valor del umbral verde, en % relativo a la meta. Lo
+   * calcula construirKpi() y lo consume el motor de alertas para priorizar:
+   * sin esto no hay forma de distinguir un KPI que roza la meta de uno que la
+   * multiplica, porque el valor crudo no dice nada sin su meta al lado.
+   */
+  desvio: number | null;
+}
+
+/**
+ * Desvio del valor respecto al umbral verde, en porcentaje de la meta.
+ * Devuelve 0 si el valor esta dentro de verde y null si no hay con que
+ * compararlo.
+ *
+ * Se mide contra el borde del verde y no contra el "objetivo ideal" porque es
+ * el unico numero que el documento define para todos los KPIs.
+ */
+export function desvioContraUmbral(
+  valor: number | null,
+  u: UmbralKpi,
+): number | null {
+  if (valor === null || !Number.isFinite(valor)) return null;
+
+  // Una meta de 0 no admite desvio relativo (dividiria por cero). En esos
+  // casos el KPI ya viene expresado en %, asi que la diferencia absoluta es
+  // directamente comparable.
+  const relativo = (exceso: number, meta: number) =>
+    meta === 0
+      ? Math.abs(exceso)
+      : Math.round((Math.abs(exceso) / Math.abs(meta)) * 1000) / 10;
+
+  if (u.modo === "band") {
+    const { verdeMin, verdeMax } = u;
+    if (verdeMax !== undefined && valor > verdeMax) {
+      return relativo(valor - verdeMax, verdeMax);
+    }
+    if (verdeMin !== undefined && valor < verdeMin) {
+      return relativo(verdeMin - valor, verdeMin);
+    }
+    return 0;
+  }
+
+  if (u.modo === "lower_better") {
+    if (u.verde === undefined) return null;
+    return valor <= u.verde ? 0 : relativo(valor - u.verde, u.verde);
+  }
+
+  if (u.verde === undefined) return null;
+  return valor >= u.verde ? 0 : relativo(u.verde - valor, u.verde);
 }
 
 export function evaluarSemaforo(
@@ -92,7 +141,7 @@ export function puntosDeSemaforo(semaforo: Semaforo, peso: number): number {
 }
 
 export function construirKpi(
-  base: Omit<KpiAdmin, "semaforo" | "puntos" | "puntosMax">,
+  base: Omit<KpiAdmin, "semaforo" | "puntos" | "puntosMax" | "desvio">,
   umbral: UmbralKpi,
 ): KpiAdmin {
   const semaforo = evaluarSemaforo(base.valor, umbral);
@@ -101,6 +150,7 @@ export function construirKpi(
     semaforo,
     puntos: puntosDeSemaforo(semaforo, base.peso),
     puntosMax: base.peso,
+    desvio: desvioContraUmbral(base.valor, umbral),
   };
 }
 
