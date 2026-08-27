@@ -2070,7 +2070,8 @@
         "ticket_factura": "N° de factura",
         "case_number": "N° de caso",
         "adjunto_imagen": "Imagen",
-        "adjunto_video": "Video"
+        "adjunto_video": "Video",
+        "print": "Imprimir acta"
       }
     },
     "despacho": {
@@ -2274,6 +2275,28 @@
       "cola_fallidos": "{count, plural, =1 {# ingreso no se pudo enviar} other {# ingresos no se pudieron enviar}}",
       "cola_reintentar": "Reintentar ahora"
     },
-    "back": "Volver"
+    "back": "Volver",
+    "firmas": {
+      "titulo": "Firmas del acta",
+      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla.",
+      "completa": "Completa",
+      "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
+      "firmado": "Firmado",
+      "firmar": "Firmar",
+      "rehacer": "Rehacer",
+      "borrar": "Borrar firma",
+      "sin_nombre": "Sin asignar",
+      "nombre": "Nombre de quien firma",
+      "trazo": "Firme aquí con el dedo",
+      "guardar": "Guardar firma",
+      "cancelar": "Cancelar",
+      "error": "No se pudo guardar la firma",
+      "rol": {
+        "tecnico": "Técnico de OSC",
+        "almacen": "Almacén",
+        "seguridad": "Seguridad de OSC",
+        "cliente": "Recibe / Entrega"
+      }
+    }
   }
 }

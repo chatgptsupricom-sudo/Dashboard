@@ -22,6 +22,7 @@ import {
 import { useEffect, useState } from "react";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import FirmasActa from "@/components/seguridad/FirmasActa";
 
 type Despacho = {
   id: number;
@@ -134,6 +135,15 @@ export default function DespachoDetailPage() {
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
   const [calificacion, setCalificacion] = useState<Calificacion>(null);
   const [loading, setLoading] = useState(true);
+  // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
+  // no del codigo, para no tener que desplegar el dia que cambie.
+  const [tecnico, setTecnico] = useState<{ nombre: string; cargo: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/seguridad/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.tecnico && setTecnico(j.tecnico))
+      .catch(() => {});
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   const [draftRating, setDraftRating] = useState(0);
@@ -653,6 +663,20 @@ export default function DespachoDetailPage() {
             )}
           </section>
         )}
+
+        {/* Las 4 firmas de la planilla. Sustituyen a la firma unica del
+            cliente que habia antes, que dejaba fuera al tecnico, al almacen
+            y al de Seguridad. */}
+        <FirmasActa
+          tipo="despacho"
+          actaId={despacho.id}
+          nombresSugeridos={{
+            tecnico: tecnico?.nombre,
+            almacen: despacho.almacenista_nombre,
+            seguridad: user?.name,
+            cliente: despacho.cliente_retira || undefined,
+          }}
+        />
       </main>
     </div>
   );

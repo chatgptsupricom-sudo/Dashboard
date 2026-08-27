@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Loader2,
   MessageSquare,
+  Printer,
   Send as SendIcon,
   ShieldCheck,
   Star as StarIcon,
@@ -21,6 +22,7 @@ import {
 import { useEffect, useState } from "react";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import FirmasActa from "@/components/seguridad/FirmasActa";
 
 type Ingreso = {
   id: number;
@@ -118,6 +120,15 @@ export default function IngresoDetailPage() {
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
   const [calificacion, setCalificacion] = useState<Calificacion>(null);
   const [loading, setLoading] = useState(true);
+  // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
+  // no del codigo, para no tener que desplegar el dia que cambie.
+  const [tecnico, setTecnico] = useState<{ nombre: string; cargo: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/seguridad/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.tecnico && setTecnico(j.tecnico))
+      .catch(() => {});
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   const [draftRating, setDraftRating] = useState(0);
@@ -304,6 +315,19 @@ export default function IngresoDetailPage() {
               </p>
             </div>
           </div>
+          {/* Comprobante del acta de recepcion. Antes solo el despacho tenia
+              uno, asi que el cliente dejaba su equipo y se iba sin nada que
+              dijera en que estado lo entrego. */}
+          <a
+            href={`/api/seguridad/ingreso/${ingreso.id}/comprobante`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-10 px-3 sm:px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors shrink-0"
+            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">{td("print")}</span>
+          </a>
         </div>
       </header>
 
@@ -654,6 +678,20 @@ export default function IngresoDetailPage() {
             )}
           </section>
         )}
+
+        {/* Las 4 firmas de la planilla. En el ingreso son las que faltaban:
+            los 4 checks de estado se respondian sin que nadie reconociera en
+            que condicion se entrego el equipo. */}
+        <FirmasActa
+          tipo="ingreso"
+          actaId={ingreso.id}
+          nombresSugeridos={{
+            tecnico: tecnico?.nombre,
+            almacen: ingreso.recibido_por,
+            seguridad: user?.name,
+            cliente: ingreso.cliente_nombre,
+          }}
+        />
       </main>
 
       {lightboxOpen && fotoUrl && (

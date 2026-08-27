@@ -1,11 +1,30 @@
 import { query } from "@/lib/db";
 import { requireSeguridad } from "@/lib/seguridad/auth";
+import { fechaLarga } from "@/lib/fecha";
+import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "GzC8WCMdNfmi9qX7Oj01U/FTwaOAOwMh5EYE8VukFM8=",
-);
 
+/**
+ * Fecha y hora de la firma, en horario de Venezuela.
+ *
+ * Se fija la zona a proposito: el comprobante lo genera el servidor y lo lee
+ * alguien en el mostrador, asi que la hora tiene que ser la del mostrador y
+ * no la del servidor, esté donde esté desplegado.
+ */
+function fmtFechaHora(value: any): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("es-VE", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function esc(value: any): string {
   if (value === null || value === undefined) return "";
@@ -74,30 +93,36 @@ export async function GET(
 
   const accesoriosOk = d.accesorios_integros === 1 || d.accesorios_integros === true;
 
-  let firmaDataUrl: string | null = null;
-  try {
-    const firmaFlagResult = await query(
-      `SELECT firma_data IS NOT NULL AS has_firma FROM seguridad_despachos WHERE id = ?`,
-      [despachoId],
-    );
-    const hasFirma = firmaFlagResult.rows?.[0]?.has_firma || false;
-    if (hasFirma) {
-      const firmaDataResult = await query(
-        `SELECT firma_data, firma_mime FROM seguridad_despachos WHERE id = ?`,
-        [despachoId],
-      );
-      const firmaBuffer = firmaDataResult.rows?.[0]?.firma_data;
-      const firmaMime = firmaDataResult.rows?.[0]?.firma_mime || "image/png";
-      if (firmaBuffer) {
-        const base64 = Buffer.isBuffer(firmaBuffer)
-          ? firmaBuffer.toString("base64")
-          : Buffer.from(firmaBuffer as any).toString("base64");
-        firmaDataUrl = `data:${firmaMime};base64,${base64}`;
-      }
-    }
-  } catch {
-    firmaDataUrl = null;
-  }
+  // Las 4 firmas de la planilla: tecnico, almacen, seguridad y quien retira.
+  // Antes salia solo la del cliente, asi que el papel impreso no probaba que
+  // el almacen y Seguridad hubieran dado conformidad.
+  const [firmas, tecnico] = await Promise.all([
+    firmasConImagen("despacho", despachoId),
+    tecnicoDeOsc(),
+  ]);
+  const firmaDe = (rol: string) => firmas.find((f) => f.rol === rol);
+
+  const bloquesFirma = [
+    { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
+    { rol: "almacen", titulo: "Almacén", cargo: d.almacenista_nombre },
+    { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
+    { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
+  ]
+    .map(({ rol, titulo, cargo }) => {
+      const f = firmaDe(rol);
+      // Cuando no hay firma se deja el hueco igual: el comprobante se imprime
+      // y ahi se firma a mano, que es como funcionaba la planilla.
+      return `
+    <div class="sig">
+      <div class="trazo">${
+        f ? `<img src="${f.data_url}" alt="Firma de ${esc(f.firmante_nombre)}">` : ""
+      }</div>
+      <div class="name">${esc(titulo)}</div>
+      ${cargo ? `<div class="cargo">${esc(cargo)}</div>` : ""}
+      ${f ? `<div class="cuando">${esc(f.firmante_nombre)} · ${fmtFechaHora(f.created_at)}</div>` : ""}
+    </div>`;
+    })
+    .join("");
 
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -197,11 +222,22 @@ export async function GET(
   }
   .signatures {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 24px;
-    margin-top: 48px;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px 24px;
+    margin-top: 40px;
     page-break-inside: avoid;
   }
+  /* Alto fijo aunque no haya firma: si el bloque encoge cuando falta una,
+     el papel impreso no deja hueco para firmarla a mano. */
+  .sig .trazo {
+    height: 64px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .sig .trazo img { max-height: 62px; max-width: 100%; }
+  .sig .cargo { color: #555; font-size: 10px; }
+  .sig .cuando { color: #888; font-size: 9px; margin-top: 2px; }
   .sig {
     text-align: center;
     padding-top: 8px;
@@ -232,7 +268,7 @@ export async function GET(
   <div class="grid">
     <div class="field">
       <span class="label">Fecha de despacho</span>
-      <span class="value">${esc(d.fecha_despacho)}</span>
+      <span class="value">${fechaLarga(d.fecha_despacho)}</span>
     </div>
     <div class="field">
       <span class="label">Almacenista</span>
@@ -261,7 +297,7 @@ export async function GET(
     </div>
     <div class="field">
       <span class="label">Fecha de ingreso</span>
-      <span class="value">${esc(ingreso.fecha_entrega)}</span>
+      <span class="value">${fechaLarga(ingreso.fecha_entrega)}</span>
     </div>
     <div class="field">
       <span class="label">Ingreso #</span>
@@ -296,26 +332,8 @@ export async function GET(
   </div>
   ` : ""}
 
-  ${firmaDataUrl ? `
-  <div class="section">
-    <h2>Firma del cliente</h2>
-    <img class="firma-img" src="${firmaDataUrl}" alt="Firma del cliente">
-  </div>
-  ` : ""}
-
   <div class="signatures">
-    <div class="sig">
-      <div class="name">Recibe (Cliente)</div>
-      <div>${esc(d.cliente_retira) || ""}</div>
-    </div>
-    <div class="sig">
-      <div class="name">Entrega (Almac&eacute;n)</div>
-      <div>${esc(d.almacenista_nombre)}</div>
-    </div>
-    <div class="sig">
-      <div class="name">Seguridad OSC</div>
-      <div>&nbsp;</div>
-    </div>
+    ${bloquesFirma}
   </div>
 </body>
 </html>`;
