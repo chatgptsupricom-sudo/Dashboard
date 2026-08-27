@@ -12,10 +12,21 @@
 -- alguien que Odoo ya reconoce.
 
 -- 1. Crear el rol
-INSERT INTO roles (name, display_name) VALUES ('seguridad', 'Seguridad (Almacén)')
-ON DUPLICATE KEY UPDATE display_name = 'Seguridad (Almacén)';
+--
+-- Con INSERT ... SELECT WHERE NOT EXISTS y no con ON DUPLICATE KEY UPDATE:
+-- ese solo evita el duplicado si `roles.name` tiene indice unico, y si no lo
+-- tiene, correr el script dos veces deja dos roles 'seguridad'. A partir de
+-- ahi el login resuelve el rol con el que le devuelva primero la consulta —
+-- un fallo intermitente y dificil de rastrear.
+INSERT INTO roles (name, display_name)
+SELECT 'seguridad', 'Seguridad (Almacén)'
+ WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'seguridad');
 
--- 2. Comprobar que quedó
+-- Si ya existia con otro nombre visible, se deja al dia.
+UPDATE roles SET display_name = 'Seguridad (Almacén)' WHERE name = 'seguridad';
+
+-- 2. Comprobar que quedó, y que quedó UNO SOLO
+SELECT COUNT(*) AS filas_esperado_1 FROM roles WHERE name = 'seguridad';
 SELECT id, name, display_name FROM roles WHERE name = 'seguridad';
 
 -- 3. Asignárselo a alguien que YA existe en users_config
