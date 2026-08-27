@@ -17,8 +17,17 @@ export async function GET(
 
     let rmaResult;
     try {
+      // `model` es el nombre del producto y `hardware` la categoria, segun la
+      // convencion del modulo RMA. Sin traer `model`, el alta se prellenaba
+      // con la categoria: el acta de recepcion decia "PERIFERICOS" en vez de
+      // "Mouse HP". Eso es lo que se firma y lo que se mira cuando un cliente
+      // reclama que faltaba algo, asi que tiene que nombrar el equipo.
+      //
+      // El portal ya hacia esta misma distincion para lo que ve el cliente
+      // (`product_name: row.model || row.hardware`); faltaba de este lado.
       rmaResult = await query(
-        `SELECT id, case_number, client_name, hardware, serial, invoice_number, reported_fault
+        `SELECT id, case_number, client_name, model, hardware, serial,
+                invoice_number, reported_fault
          FROM rma_cases
          WHERE case_number = ?`,
         [case_number],
@@ -32,7 +41,19 @@ export async function GET(
       return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, case: rmaResult.rows[0] });
+    const caso = rmaResult.rows[0] as any;
+
+    // `hardware` sale ya resuelto al nombre del producto, para que quien lo
+    // consuma no tenga que repetir esta decision. La categoria queda aparte
+    // por si alguna pantalla la necesita.
+    return NextResponse.json({
+      success: true,
+      case: {
+        ...caso,
+        hardware: caso.model || caso.hardware || "",
+        categoria: caso.hardware || null,
+      },
+    });
   } catch (error: any) {
     console.error("Error buscando ticket:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

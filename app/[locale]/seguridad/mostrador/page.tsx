@@ -157,7 +157,10 @@ export default function MostradorPage() {
   // issue: un cliente reportaba desde supricom.com.ve y en el almacén nadie se
   // enteraba hasta que aparecía con el equipo.
   const [esperando, setEsperando] = useState<TicketEsperando[]>([]);
-  const [aviso, setAviso] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{
+    texto: string;
+    case_number: string;
+  } | null>(null);
   // Momento del último dato bueno; se muestra cuando estamos sirviendo caché.
   const [desconectadoDesde, setDesconectadoDesde] = useState<number | null>(null);
 
@@ -201,9 +204,14 @@ export default function MostradorPage() {
     try {
       socket = getSocket();
       socket.on("rma_ticket_nuevo", (datos: any) => {
-        setAviso(
-          `${datos?.case_number ?? ""} · ${datos?.client_name ?? ""}`.trim(),
-        );
+        setAviso({
+          texto: `${datos?.case_number ?? ""} · ${datos?.client_name ?? ""}`.trim(),
+          // Se guarda aparte del texto para poder enlazar al alta ya
+          // prellenada: el criterio del issue pide un link directo al
+          // formulario, no a la lista. Con el cliente delante, cada toque
+          // de mas es tiempo de mostrador.
+          case_number: String(datos?.case_number ?? "").trim(),
+        });
         cargarEsperando();
         // El aviso se va solo: esta pantalla se mira de reojo, no se cierra.
         setTimeout(() => setAviso(null), 12_000);
@@ -307,15 +315,29 @@ export default function MostradorPage() {
             <Inbox className="w-5 h-5 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{tm("nuevo_reporte")}</p>
-              <p className="text-xs opacity-90 truncate">{aviso}</p>
+              <p className="text-xs opacity-90 truncate">{aviso.texto}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => { setAviso(null); setVista("esperando"); }}
-              className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold active:bg-white/30"
-            >
-              {tm("ver")}
-            </button>
+            {/* Link directo al alta ya prellenada con ese ticket, que es lo
+                que pide el criterio. Antes llevaba a la lista y habia que
+                buscar el ticket otra vez. Si el evento llega sin numero
+                —no deberia— se cae a la lista, que siempre sirve. */}
+            {aviso.case_number ? (
+              <Link
+                href={`${base}/ingreso/nuevo?ticket=${encodeURIComponent(aviso.case_number)}`}
+                onClick={() => setAviso(null)}
+                className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold active:bg-white/30"
+              >
+                {tm("registrar")}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setAviso(null); setVista("esperando"); }}
+                className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold active:bg-white/30"
+              >
+                {tm("ver")}
+              </button>
+            )}
           </div>
         )}
 

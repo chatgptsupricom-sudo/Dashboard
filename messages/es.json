@@ -2267,6 +2267,7 @@
       "sin_esperando": "No hay reportes del portal pendientes de recibir.",
       "nuevo_reporte": "Nuevo reporte del portal",
       "ver": "Ver",
+      "registrar": "Registrar",
       "sin_conexion": "Sin conexión — mostrando los datos de las {hora}",
       "cola_pendientes": "Sin enviar",
       "cola_pendientes_desc": "{count, plural, =1 {# ingreso espera señal} other {# ingresos esperan señal}}",

@@ -2278,6 +2278,7 @@
       "sin_esperando": "No portal reports waiting to be received.",
       "nuevo_reporte": "New portal report",
       "ver": "View",
+      "registrar": "Register",
       "sin_conexion": "Offline — showing data from {hora}",
       "cola_pendientes": "Not sent",
       "cola_pendientes_desc": "{count, plural, =1 {# intake waiting for signal} other {# intakes waiting for signal}}",
