@@ -1,11 +1,13 @@
 import { callOdooRPC } from "@/lib/odoo";
 
 /**
- * Ordenes de entrega de Odoo para la seccion Mercancia.
+ * Documentos de Odoo para la seccion Mercancia.
  *
- * La lista de lo que va en el camion sale de Odoo (`stock.picking` y sus
- * `stock.move`), no de lo que alguien escriba a mano: si el papel lo llena el
- * mismo que carga, verificar contra el no prueba nada.
+ * Cada flujo llega con el suyo: la mercancia que ENTRA viene con la factura de
+ * la orden de compra, y la que SALE con la orden de despacho mas su factura.
+ *
+ * La lista de renglones sale de Odoo, no de lo que alguien escriba a mano: si
+ * el papel lo llena el mismo que carga, verificar contra el no prueba nada.
  */
 
 export type LineaPicking = {
@@ -36,7 +38,7 @@ function partirProducto(nombre: string): { codigo: string | null; producto: stri
 }
 
 /**
- * Busca una orden de entrega por su nombre exacto (ej. "PRIN1/OUT/05838").
+ * Busca una orden de despacho por su nombre exacto (ej. "PRIN1/OUT/05838").
  *
  * Devuelve null si no existe o si Odoo no responde. El que llama decide que
  * hacer: aqui no se inventa una orden vacia, porque un camion verificado
@@ -91,6 +93,74 @@ export async function buscarPickingPorNombre(
     cliente_nombre: p.partner_id?.[1] || "",
     estado: p.state || "",
     origen: p.origin || null,
+    lineas,
+  };
+}
+
+/**
+ * Busca una factura de compra por su numero (ej. "FACTU/2026/08/0064").
+ *
+ * Es el documento con el que llega la mercancia al almacen. Se acepta tambien
+ * la referencia del proveedor (`ref`), que es lo que muchas veces trae el
+ * papel en la mano: el numero interno de Odoo no siempre esta impreso.
+ *
+ * Solo lineas de producto: una factura trae ademas secciones, notas y lineas
+ * de impuesto, y contar eso en el porton no significa nada.
+ */
+export async function buscarFacturaCompra(
+  numero: string,
+): Promise<PickingOdoo | null> {
+  const limpio = String(numero || "").trim();
+  if (!limpio || limpio.length > 100) return null;
+
+  const facturas = await callOdooRPC<any[]>(
+    "account.move",
+    "search_read",
+    [
+      [
+        ["move_type", "=", "in_invoice"],
+        "|",
+        ["name", "=", limpio],
+        ["ref", "=", limpio],
+      ],
+    ],
+    { fields: ["name", "partner_id", "state", "invoice_origin", "ref"], limit: 1 },
+  );
+
+  const f = facturas?.[0];
+  if (!f) return null;
+
+  const lineas_raw = await callOdooRPC<any[]>(
+    "account.move.line",
+    "search_read",
+    [
+      [
+        ["move_id", "=", f.id],
+        ["display_type", "=", "product"],
+      ],
+    ],
+    { fields: ["product_id", "quantity", "name"], limit: 500 },
+  );
+
+  const lineas: LineaPicking[] = (lineas_raw || []).map((l: any) => {
+    // Si la linea no tiene producto de catalogo, se usa su descripcion: es lo
+    // unico que identifica lo que llego, y perderla dejaria un renglon mudo.
+    const etiqueta = l.product_id?.[1] || l.name || "";
+    const { codigo, producto } = partirProducto(etiqueta);
+    return {
+      odoo_product_id: l.product_id?.[0] ?? null,
+      producto,
+      codigo,
+      cantidad_cargada: Number(l.quantity || 0),
+    };
+  });
+
+  return {
+    odoo_picking_id: f.id,
+    odoo_picking_name: f.name,
+    cliente_nombre: f.partner_id?.[1] || "",
+    estado: f.state || "",
+    origen: f.invoice_origin || f.ref || null,
     lineas,
   };
 }

@@ -10,6 +10,7 @@ const MAX = {
   chofer_nombre: 200,
   placa_vehiculo: 50,
   odoo_picking_name: 100,
+  factura_numero: 100,
   producto: 300,
   codigo: 100,
   observaciones: 5000,
@@ -125,9 +126,10 @@ export async function POST(request: NextRequest) {
 
     const res = await query(
       `INSERT INTO seguridad_mercancia
-        (tipo, fecha, odoo_picking_id, odoo_picking_name, cliente_nombre,
-         almacenista_nombre, chofer_nombre, placa_vehiculo, observaciones)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (tipo, fecha, odoo_picking_id, odoo_picking_name, factura_numero,
+         cliente_nombre, almacenista_nombre, chofer_nombre, placa_vehiculo,
+         observaciones)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tipo,
         fecha,
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
           ? Number(body.odoo_picking_id)
           : null,
         truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
+        truncar(body?.factura_numero, MAX.factura_numero),
         truncar(body?.cliente_nombre, MAX.cliente_nombre),
         almacenista,
         truncar(body?.chofer_nombre, MAX.chofer_nombre),

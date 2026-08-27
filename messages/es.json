@@ -2298,10 +2298,10 @@
       "ingreso_sub": "Mercancía que entra al almacén",
       "egreso_sub": "Carga que sale en camión",
       "nuevo": "Registrar",
-      "buscar_orden": "Orden de entrega de Odoo",
+      "buscar_orden": "Orden de despacho",
       "buscar_orden_ph": "Ej: PRIN1/OUT/05838",
       "buscar": "Buscar",
-      "no_encontrada": "No encontramos esa orden de entrega",
+      "no_encontrada": "No encontramos ese documento en Odoo",
       "cliente": "Cliente",
       "almacenista": "Almacenista que carga",
       "chofer": "Chofer",
@@ -2325,7 +2325,11 @@
       "vacio": "Todavía no hay movimientos.",
       "error": "No se pudo guardar",
       "sin_orden": "Sin orden de Odoo",
-      "diferencia": "Diferencia"
+      "diferencia": "Diferencia",
+      "buscar_factura": "Factura de la orden de compra",
+      "buscar_factura_ph": "Ej: FACTU/2026/08/0064",
+      "factura": "Factura que acompaña el despacho",
+      "factura_ph": "Número de factura"
     }
   }
 }

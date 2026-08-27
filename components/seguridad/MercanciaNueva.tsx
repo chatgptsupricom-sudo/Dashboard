@@ -57,6 +57,9 @@ export default function MercanciaNueva({
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  // Solo el egreso la pide aparte: en el ingreso, la factura de compra ES el
+  // documento que se busca, asi que ya viene con la orden.
+  const [factura, setFactura] = useState("");
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export default function MercanciaNueva({
     setErrorOrden(null);
     try {
       const res = await fetch(
-        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}`,
+        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}`,
       );
       if (!res.ok) {
         setErrorOrden(tm("no_encontrada"));
@@ -107,6 +110,8 @@ export default function MercanciaNueva({
           fecha,
           odoo_picking_id: picking?.odoo_picking_id,
           odoo_picking_name: picking?.odoo_picking_name,
+          factura_numero:
+            tipo === "egreso" ? factura.trim() || undefined : picking?.odoo_picking_name,
           cliente_nombre: picking?.cliente_nombre,
           almacenista_nombre: almacenista.trim(),
           chofer_nombre: chofer.trim() || undefined,
@@ -145,7 +150,7 @@ export default function MercanciaNueva({
         {/* Orden de Odoo */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-3">
-            {tm("buscar_orden")}
+            {tm(tipo === "ingreso" ? "buscar_factura" : "buscar_orden")}
           </h2>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -158,7 +163,7 @@ export default function MercanciaNueva({
                   buscarOrden();
                 }
               }}
-              placeholder={tm("buscar_orden_ph")}
+              placeholder={tm(tipo === "ingreso" ? "buscar_factura_ph" : "buscar_orden_ph")}
               className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
             />
             <button
@@ -231,6 +236,17 @@ export default function MercanciaNueva({
               className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
             />
           </Campo>
+          {tipo === "egreso" && (
+            <Campo label={tm("factura")}>
+              <input
+                type="text"
+                value={factura}
+                onChange={(e) => setFactura(e.target.value.slice(0, 100))}
+                placeholder={tm("factura_ph")}
+                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
+              />
+            </Campo>
+          )}
           <Campo label={`${tm("almacenista")} *`}>
             <input
               type="text"
