@@ -18,8 +18,8 @@ import SignaturePad from "@/components/seguridad/SignaturePad";
  * con el cliente esperando.
  */
 
-const ROLES = ["tecnico", "almacen", "seguridad", "cliente"] as const;
-type Rol = (typeof ROLES)[number];
+const TODOS_LOS_ROLES = ["tecnico", "almacen", "seguridad", "cliente"] as const;
+type Rol = (typeof TODOS_LOS_ROLES)[number];
 
 type Firma = { rol: Rol; firmante_nombre: string; created_at: string };
 
@@ -27,11 +27,21 @@ export default function FirmasActa({
   tipo,
   actaId,
   nombresSugeridos,
+  roles = TODOS_LOS_ROLES as unknown as Rol[],
 }: {
-  tipo: "ingreso" | "despacho";
+  tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
   /** Nombre que se propone para cada rol; el usuario puede corregirlo. */
   nombresSugeridos: Partial<Record<Rol, string>>;
+  /**
+   * Quien firma. Por defecto los cuatro de la planilla de RMA.
+   *
+   * Mercancia pasa solo ["seguridad"]: ahi no hay cliente que reciba ni
+   * tecnico que intervenga — es el almacen cargando un camion y Seguridad
+   * dando fe de lo que salio. Pedir cuatro firmas seria pedir tres que nadie
+   * puede dar.
+   */
+  roles?: Rol[];
 }) {
   const t = useTranslations("seguridad.firmas");
 
@@ -107,6 +117,7 @@ export default function FirmasActa({
     }
   };
 
+  const ROLES = roles;
   const faltan = ROLES.filter((r) => !firmaDe(r)).length;
 
   return (
@@ -125,9 +136,11 @@ export default function FirmasActa({
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500 mb-4">{t("ayuda")}</p>
+      <p className="text-xs text-slate-500 mb-4">
+        {ROLES.length > 1 ? t("ayuda") : t("ayuda_una")}
+      </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className={`grid gap-3 ${ROLES.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
         {ROLES.map((rol) => {
           const firmada = firmaDe(rol);
           return (

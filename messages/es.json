@@ -2250,6 +2250,7 @@
     "firmas": {
       "titulo": "Firmas del acta",
       "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla.",
+      "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla.",
       "completa": "Completa",
       "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
       "firmado": "Firmado",

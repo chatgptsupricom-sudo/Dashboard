@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { fechaCorta } from "@/lib/fecha";
+import FirmasActa from "@/components/seguridad/FirmasActa";
 
 /**
  * Verificacion en el porton y calificacion del almacenista.
@@ -265,6 +266,16 @@ export default function MercanciaDetalle({
             );
           })}
         </section>
+
+        {/* Firma de Seguridad. Una sola, no las cuatro de la planilla de RMA:
+            aqui no hay cliente que reciba ni tecnico que intervenga — es el
+            almacen cargando un camion y Seguridad dando fe de lo que salio. */}
+        <FirmasActa
+          tipo="mercancia"
+          actaId={mov.id}
+          roles={["seguridad"]}
+          nombresSugeridos={{ seguridad: user?.name }}
+        />
 
         {/* Calificacion del almacenista que cargo */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">

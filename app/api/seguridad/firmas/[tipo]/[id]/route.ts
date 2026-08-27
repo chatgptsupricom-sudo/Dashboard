@@ -102,7 +102,11 @@ export async function POST(
 
     // Que el acta exista antes de colgarle una firma. Sin esto quedarian
     // firmas huerfanas apuntando a actas que nunca se crearon.
-    const tabla = p.tipo === "ingreso" ? "seguridad_ingresos" : "seguridad_despachos";
+    const tabla = {
+      ingreso: "seguridad_ingresos",
+      despacho: "seguridad_despachos",
+      mercancia: "seguridad_mercancia",
+    }[p.tipo as string];
     const existe = await query(`SELECT id FROM ${tabla} WHERE id = ?`, [p.actaId]);
     if (existe.rows.length === 0) {
       return NextResponse.json({ error: "El acta no existe" }, { status: 404 });

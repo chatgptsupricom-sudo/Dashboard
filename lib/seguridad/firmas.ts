@@ -11,7 +11,7 @@ import { query } from "@/lib/db";
 export const ROLES_FIRMA = ["tecnico", "almacen", "seguridad", "cliente"] as const;
 export type RolFirma = (typeof ROLES_FIRMA)[number];
 
-export const TIPOS_ACTA = ["ingreso", "despacho"] as const;
+export const TIPOS_ACTA = ["ingreso", "despacho", "mercancia"] as const;
 export type TipoActa = (typeof TIPOS_ACTA)[number];
 
 export function esRolValido(v: unknown): v is RolFirma {
