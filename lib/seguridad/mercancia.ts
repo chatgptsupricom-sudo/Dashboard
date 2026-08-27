@@ -20,7 +20,8 @@ export type LineaPicking = {
 export type PickingOdoo = {
   odoo_picking_id: number;
   odoo_picking_name: string;
-  cliente_nombre: string;
+  /** Proveedor en un ingreso, cliente en un egreso. */
+  contraparte: string;
   estado: string;
   origen: string | null;
   lineas: LineaPicking[];
@@ -90,7 +91,7 @@ export async function buscarPickingPorNombre(
   return {
     odoo_picking_id: p.id,
     odoo_picking_name: p.name,
-    cliente_nombre: p.partner_id?.[1] || "",
+    contraparte: p.partner_id?.[1] || "",
     estado: p.state || "",
     origen: p.origin || null,
     lineas,
@@ -158,7 +159,7 @@ export async function buscarFacturaCompra(
   return {
     odoo_picking_id: f.id,
     odoo_picking_name: f.name,
-    cliente_nombre: f.partner_id?.[1] || "",
+    contraparte: f.partner_id?.[1] || "",
     estado: f.state || "",
     origen: f.invoice_origin || f.ref || null,
     lineas,

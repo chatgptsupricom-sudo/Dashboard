@@ -38,7 +38,7 @@ type Movimiento = {
   tipo: "ingreso" | "egreso";
   fecha: string;
   odoo_picking_name: string | null;
-  cliente_nombre: string | null;
+  contraparte: string | null;
   almacenista_nombre: string;
   chofer_nombre: string | null;
   placa_vehiculo: string | null;

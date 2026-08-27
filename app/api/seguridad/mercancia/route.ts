@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 const MAX = {
-  cliente_nombre: 200,
+  contraparte: 200,
   almacenista_nombre: 200,
   chofer_nombre: 200,
   placa_vehiculo: 50,
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     const res = await query(
       `INSERT INTO seguridad_mercancia
         (tipo, fecha, odoo_picking_id, odoo_picking_name, factura_numero,
-         cliente_nombre, almacenista_nombre, chofer_nombre, placa_vehiculo,
+         contraparte, almacenista_nombre, chofer_nombre, placa_vehiculo,
          observaciones)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
           : null,
         truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
         truncar(body?.factura_numero, MAX.factura_numero),
-        truncar(body?.cliente_nombre, MAX.cliente_nombre),
+        truncar(body?.contraparte, MAX.contraparte),
         almacenista,
         truncar(body?.chofer_nombre, MAX.chofer_nombre),
         truncar(body?.placa_vehiculo, MAX.placa_vehiculo),

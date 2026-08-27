@@ -26,7 +26,7 @@ type Movimiento = {
   tipo: "ingreso" | "egreso";
   fecha: string;
   odoo_picking_name: string | null;
-  cliente_nombre: string | null;
+  contraparte: string | null;
   almacenista_nombre: string;
   chofer_nombre: string | null;
   placa_vehiculo: string | null;
@@ -104,7 +104,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-900 truncate">
                   {m.odoo_picking_name || tm("sin_orden")}
-                  {m.cliente_nombre ? ` · ${m.cliente_nombre}` : ""}
+                  {m.contraparte ? ` · ${m.contraparte}` : ""}
                 </p>
                 <p className="text-xs text-slate-500 truncate">
                   {fechaCorta(m.fecha)} · {m.almacenista_nombre}

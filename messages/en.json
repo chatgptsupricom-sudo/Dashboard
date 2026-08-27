@@ -2314,6 +2314,7 @@
       "buscar": "Search",
       "no_encontrada": "We could not find that document in Odoo",
       "cliente": "Customer",
+      "proveedor": "Supplier",
       "almacenista": "Loading warehouse worker",
       "chofer": "Driver",
       "placa": "Vehicle plate",

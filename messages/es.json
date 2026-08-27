@@ -2303,6 +2303,7 @@
       "buscar": "Buscar",
       "no_encontrada": "No encontramos ese documento en Odoo",
       "cliente": "Cliente",
+      "proveedor": "Proveedor",
       "almacenista": "Almacenista que carga",
       "chofer": "Chofer",
       "placa": "Placa del vehículo",

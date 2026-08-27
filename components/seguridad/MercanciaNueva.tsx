@@ -48,7 +48,7 @@ export default function MercanciaNueva({
   const [picking, setPicking] = useState<{
     odoo_picking_id: number;
     odoo_picking_name: string;
-    cliente_nombre: string;
+    contraparte: string;
   } | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
 
@@ -84,7 +84,7 @@ export default function MercanciaNueva({
       setPicking({
         odoo_picking_id: p.odoo_picking_id,
         odoo_picking_name: p.odoo_picking_name,
-        cliente_nombre: p.cliente_nombre,
+        contraparte: p.contraparte,
       });
       setLineas(p.lineas || []);
     } catch {
@@ -112,7 +112,7 @@ export default function MercanciaNueva({
           odoo_picking_name: picking?.odoo_picking_name,
           factura_numero:
             tipo === "egreso" ? factura.trim() || undefined : picking?.odoo_picking_name,
-          cliente_nombre: picking?.cliente_nombre,
+          contraparte: picking?.contraparte,
           almacenista_nombre: almacenista.trim(),
           chofer_nombre: chofer.trim() || undefined,
           placa_vehiculo: placa.trim() || undefined,
@@ -193,7 +193,8 @@ export default function MercanciaNueva({
                 {picking.odoo_picking_name}
               </p>
               <p className="text-xs text-slate-600">
-                {tm("cliente")}: {picking.cliente_nombre || "—"}
+                {tm(tipo === "ingreso" ? "proveedor" : "cliente")}:{" "}
+                {picking.contraparte || "—"}
               </p>
             </div>
           )}
