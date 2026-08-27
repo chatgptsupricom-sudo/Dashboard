@@ -1,43 +1,56 @@
 -- ============================================================
--- Modulo Seguridad: todas las migraciones en un solo archivo.
+-- MODULO SEGURIDAD — MIGRACION UNICA
 --
--- Se puede correr VARIAS VECES sin romper nada: cada tabla usa
--- CREATE TABLE IF NOT EXISTS y cada columna se agrega solo si no existe.
+-- Un solo archivo con todo el modulo: RMA (recepcion y despacho de equipos) y
+-- Mercancia (carga y descarga de camiones).
 --
--- Por que no basta con concatenar los archivos sueltos: `ALTER TABLE ... ADD
--- COLUMN` falla con "Duplicate column name" cuando la columna ya esta, y eso
--- corta el resto del script. En un despliegue donde nadie recuerda que se
--- corrio antes, un script que se puede repetir vale mas que uno que hay que
--- ejecutar en el orden justo.
+-- Se puede correr VARIAS VECES sin romper nada, y sobre una base vacia o sobre
+-- una a medio migrar. Cada tabla usa CREATE TABLE IF NOT EXISTS y cada columna
+-- se agrega solo si falta.
 --
--- No se usa `ADD COLUMN IF NOT EXISTS`: MariaDB lo soporta pero MySQL no,
--- antes de 8.0.29. La consulta a information_schema funciona en los dos.
+-- SUSTITUYE a los archivos sueltos que habia antes (seguridad.sql,
+-- add_firmas_acta_seguridad.sql, add_idempotency_key_seguridad_ingresos.sql,
+-- add_despachado_at_rma_cases.sql, add_mercancia_seguridad.sql,
+-- add_factura_mercancia.sql y rename_contraparte_mercancia.sql). Eran siete
+-- que habia que ejecutar en el orden justo, y equivocarse dejaba la base a
+-- medias sin avisar.
 --
--- No se usan procedimientos almacenados a proposito: harian falta DELIMITER,
--- que es una directiva del cliente y no la entienden todas las consolas.
+-- No usa `ADD COLUMN IF NOT EXISTS`: MariaDB lo soporta pero MySQL no, antes
+-- de 8.0.29. La consulta a information_schema funciona en los dos. Tampoco usa
+-- procedimientos almacenados, que necesitarian DELIMITER — una directiva del
+-- cliente que no todas las consolas entienden.
+--
+-- FALTA APARTE: un usuario con rol `seguridad` en users_config
+-- (ver sql/insert_role_seguridad.sql).
 -- ============================================================
 
 
--- ------------------------------------------------------------
--- 1. Tablas del modulo (issues #30 a #33)
--- ------------------------------------------------------------
+-- ============================================================
+-- 1. RMA — recepcion y despacho de equipos
+-- ============================================================
 
 CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   rma_case_id INT DEFAULT NULL,
   fecha_entrega DATE NOT NULL,
+  nd_numero VARCHAR(50) DEFAULT NULL,
   factura_numero VARCHAR(100) DEFAULT NULL,
   cliente_nombre VARCHAR(200) NOT NULL,
   hardware VARCHAR(200) DEFAULT NULL,
   serial VARCHAR(200) DEFAULT NULL,
   descripcion_falla TEXT DEFAULT NULL,
+  -- Los 4 checks de la planilla van NOT NULL y sin valor por defecto: con
+  -- DEFAULT 1 se podia registrar un ingreso sin revisar nada y quedaba
+  -- declarado que el equipo llego completo.
   accesorios_integros TINYINT(1) NOT NULL,
   sin_manipulacion TINYINT(1) NOT NULL,
   dentro_de_fecha TINYINT(1) NOT NULL,
   falla_cubierta_garantia TINYINT(1) NOT NULL,
   recibido_por VARCHAR(200) NOT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
+  idempotency_key VARCHAR(64) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX uq_idempotency_key (idempotency_key),
   INDEX idx_fecha (fecha_entrega),
   INDEX idx_cliente (cliente_nombre),
   INDEX idx_rma_case (rma_case_id),
@@ -49,12 +62,15 @@ CREATE TABLE IF NOT EXISTS seguridad_despachos (
   ingreso_id INT DEFAULT NULL,
   rma_case_id INT DEFAULT NULL,
   fecha_despacho DATE NOT NULL,
+  nd_numero VARCHAR(50) DEFAULT NULL,
   almacenista_nombre VARCHAR(200) NOT NULL,
   facturas_json TEXT DEFAULT NULL,
   cliente_retira VARCHAR(200) DEFAULT NULL,
   accesorios_integros TINYINT(1) NOT NULL,
   observaciones TEXT DEFAULT NULL,
   firma_url VARCHAR(500) DEFAULT NULL,
+  firma_data LONGBLOB NULL,
+  firma_mime VARCHAR(50) DEFAULT 'image/png' NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_fecha (fecha_despacho),
   INDEX idx_almacenista (almacenista_nombre),
@@ -66,7 +82,7 @@ CREATE TABLE IF NOT EXISTS seguridad_calificaciones (
   id INT AUTO_INCREMENT PRIMARY KEY,
   almacenista_nombre VARCHAR(200) NOT NULL,
   calificacion TINYINT NOT NULL,
-  relacionado_a ENUM('ingreso','despacho') NOT NULL,
+  relacionado_a ENUM('ingreso','despacho','mercancia') NOT NULL,
   relacionado_id INT NOT NULL,
   comentario VARCHAR(500) DEFAULT NULL,
   calificado_por VARCHAR(200) NOT NULL,
@@ -77,19 +93,23 @@ CREATE TABLE IF NOT EXISTS seguridad_calificaciones (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- ------------------------------------------------------------
--- 2. Las 4 firmas del acta y la configuracion del modulo
--- ------------------------------------------------------------
+-- ============================================================
+-- 2. Firmas del acta y configuracion del modulo
+-- ============================================================
 
+-- Tabla aparte y no columnas por rol: son 4 roles x 3 tipos de acta. Ademas
+-- queda registrado CUANDO firmo cada uno, que en una disputa importa tanto
+-- como la firma.
 CREATE TABLE IF NOT EXISTS seguridad_firmas (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  acta_tipo ENUM('ingreso','despacho') NOT NULL,
+  acta_tipo ENUM('ingreso','despacho','mercancia') NOT NULL,
   acta_id INT NOT NULL,
   rol ENUM('tecnico','almacen','seguridad','cliente') NOT NULL,
   firmante_nombre VARCHAR(200) NOT NULL,
   firma_data LONGBLOB NOT NULL,
   firma_mime VARCHAR(50) DEFAULT 'image/png',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  -- Un rol firma una vez por acta: volver a firmar reemplaza, no acumula.
   UNIQUE KEY uq_acta_rol (acta_tipo, acta_id, rol),
   INDEX idx_acta (acta_tipo, acta_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -100,89 +120,177 @@ CREATE TABLE IF NOT EXISTS seguridad_config (
   actualizado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ON DUPLICATE KEY UPDATE valor = valor: si ya esta configurado, se respeta el
--- nombre que hayan puesto. Repetir el script no pisa el tecnico actual.
+-- ON DUPLICATE KEY UPDATE valor = valor: si ya esta configurado se respeta lo
+-- que hayan puesto. Repetir el script no pisa el tecnico actual.
 INSERT INTO seguridad_config (clave, valor) VALUES
   ('tecnico_nombre', 'Ing. Manuel García'),
   ('tecnico_cargo', 'Técnico de OSC')
 ON DUPLICATE KEY UPDATE valor = valor;
 
 
--- ------------------------------------------------------------
--- 3. Columnas agregadas despues, cada una solo si falta
--- ------------------------------------------------------------
+-- ============================================================
+-- 3. Mercancia — carga y descarga de camiones
+-- ============================================================
 
--- seguridad_ingresos.idempotency_key  (cola offline del mostrador, #39)
+-- `contraparte` y no `cliente_nombre`: en un EGRESO es el cliente que recibe,
+-- pero en un INGRESO es el PROVEEDOR que envia.
+CREATE TABLE IF NOT EXISTS seguridad_mercancia (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tipo ENUM('ingreso','egreso') NOT NULL,
+  fecha DATE NOT NULL,
+  -- Documento de Odoo con el que viaja la mercancia: factura de compra en un
+  -- ingreso, orden de despacho en un egreso.
+  odoo_picking_id INT DEFAULT NULL,
+  odoo_picking_name VARCHAR(100) DEFAULT NULL,
+  factura_numero VARCHAR(100) DEFAULT NULL,
+  contraparte VARCHAR(200) DEFAULT NULL,
+  almacenista_nombre VARCHAR(200) NOT NULL,
+  chofer_nombre VARCHAR(200) DEFAULT NULL,
+  placa_vehiculo VARCHAR(50) DEFAULT NULL,
+  -- descuadre NO bloquea la salida: queda registrado y avisa. Parar un camion
+  -- es decision de una persona, no del software.
+  estado ENUM('pendiente','conforme','descuadre') NOT NULL DEFAULT 'pendiente',
+  verificado_por VARCHAR(200) DEFAULT NULL,
+  verificado_at TIMESTAMP NULL DEFAULT NULL,
+  observaciones TEXT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_tipo_fecha (tipo, fecha),
+  INDEX idx_almacenista (almacenista_nombre),
+  INDEX idx_estado (estado),
+  INDEX idx_picking (odoo_picking_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- `cantidad_verificada` empieza en NULL a proposito: "todavia no lo he
+-- contado" no es lo mismo que "conte cero".
+CREATE TABLE IF NOT EXISTS seguridad_mercancia_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mercancia_id INT NOT NULL,
+  odoo_product_id INT DEFAULT NULL,
+  producto VARCHAR(300) NOT NULL,
+  codigo VARCHAR(100) DEFAULT NULL,
+  cantidad_cargada DECIMAL(12,3) NOT NULL DEFAULT 0,
+  cantidad_verificada DECIMAL(12,3) DEFAULT NULL,
+  observacion VARCHAR(300) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_mercancia (mercancia_id),
+  CONSTRAINT fk_mercancia_item FOREIGN KEY (mercancia_id)
+    REFERENCES seguridad_mercancia(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ============================================================
+-- 4. Puesta al dia de bases que ya existian
+--
+-- Todo lo de arriba ya trae la forma final, asi que en una base nueva esta
+-- seccion no hace nada. Es para las que se crearon antes.
+-- ============================================================
+
+-- --- seguridad_ingresos ---
+
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_ingresos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_ingresos'
       AND COLUMN_NAME = 'idempotency_key') > 0,
-  'SELECT "idempotency_key ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_ingresos ADD COLUMN idempotency_key VARCHAR(64) DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_ingresos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_ingresos'
       AND INDEX_NAME = 'uq_idempotency_key') > 0,
-  'SELECT "uq_idempotency_key ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_ingresos ADD UNIQUE INDEX uq_idempotency_key (idempotency_key)'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- seguridad_ingresos.nd_numero  (numero del encabezado de la planilla)
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_ingresos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_ingresos'
       AND COLUMN_NAME = 'nd_numero') > 0,
-  'SELECT "ingresos.nd_numero ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_ingresos ADD COLUMN nd_numero VARCHAR(50) DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- seguridad_despachos.nd_numero
+-- --- seguridad_despachos ---
+
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_despachos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_despachos'
       AND COLUMN_NAME = 'nd_numero') > 0,
-  'SELECT "despachos.nd_numero ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_despachos ADD COLUMN nd_numero VARCHAR(50) DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- seguridad_despachos.firma_data / firma_mime
--- La firma unica del cliente, anterior a las 4 firmas. El endpoint las crea
--- solo si faltan, pero se dejan aca para que la base quede completa de una vez.
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_despachos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_despachos'
       AND COLUMN_NAME = 'firma_data') > 0,
-  'SELECT "firma_data ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_despachos ADD COLUMN firma_data LONGBLOB NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'seguridad_despachos'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_despachos'
       AND COLUMN_NAME = 'firma_mime') > 0,
-  'SELECT "firma_mime ya existe" AS aviso',
+  'SELECT 1',
   'ALTER TABLE seguridad_despachos ADD COLUMN firma_mime VARCHAR(50) DEFAULT ''image/png'' NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- rma_cases.despachado_at  (issue #32)
--- Solo si la tabla rma_cases existe: en una base sin el modulo RMA no hay nada
--- que alterar, y el script no deberia caerse por eso.
+-- --- seguridad_mercancia ---
+
+-- Bases creadas antes del renombrado todavia tienen `cliente_nombre`.
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'cliente_nombre') > 0,
+  'ALTER TABLE seguridad_mercancia CHANGE COLUMN cliente_nombre contraparte VARCHAR(200) DEFAULT NULL',
+  'SELECT 1'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'factura_numero') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN factura_numero VARCHAR(100) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- --- ENUMs que crecieron al llegar Mercancia ---
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_calificaciones'
+      AND COLUMN_NAME = 'relacionado_a' AND COLUMN_TYPE LIKE '%mercancia%') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_calificaciones
+     MODIFY COLUMN relacionado_a ENUM(''ingreso'',''despacho'',''mercancia'') NOT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_firmas'
+      AND COLUMN_NAME = 'acta_tipo' AND COLUMN_TYPE LIKE '%mercancia%') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_firmas
+     MODIFY COLUMN acta_tipo ENUM(''ingreso'',''despacho'',''mercancia'') NOT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- --- rma_cases (del modulo RMA, no de este) ---
+
+-- Solo si esa tabla existe: una base sin el modulo RMA no tiene nada que
+-- alterar y el script no deberia caerse por eso.
+--
+-- `despachado_at` y no un valor mas en el ENUM de `status`: el estado guarda
+-- el DESENLACE del caso (reparado, nota de credito) y la entrega fisica le
+-- ocurre a cualquiera de ellos. Pisarlo borraria por que se cerro el caso.
 SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rma_cases') = 0
   OR (SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'rma_cases'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rma_cases'
       AND COLUMN_NAME = 'despachado_at') > 0,
-  'SELECT "rma_cases.despachado_at ya existe o no hay tabla" AS aviso',
+  'SELECT 1',
   'ALTER TABLE rma_cases ADD COLUMN despachado_at DATE DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -190,24 +298,27 @@ SET @sql := (SELECT IF(
   (SELECT COUNT(*) FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rma_cases') = 0
   OR (SELECT COUNT(*) FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'rma_cases'
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rma_cases'
       AND INDEX_NAME = 'idx_despachado') > 0,
-  'SELECT "idx_despachado ya existe o no hay tabla" AS aviso',
+  'SELECT 1',
   'ALTER TABLE rma_cases ADD INDEX idx_despachado (despachado_at)'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 
--- ------------------------------------------------------------
--- 4. Comprobacion final
--- ------------------------------------------------------------
+-- ============================================================
+-- 5. Comprobacion
+--
+-- En una base con el modulo RMA debe decir 7 y 7.
+-- Sin rma_cases, dice 7 y 6, que tambien esta bien.
+-- ============================================================
 
 SELECT
   (SELECT COUNT(*) FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME IN ('seguridad_ingresos','seguridad_despachos',
                          'seguridad_calificaciones','seguridad_firmas',
-                         'seguridad_config')) AS tablas_de_5,
+                         'seguridad_config','seguridad_mercancia',
+                         'seguridad_mercancia_items')) AS tablas_de_7,
   (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
       AND (TABLE_NAME, COLUMN_NAME) IN (
@@ -215,5 +326,6 @@ SELECT
         ('seguridad_ingresos','nd_numero'),
         ('seguridad_despachos','nd_numero'),
         ('seguridad_despachos','firma_data'),
-        ('seguridad_despachos','firma_mime'),
-        ('rma_cases','despachado_at'))) AS columnas_de_6;
+        ('seguridad_mercancia','contraparte'),
+        ('seguridad_mercancia','factura_numero'),
+        ('rma_cases','despachado_at'))) AS columnas_de_7;
