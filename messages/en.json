@@ -2081,6 +2081,7 @@
         "ticket_hardware": "Hardware",
         "ticket_serial": "Serial",
         "ticket_factura": "Invoice #",
+        "ticket_telefono": "Customer phone",
         "case_number": "Case #",
         "adjunto_imagen": "Image",
         "adjunto_video": "Video",

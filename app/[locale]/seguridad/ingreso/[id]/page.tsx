@@ -48,6 +48,9 @@ type RmaCase = {
   case_number: string;
   status: string;
   invoice_number: string;
+  /** Se lee del ticket, no se copia al ingreso: si el cliente lo corrige en
+   *  RMA, el acta tiene que mostrar el corregido. */
+  client_phone: string | null;
 } | null;
 
 type Adjunto = {
@@ -627,6 +630,25 @@ export default function IngresoDetailPage() {
                   label={td("ticket_factura")}
                   value={rmaCase.invoice_number || td("no_value")}
                 />
+                {/* Telefono del cliente, leido del ticket. Es para llamarlo
+                    cuando el equipo lleva dias sin retirar, sin salir del
+                    modulo a buscarlo. Va como enlace tel: porque esto se abre
+                    desde un telefono en el mostrador. */}
+                {rmaCase.client_phone && (
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+                      {td("ticket_telefono")}
+                    </dt>
+                    <dd className="mt-1">
+                      <a
+                        href={`tel:${rmaCase.client_phone}`}
+                        className="text-sm font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+                      >
+                        {rmaCase.client_phone}
+                      </a>
+                    </dd>
+                  </div>
+                )}
               </dl>
             ) : (
               <p className="text-sm text-slate-500">{td("no_ticket")}</p>

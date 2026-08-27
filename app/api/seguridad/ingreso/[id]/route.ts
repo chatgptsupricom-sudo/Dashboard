@@ -36,7 +36,12 @@ export async function GET(
     if (ingreso.rma_case_id) {
       try {
         const rmaResult = await query(
-          `SELECT id, case_number, status, invoice_number
+          // El telefono se lee del ticket y NO se copia a seguridad_ingresos:
+          // duplicarlo significaria que el dia que el cliente lo corrija en
+          // RMA, el acta siga mostrando el viejo. Aqui hace falta para poder
+          // llamar al cliente cuando el equipo lleva dias sin retirar, sin
+          // tener que salir del modulo a buscarlo.
+          `SELECT id, case_number, status, invoice_number, client_phone
            FROM rma_cases
            WHERE id = ?`,
           [ingreso.rma_case_id],
