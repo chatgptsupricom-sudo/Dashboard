@@ -13,6 +13,10 @@ const RAW_URL =
   process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com";
 const ODOO_URL = RAW_URL.replace(/\/$/, "");
 const ODOO_DB = process.env.ODOO_DB || "";
+// uid del usuario de la API. Fijo a 388 en producción; se puede overridear
+// con ODOO_UID para apuntar a otra instancia (ej. un Odoo local de pruebas,
+// donde el usuario admin de fabrica es el id 2).
+const ODOO_UID = Number(process.env.ODOO_UID) || 388;
 
 /**
  * Función base para llamadas RPC a Odoo (JSON-RPC 2.0)
@@ -59,7 +63,7 @@ export async function callOdooRPC<T>(
         method: "execute_kw",
         args: [
           ODOO_DB,
-          388,
+          ODOO_UID,
           odooApiKey(),
           model,
           method,
