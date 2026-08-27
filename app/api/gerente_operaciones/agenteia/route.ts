@@ -18,10 +18,29 @@ const pdf = require("pdf-parse");
 // 🔐 BYPASS SSL PARA ENTORNO DE PRUEBAS / ODOO SH DEV
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: "https://api.openai-proxy.com/v1",
-});
+/**
+ * El cliente se crea al usarlo, no al importar el modulo.
+ *
+ * `new OpenAI({ apiKey: undefined })` lanza "Missing credentials" en el acto,
+ * asi que crearlo aqui arriba obligaba a que OPENAI_API_KEY estuviera presente
+ * durante `next build` — y por eso el Dockerfile la recibia como build-arg,
+ * quedando escrita en el log del despliegue.
+ *
+ * Creandolo dentro del handler, el build no necesita la clave y, si falta en
+ * ejecucion, falla solo esta ruta con un error claro en vez de tumbar el
+ * modulo entero al cargarse.
+ */
+let openaiCliente: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openaiCliente) {
+    openaiCliente = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: "https://api.openai-proxy.com/v1",
+    });
+  }
+  return openaiCliente;
+}
 
 // 🛠️ HERRAMIENTAS BLINDADAS: PARÁMETROS EXPLÍCITOS PARA EVITAR TYPE ERRORS DE PYTHON
 const agentTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -254,7 +273,7 @@ export async function POST(request: Request) {
     const apiMessages = [contextPrompt, ...cleanedMessages];
 
     // 1. Primera llamada cognitiva
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: aiModel,
       messages: apiMessages,
       tools: agentTools,
@@ -265,7 +284,7 @@ export async function POST(request: Request) {
     const toolCalls = responseMessage.tool_calls;
 
     if (!toolCalls) {
-      const directStream = await openai.chat.completions.create({
+      const directStream = await getOpenAI().chat.completions.create({
         model: aiModel,
         messages: apiMessages,
         stream: true,
@@ -531,7 +550,7 @@ export async function POST(request: Request) {
     }
 
     // 3. Segunda llamada streaming
-    const finalStream = await openai.chat.completions.create({
+    const finalStream = await getOpenAI().chat.completions.create({
       model: aiModel,
       messages: apiMessages,
       stream: true,

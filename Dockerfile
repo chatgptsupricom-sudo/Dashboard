@@ -75,23 +75,36 @@ RUN npm install -g pnpm
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Variables de entorno
-ARG OPENAI_API_KEY
-ARG JWT_SECRET
+# AQUI SOLO VAN VARIABLES PUBLICAS. NINGUN SECRETO.
+#
+# Un `--build-arg` no es un sitio seguro: queda escrito en el log del
+# despliegue, en la orden que lo lanza y en los metadatos de la imagen. El log
+# de EasyPanel imprime la linea entera de `docker buildx build`, asi que cada
+# secreto que se pase asi queda a la vista de cualquiera que abra el
+# despliegue. Docker mismo lo avisa con "SecretsUsedInArgOrEnv".
+#
+# Las NEXT_PUBLIC_* si tienen que estar: se INCRUSTAN en el bundle durante
+# `next build` y no se leen en ejecucion. Si no estan declaradas aqui, ponerlas
+# en el entorno de EasyPanel no sirve — el navegador nunca las ve y la
+# funcionalidad queda muda, sin error. Y por lo mismo NO son secretas: viajan
+# al navegador de cualquier visitante. Cada NEXT_PUBLIC_ nueva hay que
+# agregarla a este bloque.
 ARG NEXT_PUBLIC_ODOO_URL
-# Las NEXT_PUBLIC_* se INCRUSTAN en el bundle durante `next build`; no se leen
-# en ejecucion. Si no estan declaradas aqui, ponerlas en el entorno de EasyPanel
-# no sirve: el navegador nunca las ve y la funcionalidad queda muda, sin error.
-# Cada NEXT_PUBLIC_ nueva hay que agregarla a este bloque.
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ARG NEXT_PUBLIC_SOCKET_URL
 
-ENV OPENAI_API_KEY=$OPENAI_API_KEY
-ENV JWT_SECRET=$JWT_SECRET
 ENV NEXT_PUBLIC_ODOO_URL=$NEXT_PUBLIC_ODOO_URL
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# JWT_SECRET, DB_PASSWORD, ODOO_API_KEY, OPENAI_API_KEY, WEBHOOK_SECRET y las
+# N8N_* NO se declaran en el build: son de EJECUCION. EasyPanel ya las inyecta
+# en el contenedor, que es donde hacen falta.
+#
+# El build ya no las necesita. La ultima que lo obligaba era OPENAI_API_KEY,
+# porque el agente creaba su cliente al importar el modulo y el SDK lanza
+# "Missing credentials" si falta la clave; ahora lo crea al usarlo.
 
 RUN pnpm run build
 
