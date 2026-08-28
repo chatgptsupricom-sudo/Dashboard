@@ -31,20 +31,24 @@ export default function MercanciaOrdenes() {
 
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
+    setError(null);
     try {
       const res = await fetch("/api/seguridad/mercancia/pendientes");
-      if (!res.ok) throw new Error("fetch failed");
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "fetch failed");
       setOrdenes(json.ordenes || []);
-    } catch {
-      setError(true);
+    } catch (e: any) {
+      // El backend ya trae la causa concreta ([odoo]/[mysql] + el mensaje
+      // real) — mostrarla en vez de un generico ayuda a diagnosticar sin
+      // acceso a los logs del servidor.
+      setError(e?.message || to("error"));
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [to]);
 
   useEffect(() => {
     void cargar();
@@ -65,9 +69,9 @@ export default function MercanciaOrdenes() {
             <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5" />
-            {to("error")}
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span className="break-words">{error}</span>
           </div>
         ) : ordenes.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">

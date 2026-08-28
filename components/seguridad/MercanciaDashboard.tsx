@@ -59,19 +59,24 @@ export default function MercanciaDashboard() {
 
   const [data, setData] = useState<Dashboard | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
+    setError(null);
     try {
       const res = await fetch("/api/seguridad/mercancia/dashboard");
-      if (!res.ok) throw new Error("fetch failed");
-      setData(await res.json());
-    } catch {
-      setError(true);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "fetch failed");
+      setData(json);
+    } catch (e: any) {
+      // El backend ya trae el error real (ej. una columna que la migracion
+      // todavia no agrego) — mostrarlo en vez de un generico ayuda a
+      // diagnosticar sin acceso a los logs del servidor.
+      setError(e?.message || td("error"));
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [td]);
 
   useEffect(() => {
     void cargar();
@@ -113,9 +118,9 @@ export default function MercanciaDashboard() {
             <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         ) : error || !data ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5" />
-            {td("error")}
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span className="break-words">{error || td("error")}</span>
           </div>
         ) : (
           <>

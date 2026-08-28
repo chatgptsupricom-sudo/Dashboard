@@ -24,8 +24,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, ordenes });
   } catch (error: any) {
     console.error("Error listando facturas de venta pendientes:", error);
+    // El mensaje trae [odoo]/[mysql] al frente (ver listarFacturasVentaPendientes)
+    // para que se pueda diagnosticar sin acceso a los logs del servidor.
     return NextResponse.json(
-      { error: "No se pudo consultar Odoo" },
+      { error: `No se pudieron cargar las facturas: ${error?.message || error}` },
       { status: 502 },
     );
   }

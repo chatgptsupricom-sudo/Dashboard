@@ -188,24 +188,39 @@ export async function listarFacturasVentaPendientes(
   ];
   if (cids !== null) domain.push(["company_id", "=", cids]);
 
-  const facturas = await callOdooRPC<any[]>(
-    "account.move",
-    "search_read",
-    [domain],
-    {
-      fields: ["name", "partner_id", "state", "invoice_origin", "invoice_date"],
-      order: "invoice_date desc",
-      limit: 200,
-    },
-  );
+  // Odoo y MySQL fallan de formas distintas y con causas distintas — se
+  // etiqueta cada uno para que el error que llega al caller diga cual de
+  // los dos fue, en vez de un generico "no se pudo consultar Odoo" que
+  // culpa a Odoo aunque el problema sea la base local (ej. la migracion de
+  // `cids` en seguridad_mercancia sin correr todavia).
+  let facturas: any[] | null;
+  try {
+    facturas = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [domain],
+      {
+        fields: ["name", "partner_id", "state", "invoice_origin", "invoice_date"],
+        order: "invoice_date desc",
+        limit: 200,
+      },
+    );
+  } catch (e: any) {
+    throw new Error(`[odoo] ${e?.message || e}`);
+  }
   if (!facturas || facturas.length === 0) return [];
 
-  const usados = await query(
-    `SELECT odoo_picking_id FROM seguridad_mercancia
-      WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
-        ${cids !== null ? "AND cids = ?" : ""}`,
-    cids !== null ? [cids] : [],
-  );
+  let usados: { rows: any[] };
+  try {
+    usados = await query(
+      `SELECT odoo_picking_id FROM seguridad_mercancia
+        WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+          ${cids !== null ? "AND cids = ?" : ""}`,
+      cids !== null ? [cids] : [],
+    );
+  } catch (e: any) {
+    throw new Error(`[mysql] ${e?.message || e}`);
+  }
   const idsUsados = new Set(
     (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
   );
