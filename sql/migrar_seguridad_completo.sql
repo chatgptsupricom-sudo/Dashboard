@@ -214,6 +214,50 @@ CREATE TABLE IF NOT EXISTS seguridad_mercancia_items (
 
 
 -- ============================================================
+-- 3b. Catalogos de Mercancia: almacenistas, choferes, unidades
+--
+-- Hasta aca, "almacenista que carga"/"chofer"/"placa" en seguridad_mercancia
+-- eran texto libre — cada quien lo escribia distinto (mayusculas, con o sin
+-- acento) y no habia forma de elegir de una lista. Estas tres tablas son el
+-- catalogo del que se elige en el formulario; seguridad_mercancia sigue
+-- guardando el texto (nombre/placa), no un id, porque ya asi funcionan las
+-- calificaciones (por nombre) y cambiar eso es un alcance aparte.
+--
+-- No se migran valores historicos que ya estaban en seguridad_mercancia como
+-- texto libre: podrian tener variaciones (mayusculas, espacios, apodos) que
+-- convendria revisar a mano antes de volverlas "oficiales" en el catalogo.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS seguridad_catalogo_almacenistas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  cids INT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_nombre_cids (nombre, cids),
+  INDEX idx_cids (cids)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS seguridad_catalogo_choferes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  cids INT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_nombre_cids (nombre, cids),
+  INDEX idx_cids (cids)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS seguridad_catalogo_unidades (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  placa VARCHAR(50) NOT NULL,
+  descripcion VARCHAR(200) DEFAULT NULL,
+  cids INT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_placa_cids (placa, cids),
+  INDEX idx_cids (cids)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ============================================================
 -- 4. Puesta al dia de bases que ya existian
 --
 -- Todo lo de arriba ya trae la forma final, asi que en una base nueva esta
@@ -457,8 +501,8 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- ============================================================
 -- 5. Comprobacion
 --
--- En una base con el modulo RMA debe decir 7 y 15.
--- Sin rma_cases, dice 7 y 14, que tambien esta bien.
+-- En una base con el modulo RMA debe decir 10 y 15.
+-- Sin rma_cases, dice 10 y 14, que tambien esta bien.
 -- ============================================================
 
 SELECT
@@ -467,7 +511,10 @@ SELECT
       AND TABLE_NAME IN ('seguridad_ingresos','seguridad_despachos',
                          'seguridad_calificaciones','seguridad_firmas',
                          'seguridad_config','seguridad_mercancia',
-                         'seguridad_mercancia_items')) AS tablas_de_7,
+                         'seguridad_mercancia_items',
+                         'seguridad_catalogo_almacenistas',
+                         'seguridad_catalogo_choferes',
+                         'seguridad_catalogo_unidades')) AS tablas_de_10,
   (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
       AND (TABLE_NAME, COLUMN_NAME) IN (

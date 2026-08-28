@@ -2373,6 +2373,41 @@
         "error": "No se pudieron cargar las facturas de Odoo.",
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta factura"
+      },
+      "almacenistas_catalogo": {
+        "titulo": "Almacenistas",
+        "subtitulo": "Quienes cargan y descargan camiones",
+        "campo": "Nombre y apellido",
+        "campo_ph": "Ej: Juan Pérez",
+        "vacio": "Todavía no hay almacenistas registrados.",
+        "error": "No se pudo registrar el almacenista",
+        "agregar_select": "Agregar de la lista de almacenistas",
+        "select_placeholder": "-- Seleccionar almacenista --",
+        "gestionar": "Gestionar almacenistas"
+      },
+      "choferes_catalogo": {
+        "titulo": "Choferes",
+        "subtitulo": "Quienes manejan el vehículo del despacho",
+        "campo": "Nombre y apellido",
+        "campo_ph": "Ej: Pedro Gómez",
+        "vacio": "Todavía no hay choferes registrados.",
+        "error": "No se pudo registrar el chofer",
+        "select_placeholder": "-- Seleccionar chofer --",
+        "gestionar": "Gestionar choferes"
+      },
+      "unidades": {
+        "titulo": "Unidades",
+        "subtitulo": "Vehículos que salen a despachar",
+        "placa": "Placa",
+        "placa_ph": "Ej: A12BC3D",
+        "descripcion": "Descripción",
+        "descripcion_ph": "Ej: Camión Ford F-350 blanco",
+        "opcional": "opcional",
+        "agregar": "Agregar",
+        "vacio": "Todavía no hay unidades registradas.",
+        "error": "No se pudo registrar la unidad",
+        "select_placeholder": "-- Seleccionar placa --",
+        "gestionar": "Gestionar unidades"
       }
     }
   }

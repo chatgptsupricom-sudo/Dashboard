@@ -35,6 +35,9 @@ export default function MercanciaNueva({
   tipo: "ingreso" | "egreso";
 }) {
   const tm = useTranslations("seguridad.mercancia");
+  const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
+  const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
+  const tUni = useTranslations("seguridad.mercancia.unidades");
   const t = useTranslations("seguridad");
   const params = useParams();
   const router = useRouter();
@@ -56,7 +59,6 @@ export default function MercanciaNueva({
   // Varios almacenistas pueden cargar el mismo camion (issue #43): se agregan
   // uno por uno a una lista, en vez de un solo campo de texto.
   const [almacenistas, setAlmacenistas] = useState<string[]>([]);
-  const [almacenistaInput, setAlmacenistaInput] = useState("");
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
@@ -69,6 +71,34 @@ export default function MercanciaNueva({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Catalogos para los selects de almacenista/chofer/placa — ya no se
+  // escriben a mano, se eligen de lo que este registrado.
+  const [almacenistasCat, setAlmacenistasCat] = useState<
+    { id: number; nombre: string }[]
+  >([]);
+  const [choferesCat, setChoferesCat] = useState<{ id: number; nombre: string }[]>([]);
+  const [unidadesCat, setUnidadesCat] = useState<
+    { id: number; placa: string; descripcion: string | null }[]
+  >([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [ra, rc, ru] = await Promise.all([
+          fetch("/api/seguridad/mercancia/catalogo/almacenistas"),
+          fetch("/api/seguridad/mercancia/catalogo/choferes"),
+          fetch("/api/seguridad/mercancia/catalogo/unidades"),
+        ]);
+        if (ra.ok) setAlmacenistasCat((await ra.json()).almacenistas || []);
+        if (rc.ok) setChoferesCat((await rc.json()).choferes || []);
+        if (ru.ok) setUnidadesCat((await ru.json()).unidades || []);
+      } catch {
+        // Los selects quedan vacios; el enlace "Gestionar..." sigue ahi para
+        // ir a registrar antes de volver.
+      }
+    })();
+  }, []);
+
   const rol = (user?.role || "").toLowerCase().trim();
   // Almacen solo prepara egresos — el ingreso (mercancia que entra por
   // compra) sigue siendo tarea de Seguridad. El backend ya lo rechaza con
@@ -76,11 +106,9 @@ export default function MercanciaNueva({
   // despues no se puede guardar.
   const bloqueadoPorRol = tipo === "ingreso" && rol === "almacen";
 
-  const agregarAlmacenista = () => {
-    const v = almacenistaInput.trim().slice(0, 200);
+  const agregarAlmacenista = (v: string) => {
     if (!v || almacenistas.includes(v) || almacenistas.length >= 30) return;
     setAlmacenistas((p) => [...p, v]);
-    setAlmacenistaInput("");
   };
   const quitarAlmacenista = (v: string) =>
     setAlmacenistas((p) => p.filter((x) => x !== v));
@@ -322,32 +350,53 @@ export default function MercanciaNueva({
               />
             </Campo>
           )}
-          <Campo label={`${tm("almacenista")} *`}>
-            <ListaChips
+          <Campo
+            label={`${tm("almacenista")} *`}
+            gestionar={{ href: `/${locale}/seguridad/mercancia/almacenistas`, texto: tAlm("gestionar") }}
+          >
+            <SelectChips
               valores={almacenistas}
-              input={almacenistaInput}
-              onInput={(v) => setAlmacenistaInput(v.slice(0, 200))}
+              opciones={almacenistasCat.map((a) => a.nombre)}
               onAgregar={agregarAlmacenista}
               onQuitar={quitarAlmacenista}
-              placeholder={tm("almacenista")}
+              placeholder={tAlm("select_placeholder")}
             />
           </Campo>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Campo label={tm("chofer")}>
-              <input
-                type="text"
+            <Campo
+              label={tm("chofer")}
+              gestionar={{ href: `/${locale}/seguridad/mercancia/choferes`, texto: tCho("gestionar") }}
+            >
+              <select
                 value={chofer}
-                onChange={(e) => setChofer(e.target.value.slice(0, 200))}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
-              />
+                onChange={(e) => setChofer(e.target.value)}
+                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+              >
+                <option value="">{tCho("select_placeholder")}</option>
+                {choferesCat.map((c) => (
+                  <option key={c.id} value={c.nombre}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
             </Campo>
-            <Campo label={tm("placa")}>
-              <input
-                type="text"
+            <Campo
+              label={tm("placa")}
+              gestionar={{ href: `/${locale}/seguridad/mercancia/unidades`, texto: tUni("gestionar") }}
+            >
+              <select
                 value={placa}
-                onChange={(e) => setPlaca(e.target.value.slice(0, 50))}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm uppercase"
-              />
+                onChange={(e) => setPlaca(e.target.value)}
+                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+              >
+                <option value="">{tUni("select_placeholder")}</option>
+                {unidadesCat.map((u) => (
+                  <option key={u.id} value={u.placa}>
+                    {u.placa}
+                    {u.descripcion ? ` — ${u.descripcion}` : ""}
+                  </option>
+                ))}
+              </select>
             </Campo>
           </div>
           <Campo label={tm("observaciones")}>
@@ -387,16 +436,83 @@ export default function MercanciaNueva({
 function Campo({
   label,
   children,
+  gestionar,
 }: {
   label: string;
   children: React.ReactNode;
+  /** Enlace a la pantalla donde se registra lo que llena este select. */
+  gestionar?: { href: string; texto: string };
 }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-        {label}
-      </label>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <label className="block text-xs font-semibold text-slate-600">{label}</label>
+        {gestionar && (
+          <Link
+            href={gestionar.href}
+            className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline shrink-0"
+          >
+            {gestionar.texto}
+          </Link>
+        )}
+      </div>
       {children}
+    </div>
+  );
+}
+
+/** Multi-select de un catalogo: se elige de un <select>, queda como chip removible. */
+function SelectChips({
+  valores,
+  opciones,
+  onAgregar,
+  onQuitar,
+  placeholder,
+}: {
+  valores: string[];
+  opciones: string[];
+  onAgregar: (v: string) => void;
+  onQuitar: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <select
+        value=""
+        onChange={(e) => {
+          if (e.target.value) onAgregar(e.target.value);
+        }}
+        className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+      >
+        <option value="">{placeholder}</option>
+        {opciones
+          .filter((o) => !valores.includes(o))
+          .map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+      </select>
+      {valores.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {valores.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-semibold text-violet-800"
+            >
+              {v}
+              <button
+                type="button"
+                onClick={() => onQuitar(v)}
+                className="p-0.5 rounded-full hover:bg-violet-100"
+                aria-label="x"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

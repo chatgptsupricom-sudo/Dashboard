@@ -2384,6 +2384,41 @@
         "error": "Could not load invoices from Odoo.",
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this invoice"
+      },
+      "almacenistas_catalogo": {
+        "titulo": "Warehouse workers",
+        "subtitulo": "Who loads and unloads trucks",
+        "campo": "Full name",
+        "campo_ph": "e.g. John Smith",
+        "vacio": "No warehouse workers registered yet.",
+        "error": "Could not register the warehouse worker",
+        "agregar_select": "Add from the list of warehouse workers",
+        "select_placeholder": "-- Select warehouse worker --",
+        "gestionar": "Manage warehouse workers"
+      },
+      "choferes_catalogo": {
+        "titulo": "Drivers",
+        "subtitulo": "Who drives the dispatch vehicle",
+        "campo": "Full name",
+        "campo_ph": "e.g. Peter Gomez",
+        "vacio": "No drivers registered yet.",
+        "error": "Could not register the driver",
+        "select_placeholder": "-- Select driver --",
+        "gestionar": "Manage drivers"
+      },
+      "unidades": {
+        "titulo": "Vehicles",
+        "subtitulo": "Vehicles used for dispatch",
+        "placa": "Plate",
+        "placa_ph": "e.g. A12BC3D",
+        "descripcion": "Description",
+        "descripcion_ph": "e.g. White Ford F-350 truck",
+        "opcional": "optional",
+        "agregar": "Add",
+        "vacio": "No vehicles registered yet.",
+        "error": "Could not register the vehicle",
+        "select_placeholder": "-- Select plate --",
+        "gestionar": "Manage vehicles"
       }
     }
   }
