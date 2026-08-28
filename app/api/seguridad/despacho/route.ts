@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { filtroDespachos } from "@/lib/seguridad/filtros";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get("search") || "").trim();
     const desde = (searchParams.get("desde") || "").trim();
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const offset = (page - 1) * limit;
 
-    const { where, params } = filtroDespachos(searchParams);
+    const { where, params } = filtroDespachos(searchParams, cids);
 
     let total = 0;
     let rows: any[];
@@ -68,22 +71,27 @@ export async function GET(request: NextRequest) {
       rows = rowsResult.rows;
     } catch (e: any) {
       console.warn("seguridad_ingresos no disponible para join:", e?.message);
+      // Alias `d` aunque sea una sola tabla: `where` (de filtroDespachos)
+      // puede traer `d.cids = ?` calificado, porque en la consulta de arriba
+      // (con el JOIN) un `cids` sin calificar es ambiguo contra
+      // `seguridad_ingresos.cids`. Sin el alias aqui, este fallback rompe con
+      // "Unknown table 'd'" en cuanto haya un filtro de sucursal.
       const countResult = await query(
-        `SELECT COUNT(*) as total FROM seguridad_despachos ${where}`,
+        `SELECT COUNT(*) as total FROM seguridad_despachos d ${where}`,
         params,
       );
       total = countResult.rows[0]?.total || 0;
 
       const rowsResult = await query(
-        `SELECT *,
+        `SELECT d.*,
           (SELECT AVG(c.calificacion)
            FROM seguridad_calificaciones c
            WHERE c.relacionado_a = 'despacho'
-             AND c.relacionado_id = seguridad_despachos.id
-             AND c.almacenista_nombre = seguridad_despachos.almacenista_nombre
+             AND c.relacionado_id = d.id
+             AND c.almacenista_nombre = d.almacenista_nombre
           ) AS promedio_calificacion
-         FROM seguridad_despachos ${where}
-         ORDER BY fecha_despacho DESC, created_at DESC
+         FROM seguridad_despachos d ${where}
+         ORDER BY d.fecha_despacho DESC, d.created_at DESC
          LIMIT ${limit} OFFSET ${offset}`,
         params,
       );
@@ -120,6 +128,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     let body: any;
     try {
@@ -211,8 +222,8 @@ export async function POST(request: NextRequest) {
     const result = await query(
       `INSERT INTO seguridad_despachos
         (ingreso_id, rma_case_id, fecha_despacho, almacenista_nombre, facturas_json,
-         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ingresoId,
         rmaCaseId,
@@ -225,6 +236,7 @@ export async function POST(request: NextRequest) {
         truncate(body.firma_url, MAX.firma_url),
         // Correlativo que el almacen lleva a mano en la planilla de papel.
         truncate(body.nd_numero, MAX.nd_numero),
+        cids,
       ],
     );
 

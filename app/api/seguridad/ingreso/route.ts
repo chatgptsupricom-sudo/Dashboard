@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { filtroIngresos } from "@/lib/seguridad/filtros";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -28,6 +28,9 @@ export async function GET(request: NextRequest) {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get("search") || "").trim();
     const desde = (searchParams.get("desde") || "").trim();
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const offset = (page - 1) * limit;
 
-    const { where, params } = filtroIngresos(searchParams);
+    const { where, params } = filtroIngresos(searchParams, cids);
 
     const countResult = await query(
       `SELECT COUNT(*) as total FROM seguridad_ingresos ${where}`,
@@ -84,6 +87,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     let body: any;
     try {
@@ -198,8 +204,8 @@ export async function POST(request: NextRequest) {
         (rma_case_id, fecha_entrega, factura_numero, cliente_nombre, hardware, serial,
          descripcion_falla, accesorios_integros, sin_manipulacion, dentro_de_fecha,
          falla_cubierta_garantia, recibido_por, foto_estado_url, idempotency_key,
-         nd_numero)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         nd_numero, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rmaCaseId,
         fechaEntrega,
@@ -217,6 +223,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey,
         // Correlativo que el almacen lleva a mano en la planilla de papel.
         truncate(body.nd_numero, MAX.nd_numero),
+        cids,
       ],
     );
 

@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -12,6 +12,9 @@ export async function GET(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { id } = await params;
     const ingresoId = parseInt(id, 10);
     if (isNaN(ingresoId)) {
@@ -19,11 +22,17 @@ export async function GET(
     }
 
     const ingresoResult = await query(
-      "SELECT rma_case_id FROM seguridad_ingresos WHERE id = ?",
+      "SELECT rma_case_id, cids FROM seguridad_ingresos WHERE id = ?",
       [ingresoId],
     );
 
     if (ingresoResult.rows.length === 0) {
+      return NextResponse.json({ error: "Ingreso no encontrado" }, { status: 404 });
+    }
+
+    // 404 y no 403: adivinar un id de otra sucursal no debe ni confirmar que
+    // existe.
+    if (cids !== null && Number((ingresoResult.rows[0] as any).cids) !== cids) {
       return NextResponse.json({ error: "Ingreso no encontrado" }, { status: 404 });
     }
 

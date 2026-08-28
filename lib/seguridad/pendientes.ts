@@ -42,10 +42,20 @@ export interface IngresoPendiente {
  */
 export async function ingresosPendientes(
   dias: number,
+  cids: number | null,
   limite = 200,
 ): Promise<IngresoPendiente[]> {
   const d = Math.trunc(dias);
   const l = Math.min(Math.max(Math.trunc(limite), 1), 1000);
+
+  // null = superadmin, ve todas las sucursales. El resto solo ve los ingresos
+  // de la suya — mismo criterio que el resto del modulo.
+  const params: any[] = [];
+  let filtroCids = "";
+  if (cids !== null) {
+    filtroCids = " AND i.cids = ?";
+    params.push(cids);
+  }
 
   const { rows } = await query(
     `SELECT i.id,
@@ -63,8 +73,10 @@ export async function ingresosPendientes(
        LEFT JOIN rma_cases c ON c.id = i.rma_case_id
       WHERE d.id IS NULL
         AND i.fecha_entrega < CURDATE() - INTERVAL ${d} DAY
+        ${filtroCids}
       ORDER BY i.fecha_entrega ASC
       LIMIT ${l}`,
+    params,
   );
 
   return rows.map((r: any) => ({

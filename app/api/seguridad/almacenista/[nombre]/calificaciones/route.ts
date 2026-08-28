@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -12,6 +12,9 @@ export async function GET(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { nombre: rawNombre } = await params;
     let almacenista: string;
     try {
@@ -23,11 +26,14 @@ export async function GET(
       return NextResponse.json({ error: "nombre requerido" }, { status: 400 });
     }
 
+    const filtroCids = cids !== null ? " AND cids = ?" : "";
+    const paramsCids = cids !== null ? [almacenista, cids] : [almacenista];
+
     const summary = await query(
       `SELECT AVG(calificacion) AS promedio, COUNT(*) AS total
        FROM seguridad_calificaciones
-       WHERE almacenista_nombre = ?`,
-      [almacenista],
+       WHERE almacenista_nombre = ?${filtroCids}`,
+      paramsCids,
     );
 
     const total = Number(summary.rows[0]?.total || 0);
@@ -39,9 +45,9 @@ export async function GET(
     const distribucionRows = await query(
       `SELECT calificacion, COUNT(*) AS cantidad
        FROM seguridad_calificaciones
-       WHERE almacenista_nombre = ?
+       WHERE almacenista_nombre = ?${filtroCids}
        GROUP BY calificacion`,
-      [almacenista],
+      paramsCids,
     );
 
     const distribucion: Record<string, number> = { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 };
@@ -53,10 +59,10 @@ export async function GET(
     const ultimos = await query(
       `SELECT id, calificacion, comentario, relacionado_a, relacionado_id, calificado_por, created_at
        FROM seguridad_calificaciones
-       WHERE almacenista_nombre = ?
+       WHERE almacenista_nombre = ?${filtroCids}
        ORDER BY created_at DESC
        LIMIT 50`,
-      [almacenista],
+      paramsCids,
     );
 
     const ultimos_comentarios = (ultimos.rows as any[]).map((row) => {

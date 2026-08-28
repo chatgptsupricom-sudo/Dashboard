@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -14,14 +14,19 @@ export async function GET(request: NextRequest) {
   const auth = await requireSeguridad(request);
   if (auth.error) return auth.error;
 
+  const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+  if (cidsError) return cidsError;
+
   try {
     const result = await query(
       `SELECT almacenista_nombre AS almacenista,
               AVG(calificacion) AS promedio,
               COUNT(*) AS total
        FROM seguridad_calificaciones
+       ${cids !== null ? "WHERE cids = ?" : ""}
        GROUP BY almacenista_nombre
        ORDER BY promedio DESC, total DESC`,
+      cids !== null ? [cids] : [],
     );
     const rows = (result as any).rows ?? result;
     const almacenistas = (Array.isArray(rows) ? rows : []).map((r: any) => ({

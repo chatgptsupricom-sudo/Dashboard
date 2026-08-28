@@ -1,11 +1,19 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
+    // null = superadmin, ve todas las sucursales. El dashboard es la pantalla
+    // principal del modulo: si no refleja solo la sucursal de quien lo mira,
+    // el resto del filtro (listados, exports) no sirve de mucho.
+    const paramCids = cids !== null ? [cids] : [];
 
     // El mostrador (#39) solo muestra los 3 contadores del dia y se abre desde
     // el telefono en el almacen. Pedirle las 14 consultas del dashboard para
@@ -16,16 +24,21 @@ export async function GET(request: NextRequest) {
     if (new URL(request.url).searchParams.get("resumen") === "1") {
       const [ingresosHoyRes, despachosHoyRes, pendientesRes] = await Promise.all([
         query(
-          "SELECT COUNT(*) AS total FROM seguridad_ingresos WHERE fecha_entrega = CURDATE()",
+          `SELECT COUNT(*) AS total FROM seguridad_ingresos
+            WHERE fecha_entrega = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+          paramCids,
         ),
         query(
-          "SELECT COUNT(*) AS total FROM seguridad_despachos WHERE fecha_despacho = CURDATE()",
+          `SELECT COUNT(*) AS total FROM seguridad_despachos
+            WHERE fecha_despacho = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+          paramCids,
         ),
         query(
           `SELECT COUNT(*) AS total
            FROM seguridad_ingresos i
            LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
-           WHERE d.id IS NULL`,
+           WHERE d.id IS NULL${cids !== null ? " AND i.cids = ?" : ""}`,
+          paramCids,
         ),
       ]);
 
@@ -56,50 +69,70 @@ export async function GET(request: NextRequest) {
       garantiasDenegadasRes,
     ] = await Promise.all([
       query(
-        "SELECT COUNT(*) AS total FROM seguridad_ingresos WHERE fecha_entrega = CURDATE()",
+        `SELECT COUNT(*) AS total FROM seguridad_ingresos
+          WHERE fecha_entrega = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
-        "SELECT COUNT(*) AS total FROM seguridad_ingresos WHERE fecha_entrega = CURDATE() - INTERVAL 1 DAY",
+        `SELECT COUNT(*) AS total FROM seguridad_ingresos
+          WHERE fecha_entrega = CURDATE() - INTERVAL 1 DAY${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
-        "SELECT COUNT(*) AS total FROM seguridad_despachos WHERE fecha_despacho = CURDATE()",
+        `SELECT COUNT(*) AS total FROM seguridad_despachos
+          WHERE fecha_despacho = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
-        "SELECT COUNT(*) AS total FROM seguridad_despachos WHERE fecha_despacho = CURDATE() - INTERVAL 1 DAY",
+        `SELECT COUNT(*) AS total FROM seguridad_despachos
+          WHERE fecha_despacho = CURDATE() - INTERVAL 1 DAY${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT COUNT(*) AS total
          FROM seguridad_ingresos i
          LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
-         WHERE d.id IS NULL AND i.fecha_entrega < CURDATE() - INTERVAL 7 DAY`,
+         WHERE d.id IS NULL AND i.fecha_entrega < CURDATE() - INTERVAL 7 DAY
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT AVG(calificacion) AS promedio
          FROM seguridad_calificaciones
-         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)`,
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT COUNT(*) AS total
          FROM seguridad_calificaciones
-         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)`,
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT COUNT(*) AS total
          FROM seguridad_ingresos i
          LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
-         WHERE d.id IS NULL`,
+         WHERE d.id IS NULL
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT * FROM seguridad_ingresos
+         ${cids !== null ? "WHERE cids = ?" : ""}
          ORDER BY created_at DESC
          LIMIT 10`,
+        paramCids,
       ),
       query(
         `SELECT d.*, i.cliente_nombre AS cliente_nombre
          FROM seguridad_despachos d
          LEFT JOIN seguridad_ingresos i ON i.id = d.ingreso_id
+         ${cids !== null ? "WHERE d.cids = ?" : ""}
          ORDER BY d.created_at DESC
          LIMIT 10`,
+        paramCids,
       ),
       query(
         // DATEDIFF explicito: el front pinta el badge "N dias en taller" y con
@@ -108,8 +141,10 @@ export async function GET(request: NextRequest) {
          FROM seguridad_ingresos i
          LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
          WHERE d.id IS NULL
+         ${cids !== null ? "AND i.cids = ?" : ""}
          ORDER BY i.fecha_entrega DESC
          LIMIT 10`,
+        paramCids,
       ),
       query(
         `SELECT
@@ -118,27 +153,35 @@ export async function GET(request: NextRequest) {
             COUNT(*) AS calificaciones,
             (SELECT COUNT(*) FROM seguridad_ingresos
              WHERE recibido_por = c.almacenista_nombre
-               AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS ingresos_mes,
+               AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+               ${cids !== null ? "AND cids = ?" : ""}) AS ingresos_mes,
             (SELECT COUNT(*) FROM seguridad_despachos
              WHERE almacenista_nombre = c.almacenista_nombre
-               AND fecha_despacho >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS despachos_mes
+               AND fecha_despacho >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+               ${cids !== null ? "AND cids = ?" : ""}) AS despachos_mes
          FROM seguridad_calificaciones c
          WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND c.cids = ?" : ""}
          GROUP BY c.almacenista_nombre
          ORDER BY promedio DESC, calificaciones DESC
          LIMIT 10`,
+        cids !== null ? [cids, cids, cids] : [],
       ),
       query(
         `SELECT COUNT(*) AS total
          FROM seguridad_ingresos i
          LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
-         WHERE d.id IS NULL AND i.fecha_entrega < DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
+         WHERE d.id IS NULL AND i.fecha_entrega < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
       ),
       query(
         `SELECT COUNT(*) AS total
          FROM seguridad_ingresos
          WHERE falla_cubierta_garantia = 0
-           AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)`,
+           AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+           ${cids !== null ? "AND cids = ?" : ""}`,
+        paramCids,
       ),
     ]);
 

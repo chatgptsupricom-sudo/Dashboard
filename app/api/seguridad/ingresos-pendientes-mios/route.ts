@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { resolverCidsSesion } from "@/lib/seguridad/auth";
 import { diasUmbral, ingresosPendientes } from "@/lib/seguridad/pendientes";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -27,9 +28,12 @@ export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma", "seguridad"]);
   if (auth.error) return auth.error;
 
+  const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+  if (cidsError) return cidsError;
+
   try {
     const dias = diasUmbral();
-    const pendientes = await ingresosPendientes(dias);
+    const pendientes = await ingresosPendientes(dias, cids);
 
     return NextResponse.json({
       success: true,

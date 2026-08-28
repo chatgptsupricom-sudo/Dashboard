@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -9,6 +9,9 @@ export async function GET(
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     const { case_number } = await params;
     if (!case_number || case_number.length > 20) {
@@ -25,9 +28,12 @@ export async function GET(
       //
       // El portal ya hacia esta misma distincion para lo que ve el cliente
       // (`product_name: row.model || row.hardware`); faltaba de este lado.
+      //
+      // `company_id` en vez de `cids`: `rma_cases` no tiene columna `cids`,
+      // usa `company_id` en el mismo espacio numerico (9/10/7).
       rmaResult = await query(
         `SELECT id, case_number, client_name, model, hardware, serial,
-                invoice_number, reported_fault
+                invoice_number, reported_fault, company_id
          FROM rma_cases
          WHERE case_number = ?`,
         [case_number],
@@ -42,6 +48,12 @@ export async function GET(
     }
 
     const caso = rmaResult.rows[0] as any;
+
+    // 404 y no 403: adivinar el case_number de un ticket de otra sucursal no
+    // debe ni confirmar que existe.
+    if (cids !== null && Number(caso.company_id) !== cids) {
+      return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
+    }
 
     // `hardware` sale ya resuelto al nombre del producto, para que quien lo
     // consuma no tenga que repetir esta decision. La categoria queda aparte

@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   construirExcel,
   fechaExcel,
@@ -29,8 +29,11 @@ export async function GET(request: NextRequest) {
   const auth = await requireSeguridad(request);
   if (auth.error) return auth.error;
 
+  const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+  if (cidsError) return cidsError;
+
   const { searchParams } = new URL(request.url);
-  const { where, params } = filtroDespachos(searchParams);
+  const { where, params } = filtroDespachos(searchParams, cids);
 
   // El listado hace LEFT JOIN con ingresos; acá se replica para poder traer el
   // cliente y el serial del ingreso vinculado, que es lo que hace útil el

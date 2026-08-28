@@ -17,7 +17,7 @@ function texto(sp: URLSearchParams, k: string) {
   return (sp.get(k) || "").trim();
 }
 
-export function filtroIngresos(sp: URLSearchParams): Filtro {
+export function filtroIngresos(sp: URLSearchParams, cids: number | null): Filtro {
   let where = "WHERE 1=1";
   const params: any[] = [];
 
@@ -55,10 +55,28 @@ export function filtroIngresos(sp: URLSearchParams): Filtro {
     )`;
   }
 
+  // null = superadmin, ve todas las sucursales. Mismo criterio que el resto
+  // del modulo: sin esto cualquiera con sesion veia ingresos de otra sucursal
+  // en el listado y en el Excel exportado.
+  if (cids !== null) {
+    where += " AND cids = ?";
+    params.push(cids);
+  }
+
   return { where, params };
 }
 
-export function filtroDespachos(sp: URLSearchParams): Filtro {
+/**
+ * Nota sobre `d.cids`: a diferencia de `filtroIngresos`, aca el filtro va
+ * calificado con el alias `d`. El listado y el export unen
+ * `seguridad_despachos` con `seguridad_ingresos` (LEFT JOIN), y desde que
+ * `seguridad_ingresos` tambien tiene columna `cids`, un `cids = ?` sin
+ * calificar es ambiguo para MySQL en esa consulta — rompe el listado entero,
+ * no solo el filtro. Todo consumidor de este `where` tiene que exponer la
+ * tabla `seguridad_despachos` como `d` (con alias, aunque sea de una sola
+ * tabla) para que esto resuelva.
+ */
+export function filtroDespachos(sp: URLSearchParams, cids: number | null): Filtro {
   let where = "WHERE 1=1";
   const params: any[] = [];
 
@@ -99,6 +117,11 @@ export function filtroDespachos(sp: URLSearchParams): Filtro {
   if (!isNaN(rmaCaseId)) {
     where += " AND rma_case_id = ?";
     params.push(rmaCaseId);
+  }
+
+  if (cids !== null) {
+    where += " AND d.cids = ?";
+    params.push(cids);
   }
 
   return { where, params };

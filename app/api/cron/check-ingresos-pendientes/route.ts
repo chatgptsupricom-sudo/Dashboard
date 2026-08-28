@@ -50,7 +50,10 @@ export async function GET(request: Request) {
 
   try {
     const dias = dryRun ? diasSolicitados(request) ?? diasUmbral() : diasUmbral();
-    const pendientes = await ingresosPendientes(dias);
+    // Cron sin sesion de usuario: avisa al equipo tecnico completo, de todas
+    // las sucursales, igual que hacia antes de que el modulo filtrara por
+    // cids. `null` es el mismo "sin filtro" que usa superadmin.
+    const pendientes = await ingresosPendientes(dias, null);
 
     if (pendientes.length === 0) {
       console.log(`[cron-pendientes] sin ingresos de más de ${dias} días`);

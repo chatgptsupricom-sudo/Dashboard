@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +48,9 @@ export async function POST(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { id } = await params;
     const despachoId = parseDespachoId(id);
     if (despachoId === null) {
@@ -57,10 +60,15 @@ export async function POST(
     await ensureColumns();
 
     const exists = await query(
-      "SELECT id FROM seguridad_despachos WHERE id = ?",
+      "SELECT id, cids FROM seguridad_despachos WHERE id = ?",
       [despachoId],
     );
     if (exists.rows.length === 0) {
+      return NextResponse.json({ error: "Despacho no encontrado" }, { status: 404 });
+    }
+    // 404 y no 403: adivinar un id de otra sucursal no debe ni confirmar que
+    // existe.
+    if (cids !== null && Number((exists.rows[0] as any).cids) !== cids) {
       return NextResponse.json({ error: "Despacho no encontrado" }, { status: 404 });
     }
 
@@ -120,6 +128,9 @@ export async function GET(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { id } = await params;
     const despachoId = parseDespachoId(id);
     if (despachoId === null) {
@@ -129,12 +140,17 @@ export async function GET(
     await ensureColumns();
 
     const result = await query(
-      "SELECT firma_data, firma_mime FROM seguridad_despachos WHERE id = ?",
+      "SELECT firma_data, firma_mime, cids FROM seguridad_despachos WHERE id = ?",
       [despachoId],
     );
     const row = result.rows?.[0];
 
     if (!row || !row.firma_data) {
+      return new Response("Not found", { status: 404 });
+    }
+    // 404 y no 403: adivinar un id de otra sucursal no debe ni confirmar que
+    // existe.
+    if (cids !== null && Number(row.cids) !== cids) {
       return new Response("Not found", { status: 404 });
     }
 
@@ -164,6 +180,9 @@ export async function DELETE(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { id } = await params;
     const despachoId = parseDespachoId(id);
     if (despachoId === null) {
@@ -173,10 +192,15 @@ export async function DELETE(
     await ensureColumns();
 
     const exists = await query(
-      "SELECT id FROM seguridad_despachos WHERE id = ?",
+      "SELECT id, cids FROM seguridad_despachos WHERE id = ?",
       [despachoId],
     );
     if (exists.rows.length === 0) {
+      return NextResponse.json({ error: "Despacho no encontrado" }, { status: 404 });
+    }
+    // 404 y no 403: adivinar un id de otra sucursal no debe ni confirmar que
+    // existe.
+    if (cids !== null && Number((exists.rows[0] as any).cids) !== cids) {
       return NextResponse.json({ error: "Despacho no encontrado" }, { status: 404 });
     }
 

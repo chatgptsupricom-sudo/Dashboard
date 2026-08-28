@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   construirExcel,
   fechaExcel,
@@ -18,9 +18,12 @@ export async function GET(request: NextRequest) {
   const auth = await requireSeguridad(request);
   if (auth.error) return auth.error;
 
+  const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+  if (cidsError) return cidsError;
+
   const { searchParams } = new URL(request.url);
   // El mismo builder que usa el listado: lo exportado es lo que se ve.
-  const { where, params } = filtroIngresos(searchParams);
+  const { where, params } = filtroIngresos(searchParams, cids);
 
   // Sin paginar, pero con techo: exportar es legítimo, tumbar el servidor con
   // una consulta sin límite no.

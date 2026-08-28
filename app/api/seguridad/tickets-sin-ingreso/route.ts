@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
   const auth = await requireSeguridad(request);
   if (auth.error) return auth.error;
 
+  const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+  if (cidsError) return cidsError;
+
   const { searchParams } = new URL(request.url);
   // Por defecto 30 días: un ticket del portal más viejo que eso y sin ingreso
   // es que el cliente no llevó el equipo, no algo pendiente de recibir.
@@ -31,6 +34,15 @@ export async function GET(request: NextRequest) {
   );
 
   try {
+    // `rma_cases` no tiene columna `cids`: usa `company_id`, mismo espacio
+    // numerico (9/10/7).
+    const params: any[] = [dias];
+    let filtroCids = "";
+    if (cids !== null) {
+      filtroCids = " AND c.company_id = ?";
+      params.push(cids);
+    }
+
     const result = await query(
       `SELECT c.id, c.case_number, c.client_name, c.client_phone,
               c.model, c.hardware, c.brand, c.serial, c.invoice_number,
@@ -41,9 +53,10 @@ export async function GET(request: NextRequest) {
         WHERE c.origen = 'portal'
           AND i.id IS NULL
           AND c.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+          ${filtroCids}
      ORDER BY c.created_at DESC
         LIMIT 100`,
-      [dias],
+      params,
     );
 
     const rows = ((result as any).rows ?? []) as any[];
