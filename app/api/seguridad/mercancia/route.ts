@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireAlmacenOSeguridad } from "@/lib/seguridad/auth";
+import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -35,6 +35,9 @@ export async function GET(request: NextRequest) {
     const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const sp = new URL(request.url).searchParams;
     const tipo = (sp.get("tipo") || "").trim();
     const estado = (sp.get("estado") || "").trim();
@@ -48,6 +51,13 @@ export async function GET(request: NextRequest) {
     if (["pendiente", "conforme", "descuadre"].includes(estado)) {
       where += " AND estado = ?";
       params.push(estado);
+    }
+    // null = superadmin, ve todas las sucursales. Las filas viejas sin cids
+    // (de antes de este filtro) quedan fuera para todos los demas — no se les
+    // asigna una sucursal adivinada.
+    if (cids !== null) {
+      where += " AND m.cids = ?";
+      params.push(cids);
     }
 
     const res = await query(
@@ -88,6 +98,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     let body: any;
     try {
@@ -179,8 +192,8 @@ export async function POST(request: NextRequest) {
       `INSERT INTO seguridad_mercancia
         (tipo, fecha, odoo_picking_id, odoo_picking_name, factura_numero,
          facturas_json, contraparte, almacenista_nombre, almacenistas_json,
-         chofer_nombre, placa_vehiculo, observaciones)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         chofer_nombre, placa_vehiculo, observaciones, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tipo,
         fecha,
@@ -196,6 +209,7 @@ export async function POST(request: NextRequest) {
         truncar(body?.chofer_nombre, MAX.chofer_nombre),
         truncar(body?.placa_vehiculo, MAX.placa_vehiculo),
         truncar(body?.observaciones, MAX.observaciones),
+        cids,
       ],
     );
 

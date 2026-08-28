@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { requireAlmacenOSeguridad, requireSeguridad } from "@/lib/seguridad/auth";
+import {
+  requireAlmacenOSeguridad,
+  requireSeguridad,
+  resolverCidsSesion,
+} from "@/lib/seguridad/auth";
 import { evaluarDescuadre, parsearLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -55,11 +59,20 @@ export async function GET(
     const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const id = parseInt((await params).id, 10);
     if (isNaN(id)) return NextResponse.json({ error: "id invalido" }, { status: 400 });
 
     const datos = await cargar(id);
     if (!datos) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    // 404 y no 403: adivinar un id de otra sucursal no debe ni confirmar que
+    // existe. Mismo criterio en el POST de abajo.
+    if (cids !== null && Number(datos.movimiento.cids) !== cids) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, ...datos });
   } catch (error: any) {
@@ -87,6 +100,9 @@ export async function POST(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const id = parseInt((await params).id, 10);
     if (isNaN(id)) return NextResponse.json({ error: "id invalido" }, { status: 400 });
 
@@ -99,6 +115,10 @@ export async function POST(
 
     const datos = await cargar(id);
     if (!datos) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    if (cids !== null && Number(datos.movimiento.cids) !== cids) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
 
     const verificadoPor = String(body?.verificado_por || "").trim().slice(0, 200);
     if (!verificadoPor) {

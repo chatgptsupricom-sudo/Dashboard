@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     const { searchParams } = new URL(request.url);
     const almacenista = (searchParams.get("almacenista") || "").trim();
@@ -48,6 +51,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (cids !== null) {
+      where += " AND cids = ?";
+      params.push(cids);
+    }
+
     const result = await query(
       `SELECT * FROM seguridad_calificaciones ${where}
        ORDER BY created_at DESC
@@ -70,6 +78,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     let body: any;
     try {
@@ -132,44 +143,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
 
-    if (relacionadoARaw === "ingreso") {
-      try {
-        const lookup = await query(
-          "SELECT id FROM seguridad_ingresos WHERE id = ?",
-          [relacionadoId],
-        );
-        if (lookup.rows.length === 0) {
-          return NextResponse.json(
-            { error: "relacionado_id no existe en seguridad_ingresos" },
-            { status: 400 },
-          );
-        }
-      } catch (e: any) {
-        console.warn("seguridad_ingresos no disponible:", e?.message);
+    // Ademas de existir, el registro referenciado tiene que ser de la misma
+    // sucursal que quien califica — si no, alguien de Valencia podria
+    // calificar (o adivinar) un ingreso/despacho/egreso de Caracas con solo
+    // saber su id.
+    const TABLA_POR_TIPO: Record<string, string> = {
+      ingreso: "seguridad_ingresos",
+      despacho: "seguridad_despachos",
+      mercancia: "seguridad_mercancia",
+    };
+    const tabla = TABLA_POR_TIPO[relacionadoARaw];
+    try {
+      const lookup = await query(`SELECT id, cids FROM ${tabla} WHERE id = ?`, [
+        relacionadoId,
+      ]);
+      const fila = lookup.rows[0] as any;
+      if (!fila || (cids !== null && Number(fila.cids) !== cids)) {
         return NextResponse.json(
-          { error: "No se pudo verificar el ingreso relacionado" },
-          { status: 503 },
+          { error: `relacionado_id no existe en ${tabla}` },
+          { status: 400 },
         );
       }
-    } else if (relacionadoARaw === "despacho") {
-      try {
-        const lookup = await query(
-          "SELECT id FROM seguridad_despachos WHERE id = ?",
-          [relacionadoId],
-        );
-        if (lookup.rows.length === 0) {
-          return NextResponse.json(
-            { error: "relacionado_id no existe en seguridad_despachos" },
-            { status: 400 },
-          );
-        }
-      } catch (e: any) {
-        console.warn("seguridad_despachos no disponible:", e?.message);
-        return NextResponse.json(
-          { error: "No se pudo verificar el despacho relacionado" },
-          { status: 503 },
-        );
-      }
+    } catch (e: any) {
+      console.warn(`${tabla} no disponible:`, e?.message);
+      return NextResponse.json(
+        { error: "No se pudo verificar el registro relacionado" },
+        { status: 503 },
+      );
     }
 
     try {
@@ -191,8 +191,8 @@ export async function POST(request: NextRequest) {
 
     const result = await query(
       `INSERT INTO seguridad_calificaciones
-        (almacenista_nombre, calificacion, relacionado_a, relacionado_id, comentario, calificado_por)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+        (almacenista_nombre, calificacion, relacionado_a, relacionado_id, comentario, calificado_por, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         almacenistaNombre,
         calificacion,
@@ -200,6 +200,7 @@ export async function POST(request: NextRequest) {
         relacionadoId,
         comentario,
         calificadoPor,
+        cids,
       ],
     );
 

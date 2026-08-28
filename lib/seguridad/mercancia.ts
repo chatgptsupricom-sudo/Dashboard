@@ -71,17 +71,26 @@ function partirProducto(nombre: string): { codigo: string | null; producto: stri
  * Devuelve null si no existe o si Odoo no responde. El que llama decide que
  * hacer: aqui no se inventa una orden vacia, porque un camion verificado
  * contra una lista vacia sale "conforme" siempre.
+ *
+ * `cids` acota la busqueda a la sucursal de quien la hace (9=Valencia,
+ * 10=Caracas, 7=Panama) — sin esto, cualquiera podia buscar y verificar un
+ * picking de otra sucursal con solo saber (o adivinar) su nombre. `null` es
+ * "sin filtro" (superadmin).
  */
 export async function buscarPickingPorNombre(
   nombre: string,
+  cids: number | null,
 ): Promise<PickingOdoo | null> {
   const limpio = String(nombre || "").trim();
   if (!limpio || limpio.length > 100) return null;
 
+  const domain: any[] = [["name", "=", limpio]];
+  if (cids !== null) domain.push(["company_id", "=", cids]);
+
   const pickings = await callOdooRPC<any[]>(
     "stock.picking",
     "search_read",
-    [[["name", "=", limpio]]],
+    [domain],
     {
       fields: ["name", "partner_id", "state", "origin", "picking_type_code"],
       limit: 1,
@@ -134,24 +143,24 @@ export async function buscarPickingPorNombre(
  *
  * Solo lineas de producto: una factura trae ademas secciones, notas y lineas
  * de impuesto, y contar eso en el porton no significa nada.
+ *
+ * `cids` acota por sucursal, mismo motivo que en `buscarPickingPorNombre`.
  */
 export async function buscarFacturaCompra(
   numero: string,
+  cids: number | null,
 ): Promise<PickingOdoo | null> {
   const limpio = String(numero || "").trim();
   if (!limpio || limpio.length > 100) return null;
 
+  const domain: any[] = [["move_type", "=", "in_invoice"]];
+  if (cids !== null) domain.push(["company_id", "=", cids]);
+  domain.push("|", ["name", "=", limpio], ["ref", "=", limpio]);
+
   const facturas = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
-    [
-      [
-        ["move_type", "=", "in_invoice"],
-        "|",
-        ["name", "=", limpio],
-        ["ref", "=", limpio],
-      ],
-    ],
+    [domain],
     { fields: ["name", "partner_id", "state", "invoice_origin", "ref"], limit: 1 },
   );
 

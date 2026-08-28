@@ -249,6 +249,17 @@ export default async function middleware(request: NextRequest) {
           new URL(`/${locale}/seguridad`, request.url),
         );
       }
+      // El gate de la seccion 11 deja pasar a Almacen por CUALQUIER ruta bajo
+      // /seguridad (incluida la bare /seguridad), asi que no basta con
+      // atajar el /dashboard -> /seguridad de arriba: si Almacen entra
+      // directo a /seguridad (link viejo, favorito, historial), cae en el
+      // mismo home de RMA que no le corresponde. Solo la ruta exacta, no sus
+      // subrutas (/seguridad/mercancia/egreso si debe renderizar).
+      if (/^\/(es|en)\/seguridad\/?$/.test(pathname) && isAlmacen) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/seguridad/mercancia/egreso`, request.url),
+        );
+      }
     } catch (e) {
       console.error("Error en middleware:", e);
       return NextResponse.redirect(new URL(`/${locale}/login`, request.url));

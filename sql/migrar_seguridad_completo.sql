@@ -49,12 +49,19 @@ CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   recibido_por VARCHAR(200) NOT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
   idempotency_key VARCHAR(64) DEFAULT NULL,
+  -- Sucursal de quien registra (9=Valencia, 10=Caracas, 7=Panama), del mismo
+  -- `cids` que ya viaja en el JWT desde el login. NULL en filas viejas: no se
+  -- inventa una sucursal para datos historicos que no la tenian, asi que
+  -- quedan visibles solo para superadmin en vez de asignarselas a la sucursal
+  -- equivocada.
+  cids INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE INDEX uq_idempotency_key (idempotency_key),
   INDEX idx_fecha (fecha_entrega),
   INDEX idx_cliente (cliente_nombre),
   INDEX idx_rma_case (rma_case_id),
-  INDEX idx_recibido (recibido_por)
+  INDEX idx_recibido (recibido_por),
+  INDEX idx_cids (cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS seguridad_despachos (
@@ -71,13 +78,19 @@ CREATE TABLE IF NOT EXISTS seguridad_despachos (
   firma_url VARCHAR(500) DEFAULT NULL,
   firma_data LONGBLOB NULL,
   firma_mime VARCHAR(50) DEFAULT 'image/png' NULL,
+  cids INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_fecha (fecha_despacho),
   INDEX idx_almacenista (almacenista_nombre),
   INDEX idx_ingreso (ingreso_id),
-  INDEX idx_rma_case (rma_case_id)
+  INDEX idx_rma_case (rma_case_id),
+  INDEX idx_cids (cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- `cids` propio y no resuelto via `relacionado_a`+`relacionado_id`: esta tabla
+-- no tiene FK real a la fila que califica (puede ser ingreso, despacho o
+-- mercancia, cada uno en su propia tabla), asi que duplicar el dato al
+-- insertar es mas simple y mas rapido de leer que un JOIN condicional por tipo.
 CREATE TABLE IF NOT EXISTS seguridad_calificaciones (
   id INT AUTO_INCREMENT PRIMARY KEY,
   almacenista_nombre VARCHAR(200) NOT NULL,
@@ -86,10 +99,12 @@ CREATE TABLE IF NOT EXISTS seguridad_calificaciones (
   relacionado_id INT NOT NULL,
   comentario VARCHAR(500) DEFAULT NULL,
   calificado_por VARCHAR(200) NOT NULL,
+  cids INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_almacenista (almacenista_nombre),
   INDEX idx_relacionado (relacionado_a, relacionado_id),
-  INDEX idx_fecha (created_at)
+  INDEX idx_fecha (created_at),
+  INDEX idx_cids (cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -108,10 +123,14 @@ CREATE TABLE IF NOT EXISTS seguridad_firmas (
   firmante_nombre VARCHAR(200) NOT NULL,
   firma_data LONGBLOB NOT NULL,
   firma_mime VARCHAR(50) DEFAULT 'image/png',
+  -- Mismo motivo que seguridad_calificaciones: sin FK real al acta, se
+  -- duplica el `cids` de quien firma en vez de resolverlo por tipo.
+  cids INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   -- Un rol firma una vez por acta: volver a firmar reemplaza, no acumula.
   UNIQUE KEY uq_acta_rol (acta_tipo, acta_id, rol),
-  INDEX idx_acta (acta_tipo, acta_id)
+  INDEX idx_acta (acta_tipo, acta_id),
+  INDEX idx_cids (cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS seguridad_config (
@@ -163,11 +182,13 @@ CREATE TABLE IF NOT EXISTS seguridad_mercancia (
   verificado_por VARCHAR(200) DEFAULT NULL,
   verificado_at TIMESTAMP NULL DEFAULT NULL,
   observaciones TEXT DEFAULT NULL,
+  cids INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_tipo_fecha (tipo, fecha),
   INDEX idx_almacenista (almacenista_nombre),
   INDEX idx_estado (estado),
-  INDEX idx_picking (odoo_picking_id)
+  INDEX idx_picking (odoo_picking_id),
+  INDEX idx_cids (cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- `cantidad_verificada` empieza en NULL a proposito: "todavia no lo he
@@ -225,6 +246,24 @@ SET @sql := (SELECT IF(
   'ALTER TABLE seguridad_ingresos ADD COLUMN nd_numero VARCHAR(50) DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- Sucursal de quien registra (aislamiento por cids, ver comentario en el
+-- CREATE TABLE de arriba).
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_ingresos'
+      AND COLUMN_NAME = 'cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_ingresos ADD COLUMN cids INT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_ingresos'
+      AND INDEX_NAME = 'idx_cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_ingresos ADD INDEX idx_cids (cids)'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- --- seguridad_despachos ---
 
 SET @sql := (SELECT IF(
@@ -249,6 +288,22 @@ SET @sql := (SELECT IF(
       AND COLUMN_NAME = 'firma_mime') > 0,
   'SELECT 1',
   'ALTER TABLE seguridad_despachos ADD COLUMN firma_mime VARCHAR(50) DEFAULT ''image/png'' NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_despachos'
+      AND COLUMN_NAME = 'cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_despachos ADD COLUMN cids INT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_despachos'
+      AND INDEX_NAME = 'idx_cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_despachos ADD INDEX idx_cids (cids)'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- --- seguridad_mercancia ---
@@ -287,6 +342,22 @@ SET @sql := (SELECT IF(
   'ALTER TABLE seguridad_mercancia ADD COLUMN almacenistas_json TEXT DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN cids INT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND INDEX_NAME = 'idx_cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD INDEX idx_cids (cids)'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- --- seguridad_mercancia_items ---
 
 -- Checkbox "No salio" por renglon (issue #44).
@@ -296,6 +367,42 @@ SET @sql := (SELECT IF(
       AND COLUMN_NAME = 'no_salio') > 0,
   'SELECT 1',
   'ALTER TABLE seguridad_mercancia_items ADD COLUMN no_salio TINYINT(1) NOT NULL DEFAULT 0'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- --- seguridad_calificaciones y seguridad_firmas: cids ---
+
+-- Sin FK real al acta (relacionado_a/acta_tipo + id generico), asi que el
+-- cids se duplica al insertar en vez de resolverse por tipo en cada lectura.
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_calificaciones'
+      AND COLUMN_NAME = 'cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_calificaciones ADD COLUMN cids INT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_calificaciones'
+      AND INDEX_NAME = 'idx_cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_calificaciones ADD INDEX idx_cids (cids)'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_firmas'
+      AND COLUMN_NAME = 'cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_firmas ADD COLUMN cids INT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_firmas'
+      AND INDEX_NAME = 'idx_cids') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_firmas ADD INDEX idx_cids (cids)'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- --- ENUMs que crecieron al llegar Mercancia ---
@@ -350,8 +457,8 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- ============================================================
 -- 5. Comprobacion
 --
--- En una base con el modulo RMA debe decir 7 y 10.
--- Sin rma_cases, dice 7 y 9, que tambien esta bien.
+-- En una base con el modulo RMA debe decir 7 y 15.
+-- Sin rma_cases, dice 7 y 14, que tambien esta bien.
 -- ============================================================
 
 SELECT
@@ -373,4 +480,10 @@ SELECT
         ('seguridad_mercancia','facturas_json'),
         ('seguridad_mercancia','almacenistas_json'),
         ('seguridad_mercancia_items','no_salio'),
-        ('rma_cases','despachado_at'))) AS columnas_de_10;
+        -- Aislamiento por sucursal (cids), en las 5 tablas que hacia falta.
+        ('seguridad_ingresos','cids'),
+        ('seguridad_despachos','cids'),
+        ('seguridad_calificaciones','cids'),
+        ('seguridad_firmas','cids'),
+        ('seguridad_mercancia','cids'),
+        ('rma_cases','despachado_at'))) AS columnas_de_15;

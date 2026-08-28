@@ -1,4 +1,4 @@
-import { requireAlmacenOSeguridad } from "@/lib/seguridad/auth";
+import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   buscarFacturaCompra,
   buscarPickingPorNombre,
@@ -26,6 +26,9 @@ export async function GET(
     const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { nombre } = await params;
     const tipo = new URL(request.url).searchParams.get("tipo");
     const buscado = decodeURIComponent(nombre);
@@ -42,8 +45,8 @@ export async function GET(
 
     const picking =
       tipo === "ingreso"
-        ? await buscarFacturaCompra(buscado)
-        : await buscarPickingPorNombre(buscado);
+        ? await buscarFacturaCompra(buscado, cids)
+        : await buscarPickingPorNombre(buscado, cids);
 
     if (!picking) {
       return NextResponse.json(

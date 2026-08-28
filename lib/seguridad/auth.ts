@@ -37,3 +37,35 @@ export async function requireAlmacenOSeguridad(
 ): Promise<{ payload?: any; error?: NextResponse }> {
   return requireRoles(request, ["seguridad", "almacen"]);
 }
+
+/**
+ * Resuelve la sucursal (`cids`) de la sesion para filtrar datos por ella.
+ *
+ * Cada usuario de `seguridad`/`almacen` solo debe ver lo de su sucursal
+ * (9=Valencia, 10=Caracas, 7=Panama) — el modulo entero no filtraba por esto
+ * hasta ahora, asi que cualquiera veia todas las sucursales. `superadmin` es
+ * la unica excepcion: ve todo, por eso devuelve `cids: null` ("sin filtro"),
+ * mismo significado que ya usan otros modulos (ej. gerente_venta/inventario).
+ *
+ * Si el usuario no es superadmin y no tiene `cids` asignado en `users_config`,
+ * se corta con 403 en vez de dejarlo pasar sin filtro — lo contrario seria
+ * mostrarle todas las sucursales por un dato mal cargado.
+ */
+export function resolverCidsSesion(
+  payload: any,
+): { cids: number | null; error?: NextResponse } {
+  const rol = String(payload?.role || "").toLowerCase().trim();
+  if (rol === "superadmin") return { cids: null };
+
+  const cids = Number(payload?.cids);
+  if (!Number.isFinite(cids) || cids <= 0) {
+    return {
+      cids: null,
+      error: NextResponse.json(
+        { error: "Tu usuario no tiene una sucursal (cids) asignada" },
+        { status: 403 },
+      ),
+    };
+  }
+  return { cids };
+}

@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   decodificarFirmaPng,
   esRolValido,
@@ -7,6 +7,25 @@ import {
   firmasDeActa,
 } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
+
+const TABLA_POR_TIPO: Record<string, string> = {
+  ingreso: "seguridad_ingresos",
+  despacho: "seguridad_despachos",
+  mercancia: "seguridad_mercancia",
+};
+
+/** El acta existe y es de la sucursal de la sesion (null = superadmin, sin filtro). */
+async function actaVisible(
+  tipo: string,
+  actaId: number,
+  cids: number | null,
+): Promise<boolean> {
+  const tabla = TABLA_POR_TIPO[tipo];
+  const res = await query(`SELECT id, cids FROM ${tabla} WHERE id = ?`, [actaId]);
+  const fila = res.rows[0] as any;
+  if (!fila) return false;
+  return cids === null || Number(fila.cids) === cids;
+}
 
 /**
  * Firmas del acta de RMA: /api/seguridad/firmas/{ingreso|despacho}/{id}
@@ -37,9 +56,16 @@ export async function GET(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { tipo, id } = await params;
     const p = parsearParams(tipo, id);
     if (p.error) return NextResponse.json({ error: p.error }, { status: 400 });
+
+    if (!(await actaVisible(p.tipo!, p.actaId!, cids))) {
+      return NextResponse.json({ error: "El acta no existe" }, { status: 404 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -58,6 +84,9 @@ export async function POST(
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
 
     const { tipo, id } = await params;
     const p = parsearParams(tipo, id);
@@ -100,15 +129,10 @@ export async function POST(
       return NextResponse.json({ error: "Firma demasiado grande" }, { status: 400 });
     }
 
-    // Que el acta exista antes de colgarle una firma. Sin esto quedarian
-    // firmas huerfanas apuntando a actas que nunca se crearon.
-    const tabla = {
-      ingreso: "seguridad_ingresos",
-      despacho: "seguridad_despachos",
-      mercancia: "seguridad_mercancia",
-    }[p.tipo as string];
-    const existe = await query(`SELECT id FROM ${tabla} WHERE id = ?`, [p.actaId]);
-    if (existe.rows.length === 0) {
+    // Que el acta exista Y sea de la sucursal de la sesion antes de colgarle
+    // una firma. Sin esto quedarian firmas huerfanas apuntando a actas que
+    // nunca se crearon, o alguien firmando un acta de otra sucursal.
+    if (!(await actaVisible(p.tipo!, p.actaId!, cids))) {
       return NextResponse.json({ error: "El acta no existe" }, { status: 404 });
     }
 
@@ -116,14 +140,14 @@ export async function POST(
     // acumula. Dos firmas del mismo rol y nadie sabria cual vale.
     await query(
       `INSERT INTO seguridad_firmas
-         (acta_tipo, acta_id, rol, firmante_nombre, firma_data, firma_mime)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (acta_tipo, acta_id, rol, firmante_nombre, firma_data, firma_mime, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          firmante_nombre = VALUES(firmante_nombre),
          firma_data = VALUES(firma_data),
          firma_mime = VALUES(firma_mime),
          created_at = CURRENT_TIMESTAMP`,
-      [p.tipo, p.actaId, body.rol, nombre, decodificada.buffer, decodificada.mime],
+      [p.tipo, p.actaId, body.rol, nombre, decodificada.buffer, decodificada.mime, cids],
     );
 
     return NextResponse.json({
@@ -146,9 +170,16 @@ export async function DELETE(
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
 
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
     const { tipo, id } = await params;
     const p = parsearParams(tipo, id);
     if (p.error) return NextResponse.json({ error: p.error }, { status: 400 });
+
+    if (!(await actaVisible(p.tipo!, p.actaId!, cids))) {
+      return NextResponse.json({ error: "El acta no existe" }, { status: 404 });
+    }
 
     const rol = new URL(request.url).searchParams.get("rol");
     if (!esRolValido(rol)) {
