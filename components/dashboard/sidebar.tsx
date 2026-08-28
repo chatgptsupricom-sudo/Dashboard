@@ -116,6 +116,7 @@ export function Sidebar({
   const [isVentasOpen, setIsVentasOpen] = useState(false);
   const [isCxCOpen, setIsCxCOpen] = useState(false);
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
+  const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -226,18 +227,6 @@ export function Sidebar({
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.
-    //
-    // Sus pantallas se listan una a una y no detras de una sola entrada: el
-    // modulo tiene dos flujos distintos —RMA y Mercancia— y esconderlos tras
-    // "Seguridad" obligaba a entrar y navegar por dentro para llegar a
-    // cualquiera de ellos.
-    { id: "seguridad", label: t("seguridad"), icon: ShieldCheck, slug: "/seguridad", absoluteHref: true },
-    { id: "seguridad_ingresos", label: t("seguridad_ingresos"), icon: ClipboardList, slug: "/seguridad/ingreso", absoluteHref: true },
-    { id: "seguridad_despachos", label: t("seguridad_despachos"), icon: Send, slug: "/seguridad/despacho", absoluteHref: true },
-    { id: "seguridad_por_llegar", label: t("seguridad_por_llegar"), icon: Inbox, slug: "/seguridad/por-llegar", absoluteHref: true },
-    { id: "seguridad_mercancia_ingreso", label: t("seguridad_mercancia_ingreso"), icon: PackageCheck, slug: "/seguridad/mercancia/ingreso", absoluteHref: true },
-    { id: "seguridad_mercancia_egreso", label: t("seguridad_mercancia_egreso"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
-    { id: "seguridad_almacenistas", label: t("seguridad_almacenistas"), icon: Star, slug: "/seguridad/almacenista", absoluteHref: true },
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
     { id: "rma_salida", label: t("salida_rma"), icon: Truck, slug: "/rma/salida", absoluteHref: true },
     { id: "sales_dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "/dashboard" },
@@ -647,6 +636,90 @@ export function Sidebar({
                               className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
                             >
                               {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenu desplegable de SEGURIDAD.
+                Agrupado en vez de siete entradas sueltas: el modulo tiene dos
+                flujos —RMA y Mercancia— y sueltas empujaban el resto del menu
+                fuera de la vista para todo el que no trabaja en almacen. */}
+            {allowedSections.includes("seguridad") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsSeguridadOpen(!isSeguridadOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seguridad")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isSeguridadOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isSeguridadOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("seguridad_panel"), href: `/${locale}/seguridad` },
+                        { grupo: "RMA" },
+                        { label: t("seguridad_ingresos"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seguridad_despachos"), href: `/${locale}/seguridad/despacho` },
+                        { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
+                        { grupo: "Mercancía" },
+                        { label: t("seguridad_mercancia_ingreso"), href: `/${locale}/seguridad/mercancia/ingreso` },
+                        { label: t("seguridad_mercancia_egreso"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        { grupo: " " },
+                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                      ].map((sub: any, index) => {
+                        // Separador con el nombre del flujo: dentro del
+                        // desplegable siguen siendo dos cosas distintas.
+                        if (sub.grupo !== undefined) {
+                          return (
+                            <p
+                              key={index}
+                              className="px-4 pt-2 text-[10px] font-bold uppercase tracking-wider text-slate-500"
+                            >
+                              {sub.grupo}
+                            </p>
+                          );
+                        }
+
+                        // Coincidencia por prefijo: el detalle de un ingreso
+                        // (/seguridad/ingreso/12) tiene que marcar su entrada.
+                        // El panel se compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad");
+                        const isSubActive = esPanel
+                          ? pathname === sub.href
+                          : pathname.startsWith(sub.href);
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
                             </div>
                           </Link>
                         );

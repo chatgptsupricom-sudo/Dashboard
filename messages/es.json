@@ -187,7 +187,8 @@
     "seguridad_por_llegar": "Equipos por llegar",
     "seguridad_mercancia_ingreso": "Mercancía: ingresos",
     "seguridad_mercancia_egreso": "Mercancía: egresos",
-    "seguridad_almacenistas": "Almacenistas"
+    "seguridad_almacenistas": "Almacenistas",
+    "seguridad_panel": "Panel de Seguridad"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",

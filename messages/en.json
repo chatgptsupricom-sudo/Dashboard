@@ -205,7 +205,8 @@
     "seguridad_por_llegar": "Devices on the way",
     "seguridad_mercancia_ingreso": "Merchandise: inbound",
     "seguridad_mercancia_egreso": "Merchandise: outbound",
-    "seguridad_almacenistas": "Warehouse staff"
+    "seguridad_almacenistas": "Warehouse staff",
+    "seguridad_panel": "Security panel"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
