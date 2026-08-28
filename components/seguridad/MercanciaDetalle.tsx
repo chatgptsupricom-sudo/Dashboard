@@ -1,19 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Loader2, Package } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases } from "./mercancia-ui";
 
 /**
  * Verificacion en el porton y calificacion del almacenista.
@@ -65,7 +60,6 @@ export default function MercanciaDetalle({
   id: string;
 }) {
   const tm = useTranslations("seguridad.mercancia");
-  const t = useTranslations("seguridad");
   const tc = useTranslations("seguridad.calificacion");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
@@ -189,14 +183,14 @@ export default function MercanciaDetalle({
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-400">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-300">
         <Loader2 className="w-5 h-5 animate-spin" />
       </div>
     );
   }
   if (!mov) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
         {tm("vacio")}
       </div>
     );
@@ -219,37 +213,20 @@ export default function MercanciaDetalle({
   const diferencias = noSalioCount + diferenciaCantidadCount;
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <Link
-            href={base}
-            className="p-2 rounded-[10px] text-slate-500 hover:bg-slate-100"
-            aria-label={t("back")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-              {mov.odoo_picking_name || tm("sin_factura")}
-            </h1>
-            <p className="text-xs text-slate-500 truncate">
-              {fechaCorta(mov.fecha)} ·{" "}
-              {(mov.almacenistas?.length ? mov.almacenistas : [mov.almacenista_nombre]).join(
-                ", ",
-              )}
-            </p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader
+        titulo={mov.odoo_picking_name || tm("sin_factura")}
+        subtitulo={`${fechaCorta(mov.fecha)} · ${(mov.almacenistas?.length ? mov.almacenistas : [mov.almacenista_nombre]).join(", ")}`}
+        volverA={base}
+      />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4 pb-28">
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-28">
         {/* Resultado de la verificacion, arriba: es lo que se mira primero */}
         {mov.estado === "descuadre" ? (
-          <div className="rounded-2xl border border-red-300 bg-red-50 p-4 flex items-start gap-3">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-red-800">{tm("descuadre")}</p>
+              <p className="text-sm font-semibold text-red-800">{tm("descuadre")}</p>
               <p className="text-sm text-red-700">
                 {tm("descuadre_aviso", { count: diferencias })}
               </p>
@@ -270,22 +247,23 @@ export default function MercanciaDetalle({
             </div>
           </div>
         ) : mov.estado === "conforme" ? (
-          <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 flex items-center gap-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <p className="text-sm font-bold text-emerald-800">
+            <p className="text-sm font-semibold text-emerald-800">
               {tm("conforme_aviso")}
             </p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-            {tm("sin_verificar")}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0" />
+            <p className="text-sm font-semibold text-amber-800">{tm("sin_verificar")}</p>
           </div>
         )}
 
         {/* Conteo renglon por renglon */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <h2 className="text-sm font-bold text-slate-900 mb-1">{tm("items")}</h2>
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px] font-bold uppercase tracking-wider text-slate-400 pb-2 border-b border-slate-100">
+        <Card>
+          <SectionTitle>{tm("items")}</SectionTitle>
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
             <span>{tm("producto")}</span>
             <span className="text-right w-16">{tm("cargado")}</span>
             <span className="text-right w-24">{tm("verificado")}</span>
@@ -300,17 +278,22 @@ export default function MercanciaDetalle({
               Number(contado) !== Number(it.cantidad_cargada);
             const motivoFalta = marcado && !motivos[it.id]?.trim();
             return (
-              <div key={it.id} className="py-2 border-b border-slate-50">
+              <div key={it.id} className="py-2.5 border-b border-slate-50 last:border-0">
                 <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center">
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-900 truncate">{it.producto}</p>
-                    {it.codigo && (
-                      <p className="text-[11px] font-mono text-slate-400">
-                        {it.codigo}
-                      </p>
-                    )}
+                  <div className="min-w-0 flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                      <Package className="w-3.5 h-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm text-slate-800 truncate">{it.producto}</p>
+                      {it.codigo && (
+                        <p className="text-[11px] font-mono text-slate-400">
+                          {it.codigo}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-sm font-bold tabular-nums text-slate-700 w-16 text-right">
+                  <span className="text-sm font-semibold tabular-nums text-slate-700 w-16 text-right">
                     {Number(it.cantidad_cargada)}
                   </span>
                   <input
@@ -322,18 +305,18 @@ export default function MercanciaDetalle({
                     onChange={(e) =>
                       setConteos((p) => ({ ...p, [it.id]: e.target.value }))
                     }
-                    className={`w-24 h-11 px-2 text-right rounded-[10px] border text-sm tabular-nums disabled:opacity-60 disabled:bg-slate-50 ${
+                    className={`w-24 h-10 px-2 text-right rounded-lg border text-sm tabular-nums disabled:opacity-60 disabled:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-100 ${
                       hayDif
-                        ? "border-red-400 bg-red-50 text-red-700 font-bold"
-                        : "border-slate-200"
+                        ? "border-red-300 bg-red-50 text-red-700 font-semibold"
+                        : "border-slate-200 focus:border-[color:var(--portal-primary,#741DFE)]"
                     }`}
                   />
                 </div>
 
                 {/* Checkbox "No salio" + motivo obligatorio (issue #44). Senal
                     aparte del conteo: complementa, no sustituye. */}
-                <div className="mt-1.5 pl-0.5">
-                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 select-none">
+                <div className="mt-2 pl-9">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 select-none cursor-pointer">
                     <input
                       type="checkbox"
                       checked={marcado}
@@ -357,10 +340,10 @@ export default function MercanciaDetalle({
                         }))
                       }
                       placeholder={tm("motivo_placeholder")}
-                      className={`mt-1.5 w-full h-10 px-3 rounded-[10px] border text-sm disabled:opacity-60 disabled:bg-slate-50 ${
+                      className={`mt-1.5 w-full h-10 px-3 rounded-lg border text-sm disabled:opacity-60 disabled:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-red-100 ${
                         motivoFalta && !esAlmacen
-                          ? "border-red-400 bg-red-50"
-                          : "border-slate-200"
+                          ? "border-red-300 bg-red-50"
+                          : "border-slate-200 focus:border-red-300"
                       }`}
                     />
                   )}
@@ -368,7 +351,7 @@ export default function MercanciaDetalle({
               </div>
             );
           })}
-        </section>
+        </Card>
 
         {/* Firma de Seguridad, verificacion y calificacion: todo esto es exclusivo
             de Seguridad (issue #42/#43). Almacen preparo el registro y aqui solo
@@ -386,7 +369,7 @@ export default function MercanciaDetalle({
             />
 
             {/* Calificacion de cada almacenista que cargo (issue #43: puede ser mas de uno) */}
-            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-5">
+            <Card className="space-y-5">
               {(mov.almacenistas?.length ? mov.almacenistas : [mov.almacenista_nombre]).map(
                 (nombre) => {
                   const existente = calificaciones.find(
@@ -394,9 +377,7 @@ export default function MercanciaDetalle({
                   );
                   return (
                     <div key={nombre}>
-                      <h2 className="text-sm font-bold text-slate-900 mb-3">
-                        {tc("rate_for", { name: nombre })}
-                      </h2>
+                      <SectionTitle>{tc("rate_for", { name: nombre })}</SectionTitle>
                       {existente ? (
                         <StarRatingDisplay
                           value={Number(existente.calificacion)}
@@ -420,47 +401,38 @@ export default function MercanciaDetalle({
                               }))
                             }
                             placeholder={tc("comment_placeholder")}
-                            className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm"
+                            className={inputClases}
                           />
-                          <button
-                            type="button"
+                          <BotonPrimario
                             onClick={() => calificar(nombre)}
                             disabled={(estrellasPor[nombre] || 0) < 1}
-                            className="min-h-[44px] px-4 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-                            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
                           >
                             {tc("save")}
-                          </button>
+                          </BotonPrimario>
                         </div>
                       )}
                     </div>
                   );
                 },
               )}
-            </section>
+            </Card>
           </>
         )}
 
         {error && (
-          <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
       </main>
 
       {!esAlmacen && (
-        <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-            <button
-              type="button"
-              onClick={verificar}
-              disabled={guardando || faltaMotivo}
-              className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-            >
+        <div className="fixed inset-x-0 bottom-0 border-t border-slate-200/70 bg-white/90 backdrop-blur">
+          <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
+            <BotonPrimario onClick={verificar} disabled={guardando || faltaMotivo} className="w-full h-12">
               {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
               {tm("verificar")}
-            </button>
+            </BotonPrimario>
           </div>
         </div>
       )}

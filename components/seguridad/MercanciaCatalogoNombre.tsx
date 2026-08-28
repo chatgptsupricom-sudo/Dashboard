@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Loader2, Plus, User, XCircle } from "lucide-react";
+import { Loader2, Plus, User, Users, XCircle } from "lucide-react";
+import { PageHeader, Card, EmptyState, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
  * Catalogo simple de un solo campo (nombre): sirve tanto para Almacenistas
@@ -35,8 +34,6 @@ export default function MercanciaCatalogoNombre({
   errorTexto: string;
   volverA: string;
 }) {
-  const t = useTranslations("seguridad");
-
   const [items, setItems] = useState<Item[]>([]);
   const [cargando, setCargando] = useState(true);
   const [nombre, setNombre] = useState("");
@@ -81,28 +78,12 @@ export default function MercanciaCatalogoNombre({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <Link
-            href={volverA}
-            className="p-2 rounded-[10px] text-slate-500 hover:bg-slate-100"
-            aria-label={t("back")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900">{titulo}</h1>
-            <p className="text-xs text-slate-500">{subtitulo}</p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader icon={Users} titulo={titulo} subtitulo={subtitulo} volverA={volverA} />
 
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-            {campoLabel}
-          </label>
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-4">
+        <Card>
+          <label className={labelClases}>{campoLabel}</label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -115,44 +96,45 @@ export default function MercanciaCatalogoNombre({
                 }
               }}
               placeholder={campoPlaceholder}
-              className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+              className={inputClases}
             />
-            <button
-              type="button"
+            <BotonPrimario
               onClick={() => void agregar()}
               disabled={guardando || !nombre.trim()}
-              className="h-12 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+              icon={guardando ? undefined : Plus}
+              className="w-11 px-0 shrink-0"
             >
-              {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            </button>
+              {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
+            </BotonPrimario>
           </div>
           {error && (
-            <p className="mt-2 text-sm text-red-600 flex items-center gap-2">
-              <XCircle className="w-4 h-4" />
+            <p className="mt-2.5 text-sm text-red-600 flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 shrink-0" />
               {error}
             </p>
           )}
-        </section>
+        </Card>
 
-        <section className="bg-white border border-slate-200 rounded-[10px]">
+        <Card padded={false}>
           {cargando ? (
-            <div className="flex items-center justify-center py-12 text-slate-400">
+            <div className="flex items-center justify-center py-14 text-slate-300">
               <Loader2 className="w-5 h-5 animate-spin" />
             </div>
           ) : items.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-400">{vacioTexto}</p>
+            <EmptyState icon={User} texto={vacioTexto} />
           ) : (
             <div className="divide-y divide-slate-100">
               {items.map((it) => (
-                <div key={it.id} className="flex items-center gap-3 px-5 py-3">
-                  <User className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-900">{it.nombre}</span>
+                <div key={it.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <span className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                    <User className="w-4 h-4" />
+                  </span>
+                  <span className="text-sm text-slate-800 font-medium">{it.nombre}</span>
                 </div>
               ))}
             </div>
           )}
-        </section>
+        </Card>
       </main>
     </div>
   );

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Loader2, Plus, Search, X, XCircle } from "lucide-react";
+import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
  * Registro de una carga de mercancia.
@@ -211,15 +212,17 @@ export default function MercanciaNueva({
 
   if (bloqueadoPorRol) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-4 bg-slate-50">
         <div className="max-w-sm text-center space-y-3">
-          <XCircle className="w-8 h-8 text-red-500 mx-auto" />
-          <p className="text-sm font-semibold text-slate-700">
+          <span className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
+            <XCircle className="w-6 h-6" />
+          </span>
+          <p className="text-sm font-medium text-slate-700">
             {tm("solo_seguridad_ingreso")}
           </p>
           <Link
             href={`/${locale}/seguridad/mercancia/egreso`}
-            className="inline-flex text-sm font-semibold text-[color:var(--portal-primary,#741DFE)]"
+            className="inline-flex text-sm font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75"
           >
             {t("back")}
           </Link>
@@ -229,28 +232,18 @@ export default function MercanciaNueva({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <Link
-            href={base}
-            className="p-2 rounded-[10px] text-slate-500 hover:bg-slate-100"
-            aria-label={t("back")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-            {tm(tipo === "ingreso" ? "ingreso_titulo" : "egreso_titulo")}
-          </h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader
+        titulo={tm(tipo === "ingreso" ? "ingreso_titulo" : "egreso_titulo")}
+        volverA={base}
+      />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4 pb-28">
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-28">
         {/* Factura de Odoo */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <h2 className="text-sm font-bold text-slate-900 mb-3">
+        <Card>
+          <SectionTitle>
             {tm(tipo === "ingreso" ? "buscar_factura_compra" : "buscar_factura_venta")}
-          </h2>
+          </SectionTitle>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
@@ -265,81 +258,81 @@ export default function MercanciaNueva({
               placeholder={tm(
                 tipo === "ingreso" ? "buscar_factura_compra_ph" : "buscar_factura_venta_ph",
               )}
-              className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+              className={inputClases}
             />
-            <button
-              type="button"
+            <BotonPrimario
               onClick={() => buscarOrden()}
               disabled={buscando || !orden.trim()}
-              className="h-12 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+              icon={buscando ? undefined : Search}
+              className="shrink-0"
             >
-              {buscando ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
+              {buscando && <Loader2 className="w-4 h-4 animate-spin" />}
               {tm("buscar")}
-            </button>
+            </BotonPrimario>
           </div>
           {errorOrden && (
-            <p className="mt-3 text-sm text-red-600 flex items-center gap-2">
-              <XCircle className="w-4 h-4" />
+            <p className="mt-3 text-sm text-red-600 flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 shrink-0" />
               {errorOrden}
             </p>
           )}
           {picking && (
-            <div className="mt-4 rounded-[10px] border border-violet-200 bg-violet-50/60 p-4">
-              <p className="text-sm font-bold text-violet-900">
+            <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+              <p className="text-sm font-semibold text-violet-900">
                 {picking.odoo_picking_name}
               </p>
-              <p className="text-xs text-slate-600">
+              <p className="text-xs text-violet-700/80 mt-0.5">
                 {tm(tipo === "ingreso" ? "proveedor" : "cliente")}:{" "}
                 {picking.contraparte || "—"}
               </p>
             </div>
           )}
-        </section>
+        </Card>
 
         {/* Renglones traidos de Odoo. Solo lectura: son la referencia contra la
             que se verificara en el porton. */}
         {lineas.length > 0 && (
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-3">
+          <Card>
+            <SectionTitle>
               {tm("items")} ({lineas.length})
-            </h2>
-            <div className="divide-y divide-slate-100">
+            </SectionTitle>
+            <div className="divide-y divide-slate-100 -mx-5">
               {lineas.map((l, i) => (
-                <div key={i} className="flex items-center gap-3 py-2">
+                <div key={i} className="flex items-center gap-3 px-5 py-2.5">
+                  <span className="w-7 h-7 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                    <Package className="w-3.5 h-3.5" />
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-slate-900 truncate">{l.producto}</p>
+                    <p className="text-sm text-slate-800 truncate">{l.producto}</p>
                     {l.codigo && (
                       <p className="text-[11px] font-mono text-slate-400">
                         {l.codigo}
                       </p>
                     )}
                   </div>
-                  <span className="text-sm font-bold tabular-nums text-slate-700">
+                  <span className="text-sm font-semibold tabular-nums text-slate-700">
                     {l.cantidad_cargada}
                   </span>
                 </div>
               ))}
             </div>
-          </section>
+          </Card>
         )}
 
         {/* Datos del movimiento */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
-          <Campo label={tm("fecha")}>
+        <Card className="space-y-4">
+          <div>
+            <label className={labelClases}>{tm("fecha")}</label>
             <input
               type="date"
               value={fecha}
               onChange={(e) => setFecha(e.target.value)}
-              className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
+              className={inputClases}
             />
-          </Campo>
+          </div>
           {tipo === "egreso" && (
-            <Campo label={tm("factura")}>
+            <div>
+              <label className={labelClases}>{tm("factura")}</label>
               <ListaChips
                 valores={facturas}
                 input={facturaInput}
@@ -348,12 +341,18 @@ export default function MercanciaNueva({
                 onQuitar={quitarFactura}
                 placeholder={tm("factura_ph")}
               />
-            </Campo>
+            </div>
           )}
-          <Campo
-            label={`${tm("almacenista")} *`}
-            gestionar={{ href: `/${locale}/seguridad/mercancia/almacenistas`, texto: tAlm("gestionar") }}
-          >
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label className={`${labelClases} mb-0`}>{tm("almacenista")} *</label>
+              <Link
+                href={`/${locale}/seguridad/mercancia/almacenistas`}
+                className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+              >
+                {tAlm("gestionar")}
+              </Link>
+            </div>
             <SelectChips
               valores={almacenistas}
               opciones={almacenistasCat.map((a) => a.nombre)}
@@ -361,16 +360,22 @@ export default function MercanciaNueva({
               onQuitar={quitarAlmacenista}
               placeholder={tAlm("select_placeholder")}
             />
-          </Campo>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Campo
-              label={tm("chofer")}
-              gestionar={{ href: `/${locale}/seguridad/mercancia/choferes`, texto: tCho("gestionar") }}
-            >
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className={`${labelClases} mb-0`}>{tm("chofer")}</label>
+                <Link
+                  href={`/${locale}/seguridad/mercancia/choferes`}
+                  className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+                >
+                  {tCho("gestionar")}
+                </Link>
+              </div>
               <select
                 value={chofer}
                 onChange={(e) => setChofer(e.target.value)}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+                className={inputClases}
               >
                 <option value="">{tCho("select_placeholder")}</option>
                 {choferesCat.map((c) => (
@@ -379,15 +384,21 @@ export default function MercanciaNueva({
                   </option>
                 ))}
               </select>
-            </Campo>
-            <Campo
-              label={tm("placa")}
-              gestionar={{ href: `/${locale}/seguridad/mercancia/unidades`, texto: tUni("gestionar") }}
-            >
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className={`${labelClases} mb-0`}>{tm("placa")}</label>
+                <Link
+                  href={`/${locale}/seguridad/mercancia/unidades`}
+                  className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+                >
+                  {tUni("gestionar")}
+                </Link>
+              </div>
               <select
                 value={placa}
                 onChange={(e) => setPlaca(e.target.value)}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+                className={inputClases}
               >
                 <option value="">{tUni("select_placeholder")}</option>
                 {unidadesCat.map((u) => (
@@ -397,66 +408,37 @@ export default function MercanciaNueva({
                   </option>
                 ))}
               </select>
-            </Campo>
+            </div>
           </div>
-          <Campo label={tm("observaciones")}>
+          <div>
+            <label className={labelClases}>{tm("observaciones")}</label>
             <textarea
               value={observaciones}
               onChange={(e) => setObservaciones(e.target.value.slice(0, 5000))}
-              className="w-full min-h-[80px] px-3 py-2 border border-slate-200 rounded-[10px] text-sm"
+              className={`${inputClases} h-auto min-h-[88px] py-2.5`}
             />
-          </Campo>
-        </section>
+          </div>
+        </Card>
 
         {error && (
-          <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-          <button
-            type="button"
+      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200/70 bg-white/90 backdrop-blur">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
+          <BotonPrimario
             onClick={guardar}
             disabled={guardando || lineas.length === 0 || almacenistas.length === 0}
-            className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+            className="w-full h-12"
           >
             {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
             {tm("guardar")}
-          </button>
+          </BotonPrimario>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Campo({
-  label,
-  children,
-  gestionar,
-}: {
-  label: string;
-  children: React.ReactNode;
-  /** Enlace a la pantalla donde se registra lo que llena este select. */
-  gestionar?: { href: string; texto: string };
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <label className="block text-xs font-semibold text-slate-600">{label}</label>
-        {gestionar && (
-          <Link
-            href={gestionar.href}
-            className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline shrink-0"
-          >
-            {gestionar.texto}
-          </Link>
-        )}
-      </div>
-      {children}
     </div>
   );
 }
@@ -482,7 +464,7 @@ function SelectChips({
         onChange={(e) => {
           if (e.target.value) onAgregar(e.target.value);
         }}
-        className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white"
+        className={inputClases}
       >
         <option value="">{placeholder}</option>
         {opciones
@@ -494,11 +476,11 @@ function SelectChips({
           ))}
       </select>
       {valores.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-2">
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {valores.map((v) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-semibold text-violet-800"
+              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 text-xs font-medium text-violet-700"
             >
               {v}
               <button
@@ -517,7 +499,7 @@ function SelectChips({
   );
 }
 
-/** Lista editable de chips (facturas o almacenistas): agregar de a uno, quitar con la X. */
+/** Lista editable de chips (facturas): agregar de a uno, quitar con la X. */
 function ListaChips({
   valores,
   input,
@@ -547,24 +529,24 @@ function ListaChips({
             }
           }}
           placeholder={placeholder}
-          className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
+          className={inputClases}
         />
         <button
           type="button"
           onClick={onAgregar}
           disabled={!input.trim()}
-          className="h-12 w-12 shrink-0 inline-flex items-center justify-center rounded-[10px] border border-slate-200 text-slate-600 disabled:opacity-40"
+          className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors"
           aria-label="+"
         >
           <Plus className="w-4 h-4" />
         </button>
       </div>
       {valores.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-2">
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {valores.map((v) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-semibold text-violet-800"
+              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 text-xs font-medium text-violet-700"
             >
               {v}
               <button

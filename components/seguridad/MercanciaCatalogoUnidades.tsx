@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Loader2, Plus, Truck, XCircle } from "lucide-react";
+import { Loader2, Plus, Truck, XCircle } from "lucide-react";
+import { PageHeader, Card, EmptyState, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
  * Catalogo de unidades (vehiculos): placa + descripcion opcional. Alimenta
@@ -13,7 +13,6 @@ import { ArrowLeft, Loader2, Plus, Truck, XCircle } from "lucide-react";
 type Unidad = { id: number; placa: string; descripcion: string | null };
 
 export default function MercanciaCatalogoUnidades({ volverA }: { volverA: string }) {
-  const t = useTranslations("seguridad");
   const tu = useTranslations("seguridad.mercancia.unidades");
 
   const [items, setItems] = useState<Unidad[]>([]);
@@ -62,80 +61,65 @@ export default function MercanciaCatalogoUnidades({ volverA }: { volverA: string
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <Link
-            href={volverA}
-            className="p-2 rounded-[10px] text-slate-500 hover:bg-slate-100"
-            aria-label={t("back")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900">{tu("titulo")}</h1>
-            <p className="text-xs text-slate-500">{tu("subtitulo")}</p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader icon={Truck} titulo={tu("titulo")} subtitulo={tu("subtitulo")} volverA={volverA} />
 
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-4">
+        <Card className="space-y-3.5">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              {tu("placa")} *
-            </label>
+            <label className={labelClases}>{tu("placa")} *</label>
             <input
               type="text"
               value={placa}
               onChange={(e) => setPlaca(e.target.value.toUpperCase().slice(0, 50))}
               placeholder={tu("placa_ph")}
-              className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm uppercase focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+              className={`${inputClases} uppercase`}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+            <label className={labelClases}>
               {tu("descripcion")}{" "}
-              <span className="text-slate-400 font-normal">({tu("opcional")})</span>
+              <span className="text-slate-400 font-normal normal-case">({tu("opcional")})</span>
             </label>
             <input
               type="text"
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value.slice(0, 200))}
               placeholder={tu("descripcion_ph")}
-              className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+              className={inputClases}
             />
           </div>
-          <button
-            type="button"
+          <BotonPrimario
             onClick={() => void agregar()}
             disabled={guardando || !placa.trim()}
-            className="w-full h-12 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+            icon={guardando ? undefined : Plus}
+            className="w-full"
           >
-            {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
             {tu("agregar")}
-          </button>
+          </BotonPrimario>
           {error && (
-            <p className="text-sm text-red-600 flex items-center gap-2">
-              <XCircle className="w-4 h-4" />
+            <p className="text-sm text-red-600 flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 shrink-0" />
               {error}
             </p>
           )}
-        </section>
+        </Card>
 
-        <section className="bg-white border border-slate-200 rounded-[10px]">
+        <Card padded={false}>
           {cargando ? (
-            <div className="flex items-center justify-center py-12 text-slate-400">
+            <div className="flex items-center justify-center py-14 text-slate-300">
               <Loader2 className="w-5 h-5 animate-spin" />
             </div>
           ) : items.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-400">{tu("vacio")}</p>
+            <EmptyState icon={Truck} texto={tu("vacio")} />
           ) : (
             <div className="divide-y divide-slate-100">
               {items.map((it) => (
-                <div key={it.id} className="flex items-center gap-3 px-5 py-3">
-                  <Truck className="w-4 h-4 text-slate-400 shrink-0" />
+                <div key={it.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <span className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                    <Truck className="w-4 h-4" />
+                  </span>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900">{it.placa}</p>
                     {it.descripcion && (
@@ -146,7 +130,7 @@ export default function MercanciaCatalogoUnidades({ volverA }: { volverA: string
               ))}
             </div>
           )}
-        </section>
+        </Card>
       </main>
     </div>
   );

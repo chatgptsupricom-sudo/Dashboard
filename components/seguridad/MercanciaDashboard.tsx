@@ -6,14 +6,24 @@ import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronRight,
   Clock,
-  ClipboardList,
-  Loader2,
+  FileText,
+  LayoutDashboard,
+  Plus,
   Star,
+  TrendingUp,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
+import {
+  PageHeader,
+  Card,
+  EmptyState,
+  BotonPrimario,
+  BotonSecundario,
+} from "./mercancia-ui";
 
 /**
  * KPIs del egreso de mercancia para Almacen: cuanto salio hoy, cuanto falta
@@ -83,61 +93,67 @@ export default function MercanciaDashboard() {
   }, [cargar]);
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
-          <h1 className="text-base sm:text-lg font-bold text-slate-900">
-            {td("titulo")}
-          </h1>
-          <p className="text-xs text-slate-500">
-            {td("subtitulo")} · {user?.name}
-          </p>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader
+        icon={LayoutDashboard}
+        titulo={td("titulo")}
+        subtitulo={`${td("subtitulo")} · ${user?.name || ""}`}
+        accion={
+          <div className="hidden sm:flex items-center gap-2">
+            <BotonSecundario href={`/${locale}/seguridad/mercancia/ordenes`} icon={FileText}>
+              {td("ver_ordenes")}
+            </BotonSecundario>
+            <BotonPrimario href={`${base}/nuevo`} icon={Plus}>
+              {tm("nuevo")}
+            </BotonPrimario>
+          </div>
+        }
+      />
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`${base}/nuevo`}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-          >
-            {tm("nuevo")}
-          </Link>
-          <Link
-            href={`/${locale}/seguridad/mercancia/ordenes`}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-          >
-            <ClipboardList className="w-4 h-4" />
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+        <div className="flex sm:hidden items-center gap-2">
+          <BotonSecundario href={`/${locale}/seguridad/mercancia/ordenes`} icon={FileText} className="flex-1">
             {td("ver_ordenes")}
-          </Link>
+          </BotonSecundario>
+          <BotonPrimario href={`${base}/nuevo`} icon={Plus} className="flex-1">
+            {tm("nuevo")}
+          </BotonPrimario>
         </div>
 
         {cargando ? (
-          <div className="flex items-center justify-center py-16 text-slate-400">
-            <Loader2 className="w-5 h-5 animate-spin" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-28 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
+            ))}
           </div>
         ) : error || !data ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 flex items-start gap-2">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 flex items-start gap-2.5">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
             <span className="break-words">{error || td("error")}</span>
           </div>
         ) : (
           <>
             <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <KPI label={td("kpi_egresos_hoy")} value={data.kpis.egresos_hoy} delta={data.kpis.egresos_hoy_delta} />
               <KPI
+                icon={TrendingUp}
+                label={td("kpi_egresos_hoy")}
+                value={data.kpis.egresos_hoy}
+                delta={data.kpis.egresos_hoy_delta}
+              />
+              <KPI
+                icon={Clock}
                 label={td("kpi_pendientes")}
                 value={data.kpis.pendientes_verificar}
-                warning={data.kpis.pendientes_verificar > 0}
+                tono={data.kpis.pendientes_verificar > 0 ? "amber" : "neutral"}
               />
               <KPI
+                icon={AlertTriangle}
                 label={td("kpi_descuadres")}
                 value={data.kpis.descuadres_30d}
-                warning={data.kpis.descuadres_30d > 0}
-                danger={data.kpis.descuadres_30d > 0}
+                tono={data.kpis.descuadres_30d > 0 ? "red" : "neutral"}
               />
               <KPI
+                icon={Star}
                 label={td("kpi_promedio")}
                 value={
                   data.kpis.promedio_calificacion !== null
@@ -148,28 +164,30 @@ export default function MercanciaDashboard() {
               />
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                  {td("recientes")}
-                </h2>
-                <Link href={base} className="text-xs font-semibold text-violet-700 hover:text-violet-900">
-                  {td("ver_todos")} →
+            <Card padded={false}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h2 className="text-[13px] font-semibold text-slate-900">{td("recientes")}</h2>
+                <Link
+                  href={base}
+                  className="text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 flex items-center gap-0.5"
+                >
+                  {td("ver_todos")}
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
               {data.egresos_recientes.length === 0 ? (
-                <p className="px-5 py-8 text-center text-sm text-slate-400">{td("vacio")}</p>
+                <EmptyState icon={FileText} texto={td("vacio")} />
               ) : (
                 <div className="divide-y divide-slate-100">
                   {data.egresos_recientes.map((e) => (
                     <Link
                       key={e.id}
                       href={`${base}/${e.id}`}
-                      className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+                      className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/80 transition-colors"
                     >
-                      <EstadoBadge estado={e.estado} />
+                      <EstadoIcono estado={e.estado} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">
+                        <p className="text-sm font-medium text-slate-900 truncate">
                           {e.odoo_picking_name || tm("sin_factura")}
                           {e.contraparte ? ` · ${e.contraparte}` : ""}
                         </p>
@@ -177,29 +195,29 @@ export default function MercanciaDashboard() {
                           {fechaCorta(e.fecha)} · {e.almacenista_nombre}
                         </p>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
                     </Link>
                   ))}
                 </div>
               )}
-            </section>
+            </Card>
 
             {data.top_almacenistas.length > 0 && (
-              <section className="rounded-2xl border border-slate-200 bg-white">
-                <div className="px-5 py-3 border-b border-slate-100">
-                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              <Card padded={false}>
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h2 className="text-[13px] font-semibold text-slate-900">
                     {td("top_almacenistas")}
                   </h2>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {data.top_almacenistas.map((a) => (
-                    <div key={a.nombre} className="flex items-center gap-3 px-5 py-3">
+                    <div key={a.nombre} className="flex items-center gap-3 px-5 py-3.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{a.nombre}</p>
+                        <p className="text-sm font-medium text-slate-900 truncate">{a.nombre}</p>
                         <p className="text-xs text-slate-500">{a.egresos} egresos</p>
                       </div>
-                      <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
-                      <span className="font-bold text-violet-700 tabular-nums">
+                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      <span className="text-sm font-semibold text-slate-800 tabular-nums">
                         {a.promedio.toFixed(1)}
                       </span>
                       <span className="text-xs text-slate-400 w-10 text-right tabular-nums">
@@ -208,7 +226,7 @@ export default function MercanciaDashboard() {
                     </div>
                   ))}
                 </div>
-              </section>
+              </Card>
             )}
           </>
         )}
@@ -218,56 +236,56 @@ export default function MercanciaDashboard() {
 }
 
 function KPI({
+  icon: Icon,
   label,
   value,
   delta,
   subtitle,
-  warning,
-  danger,
+  tono = "neutral",
 }: {
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number | string;
   delta?: number;
   subtitle?: string;
-  warning?: boolean;
-  danger?: boolean;
+  tono?: "neutral" | "amber" | "red";
 }) {
+  const iconClases =
+    tono === "red"
+      ? "bg-red-50 text-red-600"
+      : tono === "amber"
+        ? "bg-amber-50 text-amber-600"
+        : "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]";
   return (
-    <div
-      className={`rounded-2xl border bg-gradient-to-br p-4 ${
-        danger
-          ? "from-red-50 to-red-100/50 border-red-200"
-          : warning
-            ? "from-amber-50 to-amber-100/50 border-amber-200"
-            : "from-violet-50 to-violet-100/50 border-violet-100"
-      }`}
-    >
-      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        {label}
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconClases}`}>
+        <Icon className="w-4 h-4" />
       </span>
-      <p className="text-3xl sm:text-4xl font-black text-slate-900 tabular-nums mt-2">
+      <p className="text-2xl sm:text-3xl font-semibold text-slate-900 tabular-nums mt-3 tracking-tight">
         {value}
       </p>
+      <p className="text-[11px] font-medium text-slate-500 mt-1">{label}</p>
       {typeof delta === "number" && (
-        <p className="text-xs mt-1 text-slate-500">
+        <p className="text-[11px] text-slate-400 mt-0.5">
           {delta > 0 ? "+" : ""}
           {delta} vs ayer
         </p>
       )}
-      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+      {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
     </div>
   );
 }
 
-function EstadoBadge({ estado }: { estado: "pendiente" | "conforme" | "descuadre" }) {
+function EstadoIcono({ estado }: { estado: "pendiente" | "conforme" | "descuadre" }) {
   const conf = {
-    conforme: { icon: <Star className="w-4 h-4" />, clase: "bg-emerald-100 text-emerald-700" },
-    descuadre: { icon: <AlertTriangle className="w-4 h-4" />, clase: "bg-red-100 text-red-700" },
-    pendiente: { icon: <Clock className="w-4 h-4" />, clase: "bg-amber-100 text-amber-700" },
+    conforme: { icon: CheckCircle2, clase: "bg-emerald-50 text-emerald-600" },
+    descuadre: { icon: AlertTriangle, clase: "bg-red-50 text-red-600" },
+    pendiente: { icon: Clock, clase: "bg-amber-50 text-amber-600" },
   }[estado];
+  const Icon = conf.icon;
   return (
-    <span className={`inline-flex items-center p-1.5 rounded-lg shrink-0 ${conf.clase}`}>
-      {conf.icon}
+    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${conf.clase}`}>
+      <Icon className="w-4 h-4" />
     </span>
   );
 }
