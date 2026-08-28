@@ -199,18 +199,31 @@ export async function buscarFacturaCompra(
  * Un renglon sin contar (`cantidad_verificada` null) NO cuenta como faltante:
  * "todavia no lo revise" y "conte cero" son cosas distintas, y confundirlas
  * marcaria descuadre en cada acta a medio llenar.
+ *
+ * `no_salio` (issue #44) es una senal aparte del conteo numerico: un renglon
+ * puede salir en cantidad parcial (3 de 4) sin ser "no salio", y al reves, se
+ * puede marcar "no salio" sin llegar a contar la cantidad. El checkbox manda
+ * sobre la cantidad cuando estan en conflicto — es la razon por la que Seguridad
+ * lo marco explicitamente.
  */
 export function evaluarDescuadre(
-  items: Array<{ cantidad_cargada: number; cantidad_verificada: number | null }>,
+  items: Array<{
+    cantidad_cargada: number;
+    cantidad_verificada: number | null;
+    no_salio?: boolean;
+  }>,
 ): { estado: "pendiente" | "conforme" | "descuadre"; diferencias: number } {
-  const contados = items.filter((i) => i.cantidad_verificada !== null);
-  if (contados.length === 0) return { estado: "pendiente", diferencias: 0 };
+  const marcados = items.filter((i) => i.no_salio).length;
 
-  const diferencias = contados.filter(
-    (i) => Number(i.cantidad_verificada) !== Number(i.cantidad_cargada),
+  const contados = items.filter((i) => i.cantidad_verificada !== null);
+  const conDiferenciaCantidad = contados.filter(
+    (i) => !i.no_salio && Number(i.cantidad_verificada) !== Number(i.cantidad_cargada),
   ).length;
 
+  const diferencias = marcados + conDiferenciaCantidad;
   if (diferencias > 0) return { estado: "descuadre", diferencias };
+
+  if (contados.length === 0) return { estado: "pendiente", diferencias: 0 };
 
   // Conforme solo si ademas no quedo ningun renglon sin contar: si falta por
   // revisar la mitad del camion, eso no es "todo correcto".

@@ -115,6 +115,16 @@ export async function POST(
       datos.items.map((i: any) => [Number(i.id), i]),
     );
 
+    // Se valida todo antes de escribir nada: si un renglon falla, "el
+    // guardado falla" tiene que ser literal, no dejar a medias los renglones
+    // que ya se habian procesado antes en el mismo array.
+    const actualizaciones: Array<{
+      item: any;
+      cantidad: number | null;
+      observacion: string | null;
+      noSalio: boolean;
+    }> = [];
+
     for (const c of conteos) {
       const item = porId.get(Number(c?.id));
       if (!item) continue;
@@ -132,18 +142,30 @@ export async function POST(
         );
       }
 
+      const noSalio = c?.no_salio === true;
+      const observacion = c?.observacion ? String(c.observacion).trim().slice(0, 300) : null;
+      if (noSalio && !observacion) {
+        // El checkbox sin motivo no dice nada util: "no salio" y "no salio
+        // porque X" son la diferencia entre un dato y una excusa.
+        return NextResponse.json(
+          { error: `El motivo es obligatorio para "${item.producto}" (no salio)` },
+          { status: 400 },
+        );
+      }
+
+      actualizaciones.push({ item, cantidad, observacion, noSalio });
+    }
+
+    for (const { item, cantidad, observacion, noSalio } of actualizaciones) {
       await query(
         `UPDATE seguridad_mercancia_items
-            SET cantidad_verificada = ?, observacion = ?
+            SET cantidad_verificada = ?, observacion = ?, no_salio = ?
           WHERE id = ? AND mercancia_id = ?`,
-        [
-          cantidad,
-          c?.observacion ? String(c.observacion).slice(0, 300) : null,
-          item.id,
-          id,
-        ],
+        [cantidad, observacion, noSalio ? 1 : 0, item.id, id],
       );
       item.cantidad_verificada = cantidad;
+      item.observacion = observacion;
+      item.no_salio = noSalio ? 1 : 0;
     }
 
     const { estado, diferencias } = evaluarDescuadre(
@@ -153,6 +175,7 @@ export async function POST(
           i.cantidad_verificada === null || i.cantidad_verificada === undefined
             ? null
             : Number(i.cantidad_verificada),
+        no_salio: Number(i.no_salio) === 1,
       })),
     );
 

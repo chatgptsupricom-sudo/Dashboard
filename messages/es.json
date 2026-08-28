@@ -2343,7 +2343,12 @@
       "factura": "Factura(s) que acompañan el despacho",
       "factura_ph": "Número de factura",
       "solo_seguridad_ingreso": "El ingreso de mercancía lo registra Seguridad.",
-      "solo_lectura_almacen": "Este registro lo verifica Seguridad en el portón."
+      "solo_lectura_almacen": "Este registro lo verifica Seguridad en el portón.",
+      "no_salio_checkbox": "No salió",
+      "motivo_placeholder": "Motivo (obligatorio)",
+      "motivo_obligatorio": "Falta el motivo en algún producto marcado como \"No salió\"",
+      "no_salio_resumen": "{count, plural, =1 {# producto marcado como \"No salió\"} other {# productos marcados como \"No salió\"}}",
+      "diferencia_cantidad_resumen": "{count, plural, =1 {# renglón con diferencia de cantidad} other {# renglones con diferencia de cantidad}}"
     }
   }
 }

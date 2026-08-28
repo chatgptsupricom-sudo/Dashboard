@@ -181,6 +181,10 @@ CREATE TABLE IF NOT EXISTS seguridad_mercancia_items (
   cantidad_cargada DECIMAL(12,3) NOT NULL DEFAULT 0,
   cantidad_verificada DECIMAL(12,3) DEFAULT NULL,
   observacion VARCHAR(300) DEFAULT NULL,
+  -- Checkbox explicito, no una inferencia de `cantidad_verificada = 0`: un
+  -- renglon puede salir en cantidad parcial sin ser "no salio" (issue #44).
+  -- El checkbox es la senal primaria; la cantidad es aparte.
+  no_salio TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_mercancia (mercancia_id),
   CONSTRAINT fk_mercancia_item FOREIGN KEY (mercancia_id)
@@ -283,6 +287,17 @@ SET @sql := (SELECT IF(
   'ALTER TABLE seguridad_mercancia ADD COLUMN almacenistas_json TEXT DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- --- seguridad_mercancia_items ---
+
+-- Checkbox "No salio" por renglon (issue #44).
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia_items'
+      AND COLUMN_NAME = 'no_salio') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia_items ADD COLUMN no_salio TINYINT(1) NOT NULL DEFAULT 0'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- --- ENUMs que crecieron al llegar Mercancia ---
 
 SET @sql := (SELECT IF(
@@ -335,8 +350,8 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- ============================================================
 -- 5. Comprobacion
 --
--- En una base con el modulo RMA debe decir 7 y 9.
--- Sin rma_cases, dice 7 y 8, que tambien esta bien.
+-- En una base con el modulo RMA debe decir 7 y 10.
+-- Sin rma_cases, dice 7 y 9, que tambien esta bien.
 -- ============================================================
 
 SELECT
@@ -357,4 +372,5 @@ SELECT
         ('seguridad_mercancia','factura_numero'),
         ('seguridad_mercancia','facturas_json'),
         ('seguridad_mercancia','almacenistas_json'),
-        ('rma_cases','despachado_at'))) AS columnas_de_9;
+        ('seguridad_mercancia_items','no_salio'),
+        ('rma_cases','despachado_at'))) AS columnas_de_10;

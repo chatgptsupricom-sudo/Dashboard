@@ -31,6 +31,7 @@ type Item = {
   cantidad_cargada: string | number;
   cantidad_verificada: string | number | null;
   observacion: string | null;
+  no_salio: number | boolean;
 };
 
 type Movimiento = {
@@ -75,6 +76,10 @@ export default function MercanciaDetalle({
   const [items, setItems] = useState<Item[]>([]);
   const [calificaciones, setCalificaciones] = useState<Calificacion[]>([]);
   const [conteos, setConteos] = useState<Record<number, string>>({});
+  // "No salio" y su motivo (issue #44): senal aparte del conteo numerico, por
+  // eso vive en su propio estado en vez de reusar `conteos`.
+  const [noSalio, setNoSalio] = useState<Record<number, boolean>>({});
+  const [motivos, setMotivos] = useState<Record<number, string>>({});
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,13 +102,19 @@ export default function MercanciaDetalle({
       setItems(json.items || []);
       setCalificaciones(json.calificaciones || []);
       const previos: Record<number, string> = {};
+      const noSalioPrevios: Record<number, boolean> = {};
+      const motivosPrevios: Record<number, string> = {};
       for (const it of json.items || []) {
         previos[it.id] =
           it.cantidad_verificada === null || it.cantidad_verificada === undefined
             ? ""
             : String(Number(it.cantidad_verificada));
+        noSalioPrevios[it.id] = Number(it.no_salio) === 1;
+        motivosPrevios[it.id] = it.observacion || "";
       }
       setConteos(previos);
+      setNoSalio(noSalioPrevios);
+      setMotivos(motivosPrevios);
     } finally {
       setCargando(false);
     }
@@ -113,8 +124,16 @@ export default function MercanciaDetalle({
     void cargar();
   }, [cargar]);
 
+  // Ningun envio a medias: si algun renglon quedo marcado "No salio" sin
+  // motivo, el boton de abajo se desactiva antes de llegar al backend.
+  const faltaMotivo = items.some((it) => noSalio[it.id] && !motivos[it.id]?.trim());
+
   const verificar = async () => {
     setError(null);
+    if (faltaMotivo) {
+      setError(tm("motivo_obligatorio"));
+      return;
+    }
     setGuardando(true);
     try {
       const res = await fetch(`/api/seguridad/mercancia/${id}`, {
@@ -128,6 +147,8 @@ export default function MercanciaDetalle({
               conteos[it.id] === "" || conteos[it.id] === undefined
                 ? null
                 : Number(conteos[it.id]),
+            no_salio: !!noSalio[it.id],
+            observacion: noSalio[it.id] ? (motivos[it.id] || "").trim() : null,
           })),
         }),
       });
@@ -181,11 +202,21 @@ export default function MercanciaDetalle({
     );
   }
 
-  const diferencias = items.filter(
-    (i) =>
-      i.cantidad_verificada !== null &&
-      Number(i.cantidad_verificada) !== Number(i.cantidad_cargada),
-  ).length;
+  // El resumen distingue las dos senales: lo marcado explicitamente "no
+  // salio" y lo que solo difiere en cantidad (issue #44). Un renglon
+  // marcado "no salio" cuenta ahi, no en la diferencia de cantidad, aunque
+  // ademas tenga un numero distinto.
+  const noSalioCount = items.filter((i) => noSalio[i.id]).length;
+  const diferenciaCantidadCount = items.filter((i) => {
+    const contado = conteos[i.id];
+    return (
+      !noSalio[i.id] &&
+      contado !== "" &&
+      contado !== undefined &&
+      Number(contado) !== Number(i.cantidad_cargada)
+    );
+  }).length;
+  const diferencias = noSalioCount + diferenciaCantidadCount;
 
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
@@ -222,6 +253,20 @@ export default function MercanciaDetalle({
               <p className="text-sm text-red-700">
                 {tm("descuadre_aviso", { count: diferencias })}
               </p>
+              {(noSalioCount > 0 || diferenciaCantidadCount > 0) && (
+                <ul className="mt-1 text-xs text-red-600 list-disc list-inside">
+                  {noSalioCount > 0 && (
+                    <li>{tm("no_salio_resumen", { count: noSalioCount })}</li>
+                  )}
+                  {diferenciaCantidadCount > 0 && (
+                    <li>
+                      {tm("diferencia_cantidad_resumen", {
+                        count: diferenciaCantidadCount,
+                      })}
+                    </li>
+                  )}
+                </ul>
+              )}
             </div>
           </div>
         ) : mov.estado === "conforme" ? (
@@ -247,41 +292,79 @@ export default function MercanciaDetalle({
           </div>
           {items.map((it) => {
             const contado = conteos[it.id];
+            const marcado = !!noSalio[it.id];
             const hayDif =
+              !marcado &&
               contado !== "" &&
               contado !== undefined &&
               Number(contado) !== Number(it.cantidad_cargada);
+            const motivoFalta = marcado && !motivos[it.id]?.trim();
             return (
-              <div
-                key={it.id}
-                className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-2 border-b border-slate-50"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-900 truncate">{it.producto}</p>
-                  {it.codigo && (
-                    <p className="text-[11px] font-mono text-slate-400">
-                      {it.codigo}
-                    </p>
+              <div key={it.id} className="py-2 border-b border-slate-50">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-900 truncate">{it.producto}</p>
+                    {it.codigo && (
+                      <p className="text-[11px] font-mono text-slate-400">
+                        {it.codigo}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-sm font-bold tabular-nums text-slate-700 w-16 text-right">
+                    {Number(it.cantidad_cargada)}
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={contado ?? ""}
+                    disabled={esAlmacen}
+                    onChange={(e) =>
+                      setConteos((p) => ({ ...p, [it.id]: e.target.value }))
+                    }
+                    className={`w-24 h-11 px-2 text-right rounded-[10px] border text-sm tabular-nums disabled:opacity-60 disabled:bg-slate-50 ${
+                      hayDif
+                        ? "border-red-400 bg-red-50 text-red-700 font-bold"
+                        : "border-slate-200"
+                    }`}
+                  />
+                </div>
+
+                {/* Checkbox "No salio" + motivo obligatorio (issue #44). Senal
+                    aparte del conteo: complementa, no sustituye. */}
+                <div className="mt-1.5 pl-0.5">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 select-none">
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      disabled={esAlmacen}
+                      onChange={(e) =>
+                        setNoSalio((p) => ({ ...p, [it.id]: e.target.checked }))
+                      }
+                      className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-400 disabled:opacity-60"
+                    />
+                    {tm("no_salio_checkbox")}
+                  </label>
+                  {marcado && (
+                    <input
+                      type="text"
+                      value={motivos[it.id] || ""}
+                      disabled={esAlmacen}
+                      onChange={(e) =>
+                        setMotivos((p) => ({
+                          ...p,
+                          [it.id]: e.target.value.slice(0, 300),
+                        }))
+                      }
+                      placeholder={tm("motivo_placeholder")}
+                      className={`mt-1.5 w-full h-10 px-3 rounded-[10px] border text-sm disabled:opacity-60 disabled:bg-slate-50 ${
+                        motivoFalta && !esAlmacen
+                          ? "border-red-400 bg-red-50"
+                          : "border-slate-200"
+                      }`}
+                    />
                   )}
                 </div>
-                <span className="text-sm font-bold tabular-nums text-slate-700 w-16 text-right">
-                  {Number(it.cantidad_cargada)}
-                </span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  value={contado ?? ""}
-                  disabled={esAlmacen}
-                  onChange={(e) =>
-                    setConteos((p) => ({ ...p, [it.id]: e.target.value }))
-                  }
-                  className={`w-24 h-11 px-2 text-right rounded-[10px] border text-sm tabular-nums disabled:opacity-60 disabled:bg-slate-50 ${
-                    hayDif
-                      ? "border-red-400 bg-red-50 text-red-700 font-bold"
-                      : "border-slate-200"
-                  }`}
-                />
               </div>
             );
           })}
@@ -371,7 +454,7 @@ export default function MercanciaDetalle({
             <button
               type="button"
               onClick={verificar}
-              disabled={guardando}
+              disabled={guardando || faltaMotivo}
               className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
               style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
             >

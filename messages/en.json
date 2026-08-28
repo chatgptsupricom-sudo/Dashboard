@@ -2354,7 +2354,12 @@
       "factura": "Invoice(s) travelling with the dispatch",
       "factura_ph": "Invoice number",
       "solo_seguridad_ingreso": "Security registers inbound merchandise.",
-      "solo_lectura_almacen": "Security verifies this record at the gate."
+      "solo_lectura_almacen": "Security verifies this record at the gate.",
+      "no_salio_checkbox": "Did not go out",
+      "motivo_placeholder": "Reason (required)",
+      "motivo_obligatorio": "A reason is missing on a product marked \"Did not go out\"",
+      "no_salio_resumen": "{count, plural, =1 {# product marked \"Did not go out\"} other {# products marked \"Did not go out\"}}",
+      "diferencia_cantidad_resumen": "{count, plural, =1 {# line with a quantity mismatch} other {# lines with a quantity mismatch}}"
     }
   }
 }
