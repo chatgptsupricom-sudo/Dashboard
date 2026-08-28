@@ -165,7 +165,7 @@ export default function MercanciaDashboard() {
                       <EstadoBadge estado={e.estado} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 truncate">
-                          {e.odoo_picking_name || tm("sin_orden")}
+                          {e.odoo_picking_name || tm("sin_factura")}
                           {e.contraparte ? ` · ${e.contraparte}` : ""}
                         </p>
                         <p className="text-xs text-slate-500 truncate">

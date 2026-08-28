@@ -192,7 +192,7 @@
     "seg_merc_ingresos": "Ingresos",
     "seg_merc_egresos": "Egresos",
     "almacen_egresos": "Egresos de mercancía",
-    "almacen_ordenes": "Órdenes de despacho"
+    "almacen_ordenes": "Facturas pendientes"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
@@ -2310,8 +2310,6 @@
       "ingreso_sub": "Mercancía que entra al almacén",
       "egreso_sub": "Carga que sale en camión",
       "nuevo": "Registrar",
-      "buscar_orden": "Orden de despacho",
-      "buscar_orden_ph": "Ej: PRIN1/OUT/05838",
       "buscar": "Buscar",
       "no_encontrada": "No encontramos ese documento en Odoo",
       "cliente": "Cliente",
@@ -2337,10 +2335,12 @@
       "sin_verificar": "Sin verificar",
       "vacio": "Todavía no hay movimientos.",
       "error": "No se pudo guardar",
-      "sin_orden": "Sin orden de Odoo",
+      "sin_factura": "Sin factura de Odoo",
       "diferencia": "Diferencia",
-      "buscar_factura": "Factura de la orden de compra",
-      "buscar_factura_ph": "Ej: FACTU/2026/08/0064",
+      "buscar_factura_compra": "Factura de la orden de compra",
+      "buscar_factura_compra_ph": "Ej: FACTU/2026/08/0064",
+      "buscar_factura_venta": "Factura de venta",
+      "buscar_factura_venta_ph": "Ej: FACTU/2026/08/0064",
       "factura": "Factura(s) que acompañan el despacho",
       "factura_ph": "Número de factura",
       "solo_seguridad_ingreso": "El ingreso de mercancía lo registra Seguridad.",
@@ -2363,17 +2363,16 @@
         "recientes": "Egresos recientes",
         "top_almacenistas": "Mejor calificados",
         "ver_todos": "Ver todos",
-        "ver_ordenes": "Ver órdenes pendientes",
+        "ver_ordenes": "Ver facturas pendientes",
         "vacio": "Todavía no hay egresos registrados."
       },
       "ordenes": {
-        "titulo": "Órdenes de despacho pendientes",
+        "titulo": "Facturas pendientes de despacho",
         "subtitulo": "Todavía no procesadas como egreso",
-        "vacio": "No hay órdenes pendientes en Odoo.",
-        "error": "No se pudieron cargar las órdenes de Odoo.",
-        "fecha_programada": "Programada",
+        "vacio": "No hay facturas pendientes en Odoo.",
+        "error": "No se pudieron cargar las facturas de Odoo.",
         "ver_detalle": "Ver detalle",
-        "registrar_egreso": "Registrar egreso con esta orden"
+        "registrar_egreso": "Registrar egreso con esta factura"
       }
     }
   }

@@ -231,7 +231,7 @@ export default function MercanciaDetalle({
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-              {mov.odoo_picking_name || tm("sin_orden")}
+              {mov.odoo_picking_name || tm("sin_factura")}
             </h1>
             <p className="text-xs text-slate-500 truncate">
               {fechaCorta(mov.fecha)} ·{" "}

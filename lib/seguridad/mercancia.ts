@@ -4,8 +4,11 @@ import { callOdooRPC } from "@/lib/odoo";
 /**
  * Documentos de Odoo para la seccion Mercancia.
  *
- * Cada flujo llega con el suyo: la mercancia que ENTRA viene con la factura de
- * la orden de compra, y la que SALE con la orden de despacho mas su factura.
+ * Los dos flujos trabajan por factura, no por el picking/orden de despacho de
+ * Odoo: la mercancia que ENTRA con la factura de la orden de compra
+ * (account.move, in_invoice), y la que SALE con la factura de venta
+ * (account.move, out_invoice). El almacen no maneja el picking en el dia a
+ * dia — la factura es el documento que tiene en la mano.
  *
  * La lista de renglones sale de Odoo, no de lo que alguien escriba a mano: si
  * el papel lo llena el mismo que carga, verificar contra el no prueba nada.
@@ -34,7 +37,7 @@ export type PickingResumen = {
   contraparte: string;
   estado: string;
   origen: string | null;
-  fecha_programada: string | null;
+  fecha: string | null;
 };
 
 /**
@@ -76,149 +79,28 @@ function partirProducto(nombre: string): { codigo: string | null; producto: stri
 }
 
 /**
- * Busca una orden de despacho por su nombre exacto (ej. "PRIN1/OUT/05838").
+ * Busca una factura (compra o venta) por su numero, ej. "FACTU/2026/08/0064".
  *
- * Devuelve null si no existe o si Odoo no responde. El que llama decide que
- * hacer: aqui no se inventa una orden vacia, porque un camion verificado
- * contra una lista vacia sale "conforme" siempre.
- *
- * `cids` acota la busqueda a la sucursal de quien la hace (9=Valencia,
- * 10=Caracas, 7=Panama) — sin esto, cualquiera podia buscar y verificar un
- * picking de otra sucursal con solo saber (o adivinar) su nombre. `null` es
- * "sin filtro" (superadmin).
- */
-export async function buscarPickingPorNombre(
-  nombre: string,
-  cids: number | null,
-): Promise<PickingOdoo | null> {
-  const limpio = String(nombre || "").trim();
-  if (!limpio || limpio.length > 100) return null;
-
-  const domain: any[] = [["name", "=", limpio]];
-  if (cids !== null) domain.push(["company_id", "=", cids]);
-
-  const pickings = await callOdooRPC<any[]>(
-    "stock.picking",
-    "search_read",
-    [domain],
-    {
-      fields: ["name", "partner_id", "state", "origin", "picking_type_code"],
-      limit: 1,
-    },
-  );
-
-  const p = pickings?.[0];
-  if (!p) return null;
-
-  const moves = await callOdooRPC<any[]>(
-    "stock.move",
-    "search_read",
-    [[["picking_id", "=", p.id]]],
-    { fields: ["product_id", "product_uom_qty", "quantity"], limit: 500 },
-  );
-
-  const lineas: LineaPicking[] = (moves || []).map((m: any) => {
-    const { codigo, producto } = partirProducto(m.product_id?.[1] || "");
-    return {
-      odoo_product_id: m.product_id?.[0] ?? null,
-      producto,
-      codigo,
-      // `quantity` es lo realmente despachado y `product_uom_qty` lo pedido.
-      // Se toma lo despachado cuando existe: es lo que de verdad subio al
-      // camion, que es contra lo que hay que contar en el porton.
-      cantidad_cargada: Number(
-        m.quantity !== undefined && m.quantity !== null && Number(m.quantity) > 0
-          ? m.quantity
-          : m.product_uom_qty || 0,
-      ),
-    };
-  });
-
-  return {
-    odoo_picking_id: p.id,
-    odoo_picking_name: p.name,
-    contraparte: p.partner_id?.[1] || "",
-    estado: p.state || "",
-    origen: p.origin || null,
-    lineas,
-  };
-}
-
-/**
- * Ordenes de despacho (egresos) de Odoo aun no procesadas.
- *
- * "Pendiente" tiene dos partes: que Odoo no la de por cerrada (`state` fuera
- * de done/cancel) y que Almacen no la haya registrado ya como egreso — sin lo
- * segundo, cada orden ya cargada seguiria apareciendo en la lista para
- * siempre. El cruce se hace en MySQL (`seguridad_mercancia`) porque Odoo no
- * sabe nada de nuestros registros.
- *
- * `cids` acota por sucursal (null = superadmin, sin filtro), mismo criterio
- * que el resto del modulo.
- */
-export async function listarPickingsPendientes(
-  cids: number | null,
-): Promise<PickingResumen[]> {
-  const domain: any[] = [
-    ["picking_type_code", "=", "outgoing"],
-    ["state", "not in", ["done", "cancel"]],
-  ];
-  if (cids !== null) domain.push(["company_id", "=", cids]);
-
-  const pickings = await callOdooRPC<any[]>(
-    "stock.picking",
-    "search_read",
-    [domain],
-    {
-      fields: ["name", "partner_id", "state", "origin", "scheduled_date"],
-      order: "scheduled_date asc",
-      limit: 200,
-    },
-  );
-  if (!pickings || pickings.length === 0) return [];
-
-  const usados = await query(
-    `SELECT odoo_picking_id FROM seguridad_mercancia
-      WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
-        ${cids !== null ? "AND cids = ?" : ""}`,
-    cids !== null ? [cids] : [],
-  );
-  const idsUsados = new Set(
-    (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
-  );
-
-  return pickings
-    .filter((p: any) => !idsUsados.has(p.id))
-    .map((p: any) => ({
-      odoo_picking_id: p.id,
-      odoo_picking_name: p.name,
-      contraparte: p.partner_id?.[1] || "",
-      estado: p.state || "",
-      origen: p.origin || null,
-      fecha_programada: p.scheduled_date || null,
-    }));
-}
-
-/**
- * Busca una factura de compra por su numero (ej. "FACTU/2026/08/0064").
- *
- * Es el documento con el que llega la mercancia al almacen. Se acepta tambien
- * la referencia del proveedor (`ref`), que es lo que muchas veces trae el
+ * Acepta tambien la referencia (`ref`), que es lo que muchas veces trae el
  * papel en la mano: el numero interno de Odoo no siempre esta impreso.
  *
  * Solo lineas de producto: una factura trae ademas secciones, notas y lineas
  * de impuesto, y contar eso en el porton no significa nada.
  *
- * `cids` acota por sucursal, mismo motivo que en `buscarPickingPorNombre`.
+ * `cids` acota la busqueda a la sucursal de quien la hace (9=Valencia,
+ * 10=Caracas, 7=Panama) — sin esto, cualquiera podia buscar y verificar una
+ * factura de otra sucursal con solo saber (o adivinar) su numero. `null` es
+ * "sin filtro" (superadmin).
  */
-export async function buscarFacturaCompra(
+async function buscarFactura(
   numero: string,
   cids: number | null,
+  moveType: "in_invoice" | "out_invoice",
 ): Promise<PickingOdoo | null> {
   const limpio = String(numero || "").trim();
   if (!limpio || limpio.length > 100) return null;
 
-  const domain: any[] = [["move_type", "=", "in_invoice"]];
+  const domain: any[] = [["move_type", "=", moveType]];
   if (cids !== null) domain.push(["company_id", "=", cids]);
   domain.push("|", ["name", "=", limpio], ["ref", "=", limpio]);
 
@@ -246,7 +128,8 @@ export async function buscarFacturaCompra(
 
   const lineas: LineaPicking[] = (lineas_raw || []).map((l: any) => {
     // Si la linea no tiene producto de catalogo, se usa su descripcion: es lo
-    // unico que identifica lo que llego, y perderla dejaria un renglon mudo.
+    // unico que identifica lo que salio/llego, y perderla dejaria un renglon
+    // mudo.
     const etiqueta = l.product_id?.[1] || l.name || "";
     const { codigo, producto } = partirProducto(etiqueta);
     return {
@@ -260,11 +143,83 @@ export async function buscarFacturaCompra(
   return {
     odoo_picking_id: f.id,
     odoo_picking_name: f.name,
+    // Proveedor en una factura de compra, cliente en una de venta.
     contraparte: f.partner_id?.[1] || "",
     estado: f.state || "",
     origen: f.invoice_origin || f.ref || null,
     lineas,
   };
+}
+
+/** Factura de la orden de compra — el documento con el que llega la mercancia (ingreso). */
+export async function buscarFacturaCompra(
+  numero: string,
+  cids: number | null,
+): Promise<PickingOdoo | null> {
+  return buscarFactura(numero, cids, "in_invoice");
+}
+
+/** Factura de venta — el documento con el que sale la mercancia (egreso). */
+export async function buscarFacturaVenta(
+  numero: string,
+  cids: number | null,
+): Promise<PickingOdoo | null> {
+  return buscarFactura(numero, cids, "out_invoice");
+}
+
+/**
+ * Facturas de venta (egresos) confirmadas en Odoo que Almacen aun no proceso.
+ *
+ * "Pendiente" tiene dos partes: que la factura ya este `posted` (una factura
+ * en borrador todavia puede cambiar) y que Almacen no la haya registrado ya
+ * como egreso — sin lo segundo, cada factura ya cargada seguiria apareciendo
+ * en la lista para siempre. El cruce se hace en MySQL (`seguridad_mercancia`)
+ * porque Odoo no sabe nada de nuestros registros.
+ *
+ * `cids` acota por sucursal (null = superadmin, sin filtro), mismo criterio
+ * que el resto del modulo.
+ */
+export async function listarFacturasVentaPendientes(
+  cids: number | null,
+): Promise<PickingResumen[]> {
+  const domain: any[] = [
+    ["move_type", "=", "out_invoice"],
+    ["state", "=", "posted"],
+  ];
+  if (cids !== null) domain.push(["company_id", "=", cids]);
+
+  const facturas = await callOdooRPC<any[]>(
+    "account.move",
+    "search_read",
+    [domain],
+    {
+      fields: ["name", "partner_id", "state", "invoice_origin", "invoice_date"],
+      order: "invoice_date desc",
+      limit: 200,
+    },
+  );
+  if (!facturas || facturas.length === 0) return [];
+
+  const usados = await query(
+    `SELECT odoo_picking_id FROM seguridad_mercancia
+      WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+        ${cids !== null ? "AND cids = ?" : ""}`,
+    cids !== null ? [cids] : [],
+  );
+  const idsUsados = new Set(
+    (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
+  );
+
+  return facturas
+    .filter((f: any) => !idsUsados.has(f.id))
+    .map((f: any) => ({
+      odoo_picking_id: f.id,
+      odoo_picking_name: f.name,
+      contraparte: f.partner_id?.[1] || "",
+      estado: f.state || "",
+      origen: f.invoice_origin || null,
+      fecha: f.invoice_date || null,
+    }));
 }
 
 /**

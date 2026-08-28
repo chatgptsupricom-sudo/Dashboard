@@ -210,7 +210,7 @@
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
-    "almacen_ordenes": "Dispatch orders"
+    "almacen_ordenes": "Pending invoices"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
@@ -2321,8 +2321,6 @@
       "ingreso_sub": "Merchandise arriving at the warehouse",
       "egreso_sub": "Load leaving on a truck",
       "nuevo": "Register",
-      "buscar_orden": "Dispatch order",
-      "buscar_orden_ph": "e.g. PRIN1/OUT/05838",
       "buscar": "Search",
       "no_encontrada": "We could not find that document in Odoo",
       "cliente": "Customer",
@@ -2348,10 +2346,12 @@
       "sin_verificar": "Not verified",
       "vacio": "No movements yet.",
       "error": "Could not save",
-      "sin_orden": "No Odoo order",
+      "sin_factura": "No Odoo invoice",
       "diferencia": "Difference",
-      "buscar_factura": "Purchase order invoice",
-      "buscar_factura_ph": "e.g. FACTU/2026/08/0064",
+      "buscar_factura_compra": "Purchase order invoice",
+      "buscar_factura_compra_ph": "e.g. FACTU/2026/08/0064",
+      "buscar_factura_venta": "Sales invoice",
+      "buscar_factura_venta_ph": "e.g. FACTU/2026/08/0064",
       "factura": "Invoice(s) travelling with the dispatch",
       "factura_ph": "Invoice number",
       "solo_seguridad_ingreso": "Security registers inbound merchandise.",
@@ -2374,17 +2374,16 @@
         "recientes": "Recent outbound",
         "top_almacenistas": "Top rated",
         "ver_todos": "View all",
-        "ver_ordenes": "View pending orders",
+        "ver_ordenes": "View pending invoices",
         "vacio": "No outbound movements registered yet."
       },
       "ordenes": {
-        "titulo": "Pending dispatch orders",
+        "titulo": "Pending invoices to dispatch",
         "subtitulo": "Not yet processed as outbound",
-        "vacio": "No pending orders in Odoo.",
-        "error": "Could not load orders from Odoo.",
-        "fecha_programada": "Scheduled",
+        "vacio": "No pending invoices in Odoo.",
+        "error": "Could not load invoices from Odoo.",
         "ver_detalle": "View detail",
-        "registrar_egreso": "Register outbound with this order"
+        "registrar_egreso": "Register outbound with this invoice"
       }
     }
   }

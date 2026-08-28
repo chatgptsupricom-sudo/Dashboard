@@ -60,9 +60,9 @@ export default function MercanciaNueva({
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
-  // Solo el egreso las pide aparte: en el ingreso, la factura de compra ES el
-  // documento que se busca, asi que ya viene con la orden. Un camion puede
-  // salir con varias facturas, asi que tambien es lista.
+  // La factura buscada arriba se agrega sola a esta lista al encontrarla
+  // (ver buscarOrden) — un camion puede salir con mas de una, asi que sigue
+  // siendo lista y no un solo campo, para agregar las demas a mano.
   const [facturas, setFacturas] = useState<string[]>([]);
   const [facturaInput, setFacturaInput] = useState("");
 
@@ -117,6 +117,14 @@ export default function MercanciaNueva({
         contraparte: p.contraparte,
       });
       setLineas(p.lineas || []);
+      // La factura buscada es una de las que salen en el camion: se agrega
+      // sola a la lista, en vez de obligar a volver a escribir el mismo
+      // numero que ya se acaba de buscar.
+      if (tipo === "egreso" && p.odoo_picking_name) {
+        setFacturas((prev) =>
+          prev.includes(p.odoo_picking_name) ? prev : [...prev, p.odoo_picking_name],
+        );
+      }
     } catch {
       setErrorOrden(tm("no_encontrada"));
     } finally {
@@ -124,14 +132,14 @@ export default function MercanciaNueva({
     }
   };
 
-  // Llega desde "Ver detalle" de una orden pendiente (Ordenes de despacho)
-  // con `?orden=` ya resuelto — se busca sola en vez de obligar a
-  // retranscribir el nombre que la pantalla anterior ya mostraba. Se lee de
+  // Llega desde "Ver detalle" de una factura pendiente (Facturas pendientes)
+  // con `?factura=` ya resuelto — se busca sola en vez de obligar a
+  // retranscribir el numero que la pantalla anterior ya mostraba. Se lee de
   // `window` y no con `useSearchParams` para no arrastrar el Suspense que
   // este pide en build (mismo criterio que ingreso/nuevo/page.tsx).
   useEffect(() => {
     if (tipo !== "egreso") return;
-    const pre = new URLSearchParams(window.location.search).get("orden")?.trim();
+    const pre = new URLSearchParams(window.location.search).get("factura")?.trim();
     if (!pre) return;
     setOrden(pre);
     void buscarOrden(pre);
@@ -210,10 +218,10 @@ export default function MercanciaNueva({
       </header>
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4 pb-28">
-        {/* Orden de Odoo */}
+        {/* Factura de Odoo */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-3">
-            {tm(tipo === "ingreso" ? "buscar_factura" : "buscar_orden")}
+            {tm(tipo === "ingreso" ? "buscar_factura_compra" : "buscar_factura_venta")}
           </h2>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -226,7 +234,9 @@ export default function MercanciaNueva({
                   buscarOrden();
                 }
               }}
-              placeholder={tm(tipo === "ingreso" ? "buscar_factura_ph" : "buscar_orden_ph")}
+              placeholder={tm(
+                tipo === "ingreso" ? "buscar_factura_compra_ph" : "buscar_factura_venta_ph",
+              )}
               className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
             />
             <button

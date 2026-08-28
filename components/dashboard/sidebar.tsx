@@ -228,9 +228,9 @@ export function Sidebar({
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     // Rol Almacen (issue #42): entradas planas, no un desplegable, porque
     // hoy solo tiene dos pantallas — registrar el egreso y navegar las
-    // ordenes de despacho pendientes en Odoo. Seguridad ve la misma ruta de
-    // egresos dentro de su grupo "Mercancia"; esta es la version que ve
-    // Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    // facturas de venta pendientes de despacho en Odoo. Seguridad ve la misma
+    // ruta de egresos dentro de su grupo "Mercancia"; esta es la version que
+    // ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
     { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
     { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se

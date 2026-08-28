@@ -7,11 +7,11 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ArrowLeft, Loader2, Send } from "lucide-react";
 
 /**
- * Detalle de una orden de despacho, leido directo de Odoo.
+ * Detalle de una factura de venta, leido directo de Odoo.
  *
  * Reusa el mismo endpoint que ya usaba el buscador de MercanciaNueva
  * (/api/seguridad/mercancia/odoo/[nombre]?tipo=egreso) — el detalle
- * "completo" de una orden es exactamente lo que ese endpoint ya trae.
+ * "completo" de una factura es exactamente lo que ese endpoint ya trae.
  */
 
 type Linea = {
@@ -121,7 +121,7 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
             <Link
-              href={`/${locale}/seguridad/mercancia/egreso/nuevo?orden=${encodeURIComponent(nombre)}`}
+              href={`/${locale}/seguridad/mercancia/egreso/nuevo?factura=${encodeURIComponent(nombre)}`}
               className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white"
               style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
             >

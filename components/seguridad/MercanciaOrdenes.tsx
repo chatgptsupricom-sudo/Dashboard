@@ -8,11 +8,11 @@ import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 
 /**
- * Ordenes de despacho de Odoo que Almacen todavia no proceso como egreso.
+ * Facturas de venta de Odoo que Almacen todavia no proceso como egreso.
  *
  * Antes de esto, para registrar un egreso habia que saber de memoria el
- * nombre exacto del picking (ej. "PRIN1/OUT/05838") y escribirlo en el
- * buscador. Esta pantalla existe para navegar en vez de adivinar.
+ * numero exacto de la factura y escribirlo en el buscador. Esta pantalla
+ * existe para navegar en vez de adivinar.
  */
 
 type Orden = {
@@ -21,7 +21,7 @@ type Orden = {
   contraparte: string;
   estado: string;
   origen: string | null;
-  fecha_programada: string | null;
+  fecha: string | null;
 };
 
 export default function MercanciaOrdenes() {
@@ -86,9 +86,7 @@ export default function MercanciaOrdenes() {
                 </p>
                 <p className="text-xs text-slate-500 truncate">
                   {o.contraparte || "—"}
-                  {o.fecha_programada
-                    ? ` · ${to("fecha_programada")}: ${fechaCorta(o.fecha_programada)}`
-                    : ""}
+                  {o.fecha ? ` · ${fechaCorta(o.fecha)}` : ""}
                 </p>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />

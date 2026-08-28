@@ -104,7 +104,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               <EstadoBadge estado={m.estado} tm={tm} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-900 truncate">
-                  {m.odoo_picking_name || tm("sin_orden")}
+                  {m.odoo_picking_name || tm("sin_factura")}
                   {m.contraparte ? ` · ${m.contraparte}` : ""}
                 </p>
                 <p className="text-xs text-slate-500 truncate">
