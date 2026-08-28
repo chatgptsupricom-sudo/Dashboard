@@ -116,7 +116,8 @@ export function Sidebar({
   const [isVentasOpen, setIsVentasOpen] = useState(false);
   const [isCxCOpen, setIsCxCOpen] = useState(false);
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
-  const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
+  const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
+  const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -646,28 +647,25 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenu desplegable de SEGURIDAD.
-                Agrupado en vez de siete entradas sueltas: el modulo tiene dos
-                flujos —RMA y Mercancia— y sueltas empujaban el resto del menu
-                fuera de la vista para todo el que no trabaja en almacen. */}
+            {/* Recepcion y despacho de equipos RMA del almacen. */}
             {allowedSections.includes("seguridad") && (
               <div className="space-y-1">
                 <button
-                  onClick={() => setIsSeguridadOpen(!isSeguridadOpen)}
+                  onClick={() => setIsRmaAlmacenOpen(!isRmaAlmacenOpen)}
                   className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
                 >
                   <div className="flex items-center gap-3">
-                    <ShieldCheck size={20} className="text-slate-400" />
-                    <span className="text-sm">{t("seguridad")}</span>
+                    <ClipboardList size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_rma")}</span>
                   </div>
                   <ChevronDown
                     size={16}
-                    className={`text-slate-400 transition-transform duration-200 ${isSeguridadOpen ? "rotate-180" : ""}`}
+                    className={`text-slate-400 transition-transform duration-200 ${isRmaAlmacenOpen ? "rotate-180" : ""}`}
                   />
                 </button>
 
                 <AnimatePresence>
-                  {isSeguridadOpen && (
+                  {isRmaAlmacenOpen && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
@@ -675,33 +673,75 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { label: t("seguridad_panel"), href: `/${locale}/seguridad` },
-                        { grupo: "RMA" },
-                        { label: t("seguridad_ingresos"), href: `/${locale}/seguridad/ingreso` },
-                        { label: t("seguridad_despachos"), href: `/${locale}/seguridad/despacho` },
+                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                        { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
                         { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
-                        { grupo: "Mercancía" },
-                        { label: t("seguridad_mercancia_ingreso"), href: `/${locale}/seguridad/mercancia/ingreso` },
-                        { label: t("seguridad_mercancia_egreso"), href: `/${locale}/seguridad/mercancia/egreso` },
-                        { grupo: " " },
-                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
-                      ].map((sub: any, index) => {
-                        // Separador con el nombre del flujo: dentro del
-                        // desplegable siguen siendo dos cosas distintas.
-                        if (sub.grupo !== undefined) {
-                          return (
-                            <p
-                              key={index}
-                              className="px-4 pt-2 text-[10px] font-bold uppercase tracking-wider text-slate-500"
-                            >
-                              {sub.grupo}
-                            </p>
-                          );
-                        }
+                      ].map((sub, index) => {
+                        // Coincidencia por prefijo para que el detalle de un
+                        // registro siga marcando su seccion. El panel se
+                        // compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad");
+                        const isSubActive = esPanel
+                          ? pathname === sub.href
+                          : pathname.startsWith(sub.href);
 
-                        // Coincidencia por prefijo: el detalle de un ingreso
-                        // (/seguridad/ingreso/12) tiene que marcar su entrada.
-                        // El panel se compara exacto o marcaria siempre.
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Carga y descarga de camiones, con la calificacion del almacenista. */}
+            {allowedSections.includes("seguridad") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsMercanciaOpen(!isMercanciaOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Truck size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_mercancia")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isMercanciaOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isMercanciaOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("seg_merc_ingresos"), href: `/${locale}/seguridad/mercancia/ingreso` },
+                        { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                      ].map((sub, index) => {
+                        // Coincidencia por prefijo para que el detalle de un
+                        // registro siga marcando su seccion. El panel se
+                        // compara exacto o marcaria siempre.
                         const esPanel = sub.href.endsWith("/seguridad");
                         const isSubActive = esPanel
                           ? pathname === sub.href

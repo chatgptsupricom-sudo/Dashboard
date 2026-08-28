@@ -182,13 +182,15 @@
     "por_cliente": "Por Cliente",
     "cerrar_sesion": "Cerrar Sesión",
     "super_admin": "Super Admin",
-    "seguridad_ingresos": "Ingresos RMA",
-    "seguridad_despachos": "Despachos RMA",
     "seguridad_por_llegar": "Equipos por llegar",
-    "seguridad_mercancia_ingreso": "Mercancía: ingresos",
-    "seguridad_mercancia_egreso": "Mercancía: egresos",
     "seguridad_almacenistas": "Almacenistas",
-    "seguridad_panel": "Panel de Seguridad"
+    "seg_grupo_rma": "RMA",
+    "seg_grupo_mercancia": "Mercancía",
+    "seg_ingreso": "Ingreso",
+    "seg_egreso": "Egreso",
+    "seg_estadisticas": "Estadísticas de RMA",
+    "seg_merc_ingresos": "Ingresos",
+    "seg_merc_egresos": "Egresos"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
