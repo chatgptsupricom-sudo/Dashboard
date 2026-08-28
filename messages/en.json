@@ -208,7 +208,8 @@
     "seg_egreso": "Dispatch",
     "seg_estadisticas": "RMA statistics",
     "seg_merc_ingresos": "Inbound",
-    "seg_merc_egresos": "Outbound"
+    "seg_merc_egresos": "Outbound",
+    "almacen_egresos": "Merchandise outbound"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",

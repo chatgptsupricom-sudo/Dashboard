@@ -18,6 +18,7 @@ export enum UserRole {
   ASISTENTE_VENTAS = "asistente de ventas",
   ADMINISTRACION = "administración",
   SEGURIDAD = "seguridad",
+  ALMACEN = "almacen",
 }
 
 // Permisos por rol
@@ -326,6 +327,20 @@ export const rolePermissions: RolePermissions = {
       "seguridad_mercancia_egreso",
       "seguridad_almacenistas",
     ],
+  },
+  // Prepara el egreso de mercancia — busca la orden de despacho, junta las
+  // facturas del camion, asigna almacenista(s) — y se lo entrega a Seguridad,
+  // que lo verifica en el porton (issue #44). Es DELIBERADAMENTE angosto: no
+  // ve RMA (equipos de un cliente en reparacion) ni el resto de Mercancia
+  // (ingresos, calificacion de almacenistas), que siguen siendo de Seguridad.
+  // Separar quien carga el camion de quien lo verifica es el punto de esto.
+  [UserRole.ALMACEN]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["dashboard", "almacen_egresos"],
   },
 };
 

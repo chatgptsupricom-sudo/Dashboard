@@ -21,3 +21,19 @@ export async function requireSeguridad(
 ): Promise<{ payload?: any; error?: NextResponse }> {
   return requireRoles(request, ["seguridad"]);
 }
+
+/**
+ * Guard de las rutas que tambien puede tocar el rol `almacen` (issue #42).
+ *
+ * Almacen prepara el egreso de mercancia — busca la orden de despacho, junta
+ * facturas, asigna almacenista(s) — y se lo entrega a Seguridad, que lo
+ * verifica en el porton. Solo las rutas de esa preparacion usan este guard;
+ * la verificacion, las firmas y todo RMA siguen siendo `requireSeguridad`
+ * exclusivo. Mezclar los dos roles en el mismo guard por descuido es
+ * exactamente el tipo de error que este archivo existe para evitar.
+ */
+export async function requireAlmacenOSeguridad(
+  request: NextRequest,
+): Promise<{ payload?: any; error?: NextResponse }> {
+  return requireRoles(request, ["seguridad", "almacen"]);
+}

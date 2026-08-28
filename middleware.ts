@@ -112,6 +112,11 @@ export default async function middleware(request: NextRequest) {
       const isAdministracion = userRole === "administración";
       // Nueva constante para el rol de Seguridad (Almacén / Control de acceso)
       const isSeguridad = userRole === "seguridad";
+      // Rol Almacen (issue #42): prepara el egreso de mercancia y se lo
+      // entrega a Seguridad. Vive dentro de /seguridad, no en una ruta propia
+      // — sin esto, el guard de la seccion 11 lo redirige antes de llegar a
+      // ninguna pantalla del modulo.
+      const isAlmacen = userRole === "almacen";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -220,14 +225,16 @@ export default async function middleware(request: NextRequest) {
       // /seguridad/login dedicado se eliminó — con el módulo protegido, esa
       // ruta nunca llegaba a renderizarse (el guard de arriba redirige antes
       // de alcanzar la excepción), así que era código muerto.
-      if (pathname.includes("/seguridad") && !isSeguridad && !isSuperAdmin) {
+      if (pathname.includes("/seguridad") && !isSeguridad && !isAlmacen && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/login`, request.url),
         );
       }
-      // Ademas, si el Seguridad esta logueado e intenta entrar al /dashboard
-      // comun, lo devolvemos a su modulo (no tiene nada que hacer ahi).
-      if (pathname.includes("/dashboard") && isSeguridad) {
+      // Ademas, si Seguridad o Almacen estan logueados e intentan entrar al
+      // /dashboard comun, los devolvemos a su modulo (no tienen nada que
+      // hacer ahi). El gate de arriba solo cubre entrada al modulo; este
+      // cubre la salida hacia el panel general.
+      if (pathname.includes("/dashboard") && (isSeguridad || isAlmacen)) {
         return NextResponse.redirect(
           new URL(`/${locale}/seguridad`, request.url),
         );

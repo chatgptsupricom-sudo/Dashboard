@@ -190,7 +190,8 @@
     "seg_egreso": "Egreso",
     "seg_estadisticas": "Estadísticas de RMA",
     "seg_merc_ingresos": "Ingresos",
-    "seg_merc_egresos": "Egresos"
+    "seg_merc_egresos": "Egresos",
+    "almacen_egresos": "Egresos de mercancía"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
