@@ -1,4 +1,4 @@
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireAlmacenOSeguridad } from "@/lib/seguridad/auth";
 import {
   buscarFacturaCompra,
   buscarPickingPorNombre,
@@ -23,12 +23,22 @@ export async function GET(
   { params }: { params: Promise<{ nombre: string }> },
 ) {
   try {
-    const auth = await requireSeguridad(request);
+    const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
 
     const { nombre } = await params;
     const tipo = new URL(request.url).searchParams.get("tipo");
     const buscado = decodeURIComponent(nombre);
+
+    // El ingreso (factura de compra) sigue siendo exclusivo de Seguridad —
+    // Almacen solo busca ordenes de despacho para el egreso.
+    const rol = String(auth.payload?.role || "").toLowerCase().trim();
+    if (tipo === "ingreso" && rol !== "seguridad" && rol !== "superadmin") {
+      return NextResponse.json(
+        { error: "El ingreso de mercancia lo registra Seguridad" },
+        { status: 403 },
+      );
+    }
 
     const picking =
       tipo === "ingreso"

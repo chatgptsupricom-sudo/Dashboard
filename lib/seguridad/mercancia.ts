@@ -28,6 +28,33 @@ export type PickingOdoo = {
 };
 
 /**
+ * Listas de facturas y almacenistas por egreso (issue #43).
+ *
+ * Un camion puede salir con varias facturas y con mas de un almacenista
+ * cargandolo. Se guardan como JSON en una columna de texto, mismo patron que
+ * `seguridad_despachos.facturas_json` en RMA — no una tabla aparte, porque no
+ * hace falta consultarlas por separado, solo mostrarlas junto al registro.
+ */
+export function serializarLista(items: unknown, max: number, maxItems: number): string | null {
+  if (!Array.isArray(items)) return null;
+  const limpios = items
+    .map((v) => String(v ?? "").trim().slice(0, max))
+    .filter((v) => v.length > 0)
+    .slice(0, maxItems);
+  return limpios.length > 0 ? JSON.stringify(limpios) : null;
+}
+
+export function parsearLista(json: unknown): string[] {
+  if (!json || typeof json !== "string") return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * El nombre del producto en Odoo viene como "[CODIGO] Descripcion".
  * Se separan para que el codigo se pueda leer de un vistazo en el porton,
  * que es donde alguien compara caja contra pantalla.

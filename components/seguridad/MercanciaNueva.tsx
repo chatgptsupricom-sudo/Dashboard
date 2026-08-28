@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { ArrowLeft, Loader2, Search, XCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 /**
@@ -53,16 +53,46 @@ export default function MercanciaNueva({
   const [lineas, setLineas] = useState<Linea[]>([]);
 
   const [fecha, setFecha] = useState(hoyISO());
-  const [almacenista, setAlmacenista] = useState("");
+  // Varios almacenistas pueden cargar el mismo camion (issue #43): se agregan
+  // uno por uno a una lista, en vez de un solo campo de texto.
+  const [almacenistas, setAlmacenistas] = useState<string[]>([]);
+  const [almacenistaInput, setAlmacenistaInput] = useState("");
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
-  // Solo el egreso la pide aparte: en el ingreso, la factura de compra ES el
-  // documento que se busca, asi que ya viene con la orden.
-  const [factura, setFactura] = useState("");
+  // Solo el egreso las pide aparte: en el ingreso, la factura de compra ES el
+  // documento que se busca, asi que ya viene con la orden. Un camion puede
+  // salir con varias facturas, asi que tambien es lista.
+  const [facturas, setFacturas] = useState<string[]>([]);
+  const [facturaInput, setFacturaInput] = useState("");
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const rol = (user?.role || "").toLowerCase().trim();
+  // Almacen solo prepara egresos — el ingreso (mercancia que entra por
+  // compra) sigue siendo tarea de Seguridad. El backend ya lo rechaza con
+  // 403; aqui se bloquea antes para no dejar llenar un formulario que
+  // despues no se puede guardar.
+  const bloqueadoPorRol = tipo === "ingreso" && rol === "almacen";
+
+  const agregarAlmacenista = () => {
+    const v = almacenistaInput.trim().slice(0, 200);
+    if (!v || almacenistas.includes(v) || almacenistas.length >= 30) return;
+    setAlmacenistas((p) => [...p, v]);
+    setAlmacenistaInput("");
+  };
+  const quitarAlmacenista = (v: string) =>
+    setAlmacenistas((p) => p.filter((x) => x !== v));
+
+  const agregarFactura = () => {
+    const v = facturaInput.trim().slice(0, 100);
+    if (!v || facturas.includes(v) || facturas.length >= 30) return;
+    setFacturas((p) => [...p, v]);
+    setFacturaInput("");
+  };
+  const quitarFactura = (v: string) =>
+    setFacturas((p) => p.filter((x) => x !== v));
 
   const buscarOrden = async () => {
     const v = orden.trim();
@@ -96,7 +126,7 @@ export default function MercanciaNueva({
 
   const guardar = async () => {
     setError(null);
-    if (!almacenista.trim() || lineas.length === 0) {
+    if (almacenistas.length === 0 || lineas.length === 0) {
       setError(tm("error"));
       return;
     }
@@ -110,10 +140,10 @@ export default function MercanciaNueva({
           fecha,
           odoo_picking_id: picking?.odoo_picking_id,
           odoo_picking_name: picking?.odoo_picking_name,
-          factura_numero:
-            tipo === "egreso" ? factura.trim() || undefined : picking?.odoo_picking_name,
+          facturas:
+            tipo === "egreso" ? facturas : [picking?.odoo_picking_name].filter(Boolean),
           contraparte: picking?.contraparte,
-          almacenista_nombre: almacenista.trim(),
+          almacenistas,
           chofer_nombre: chofer.trim() || undefined,
           placa_vehiculo: placa.trim() || undefined,
           observaciones: observaciones.trim() || undefined,
@@ -128,6 +158,25 @@ export default function MercanciaNueva({
       setGuardando(false);
     }
   };
+
+  if (bloqueadoPorRol) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-sm text-center space-y-3">
+          <XCircle className="w-8 h-8 text-red-500 mx-auto" />
+          <p className="text-sm font-semibold text-slate-700">
+            {tm("solo_seguridad_ingreso")}
+          </p>
+          <Link
+            href={`/${locale}/seguridad/mercancia/egreso`}
+            className="inline-flex text-sm font-semibold text-[color:var(--portal-primary,#741DFE)]"
+          >
+            {t("back")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
@@ -239,21 +288,24 @@ export default function MercanciaNueva({
           </Campo>
           {tipo === "egreso" && (
             <Campo label={tm("factura")}>
-              <input
-                type="text"
-                value={factura}
-                onChange={(e) => setFactura(e.target.value.slice(0, 100))}
+              <ListaChips
+                valores={facturas}
+                input={facturaInput}
+                onInput={(v) => setFacturaInput(v.slice(0, 100))}
+                onAgregar={agregarFactura}
+                onQuitar={quitarFactura}
                 placeholder={tm("factura_ph")}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
               />
             </Campo>
           )}
           <Campo label={`${tm("almacenista")} *`}>
-            <input
-              type="text"
-              value={almacenista}
-              onChange={(e) => setAlmacenista(e.target.value.slice(0, 200))}
-              className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
+            <ListaChips
+              valores={almacenistas}
+              input={almacenistaInput}
+              onInput={(v) => setAlmacenistaInput(v.slice(0, 200))}
+              onAgregar={agregarAlmacenista}
+              onQuitar={quitarAlmacenista}
+              placeholder={tm("almacenista")}
             />
           </Campo>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -295,7 +347,7 @@ export default function MercanciaNueva({
           <button
             type="button"
             onClick={guardar}
-            disabled={guardando || lineas.length === 0 || !almacenista.trim()}
+            disabled={guardando || lineas.length === 0 || almacenistas.length === 0}
             className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
           >
@@ -321,6 +373,72 @@ function Campo({
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+/** Lista editable de chips (facturas o almacenistas): agregar de a uno, quitar con la X. */
+function ListaChips({
+  valores,
+  input,
+  onInput,
+  onAgregar,
+  onQuitar,
+  placeholder,
+}: {
+  valores: string[];
+  input: string;
+  onInput: (v: string) => void;
+  onAgregar: () => void;
+  onQuitar: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => onInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onAgregar();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 h-12 px-3 border border-slate-200 rounded-[10px] text-sm"
+        />
+        <button
+          type="button"
+          onClick={onAgregar}
+          disabled={!input.trim()}
+          className="h-12 w-12 shrink-0 inline-flex items-center justify-center rounded-[10px] border border-slate-200 text-slate-600 disabled:opacity-40"
+          aria-label="+"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+      {valores.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {valores.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-semibold text-violet-800"
+            >
+              {v}
+              <button
+                type="button"
+                onClick={() => onQuitar(v)}
+                className="p-0.5 rounded-full hover:bg-violet-100"
+                aria-label="x"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

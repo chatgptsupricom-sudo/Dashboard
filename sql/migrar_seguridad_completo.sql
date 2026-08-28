@@ -142,9 +142,19 @@ CREATE TABLE IF NOT EXISTS seguridad_mercancia (
   -- ingreso, orden de despacho en un egreso.
   odoo_picking_id INT DEFAULT NULL,
   odoo_picking_name VARCHAR(100) DEFAULT NULL,
+  -- Un camion puede salir con varias facturas. `factura_numero` se queda
+  -- como la principal (compatibilidad con lo que ya la lee), y `facturas_json`
+  -- trae la lista completa cuando hay mas de una. Mismo patron que
+  -- seguridad_despachos.facturas_json en RMA.
   factura_numero VARCHAR(100) DEFAULT NULL,
+  facturas_json TEXT DEFAULT NULL,
   contraparte VARCHAR(200) DEFAULT NULL,
+  -- Igual que las facturas: puede cargar mas de un almacenista el mismo
+  -- camion. `almacenista_nombre` se queda como el principal/responsable
+  -- (sigue siendo NOT NULL: todo registro tiene que decir quien responde), y
+  -- `almacenistas_json` trae la lista completa cuando hay mas de uno.
   almacenista_nombre VARCHAR(200) NOT NULL,
+  almacenistas_json TEXT DEFAULT NULL,
   chofer_nombre VARCHAR(200) DEFAULT NULL,
   placa_vehiculo VARCHAR(50) DEFAULT NULL,
   -- descuadre NO bloquea la salida: queda registrado y avisa. Parar un camion
@@ -256,6 +266,23 @@ SET @sql := (SELECT IF(
   'ALTER TABLE seguridad_mercancia ADD COLUMN factura_numero VARCHAR(100) DEFAULT NULL'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- Varias facturas y varios almacenistas por egreso (issue #43).
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'facturas_json') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN facturas_json TEXT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'almacenistas_json') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN almacenistas_json TEXT DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- --- ENUMs que crecieron al llegar Mercancia ---
 
 SET @sql := (SELECT IF(
@@ -308,8 +335,8 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- ============================================================
 -- 5. Comprobacion
 --
--- En una base con el modulo RMA debe decir 7 y 7.
--- Sin rma_cases, dice 7 y 6, que tambien esta bien.
+-- En una base con el modulo RMA debe decir 7 y 9.
+-- Sin rma_cases, dice 7 y 8, que tambien esta bien.
 -- ============================================================
 
 SELECT
@@ -328,4 +355,6 @@ SELECT
         ('seguridad_despachos','firma_data'),
         ('seguridad_mercancia','contraparte'),
         ('seguridad_mercancia','factura_numero'),
-        ('rma_cases','despachado_at'))) AS columnas_de_7;
+        ('seguridad_mercancia','facturas_json'),
+        ('seguridad_mercancia','almacenistas_json'),
+        ('rma_cases','despachado_at'))) AS columnas_de_9;

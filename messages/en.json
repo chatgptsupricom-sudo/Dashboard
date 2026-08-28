@@ -2351,8 +2351,10 @@
       "diferencia": "Difference",
       "buscar_factura": "Purchase order invoice",
       "buscar_factura_ph": "e.g. FACTU/2026/08/0064",
-      "factura": "Invoice travelling with the dispatch",
-      "factura_ph": "Invoice number"
+      "factura": "Invoice(s) travelling with the dispatch",
+      "factura_ph": "Invoice number",
+      "solo_seguridad_ingreso": "Security registers inbound merchandise.",
+      "solo_lectura_almacen": "Security verifies this record at the gate."
     }
   }
 }

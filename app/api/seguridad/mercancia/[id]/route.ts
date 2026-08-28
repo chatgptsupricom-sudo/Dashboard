@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
-import { requireSeguridad } from "@/lib/seguridad/auth";
-import { evaluarDescuadre } from "@/lib/seguridad/mercancia";
+import { requireAlmacenOSeguridad, requireSeguridad } from "@/lib/seguridad/auth";
+import { evaluarDescuadre, parsearLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -12,27 +12,47 @@ async function cargar(id: number) {
     "SELECT * FROM seguridad_mercancia_items WHERE mercancia_id = ? ORDER BY id",
     [id],
   );
+  // Plural: puede haber mas de un almacenista por egreso (issue #43), y cada
+  // uno se califica aparte. Antes se traia solo uno con LIMIT 1, que se
+  // quedaba con la primera calificacion y ocultaba el resto.
   const calif = await query(
-    `SELECT id, calificacion, comentario, calificado_por, created_at
+    `SELECT id, almacenista_nombre, calificacion, comentario, calificado_por, created_at
        FROM seguridad_calificaciones
       WHERE relacionado_a = 'mercancia' AND relacionado_id = ?
-      LIMIT 1`,
+      ORDER BY id`,
     [id],
   ).catch(() => ({ rows: [] as any[] }));
 
+  const fila = mov.rows[0] as any;
+  const facturas = parsearLista(fila.facturas_json).length
+    ? parsearLista(fila.facturas_json)
+    : fila.factura_numero
+      ? [fila.factura_numero]
+      : [];
+  const almacenistas = parsearLista(fila.almacenistas_json).length
+    ? parsearLista(fila.almacenistas_json)
+    : [fila.almacenista_nombre];
+
   return {
-    movimiento: mov.rows[0],
+    movimiento: { ...fila, facturas, almacenistas },
     items: items.rows,
-    calificacion: calif.rows[0] ?? null,
+    calificaciones: calif.rows,
   };
 }
 
+/**
+ * GET: detalle del movimiento.
+ *
+ * Lo ve tambien Almacen (issue #43) — es como sabe si lo que registro quedo
+ * conforme o con descuadre. Lo que Almacen NO tiene es el POST de aqui abajo
+ * (la verificacion): ese sigue siendo `requireSeguridad` exclusivo.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await requireSeguridad(request);
+    const auth = await requireAlmacenOSeguridad(request);
     if (auth.error) return auth.error;
 
     const id = parseInt((await params).id, 10);
@@ -50,6 +70,10 @@ export async function GET(
 
 /**
  * POST: la verificacion del porton.
+ *
+ * Solo Seguridad — Almacen preparo el registro (issue #43), no le toca
+ * contarlo ni firmarlo como conforme. Separar quien carga de quien verifica es
+ * el punto de todo este reparto de roles.
  *
  * Recibe lo que Seguridad conto por renglon y recalcula el estado. NO bloquea
  * la salida cuando hay descuadre: queda registrado y marcado para que alguien
@@ -142,7 +166,7 @@ export async function POST(
     if (estado === "descuadre") {
       console.warn(
         `[mercancia ${id}] DESCUADRE: ${diferencias} renglon(es) no coinciden. ` +
-          `Almacenista: ${datos.movimiento.almacenista_nombre}. ` +
+          `Almacenista(s): ${datos.movimiento.almacenistas.join(", ")}. ` +
           `Verifico: ${verificadoPor}.`,
       );
     }

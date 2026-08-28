@@ -40,11 +40,20 @@ type Movimiento = {
   odoo_picking_name: string | null;
   contraparte: string | null;
   almacenista_nombre: string;
+  almacenistas: string[];
+  facturas: string[];
   chofer_nombre: string | null;
   placa_vehiculo: string | null;
   estado: "pendiente" | "conforme" | "descuadre";
   verificado_por: string | null;
   observaciones: string | null;
+};
+
+type Calificacion = {
+  id: number;
+  almacenista_nombre: string;
+  calificacion: number | string;
+  comentario: string | null;
 };
 
 export default function MercanciaDetalle({
@@ -64,14 +73,20 @@ export default function MercanciaDetalle({
 
   const [mov, setMov] = useState<Movimiento | null>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const [calificacion, setCalificacion] = useState<any>(null);
+  const [calificaciones, setCalificaciones] = useState<Calificacion[]>([]);
   const [conteos, setConteos] = useState<Record<number, string>>({});
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [estrellas, setEstrellas] = useState(0);
-  const [comentario, setComentario] = useState("");
+  // Un formulario de calificacion en curso por almacenista, gateado por nombre.
+  const [estrellasPor, setEstrellasPor] = useState<Record<string, number>>({});
+  const [comentarioPor, setComentarioPor] = useState<Record<string, string>>({});
+
+  const rol = (user?.role || "").toLowerCase().trim();
+  // Almacen preparo el registro (issue #43): ve el estado, pero no verifica
+  // en el porton ni firma ni califica — eso es exclusivo de Seguridad.
+  const esAlmacen = rol === "almacen";
 
   const cargar = useCallback(async () => {
     try {
@@ -80,7 +95,7 @@ export default function MercanciaDetalle({
       const json = await res.json();
       setMov(json.movimiento);
       setItems(json.items || []);
-      setCalificacion(json.calificacion ?? null);
+      setCalificaciones(json.calificaciones || []);
       const previos: Record<number, string> = {};
       for (const it of json.items || []) {
         previos[it.id] =
@@ -127,23 +142,24 @@ export default function MercanciaDetalle({
     }
   };
 
-  const calificar = async () => {
+  const calificar = async (almacenistaNombre: string) => {
+    const estrellas = estrellasPor[almacenistaNombre] || 0;
     if (!mov || estrellas < 1) return;
     try {
       await fetch("/api/seguridad/calificar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          almacenista_nombre: mov.almacenista_nombre,
+          almacenista_nombre: almacenistaNombre,
           calificacion: estrellas,
           relacionado_a: "mercancia",
           relacionado_id: mov.id,
-          comentario: comentario.trim() || null,
+          comentario: (comentarioPor[almacenistaNombre] || "").trim() || null,
           calificado_por: user?.name || user?.email || "Seguridad",
         }),
       });
-      setEstrellas(0);
-      setComentario("");
+      setEstrellasPor((p) => ({ ...p, [almacenistaNombre]: 0 }));
+      setComentarioPor((p) => ({ ...p, [almacenistaNombre]: "" }));
       void cargar();
     } catch {
       // El fallo de la calificacion no debe tapar la verificacion.
@@ -187,7 +203,10 @@ export default function MercanciaDetalle({
               {mov.odoo_picking_name || tm("sin_orden")}
             </h1>
             <p className="text-xs text-slate-500 truncate">
-              {fechaCorta(mov.fecha)} · {mov.almacenista_nombre}
+              {fechaCorta(mov.fecha)} ·{" "}
+              {(mov.almacenistas?.length ? mov.almacenistas : [mov.almacenista_nombre]).join(
+                ", ",
+              )}
             </p>
           </div>
         </div>
@@ -253,10 +272,11 @@ export default function MercanciaDetalle({
                   inputMode="decimal"
                   min={0}
                   value={contado ?? ""}
+                  disabled={esAlmacen}
                   onChange={(e) =>
                     setConteos((p) => ({ ...p, [it.id]: e.target.value }))
                   }
-                  className={`w-24 h-11 px-2 text-right rounded-[10px] border text-sm tabular-nums ${
+                  className={`w-24 h-11 px-2 text-right rounded-[10px] border text-sm tabular-nums disabled:opacity-60 disabled:bg-slate-50 ${
                     hayDif
                       ? "border-red-400 bg-red-50 text-red-700 font-bold"
                       : "border-slate-200"
@@ -267,45 +287,76 @@ export default function MercanciaDetalle({
           })}
         </section>
 
-        {/* Firma de Seguridad. Una sola, no las cuatro de la planilla de RMA:
-            aqui no hay cliente que reciba ni tecnico que intervenga — es el
-            almacen cargando un camion y Seguridad dando fe de lo que salio. */}
-        <FirmasActa
-          tipo="mercancia"
-          actaId={mov.id}
-          roles={["seguridad"]}
-          nombresSugeridos={{ seguridad: user?.name }}
-        />
+        {/* Firma de Seguridad, verificacion y calificacion: todo esto es exclusivo
+            de Seguridad (issue #42/#43). Almacen preparo el registro y aqui solo
+            ve el estado — no firma, no verifica, no califica. */}
+        {!esAlmacen && (
+          <>
+            {/* Firma de Seguridad. Una sola, no las cuatro de la planilla de RMA:
+                aqui no hay cliente que reciba ni tecnico que intervenga — es el
+                almacen cargando un camion y Seguridad dando fe de lo que salio. */}
+            <FirmasActa
+              tipo="mercancia"
+              actaId={mov.id}
+              roles={["seguridad"]}
+              nombresSugeridos={{ seguridad: user?.name }}
+            />
 
-        {/* Calificacion del almacenista que cargo */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <h2 className="text-sm font-bold text-slate-900 mb-3">
-            {tc("rate_for", { name: mov.almacenista_nombre })}
-          </h2>
-          {calificacion ? (
-            <StarRatingDisplay value={Number(calificacion.calificacion)} showValue />
-          ) : (
-            <div className="space-y-3">
-              <StarRating value={estrellas} onChange={setEstrellas} />
-              <input
-                type="text"
-                value={comentario}
-                onChange={(e) => setComentario(e.target.value.slice(0, 500))}
-                placeholder={tc("comment_placeholder")}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm"
-              />
-              <button
-                type="button"
-                onClick={calificar}
-                disabled={estrellas < 1}
-                className="min-h-[44px] px-4 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-                style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-              >
-                {tc("save")}
-              </button>
-            </div>
-          )}
-        </section>
+            {/* Calificacion de cada almacenista que cargo (issue #43: puede ser mas de uno) */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-5">
+              {(mov.almacenistas?.length ? mov.almacenistas : [mov.almacenista_nombre]).map(
+                (nombre) => {
+                  const existente = calificaciones.find(
+                    (c) => c.almacenista_nombre === nombre,
+                  );
+                  return (
+                    <div key={nombre}>
+                      <h2 className="text-sm font-bold text-slate-900 mb-3">
+                        {tc("rate_for", { name: nombre })}
+                      </h2>
+                      {existente ? (
+                        <StarRatingDisplay
+                          value={Number(existente.calificacion)}
+                          showValue
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          <StarRating
+                            value={estrellasPor[nombre] || 0}
+                            onChange={(v) =>
+                              setEstrellasPor((p) => ({ ...p, [nombre]: v }))
+                            }
+                          />
+                          <input
+                            type="text"
+                            value={comentarioPor[nombre] || ""}
+                            onChange={(e) =>
+                              setComentarioPor((p) => ({
+                                ...p,
+                                [nombre]: e.target.value.slice(0, 500),
+                              }))
+                            }
+                            placeholder={tc("comment_placeholder")}
+                            className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => calificar(nombre)}
+                            disabled={(estrellasPor[nombre] || 0) < 1}
+                            className="min-h-[44px] px-4 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
+                            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+                          >
+                            {tc("save")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
+              )}
+            </section>
+          </>
+        )}
 
         {error && (
           <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -314,20 +365,22 @@ export default function MercanciaDetalle({
         )}
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-          <button
-            type="button"
-            onClick={verificar}
-            disabled={guardando}
-            className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-          >
-            {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-            {tm("verificar")}
-          </button>
+      {!esAlmacen && (
+        <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+            <button
+              type="button"
+              onClick={verificar}
+              disabled={guardando}
+              className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
+              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+            >
+              {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
+              {tm("verificar")}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

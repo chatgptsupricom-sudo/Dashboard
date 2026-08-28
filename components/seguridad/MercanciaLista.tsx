@@ -28,6 +28,7 @@ type Movimiento = {
   odoo_picking_name: string | null;
   contraparte: string | null;
   almacenista_nombre: string;
+  almacenistas: string[];
   chofer_nombre: string | null;
   placa_vehiculo: string | null;
   estado: "pendiente" | "conforme" | "descuadre";
@@ -107,7 +108,10 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
                   {m.contraparte ? ` · ${m.contraparte}` : ""}
                 </p>
                 <p className="text-xs text-slate-500 truncate">
-                  {fechaCorta(m.fecha)} · {m.almacenista_nombre}
+                  {fechaCorta(m.fecha)} ·{" "}
+                  {(m.almacenistas?.length ? m.almacenistas : [m.almacenista_nombre]).join(
+                    ", ",
+                  )}
                   {m.placa_vehiculo ? ` · ${m.placa_vehiculo}` : ""}
                 </p>
               </div>
