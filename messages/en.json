@@ -209,7 +209,8 @@
     "seg_estadisticas": "RMA statistics",
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
-    "almacen_egresos": "Merchandise outbound"
+    "almacen_egresos": "Merchandise outbound",
+    "almacen_ordenes": "Dispatch orders"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
@@ -2359,7 +2360,32 @@
       "motivo_placeholder": "Reason (required)",
       "motivo_obligatorio": "A reason is missing on a product marked \"Did not go out\"",
       "no_salio_resumen": "{count, plural, =1 {# product marked \"Did not go out\"} other {# products marked \"Did not go out\"}}",
-      "diferencia_cantidad_resumen": "{count, plural, =1 {# line with a quantity mismatch} other {# lines with a quantity mismatch}}"
+      "diferencia_cantidad_resumen": "{count, plural, =1 {# line with a quantity mismatch} other {# lines with a quantity mismatch}}",
+      "dashboard": {
+        "titulo": "Merchandise outbound",
+        "subtitulo": "Your branch at a glance",
+        "loading": "Loading…",
+        "error": "Could not load the summary. Try reloading the page.",
+        "kpi_egresos_hoy": "Outbound today",
+        "kpi_pendientes": "Pending verification",
+        "kpi_descuadres": "Mismatches (30 days)",
+        "kpi_promedio": "Average rating",
+        "kpi_total_calif": "{count, plural, =1 {# rating this month} other {# ratings this month}}",
+        "recientes": "Recent outbound",
+        "top_almacenistas": "Top rated",
+        "ver_todos": "View all",
+        "ver_ordenes": "View pending orders",
+        "vacio": "No outbound movements registered yet."
+      },
+      "ordenes": {
+        "titulo": "Pending dispatch orders",
+        "subtitulo": "Not yet processed as outbound",
+        "vacio": "No pending orders in Odoo.",
+        "error": "Could not load orders from Odoo.",
+        "fecha_programada": "Scheduled",
+        "ver_detalle": "View detail",
+        "registrar_egreso": "Register outbound with this order"
+      }
     }
   }
 }

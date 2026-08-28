@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Loader2, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
@@ -94,8 +94,8 @@ export default function MercanciaNueva({
   const quitarFactura = (v: string) =>
     setFacturas((p) => p.filter((x) => x !== v));
 
-  const buscarOrden = async () => {
-    const v = orden.trim();
+  const buscarOrden = async (valor?: string) => {
+    const v = (valor ?? orden).trim();
     if (!v) return;
     setBuscando(true);
     setErrorOrden(null);
@@ -123,6 +123,20 @@ export default function MercanciaNueva({
       setBuscando(false);
     }
   };
+
+  // Llega desde "Ver detalle" de una orden pendiente (Ordenes de despacho)
+  // con `?orden=` ya resuelto — se busca sola en vez de obligar a
+  // retranscribir el nombre que la pantalla anterior ya mostraba. Se lee de
+  // `window` y no con `useSearchParams` para no arrastrar el Suspense que
+  // este pide en build (mismo criterio que ingreso/nuevo/page.tsx).
+  useEffect(() => {
+    if (tipo !== "egreso") return;
+    const pre = new URLSearchParams(window.location.search).get("orden")?.trim();
+    if (!pre) return;
+    setOrden(pre);
+    void buscarOrden(pre);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const guardar = async () => {
     setError(null);
@@ -217,7 +231,7 @@ export default function MercanciaNueva({
             />
             <button
               type="button"
-              onClick={buscarOrden}
+              onClick={() => buscarOrden()}
               disabled={buscando || !orden.trim()}
               className="h-12 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
               style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}

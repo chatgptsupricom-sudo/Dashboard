@@ -191,7 +191,8 @@
     "seg_estadisticas": "Estadísticas de RMA",
     "seg_merc_ingresos": "Ingresos",
     "seg_merc_egresos": "Egresos",
-    "almacen_egresos": "Egresos de mercancía"
+    "almacen_egresos": "Egresos de mercancía",
+    "almacen_ordenes": "Órdenes de despacho"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
@@ -2348,7 +2349,32 @@
       "motivo_placeholder": "Motivo (obligatorio)",
       "motivo_obligatorio": "Falta el motivo en algún producto marcado como \"No salió\"",
       "no_salio_resumen": "{count, plural, =1 {# producto marcado como \"No salió\"} other {# productos marcados como \"No salió\"}}",
-      "diferencia_cantidad_resumen": "{count, plural, =1 {# renglón con diferencia de cantidad} other {# renglones con diferencia de cantidad}}"
+      "diferencia_cantidad_resumen": "{count, plural, =1 {# renglón con diferencia de cantidad} other {# renglones con diferencia de cantidad}}",
+      "dashboard": {
+        "titulo": "Egresos de mercancía",
+        "subtitulo": "Resumen de tu sucursal",
+        "loading": "Cargando…",
+        "error": "No se pudo cargar el resumen. Intenta recargar la página.",
+        "kpi_egresos_hoy": "Egresos hoy",
+        "kpi_pendientes": "Pendientes de verificar",
+        "kpi_descuadres": "Descuadres (30 días)",
+        "kpi_promedio": "Calificación promedio",
+        "kpi_total_calif": "{count, plural, =1 {# calificación este mes} other {# calificaciones este mes}}",
+        "recientes": "Egresos recientes",
+        "top_almacenistas": "Mejor calificados",
+        "ver_todos": "Ver todos",
+        "ver_ordenes": "Ver órdenes pendientes",
+        "vacio": "Todavía no hay egresos registrados."
+      },
+      "ordenes": {
+        "titulo": "Órdenes de despacho pendientes",
+        "subtitulo": "Todavía no procesadas como egreso",
+        "vacio": "No hay órdenes pendientes en Odoo.",
+        "error": "No se pudieron cargar las órdenes de Odoo.",
+        "fecha_programada": "Programada",
+        "ver_detalle": "Ver detalle",
+        "registrar_egreso": "Registrar egreso con esta orden"
+      }
     }
   }
 }

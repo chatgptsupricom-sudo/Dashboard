@@ -1,3 +1,4 @@
+import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 
 /**
@@ -25,6 +26,15 @@ export type PickingOdoo = {
   estado: string;
   origen: string | null;
   lineas: LineaPicking[];
+};
+
+export type PickingResumen = {
+  odoo_picking_id: number;
+  odoo_picking_name: string;
+  contraparte: string;
+  estado: string;
+  origen: string | null;
+  fecha_programada: string | null;
 };
 
 /**
@@ -132,6 +142,61 @@ export async function buscarPickingPorNombre(
     origen: p.origin || null,
     lineas,
   };
+}
+
+/**
+ * Ordenes de despacho (egresos) de Odoo aun no procesadas.
+ *
+ * "Pendiente" tiene dos partes: que Odoo no la de por cerrada (`state` fuera
+ * de done/cancel) y que Almacen no la haya registrado ya como egreso — sin lo
+ * segundo, cada orden ya cargada seguiria apareciendo en la lista para
+ * siempre. El cruce se hace en MySQL (`seguridad_mercancia`) porque Odoo no
+ * sabe nada de nuestros registros.
+ *
+ * `cids` acota por sucursal (null = superadmin, sin filtro), mismo criterio
+ * que el resto del modulo.
+ */
+export async function listarPickingsPendientes(
+  cids: number | null,
+): Promise<PickingResumen[]> {
+  const domain: any[] = [
+    ["picking_type_code", "=", "outgoing"],
+    ["state", "not in", ["done", "cancel"]],
+  ];
+  if (cids !== null) domain.push(["company_id", "=", cids]);
+
+  const pickings = await callOdooRPC<any[]>(
+    "stock.picking",
+    "search_read",
+    [domain],
+    {
+      fields: ["name", "partner_id", "state", "origin", "scheduled_date"],
+      order: "scheduled_date asc",
+      limit: 200,
+    },
+  );
+  if (!pickings || pickings.length === 0) return [];
+
+  const usados = await query(
+    `SELECT odoo_picking_id FROM seguridad_mercancia
+      WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+        ${cids !== null ? "AND cids = ?" : ""}`,
+    cids !== null ? [cids] : [],
+  );
+  const idsUsados = new Set(
+    (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
+  );
+
+  return pickings
+    .filter((p: any) => !idsUsados.has(p.id))
+    .map((p: any) => ({
+      odoo_picking_id: p.id,
+      odoo_picking_name: p.name,
+      contraparte: p.partner_id?.[1] || "",
+      estado: p.state || "",
+      origen: p.origin || null,
+      fecha_programada: p.scheduled_date || null,
+    }));
 }
 
 /**

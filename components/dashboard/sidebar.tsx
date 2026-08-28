@@ -226,11 +226,13 @@ export function Sidebar({
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
-    // Rol Almacen (issue #42): una entrada plana, no un desplegable, porque
-    // hoy solo tiene una pantalla — registrar el egreso de mercancia. Seguridad
-    // ve la misma ruta dentro de su grupo "Mercancia"; esta es la version que
-    // ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    // Rol Almacen (issue #42): entradas planas, no un desplegable, porque
+    // hoy solo tiene dos pantallas — registrar el egreso y navegar las
+    // ordenes de despacho pendientes en Odoo. Seguridad ve la misma ruta de
+    // egresos dentro de su grupo "Mercancia"; esta es la version que ve
+    // Almacen, que no tiene el resto de ese grupo ni el de RMA.
     { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
+    { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },

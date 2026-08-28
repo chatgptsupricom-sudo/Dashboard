@@ -235,16 +235,23 @@ export default async function middleware(request: NextRequest) {
       // hacer ahi). El gate de arriba solo cubre entrada al modulo; este
       // cubre la salida hacia el panel general.
       //
+      // Match exacto de `/dashboard` como ruta, NO `.includes()`: Almacen
+      // ahora tiene su propio dashboard en /seguridad/mercancia/dashboard, que
+      // TAMBIEN contiene la substring "/dashboard" — con `.includes()` esta
+      // regla se disparaba sobre su propio destino y quedaba en loop infinito
+      // de redirect (307 a si misma).
+      //
       // Almacen NO va a `/seguridad` (ese es el home de Seguridad para RMA:
       // ingresos/despachos, con un dashboard que llama a
-      // /api/seguridad/dashboard, exclusivo de Seguridad). Almacen solo tiene
-      // una pantalla — el egreso de mercancia — asi que va directo ahi.
-      if (pathname.includes("/dashboard") && isAlmacen) {
+      // /api/seguridad/dashboard, exclusivo de Seguridad). Almacen tiene su
+      // propio dashboard (KPIs de sus egresos) en /seguridad/mercancia/dashboard.
+      const esDashboardComun = /^\/(es|en)\/dashboard(\/|$)/.test(pathname);
+      if (esDashboardComun && isAlmacen) {
         return NextResponse.redirect(
-          new URL(`/${locale}/seguridad/mercancia/egreso`, request.url),
+          new URL(`/${locale}/seguridad/mercancia/dashboard`, request.url),
         );
       }
-      if (pathname.includes("/dashboard") && isSeguridad) {
+      if (esDashboardComun && isSeguridad) {
         return NextResponse.redirect(
           new URL(`/${locale}/seguridad`, request.url),
         );
@@ -254,10 +261,10 @@ export default async function middleware(request: NextRequest) {
       // atajar el /dashboard -> /seguridad de arriba: si Almacen entra
       // directo a /seguridad (link viejo, favorito, historial), cae en el
       // mismo home de RMA que no le corresponde. Solo la ruta exacta, no sus
-      // subrutas (/seguridad/mercancia/egreso si debe renderizar).
+      // subrutas (/seguridad/mercancia/... si deben renderizar).
       if (/^\/(es|en)\/seguridad\/?$/.test(pathname) && isAlmacen) {
         return NextResponse.redirect(
-          new URL(`/${locale}/seguridad/mercancia/egreso`, request.url),
+          new URL(`/${locale}/seguridad/mercancia/dashboard`, request.url),
         );
       }
     } catch (e) {

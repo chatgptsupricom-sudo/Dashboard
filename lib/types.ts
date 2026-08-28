@@ -340,7 +340,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "almacen_egresos"],
+    sections: ["dashboard", "almacen_egresos", "almacen_ordenes"],
   },
 };
 
