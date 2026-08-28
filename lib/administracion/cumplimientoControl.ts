@@ -1,4 +1,4 @@
-import { searchReadTodo, RefsAdminKpis } from "./odooRefs";
+import { idsParaEmpresas, searchReadTodo, RefsAdminKpis } from "./odooRefs";
 
 /**
  * Cumplimiento y Control (issue #8, 10 pts).
@@ -39,16 +39,18 @@ export async function fetchOperacionesFueraPolitica(
   desde: string,
   hasta: string,
 ): Promise<ResultadoOperacionesFueraPolitica | null> {
-  if (refs.categoriaOperacionesFueraPolitica === null) return null;
+  // Cada sede tiene su propia categoria "Excepcion de Politica" (mismo caso
+  // que "Solicitud Administrativa" en gestionAdministrativa.ts).
+  const categoriaIds = idsParaEmpresas(
+    refs.categoriaOperacionesFueraPoliticaPorEmpresa,
+    companyIds,
+  );
+  if (categoriaIds.length === 0) return null;
 
-  // approval.request.company_id es un related de category_id.company_id,
-  // que en approval.category es obligatorio (nunca false) — un filtro llano
-  // "in" basta, a diferencia de project.task mas abajo.
   const total = await searchReadTodo(
     "approval.request",
     [
-      ["category_id", "=", refs.categoriaOperacionesFueraPolitica],
-      ["company_id", "in", companyIds],
+      ["category_id", "in", categoriaIds],
       ["create_date", ">=", desde],
       ["create_date", "<=", hasta],
     ],
@@ -70,16 +72,18 @@ export async function fetchIncidenciasVencidas(
   refs: RefsAdminKpis,
   companyIds: number[],
 ): Promise<ResultadoIncidenciasVencidas | null> {
-  if (refs.equipoIncidenciasAdministrativas === null) return null;
+  // Cada sede tiene su propio equipo "Incidencias Administrativas"
+  // (helpdesk.team tambien exige una compañía obligatoria).
+  const equipoIds = idsParaEmpresas(
+    refs.equipoIncidenciasAdministrativasPorEmpresa,
+    companyIds,
+  );
+  if (equipoIds.length === 0) return null;
 
-  // helpdesk.ticket.company_id es un related de team_id.company_id, que en
-  // helpdesk.team es obligatorio (nunca false) — filtro llano "in", igual que
-  // approval.request.
   const abiertas = await searchReadTodo(
     "helpdesk.ticket",
     [
-      ["team_id", "=", refs.equipoIncidenciasAdministrativas],
-      ["company_id", "in", companyIds],
+      ["team_id", "in", equipoIds],
       ["close_date", "=", false],
     ],
     ["id", "sla_fail"],

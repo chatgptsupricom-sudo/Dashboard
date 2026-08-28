@@ -312,7 +312,7 @@ export async function GET(request: NextRequest) {
       success: true,
       mes,
       empresa: empresa || "todas",
-      moduloInstalado: refs.categoriaSolicitudAdministrativa !== null,
+      moduloInstalado: Object.keys(refs.categoriaSolicitudAdministrativaPorEmpresa).length > 0,
       categorias,
       alertas,
     });

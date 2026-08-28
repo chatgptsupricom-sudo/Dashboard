@@ -1,4 +1,4 @@
-import { searchReadTodo, RefsAdminKpis } from "./odooRefs";
+import { idsParaEmpresas, searchReadTodo, RefsAdminKpis } from "./odooRefs";
 
 /**
  * Gestión Administrativa (issue #8, 10 pts).
@@ -70,14 +70,21 @@ export async function fetchDocumentosATiempo(
   hasta: string,
   plazoInternoDias: number | null,
 ): Promise<ResultadoDocumentosATiempo | null> {
-  if (refs.categoriaSolicitudAdministrativa === null) return null;
+  // Cada sede tiene su propia categoria "Solicitud Administrativa"
+  // (approval.category exige una compañía, no admite "todas") — se filtra
+  // por esos ids en vez de por un id global unico, y ya no hace falta ademas
+  // filtrar por company_id: el id de categoria ya es especifico de la sede.
+  const categoriaIds = idsParaEmpresas(
+    refs.categoriaSolicitudAdministrativaPorEmpresa,
+    companyIds,
+  );
+  if (categoriaIds.length === 0) return null;
 
   const [procesadas, pendientes] = await Promise.all([
     searchReadTodo(
       "approval.request",
       [
-        ["category_id", "=", refs.categoriaSolicitudAdministrativa],
-        ["company_id", "in", companyIds],
+        ["category_id", "in", categoriaIds],
         ["request_status", "in", ["approved", "refused"]],
         ["create_date", ">=", desde],
         ["create_date", "<=", hasta],
@@ -87,8 +94,7 @@ export async function fetchDocumentosATiempo(
     searchReadTodo(
       "approval.request",
       [
-        ["category_id", "=", refs.categoriaSolicitudAdministrativa],
-        ["company_id", "in", companyIds],
+        ["category_id", "in", categoriaIds],
         ["request_status", "in", ["new", "pending"]],
       ],
       ["id", "create_date"],
