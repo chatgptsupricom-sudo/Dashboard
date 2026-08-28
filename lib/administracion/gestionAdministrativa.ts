@@ -65,6 +65,7 @@ function diasEntre(a: string, b: string): number {
  */
 export async function fetchDocumentosATiempo(
   refs: RefsAdminKpis,
+  companyIds: number[],
   desde: string,
   hasta: string,
   plazoInternoDias: number | null,
@@ -76,6 +77,7 @@ export async function fetchDocumentosATiempo(
       "approval.request",
       [
         ["category_id", "=", refs.categoriaSolicitudAdministrativa],
+        ["company_id", "in", companyIds],
         ["request_status", "in", ["approved", "refused"]],
         ["create_date", ">=", desde],
         ["create_date", "<=", hasta],
@@ -86,6 +88,7 @@ export async function fetchDocumentosATiempo(
       "approval.request",
       [
         ["category_id", "=", refs.categoriaSolicitudAdministrativa],
+        ["company_id", "in", companyIds],
         ["request_status", "in", ["new", "pending"]],
       ],
       ["id", "create_date"],
@@ -174,6 +177,7 @@ export async function fetchLegalizacionPendiente(
  */
 export async function fetchCierreMensual(
   refs: RefsAdminKpis,
+  companyIds: number[],
   desde: string,
   hasta: string,
 ): Promise<ResultadoCierreMensual | null> {
@@ -183,6 +187,15 @@ export async function fetchCierreMensual(
     "project.task",
     [
       ["project_id", "=", refs.proyectoCierreMensual],
+      // project.task.company_id puede venir FALSE de verdad: el proyecto es
+      // compartido entre sedes (project.project admite company_id vacio =
+      // "todas las compañias") y sus tareas heredan ese false. Un filtro
+      // llano `in companyIds` NUNCA matchea false y dejaria este KPI en cero
+      // siempre — verificado que pasa exactamente eso sin el '|'. El OR habilita
+      // tanto las tareas compartidas como las que sí tengan sede propia.
+      "|",
+      ["company_id", "=", false],
+      ["company_id", "in", companyIds],
       ["date_deadline", ">=", desde],
       ["date_deadline", "<=", hasta],
     ],

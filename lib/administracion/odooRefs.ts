@@ -14,7 +14,7 @@ import { callOdooRPC } from "@/lib/odoo";
  * resolverlos es una llamada RPC extra que no vale la pena repetir en cada
  * carga de la página.
  */
-const cache = new Map<string, number | null>();
+const cache = new Map<string, number>();
 
 export async function resolverIdExterno(
   nombreExterno: string,
@@ -33,7 +33,12 @@ export async function resolverIdExterno(
     { fields: ["res_id"], limit: 1 },
   );
   const resId = rows && rows[0] ? Number(rows[0].res_id) : null;
-  cache.set(nombreExterno, resId);
+  // Solo se cachea un id resuelto. Si el modulo todavia no esta instalado en
+  // Odoo, `resId` sale null y NO se guarda — de lo contrario, instalar el
+  // modulo en producción con el proceso de Next.js ya corriendo dejaria los
+  // KPIs en "sin datos" para siempre hasta un reinicio manual, sin ningun
+  // error que lo explique.
+  if (resId !== null) cache.set(nombreExterno, resId);
   return resId;
 }
 

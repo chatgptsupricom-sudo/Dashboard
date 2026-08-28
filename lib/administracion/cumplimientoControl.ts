@@ -35,15 +35,20 @@ export interface ResultadoAuditoriaInterna {
  */
 export async function fetchOperacionesFueraPolitica(
   refs: RefsAdminKpis,
+  companyIds: number[],
   desde: string,
   hasta: string,
 ): Promise<ResultadoOperacionesFueraPolitica | null> {
   if (refs.categoriaOperacionesFueraPolitica === null) return null;
 
+  // approval.request.company_id es un related de category_id.company_id,
+  // que en approval.category es obligatorio (nunca false) — un filtro llano
+  // "in" basta, a diferencia de project.task mas abajo.
   const total = await searchReadTodo(
     "approval.request",
     [
       ["category_id", "=", refs.categoriaOperacionesFueraPolitica],
+      ["company_id", "in", companyIds],
       ["create_date", ">=", desde],
       ["create_date", "<=", hasta],
     ],
@@ -63,13 +68,18 @@ export async function fetchOperacionesFueraPolitica(
  */
 export async function fetchIncidenciasVencidas(
   refs: RefsAdminKpis,
+  companyIds: number[],
 ): Promise<ResultadoIncidenciasVencidas | null> {
   if (refs.equipoIncidenciasAdministrativas === null) return null;
 
+  // helpdesk.ticket.company_id es un related de team_id.company_id, que en
+  // helpdesk.team es obligatorio (nunca false) — filtro llano "in", igual que
+  // approval.request.
   const abiertas = await searchReadTodo(
     "helpdesk.ticket",
     [
       ["team_id", "=", refs.equipoIncidenciasAdministrativas],
+      ["company_id", "in", companyIds],
       ["close_date", "=", false],
     ],
     ["id", "sla_fail"],
@@ -95,15 +105,23 @@ export async function fetchIncidenciasVencidas(
  */
 export async function fetchAuditoriaInterna(
   refs: RefsAdminKpis,
+  companyIds: number[],
   desde: string,
   hasta: string,
 ): Promise<ResultadoAuditoriaInterna | null> {
   if (refs.proyectoAuditoriaInterna === null) return null;
 
+  // Mismo caso que Cierre Mensual: el proyecto es compartido (company_id
+  // vacio) y sus tareas heredan ese false, asi que hace falta el OR — un
+  // "in companyIds" llano dejaria este KPI en cero siempre. Verificado por
+  // RPC contra Odoo.
   const hallazgos = await searchReadTodo(
     "project.task",
     [
       ["project_id", "=", refs.proyectoAuditoriaInterna],
+      "|",
+      ["company_id", "=", false],
+      ["company_id", "in", companyIds],
       ["create_date", ">=", desde],
       ["create_date", "<=", hasta],
     ],

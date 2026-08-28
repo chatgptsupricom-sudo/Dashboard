@@ -69,12 +69,12 @@ export async function GET(request: NextRequest) {
 
     const [docsATiempo, legalizacion, cierreMensual, fueraPolitica, incidencias, auditoria] =
       await Promise.all([
-        fetchDocumentosATiempo(refs, desde, hasta, metas.plazo_procesamiento_dias),
+        fetchDocumentosATiempo(refs, companyIds, desde, hasta, metas.plazo_procesamiento_dias),
         fetchLegalizacionPendiente(companyIds, metas.legalizacion_dias ?? 30),
-        fetchCierreMensual(refs, desde, hasta),
-        fetchOperacionesFueraPolitica(refs, desde, hasta),
-        fetchIncidenciasVencidas(refs),
-        fetchAuditoriaInterna(refs, desde, hasta),
+        fetchCierreMensual(refs, companyIds, desde, hasta),
+        fetchOperacionesFueraPolitica(refs, companyIds, desde, hasta),
+        fetchIncidenciasVencidas(refs, companyIds),
+        fetchAuditoriaInterna(refs, companyIds, desde, hasta),
       ]);
 
     // ───────────────────────────────── Gestión Administrativa (10 pts)
