@@ -297,7 +297,11 @@ export async function GET(request: NextRequest) {
         montoAfectado:
           k.id === "desviacion_gastos"
             ? Math.round((totalReal - totalPresupuesto) * 100) / 100
-            : null,
+            // Cuanto subio o bajo el gasto en dolares contra el mes anterior;
+            // solo tiene sentido si hubo gasto que comparar el mes pasado.
+            : k.id === "variacion_mensual_gasto" && totalRealPrev > 0
+              ? Math.round((totalReal - totalRealPrev) * 100) / 100
+              : null,
         fechaDeteccion: new Date().toISOString().split("T")[0],
         accion: "Revisar ejecución del gasto contra presupuesto",
         fechaCompromiso: null,

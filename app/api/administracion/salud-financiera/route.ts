@@ -357,6 +357,12 @@ export async function GET(request: NextRequest) {
             k.id === "cartera_vencida" ? cxc.vencido
             : k.id === "cartera_90" ? cxc.b91mas
             : k.id === "obligaciones_vencidas" ? cxp.saldoVencido
+            // El flujo proyectado ya es un monto en si mismo (positivo o
+            // negativo), no hace falta derivarlo de otra cosa.
+            : k.id === "flujo_proyectado_30d" ? flujoProyectado
+            // Lo "afectado" en cobros esperados es lo que todavia no se ha
+            // cobrado del periodo, no el total esperado ni lo ya cobrado.
+            : k.id === "cobros_esperados" ? (esperado > 0 ? Math.round((esperado - cobrado) * 100) / 100 : null)
             : null,
           fechaDeteccion: hoy,
           accion: k.detalle || "Revisar indicador",
