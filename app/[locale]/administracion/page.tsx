@@ -14,8 +14,10 @@ import {
   Activity,
   AlertTriangle,
   Banknote,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   Loader2,
   Receipt,
   TrendingDown,
@@ -91,6 +93,21 @@ interface RespuestaGastos {
   alertas: AlertaAdmin[];
 }
 
+/**
+ * Lo que la pagina necesita de /api/administracion/gestion-cumplimiento
+ * (issue #8: Gestion Administrativa + Cumplimiento y Control). A diferencia
+ * de gastos, este endpoint ya devuelve DOS categorias porque comparten la
+ * misma dependencia (el modulo supricom_admin_kpis en Odoo).
+ */
+interface RespuestaGestionCumplimiento {
+  success: boolean;
+  categorias: Categoria[];
+  alertas: AlertaAdmin[];
+  /** false = el modulo de configuracion (Approvals/Helpdesk/Project para
+   *  estas areas) todavia no esta instalado en esta instancia de Odoo. */
+  moduloInstalado: boolean;
+}
+
 const SEMAFORO: Record<Semaforo, string> = {
   verde: "bg-emerald-50 text-emerald-700 border-emerald-200",
   amarillo: "bg-amber-50 text-amber-700 border-amber-200",
@@ -103,22 +120,25 @@ const ICONO_CATEGORIA: Record<string, any> = {
   "Tesorería y Liquidez": Banknote,
   "Cuentas por Pagar": Wallet,
   "Gastos y Presupuesto": Receipt,
+  "Gestión Administrativa": ClipboardCheck,
+  "Cumplimiento y Control": CheckSquare,
 };
 
 const CATEGORIA_GASTOS = "Gastos y Presupuesto";
 
 /**
- * El documento de Administracion pondera 100 puntos en 6 areas. Hoy solo 4
- * tienen fuente de datos (65 financieros + 15 de gastos); Gestion
- * Administrativa y Cumplimiento y Control suman 20 puntos que ningun sistema
- * registra todavia (ver issue #8). Se declaran aqui para que la pagina diga
- * sobre que se esta calculando en vez de aparentar un 100 completo.
+ * El documento de Administracion pondera 100 puntos en 6 areas. Las 6 ya
+ * están representadas en `categorias` (issue #8 completo), así que
+ * `indice.puntosMax` es siempre 100 en cuanto las cuatro llamadas responden —
+ * ya no hace falta declarar aparte cuáles áreas "no existen todavía".
+ *
+ * Lo que sigue variando es CUÁNTO de esos 100 puntos tiene fuente real hoy
+ * (`puntosMaxEvaluables`): Gestión Administrativa y Cumplimiento dependen de
+ * que el módulo `supricom_admin_kpis` esté instalado en Odoo (ver
+ * `moduloInstalado` en la respuesta) y de que la gente empiece a usar
+ * Approvals/Helpdesk/Project para lo que capturan.
  */
 const PUNTOS_DOCUMENTO = 100;
-const AREAS_SIN_FUENTE = [
-  { nombre: "Gestión Administrativa", puntos: 10 },
-  { nombre: "Cumplimiento y Control", puntos: 10 },
-];
 
 const ETIQUETA_ESTATUS: Record<EstatusAlerta, string> = {
   abierta: "Abierta",
@@ -264,6 +284,8 @@ export default function SaludAdministrativaPage() {
   });
   const [data, setData] = useState<Respuesta | null>(null);
   const [gastos, setGastos] = useState<RespuestaGastos | null>(null);
+  const [gestionCumplimiento, setGestionCumplimiento] =
+    useState<RespuestaGestionCumplimiento | null>(null);
   const [seguimientos, setSeguimientos] = useState<
     Record<string, SeguimientoAlerta>
   >({});
@@ -275,25 +297,29 @@ export default function SaludAdministrativaPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [resFin, resGastos, resSeg] = await Promise.all([
+      const [resFin, resGastos, resGC, resSeg] = await Promise.all([
         fetch(`/api/administracion/salud-financiera?empresa=${empresa}&mes=${mes}`),
         fetch(`/api/administracion/gastos?empresa=${empresa}&mes=${mes}`),
+        fetch(`/api/administracion/gestion-cumplimiento?empresa=${empresa}&mes=${mes}`),
         fetch(`/api/administracion/alertas?empresa=${empresa}&mes=${mes}`),
       ]);
-      const [jFin, jGastos, jSeg] = await Promise.all([
+      const [jFin, jGastos, jGC, jSeg] = await Promise.all([
         resFin.json(),
         resGastos.json(),
+        resGC.json(),
         resSeg.json(),
       ]);
       setData(jFin.success ? jFin : null);
-      // Gastos y el seguimiento son complementarios: si alguno falla se sigue
-      // mostrando el indice con lo que si cargo, en vez de dejar la pagina en
-      // blanco por un area caida.
+      // Gastos, Gestion/Cumplimiento y el seguimiento son complementarios: si
+      // alguno falla se sigue mostrando el indice con lo que si cargo, en vez
+      // de dejar la pagina en blanco por un area caida.
       setGastos(jGastos.success ? jGastos : null);
+      setGestionCumplimiento(jGC.success ? jGC : null);
       setSeguimientos(jSeg.success ? jSeg.seguimientos : {});
     } catch {
       setData(null);
       setGastos(null);
+      setGestionCumplimiento(null);
       setSeguimientos({});
     }
     setLoading(false);
@@ -303,11 +329,18 @@ export default function SaludAdministrativaPage() {
     fetchData();
   }, [fetchData]);
 
-  // ── Indice general: las 3 areas financieras (65 pts) + Gastos (15 pts)
+  // ── Indice general: las 6 areas del documento (100 pts). Financieras +
+  // Gastos ya tenian fuente real; Gestion Administrativa y Cumplimiento se
+  // suman aqui — puntosMaxEvaluables sigue filtrando lo que de verdad se
+  // puede medir dentro de cada una.
   const categorias = useMemo<Categoria[]>(() => {
     if (!data) return [];
-    return gastos ? [...data.categorias, gastos.resumen] : data.categorias;
-  }, [data, gastos]);
+    return [
+      ...data.categorias,
+      ...(gastos ? [gastos.resumen] : []),
+      ...(gestionCumplimiento ? gestionCumplimiento.categorias : []),
+    ];
+  }, [data, gastos, gestionCumplimiento]);
 
   const indice = useMemo(() => {
     const puntos =
@@ -335,10 +368,14 @@ export default function SaludAdministrativaPage() {
   const alertas = useMemo(
     () =>
       aplicarSeguimiento(
-        [...(data?.alertas ?? []), ...(gastos?.alertas ?? [])],
+        [
+          ...(data?.alertas ?? []),
+          ...(gastos?.alertas ?? []),
+          ...(gestionCumplimiento?.alertas ?? []),
+        ],
         seguimientos,
       ),
-    [data, gastos, seguimientos],
+    [data, gastos, gestionCumplimiento, seguimientos],
   );
   const topAlertas = useMemo(
     () => construirTopAlertas([alertas], 10),
@@ -403,7 +440,7 @@ export default function SaludAdministrativaPage() {
           </h1>
           <p className="text-gray-500">
             Cuentas por Cobrar · Tesorería · Cuentas por Pagar · Gastos y
-            Presupuesto
+            Presupuesto · Gestión Administrativa · Cumplimiento y Control
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -459,7 +496,7 @@ export default function SaludAdministrativaPage() {
                   {indice.puntos} de {indice.puntosEvaluables} pts evaluables
                 </p>
               </div>
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 {categorias.map((c) => (
                   <div key={c.categoria} className="bg-white rounded-xl p-3 border">
                     <p className="text-[11px] text-gray-500">{c.categoria}</p>
@@ -490,20 +527,19 @@ export default function SaludAdministrativaPage() {
                 </p>
                 {indice.puntosEvaluables < indice.puntosMax && (
                   <p>
-                    {indice.puntosMax - indice.puntosEvaluables} puntos de las
-                    áreas ya implementadas corresponden a indicadores sin fuente
-                    de datos; se excluyen del cálculo en vez de contarlos como
-                    incumplidos.
+                    {Math.round((indice.puntosMax - indice.puntosEvaluables) * 100) / 100}{" "}
+                    puntos corresponden a indicadores sin fuente de datos; se
+                    excluyen del cálculo en vez de contarlos como incumplidos.
                   </p>
                 )}
-                <p>
-                  Los {PUNTOS_DOCUMENTO - indice.puntosMax} puntos restantes son{" "}
-                  {AREAS_SIN_FUENTE.map((a) => `${a.nombre} (${a.puntos})`).join(
-                    " y ",
-                  )}
-                  : ningún sistema registra hoy esos datos, así que no se
-                  calculan.
-                </p>
+                {gestionCumplimiento && !gestionCumplimiento.moduloInstalado && (
+                  <p>
+                    Gestión Administrativa y Cumplimiento y Control están en
+                    "sin datos" porque el módulo de configuración
+                    (Approvals/Helpdesk/Project) todavía no está instalado en
+                    esta instancia de Odoo — ver issue #8.
+                  </p>
+                )}
               </div>
             </div>
           )}
