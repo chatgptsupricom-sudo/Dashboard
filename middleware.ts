@@ -234,7 +234,17 @@ export default async function middleware(request: NextRequest) {
       // /dashboard comun, los devolvemos a su modulo (no tienen nada que
       // hacer ahi). El gate de arriba solo cubre entrada al modulo; este
       // cubre la salida hacia el panel general.
-      if (pathname.includes("/dashboard") && (isSeguridad || isAlmacen)) {
+      //
+      // Almacen NO va a `/seguridad` (ese es el home de Seguridad para RMA:
+      // ingresos/despachos, con un dashboard que llama a
+      // /api/seguridad/dashboard, exclusivo de Seguridad). Almacen solo tiene
+      // una pantalla — el egreso de mercancia — asi que va directo ahi.
+      if (pathname.includes("/dashboard") && isAlmacen) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/seguridad/mercancia/egreso`, request.url),
+        );
+      }
+      if (pathname.includes("/dashboard") && isSeguridad) {
         return NextResponse.redirect(
           new URL(`/${locale}/seguridad`, request.url),
         );
