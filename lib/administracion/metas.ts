@@ -37,10 +37,10 @@ export const METAS_DEFAULT: Record<string, number | null> = {
 
   // Gestión Administrativa (issue #8, 20 pts sin fuente hasta que se
   // configuraron Approvals/Helpdesk/Project — ver supricom_admin_kpis).
-  // "Plazo interno de procesamiento": Administración no lo ha definido
-  // todavía (era una de las preguntas abiertas del issue). Sin esto,
-  // "documentos procesados a tiempo" no tiene contra qué medirse.
-  plazo_procesamiento_dias: null,
+  // "Plazo interno de procesamiento": Administración lo definió en 24h:
+  // se guarda en días porque diasEntre()/pendientesVencidos comparan en esa
+  // unidad, y 24h son exactamente 1 día — no hace falta una unidad aparte.
+  plazo_procesamiento_dias: 1,
   legalizacion_dias: 30, // proxy: >30 dias sin legalizar es la banda que ya usa Tesorería para "vencido"
   pct_legalizacion_vencida: 20,
 

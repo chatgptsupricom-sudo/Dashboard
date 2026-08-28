@@ -110,7 +110,10 @@ export async function GET(request: NextRequest) {
           nombre: "Tiempo promedio de procesamiento",
           formula: "Promedio (fecha resolución − fecha creación) de solicitudes resueltas",
           peso: 2,
-          metaTexto: "Referencial (sin banda definida)",
+          metaTexto:
+            metas.plazo_procesamiento_dias !== null
+              ? `Referencial (plazo ≤${metas.plazo_procesamiento_dias} días)`
+              : "Referencial (sin banda definida)",
           valor: docsATiempo?.tiempoPromedioDias ?? null,
           unidad: "",
           frecuencia: "Mensual",
@@ -120,13 +123,20 @@ export async function GET(request: NextRequest) {
             ? SIN_MODULO
             : "En días. Se mide fecha de creación → última modificación de la solicitud ya resuelta; una edición no relacionada con la decisión puede inflar este número.",
         },
-        // Banda PROVISIONAL (3 / 7 días) — Administración no definió un plazo
-        // interno de procesamiento (pregunta abierta del issue #8), y sin
-        // umbrales evaluarSemaforo() caería siempre en rojo por defecto. Es
-        // el mismo tipo de proxy explícito que ya se usa en gastos/route.ts
-        // para "gasto extraordinario": vale hasta que Administración de un
-        // numero real.
-        { modo: "lower_better", verde: 3, amarillo: 7 },
+        // Antes de que Administración definiera el plazo (24h = 1 día, issue
+        // #8) esta banda era un proxy provisional de 3/7 días para que
+        // evaluarSemaforo() no cayera siempre en rojo por falta de umbral.
+        // Ya con el plazo real, se mide el promedio contra ese mismo número
+        // en vez de un límite inventado: 1x el plazo es verde, 2x es el
+        // corte de amarillo. Si Administración vuelve a borrar la meta
+        // (null), cae de nuevo al proxy 3/7 para no quedar sin banda.
+        metas.plazo_procesamiento_dias !== null
+          ? {
+              modo: "lower_better",
+              verde: metas.plazo_procesamiento_dias,
+              amarillo: metas.plazo_procesamiento_dias * 2,
+            }
+          : { modo: "lower_better", verde: 3, amarillo: 7 },
       ),
       construirKpi(
         {
