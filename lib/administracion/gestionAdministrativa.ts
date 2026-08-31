@@ -212,7 +212,12 @@ export async function fetchCierreMensual(
   let cerradasATiempo = 0;
   let vencidasSinCerrar = 0;
   tareas.forEach((t) => {
-    const deadlineMs = new Date(t.date_deadline.replace(" ", "T") + "Z").getTime();
+    // date_deadline es un campo de solo-fecha en Odoo, pero el RPC lo entrega
+    // como "YYYY-MM-DD 00:00:00" (medianoche). Comparar contra eso literal
+    // marca como "vencida" una tarea el mismo dia en que vence, apenas pasa
+    // la medianoche — el plazo real es hasta el FIN de ese dia, no el inicio.
+    const fechaDeadline = t.date_deadline.slice(0, 10);
+    const deadlineMs = new Date(fechaDeadline + "T23:59:59Z").getTime();
     const cerrada = refs.stageCierreCerrado !== null && t.stage_id?.[0] === refs.stageCierreCerrado;
     if (cerrada) {
       const cierreMs = new Date(t.write_date.replace(" ", "T") + "Z").getTime();
