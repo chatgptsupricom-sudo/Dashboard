@@ -110,7 +110,7 @@ export default function MercanciaDashboard() {
         }
       />
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
         <div className="flex sm:hidden items-center gap-2">
           <BotonSecundario href={`/${locale}/seguridad/mercancia/ordenes`} icon={FileText} className="flex-1">
             {td("ver_ordenes")}
@@ -164,70 +164,72 @@ export default function MercanciaDashboard() {
               />
             </section>
 
-            <Card padded={false}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <h2 className="text-[13px] font-semibold text-slate-900">{td("recientes")}</h2>
-                <Link
-                  href={base}
-                  className="text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 flex items-center gap-0.5"
-                >
-                  {td("ver_todos")}
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-              {data.egresos_recientes.length === 0 ? (
-                <EmptyState icon={FileText} texto={td("vacio")} />
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {data.egresos_recientes.map((e) => (
-                    <Link
-                      key={e.id}
-                      href={`${base}/${e.id}`}
-                      className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/80 transition-colors"
-                    >
-                      <EstadoIcono estado={e.estado} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900 truncate">
-                          {e.odoo_picking_name || tm("sin_factura")}
-                          {e.contraparte ? ` · ${e.contraparte}` : ""}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {fechaCorta(e.fecha)} · {e.almacenista_nombre}
-                        </p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {data.top_almacenistas.length > 0 && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
               <Card padded={false}>
-                <div className="px-5 py-4 border-b border-slate-100">
-                  <h2 className="text-[13px] font-semibold text-slate-900">
-                    {td("top_almacenistas")}
-                  </h2>
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                  <h2 className="text-[13px] font-semibold text-slate-900">{td("recientes")}</h2>
+                  <Link
+                    href={base}
+                    className="text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 flex items-center gap-0.5"
+                  >
+                    {td("ver_todos")}
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Link>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {data.top_almacenistas.map((a) => (
-                    <div key={a.nombre} className="flex items-center gap-3 px-5 py-3.5">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900 truncate">{a.nombre}</p>
-                        <p className="text-xs text-slate-500">{a.egresos} egresos</p>
-                      </div>
-                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      <span className="text-sm font-semibold text-slate-800 tabular-nums">
-                        {a.promedio.toFixed(1)}
-                      </span>
-                      <span className="text-xs text-slate-400 w-10 text-right tabular-nums">
-                        ({a.calificaciones})
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {data.egresos_recientes.length === 0 ? (
+                  <EmptyState icon={FileText} texto={td("vacio")} />
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {data.egresos_recientes.map((e) => (
+                      <Link
+                        key={e.id}
+                        href={`${base}/${e.id}`}
+                        className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/80 transition-colors"
+                      >
+                        <EstadoIcono estado={e.estado} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900 truncate">
+                            {e.odoo_picking_name || tm("sin_factura")}
+                            {e.contraparte ? ` · ${e.contraparte}` : ""}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {fechaCorta(e.fecha)} · {e.almacenista_nombre}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </Card>
-            )}
+
+              {data.top_almacenistas.length > 0 && (
+                <Card padded={false}>
+                  <div className="px-5 py-4 border-b border-slate-100">
+                    <h2 className="text-[13px] font-semibold text-slate-900">
+                      {td("top_almacenistas")}
+                    </h2>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {data.top_almacenistas.map((a) => (
+                      <div key={a.nombre} className="flex items-center gap-3 px-5 py-3.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900 truncate">{a.nombre}</p>
+                          <p className="text-xs text-slate-500">{a.egresos} egresos</p>
+                        </div>
+                        <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                        <span className="text-sm font-semibold text-slate-800 tabular-nums">
+                          {a.promedio.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-slate-400 w-10 text-right tabular-nums">
+                          ({a.calificaciones})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </div>
           </>
         )}
       </main>

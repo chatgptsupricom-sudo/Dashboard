@@ -13,6 +13,10 @@ import { PageHeader, EmptyState, BotonPrimario } from "./mercancia-ui";
  *
  * Los dos muestran lo mismo y cambian el titulo y el filtro; duplicar la
  * pantalla seria mantener dos veces la misma tabla.
+ *
+ * Grid y no lista: se ve en telefono, tablet, monitor y hasta television de
+ * sala — una sola columna angosta desperdicia el ancho en cualquier pantalla
+ * que no sea un telefono.
  */
 
 type Movimiento = {
@@ -69,42 +73,54 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
         }
       />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-2.5">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {cargando ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-slate-300">
-            <Loader2 className="w-5 h-5 animate-spin" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-24 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
+            ))}
           </div>
         ) : items.length === 0 ? (
           <div className="bg-white border border-slate-200/80 rounded-2xl">
             <EmptyState icon={Package} texto={tm("vacio")} />
           </div>
         ) : (
-          items.map((m) => (
-            <Link
-              key={m.id}
-              href={`${base}/${m.id}`}
-              className="group flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-violet-200 hover:shadow-[0_2px_8px_rgba(116,29,254,0.08)] transition-all"
-            >
-              <EstadoBadge estado={m.estado} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900 truncate">
-                  {m.odoo_picking_name || tm("sin_factura")}
-                  {m.contraparte ? ` · ${m.contraparte}` : ""}
-                </p>
-                <p className="text-xs text-slate-500 truncate">
-                  {fechaCorta(m.fecha)} ·{" "}
-                  {(m.almacenistas?.length ? m.almacenistas : [m.almacenista_nombre]).join(
-                    ", ",
-                  )}
-                  {m.placa_vehiculo ? ` · ${m.placa_vehiculo}` : ""}
-                </p>
-              </div>
-              <span className="text-xs text-slate-400 tabular-nums shrink-0">
-                {m.total_items}
-              </span>
-              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0 transition-colors" />
-            </Link>
-          ))
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+            {items.map((m) => (
+              <Link
+                key={m.id}
+                href={`${base}/${m.id}`}
+                className="group flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-violet-200 hover:shadow-[0_4px_14px_rgba(116,29,254,0.1)] hover:-translate-y-0.5 transition-all"
+              >
+                <EstadoBadge estado={m.estado} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 truncate">
+                    {m.odoo_picking_name || tm("sin_factura")}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    {m.contraparte || "—"}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1.5 truncate">
+                    {fechaCorta(m.fecha)} ·{" "}
+                    {(m.almacenistas?.length ? m.almacenistas : [m.almacenista_nombre]).join(
+                      ", ",
+                    )}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {m.placa_vehiculo && (
+                      <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md">
+                        {m.placa_vehiculo}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-slate-400 tabular-nums ml-auto">
+                      {m.total_items}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0 transition-colors" />
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
       </main>
     </div>
