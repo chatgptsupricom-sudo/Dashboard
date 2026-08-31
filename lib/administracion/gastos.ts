@@ -1,4 +1,29 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
+
+/**
+ * `presupuesto_gastos` la crea el endpoint de carga (`/api/administracion/
+ * presupuesto`) al usarse por primera vez. `gastos/route.ts` la consulta
+ * pero nunca la crea — en una base nueva, si alguien mira el índice de
+ * Gastos antes de que Administración haya cargado un presupuesto ni una
+ * sola vez, la tabla no existe todavía y el SELECT fallaría (silenciado por
+ * el catch de esa ruta, así que ni se nota). Se comparte esta función para
+ * que ambas rutas dejen de depender del orden en que alguien las visita.
+ */
+export async function ensurePresupuestoTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS presupuesto_gastos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      company_id INT NOT NULL,
+      mes VARCHAR(7) NOT NULL,
+      cuenta_codigo VARCHAR(50) NOT NULL,
+      monto DECIMAL(15,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_presupuesto (company_id, mes, cuenta_codigo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
 
 /**
  * Fuente del "gasto real": facturas de proveedor contabilizadas, tomando las

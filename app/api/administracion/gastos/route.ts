@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
 import {
+  ensurePresupuestoTable,
   fetchCuentasGasto,
   fetchGastoReal,
   mesAnterior,
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
     // Presupuesto cargado para el mes (tabla propia; Odoo no tiene presupuesto).
     let presupuestoPorCuenta: Record<string, number> = {};
     try {
+      await ensurePresupuestoTable();
       // Con varias sedes se suman los presupuestos de cada una, igual que se
       // suma su gasto real, para que la comparacion siga siendo homogenea.
       const rows = await query(
