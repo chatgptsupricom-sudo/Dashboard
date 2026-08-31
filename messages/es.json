@@ -192,7 +192,10 @@
     "seg_merc_ingresos": "Ingresos",
     "seg_merc_egresos": "Egresos",
     "almacen_egresos": "Egresos de mercancía",
-    "almacen_ordenes": "Facturas pendientes"
+    "almacen_ordenes": "Facturas pendientes",
+    "almacen_almacenistas": "Gestionar Almacenistas",
+    "almacen_choferes": "Gestionar Choferes",
+    "almacen_unidades": "Gestionar Unidades"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",

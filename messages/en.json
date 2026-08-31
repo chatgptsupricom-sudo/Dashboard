@@ -210,7 +210,10 @@
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
-    "almacen_ordenes": "Pending invoices"
+    "almacen_ordenes": "Pending invoices",
+    "almacen_almacenistas": "Manage Warehouse Workers",
+    "almacen_choferes": "Manage Drivers",
+    "almacen_unidades": "Manage Vehicles"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",

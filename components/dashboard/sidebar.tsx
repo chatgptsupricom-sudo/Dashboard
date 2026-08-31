@@ -32,12 +32,14 @@ import {
   BrainCircuit,
   Calendar,
   Camera,
+  Car,
   ChevronDown,
   ClipboardList,
   CreditCard,
   DollarSign,
   FileText,
   Globe,
+  IdCard,
   LayoutDashboard,
   LogOut,
   Map,
@@ -226,13 +228,18 @@ export function Sidebar({
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
-    // Rol Almacen (issue #42): entradas planas, no un desplegable, porque
-    // hoy solo tiene dos pantallas — registrar el egreso y navegar las
-    // facturas de venta pendientes de despacho en Odoo. Seguridad ve la misma
-    // ruta de egresos dentro de su grupo "Mercancia"; esta es la version que
-    // ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
+    // ve la misma ruta de egresos dentro de su grupo "Mercancia"; esta es la
+    // version que ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
     { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
     { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
+    // Catalogos que alimentan los selects del formulario de egreso — antes
+    // solo se llegaba con el enlace "Gestionar..." dentro del formulario, se
+    // agregan tambien al menu para que se puedan administrar sin tener que
+    // empezar un registro primero.
+    { id: "almacen_almacenistas", label: t("almacen_almacenistas"), icon: Users, slug: "/seguridad/mercancia/almacenistas", absoluteHref: true },
+    { id: "almacen_choferes", label: t("almacen_choferes"), icon: IdCard, slug: "/seguridad/mercancia/choferes", absoluteHref: true },
+    { id: "almacen_unidades", label: t("almacen_unidades"), icon: Car, slug: "/seguridad/mercancia/unidades", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
