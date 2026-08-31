@@ -8,6 +8,22 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
+async function fetchPaginated(model: string, domain: any[], fields: string[], order?: string): Promise<any[]> {
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      model, "search_read", [domain],
+      { fields, order, limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, [
     "cuentas por cobrar",
@@ -46,23 +62,24 @@ export async function GET(request: NextRequest) {
       domain.push(["user_id", "=", parseInt(salesuserId)]);
     }
 
-    const records = (await callOdooRPC<any[]>(
+    // Paginado en vez de un limit fijo: con un cliente/vendedor de mucho
+    // volumen, un solo search_read con limit:2000 descartaba facturas en
+    // silencio sin avisar en la respuesta. El orden final que ve el usuario
+    // lo aplica el .sort() de mas abajo, asi que aqui basta un orden estable
+    // (id) para que la paginacion no repita ni salte filas.
+    const records = await fetchPaginated(
       "digiflex.cxc.report",
-      "search_read",
-      [domain],
-      {
-        fields: [
-          "id", "move_id", "partner_id", "partner_name",
-          "user_id", "user_name", "company_id", "company_name",
-          "invoice_date", "date_maturity", "days_overdue",
-          "amount_residual", "amount_current",
-          "amount_1_30", "amount_31_60", "amount_61_90", "amount_91_plus",
-          "transaction_type", "document_number",
-        ],
-        limit: 2000,
-        order: "days_overdue desc, date_maturity asc",
-      },
-    )) || [];
+      domain,
+      [
+        "id", "move_id", "partner_id", "partner_name",
+        "user_id", "user_name", "company_id", "company_name",
+        "invoice_date", "date_maturity", "days_overdue",
+        "amount_residual", "amount_current",
+        "amount_1_30", "amount_31_60", "amount_61_90", "amount_91_plus",
+        "transaction_type", "document_number",
+      ],
+      "id asc",
+    );
 
     // Mapear aging band del reporte Odoo al formato del frontend. Se banda
     // por days_overdue sin mirar el signo de amount_residual: una nota de

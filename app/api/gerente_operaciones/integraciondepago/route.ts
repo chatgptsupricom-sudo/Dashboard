@@ -1,22 +1,49 @@
-import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
+const CUSTOMER_INVOICE_TYPES = new Set(["out_invoice", "out_refund"]);
+const INVOICE_LIKE_TYPES = new Set([
+  "out_invoice",
+  "out_refund",
+  "in_invoice",
+  "in_refund",
+]);
+
+async function fetchPaginated(
+  model: string,
+  domain: any[],
+  fields: string[],
+): Promise<any[]> {
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      model,
+      "search_read",
+      [domain],
+      { fields, order: "id DESC", limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
-    // 1. AUTENTICACIÓN SEGURA MEDIANTE TOKEN
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const payload = verifyToken(token);
-    const userCompanyId = parseInt(payload?.cids as string);
-
-    if (!userCompanyId)
+    const userCompanyId = parseInt(auth.payload?.cids as string);
+    if (!userCompanyId) {
       return NextResponse.json(
         { error: "Empresa no definida" },
         { status: 403 },
       );
+    }
 
     // 2. PARÁMETROS
     const { searchParams } = new URL(request.url);
@@ -24,13 +51,8 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const search = (searchParams.get("search") || "").toLowerCase();
     const vendedor = searchParams.get("vendedor");
-    const fechaInicioRaw = searchParams.get("fechaInicio");
-    const fechaFinRaw = searchParams.get("fechaFin");
-
-    const cleanDate = (dateStr: string | null) =>
-      dateStr ? dateStr.split("Z")[0].replace("T", " ").split(".")[0] : null;
-    const fechaInicio = cleanDate(fechaInicioRaw);
-    const fechaFin = cleanDate(fechaFinRaw);
+    const fechaInicioRaw = searchParams.get("fechaInicio") || "";
+    const fechaFinRaw = searchParams.get("fechaFin") || "";
 
     // 3. CONSULTAS ODOO (Forzando userCompanyId)
     const [companies, allUsers] = await Promise.all([
@@ -48,29 +70,24 @@ export async function GET(request: Request) {
       ),
     ]);
 
-    const domain: any[] = [];
-    if (fechaInicio) domain.push(["create_date", ">=", fechaInicio]);
-    if (fechaFin) domain.push(["create_date", "<=", fechaFin]);
-
-    const reconciles =
-      (await callOdooRPC<any[]>(
-        "account.partial.reconcile",
-        "search_read",
-        [domain],
-        {
-          context: { allowed_company_ids: [userCompanyId] },
-          fields: ["create_date", "amount", "debit_move_id", "credit_move_id"],
-          order: "id DESC",
-          limit: 2000,
-        },
-      )) || [];
+    // No filtramos account.partial.reconcile por fecha en el dominio: el
+    // campo que representa la "fecha de abono" (paymentMove.date) vive en
+    // account.move, dos saltos más allá del reconcile, así que no se puede
+    // expresar en un único dominio de Odoo sin arriesgar excluir facturas
+    // legítimas cuya fecha cae fuera del rango. Se filtra abajo, ya
+    // emparejado, por ese único campo.
+    const reconciles = await fetchPaginated(
+      "account.partial.reconcile",
+      [],
+      ["create_date", "amount", "debit_move_id", "credit_move_id"],
+    );
 
     if (!reconciles.length) {
       return NextResponse.json({
         results: [],
         total_count: 0,
-        companies,
-        vendedores: allUsers,
+        companies: companies || [],
+        vendedores: allUsers || [],
       });
     }
 
@@ -92,25 +109,20 @@ export async function GET(request: Request) {
       lines.map((l) => [l.id, l.move_id[0]]),
     );
 
-    const moves =
-      (await callOdooRPC<any[]>(
-        "account.move",
-        "search_read",
-        [[["company_id", "=", userCompanyId]]],
-        {
-          fields: [
-            "name",
-            "state",
-            "amount_total",
-            "partner_id",
-            "invoice_user_id",
-            "invoice_date",
-            "move_type",
-            "date",
-          ],
-          limit: 5000,
-        },
-      )) || [];
+    const moves = await fetchPaginated(
+      "account.move",
+      [["company_id", "=", userCompanyId]],
+      [
+        "name",
+        "state",
+        "amount_total",
+        "partner_id",
+        "invoice_user_id",
+        "invoice_date",
+        "move_type",
+        "date",
+      ],
+    );
 
     const moveMap = Object.fromEntries(moves.map((m) => [m.id, m]));
     const partnerIds = new Set(
@@ -132,9 +144,19 @@ export async function GET(request: Request) {
         const cMove = moveMap[lineToMoveMap[r.credit_move_id?.[0]]];
         if (!dMove || !cMove) return null;
 
-        const isDInvoice = dMove.move_type === "out_invoice";
-        const invoiceMove = isDInvoice ? dMove : cMove;
-        const paymentMove = isDInvoice ? cMove : dMove;
+        // Exactamente un lado debe ser factura/nota de crédito de cliente;
+        // el otro debe ser el pago que la salda. Si ambos lados o ninguno
+        // califican, no es un par factura+pago de cliente.
+        const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
+        const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
+        if (dIsCustomerInvoice === cIsCustomerInvoice) return null;
+
+        const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
+        const paymentMove = dIsCustomerInvoice ? cMove : dMove;
+
+        // El lado "pago" no puede ser a su vez una factura/nota de crédito.
+        if (INVOICE_LIKE_TYPES.has(paymentMove.move_type)) return null;
+
         const partner = partnerMap[invoiceMove.partner_id?.[0]];
 
         return {
@@ -142,7 +164,7 @@ export async function GET(request: Request) {
           doc_abono: paymentMove?.name || "-",
           status: paymentMove?.state === "cancel" ? "Anulado" : "Vigente",
           valor_abono: r.amount || 0,
-          valor_pagado: r.amount || 0, // Campo corregido
+          valor_pagado: r.amount || 0,
           nit_cif_ruc: partner?.vat || "-",
           cliente: partner?.name || invoiceMove.partner_id?.[1] || "-",
           factura: invoiceMove.name || "-",
@@ -154,22 +176,18 @@ export async function GET(request: Request) {
       })
       .filter((r): r is any => r !== null);
 
-    // FILTRO DE FECHA INTELIGENTE
-    if (fechaInicio && fechaFin) {
-      const start = new Date(fechaInicio);
-      const end = new Date(fechaFin);
-
-      // Convertimos ambas fechas a un formato de solo fecha YYYY-MM-DD
-      const formatDate = (d: Date) => d.toISOString().split("T")[0];
-      const startStr = formatDate(start);
-      const endStr = formatDate(end);
+    // FILTRO DE FECHA (ABONO) — un único campo (fecha_abono, derivado de
+    // paymentMove.date), comparado como texto YYYY-MM-DD para no reintroducir
+    // desfaces de huso horario al pasar por Date().
+    if (fechaInicioRaw && fechaFinRaw) {
+      const startStr = fechaInicioRaw.split("T")[0];
+      const endStr = fechaFinRaw.split("T")[0];
 
       resultado = resultado.filter((r) => {
-        // Extraemos solo la fecha de la creación del registro (quitando la hora)
-        const recordDate = r.fecha_abono ? r.fecha_abono.split(" ")[0] : "";
-
-        // Comparamos cadenas de fecha: "2026-06-01" >= "2026-06-01" && "2026-06-01" <= "2026-06-01"
-        return recordDate >= startStr && recordDate <= endStr;
+        const abonoStr = r.fecha_abono
+          ? String(r.fecha_abono).split(" ")[0].split("T")[0]
+          : "";
+        return abonoStr >= startStr && abonoStr <= endStr;
       });
     }
 
@@ -187,8 +205,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       results: paginated,
       total_count: resultado.length,
-      companies: companies.map((c) => ({ cid: c.id.toString(), name: c.name })),
-      vendedores: allUsers
+      companies: (companies || []).map((c) => ({ cid: c.id.toString(), name: c.name })),
+      vendedores: (allUsers || [])
         .filter((u) => moves.some((m) => m.invoice_user_id?.[0] === u.id))
         .map((v) => ({ id: v.id.toString(), name: v.name })),
     });
