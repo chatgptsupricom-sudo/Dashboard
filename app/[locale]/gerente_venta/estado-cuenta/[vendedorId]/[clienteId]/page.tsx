@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -104,8 +105,13 @@ function Modal({
   children: React.ReactNode;
 }) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+  // Portal a document.body: el sidebar fijo vive en su propio z-[100], por
+  // encima del z-50 que suelen usar los modales de este panel. Sin el
+  // portal, el modal queda anidado dentro del contenido de la pagina y el
+  // sidebar lo tapa por completo del lado izquierdo por mas z-index que se
+  // le suba — es cuestion de contexto de apilamiento, no solo de numero.
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
         className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col w-full max-w-5xl"
@@ -119,7 +125,8 @@ function Modal({
         </div>
         <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
