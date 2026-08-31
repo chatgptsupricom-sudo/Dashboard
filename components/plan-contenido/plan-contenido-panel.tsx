@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { io, Socket } from "socket.io-client";
 import {
   AlertCircle,
@@ -334,8 +335,8 @@ export default function PlanContenidoPanel({
       </div>
 
       {/* Historial */}
-      {showHistory && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4"
+      {showHistory && createPortal(
+        <div className="fixed inset-0 z-[110] bg-slate-900/40 flex items-center justify-center p-4"
              onClick={() => setShowHistory(false)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col"
                onClick={(e) => e.stopPropagation()}>
@@ -405,7 +406,8 @@ export default function PlanContenidoPanel({
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
