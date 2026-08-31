@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Boxes, Package, PackageX, Search, Download, X, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 const SEDES = [
   { id: "9", label: "Valencia" },
@@ -208,8 +209,8 @@ export default function AdminLeadsCatalogoPage() {
         </div>
       )}
 
-      {modalExport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      {modalExport && createPortal(
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
               <h2 className="text-base font-bold text-zinc-900">Columnas a exportar</h2>
@@ -256,7 +257,8 @@ export default function AdminLeadsCatalogoPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
