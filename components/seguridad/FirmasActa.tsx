@@ -28,6 +28,7 @@ export default function FirmasActa({
   actaId,
   nombresSugeridos,
   roles = TODOS_LOS_ROLES as unknown as Rol[],
+  readOnly = false,
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -42,6 +43,13 @@ export default function FirmasActa({
    * puede dar.
    */
   roles?: Rol[];
+  /**
+   * RMA ve esta misma acta para verificar que este completa, pero no firma
+   * ni borra nada — solo Seguridad captura firmas. En este modo se muestra
+   * el mismo estado (firmado / sin firmar) sin los botones de accion, y la
+   * API de captura (`POST`/`DELETE`) ni siquiera se llama.
+   */
+  readOnly?: boolean;
 }) {
   const t = useTranslations("seguridad.firmas");
 
@@ -163,21 +171,25 @@ export default function FirmasActa({
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       {t("firmado")}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => abrir(rol)}
-                      className="ml-auto text-[11px] font-semibold text-slate-500 hover:text-slate-900 min-h-[32px] px-2"
-                    >
-                      {t("rehacer")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => borrar(rol)}
-                      aria-label={t("borrar")}
-                      className="text-slate-400 hover:text-red-600 min-h-[32px] px-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!readOnly && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => abrir(rol)}
+                          className="ml-auto text-[11px] font-semibold text-slate-500 hover:text-slate-900 min-h-[32px] px-2"
+                        >
+                          {t("rehacer")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => borrar(rol)}
+                          aria-label={t("borrar")}
+                          className="text-slate-400 hover:text-red-600 min-h-[32px] px-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </>
               ) : (
@@ -185,15 +197,21 @@ export default function FirmasActa({
                   <p className="text-sm text-slate-500 mt-1 truncate">
                     {nombresSugeridos[rol] || t("sin_nombre")}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => abrir(rol)}
-                    className="mt-2 w-full inline-flex items-center justify-center gap-2 min-h-[44px] rounded-[10px] text-sm font-semibold text-white"
-                    style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-                  >
-                    <PenLine className="w-4 h-4" />
-                    {t("firmar")}
-                  </button>
+                  {readOnly ? (
+                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                      {t("sin_firmar")}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => abrir(rol)}
+                      className="mt-2 w-full inline-flex items-center justify-center gap-2 min-h-[44px] rounded-[10px] text-sm font-semibold text-white"
+                      style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+                    >
+                      <PenLine className="w-4 h-4" />
+                      {t("firmar")}
+                    </button>
+                  )}
                 </>
               )}
             </div>

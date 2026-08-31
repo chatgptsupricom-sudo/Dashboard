@@ -2269,6 +2269,7 @@
       "completa": "Completa",
       "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
       "firmado": "Firmado",
+      "sin_firmar": "Sin firmar",
       "firmar": "Firmar",
       "rehacer": "Rehacer",
       "borrar": "Borrar firma",

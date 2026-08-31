@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad, requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   decodificarFirmaPng,
   esRolValido,
@@ -53,13 +53,19 @@ export async function GET(
   { params }: { params: Promise<{ tipo: string; id: string }> },
 ) {
   try {
-    const auth = await requireSeguridad(request);
+    const { tipo, id } = await params;
+
+    // Solo el ingreso se abre a RMA (verifica que el acta tenga las 4
+    // firmas antes de intervenir el equipo). Despacho y mercancia son cosa
+    // de Almacen/Seguridad y siguen exclusivos.
+    const auth = tipo === "ingreso"
+      ? await requireRmaOSeguridad(request)
+      : await requireSeguridad(request);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
-    const { tipo, id } = await params;
     const p = parsearParams(tipo, id);
     if (p.error) return NextResponse.json({ error: p.error }, { status: 400 });
 

@@ -39,6 +39,22 @@ export async function requireAlmacenOSeguridad(
 }
 
 /**
+ * Guard de las rutas de ingreso RMA que tambien puede leer el rol `rma`.
+ *
+ * El usuario de RMA es quien llama al cliente y decide si el ingreso quedo
+ * bien hecho (las 4 firmas, los 4 checks) antes de intervenir el equipo — pero
+ * hasta ahora solo podia verlo si alguien de Seguridad se lo mostraba por
+ * fuera del sistema. Este guard es exclusivamente para LECTURA (el detalle del
+ * acta de ingreso); capturar o borrar una firma y calificar al almacenista
+ * siguen siendo `requireSeguridad` exclusivo.
+ */
+export async function requireRmaOSeguridad(
+  request: NextRequest,
+): Promise<{ payload?: any; error?: NextResponse }> {
+  return requireRoles(request, ["seguridad", "rma"]);
+}
+
+/**
  * Resuelve la sucursal (`cids`) de la sesion para filtrar datos por ella.
  *
  * Cada usuario de `seguridad`/`almacen` solo debe ver lo de su sucursal

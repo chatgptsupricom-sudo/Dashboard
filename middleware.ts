@@ -225,7 +225,19 @@ export default async function middleware(request: NextRequest) {
       // /seguridad/login dedicado se eliminó — con el módulo protegido, esa
       // ruta nunca llegaba a renderizarse (el guard de arriba redirige antes
       // de alcanzar la excepción), así que era código muerto.
-      if (pathname.includes("/seguridad") && !isSeguridad && !isAlmacen && !isSuperAdmin) {
+      // RMA entra solo al detalle de UN ingreso (llama al cliente y verifica
+      // que el acta tenga las 4 firmas y los 4 checks antes de intervenir el
+      // equipo) — no al resto del modulo de Seguridad. Por eso no se suma
+      // `isRma` al gate general como Almacen: eso abriria tambien el listado
+      // de ingresos, despachos y mercancia, que no le corresponden.
+      const esIngresoDetalleRma = /^\/(es|en)\/seguridad\/ingreso\/\d+(\/|$)/.test(pathname);
+      if (
+        pathname.includes("/seguridad") &&
+        !isSeguridad &&
+        !isAlmacen &&
+        !isSuperAdmin &&
+        !(isRma && esIngresoDetalleRma)
+      ) {
         return NextResponse.redirect(
           new URL(`/${locale}/login`, request.url),
         );

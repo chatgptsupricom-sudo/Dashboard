@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { fechaLarga } from "@/lib/fecha";
 import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
@@ -67,7 +67,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireSeguridad(request);
+  const auth = await requireRmaOSeguridad(request);
   if (auth.error) return auth.error;
 
   const { cids, error: cidsError } = resolverCidsSesion(auth.payload);

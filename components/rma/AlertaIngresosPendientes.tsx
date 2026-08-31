@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { connectSocket } from "@/lib/socket-client";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { AlertTriangle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, ChevronRight, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
@@ -40,6 +42,8 @@ interface Alerta {
 export function AlertaIngresosPendientes() {
   const t = useTranslations("rma");
   const { user } = useAuthStore();
+  const params = useParams();
+  const locale = (params?.locale as string) || "es";
   const [alerta, setAlerta] = useState<Alerta | null>(null);
   const [cerrado, setCerrado] = useState(false);
   const [abierto, setAbierto] = useState(false);
@@ -105,21 +109,24 @@ export function AlertaIngresosPendientes() {
           {abierto && (
             <ul className="mt-3 space-y-1.5 text-sm text-amber-900">
               {alerta.ingresos.map((i) => (
-                <li
-                  key={i.id}
-                  className="flex flex-wrap items-baseline gap-x-2 border-t border-amber-200 pt-1.5"
-                >
-                  <span className="font-medium">{i.cliente_nombre}</span>
-                  {i.hardware && <span className="text-amber-700">{i.hardware}</span>}
-                  {i.serial && (
-                    <span className="text-amber-600 font-mono text-xs">{i.serial}</span>
-                  )}
-                  {i.case_number && (
-                    <span className="text-amber-600 text-xs">#{i.case_number}</span>
-                  )}
-                  <span className="ml-auto text-amber-700 whitespace-nowrap">
-                    {t("pendientes_alerta_dias", { dias: i.dias_en_taller })}
-                  </span>
+                <li key={i.id} className="border-t border-amber-200 pt-1.5">
+                  <Link
+                    href={`/${locale}/seguridad/ingreso/${i.id}`}
+                    className="flex flex-wrap items-baseline gap-x-2 hover:underline"
+                  >
+                    <span className="font-medium">{i.cliente_nombre}</span>
+                    {i.hardware && <span className="text-amber-700">{i.hardware}</span>}
+                    {i.serial && (
+                      <span className="text-amber-600 font-mono text-xs">{i.serial}</span>
+                    )}
+                    {i.case_number && (
+                      <span className="text-amber-600 text-xs">#{i.case_number}</span>
+                    )}
+                    <span className="ml-auto inline-flex items-center gap-0.5 text-amber-700 whitespace-nowrap">
+                      {t("pendientes_alerta_dias", { dias: i.dias_en_taller })}
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </Link>
                 </li>
               ))}
             </ul>

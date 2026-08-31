@@ -2280,6 +2280,7 @@
       "completa": "Complete",
       "faltan": "{count, plural, =1 {# signature missing} other {# signatures missing}}",
       "firmado": "Signed",
+      "sin_firmar": "Not signed",
       "firmar": "Sign",
       "rehacer": "Redo",
       "borrar": "Delete signature",

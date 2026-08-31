@@ -118,6 +118,12 @@ export default function IngresoDetailPage() {
   const base = `/${locale}/seguridad`;
 
   const { user } = useAuthStore();
+  // RMA llega aqui para verificar el ingreso (llama al cliente, confirma que
+  // el acta tenga las 4 firmas y los 4 checks) antes de intervenir el
+  // equipo — pero no firma ni califica, eso sigue siendo de Seguridad. Mismo
+  // patron que `esAlmacen` en MercanciaDetalle.tsx: todo el contenido de
+  // lectura queda visible, solo se ocultan los controles de captura.
+  const esRma = (user?.role || "").toLowerCase().trim() === "rma";
 
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
@@ -397,6 +403,7 @@ export default function IngresoDetailPage() {
             seguridad: user?.name,
             cliente: ingreso.cliente_nombre,
           }}
+          readOnly={esRma}
         />
 
         {/* Checks card */}
@@ -491,6 +498,10 @@ export default function IngresoDetailPage() {
                 </span>
               </p>
             </div>
+          ) : esRma ? (
+            <p className="text-sm text-slate-500 text-center py-4">
+              {tc("not_rated")}
+            </p>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50/40 px-3 py-4">
