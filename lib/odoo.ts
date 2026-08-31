@@ -1,6 +1,26 @@
 import axios from "axios";
 import { odooApiKey } from "@/lib/secretos";
 
+/**
+ * Se lanza cuando Odoo no respondió en absoluto (caído, sin red, timeout,
+ * DNS) — a diferencia de un error de aplicación (dominio inválido, permiso
+ * denegado), donde Odoo SÍ contestó y `callOdooRPC` sigue devolviendo null
+ * como antes, para no romper el resto de fetchers en un `Promise.all`.
+ *
+ * Antes, cualquier error (incluida Odoo caído) devolvía null en silencio, y
+ * eso se interpretaba igual que "no hay fuente de datos" — un panel entero
+ * podía salir en "sin datos" sin ningún aviso de que Odoo no está
+ * respondiendo. Las rutas que quieran distinguirlo deben capturar este tipo
+ * de error específicamente.
+ */
+export class OdooUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super("No se pudo conectar con Odoo");
+    this.name = "OdooUnreachableError";
+    this.cause = cause;
+  }
+}
+
 export interface OdooUser {
   id: number;
   name: string;
@@ -13,8 +33,10 @@ const RAW_URL =
   process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com";
 const ODOO_URL = RAW_URL.replace(/\/$/, "");
 const ODOO_DB = process.env.ODOO_DB || "";
-const ODOO_API_KEY =
-  odooApiKey();
+// uid del usuario de la API. Fijo a 388 en producción; se puede overridear
+// con ODOO_UID para apuntar a otra instancia (ej. un Odoo local de pruebas,
+// donde el usuario admin de fabrica es el id 2).
+const ODOO_UID = Number(process.env.ODOO_UID) || 388;
 
 /**
  * Función base para llamadas RPC a Odoo (JSON-RPC 2.0)
@@ -61,8 +83,8 @@ export async function callOdooRPC<T>(
         method: "execute_kw",
         args: [
           ODOO_DB,
-          388,
-          ODOO_API_KEY,
+          ODOO_UID,
+          odooApiKey(),
           model,
           method,
           args, // Esto debe ser una lista: [[filtro, op, valor]]
@@ -86,6 +108,13 @@ export async function callOdooRPC<T>(
     return response.data.result as T;
   } catch (error: any) {
     console.error("❌ Error RPC:", error.message);
+    // axios solo pone `error.response` cuando el servidor SÍ contestó (con un
+    // error HTTP). Si no hay `response`, la solicitud nunca llegó a destino
+    // ni volvió — Odoo caído, timeout, DNS, sin red — eso es un problema de
+    // conexión real, no "esta consulta puntual no aplica".
+    if (!error.response) {
+      throw new OdooUnreachableError(error);
+    }
     return null;
   }
 }

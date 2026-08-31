@@ -1,4 +1,29 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
+
+/**
+ * `presupuesto_gastos` la crea el endpoint de carga (`/api/administracion/
+ * presupuesto`) al usarse por primera vez. `gastos/route.ts` la consulta
+ * pero nunca la crea — en una base nueva, si alguien mira el índice de
+ * Gastos antes de que Administración haya cargado un presupuesto ni una
+ * sola vez, la tabla no existe todavía y el SELECT fallaría (silenciado por
+ * el catch de esa ruta, así que ni se nota). Se comparte esta función para
+ * que ambas rutas dejen de depender del orden en que alguien las visita.
+ */
+export async function ensurePresupuestoTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS presupuesto_gastos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      company_id INT NOT NULL,
+      mes VARCHAR(7) NOT NULL,
+      cuenta_codigo VARCHAR(50) NOT NULL,
+      monto DECIMAL(15,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_presupuesto (company_id, mes, cuenta_codigo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
 
 /**
  * Fuente del "gasto real": facturas de proveedor contabilizadas, tomando las
@@ -64,14 +89,18 @@ async function fetchPaginado(
 }
 
 export async function fetchCuentasGasto(
-  companyId: number,
+  companyIds: number[],
 ): Promise<CuentaGasto[]> {
   const cuentas = await fetchPaginado(
     "account.account",
     [["account_type", "=", TIPO_CUENTA_GASTO]],
     ["id", "code", "name"],
-    { allowed_company_ids: [companyId] },
+    { allowed_company_ids: companyIds },
   );
+  // Se devuelven TODAS las cuentas, sin deduplicar: con varias sedes el mismo
+  // codigo contable puede existir como un registro por empresa, y filtrar el
+  // gasto real necesita todos esos ids. Para listas de cuentas (plantilla de
+  // presupuesto) usar dedupPorCodigo().
   return (cuentas || [])
     .filter((c: any) => c.code)
     .map((c: any) => ({
@@ -83,12 +112,22 @@ export async function fetchCuentasGasto(
     .sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 
+/** Una fila por codigo contable, para listados y plantillas. */
+export function dedupPorCodigo(cuentas: CuentaGasto[]): CuentaGasto[] {
+  const vistos = new Set<string>();
+  return cuentas.filter((c) => {
+    if (vistos.has(c.codigo)) return false;
+    vistos.add(c.codigo);
+    return true;
+  });
+}
+
 /**
  * Gasto real por cuenta en un rango. Incluye notas de credito de proveedor
  * (`in_refund`), cuyo balance negativo descuenta correctamente del gasto.
  */
 export async function fetchGastoReal(
-  companyId: number,
+  companyIds: number[],
   desde: string,
   hasta: string,
   cuentas: CuentaGasto[],
@@ -109,11 +148,11 @@ export async function fetchGastoReal(
       ["move_id.state", "=", "posted"],
       ["move_id.invoice_date", ">=", desde],
       ["move_id.invoice_date", "<=", hasta],
-      ["move_id.company_id", "=", companyId],
+      ["move_id.company_id", "in", companyIds],
       ["account_id", "in", cuentas.map((c) => c.id)],
     ],
     ["account_id", "balance", "move_id", "partner_id", "date"],
-    { allowed_company_ids: [companyId] },
+    { allowed_company_ids: companyIds },
   );
 
   (lineas || []).forEach((l: any) => {

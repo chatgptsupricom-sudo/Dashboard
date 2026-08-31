@@ -6,22 +6,11 @@ import {
   canViewAdministracion,
   getAdminUser,
 } from "@/lib/administracion/auth";
-import { fetchCuentasGasto } from "@/lib/administracion/gastos";
-
-async function ensureTable() {
-  await query(`
-    CREATE TABLE IF NOT EXISTS presupuesto_gastos (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      company_id INT NOT NULL,
-      mes VARCHAR(7) NOT NULL,
-      cuenta_codigo VARCHAR(50) NOT NULL,
-      monto DECIMAL(15,2) NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY unique_presupuesto (company_id, mes, cuenta_codigo)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-}
+import {
+  dedupPorCodigo,
+  ensurePresupuestoTable as ensureTable,
+  fetchCuentasGasto,
+} from "@/lib/administracion/gastos";
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,7 +30,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const cuentas = await fetchCuentasGasto(companyId);
+    const cuentas = dedupPorCodigo(await fetchCuentasGasto([companyId]));
     const rows = await query(
       "SELECT cuenta_codigo, monto FROM presupuesto_gastos WHERE company_id = ? AND mes = ?",
       [companyId, mes],

@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
 import {
+  ensurePresupuestoTable,
   fetchCuentasGasto,
   fetchGastoReal,
   mesAnterior,
@@ -12,6 +13,10 @@ import {
   AlertaAdmin,
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
+import {
+  companyIdsDeEmpresa,
+  empresaDeCompanyId,
+} from "@/lib/administracion/empresas";
 
 const CATEGORIA = "Gastos y Presupuesto";
 const PUNTOS_CATEGORIA = 15;
@@ -28,12 +33,25 @@ export async function GET(request: NextRequest) {
     const mes =
       url.searchParams.get("mes") ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const companyId = parseInt(url.searchParams.get("company_id") || "9", 10);
+    // Dos formas de filtrar la sede, porque hay dos consumidores: la pagina de
+    // Gastos trabaja siempre sobre una sede (`company_id`, porque el
+    // presupuesto se carga por empresa) y el indice general usa el mismo
+    // `empresa` que Salud Financiera, donde vacio significa todas las sedes.
+    const empresaParam = url.searchParams.get("empresa");
+    const companyIdParam = url.searchParams.get("company_id");
+    const companyIds =
+      empresaParam !== null
+        ? companyIdsDeEmpresa(empresaParam)
+        : [parseInt(companyIdParam || "9", 10)];
+    const empresa =
+      empresaParam !== null
+        ? (empresaParam || "").toLowerCase().trim()
+        : empresaDeCompanyId(companyIds[0]);
 
-    const cuentas = await fetchCuentasGasto(companyId);
+    const cuentas = await fetchCuentasGasto(companyIds);
     const { desde, hasta } = rangoDelMes(mes);
     const { porCuenta: realMes, detalles } = await fetchGastoReal(
-      companyId,
+      companyIds,
       desde,
       hasta,
       cuentas,
@@ -43,14 +61,14 @@ export async function GET(request: NextRequest) {
     const mesPrev = mesAnterior(mes, 1);
     const rangoPrev = rangoDelMes(mesPrev);
     const { porCuenta: realMesPrev } = await fetchGastoReal(
-      companyId,
+      companyIds,
       rangoPrev.desde,
       rangoPrev.hasta,
       cuentas,
     );
     const inicio3m = rangoDelMes(mesAnterior(mes, 3)).desde;
     const { porCuenta: real3mPrevios } = await fetchGastoReal(
-      companyId,
+      companyIds,
       inicio3m,
       rangoPrev.hasta,
       cuentas,
@@ -59,9 +77,15 @@ export async function GET(request: NextRequest) {
     // Presupuesto cargado para el mes (tabla propia; Odoo no tiene presupuesto).
     let presupuestoPorCuenta: Record<string, number> = {};
     try {
+      await ensurePresupuestoTable();
+      // Con varias sedes se suman los presupuestos de cada una, igual que se
+      // suma su gasto real, para que la comparacion siga siendo homogenea.
       const rows = await query(
-        "SELECT cuenta_codigo, monto FROM presupuesto_gastos WHERE company_id = ? AND mes = ?",
-        [companyId, mes],
+        `SELECT cuenta_codigo, SUM(monto) AS monto
+           FROM presupuesto_gastos
+          WHERE company_id IN (${companyIds.map(() => "?").join(",")}) AND mes = ?
+          GROUP BY cuenta_codigo`,
+        [...companyIds, mes],
       );
       (rows.rows as any[]).forEach((r) => {
         const monto = Number(r.monto) || 0;
@@ -275,12 +299,16 @@ export async function GET(request: NextRequest) {
         montoAfectado:
           k.id === "desviacion_gastos"
             ? Math.round((totalReal - totalPresupuesto) * 100) / 100
-            : null,
+            // Cuanto subio o bajo el gasto en dolares contra el mes anterior;
+            // solo tiene sentido si hubo gasto que comparar el mes pasado.
+            : k.id === "variacion_mensual_gasto" && totalRealPrev > 0
+              ? Math.round((totalReal - totalRealPrev) * 100) / 100
+              : null,
         fechaDeteccion: new Date().toISOString().split("T")[0],
         accion: "Revisar ejecución del gasto contra presupuesto",
         fechaCompromiso: null,
         estatus: "abierta",
-        severidad: severidadDesdeDesvio(k.semaforo, k.valor ?? 0),
+        severidad: severidadDesdeDesvio(k.semaforo, k.desvio ?? 0),
         enlace: "/administracion/gastos",
       });
     });
@@ -307,7 +335,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       mes,
-      companyId,
+      empresa,
+      companyIds,
       resumen,
       kpis,
       totales: {

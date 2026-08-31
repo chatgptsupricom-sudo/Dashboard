@@ -7,6 +7,9 @@ const JWT_SECRET = jwtSecretBytes();
 export interface AdminAuthUser {
   role: string;
   cids: number;
+  /** Para dejar rastro de quien actualiza el seguimiento de una alerta. */
+  nombre: string;
+  email: string;
 }
 
 // El rol nuevo se define en el issue #7 (lib/types.ts + tabla roles). Aqui se
@@ -28,7 +31,12 @@ export async function getAdminUser(
     if (!token) return null;
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const role = ((payload.role as string) || "").toLowerCase().trim();
-    return { role, cids: Number(payload.cids) };
+    return {
+      role,
+      cids: Number(payload.cids),
+      nombre: (payload.name as string) || "",
+      email: (payload.email as string) || "",
+    };
   } catch {
     return null;
   }
@@ -43,5 +51,12 @@ export function canViewAdministracion(user: AdminAuthUser | null): boolean {
 // escribirlo se restringe igual que verlo (no hay un rol de "solo lectura"
 // separado todavia; si aparece, se acota aqui).
 export function canEditPresupuesto(user: AdminAuthUser | null): boolean {
+  return canViewAdministracion(user);
+}
+
+// El seguimiento de alertas (fecha compromiso y estatus) es la parte del
+// indice donde Administracion se compromete con una accion, asi que se
+// restringe igual que el resto del area.
+export function canEditAlertas(user: AdminAuthUser | null): boolean {
   return canViewAdministracion(user);
 }

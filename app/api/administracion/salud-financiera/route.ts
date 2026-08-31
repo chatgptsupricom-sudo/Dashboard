@@ -17,18 +17,11 @@ import {
   construirTopAlertas,
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
-
-const COMPANY_MAP: Record<string, number> = {
-  valencia: 9,
-  caracas: 10,
-  panama: 7,
-};
+import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
 
 const SIN_DATOS = {
   promesas_pago:
     "No existe registro de promesas de pago en el sistema; requiere capturarlas.",
-  clientes_excedidos:
-    "Requiere límites de crédito por cliente, que no están configurados en Odoo.",
   exactitud_proyeccion:
     "Requiere guardar las proyecciones de caja para compararlas contra lo real.",
   facturas_pendientes:
@@ -49,9 +42,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const empresa = (searchParams.get("empresa") || "").toLowerCase();
-    const companyIds =
-      empresa && COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : [9, 10, 7];
+    const empresa = (searchParams.get("empresa") || "").toLowerCase().trim();
+    const companyIds = companyIdsDeEmpresa(empresa);
     const metas = await cargarMetas(companyIds[0]);
 
     const hoyDate = new Date();
@@ -64,11 +56,38 @@ export async function GET(request: NextRequest) {
     const hasta = fmtFecha(new Date(anio, mesNum, 0));
     const hasta30 = fmtFecha(new Date(hoyDate.getTime() + 30 * 86400000));
 
-    const [cxc, cxp, tes] = await Promise.all([
+    const [cxc, cxp, tes, clientesConLimiteRaw] = await Promise.all([
       fetchCxC(companyIds),
       fetchCxP(companyIds, desde, hasta, hoy, hasta30),
       fetchTesoreria(companyIds),
+      // "credit_limit" es un campo company_dependent (se ve en Contactos >
+      // Contabilidad > Límites de Crédito): no es que falte cargarlo, está
+      // bien poblado (>99% de los clientes con credit_limit>0 lo tienen real,
+      // no en 0) — solo faltaba conectarlo a este KPI. "credit" es el saldo
+      // por cobrar que Odoo ya calcula solo (mismo campo que se ve como
+      // "Total por cobrar" en la ficha del contacto).
+      callOdooRPC<any[]>(
+        "res.partner",
+        "search_read",
+        [
+          [
+            ["company_id", "in", companyIds],
+            ["customer_rank", ">", 0],
+            ["credit_limit", ">", 0],
+            ["active", "=", true],
+          ],
+        ],
+        { fields: ["credit_limit", "credit"], limit: 0 },
+      ),
     ]);
+    const clientesConLimite = clientesConLimiteRaw || [];
+    const clientesExcedidos = clientesConLimite.filter(
+      (c) => Number(c.credit) > Number(c.credit_limit),
+    ).length;
+    const pctClientesExcedidos =
+      clientesConLimite.length > 0
+        ? Math.round((clientesExcedidos / clientesConLimite.length) * 1000) / 10
+        : null;
 
     // Cobros esperados vs realizados: facturas de cliente que vencian en el
     // periodo y que ya fueron cobradas.
@@ -182,11 +201,15 @@ export async function GET(request: NextRequest) {
         {
           id: "clientes_excedidos", numero: 6, nombre: "Clientes excedidos de límite",
           formula: "Clientes excedidos / clientes con crédito × 100", peso: 3,
-          metaTexto: "≤2%", valor: null, unidad: "%", frecuencia: "Diaria",
-          responsable: "Crédito y Cobranzas", fuente: "ERP / Crédito",
-          detalle: SIN_DATOS.clientes_excedidos,
+          metaTexto: `≤${metas.clientes_excedidos}%`, valor: pctClientesExcedidos,
+          unidad: "%", frecuencia: "Diaria",
+          responsable: "Crédito y Cobranzas", fuente: "Odoo / Contactos",
+          detalle:
+            clientesConLimite.length > 0
+              ? `${clientesExcedidos} de ${clientesConLimite.length} clientes con límite cargado están por encima de su límite de crédito`
+              : "Ningún cliente tiene un límite de crédito mayor a 0 cargado en Odoo",
         },
-        { modo: "lower_better", verde: 2, amarillo: 5 },
+        { modo: "lower_better", verde: metas.clientes_excedidos ?? 2, amarillo: 5 },
       ),
     ];
 
@@ -363,12 +386,18 @@ export async function GET(request: NextRequest) {
             k.id === "cartera_vencida" ? cxc.vencido
             : k.id === "cartera_90" ? cxc.b91mas
             : k.id === "obligaciones_vencidas" ? cxp.saldoVencido
+            // El flujo proyectado ya es un monto en si mismo (positivo o
+            // negativo), no hace falta derivarlo de otra cosa.
+            : k.id === "flujo_proyectado_30d" ? flujoProyectado
+            // Lo "afectado" en cobros esperados es lo que todavia no se ha
+            // cobrado del periodo, no el total esperado ni lo ya cobrado.
+            : k.id === "cobros_esperados" ? (esperado > 0 ? Math.round((esperado - cobrado) * 100) / 100 : null)
             : null,
           fechaDeteccion: hoy,
           accion: k.detalle || "Revisar indicador",
           fechaCompromiso: null,
           estatus: "abierta" as const,
-          severidad: severidadDesdeDesvio(k.semaforo, k.valor ?? 0),
+          severidad: severidadDesdeDesvio(k.semaforo, k.desvio ?? 0),
           enlace: "/administracion",
         })),
     );
@@ -379,7 +408,10 @@ export async function GET(request: NextRequest) {
       empresa: empresa || "todas",
       indice: { valor: indice, puntos, puntosMax, puntosEvaluables, clasificacion },
       categorias,
-      alertas: construirTopAlertas(alertasPorArea, 10),
+      // Se devuelven todas las alertas candidatas ya ordenadas, no solo 10: la
+      // pagina las mezcla con las de Gastos y descarta las que Administracion
+      // marco como cerradas, y recortar aqui a 10 dejaria el Top final corto.
+      alertas: construirTopAlertas(alertasPorArea, 100),
       detalle: {
         cxc: {
           totalCartera: cxc.totalCartera,

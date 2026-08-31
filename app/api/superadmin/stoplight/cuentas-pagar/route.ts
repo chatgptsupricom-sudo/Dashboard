@@ -128,26 +128,48 @@ export async function GET(request: NextRequest) {
       }
     )) || [];
 
-    // Fetch purchase orders for SLA calculation
-    const poDomain: any[] = [
-      ["company_id", "=", companyId],
-      ["state", "in", ["purchase", "done"]],
-      ["date_order", ">=", formatDate(monthStart)],
-      ["date_order", "<=", formatDate(monthEnd)],
-    ];
+    const billIds = allBills.map((b: any) => b.id);
 
-    const purchaseOrders = (await callOdooRPC<any[]>(
-      "purchase.order",
-      "search_read",
-      [poDomain],
-      {
-        fields: ["id", "partner_id", "date_order", "date_planned", "company_id"],
-        limit: 5000,
-      }
-    )) || [];
+    // Ordenes de compra ligadas a ESTAS facturas (para el SLA de "Procesamiento
+    // oportuno": 3 dias habiles si viene de una PO, 5 si no). Se busca por
+    // invoice_ids en vez de filtrar purchase.order por fecha del mes: una PO
+    // de un mes anterior se puede facturar este mes, y con el filtro de fecha
+    // esos casos se perdian. Antes esto se decidia adivinando si el texto
+    // "po" aparecia en la referencia de la factura, lo cual daba falsos
+    // positivos/negativos con cualquier numero de factura que lo contuviera.
+    const purchaseOrders = billIds.length > 0
+      ? (await callOdooRPC<any[]>(
+          "purchase.order",
+          "search_read",
+          [[["invoice_ids", "in", billIds]]],
+          { fields: ["id", "invoice_ids"], limit: 5000 }
+        )) || []
+      : [];
+    const billIdsConPO = new Set<number>();
+    purchaseOrders.forEach((po: any) => {
+      (po.invoice_ids || []).forEach((id: number) => billIdsConPO.add(id));
+    });
 
-    const poMap: Record<number, any> = {};
-    purchaseOrders.forEach((po: any) => { poMap[po.id] = po; });
+    // Fecha real del ultimo pago que salda cada factura (para "Pagos a
+    // tiempo"): hace falta CUANDO se pago, no solo si ya esta pagada hoy —
+    // antes, una factura pagada meses tarde contaba igual como "a tiempo"
+    // con tal de estar saldada al momento de correr el reporte.
+    const pagos = billIds.length > 0
+      ? (await callOdooRPC<any[]>(
+          "account.payment",
+          "search_read",
+          [[["reconciled_bill_ids", "in", billIds]]],
+          { fields: ["date", "reconciled_bill_ids"], limit: 10000 }
+        )) || []
+      : [];
+    const ultimoPagoPorFactura: Record<number, string> = {};
+    pagos.forEach((p: any) => {
+      (p.reconciled_bill_ids || []).forEach((billId: number) => {
+        if (!ultimoPagoPorFactura[billId] || p.date > ultimoPagoPorFactura[billId]) {
+          ultimoPagoPorFactura[billId] = p.date;
+        }
+      });
+    });
 
     // ========================================
     // Process each bill
@@ -253,7 +275,14 @@ export async function GET(request: NextRequest) {
         const isPaid = paymentState === "paid" || paymentState === "reconciled" || paymentState === "in_payment";
         if (isPaid) {
           const paidAmount = amount - residual;
-          if (paidAmount > 0) {
+          // "A tiempo" es contra la fecha real del ultimo pago que la saldo,
+          // no solo que hoy ya este pagada (ver nota arriba). Si no aparece
+          // en account.payment (ej. se salda por una nota de credito o un
+          // asiento manual en vez de un pago), no se puede saber cuando se
+          // salvo la deuda -> no se cuenta como "a tiempo" en vez de asumirlo.
+          const fechaPago = ultimoPagoPorFactura[bill.id];
+          const pagadaATiempo = !!fechaPago && !!dueDate && fechaPago <= formatDate(dueDate);
+          if (paidAmount > 0 && pagadaATiempo) {
             montoPagadoATiempo += paidAmount;
             facturasPagadasPuntualmente++;
             if (weekIdxDue >= 0) weeklyData[weekIdxDue].pagosATiempoMonto += paidAmount;
@@ -273,7 +302,7 @@ export async function GET(request: NextRequest) {
         const createDate = bill.create_date ? new Date(bill.create_date) : invDate;
         const processingDays = countBusinessDays(invDate, createDate);
 
-        const hasPO = (bill.ref && bill.ref.toLowerCase().includes("po")) || false;
+        const hasPO = billIdsConPO.has(bill.id);
         const sla = hasPO ? 3 : 5;
 
         tiemposProcesamiento.push(processingDays);

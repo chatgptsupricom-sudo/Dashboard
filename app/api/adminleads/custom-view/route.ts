@@ -3,6 +3,8 @@ import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 import { addHistory, ensureTables, getState, getView, resolveView } from "@/lib/customView/store";
 import { buildInjection } from "@/lib/customView/runtime";
+import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
+import { buildReactInjection, detectReactPlan } from "@/lib/customView/reactInjection";
 
 declare global { var io: any; }
 
@@ -24,6 +26,19 @@ const HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store, max-age=0",
 };
+
+/**
+ * Inserta la inyeccion justo antes del cierre real del <body>.
+ *
+ * OJO: se usa lastIndexOf, no replace. Un bundle de una SPA (Vite singlefile)
+ * puede llevar la cadena "</body>" dentro del JS minificado; un replace normal
+ * la pisaria ahi y romperia el script. El </body> real es el ultimo.
+ */
+function injectBeforeBodyClose(html: string, injection: string): string {
+  const i = html.lastIndexOf("</body>");
+  if (i === -1) return html + injection;
+  return html.slice(0, i) + injection + html.slice(i);
+}
 
 /**
  * GET
@@ -65,7 +80,30 @@ export async function GET(request: NextRequest) {
     }
 
     if (mode === "base") {
-      return new Response(view.html_content, { headers: HTML_HEADERS });
+      const download = request.nextUrl.searchParams.get("download") === "1";
+      return new Response(view.html_content, {
+        headers: download
+          ? { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="plan-de-contenido.html"` }
+          : HTML_HEADERS,
+      });
+    }
+
+    // Panel React (SPA): la persistencia es un objeto plano en plan_content_state
+    // y no el overlay de DOM. Se inyecta solo la config; la app hace el resto.
+    const reactPlan = detectReactPlan(view.html_content);
+    if (reactPlan) {
+      await ensurePlanTables();
+      const planState = await getPlanState(viewName);
+      const injection = buildReactInjection({
+        api: API_BASE,
+        socketUrl: SOCKET_URL,
+        view: viewName,
+        revision: planState.revision,
+        variant: reactPlan,
+      });
+      return new Response(injectBeforeBodyClose(view.html_content, injection), {
+        headers: HTML_HEADERS,
+      });
     }
 
     const state = await getState(viewName);
@@ -78,12 +116,9 @@ export async function GET(request: NextRequest) {
       view: viewName,
     });
 
-    const html = view.html_content;
-    const injected = html.includes("</body>")
-      ? html.replace("</body>", injection + "</body>")
-      : html + injection;
-
-    return new Response(injected, { headers: HTML_HEADERS });
+    return new Response(injectBeforeBodyClose(view.html_content, injection), {
+      headers: HTML_HEADERS,
+    });
   } catch (error: any) {
     console.error("custom-view GET error:", error?.message);
     return new Response(

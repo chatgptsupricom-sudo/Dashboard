@@ -34,6 +34,21 @@ export const METAS_DEFAULT: Record<string, number | null> = {
   cobertura_pagos_30d: 1.2,
   facturas_pendientes: 5,
   descuentos_aprovechados: 90,
+
+  // Gestión Administrativa (issue #8, 20 pts sin fuente hasta que se
+  // configuraron Approvals/Helpdesk/Project — ver supricom_admin_kpis).
+  // "Plazo interno de procesamiento": Administración lo definió en 24h:
+  // se guarda en días porque diasEntre()/pendientesVencidos comparan en esa
+  // unidad, y 24h son exactamente 1 día — no hace falta una unidad aparte.
+  plazo_procesamiento_dias: 1,
+  legalizacion_dias: 30, // proxy: >30 dias sin legalizar es la banda que ya usa Tesorería para "vencido"
+  pct_legalizacion_vencida: 20,
+
+  // Cumplimiento y Control
+  operaciones_fuera_politica: 0,
+  incidencias_vencidas_pct: 10,
+  auditoria_cumplimiento_pct: 90,
+  reincidencias: 0,
 };
 
 export async function ensureMetasTable() {
