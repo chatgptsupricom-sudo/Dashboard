@@ -45,8 +45,6 @@ type Coincidencia = {
   compania: string;
 };
 
-type Sucursal = { cid: number; nombre: string };
-
 type Factura = {
   estado: "ok";
   factura: { numero: string; fecha: string | null; compania: string };
@@ -57,9 +55,14 @@ type Factura = {
 export function ReporteForm({
   locale,
   turnstileSiteKey = "",
+  sucursalCid,
+  sucursalSlug,
 }: {
   locale: string;
   turnstileSiteKey?: string;
+  /** Resuelta por la URL (/servicio-tecnico/valencia, /panama, /caracas) — ya no la elige el cliente. */
+  sucursalCid: number;
+  sucursalSlug: string;
 }) {
   const t = useTranslations("servicioTecnico");
   const router = useRouter();
@@ -67,8 +70,6 @@ export function ReporteForm({
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
 
   // Paso 1
-  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
-  const [sucursal, setSucursal] = useState("");
   const [numero, setNumero] = useState("");
   const [rif, setRif] = useState("");
   // Errores por campo. Los botones se dejan habilitados a propósito: uno
@@ -113,23 +114,6 @@ export function ReporteForm({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [paso]);
 
-  // Sucursales para el selector del paso 1. Si solo hay una configurada
-  // (PORTAL_SUCURSALES_CIDS con un único valor), se elige sola y no hace
-  // falta mostrarle el paso al cliente.
-  useEffect(() => {
-    fetch("/api/servicio-tecnico/sucursales")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const lista: Sucursal[] = data?.sucursales || [];
-        setSucursales(lista);
-        if (lista.length === 1) setSucursal(String(lista[0].cid));
-      })
-      .catch(() => {
-        // Sin lista, el selector queda vacío y el cliente no puede continuar
-        // — mejor eso que dejarlo elegir a ciegas o mandar sin sucursal.
-      });
-  }, []);
-
   // Traduce el estado de garantía y arma el detalle. Se usa en el paso 2 (por
   // producto) y en el 3 (el elegido).
   const textoGarantia = (g?: Item["garantia"]) => {
@@ -163,10 +147,10 @@ export function ReporteForm({
   );
 
   const buscarFactura = useCallback(
-    async (valor: string, documento: string, cid: string) => {
+    async (valor: string, documento: string) => {
       const consulta = valor.trim();
       const doc = documento.trim();
-      if (!consulta || !doc || !cid) return;
+      if (!consulta || !doc) return;
 
       setBuscando(true);
       setErrorBusqueda(null);
@@ -176,7 +160,7 @@ export function ReporteForm({
         const res = await fetch(
           `/api/servicio-tecnico/factura?numero=${encodeURIComponent(
             consulta,
-          )}&rif=${encodeURIComponent(doc)}&sucursal=${encodeURIComponent(cid)}`,
+          )}&rif=${encodeURIComponent(doc)}&sucursal=${sucursalCid}`,
         );
         const data = await res.json();
 
@@ -200,7 +184,7 @@ export function ReporteForm({
         setBuscando(false);
       }
     },
-    [t],
+    [t, sucursalCid],
   );
 
   async function enviar() {
@@ -216,7 +200,7 @@ export function ReporteForm({
         body: JSON.stringify({
           invoice_number: factura.factura.numero,
           rif: rif.trim(),
-          sucursal,
+          sucursal: sucursalCid,
           serial_manual: serialManual.trim(),
           item_id: item.id,
           odoo_product_id: item.producto_id,
@@ -255,7 +239,7 @@ export function ReporteForm({
       }
 
       router.push(
-        `/${locale}/servicio-tecnico/confirmacion?ticket=${encodeURIComponent(
+        `/${locale}/servicio-tecnico/${sucursalSlug}/confirmacion?ticket=${encodeURIComponent(
           data.case_number,
         )}&token=${encodeURIComponent(data.tracking_token)}`,
       );
@@ -272,7 +256,13 @@ export function ReporteForm({
 
   return (
     <div className="mx-auto max-w-2xl px-5 py-8 sm:py-12">
-      <Volver paso={paso} setPaso={setPaso} locale={locale} label={t("back")} />
+      <Volver
+        paso={paso}
+        setPaso={setPaso}
+        locale={locale}
+        sucursalSlug={sucursalSlug}
+        label={t("back")}
+      />
       <Pasos actual={paso} etiquetas={[t("form.step1"), t("form.step2"), t("form.step3")]} />
 
       {paso === 1 && (
@@ -287,7 +277,6 @@ export function ReporteForm({
             onSubmit={(e) => {
               e.preventDefault();
               const faltan: Record<string, string> = {};
-              if (!sucursal) faltan.sucursal = t("form.required");
               if (!numero.trim()) faltan.numero = t("form.required");
               if (!rif.trim()) faltan.rif = t("form.required");
               setErrores(faltan);
@@ -295,42 +284,10 @@ export function ReporteForm({
                 document.getElementById(Object.keys(faltan)[0])?.focus();
                 return;
               }
-              buscarFactura(numero, rif, sucursal);
+              buscarFactura(numero, rif);
             }}
           >
-            {sucursales.length > 1 && (
-              <>
-                <label htmlFor="sucursal" className="block text-sm font-semibold">
-                  {t("form.branchLabel")}
-                </label>
-                <select
-                  id="sucursal"
-                  className="portal-field mt-2"
-                  value={sucursal}
-                  onChange={(e) => {
-                    setSucursal(e.target.value);
-                    setErrores((p) => ({ ...p, sucursal: "" }));
-                  }}
-                  aria-invalid={!!errores.sucursal}
-                  aria-describedby={errores.sucursal ? "sucursal-error" : undefined}
-                >
-                  <option value="">{t("form.branchPlaceholder")}</option>
-                  {sucursales.map((s) => (
-                    <option key={s.cid} value={s.cid}>
-                      {s.nombre}
-                    </option>
-                  ))}
-                </select>
-                {errores.sucursal && (
-                  <MensajeError id="sucursal-error" texto={errores.sucursal} />
-                )}
-              </>
-            )}
-
-            <label
-              htmlFor="numero"
-              className={`block text-sm font-semibold ${sucursales.length > 1 ? "mt-5" : ""}`}
-            >
+            <label htmlFor="numero" className="block text-sm font-semibold">
               {t("form.invoiceLabel")}
             </label>
             <input
@@ -404,7 +361,7 @@ export function ReporteForm({
                       type="button"
                       onClick={() => {
                         setNumero(c.numero);
-                        buscarFactura(c.numero, rif, sucursal);
+                        buscarFactura(c.numero, rif);
                       }}
                       className="w-full rounded-[10px] border border-[color:var(--portal-line)] px-4 py-3 text-left hover:border-[color:var(--portal-primary)]"
                     >
@@ -699,17 +656,19 @@ function Volver({
   paso,
   setPaso,
   locale,
+  sucursalSlug,
   label,
 }: {
   paso: 1 | 2 | 3;
   setPaso: (p: 1 | 2 | 3) => void;
   locale: string;
+  sucursalSlug: string;
   label: string;
 }) {
   if (paso === 1) {
     return (
       <a
-        href={`/${locale}/servicio-tecnico`}
+        href={`/${locale}/servicio-tecnico/${sucursalSlug}`}
         className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--portal-muted)] hover:text-[color:var(--portal-primary)]"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />

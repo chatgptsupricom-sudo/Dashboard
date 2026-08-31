@@ -62,6 +62,7 @@ export default function ConsultarPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const locale = (params?.locale as string) || "es";
+  const sucursal = (params?.sucursal as string) || "";
   const tokenFromUrl = searchParams.get("token") || "";
 
   const [numero, setNumero] = useState("");
@@ -405,13 +406,13 @@ export default function ConsultarPage() {
             {/* Botones de navegacion */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
               <Link
-                href={`/${locale}/servicio-tecnico`}
+                href={`/${locale}/servicio-tecnico/${sucursal}`}
                 className="inline-flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
               >
                 {t("consultar_link_volver")}
               </Link>
               <Link
-                href={`/${locale}/servicio-tecnico/reportar`}
+                href={`/${locale}/servicio-tecnico/${sucursal}/nuevo`}
                 className="inline-flex items-center justify-center px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors"
               >
                 {t("consultar_link_nuevo_reporte")}

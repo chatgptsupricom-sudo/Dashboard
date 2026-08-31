@@ -45,9 +45,10 @@ export default function ConfirmacionPage() {
 
   useEffect(() => {
     if (!trackingToken) return;
-    const locale = window.location.pathname.split("/")[1];
+    // pathname: /{locale}/servicio-tecnico/{sucursal}/confirmacion
+    const [, locale, , sucursal] = window.location.pathname.split("/");
     setConsultationUrl(
-      `${window.location.origin}/${locale}/servicio-tecnico/consultar?token=${trackingToken}`,
+      `${window.location.origin}/${locale}/servicio-tecnico/${sucursal}/consultar?token=${trackingToken}`,
     );
   }, [trackingToken]);
 

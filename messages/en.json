@@ -661,8 +661,6 @@
       "step3": "The problem",
       "invoiceTitle": "What is your invoice number?",
       "invoiceHelp": "You will find it at the top of the invoice we handed you with the product. Type it exactly as it appears.",
-      "branchLabel": "Which branch did you buy from?",
-      "branchPlaceholder": "-- Choose a branch --",
       "invoiceLabel": "Invoice number",
       "invoicePlaceholder": "e.g. 5037537",
       "serialManualLabel": "Device serial number",
@@ -712,6 +710,8 @@
     "eyebrow": "Technical Service",
     "title": "Is your device having a problem?",
     "subtitle": "Report it here in a couple of minutes. With your invoice number we look up your products and hand the case to our technical team.",
+    "chooseBranchTitle": "Which branch did you buy from?",
+    "chooseBranchSubtitle": "Choose your branch to continue.",
     "report": {
       "title": "Report a problem",
       "desc": "Tell us which product failed and what is happening to it.",
