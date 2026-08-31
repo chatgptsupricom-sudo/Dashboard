@@ -1,4 +1,4 @@
-import { requireSeguridad } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad } from "@/lib/seguridad/auth";
 import { tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -12,10 +12,13 @@ import { NextRequest, NextResponse } from "next/server";
  * Solo lectura. Cambiar el valor es un UPDATE en `seguridad_config`, que hoy
  * hace quien administra la base; si mas adelante hace falta una pantalla, se
  * agrega el PUT aqui.
+ *
+ * RMA tambien lo consume: es el nombre sugerido del tecnico de OSC que
+ * muestra el acta de ingreso de solo lectura.
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireSeguridad(request);
+    const auth = await requireRmaOSeguridad(request);
     if (auth.error) return auth.error;
 
     return NextResponse.json({ success: true, tecnico: await tecnicoDeOsc() });

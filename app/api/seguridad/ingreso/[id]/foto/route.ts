@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad, requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -135,7 +135,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await requireSeguridad(request);
+    // La foto del estado es parte de lo que RMA revisa al verificar el
+    // ingreso. Solo lectura: subir o borrar la foto sigue siendo de
+    // Seguridad/Almacen exclusivamente (ver POST/DELETE abajo).
+    const auth = await requireRmaOSeguridad(request);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
