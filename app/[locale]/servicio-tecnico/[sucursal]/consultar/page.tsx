@@ -176,8 +176,11 @@ export default function ConsultarPage() {
           <p className="text-base text-slate-600">{t("consultar_subtitulo")}</p>
         </div>
 
-        {/* Form de busqueda (solo si NO viene con token) */}
-        {!tokenFromUrl && !ticket && (
+        {/* Form de busqueda: sin token de entrada, o con un token que fallo
+            (vencido, mal copiado). Sin el `|| error`, un enlace de consulta
+            invalido dejaba al cliente sin formulario, sin mensaje y sin forma
+            de reintentar — solo el titulo, un callejon sin salida. */}
+        {!ticket && (!tokenFromUrl || error) && (
           <form
             onSubmit={handleBuscar}
             className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4 space-y-4"
