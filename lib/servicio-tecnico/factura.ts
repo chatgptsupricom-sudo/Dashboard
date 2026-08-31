@@ -171,10 +171,15 @@ const resumen = (factura: any): FacturaResumen => ({
  *   varias compañías tienen facturas con números parecidos. El issue #25
  *   evaluará volverlo obligatorio para frenar la enumeración de facturas;
  *   está aceptado desde ya para no tener que rehacer el endpoint.
+ * @param cid sucursal elegida en el selector del portal (7/9/10). Acota la
+ *   búsqueda a esa compañía — sin esto, el mismo número corto (ej. "6384")
+ *   puede coincidir con facturas de varias sucursales a la vez y el cliente
+ *   ve la pantalla de "varias coincidencias" sin necesidad.
  */
 export async function buscarFacturaConSeriales(
   numeroCrudo: string,
   rif?: string,
+  cid?: number,
 ): Promise<ResultadoBusqueda> {
   const numero = normalizarNumero(numeroCrudo);
   if (!numero) return { estado: "no_encontrada" };
@@ -184,6 +189,7 @@ export async function buscarFacturaConSeriales(
     ["state", "=", "posted"],
     ["name", "ilike", numero],
   ];
+  if (cid) dominio.push(["company_id", "=", cid]);
 
   const facturasCrudas = await rpc<any[]>("account.move", "search_read", [dominio], {
     fields: ["id", "name", "invoice_date", "partner_id", "company_id"],

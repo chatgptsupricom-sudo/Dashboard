@@ -10,6 +10,7 @@ import {
   obtenerIp,
   registrarUso,
 } from "@/lib/servicio-tecnico/limites";
+import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -185,6 +186,10 @@ export async function POST(request: NextRequest) {
     // si aquí no se pidiera, este endpoint sería la puerta de atrás para crear
     // reportes sobre la factura de otro sin saber de quién es.
     const clientRif = String(body.rif || "").trim();
+    // Sucursal elegida en el paso 1. Se re-valida igual que el resto: el
+    // cliente puede mandar cualquier cosa, así que se descarta si no es una
+    // de las sucursales reales del portal antes de tocar Odoo.
+    const clientCid = parseInt(String(body.sucursal || ""), 10);
     // Token temporal con el que el formulario subió los adjuntos antes de que
     // el ticket existiera. Es una cadena (uuid), no un id: la versión anterior
     // le hacía parseInt y quedaba en NaN, así que el UPDATE de más abajo nunca
@@ -215,6 +220,9 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (!esSucursalValida(clientCid)) {
+      return NextResponse.json({ error: "Falta elegir la sucursal" }, { status: 400 });
+    }
 
     // Captcha. Inerte mientras no haya TURNSTILE_SECRET_KEY configurada, así
     // que hoy no bloquea a nadie. Va antes de tocar Odoo: si no pasa, no
@@ -232,7 +240,7 @@ export async function POST(request: NextRequest) {
 
     // Paso 1: re-resolver contra Odoo. El cliente puede mentir en su navegador,
     // pero no puede mentir contra Odoo.
-    const resultado = await buscarFacturaConSeriales(invoiceNumber, clientRif);
+    const resultado = await buscarFacturaConSeriales(invoiceNumber, clientRif, clientCid);
 
     if (resultado.estado === "no_encontrada") {
       // Mensaje generico (issue #25: no distinguir entre "no existe" y "no

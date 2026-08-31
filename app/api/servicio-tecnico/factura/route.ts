@@ -3,13 +3,19 @@ import {
   OdooNoDisponibleError,
 } from "@/lib/servicio-tecnico/factura";
 import { aplicarLimites, obtenerIp } from "@/lib/servicio-tecnico/limites";
+import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { NextResponse } from "next/server";
 
 /**
- * GET /api/servicio-tecnico/factura?numero=5037537[&rif=J317376900]
+ * GET /api/servicio-tecnico/factura?numero=5037537&sucursal=9[&rif=J317376900]
  *
  * Endpoint PÚBLICO (sin sesión) del portal de servicio técnico: con el número
  * de factura devuelve el cliente y los productos/seriales que puede reportar.
+ *
+ * `sucursal` es obligatorio (el selector del paso 1 del formulario): acota la
+ * búsqueda a esa compañía en vez de buscar en las tres a la vez, que además
+ * de innecesario aumenta el riesgo de ambigüedad entre facturas de
+ * sucursales distintas con números parecidos.
  *
  * Ojo al tocarlo: como no pide autenticación, todo lo que devuelva queda
  * expuesto. No agregar montos, precios ni direcciones. El teléfono y el email
@@ -29,10 +35,18 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const numero = searchParams.get("numero") || "";
   const rif = searchParams.get("rif") || "";
+  const cid = parseInt(searchParams.get("sucursal") || "", 10);
 
   if (!numero.trim()) {
     return NextResponse.json(
       { estado: "invalida", error: "Falta el número de factura" },
+      { status: 400 },
+    );
+  }
+
+  if (!esSucursalValida(cid)) {
+    return NextResponse.json(
+      { estado: "invalida", error: "Falta elegir la sucursal" },
       { status: 400 },
     );
   }
@@ -58,7 +72,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const resultado = await buscarFacturaConSeriales(numero, rif);
+    const resultado = await buscarFacturaConSeriales(numero, rif, cid);
 
     // Registro para poder detectar que alguien está raspando. Sin esto no hay
     // forma de enterarse: un raspado sostenido y por debajo del límite se ve

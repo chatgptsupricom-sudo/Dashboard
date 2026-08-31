@@ -643,6 +643,8 @@
       "step3": "La falla",
       "invoiceTitle": "¿Cuál es tu número de factura?",
       "invoiceHelp": "Está en la parte superior de la factura que te entregamos con el producto. Escríbelo tal como aparece.",
+      "branchLabel": "¿En qué sucursal compraste?",
+      "branchPlaceholder": "-- Elige una sucursal --",
       "invoiceLabel": "Número de factura",
       "invoicePlaceholder": "Ej: 5037537",
       "serialManualLabel": "Serial del equipo",
