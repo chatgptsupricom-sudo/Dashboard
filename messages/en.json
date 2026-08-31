@@ -712,6 +712,8 @@
     "subtitle": "Report it here in a couple of minutes. With your invoice number we look up your products and hand the case to our technical team.",
     "chooseBranchTitle": "Which branch did you buy from?",
     "chooseBranchSubtitle": "Choose your branch to continue.",
+    "sucursalBadge": "{nombre} branch",
+    "sucursalBadgeChange": "Change",
     "report": {
       "title": "Report a problem",
       "desc": "Tell us which product failed and what is happening to it.",

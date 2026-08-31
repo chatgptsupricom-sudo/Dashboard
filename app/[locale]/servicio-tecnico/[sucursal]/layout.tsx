@@ -1,3 +1,4 @@
+import { SucursalBadge } from "@/components/servicio-tecnico/sucursal-badge";
 import { sucursalPorSlug } from "@/lib/servicio-tecnico/sucursales";
 import { notFound } from "next/navigation";
 
@@ -15,10 +16,16 @@ export default async function SucursalLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ sucursal: string }>;
+  params: Promise<{ locale: string; sucursal: string }>;
 }) {
-  const { sucursal } = await params;
-  if (!sucursalPorSlug(sucursal)) notFound();
+  const { locale, sucursal } = await params;
+  const resuelta = sucursalPorSlug(sucursal);
+  if (!resuelta) notFound();
 
-  return <>{children}</>;
+  return (
+    <>
+      <SucursalBadge locale={locale} nombre={resuelta.nombre} />
+      {children}
+    </>
+  );
 }
