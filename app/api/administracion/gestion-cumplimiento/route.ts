@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
+import { OdooUnreachableError } from "@/lib/odoo";
 import { cargarMetas } from "@/lib/administracion/metas";
 import { construirKpi, resumirCategoria } from "@/lib/administracion/kpis";
 import {
@@ -328,6 +329,15 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error en API Gestion/Cumplimiento Administracion:", error.message);
+    // Distinto de "Error interno": esto significa que Odoo no respondió (caído,
+    // sin red, timeout), no que algo esté mal configurado en este endpoint —
+    // sin esto, el frontend no puede distinguirlo de "módulo no instalado".
+    if (error instanceof OdooUnreachableError) {
+      return NextResponse.json(
+        { success: false, error: "No se pudo conectar con Odoo", odooUnreachable: true },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }

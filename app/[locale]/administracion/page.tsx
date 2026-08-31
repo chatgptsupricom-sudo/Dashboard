@@ -108,6 +108,13 @@ interface RespuestaGestionCumplimiento {
   moduloInstalado: boolean;
 }
 
+/** Cuerpo que devuelve la ruta cuando Odoo no respondio (ver
+ *  OdooUnreachableError) — distinto de "no hay fuente de datos todavia". */
+interface RespuestaOdooCaido {
+  success: false;
+  odooUnreachable: true;
+}
+
 const SEMAFORO: Record<Semaforo, string> = {
   verde: "bg-emerald-50 text-emerald-700 border-emerald-200",
   amarillo: "bg-amber-50 text-amber-700 border-amber-200",
@@ -286,6 +293,8 @@ export default function SaludAdministrativaPage() {
   const [gastos, setGastos] = useState<RespuestaGastos | null>(null);
   const [gestionCumplimiento, setGestionCumplimiento] =
     useState<RespuestaGestionCumplimiento | null>(null);
+  const [gestionCumplimientoOdooCaido, setGestionCumplimientoOdooCaido] =
+    useState(false);
   const [seguimientos, setSeguimientos] = useState<
     Record<string, SeguimientoAlerta>
   >({});
@@ -315,11 +324,15 @@ export default function SaludAdministrativaPage() {
       // de dejar la pagina en blanco por un area caida.
       setGastos(jGastos.success ? jGastos : null);
       setGestionCumplimiento(jGC.success ? jGC : null);
+      setGestionCumplimientoOdooCaido(
+        !jGC.success && (jGC as RespuestaOdooCaido).odooUnreachable === true,
+      );
       setSeguimientos(jSeg.success ? jSeg.seguimientos : {});
     } catch {
       setData(null);
       setGastos(null);
       setGestionCumplimiento(null);
+      setGestionCumplimientoOdooCaido(false);
       setSeguimientos({});
     }
     setLoading(false);
@@ -538,6 +551,13 @@ export default function SaludAdministrativaPage() {
                     "sin datos" porque el módulo de configuración
                     (Approvals/Helpdesk/Project) todavía no está instalado en
                     esta instancia de Odoo — ver issue #8.
+                  </p>
+                )}
+                {gestionCumplimientoOdooCaido && (
+                  <p className="text-red-600 font-medium">
+                    Gestión Administrativa y Cumplimiento y Control no se
+                    pudieron calcular: Odoo no respondió. Esto NO significa que
+                    falte configurar algo — reintenta en un momento.
                   </p>
                 )}
               </div>
