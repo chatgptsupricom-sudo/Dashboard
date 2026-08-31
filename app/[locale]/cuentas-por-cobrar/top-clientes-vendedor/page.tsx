@@ -218,27 +218,32 @@ function InvoiceDetailView({ invoiceId }: { invoiceId: number }) {
   );
 }
 
-function ClientDetail({ partnerId, partnerName }: { partnerId: number; partnerName: string }) {
+function ClientDetail({ partnerId, partnerName, userId }: { partnerId: number; partnerName: string; userId?: number }) {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!partnerId) return;
     setLoading(true);
-    fetch(`/api/superadmin/cuentas-por-cobrar/search?q=${encodeURIComponent(partnerName)}&limit=100`)
+    // Antes buscaba por NOMBRE (`/search?q=partnerName`, ilike, tope de 100
+    // filas) y filtraba por partnerId en el navegador — si el nombre
+    // coincidia con otros clientes/vendedores/numeros de documento, esas 100
+    // filas se llenaban de resultados ajenos y las facturas reales de este
+    // cliente podian quedar truncadas. `/detail` ya acepta partner_id
+    // directamente (mismo endpoint que usa el resto del modulo para "estado
+    // de cuenta" de un cliente), sin busqueda de texto ni tope artificial.
+    const params = new URLSearchParams({ partner_id: String(partnerId) });
+    if (userId) params.set("user_id", String(userId));
+    fetch(`/api/superadmin/cuentas-por-cobrar/detail?${params}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
-          setInvoices(
-            (json.data?.invoices || []).filter(
-              (inv: any) => inv.partnerId === partnerId && inv.amountResidual > 0,
-            ),
-          );
+          setInvoices((json.data?.invoices || []).filter((inv: any) => inv.amountResidual > 0));
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [partnerId, partnerName]);
+  }, [partnerId, userId]);
 
   const total = invoices.reduce((s, i) => s + Math.abs(i.amountResidual), 0);
   const overdue = invoices
@@ -578,7 +583,7 @@ function SalespersonCard({ sp }: { sp: any }) {
                         </DialogDescription>
                       </DialogHeader>
                       <div className="mt-2">
-                        <ClientDetail partnerId={c.partnerId} partnerName={c.partnerName} />
+                        <ClientDetail partnerId={c.partnerId} partnerName={c.partnerName} userId={sp.userId} />
                       </div>
                     </DialogContent>
                   </Dialog>
