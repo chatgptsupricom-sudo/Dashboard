@@ -209,33 +209,79 @@ export async function GET(request: NextRequest) {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // KPIs calculados desde digiflex.cxc.report (aging bands)
+    // FUENTE 2: account.move — Efectividad, Recuperación, DSO
+    // Mismas consultas y fórmulas que /kpi-detail para que la tarjeta y su
+    // propio modal de detalle siempre coincidan (antes cada uno calculaba
+    // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const totalCurrent = agingDistribution["corriente"];
-    const total1_30 = agingDistribution["1-30"];
-    const total31_60 = agingDistribution["31-60"];
-    const total61_90 = agingDistribution["61-90"];
-    const total91Plus = agingDistribution["91+"];
+    const isSupricom = (inv: any) => (inv.partner_id?.[1] || "").toLowerCase().includes("supricom");
+    const d90 = new Date(today);
+    d90.setDate(d90.getDate() - 90);
 
-    // ── Efectividad Cobranza: % de cartera que está al día (corriente) ──
-    const efectividad = totalReceivable > 0
-      ? Math.round((totalCurrent / totalReceivable) * 10000) / 100
+    const [efectividadInvoicesRaw, recuperacionInvoicesRaw, creditSalesRaw] = await Promise.all([
+      fetchPaginated(
+        "account.move",
+        [
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["invoice_date_due", ">=", monthStart.toISOString().split("T")[0]],
+          ["invoice_date_due", "<=", monthEnd.toISOString().split("T")[0]],
+        ],
+        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
+      ),
+      fetchPaginated(
+        "account.move",
+        [
+          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
+        ],
+        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
+      ),
+      fetchPaginated(
+        "account.move",
+        [
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["invoice_date", ">=", d90.toISOString().split("T")[0]],
+        ],
+        ["id", "amount_untaxed"],
+      ),
+    ]);
+
+    // ── Efectividad Cobranza: cobrado ÷ exigible de facturas que vencen este mes ──
+    const efectividadInvoices = efectividadInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
+      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
+      const residual = Math.abs(inv.amount_residual || 0);
+      return { amountTotal, amountPaid: Math.max(amountTotal - residual, 0), amountResidual: residual };
+    });
+    const totalExigibleMes = efectividadInvoices.reduce((s, i) => s + i.amountTotal, 0);
+    const totalCobradoMes = efectividadInvoices.reduce((s, i) => s + i.amountPaid, 0);
+    const totalPendienteMes = efectividadInvoices.reduce((s, i) => s + i.amountResidual, 0);
+    const efectividad = totalExigibleMes > 0
+      ? Math.round((totalCobradoMes / totalExigibleMes) * 10000) / 100
       : null;
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
-    // ── Recuperación Vencidos: % de vencido que NO está estancado en 91+ ──
-    const totalOverdueBands = total1_30 + total31_60 + total61_90 + total91Plus;
-    const recuperacion = totalOverdueBands > 0
-      ? Math.round(((totalOverdueBands - total91Plus) / totalOverdueBands) * 10000) / 100
+    // ── Recuperación Vencidos: cuánto de lo vencido al inicio del mes ya se cobró ──
+    const recuperacionInvoices = recuperacionInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
+      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
+      return { amountTotal, amountResidual: Math.abs(inv.amount_residual || 0) };
+    });
+    const vencidoInicial = recuperacionInvoices.reduce((s, i) => s + i.amountTotal, 0);
+    const vencidoRestante = recuperacionInvoices.reduce((s, i) => s + i.amountResidual, 0);
+    const recuperacion = vencidoInicial > 0
+      ? Math.round(((vencidoInicial - vencidoRestante) / vencidoInicial) * 10000) / 100
       : null;
 
-    // ── DSO: días promedio de cobro usando bandas del aging (midpoints) ──
-    // 1-30 → 15d, 31-60 → 45d, 61-90 → 75d, 91+ → 105d
-    const dsoNumerator = (total1_30 * 15) + (total31_60 * 45) + (total61_90 * 75) + (total91Plus * 105);
-    const totalOverdueWeighted = total1_30 + total31_60 + total61_90 + total91Plus;
-    const dso = totalOverdueWeighted > 0
-      ? Math.round(dsoNumerator / totalOverdueWeighted)
+    // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
+    const totalCreditSales90d = creditSalesRaw.reduce((s, inv: any) => s + Math.abs(inv.amount_untaxed || 0), 0);
+    const dso = totalCreditSales90d > 0
+      ? Math.round((totalReceivable / totalCreditSales90d) * 90)
       : null;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -248,16 +294,11 @@ export async function GET(request: NextRequest) {
           efectividad: {
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            // OJO: esto es la cartera "corriente" (aun no vencida), NO plata
-            // ya cobrada. El campo se llamaba `cobradoMes` y el frontend lo
-            // rotulaba "Cobrado", pero es simplemente el numerador de
-            // Efectividad Cobranza (corriente / cartera total) — nadie cobro
-            // nada, sigue siendo saldo pendiente. El "cobrado" real de verdad
-            // (dinero recibido) es `totalCobrado` en /kpi-detail, que sale de
-            // otro calculo (facturas cuyo vencimiento cae en el mes).
-            corrienteMes: Math.round(totalCurrent * 100) / 100,
-            exigibleMes: Math.round(totalReceivable * 100) / 100,
-            pendiente: Math.round(totalOverdue * 100) / 100,
+            // Dinero realmente cobrado de las facturas que vencen este mes
+            // (mismo cálculo que /kpi-detail?type=efectividad).
+            cobradoMes: Math.round(totalCobradoMes * 100) / 100,
+            exigibleMes: Math.round(totalExigibleMes * 100) / 100,
+            pendiente: Math.round(totalPendienteMes * 100) / 100,
           },
           carteraVencida: {
             value: carteraVencidaPct,
@@ -268,14 +309,14 @@ export async function GET(request: NextRequest) {
           recuperacion: {
             value: recuperacion,
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(totalOverdueBands * 100) / 100,
-            vencidoRestante: Math.round(total91Plus * 100) / 100,
+            vencidoInicial: Math.round(vencidoInicial * 100) / 100,
+            vencidoRestante: Math.round(vencidoRestante * 100) / 100,
           },
           dso: {
             value: dso,
             meta: cxcMetas["dso"] || 45,
             carteraAbierta: Math.round(totalReceivable * 100) / 100,
-            ventasCredito90d: Math.round(totalOverdueWeighted * 100) / 100,
+            ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
           },
         },
         agingDistribution,
