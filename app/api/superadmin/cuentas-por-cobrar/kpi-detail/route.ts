@@ -118,9 +118,11 @@ export async function GET(request: NextRequest) {
 
     if (type === "cartera") {
       // Todas las facturas abiertas con saldo, agrupadas por aging band
+      // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
+      // modelo traen amount_residual NEGATIVO (verificado contra Odoo real).
       const reportData = await fetchPaginated(
         "digiflex.cxc.report",
-        [["company_id", "in", companyIds], ["amount_residual", ">", 0]],
+        [["company_id", "in", companyIds], ["amount_residual", "!=", 0]],
         ["id", "move_id", "partner_id", "partner_name", "user_id", "user_name",
          "company_id", "company_name", "invoice_date", "date_maturity",
          "days_overdue", "amount_residual", "amount_current",
@@ -149,7 +151,9 @@ export async function GET(request: NextRequest) {
         invoiceDateDue: r.date_maturity || null,
         daysOverdue: r.days_overdue || 0,
         agingBand: getAgingBand(r),
-        amountResidual: Math.round(Math.abs(r.amount_residual || 0) * 100) / 100,
+        // Con signo (negativo = nota de credito abierta) para que total/
+        // overdue/byBand mas abajo neten correctamente.
+        amountResidual: Math.round((r.amount_residual || 0) * 100) / 100,
       }));
 
       const total = invoices.reduce((s, i) => s + i.amountResidual, 0);
@@ -260,14 +264,16 @@ export async function GET(request: NextRequest) {
         ),
         fetchPaginated(
           "digiflex.cxc.report",
-          [["company_id", "in", companyIds], ["amount_residual", ">", 0]],
-          ["amount_residual"],
+          // != 0: misma correccion que en "cartera" arriba — las notas de
+          // credito abiertas traen amount_residual negativo en este modelo.
+          [["company_id", "in", companyIds], ["amount_residual", "!=", 0]],
+          ["amount_residual", "partner_name"],
         ),
       ]);
 
       const totalReceivable = receivableData
         .filter((r: any) => !["supricom"].some(s => (r.partner_name || "").toLowerCase().includes(s)))
-        .reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
+        .reduce((s, r) => s + (r.amount_residual || 0), 0);
 
       const sales = creditSales.map((inv: any) => ({
         id: inv.id,
