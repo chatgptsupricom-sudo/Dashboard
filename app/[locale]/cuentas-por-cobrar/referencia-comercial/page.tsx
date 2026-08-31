@@ -109,8 +109,34 @@ export default function ReferenciaComercialPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [yearsRelation, setYearsRelation] = useState(2);
+  const [yearsEdited, setYearsEdited] = useState(false);
+  const [firstInvoiceDate, setFirstInvoiceDate] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const letterRef = useRef<HTMLDivElement>(null);
   const today = new Date();
+
+  // Antes "Años de relación" era un numero escrito a mano (por defecto 2)
+  // sin respaldo en ningun dato real. Al elegir cliente se calcula desde su
+  // primera factura real en Odoo y se usa como default — sigue siendo
+  // editable a mano por si hay relacion comercial de antes de este sistema.
+  useEffect(() => {
+    if (!selectedPartner) {
+      setFirstInvoiceDate(null);
+      return;
+    }
+    setYearsEdited(false);
+    setLoadingHistory(true);
+    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setFirstInvoiceDate(json.firstInvoiceDate);
+          if (json.years !== null) setYearsRelation(Math.max(json.years, 1));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+  }, [selectedPartner]);
 
   const fetchPartners = useCallback(async () => {
     setLoading(true);
@@ -436,9 +462,21 @@ svg { display: block; }
               min={1}
               max={99}
               value={yearsRelation}
-              onChange={(e) => setYearsRelation(parseInt(e.target.value) || 1)}
+              onChange={(e) => {
+                setYearsEdited(true);
+                setYearsRelation(parseInt(e.target.value) || 1);
+              }}
               className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none"
             />
+            <p className="text-xs text-slate-400 mt-1.5">
+              {loadingHistory
+                ? "Calculando desde su primera factura..."
+                : firstInvoiceDate
+                  ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")})`
+                  : selectedPartner
+                    ? "Sin facturas registradas — ingrese el dato manualmente"
+                    : ""}
+            </p>
           </div>
         </div>
       </div>

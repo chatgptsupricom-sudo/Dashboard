@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -31,6 +32,9 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
@@ -94,9 +98,13 @@ export async function GET(request: NextRequest) {
       ],
     );
 
-    // Filtrar solo facturas (excluir notas de crédito y asientos internos)
+    // Filtrar renglones con saldo abierto (excluye asientos internos de Supricom).
+    // Incluye notas de credito abiertas: en este modelo traen amount_residual
+    // NEGATIVO (verificado contra Odoo real, ej. RNC/2026/00650 de GRUPO CMW,
+    // S.A. = -545), asi que sumarlas con signo resta correctamente del saldo
+    // del cliente en vez de excluirlas o contarlas como deuda.
     const reportInvoices = reportData.filter((r: any) =>
-      r.amount_residual > 0 && !((r.partner_name || "").toLowerCase().includes("supricom"))
+      r.amount_residual !== 0 && !((r.partner_name || "").toLowerCase().includes("supricom"))
     );
 
     // Aging distribution (rangos del reporte Odoo: corriente, 1-30, 31-60, 61-90, 91+)
@@ -112,15 +120,21 @@ export async function GET(request: NextRequest) {
     let totalOverdue = 0;
 
     reportInvoices.forEach((r: any) => {
-      const residual = Math.abs(r.amount_residual || 0);
+      // Con signo: una nota de credito abierta (residual negativo) debe
+      // restar del total, no sumarse en valor absoluto. Las bandas de aging
+      // (amount_current, amount_1_30, ...) vienen con el mismo signo que
+      // amount_residual (verificado: para estas filas su suma da exactamente
+      // amount_residual), asi que se agregan igual sin Math.abs para que las
+      // bandas sigan sumando el mismo total.
+      const residual = r.amount_residual || 0;
       totalReceivable += residual;
       if (r.days_overdue > 0) totalOverdue += residual;
 
-      agingDistribution["corriente"] += Math.abs(r.amount_current || 0);
-      agingDistribution["1-30"] += Math.abs(r.amount_1_30 || 0);
-      agingDistribution["31-60"] += Math.abs(r.amount_31_60 || 0);
-      agingDistribution["61-90"] += Math.abs(r.amount_61_90 || 0);
-      agingDistribution["91+"] += Math.abs(r.amount_91_plus || 0);
+      agingDistribution["corriente"] += r.amount_current || 0;
+      agingDistribution["1-30"] += r.amount_1_30 || 0;
+      agingDistribution["31-60"] += r.amount_31_60 || 0;
+      agingDistribution["61-90"] += r.amount_61_90 || 0;
+      agingDistribution["91+"] += r.amount_91_plus || 0;
     });
 
     const carteraVencidaPct = totalReceivable > 0
@@ -136,7 +150,7 @@ export async function GET(request: NextRequest) {
         if (!byClient[pid]) {
           byClient[pid] = { name: r.partner_name || r.partner_id?.[1] || "Sin cliente", total: 0, overdue: 0, oldest: 0, count: 0 };
         }
-        const residual = Math.abs(r.amount_residual || 0);
+        const residual = r.amount_residual || 0;
         byClient[pid].total += residual;
         byClient[pid].count++;
         if (r.days_overdue > 0) byClient[pid].overdue += residual;
@@ -157,7 +171,7 @@ export async function GET(request: NextRequest) {
         if (!byUser[uid]) {
           byUser[uid] = { name: r.user_name || r.user_id?.[1] || "Sin asignar", total: 0, overdue: 0, count: 0 };
         }
-        const residual = Math.abs(r.amount_residual || 0);
+        const residual = r.amount_residual || 0;
         byUser[uid].total += residual;
         byUser[uid].count++;
         if (r.days_overdue > 0) byUser[uid].overdue += residual;
@@ -171,9 +185,9 @@ export async function GET(request: NextRequest) {
     const byCompany = companyIds.map((cid) => {
       const coRecords = reportInvoices.filter((r: any) => (r.company_id?.[0] || 0) === cid);
       const coOverdue = coRecords.filter((r: any) => r.days_overdue > 0);
-      const coTotalReceivable = coRecords.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
-      const coTotalOverdue = coOverdue.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
-      const coTotalCurrent = coRecords.reduce((s, r) => s + Math.abs(r.amount_current || 0), 0);
+      const coTotalReceivable = coRecords.reduce((s, r) => s + (r.amount_residual || 0), 0);
+      const coTotalOverdue = coOverdue.reduce((s, r) => s + (r.amount_residual || 0), 0);
+      const coTotalCurrent = coRecords.reduce((s, r) => s + (r.amount_current || 0), 0);
 
       return {
         companyId: cid,
@@ -190,10 +204,10 @@ export async function GET(request: NextRequest) {
         overdueInvoices: coOverdue.length,
         aging: {
           corriente: Math.round(coTotalCurrent * 100) / 100,
-          "1-30": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_1_30 || 0), 0) * 100) / 100,
-          "31-60": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_31_60 || 0), 0) * 100) / 100,
-          "61-90": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_61_90 || 0), 0) * 100) / 100,
-          "91+": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_91_plus || 0), 0) * 100) / 100,
+          "1-30": Math.round(coRecords.reduce((s, r) => s + (r.amount_1_30 || 0), 0) * 100) / 100,
+          "31-60": Math.round(coRecords.reduce((s, r) => s + (r.amount_31_60 || 0), 0) * 100) / 100,
+          "61-90": Math.round(coRecords.reduce((s, r) => s + (r.amount_61_90 || 0), 0) * 100) / 100,
+          "91+": Math.round(coRecords.reduce((s, r) => s + (r.amount_91_plus || 0), 0) * 100) / 100,
         },
       };
     });

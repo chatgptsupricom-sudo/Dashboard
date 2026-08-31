@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_NAMES: Record<number, string> = {
@@ -8,9 +9,17 @@ const COMPANY_NAMES: Record<number, string> = {
 };
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireRoles(request, [
+    "cuentas por cobrar",
+    "gerente de operaciones",
+    "gerencia de ventas",
+    "asistente de ventas",
+  ]);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
     const invoiceId = parseInt(id);

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
@@ -18,6 +19,9 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get("companyId");

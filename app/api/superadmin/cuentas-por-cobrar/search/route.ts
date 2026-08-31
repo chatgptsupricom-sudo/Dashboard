@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -14,6 +15,9 @@ const COMPANY_NAMES: Record<number, string> = {
 };
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
@@ -70,9 +74,12 @@ export async function GET(request: NextRequest) {
       },
     )) || [];
 
+    // Banda por days_overdue, sin mirar el signo de amount_residual: una nota
+    // de credito abierta (residual negativo) puede estar tan vieja como
+    // cualquier factura.
     function getAgingBand(r: any): string {
-      if (!r.amount_residual || r.amount_residual <= 0) return "corriente";
-      if (r.days_overdue <= 0) return "corriente";
+      if (!r.amount_residual) return "corriente";
+      if ((r.days_overdue || 0) <= 0) return "corriente";
       if (r.days_overdue <= 30) return "1-30";
       if (r.days_overdue <= 60) return "31-60";
       if (r.days_overdue <= 90) return "61-90";
@@ -94,7 +101,9 @@ export async function GET(request: NextRequest) {
           "",
         invoiceDate: r.invoice_date || null,
         invoiceDateDue: r.date_maturity || null,
-        amountResidual: Math.round(Math.abs(r.amount_residual || 0) * 100) / 100,
+        // Con signo (negativo = nota de credito abierta) para que el total
+        // sumado mas abajo neta correctamente el saldo del cliente.
+        amountResidual: Math.round((r.amount_residual || 0) * 100) / 100,
         invoiceUserId: r.user_id?.[0] || 0,
         invoiceUserName: r.user_name || r.user_id?.[1] || "Sin asignar",
         agingDays: r.days_overdue || 0,

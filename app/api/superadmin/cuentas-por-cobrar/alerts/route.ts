@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -14,6 +15,9 @@ const COMPANY_NAMES: Record<number, string> = {
 };
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
@@ -32,10 +36,12 @@ export async function GET(request: NextRequest) {
     threeDaysLater.setDate(threeDaysLater.getDate() + 3);
     threeDaysLater.setHours(23, 59, 59, 999);
 
-    // Usar digiflex.cxc.report — facturas con saldo pendiente
+    // Usar digiflex.cxc.report — renglones con saldo abierto (facturas y
+    // notas de credito; estas ultimas traen amount_residual NEGATIVO en este
+    // modelo, verificado contra Odoo real, asi que "!= 0" las incluye).
     const domain: any[] = [
       ["company_id", "in", companyIds],
-      ["amount_residual", ">", 0],
+      ["amount_residual", "!=", 0],
     ];
 
     const records = (await callOdooRPC<any[]>(
@@ -55,7 +61,9 @@ export async function GET(request: NextRequest) {
     const openInvoices = records
       .filter((r: any) => !((r.partner_name || "").toLowerCase().includes("supricom")))
       .map((r: any) => {
-        const residual = Math.abs(r.amount_residual || 0);
+        // Con signo (negativo = nota de credito abierta) para que los
+        // totales sumados mas abajo neten correctamente.
+        const residual = r.amount_residual || 0;
         const dueDateStr = r.date_maturity || null;
         let agingDays = r.days_overdue || 0;
 
@@ -121,12 +129,12 @@ export async function GET(request: NextRequest) {
         summary: {
           totalPorVencer: facturasPorVencer.length,
           totalPorVencerMonto: facturasPorVencer.reduce(
-            (s, i) => s + Math.abs(i.amountResidual),
+            (s, i) => s + i.amountResidual,
             0,
           ),
           totalVencidas: facturasVencidas.length,
           totalVencidasMonto: facturasVencidas.reduce(
-            (s, i) => s + Math.abs(i.amountResidual),
+            (s, i) => s + i.amountResidual,
             0,
           ),
         },

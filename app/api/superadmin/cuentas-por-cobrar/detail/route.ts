@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -24,6 +25,14 @@ async function fetchPaginated(model: string, domain: any[], fields: string[], or
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, [
+    "cuentas por cobrar",
+    "gerente de operaciones",
+    "gerencia de ventas",
+    "asistente de ventas",
+  ]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
@@ -40,7 +49,10 @@ export async function GET(request: NextRequest) {
 
     const domain: any[] = [
       ["company_id", "in", companyIds],
-      ["amount_residual", ">", 0],
+      // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
+      // modelo traen amount_residual NEGATIVO (verificado contra Odoo real).
+      // Se excluian silenciosamente, dejando fuera saldo a favor del cliente.
+      ["amount_residual", "!=", 0],
     ];
 
     if (partnerId) {
@@ -69,10 +81,14 @@ export async function GET(request: NextRequest) {
       "id asc",
     );
 
-    // Mapear aging band del reporte Odoo al formato del frontend
+    // Mapear aging band del reporte Odoo al formato del frontend. Se banda
+    // por days_overdue sin mirar el signo de amount_residual: una nota de
+    // credito abierta (residual negativo) puede estar tan vieja como
+    // cualquier factura, y sus propias bandas (amount_91_plus, etc.) en Odoo
+    // ya reflejan esa antiguedad.
     function getAgingBand(r: any): string {
-      if (!r.amount_residual || r.amount_residual <= 0) return "corriente";
-      if (r.days_overdue <= 0) return "corriente";
+      if (!r.amount_residual) return "corriente";
+      if ((r.days_overdue || 0) <= 0) return "corriente";
       if (r.days_overdue <= 30) return "1-30";
       if (r.days_overdue <= 60) return "31-60";
       if (r.days_overdue <= 90) return "61-90";
@@ -90,7 +106,9 @@ export async function GET(request: NextRequest) {
         companyName: r.company_name || r.company_id?.[1] || "",
         invoiceDate: r.invoice_date || null,
         invoiceDateDue: r.date_maturity || null,
-        amountResidual: Math.round(Math.abs(r.amount_residual || 0) * 100) / 100,
+        // Con signo (negativo = nota de credito abierta) para que el total
+        // sumado mas abajo neta correctamente el saldo del cliente.
+        amountResidual: Math.round((r.amount_residual || 0) * 100) / 100,
         invoiceUserId: r.user_id?.[0] || 0,
         invoiceUserName: r.user_name || r.user_id?.[1] || "Sin asignar",
         agingDays: r.days_overdue || 0,
