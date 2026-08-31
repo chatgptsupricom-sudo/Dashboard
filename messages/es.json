@@ -694,6 +694,8 @@
     "subtitle": "Repórtala aquí en un par de minutos. Con tu número de factura buscamos tus productos y le pasamos el caso a nuestro equipo técnico.",
     "chooseBranchTitle": "¿En qué sucursal compraste?",
     "chooseBranchSubtitle": "Elige tu sucursal para continuar.",
+    "sucursalBadge": "Sucursal {nombre}",
+    "sucursalBadgeChange": "Cambiar",
     "report": {
       "title": "Reportar una falla",
       "desc": "Cuéntanos qué producto falló y qué le está pasando.",

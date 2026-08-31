@@ -141,6 +141,16 @@ export function ReporteForm({
     setErrores((p) => ({ ...p, serialManual: "" }));
   }, [itemId]);
 
+  // El error de "falta adjuntar una foto" solo se calcula al tocar "Enviar",
+  // así que si el cliente lo ve y sube la foto después, el mensaje se quedaba
+  // en pantalla —ya no bloqueaba el envío, pero parecía que la subida había
+  // fallado. Se limpia apenas hay al menos un adjunto subido con éxito.
+  useEffect(() => {
+    if (adjuntos.some((a) => a.status === "done")) {
+      setErrores((p) => (p.adjuntos ? { ...p, adjuntos: "" } : p));
+    }
+  }, [adjuntos]);
+
   const item = useMemo(
     () => factura?.items.find((i) => i.id === itemId) ?? null,
     [factura, itemId],

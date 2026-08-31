@@ -180,8 +180,14 @@ export async function POST(request: NextRequest) {
     // Serial que el cliente leyó de la etiqueta, cuando el despacho no lo tiene
     // registrado en Odoo.
     const serialManual = String(body.serial_manual || "").trim().slice(0, 100);
-    // Identificador del item tal como lo devuelve la consulta de factura.
-    const clientItemId = String(body.item_id || "").trim();
+    // Identificador del item tal como lo devuelve la consulta de factura. NO
+    // se hace .trim(): es un id opaco "<linea>:<serial>" que el cliente nunca
+    // escribe a mano (sale del <option> ya elegido), y el serial de Odoo a
+    // veces trae espacios finales de verdad (ej. lotes cargados como
+    // "260432506809    "). Un trim() aquí no calza con el id real que arma
+    // armarItems() en factura.ts y el envío falla con "no pertenece a esta
+    // factura" pese a que el cliente eligió bien.
+    const clientItemId = String(body.item_id || "");
     // Documento del cliente. Obligatorio, igual que en la consulta de factura:
     // si aquí no se pidiera, este endpoint sería la puerta de atrás para crear
     // reportes sobre la factura de otro sin saber de quién es.

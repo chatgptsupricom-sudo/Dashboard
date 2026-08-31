@@ -2,6 +2,7 @@
 
 import { useSearchParams, useParams } from "next/navigation";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
@@ -176,8 +177,21 @@ export default function ConsultarPage() {
           <p className="text-base text-slate-600">{t("consultar_subtitulo")}</p>
         </div>
 
-        {/* Form de busqueda (solo si NO viene con token) */}
-        {!tokenFromUrl && !ticket && (
+        {/* Cargando el ticket del token de la URL. Sin esto, entre el clic en
+            el enlace y la respuesta del servidor solo se veia el titulo, sin
+            ninguna pista de que la pagina estaba haciendo algo. */}
+        {tokenFromUrl && buscando && !ticket && (
+          <div className="flex items-center justify-center gap-2 py-10 text-slate-500">
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            <span className="text-sm font-medium">{t("consultar_buscando")}</span>
+          </div>
+        )}
+
+        {/* Form de busqueda: sin token de entrada, o con un token que fallo
+            (vencido, mal copiado). Sin el `|| error`, un enlace de consulta
+            invalido dejaba al cliente sin formulario, sin mensaje y sin forma
+            de reintentar — solo el titulo, un callejon sin salida. */}
+        {!ticket && (!tokenFromUrl || error) && (
           <form
             onSubmit={handleBuscar}
             className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4 space-y-4"
