@@ -3,6 +3,7 @@
 import { normalizarCanal } from "@/lib/canales";
 import { Archive, Pencil, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 export default function AdminCierresPage() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -395,9 +396,9 @@ export default function AdminCierresPage() {
       </div>
 
       {/* ── MODAL REABRIR LEAD ── */}
-      {revertLead && (
+      {revertLead && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setRevertLead(null)}
         >
           <div
@@ -463,13 +464,14 @@ export default function AdminCierresPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL EDITAR CIERRE ── */}
-      {editingLead && (
+      {editingLead && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setEditingLead(null)}
         >
           <div
@@ -533,7 +535,8 @@ export default function AdminCierresPage() {
               {saving ? "Guardando..." : "Guardar cambios"}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -774,6 +774,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { io } from "socket.io-client";
 
 type ViewMode = "tabla" | "columnas";
@@ -1740,9 +1741,9 @@ export default function MonitoringPage() {
       )}
 
       {/* ── MODAL EDICIÓN ── */}
-      {showEditModal && leadToEdit && (
+      {showEditModal && leadToEdit && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowEditModal(false)}
         >
           <div
@@ -1824,13 +1825,14 @@ export default function MonitoringPage() {
               Guardar cambios
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL ELIMINAR ── */}
-      {showDeleteModal && (
+      {showDeleteModal && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowDeleteModal(false)}
         >
           <div
@@ -1863,13 +1865,14 @@ export default function MonitoringPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL ALERTA ── */}
-      {alertMessage && (
+      {alertMessage && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setAlertMessage(null)}
         >
           <div
@@ -1889,13 +1892,14 @@ export default function MonitoringPage() {
               Entendido
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL CIERRE ── */}
-      {showClosureModal && (
+      {showClosureModal && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowClosureModal(false)}
         >
           <form
@@ -2186,13 +2190,14 @@ export default function MonitoringPage() {
               Confirmar cierre
             </button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL CREAR LEAD ── */}
-      {showCreateModal && (
+      {showCreateModal && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowCreateModal(false)}
         >
           <form
@@ -2386,13 +2391,14 @@ export default function MonitoringPage() {
               Crear Lead
             </button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL DE SEGUNDA COMPRA ── */}
-      {showSecondPurchaseModal && leadForSecondPurchase && (
+      {showSecondPurchaseModal && leadForSecondPurchase && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowSecondPurchaseModal(false)}
         >
           <form
@@ -2502,7 +2508,8 @@ export default function MonitoringPage() {
               Confirmar segunda compra
             </button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

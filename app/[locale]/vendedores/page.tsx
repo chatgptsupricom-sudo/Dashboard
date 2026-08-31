@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BarChart3, Calendar, DollarSign, Medal, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 const FERIADOS_FE: Record<number, string[]> = {
   2024: ["2024-01-01","2024-02-12","2024-02-13","2024-03-28","2024-03-29","2024-04-19","2024-05-01","2024-06-24","2024-07-05","2024-07-24","2024-10-12","2024-12-24","2024-12-25","2024-12-31"],
@@ -261,9 +262,9 @@ export default function VendedoresPage() {
       </Card>
 
       {/* Modal de detalle de Cuota */}
-      {showCuotaDetail && cuota && (
+      {showCuotaDetail && cuota && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowCuotaDetail(false)}
         >
           <div
@@ -383,7 +384,8 @@ export default function VendedoresPage() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Evolución de Ventas */}

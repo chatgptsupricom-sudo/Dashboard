@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { io, Socket } from "socket.io-client";
 import { KanbanColumn } from "./KanbanColumn";
 import { LeadCard } from "./LeadCard";
@@ -613,9 +614,9 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
       </DndContext>
 
       {/* ── MODAL DE ALERTA ── */}
-      {alertMessage && (
+      {alertMessage && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setAlertMessage(null)}
         >
           <div
@@ -635,13 +636,14 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               Entendido
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL DE CIERRE ── */}
-      {showClosureModal && (
+      {showClosureModal && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowClosureModal(false)}
         >
           <form
@@ -812,13 +814,14 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               Confirmar cierre
             </button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL DE EDICIÓN ── */}
-      {showEditModal && leadToEdit && (
+      {showEditModal && leadToEdit && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowEditModal(false)}
         >
           <div
@@ -876,13 +879,14 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               Guardar cambios
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL DE SEGUNDA COMPRA ── */}
-      {showSecondPurchaseModal && leadForSecondPurchase && (
+      {showSecondPurchaseModal && leadForSecondPurchase && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setShowSecondPurchaseModal(false)}
         >
           <form
@@ -1000,7 +1004,8 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
               Confirmar segunda compra
             </button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
