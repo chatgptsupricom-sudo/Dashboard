@@ -14,6 +14,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useTranslations, useLocale } from "next-intl";
 
 interface SpiffRule {
@@ -545,9 +546,9 @@ export default function SpiffManager({
       </Card>
 
       {/* Ranking Modal */}
-      {rankingModal && (
+      {rankingModal && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setRankingModal(null)}
         >
           <div
@@ -630,7 +631,8 @@ export default function SpiffManager({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
