@@ -1,7 +1,7 @@
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   buscarFacturaCompra,
-  buscarFacturaVenta,
+  buscarPickingEgreso,
 } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -11,12 +11,14 @@ export const dynamic = "force-dynamic";
  * GET /api/seguridad/mercancia/odoo/{nombre}?tipo=ingreso|egreso
  *
  * Trae de Odoo el documento con el que viaja la mercancia y sus lineas, para
- * prellenar el acta. Los dos flujos trabajan por factura, no por el
- * picking/orden de despacho — el almacen no maneja ese documento en el dia a
- * dia:
+ * prellenar el acta:
  *
- *   egreso  -> factura de venta (account.move, out_invoice). Ej: FACTU/2026/08/0064
+ *   egreso  -> orden de despacho (stock.picking, entrega/outgoing). Ej: CENT1/OUT/06321
  *   ingreso -> factura de la orden de compra (account.move, in_invoice). Ej: FACTU/2026/08/0064
+ *
+ * El ingreso sigue por factura — Seguridad no maneja el picking de ingreso en
+ * el dia a dia. El egreso paso de factura de venta a picking porque la
+ * factura no decia si el almacen ya habia alistado el pedido.
  */
 export async function GET(
   request: NextRequest,
@@ -46,7 +48,7 @@ export async function GET(
     const factura =
       tipo === "ingreso"
         ? await buscarFacturaCompra(buscado, cids)
-        : await buscarFacturaVenta(buscado, cids);
+        : await buscarPickingEgreso(buscado, cids);
 
     if (!factura) {
       return NextResponse.json(
@@ -54,7 +56,7 @@ export async function GET(
           error:
             tipo === "ingreso"
               ? "No encontramos esa factura de compra"
-              : "No encontramos esa factura de venta",
+              : "No encontramos esa orden de despacho",
         },
         { status: 404 },
       );

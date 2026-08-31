@@ -7,11 +7,11 @@ import { AlertTriangle, FileText, Loader2, Package, Send } from "lucide-react";
 import { PageHeader, Card, SectionTitle, BotonPrimario } from "./mercancia-ui";
 
 /**
- * Detalle de una factura de venta, leido directo de Odoo.
+ * Detalle de una orden de despacho (stock.picking), leido directo de Odoo.
  *
  * Reusa el mismo endpoint que ya usaba el buscador de MercanciaNueva
  * (/api/seguridad/mercancia/odoo/[nombre]?tipo=egreso) — el detalle
- * "completo" de una factura es exactamente lo que ese endpoint ya trae.
+ * "completo" de una orden es exactamente lo que ese endpoint ya trae.
  */
 
 type Linea = {

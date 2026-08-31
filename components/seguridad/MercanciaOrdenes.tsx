@@ -9,13 +9,14 @@ import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, EmptyState } from "./mercancia-ui";
 
 /**
- * Facturas de venta de Odoo que Almacen todavia no proceso como egreso.
+ * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir, que
+ * Almacen todavia no proceso como egreso.
  *
  * Antes de esto, para registrar un egreso habia que saber de memoria el
- * numero exacto de la factura y escribirlo en el buscador. Esta pantalla
+ * numero exacto de la orden y escribirlo en el buscador. Esta pantalla
  * existe para navegar en vez de adivinar.
  *
- * Grid y no lista: esta pantalla puede traer decenas de facturas, y se ve en
+ * Grid y no lista: esta pantalla puede traer decenas de ordenes, y se ve en
  * todo — telefono, tablet, monitor, hasta un televisor de sala. Una lista de
  * una sola columna se ve razonable en un telefono y ridicula (una tira
  * angosta en medio de una pantalla enorme) en una pantalla grande.

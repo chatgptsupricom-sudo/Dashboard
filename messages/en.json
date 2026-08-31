@@ -211,7 +211,7 @@
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
-    "almacen_ordenes": "Pending invoices",
+    "almacen_ordenes": "Pending orders",
     "almacen_almacenistas": "Manage Warehouse Workers",
     "almacen_choferes": "Manage Drivers",
     "almacen_unidades": "Manage Vehicles"
@@ -2356,10 +2356,10 @@
       "diferencia": "Difference",
       "buscar_factura_compra": "Purchase order invoice",
       "buscar_factura_compra_ph": "e.g. FACTU/2026/08/0064",
-      "buscar_factura_venta": "Sales invoice",
-      "buscar_factura_venta_ph": "e.g. FACTU/2026/08/0064",
-      "factura": "Invoice(s) travelling with the dispatch",
-      "factura_ph": "Invoice number",
+      "buscar_factura_venta": "Delivery order",
+      "buscar_factura_venta_ph": "e.g. CENT1/OUT/06321",
+      "factura": "Delivery order(s)",
+      "factura_ph": "Delivery order number",
       "solo_seguridad_ingreso": "Security registers inbound merchandise.",
       "solo_lectura_almacen": "Security verifies this record at the gate.",
       "no_salio_checkbox": "Did not go out",
@@ -2380,16 +2380,16 @@
         "recientes": "Recent outbound",
         "top_almacenistas": "Top rated",
         "ver_todos": "View all",
-        "ver_ordenes": "View pending invoices",
+        "ver_ordenes": "View pending orders",
         "vacio": "No outbound movements registered yet."
       },
       "ordenes": {
-        "titulo": "Pending invoices to dispatch",
-        "subtitulo": "Not yet processed as outbound",
-        "vacio": "No pending invoices in Odoo.",
-        "error": "Could not load invoices from Odoo.",
+        "titulo": "Pending delivery orders",
+        "subtitulo": "Ready in Odoo, not yet processed as outbound",
+        "vacio": "No delivery orders ready in Odoo.",
+        "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
-        "registrar_egreso": "Register outbound with this invoice"
+        "registrar_egreso": "Register outbound with this order"
       },
       "almacenistas_catalogo": {
         "titulo": "Warehouse workers",

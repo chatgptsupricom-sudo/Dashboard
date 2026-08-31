@@ -63,9 +63,10 @@ export default function MercanciaNueva({
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
-  // La factura buscada arriba se agrega sola a esta lista al encontrarla
-  // (ver buscarOrden) — un camion puede salir con mas de una, asi que sigue
-  // siendo lista y no un solo campo, para agregar las demas a mano.
+  // La orden buscada arriba se agrega sola a esta lista al encontrarla (ver
+  // buscarOrden) — un camion puede salir con mas de una orden de despacho,
+  // asi que sigue siendo lista y no un solo campo, para agregar las demas a
+  // mano.
   const [facturas, setFacturas] = useState<string[]>([]);
   const [facturaInput, setFacturaInput] = useState("");
 
@@ -146,7 +147,7 @@ export default function MercanciaNueva({
         contraparte: p.contraparte,
       });
       setLineas(p.lineas || []);
-      // La factura buscada es una de las que salen en el camion: se agrega
+      // La orden buscada es una de las que salen en el camion: se agrega
       // sola a la lista, en vez de obligar a volver a escribir el mismo
       // numero que ya se acaba de buscar.
       if (tipo === "egreso" && p.odoo_picking_name) {
@@ -161,9 +162,9 @@ export default function MercanciaNueva({
     }
   };
 
-  // Llega desde "Ver detalle" de una factura pendiente (Facturas pendientes)
-  // con `?factura=` ya resuelto — se busca sola en vez de obligar a
-  // retranscribir el numero que la pantalla anterior ya mostraba. Se lee de
+  // Llega desde "Ver detalle" de una orden pendiente (Órdenes de despacho
+  // pendientes) con `?factura=` ya resuelto — se busca sola en vez de obligar
+  // a retranscribir el numero que la pantalla anterior ya mostraba. Se lee de
   // `window` y no con `useSearchParams` para no arrastrar el Suspense que
   // este pide en build (mismo criterio que ingreso/nuevo/page.tsx).
   useEffect(() => {

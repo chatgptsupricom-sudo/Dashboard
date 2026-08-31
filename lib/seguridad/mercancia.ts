@@ -4,11 +4,17 @@ import { callOdooRPC } from "@/lib/odoo";
 /**
  * Documentos de Odoo para la seccion Mercancia.
  *
- * Los dos flujos trabajan por factura, no por el picking/orden de despacho de
- * Odoo: la mercancia que ENTRA con la factura de la orden de compra
- * (account.move, in_invoice), y la que SALE con la factura de venta
- * (account.move, out_invoice). El almacen no maneja el picking en el dia a
- * dia — la factura es el documento que tiene en la mano.
+ * Los dos flujos trabajan por documentos distintos: la mercancia que ENTRA
+ * se sigue por la factura de la orden de compra (account.move, in_invoice —
+ * Seguridad no maneja el picking de ingreso en el dia a dia, la factura es el
+ * documento que tiene en la mano). La que SALE se sigue por la orden de
+ * despacho (stock.picking, entrega/outgoing): es el documento que realmente
+ * dice si el camion esta listo para salir — una factura de venta puede estar
+ * `posted` sin que el almacen haya alistado nada, mientras que el picking
+ * pasa a "Listo" (`assigned`) recien cuando el inventario esta apartado y
+ * listo para cargar. Antes esto tambien se seguia por factura de venta; se
+ * volvio a picking porque la factura no reflejaba si el despacho estaba
+ * realmente listo.
  *
  * La lista de renglones sale de Odoo, no de lo que alguien escriba a mano: si
  * el papel lo llena el mismo que carga, verificar contra el no prueba nada.
@@ -159,32 +165,91 @@ export async function buscarFacturaCompra(
   return buscarFactura(numero, cids, "in_invoice");
 }
 
-/** Factura de venta — el documento con el que sale la mercancia (egreso). */
-export async function buscarFacturaVenta(
+/**
+ * Orden de despacho (stock.picking, tipo "entrega"/outgoing) — el documento
+ * con el que sale la mercancia (egreso).
+ *
+ * El `name` de un picking (ej. "CENT1/OUT/06321") NO es unico entre
+ * compañias: el mismo prefijo de almacen se reutiliza en mas de una, asi que
+ * `cids` no es solo un filtro de conveniencia aca — sin el, dos pickings
+ * distintos con el mismo nombre son ambiguos y `search_read` puede devolver
+ * el que no es. Un superadmin (`cids: null`) queda expuesto a esa ambiguedad;
+ * en la practica quien busca aca siempre es Almacen o Seguridad, con su
+ * sucursal ya resuelta.
+ */
+export async function buscarPickingEgreso(
   numero: string,
   cids: number | null,
 ): Promise<PickingOdoo | null> {
-  return buscarFactura(numero, cids, "out_invoice");
+  const limpio = String(numero || "").trim();
+  if (!limpio || limpio.length > 100) return null;
+
+  const domain: any[] = [
+    ["name", "=", limpio],
+    ["picking_type_id.code", "=", "outgoing"],
+  ];
+  if (cids !== null) domain.push(["company_id", "=", cids]);
+
+  const pickings = await callOdooRPC<any[]>(
+    "stock.picking",
+    "search_read",
+    [domain],
+    { fields: ["name", "partner_id", "state", "origin"], limit: 1 },
+  );
+
+  const p = pickings?.[0];
+  if (!p) return null;
+
+  const lineas_raw = await callOdooRPC<any[]>(
+    "stock.move.line",
+    "search_read",
+    [[["picking_id", "=", p.id]]],
+    { fields: ["product_id", "quantity"], limit: 500 },
+  );
+
+  const lineas: LineaPicking[] = (lineas_raw || []).map((l: any) => {
+    const etiqueta = l.product_id?.[1] || "";
+    const { codigo, producto } = partirProducto(etiqueta);
+    return {
+      odoo_product_id: l.product_id?.[0] ?? null,
+      producto,
+      codigo,
+      cantidad_cargada: Number(l.quantity || 0),
+    };
+  });
+
+  return {
+    odoo_picking_id: p.id,
+    odoo_picking_name: p.name,
+    contraparte: p.partner_id?.[1] || "",
+    estado: p.state || "",
+    // Referencia a la orden de venta de origen (ej. "S-04680"), para que el
+    // almacenista pueda ubicar el pedido aunque solo tenga a mano el numero
+    // de orden de despacho o viceversa.
+    origen: p.origin || null,
+    lineas,
+  };
 }
 
 /**
- * Facturas de venta (egresos) confirmadas en Odoo que Almacen aun no proceso.
+ * Ordenes de despacho (egresos) que Odoo ya tiene "Listas" (`assigned`) —
+ * inventario apartado y listo para cargar el camion — y que Almacen aun no
+ * proceso.
  *
- * "Pendiente" tiene dos partes: que la factura ya este `posted` (una factura
- * en borrador todavia puede cambiar) y que Almacen no la haya registrado ya
- * como egreso — sin lo segundo, cada factura ya cargada seguiria apareciendo
- * en la lista para siempre. El cruce se hace en MySQL (`seguridad_mercancia`)
- * porque Odoo no sabe nada de nuestros registros.
+ * `assigned` y no `posted`/`done`: una factura de venta confirmada no dice
+ * nada sobre si el almacen ya alisto el pedido, y un picking `done` ya salio
+ * (nada que hacer). `assigned` es la señal real de "listo para despachar".
  *
- * `cids` acota por sucursal (null = superadmin, sin filtro), mismo criterio
- * que el resto del modulo.
+ * El cruce con lo ya procesado se hace en MySQL (`seguridad_mercancia`)
+ * porque Odoo no sabe nada de nuestros registros. `cids` acota por sucursal
+ * (null = superadmin, sin filtro), mismo criterio que el resto del modulo.
  */
-export async function listarFacturasVentaPendientes(
+export async function listarPickingsEgresoPendientes(
   cids: number | null,
 ): Promise<PickingResumen[]> {
   const domain: any[] = [
-    ["move_type", "=", "out_invoice"],
-    ["state", "=", "posted"],
+    ["picking_type_id.code", "=", "outgoing"],
+    ["state", "=", "assigned"],
   ];
   if (cids !== null) domain.push(["company_id", "=", cids]);
 
@@ -193,22 +258,22 @@ export async function listarFacturasVentaPendientes(
   // los dos fue, en vez de un generico "no se pudo consultar Odoo" que
   // culpa a Odoo aunque el problema sea la base local (ej. la migracion de
   // `cids` en seguridad_mercancia sin correr todavia).
-  let facturas: any[] | null;
+  let pickings: any[] | null;
   try {
-    facturas = await callOdooRPC<any[]>(
-      "account.move",
+    pickings = await callOdooRPC<any[]>(
+      "stock.picking",
       "search_read",
       [domain],
       {
-        fields: ["name", "partner_id", "state", "invoice_origin", "invoice_date"],
-        order: "invoice_date desc",
+        fields: ["name", "partner_id", "state", "origin", "scheduled_date"],
+        order: "scheduled_date desc",
         limit: 200,
       },
     );
   } catch (e: any) {
     throw new Error(`[odoo] ${e?.message || e}`);
   }
-  if (!facturas || facturas.length === 0) return [];
+  if (!pickings || pickings.length === 0) return [];
 
   let usados: { rows: any[] };
   try {
@@ -225,15 +290,15 @@ export async function listarFacturasVentaPendientes(
     (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
   );
 
-  return facturas
-    .filter((f: any) => !idsUsados.has(f.id))
-    .map((f: any) => ({
-      odoo_picking_id: f.id,
-      odoo_picking_name: f.name,
-      contraparte: f.partner_id?.[1] || "",
-      estado: f.state || "",
-      origen: f.invoice_origin || null,
-      fecha: f.invoice_date || null,
+  return pickings
+    .filter((p: any) => !idsUsados.has(p.id))
+    .map((p: any) => ({
+      odoo_picking_id: p.id,
+      odoo_picking_name: p.name,
+      contraparte: p.partner_id?.[1] || "",
+      estado: p.state || "",
+      origen: p.origin || null,
+      fecha: p.scheduled_date || null,
     }));
 }
 
