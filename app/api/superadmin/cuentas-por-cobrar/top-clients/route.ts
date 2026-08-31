@@ -77,6 +77,13 @@ export async function GET(request: NextRequest) {
             ? -Math.abs(inv.amount_total || 0)
             : inv.amount_total || 0;
         const residual = inv.amount_residual || 0;
+        // Odoo guarda amount_residual de una nota de credito (out_refund)
+        // como positivo — "cuanto queda de credito sin aplicar", NO "cuanto
+        // debe el cliente". Sin este signo, una nota de credito abierta se
+        // sumaba como si fuera deuda adicional del cliente en vez de
+        // restarse de lo que debe. Ya se le daba este mismo tratamiento a
+        // amountTotal un poco mas abajo; faltaba aplicarlo aqui tambien.
+        const netResidual = inv.move_type === "out_refund" ? -Math.abs(residual) : Math.abs(residual);
         const dueDateStr = inv.invoice_date_due || null;
 
         let agingDays = 0;
@@ -104,7 +111,7 @@ export async function GET(request: NextRequest) {
             inv.company_id?.[1] ||
             "",
           amountTotal: amountTotal,
-          amountResidual: residual,
+          amountResidual: netResidual,
           agingDays,
           invoiceDate: inv.invoice_date || null,
           invoiceDateDue: dueDateStr,
@@ -148,10 +155,12 @@ export async function GET(request: NextRequest) {
         };
       }
       const sp = bySalesperson[uid];
-      sp.totalReceivable += Math.abs(inv.amountResidual);
+      // Ya viene con signo (negativo para notas de credito abiertas): sumar
+      // tal cual neta la deuda, no Math.abs de nuevo.
+      sp.totalReceivable += inv.amountResidual;
       sp.invoiceCount++;
       if (inv.agingDays > 0) {
-        sp.totalOverdue += Math.abs(inv.amountResidual);
+        sp.totalOverdue += inv.amountResidual;
       }
 
       const pid = inv.partnerId;
@@ -167,13 +176,13 @@ export async function GET(request: NextRequest) {
         };
       }
       const client = sp.clients[pid];
-      client.total += Math.abs(inv.amountResidual);
+      client.total += inv.amountResidual;
       client.count++;
       if (inv.agingDays > client.oldest) {
         client.oldest = inv.agingDays;
       }
       if (inv.agingDays > 0) {
-        client.overdue += Math.abs(inv.amountResidual);
+        client.overdue += inv.amountResidual;
       }
       client.companies.add(inv.companyName);
     });

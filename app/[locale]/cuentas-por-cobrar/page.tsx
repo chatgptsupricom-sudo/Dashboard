@@ -331,7 +331,9 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
+                {/* No es dinero cobrado: es la cartera corriente (aun no
+                    vencida), el numerador de este mismo porcentaje. */}
+                <span>Corriente: {formatCurrency(data.kpis.efectividad.corrienteMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
             </div>
@@ -460,7 +462,7 @@ export default function CxcDashboardPage() {
                         </td>
                         <td className="py-2.5 text-right">
                           <span className={`font-medium ${co.efectividad >= 95 ? "text-emerald-600" : co.efectividad >= 85 ? "text-amber-600" : "text-red-600"}`}>
-                            {co.efectividad !== null ? `${co.efectividad}%` : "N/A"}
+                            {co.efectividad != null ? `${co.efectividad}%` : "N/A"}
                           </span>
                         </td>
                         <td className="py-2.5 text-right text-slate-500">{co.openInvoices}</td>

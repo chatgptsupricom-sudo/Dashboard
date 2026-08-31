@@ -173,6 +173,7 @@ export async function GET(request: NextRequest) {
       const coOverdue = coRecords.filter((r: any) => r.days_overdue > 0);
       const coTotalReceivable = coRecords.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
       const coTotalOverdue = coOverdue.reduce((s, r) => s + Math.abs(r.amount_residual || 0), 0);
+      const coTotalCurrent = coRecords.reduce((s, r) => s + Math.abs(r.amount_current || 0), 0);
 
       return {
         companyId: cid,
@@ -180,10 +181,15 @@ export async function GET(request: NextRequest) {
         totalReceivable: Math.round(coTotalReceivable * 100) / 100,
         totalOverdue: Math.round(coTotalOverdue * 100) / 100,
         overduePct: coTotalReceivable > 0 ? Math.round((coTotalOverdue / coTotalReceivable) * 10000) / 100 : 0,
+        // Mismo calculo que el KPI global "Efectividad Cobranza" (corriente /
+        // cartera total) pero por sede — la tabla "Por Sede" lo pedia y nunca
+        // se calculo, asi que el frontend mostraba literalmente "undefined%"
+        // (el chequeo `!== null` no atajaba `undefined`).
+        efectividad: coTotalReceivable > 0 ? Math.round((coTotalCurrent / coTotalReceivable) * 10000) / 100 : null,
         openInvoices: coRecords.length,
         overdueInvoices: coOverdue.length,
         aging: {
-          corriente: Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_current || 0), 0) * 100) / 100,
+          corriente: Math.round(coTotalCurrent * 100) / 100,
           "1-30": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_1_30 || 0), 0) * 100) / 100,
           "31-60": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_31_60 || 0), 0) * 100) / 100,
           "61-90": Math.round(coRecords.reduce((s, r) => s + Math.abs(r.amount_61_90 || 0), 0) * 100) / 100,
@@ -232,7 +238,14 @@ export async function GET(request: NextRequest) {
           efectividad: {
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            cobradoMes: Math.round(totalCurrent * 100) / 100,
+            // OJO: esto es la cartera "corriente" (aun no vencida), NO plata
+            // ya cobrada. El campo se llamaba `cobradoMes` y el frontend lo
+            // rotulaba "Cobrado", pero es simplemente el numerador de
+            // Efectividad Cobranza (corriente / cartera total) — nadie cobro
+            // nada, sigue siendo saldo pendiente. El "cobrado" real de verdad
+            // (dinero recibido) es `totalCobrado` en /kpi-detail, que sale de
+            // otro calculo (facturas cuyo vencimiento cae en el mes).
+            corrienteMes: Math.round(totalCurrent * 100) / 100,
             exigibleMes: Math.round(totalReceivable * 100) / 100,
             pendiente: Math.round(totalOverdue * 100) / 100,
           },

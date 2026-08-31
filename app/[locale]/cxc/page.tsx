@@ -182,7 +182,7 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
+                <span>Corriente: {formatCurrency(data.kpis.efectividad.corrienteMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
             </div>

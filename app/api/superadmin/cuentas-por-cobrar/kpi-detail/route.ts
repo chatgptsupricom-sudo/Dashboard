@@ -88,7 +88,11 @@ export async function GET(request: NextRequest) {
           amountPaid: Math.round(Math.max(pagado, 0) * 100) / 100,
           amountResidual: Math.round(Math.abs(residual) * 100) / 100,
         };
-      });
+      }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
+      // El resto de los endpoints de CxC excluyen al partner interno
+      // "Supricom" (ver type "cartera" abajo, o detail/route.ts); a este
+      // calculo se le habia quedado afuera ese filtro, asi que sus propias
+      // facturas inflaban/desinflaban el detalle de Efectividad Cobranza.
 
       const totalExigible = invoices.reduce((s, i) => s + i.amountTotal, 0);
       const totalCobrado = invoices.reduce((s, i) => s + i.amountPaid, 0);
@@ -210,7 +214,9 @@ export async function GET(request: NextRequest) {
           amountResidual: Math.round(Math.abs(residual) * 100) / 100,
           status: residual <= 0 ? "Recuperado" : "Pendiente",
         };
-      });
+      }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
+      // Mismo motivo que en "efectividad" arriba: sin este filtro, las
+      // facturas internas de Supricom se cuentan en la cohorte de vencidas.
 
       const totalInicial = invoices.reduce((s, i) => s + i.amountTotal, 0);
       const totalRestante = invoices.reduce((s, i) => s + i.amountResidual, 0);

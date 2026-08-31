@@ -30,7 +30,7 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  efectividad: { value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number };
+  efectividad: { value: number; meta: number; corrienteMes: number; exigibleMes: number; pendiente: number };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number; meta: number; vencidoInicial: number; vencidoRestante: number };
   dso: { value: number; meta: number; carteraAbierta: number; ventasCredito90d: number };
@@ -247,7 +247,7 @@ export default function CxCReport() {
               title={t("efectividad_cobranza")}
               value={`${data.kpis.efectividad.value}%`}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
-              subtitle={`${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}`}
+              subtitle={`${t("corriente")}: ${formatCurrency(data.kpis.efectividad.corrienteMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}`}
               color={getTrafficLight(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               dot={getTrafficDot(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               icon={<TrendingUp size={20} />}
