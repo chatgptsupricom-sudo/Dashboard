@@ -250,6 +250,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 const CATEGORIAS_OCULTAS_LOWER = ["juguetes"];
 
@@ -544,8 +545,8 @@ export default function CatalogoPage() {
         })()}
 
       {/* Modal de columnas para exportar */}
-      {modalExport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      {modalExport && createPortal(
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
               <h2 className="text-base font-bold text-zinc-900">
@@ -612,7 +613,8 @@ export default function CatalogoPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
