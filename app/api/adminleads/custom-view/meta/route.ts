@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 import { ensureTables, getViewMeta, resolveView } from "@/lib/customView/store";
+import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,31 @@ export async function GET(request: NextRequest) {
     const view = await getViewMeta(viewName);
     if (!view) return NextResponse.json({ exists: false });
 
+    // ¿El HTML subido es la SPA de React? (marca en un <meta>)
+    const rk = await query(
+      `SELECT (LOCATE('supricom-plan', html_content) > 0) AS is_react
+         FROM custom_views WHERE view_name = ?`,
+      [viewName],
+    );
+    const isReact = !!Number(rk.rows?.[0]?.is_react);
+
+    if (isReact) {
+      await ensurePlanTables();
+      const plan = await getPlanState(viewName);
+      return NextResponse.json({
+        exists: true,
+        mode: "react",
+        filename: view.filename,
+        size: view.file_size,
+        updatedAt: view.updated_at,
+        baseRevision: Number(view.base_revision) || 1,
+        revision: plan.revision,
+        savedAt: plan.updatedAt,
+        savedBy: plan.updatedBy,
+        hasSnapshot: false,
+      });
+    }
+
     const s = await query(
       `SELECT revision, updated_at, updated_by,
               (snapshot_html IS NOT NULL AND CHAR_LENGTH(snapshot_html) > 0) AS has_snapshot
@@ -27,6 +53,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       exists: true,
+      mode: "overlay",
       filename: view.filename,
       size: view.file_size,
       updatedAt: view.updated_at,

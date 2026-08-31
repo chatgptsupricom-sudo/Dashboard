@@ -23,6 +23,8 @@ const API = "/api/adminleads/custom-view";
 
 interface FileMeta {
   exists: boolean;
+  /** "react" = la SPA maneja su propio estado; "overlay" = runtime de DOM. */
+  mode?: "react" | "overlay";
   filename?: string;
   updatedAt?: string;
   size?: number;
@@ -130,6 +132,17 @@ export default function PlanContenidoPanel({
       }));
     });
 
+    // Panel React: el estado lo sincroniza la propia app dentro del iframe;
+    // aqui solo se refleja el contador de cambios y quien guardo.
+    socket.on("plan-state-updated", (payload: { revision?: number; by?: string }) => {
+      setMeta((m) => ({
+        ...m,
+        revision: payload?.revision ?? m.revision,
+        savedBy: payload?.by ?? m.savedBy,
+        savedAt: new Date().toISOString(),
+      }));
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -170,12 +183,24 @@ export default function PlanContenidoPanel({
     }
   };
 
+  const isReact = meta.mode === "react";
+
   const openHistory = async () => {
     setShowHistory(true);
     try {
-      const r = await fetch(`${API}/history`);
+      const r = await fetch(isReact ? `${API}/plan-state?mode=history` : `${API}/history`);
       const d = await r.json();
-      setVersions(d.versions || []);
+      // El historial React trae { id, revision, hasState, ... }; el overlay
+      // ademas { kind, hasSnapshot }. Se normaliza para la misma tabla.
+      setVersions(
+        (d.versions || []).map((v: any) => ({
+          kind: "state",
+          label: null,
+          baseRevision: 0,
+          hasSnapshot: false,
+          ...v,
+        })),
+      );
     } catch {
       setVersions([]);
     }
@@ -184,10 +209,10 @@ export default function PlanContenidoPanel({
   const restore = async (id: number) => {
     setRestoring(id);
     try {
-      const r = await fetch(`${API}/history`, {
+      const r = await fetch(isReact ? `${API}/plan-state` : `${API}/history`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify(isReact ? { restore: id } : { id }),
       });
       const d = await r.json();
       if (d.success) {
@@ -254,9 +279,18 @@ export default function PlanContenidoPanel({
               </Button>
               <Button
                 variant="outline" size="sm"
-                onClick={() => window.open(`${API}?mode=snapshot&download=1`, "_blank")}
+                onClick={() =>
+                  window.open(
+                    isReact ? `${API}?mode=base&download=1` : `${API}?mode=snapshot&download=1`,
+                    "_blank",
+                  )
+                }
                 className="gap-1.5 text-slate-600"
-                title="Descarga el HTML completo con todos los cambios del panel"
+                title={
+                  isReact
+                    ? "Descarga el HTML del panel tal como se subio"
+                    : "Descarga el HTML completo con todos los cambios del panel"
+                }
               >
                 <Download className="w-3.5 h-3.5" />
                 Descargar
