@@ -2,6 +2,22 @@ import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
+async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      model, "search_read", [domain],
+      { fields, order: "id asc", limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -32,15 +48,11 @@ export async function GET(request: NextRequest) {
       domain.push(["id", "in", partnerIds]);
     }
 
-    const partners = (await callOdooRPC<any[]>(
+    const partners = await fetchPaginated(
       "res.partner",
-      "search_read",
-      [domain],
-      {
-        fields: ["id", "name", "vat"],
-        limit: 2000,
-      },
-    )) || [];
+      domain,
+      ["id", "name", "vat"],
+    );
 
     return NextResponse.json({
       success: true,
