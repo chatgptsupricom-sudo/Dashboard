@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 export default function UserManagement() {
   const t = useTranslations("userManagement");
@@ -438,8 +439,8 @@ export default function UserManagement() {
       {/* VENTANA MODAL ASIGNACIÓN DE PRIVILEGIOS */}
       {/* VENTANA MODAL ASIGNACIÓN DE PRIVILEGIOS */}
       <AnimatePresence>
-        {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {isOpen && createPortal(
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -572,7 +573,8 @@ export default function UserManagement() {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </div>,
+          document.body,
         )}
       </AnimatePresence>
     </div>
