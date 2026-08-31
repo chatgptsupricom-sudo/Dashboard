@@ -47,7 +47,11 @@ export async function GET(request: NextRequest) {
       "digiflex.cxc.report",
       [
         ["company_id", "in", companyIds],
-        ["amount_residual", ">", 0],
+        // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
+        // modelo traen amount_residual NEGATIVO — mismo fix que
+        // detail/route.ts (92822c9). Sin esto, esta lista de "vendedores"
+        // no coincidiria con lo que se ve al entrar al detalle de cada uno.
+        ["amount_residual", "!=", 0],
       ],
       ["user_id", "user_name", "partner_id", "amount_residual", "days_overdue"],
     );
@@ -78,7 +82,10 @@ export async function GET(request: NextRequest) {
         };
       }
       const b = byUser[uid];
-      const residual = Math.abs(r.amount_residual || 0);
+      // Con signo, no Math.abs: una nota de credito abierta (residual
+      // negativo) tiene que restar del total del vendedor, no sumarse como
+      // si fuera deuda adicional.
+      const residual = r.amount_residual || 0;
       b.totalReceivable += residual;
       if ((r.days_overdue || 0) > 0) b.totalOverdue += residual;
       b.invoiceCount++;
