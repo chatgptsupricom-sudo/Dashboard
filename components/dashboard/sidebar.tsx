@@ -215,6 +215,7 @@ export function Sidebar({
     { id: "cierres", label: t("cierres"), icon: FileText, slug: "/Cierres" },
     { id: "top_clientes", label: t("top_clientes"), icon: Trophy, slug: "/top-clientes" },
     { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
+    { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
     { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },

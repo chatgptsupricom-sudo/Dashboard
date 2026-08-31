@@ -163,7 +163,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -171,7 +171,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo"],
+    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo", "estado_cuenta"],
   },
   [UserRole.ADMINISTRACION]: {
     canViewAllSections: false,
