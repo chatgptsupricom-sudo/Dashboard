@@ -77,9 +77,7 @@ export default function MercanciaOrdenes() {
             <span className="break-words">{error}</span>
           </div>
         ) : ordenes.length === 0 ? (
-          <div className="bg-white border border-slate-200/80 rounded-2xl">
-            <EmptyState icon={FileText} texto={to("vacio")} />
-          </div>
+          <EmptyState icon={FileText} texto={to("vacio")} />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {ordenes.map((o) => (

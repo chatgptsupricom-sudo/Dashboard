@@ -2397,7 +2397,8 @@
         "error": "Could not register the warehouse worker",
         "agregar_select": "Add from the list of warehouse workers",
         "select_placeholder": "-- Select warehouse worker --",
-        "gestionar": "Manage warehouse workers"
+        "gestionar": "Manage warehouse workers",
+        "contador": "{count, plural, =1 {# warehouse worker} other {# warehouse workers}}"
       },
       "choferes_catalogo": {
         "titulo": "Drivers",
@@ -2407,7 +2408,8 @@
         "vacio": "No drivers registered yet.",
         "error": "Could not register the driver",
         "select_placeholder": "-- Select driver --",
-        "gestionar": "Manage drivers"
+        "gestionar": "Manage drivers",
+        "contador": "{count, plural, =1 {# driver} other {# drivers}}"
       },
       "unidades": {
         "titulo": "Vehicles",
@@ -2421,7 +2423,8 @@
         "vacio": "No vehicles registered yet.",
         "error": "Could not register the vehicle",
         "select_placeholder": "-- Select plate --",
-        "gestionar": "Manage vehicles"
+        "gestionar": "Manage vehicles",
+        "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
       }
     }
   }

@@ -9,9 +9,9 @@ import { PageHeader, Card, EmptyState, BotonPrimario, inputClases, labelClases }
  * Catalogo de unidades (vehiculos): placa + descripcion opcional. Alimenta
  * el select de "Placa del vehiculo" en el formulario de mercancia.
  *
- * El formulario de alta queda angosto y centrado; la lista de abajo se abre
- * en grid porque puede tener muchas unidades y se ve en pantallas de todos
- * los tamaños.
+ * Layout de dos columnas en pantallas anchas: el formulario de alta fijo a
+ * la izquierda, la lista a la derecha — mismo criterio que Almacenistas/
+ * Choferes (ver MercanciaCatalogoNombre.tsx).
  */
 
 type Unidad = { id: number; placa: string; descripcion: string | null };
@@ -68,80 +68,87 @@ export default function MercanciaCatalogoUnidades({ volverA }: { volverA: string
     <div className="min-h-screen bg-slate-50 font-sans">
       <PageHeader icon={Truck} titulo={tu("titulo")} subtitulo={tu("subtitulo")} volverA={volverA} />
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
-        <div className="max-w-xl">
-          <Card className="space-y-3.5">
-            <div>
-              <label className={labelClases}>{tu("placa")} *</label>
-              <input
-                type="text"
-                value={placa}
-                onChange={(e) => setPlaca(e.target.value.toUpperCase().slice(0, 50))}
-                placeholder={tu("placa_ph")}
-                className={`${inputClases} uppercase`}
-              />
-            </div>
-            <div>
-              <label className={labelClases}>
-                {tu("descripcion")}{" "}
-                <span className="text-slate-400 font-normal normal-case">({tu("opcional")})</span>
-              </label>
-              <input
-                type="text"
-                value={descripcion}
-                onChange={(e) => setDescripcion(e.target.value.slice(0, 200))}
-                placeholder={tu("descripcion_ph")}
-                className={inputClases}
-              />
-            </div>
-            <BotonPrimario
-              onClick={() => void agregar()}
-              disabled={guardando || !placa.trim()}
-              icon={guardando ? undefined : Plus}
-              className="w-full"
-            >
-              {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-              {tu("agregar")}
-            </BotonPrimario>
-            {error && (
-              <p className="text-sm text-red-600 flex items-center gap-1.5">
-                <XCircle className="w-4 h-4 shrink-0" />
-                {error}
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5 items-start">
+          <div className="lg:sticky lg:top-24">
+            <Card className="space-y-3.5">
+              <div>
+                <label className={labelClases}>{tu("placa")} *</label>
+                <input
+                  type="text"
+                  value={placa}
+                  onChange={(e) => setPlaca(e.target.value.toUpperCase().slice(0, 50))}
+                  placeholder={tu("placa_ph")}
+                  className={`${inputClases} uppercase`}
+                />
+              </div>
+              <div>
+                <label className={labelClases}>
+                  {tu("descripcion")}{" "}
+                  <span className="text-slate-400 font-normal normal-case">({tu("opcional")})</span>
+                </label>
+                <input
+                  type="text"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value.slice(0, 200))}
+                  placeholder={tu("descripcion_ph")}
+                  className={inputClases}
+                />
+              </div>
+              <BotonPrimario
+                onClick={() => void agregar()}
+                disabled={guardando || !placa.trim()}
+                icon={guardando ? undefined : Plus}
+                className="w-full"
+              >
+                {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
+                {tu("agregar")}
+              </BotonPrimario>
+              {error && (
+                <p className="text-sm text-red-600 flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 shrink-0" />
+                  {error}
+                </p>
+              )}
+            </Card>
+          </div>
+
+          <div>
+            {!cargando && items.length > 0 && (
+              <p className="text-xs font-medium text-slate-400 mb-3">
+                {tu("contador", { count: items.length })}
               </p>
             )}
-          </Card>
-        </div>
-
-        {cargando ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-16 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="bg-white border border-slate-200/80 rounded-2xl">
-            <EmptyState icon={Truck} texto={tu("vacio")} />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-            {items.map((it) => (
-              <div
-                key={it.id}
-                className="flex items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
-              >
-                <span className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
-                  <Truck className="w-4 h-4" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate">{it.placa}</p>
-                  {it.descripcion && (
-                    <p className="text-xs text-slate-500 truncate">{it.descripcion}</p>
-                  )}
-                </div>
+            {cargando ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="h-16 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
+                ))}
               </div>
-            ))}
+            ) : items.length === 0 ? (
+              <EmptyState icon={Truck} texto={tu("vacio")} />
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                {items.map((it) => (
+                  <div
+                    key={it.id}
+                    className="flex items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                  >
+                    <span className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                      <Truck className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{it.placa}</p>
+                      {it.descripcion && (
+                        <p className="text-xs text-slate-500 truncate">{it.descripcion}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   );

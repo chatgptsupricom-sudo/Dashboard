@@ -81,9 +81,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="bg-white border border-slate-200/80 rounded-2xl">
-            <EmptyState icon={Package} texto={tm("vacio")} />
-          </div>
+          <EmptyState icon={Package} texto={tm("vacio")} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {items.map((m) => (

@@ -13,6 +13,7 @@ export default async function Page({
     <MercanciaCatalogoNombre
       endpoint="/api/seguridad/mercancia/catalogo/almacenistas"
       listKey="almacenistas"
+      namespace="seguridad.mercancia.almacenistas_catalogo"
       titulo={t("titulo")}
       subtitulo={t("subtitulo")}
       campoLabel={t("campo")}

@@ -92,18 +92,27 @@ export function SectionTitle({
   );
 }
 
+/**
+ * Borde punteado y no una caja blanca solida: una caja llena vacia se lee
+ * como una pantalla rota; un borde punteado se lee como "aca va algo",
+ * que es la idea correcta cuando el catalogo todavia no tiene nada.
+ */
 export function EmptyState({
   icon: Icon,
   texto,
+  className = "",
 }: {
   icon?: LucideIcon;
   texto: string;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
+    <div
+      className={`flex flex-col items-center justify-center gap-2.5 py-12 px-4 text-center rounded-2xl border-2 border-dashed border-slate-200 ${className}`}
+    >
       {Icon && (
-        <span className="w-11 h-11 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
-          <Icon className="w-5 h-5" />
+        <span className="w-10 h-10 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
+          <Icon className="w-[18px] h-[18px]" />
         </span>
       )}
       <p className="text-sm text-slate-400 max-w-xs">{texto}</p>
