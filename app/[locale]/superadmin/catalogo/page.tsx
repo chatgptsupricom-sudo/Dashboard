@@ -4,13 +4,28 @@ import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import {
   Boxes,
+  Download,
+  Loader2,
   Package,
   PackageX,
   Search,
   Tag,
+  X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
+
+// Mismas columnas que ofrece la exportación de Vendedores
+// (app/[locale]/vendedores/catalogo/page.tsx) — Gerente de Ventas y
+// Asistente de Ventas comparten esta pantalla y pedían la misma opción.
+const COLUMNAS_DISPONIBLES = [
+  { key: "referencia", label: "Referencia" },
+  { key: "nombre", label: "Nombre en pantalla" },
+  { key: "marca", label: "Marca" },
+  { key: "stock", label: "Cantidad Disponible" },
+  { key: "precio", label: "Precio" },
+  { key: "imagen", label: "Imagen" },
+];
 
 export default function CatalogoPage() {
   const t = useTranslations("superadmin.catalogo");
@@ -19,6 +34,12 @@ export default function CatalogoPage() {
   const [categoria, setCategoria] = useState("todas");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  const [modalExport, setModalExport] = useState(false);
+  const [columnasSeleccionadas, setColumnasSeleccionadas] = useState<
+    Record<string, boolean>
+  >(Object.fromEntries(COLUMNAS_DISPONIBLES.map((c) => [c.key, true])));
+  const [unaHoja, setUnaHoja] = useState(false);
 
   useEffect(() => {
     fetch("/api/vendedores/catalogo")
@@ -63,6 +84,40 @@ export default function CatalogoPage() {
     });
   }, [productos, busqueda, categoria]);
 
+  const exportarExcel = async () => {
+    setModalExport(false);
+    setExportando(true);
+    try {
+      const params = new URLSearchParams({
+        categoria,
+        unaHoja: unaHoja ? "1" : "0",
+      });
+      Object.entries(columnasSeleccionadas).forEach(([k, v]) =>
+        params.set(k, v ? "1" : "0"),
+      );
+      const res = await fetch(`/api/vendedores/catalogo/export?${params}`);
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="(.+?)"/);
+      a.download = match?.[1] || "catalogo.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert("Error al exportar: " + e.message);
+    } finally {
+      setExportando(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -81,16 +136,30 @@ export default function CatalogoPage() {
           </div>
         </div>
 
-        {/* Buscador */}
-        <div className="relative w-full lg:w-96">
-          <Search className="absolute left-3 top-3.5 text-zinc-400" size={18} />
-          <input
-            type="text"
-            placeholder={t("buscar")}
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 rounded-2xl border border-zinc-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-          />
+        {/* Buscador + Exportar */}
+        <div className="flex gap-2 w-full lg:w-auto">
+          <div className="relative flex-1 lg:w-96">
+            <Search className="absolute left-3 top-3.5 text-zinc-400" size={18} />
+            <input
+              type="text"
+              placeholder={t("buscar")}
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-2xl border border-zinc-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+            />
+          </div>
+          <button
+            onClick={() => setModalExport(true)}
+            disabled={cargando || exportando || productos.length === 0}
+            className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shadow-sm whitespace-nowrap"
+          >
+            {exportando ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            {exportando ? "Exportando..." : "Exportar Excel"}
+          </button>
         </div>
       </div>
 
@@ -158,6 +227,78 @@ export default function CatalogoPage() {
           {productosFiltrados.map((p, i) => (
             <ProductoCard key={p.id} producto={p} index={i} />
           ))}
+        </div>
+      )}
+
+      {/* Modal de columnas para exportar */}
+      {modalExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+              <h2 className="text-base font-bold text-zinc-900">
+                Columnas a exportar
+              </h2>
+              <button
+                onClick={() => setModalExport(false)}
+                className="text-zinc-400 hover:text-zinc-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              {COLUMNAS_DISPONIBLES.map((col) => (
+                <label
+                  key={col.key}
+                  className="flex items-center gap-3 cursor-pointer group"
+                >
+                  <input
+                    type="checkbox"
+                    checked={columnasSeleccionadas[col.key]}
+                    onChange={(e) =>
+                      setColumnasSeleccionadas((prev) => ({
+                        ...prev,
+                        [col.key]: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 rounded accent-blue-600"
+                  />
+                  <span className="text-sm text-zinc-700 group-hover:text-zinc-900 font-medium">
+                    {col.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {categoria === "todas" && (
+              <div className="px-6 pb-5">
+                <label className="flex items-center gap-3 cursor-pointer group border-t border-zinc-100 pt-4">
+                  <input
+                    type="checkbox"
+                    checked={unaHoja}
+                    onChange={(e) => setUnaHoja(e.target.checked)}
+                    className="w-4 h-4 rounded accent-blue-600"
+                  />
+                  <span className="text-sm text-zinc-700 group-hover:text-zinc-900 font-medium">
+                    Exportar todo en una sola hoja
+                  </span>
+                </label>
+              </div>
+            )}
+            <div className="px-6 py-4 border-t border-zinc-100 flex gap-3 justify-end">
+              <button
+                onClick={() => setModalExport(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-zinc-600 hover:bg-zinc-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={exportarExcel}
+                disabled={!Object.values(columnasSeleccionadas).some(Boolean)}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
+              >
+                <Download size={15} /> Exportar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
