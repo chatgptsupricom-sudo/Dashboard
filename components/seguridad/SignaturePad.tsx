@@ -33,7 +33,6 @@ export function SignaturePad({
 
   const lastPointRef = useRef<Point | null>(null);
   const hasContentRef = useRef(false);
-  const notifiedRef = useRef(false);
   // Puntos crudos (pixeles de canvas, sin dividir por dpr) de cada trazo, para
   // poder reconstruirlos en un canvas aparte al exportar — ver
   // exportarTrazoTransparente().
@@ -142,7 +141,6 @@ export function SignaturePad({
       setupCanvas();
       if (!wasEmpty) {
         hasContentRef.current = false;
-        notifiedRef.current = false;
         trazoActualRef.current = [];
         trazosRef.current = [];
         isEmptyRef.current = true;
@@ -163,7 +161,6 @@ export function SignaturePad({
     setIsEmpty(true);
     isEmptyRef.current = true;
     hasContentRef.current = false;
-    notifiedRef.current = false;
     lastPointRef.current = null;
     trazoActualRef.current = [];
     trazosRef.current = [];
@@ -343,8 +340,7 @@ export function SignaturePad({
     }
     trazoActualRef.current = [];
 
-    if (hasContentRef.current && !notifiedRef.current && canvas) {
-      notifiedRef.current = true;
+    if (hasContentRef.current && canvas) {
       if (isEmptyRef.current) {
         isEmptyRef.current = false;
         setIsEmpty(false);
