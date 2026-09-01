@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { BrandBubbles } from "@/components/dashboard/brand-bubbles";
+import { RotacionSkus } from "@/components/adminleads/RotacionSkus";
 
 export default function AdminLeadsDashboardPage() {
   const [data, setData] = useState<any>(null);
@@ -42,6 +43,8 @@ export default function AdminLeadsDashboardPage() {
         categories={data?.categories || []}
         loading={loading}
       />
+
+      <RotacionSkus />
     </div>
   );
 }
