@@ -165,17 +165,20 @@ export async function addPlanHistory(entry: {
       [entry.view, entry.revision, entry.piecesJson, entry.label, entry.createdBy],
     );
     await query(
+      // LIMIT va inline y no como `?`: con sentencias preparadas (db.execute)
+      // MySQL rechaza `LIMIT ?` con "Incorrect arguments to mysqld_stmt_execute"
+      // (errno 1210). HISTORY_KEEP es una constante numérica, sin riesgo.
       `DELETE FROM plan_content_history
         WHERE view_name = ?
           AND id < (
             SELECT min_id FROM (
               SELECT MIN(id) AS min_id FROM (
                 SELECT id FROM plan_content_history
-                 WHERE view_name = ? ORDER BY id DESC LIMIT ?
+                 WHERE view_name = ? ORDER BY id DESC LIMIT ${HISTORY_KEEP}
               ) keep
             ) k
           )`,
-      [entry.view, entry.view, HISTORY_KEEP],
+      [entry.view, entry.view],
     );
   } catch (e: any) {
     console.error("addPlanHistory fallo:", e?.message);
