@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { asegurarEsquemaPersonal } from "@/lib/seguridad/catalogoPersonal";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -21,6 +22,29 @@ function truncate(value: any, max: number): string | null {
   if (value === undefined || value === null) return null;
   const s = String(value);
   return s.length > max ? s.slice(0, max) : s;
+}
+
+// `dentro_de_fecha` y `falla_cubierta_garantia` nacieron NOT NULL sin default
+// (a propósito, para no declarar por nadie que el equipo llegó bien). Al dejar
+// de pedirlos (#48) hay que permitir NULL para poder omitirlos del INSERT.
+// Se corre una sola vez por proceso, best-effort: si ya están nullables o la
+// columna no existe, no pasa nada.
+let columnasGarantiaAjustadas: Promise<void> | null = null;
+function asegurarColumnasGarantiaNullables(): Promise<void> {
+  if (!columnasGarantiaAjustadas) {
+    columnasGarantiaAjustadas = (async () => {
+      for (const col of ["dentro_de_fecha", "falla_cubierta_garantia"]) {
+        try {
+          await query(
+            `ALTER TABLE seguridad_ingresos MODIFY ${col} TINYINT(1) NULL DEFAULT NULL`,
+          );
+        } catch (e: any) {
+          console.warn(`No se pudo hacer nullable ${col}:`, e?.message);
+        }
+      }
+    })();
+  }
+  return columnasGarantiaAjustadas;
 }
 
 export async function GET(request: NextRequest) {
@@ -108,7 +132,19 @@ export async function POST(request: NextRequest) {
     const clienteNombre = truncate(body.cliente_nombre, MAX.cliente_nombre);
     if (!clienteNombre) errors.push("cliente_nombre es obligatorio");
 
-    const recibidoPor = truncate(body.recibido_por, MAX.recibido_por);
+    // #50: quién recibió, por cada lado del mostrador. `recibido_por` (viejo,
+    // texto único) se sigue guardando para la calificación y los KPIs — es el
+    // de Seguridad. Se acepta que el cliente lo mande directo (cola offline con
+    // builds viejos) o que se derive del de Seguridad.
+    const recibidoSeguridad = truncate(
+      body.recibido_seguridad_nombre,
+      MAX.recibido_por,
+    );
+    const recibidoRma = truncate(body.recibido_rma_nombre, MAX.recibido_por);
+    const recibidoPor =
+      truncate(body.recibido_por, MAX.recibido_por) || recibidoSeguridad;
+    if (!recibidoSeguridad) errors.push("recibido_seguridad_nombre es obligatorio");
+    if (!recibidoRma) errors.push("recibido_rma_nombre es obligatorio");
     if (!recibidoPor) errors.push("recibido_por es obligatorio");
 
     const descripcionFalla = truncate(body.descripcion_falla, MAX.descripcion_falla);
@@ -137,8 +173,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Los 4 checks de la planilla son OBLIGATORIOS y hay que declararlos
-    // explícitamente, uno por uno.
+    // Los checks de estado de la planilla son OBLIGATORIOS y hay que
+    // declararlos explícitamente, uno por uno.
     //
     // Antes se guardaban con `body.x === false ? 0 : 1`, así que un campo
     // ausente quedaba registrado como "sí". Eso es grave justo en el sentido
@@ -146,12 +182,12 @@ export async function POST(request: NextRequest) {
     // íntegros", el sistema declaraba por su cuenta que el equipo llegó
     // completo. Cuando un cliente reclame que faltaba algo, ese registro es la
     // prueba de la empresa — y decía que sí sin que nadie lo hubiera revisado.
-    const CHECKS = [
-      "accesorios_integros",
-      "sin_manipulacion",
-      "dentro_de_fecha",
-      "falla_cubierta_garantia",
-    ] as const;
+    //
+    // `dentro_de_fecha` y `falla_cubierta_garantia` salieron de acá (#48): esa
+    // evaluación de garantía viene resuelta y congelada en el ticket de RMA.
+    // Se siguen aceptando si el cliente los manda (cola offline con builds
+    // viejos), pero ya no se exigen ni se guardan.
+    const CHECKS = ["accesorios_integros", "sin_manipulacion"] as const;
 
     for (const campo of CHECKS) {
       if (typeof body[campo] !== "boolean") {
@@ -199,11 +235,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await asegurarColumnasGarantiaNullables();
+    // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
+    // base todavía no las tiene (#50).
+    await asegurarEsquemaPersonal();
+
     const result = await query(
       `INSERT INTO seguridad_ingresos
         (rma_case_id, fecha_entrega, factura_numero, cliente_nombre, hardware, serial,
-         descripcion_falla, accesorios_integros, sin_manipulacion, dentro_de_fecha,
-         falla_cubierta_garantia, recibido_por, foto_estado_url, idempotency_key,
+         descripcion_falla, accesorios_integros, sin_manipulacion,
+         recibido_por, recibido_seguridad_nombre, recibido_rma_nombre,
+         foto_estado_url, idempotency_key,
          nd_numero, cids)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -216,9 +258,9 @@ export async function POST(request: NextRequest) {
         descripcionFalla,
         body.accesorios_integros ? 1 : 0,
         body.sin_manipulacion ? 1 : 0,
-        body.dentro_de_fecha ? 1 : 0,
-        body.falla_cubierta_garantia ? 1 : 0,
         recibidoPor,
+        recibidoSeguridad,
+        recibidoRma,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
         // Correlativo que el almacen lleva a mano en la planilla de papel.

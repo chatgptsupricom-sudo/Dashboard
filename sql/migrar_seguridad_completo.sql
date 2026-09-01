@@ -39,14 +39,22 @@ CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   hardware VARCHAR(200) DEFAULT NULL,
   serial VARCHAR(200) DEFAULT NULL,
   descripcion_falla TEXT DEFAULT NULL,
-  -- Los 4 checks de la planilla van NOT NULL y sin valor por defecto: con
+  -- Los checks de la planilla van NOT NULL y sin valor por defecto: con
   -- DEFAULT 1 se podia registrar un ingreso sin revisar nada y quedaba
   -- declarado que el equipo llego completo.
   accesorios_integros TINYINT(1) NOT NULL,
   sin_manipulacion TINYINT(1) NOT NULL,
-  dentro_de_fecha TINYINT(1) NOT NULL,
-  falla_cubierta_garantia TINYINT(1) NOT NULL,
+  -- dentro_de_fecha / falla_cubierta_garantia: ya no se piden en el formulario
+  -- (#48). La garantia viene congelada en el ticket de RMA. Se dejan NULL-ables
+  -- para el historico; ver sql/alter_seguridad_ingresos_quitar_checks_garantia.sql
+  dentro_de_fecha TINYINT(1) NULL DEFAULT NULL,
+  falla_cubierta_garantia TINYINT(1) NULL DEFAULT NULL,
   recibido_por VARCHAR(200) NOT NULL,
+  -- #50: quien recibio por cada lado del mostrador. `recibido_por` se conserva
+  -- para la calificacion / KPIs (es el de Seguridad). Ver
+  -- sql/alter_seguridad_catalogo_personal.sql
+  recibido_seguridad_nombre VARCHAR(200) DEFAULT NULL,
+  recibido_rma_nombre VARCHAR(200) DEFAULT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
   idempotency_key VARCHAR(64) DEFAULT NULL,
   -- Sucursal de quien registra (9=Valencia, 10=Caracas, 7=Panama), del mismo
@@ -244,6 +252,19 @@ CREATE TABLE IF NOT EXISTS seguridad_catalogo_choferes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_nombre_cids (nombre, cids),
   INDEX idx_cids (cids)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- #50 — personal de Seguridad / RMA. Alimenta los dos selects "Recibio por..."
+-- del formulario de ingreso. `activo` para dar de baja sin perder historico.
+CREATE TABLE IF NOT EXISTS seguridad_catalogo_personal (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  rol ENUM('seguridad','rma') NOT NULL,
+  cids INT DEFAULT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_nombre_rol_cids (nombre, rol, cids),
+  INDEX idx_rol_cids (rol, cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS seguridad_catalogo_unidades (

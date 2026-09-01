@@ -190,6 +190,7 @@
     "seg_ingreso": "Ingreso",
     "seg_egreso": "Egreso",
     "seg_estadisticas": "Estadísticas de RMA",
+    "seg_personal": "Personal (Seguridad / RMA)",
     "seg_merc_ingresos": "Ingresos",
     "seg_merc_egresos": "Egresos",
     "almacen_egresos": "Egresos de mercancía",
@@ -1999,6 +2000,18 @@
       "duplicate_error": "Esta calificación ya fue registrada.",
       "rate_for": "Calificar a {name}"
     },
+    "personal": {
+      "titulo": "Personal de Seguridad y RMA",
+      "subtitulo": "Los nombres que aparecen en los selects del ingreso",
+      "col_seguridad": "Seguridad",
+      "col_rma": "RMA",
+      "campo": "Nombre completo",
+      "campo_ph": "Ej. Dario Medina",
+      "vacio": "Sin personas cargadas todavía.",
+      "dar_baja": "Dar de baja",
+      "reactivar": "Reactivar",
+      "error": "No se pudo guardar. Intenta de nuevo."
+    },
     "ingreso": {
       "back": "Volver",
       "form": {
@@ -2027,10 +2040,15 @@
         "yes": "Sí",
         "no": "No",
         "recibido_por_help": "Tu nombre aparece por defecto",
+        "recibido_seguridad": "Recibió por Seguridad",
+        "recibido_rma": "Recibió por RMA",
+        "recibido_placeholder": "Elige a la persona…",
+        "recibido_sin_catalogo": "No hay personal cargado.",
+        "recibido_gestionar": "Gestionar personal",
         "submit": "Registrar ingreso",
         "submitting": "Registrando...",
         "error_required": "Completa los campos obligatorios",
-        "error_checks_requeridos": "Responde los cuatro controles de recepción antes de continuar.",
+        "error_checks_requeridos": "Responde los controles de recepción antes de continuar.",
         "error_generic": "No se pudo registrar el ingreso",
         "opcional": "opcional",
         "encolado_titulo": "Guardado en este teléfono, todavía sin enviar",
@@ -2073,6 +2091,8 @@
         "section_data": "Datos del ingreso",
         "section_checks": "Verificación de estado",
         "section_recibido": "Recibido por",
+        "recibido_seguridad": "Recibió por Seguridad",
+        "recibido_rma": "Recibió por RMA",
         "section_ticket": "Ticket del portal",
         "section_adjuntos": "Adjuntos del cliente",
         "no_adjuntos": "Sin adjuntos del cliente",
@@ -2100,7 +2120,15 @@
         "adjunto_imagen": "Imagen",
         "adjunto_video": "Video",
         "print": "Imprimir acta",
-        "label_nd": "N.º ND"
+        "label_nd": "N.º ND",
+        "section_garantia": "Garantía",
+        "garantia_desde_ticket": "Del ticket de RMA, congelada al momento del reporte",
+        "garantia_vence": "Vence el",
+        "garantia_sin_ticket": "Sin ticket del portal vinculado: la garantía se evalúa en RMA.",
+        "warranty_en_garantia": "En garantía",
+        "warranty_vencida": "Vencida",
+        "warranty_vida_util": "Vida útil",
+        "warranty_indeterminada": "Sin determinar"
       }
     },
     "despacho": {
@@ -2275,8 +2303,8 @@
     "back": "Volver",
     "firmas": {
       "titulo": "Firmas del acta",
-      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla.",
-      "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla.",
+      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla y no se puede modificar.",
+      "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla y no se puede modificar.",
       "completa": "Completa",
       "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
       "firmado": "Firmado",
@@ -2284,6 +2312,7 @@
       "firmar": "Firmar",
       "rehacer": "Rehacer",
       "borrar": "Borrar firma",
+      "bloqueada": "Guardada",
       "sin_nombre": "Sin asignar",
       "nombre": "Nombre de quien firma",
       "trazo": "Firme aquí con el dedo",

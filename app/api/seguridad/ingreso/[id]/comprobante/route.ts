@@ -106,6 +106,40 @@ export async function GET(
     fechaDespacho = null;
   }
 
+  // Garantía: ya no es un check que Seguridad marca en la planilla (#48). Viene
+  // congelada en el ticket de RMA al momento del reporte; el comprobante la
+  // reproduce tal cual.
+  let garantia: any = null;
+  if (i.rma_case_id) {
+    try {
+      const gres = await query(
+        `SELECT garantia_estado, garantia_meses, garantia_vence, garantia_marca
+         FROM rma_cases WHERE id = ?`,
+        [i.rma_case_id],
+      );
+      garantia = gres.rows[0] ?? null;
+    } catch (e: any) {
+      console.warn("rma_cases sin columnas de garantia:", e?.message);
+    }
+  }
+  const GARANTIA_LABEL: Record<string, string> = {
+    en_garantia: "En garant&iacute;a",
+    vencida: "Vencida",
+    vida_util: "Vida &uacute;til",
+    indeterminada: "Sin determinar",
+  };
+  const garantiaTexto = garantia
+    ? [
+        GARANTIA_LABEL[garantia.garantia_estado] || "Sin determinar",
+        garantia.garantia_marca ? esc(garantia.garantia_marca) : "",
+        garantia.garantia_vence
+          ? `vence ${fechaLarga(garantia.garantia_vence)}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" &middot; ")
+    : "Seg&uacute;n ticket de RMA";
+
   const [firmas, tecnico] = await Promise.all([
     firmasConImagen("ingreso", ingresoId),
     tecnicoDeOsc(),
@@ -208,18 +242,26 @@ export async function GET(
     <tr>
       <th>Accesorios &iacute;ntegros</th>
       <th>Sin manipulaci&oacute;n</th>
-      <th>Dentro de la fecha</th>
-      <th>Falla cubierta por garant&iacute;a</th>
     </tr>
     <tr>
       <td>${check(i.accesorios_integros)}</td>
       <td>${check(i.sin_manipulacion)}</td>
-      <td>${check(i.dentro_de_fecha)}</td>
-      <td>${check(i.falla_cubierta_garantia)}</td>
     </tr>
   </table>
 
   <table style="margin-top:12px">
+    <tr><th>Garant&iacute;a (del ticket de RMA)</th><td>${garantiaTexto}</td></tr>
+  </table>
+
+  <table style="margin-top:12px">
+    <tr>
+      <th>Recibi&oacute; por Seguridad</th>
+      <td>${esc(i.recibido_seguridad_nombre || i.recibido_por) || "&mdash;"}</td>
+    </tr>
+    <tr>
+      <th>Recibi&oacute; por RMA</th>
+      <td>${esc(i.recibido_rma_nombre) || "&mdash;"}</td>
+    </tr>
     <tr><th>Fecha de despacho</th><td>${fechaDespacho ? fechaLarga(fechaDespacho) : "&mdash;"}</td></tr>
   </table>
 

@@ -208,6 +208,7 @@
     "seg_ingreso": "Intake",
     "seg_egreso": "Dispatch",
     "seg_estadisticas": "RMA statistics",
+    "seg_personal": "Staff (Security / RMA)",
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
@@ -2010,6 +2011,18 @@
       "duplicate_error": "This rating is already registered.",
       "rate_for": "Rate {name}"
     },
+    "personal": {
+      "titulo": "Security and RMA staff",
+      "subtitulo": "The names shown in the intake dropdowns",
+      "col_seguridad": "Security",
+      "col_rma": "RMA",
+      "campo": "Full name",
+      "campo_ph": "e.g. Dario Medina",
+      "vacio": "No people added yet.",
+      "dar_baja": "Deactivate",
+      "reactivar": "Reactivate",
+      "error": "Could not save. Try again."
+    },
     "ingreso": {
       "back": "Back",
       "form": {
@@ -2038,10 +2051,15 @@
         "yes": "Yes",
         "no": "No",
         "recibido_por_help": "Your name appears by default",
+        "recibido_seguridad": "Received by Security",
+        "recibido_rma": "Received by RMA",
+        "recibido_placeholder": "Choose the person…",
+        "recibido_sin_catalogo": "No staff on file.",
+        "recibido_gestionar": "Manage staff",
         "submit": "Register intake",
         "submitting": "Registering...",
         "error_required": "Fill in the required fields",
-        "error_checks_requeridos": "Answer all four reception checks before continuing.",
+        "error_checks_requeridos": "Answer the reception checks before continuing.",
         "error_generic": "Could not register the intake",
         "opcional": "optional",
         "encolado_titulo": "Saved on this phone, not sent yet",
@@ -2084,6 +2102,8 @@
         "section_data": "Intake data",
         "section_checks": "Status verification",
         "section_recibido": "Received by",
+        "recibido_seguridad": "Received by Security",
+        "recibido_rma": "Received by RMA",
         "section_ticket": "Portal ticket",
         "section_adjuntos": "Customer attachments",
         "no_adjuntos": "No customer attachments",
@@ -2111,7 +2131,15 @@
         "adjunto_imagen": "Image",
         "adjunto_video": "Video",
         "print": "Print record",
-        "label_nd": "ND no."
+        "label_nd": "ND no.",
+        "section_garantia": "Warranty",
+        "garantia_desde_ticket": "From the RMA ticket, frozen at report time",
+        "garantia_vence": "Expires on",
+        "garantia_sin_ticket": "No portal ticket linked: warranty is assessed in RMA.",
+        "warranty_en_garantia": "In warranty",
+        "warranty_vencida": "Expired",
+        "warranty_vida_util": "Service life",
+        "warranty_indeterminada": "Undetermined"
       }
     },
     "despacho": {
@@ -2286,8 +2314,8 @@
     "back": "Back",
     "firmas": {
       "titulo": "Record signatures",
-      "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished.",
-      "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished.",
+      "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished and cannot be changed.",
+      "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished and cannot be changed.",
       "completa": "Complete",
       "faltan": "{count, plural, =1 {# signature missing} other {# signatures missing}}",
       "firmado": "Signed",
@@ -2295,6 +2323,7 @@
       "firmar": "Sign",
       "rehacer": "Redo",
       "borrar": "Delete signature",
+      "bloqueada": "Saved",
       "sin_nombre": "Unassigned",
       "nombre": "Name of the signer",
       "trazo": "Sign here with your finger",

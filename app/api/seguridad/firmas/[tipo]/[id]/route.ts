@@ -35,8 +35,11 @@ async function actaVisible(
  * lo que paso con /api/seguridad/almacenistas.
  *
  * GET    devuelve quien firmo y cuando, sin las imagenes.
- * POST   guarda o reemplaza la firma de un rol.
- * DELETE borra la de un rol, para rehacerla si salio mal.
+ * POST   guarda la firma de un rol. Una vez guardada NO se puede rehacer
+ *        (#49): el acta es la prueba de la empresa y una firma que se puede
+ *        reescribir no prueba nada. Solo `superadmin` puede sobrescribir, como
+ *        via de correccion para un error real.
+ * DELETE borra la de un rol. Solo `superadmin`.
  */
 
 const MAX_FIRMA_BYTES = 1024 * 1024; // 1 MB: un trazo de canvas pesa unos pocos KB
@@ -46,6 +49,22 @@ function parsearParams(tipo: string, id: string) {
   const actaId = parseInt(id, 10);
   if (isNaN(actaId) || actaId <= 0) return { error: "id invalido" };
   return { tipo, actaId };
+}
+
+function esSuperadmin(payload: any): boolean {
+  return String(payload?.role || "").toLowerCase().trim() === "superadmin";
+}
+
+async function rolYaFirmo(
+  tipo: string,
+  actaId: number,
+  rol: string,
+): Promise<boolean> {
+  const res = await query(
+    "SELECT 1 FROM seguridad_firmas WHERE acta_tipo = ? AND acta_id = ? AND rol = ? LIMIT 1",
+    [tipo, actaId, rol],
+  );
+  return res.rows.length > 0;
 }
 
 export async function GET(
@@ -142,8 +161,17 @@ export async function POST(
       return NextResponse.json({ error: "El acta no existe" }, { status: 404 });
     }
 
-    // Reemplaza si ese rol ya habia firmado: firmar de nuevo corrige, no
-    // acumula. Dos firmas del mismo rol y nadie sabria cual vale.
+    // Una firma guardada es definitiva (#49). Reescribirla dejaria el acta sin
+    // valor de prueba. Solo superadmin puede, como correccion de un error real.
+    if (!esSuperadmin(auth.payload) && (await rolYaFirmo(p.tipo!, p.actaId!, body.rol))) {
+      return NextResponse.json(
+        { error: "Esa firma ya se guardo y no se puede rehacer." },
+        { status: 409 },
+      );
+    }
+
+    // Reemplaza si ese rol ya habia firmado (solo llega aca superadmin): dos
+    // firmas del mismo rol y nadie sabria cual vale.
     await query(
       `INSERT INTO seguridad_firmas
          (acta_tipo, acta_id, rol, firmante_nombre, firma_data, firma_mime, cids)
@@ -175,6 +203,15 @@ export async function DELETE(
   try {
     const auth = await requireSeguridad(request);
     if (auth.error) return auth.error;
+
+    // Borrar una firma guardada solo lo puede superadmin (#49). Para Seguridad
+    // la firma es definitiva una vez hecha.
+    if (!esSuperadmin(auth.payload)) {
+      return NextResponse.json(
+        { error: "Una firma guardada no se puede borrar." },
+        { status: 403 },
+      );
+    }
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;

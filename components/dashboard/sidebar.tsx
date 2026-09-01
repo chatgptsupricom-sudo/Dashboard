@@ -694,6 +694,7 @@ export function Sidebar({
                         { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
                         { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
                         { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
+                        { label: t("seg_personal"), href: `/${locale}/seguridad/config/personal` },
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se

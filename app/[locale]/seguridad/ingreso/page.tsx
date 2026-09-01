@@ -32,8 +32,6 @@ type Ingreso = {
   descripcion_falla: string | null;
   accesorios_integros: number;
   sin_manipulacion: number;
-  dentro_de_fecha: number;
-  falla_cubierta_garantia: number;
   recibido_por: string;
   promedio_calificacion: number | null;
   // null mientras el equipo siga en el taller; el id del despacho cuando ya
@@ -372,16 +370,6 @@ export default function IngresoListPage() {
                             />
                             <CheckBadge
                               value={ing.sin_manipulacion}
-                              yes={tf("yes")}
-                              no={tf("no")}
-                            />
-                            <CheckBadge
-                              value={ing.dentro_de_fecha}
-                              yes={tf("yes")}
-                              no={tf("no")}
-                            />
-                            <CheckBadge
-                              value={ing.falla_cubierta_garantia}
                               yes={tf("yes")}
                               no={tf("no")}
                             />

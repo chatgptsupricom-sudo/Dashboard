@@ -46,8 +46,11 @@ export async function GET(request: NextRequest) {
       { header: "Falla reportada", key: "descripcion_falla", width: 46 },
       { header: "Accesorios íntegros", key: "accesorios_integros", width: 18, valor: (f) => siNo(f.accesorios_integros) },
       { header: "Sin manipulación", key: "sin_manipulacion", width: 17, valor: (f) => siNo(f.sin_manipulacion) },
-      { header: "Dentro de fecha", key: "dentro_de_fecha", width: 16, valor: (f) => siNo(f.dentro_de_fecha) },
-      { header: "Cubierta por garantía", key: "falla_cubierta_garantia", width: 20, valor: (f) => siNo(f.falla_cubierta_garantia) },
+      // Estos dos checks salieron del formulario de ingreso (#48): la garantía
+      // ahora vive congelada en el ticket de RMA. Las columnas quedan por el
+      // histórico — en filas nuevas salen en blanco.
+      { header: "Dentro de fecha (histórico)", key: "dentro_de_fecha", width: 16, valor: (f) => siNo(f.dentro_de_fecha) },
+      { header: "Cubierta por garantía (histórico)", key: "falla_cubierta_garantia", width: 24, valor: (f) => siNo(f.falla_cubierta_garantia) },
       { header: "Recibido por", key: "recibido_por", width: 24 },
       { header: "Ticket RMA", key: "rma_case_id", width: 12 },
       { header: "Registrado", key: "created_at", width: 18, valor: (f) => fechaExcel(f.created_at) },
