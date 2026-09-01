@@ -1,11 +1,22 @@
 import { canViewRole } from "@/lib/actividades/rolesConfig";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { UserRole } from "@/lib/types";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db"; // Importación centralizada
 
+// Este endpoint lo usan varias vistas de actividades (superadmin/gerente/
+// estandar) para distintos roles — no hay un dueño unico, asi que el guard
+// solo exige sesion valida y deja que canViewRole() filtre segun el rol real.
+const TODOS_LOS_ROLES = Object.values(UserRole);
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const viewerRole = searchParams.get("role") || "";
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  if (auth.error) return auth.error;
+
+  // El rol del visor sale del JWT verificado, no del query string: con
+  // ?role=superAdmin cualquiera con sesion (o antes, sin sesion) obtenia
+  // canView "all" sin serlo de verdad.
+  const viewerRole = String(auth.payload?.role || "");
 
   console.log("DEBUG API - Rol del visor:", viewerRole);
 

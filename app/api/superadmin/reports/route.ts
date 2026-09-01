@@ -78,9 +78,13 @@
 //   }
 // }
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get("company_id");

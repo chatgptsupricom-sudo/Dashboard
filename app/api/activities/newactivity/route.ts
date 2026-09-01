@@ -1,5 +1,7 @@
 import mysql from "mysql2/promise";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { UserRole } from "@/lib/types";
+import { NextRequest, NextResponse } from "next/server";
 
 // Declaración global para TypeScript
 declare global {
@@ -14,7 +16,10 @@ const pool = mysql.createPool({
   waitForConnections: true,
 });
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const auth = await requireRoles(req, Object.values(UserRole));
+  if (auth.error) return auth.error;
+
   try {
     const body = await req.json();
 

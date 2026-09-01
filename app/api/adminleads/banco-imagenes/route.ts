@@ -1,5 +1,36 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+
+// Vendedores solo consultan (GET, desde /vendedores/banco-imagenes); subir y
+// borrar es cosa de adminleads/gerente de operaciones (y superadmin, que
+// siempre pasa via requireRoles).
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller"];
+const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones"];
+
+// Tamano maximo por archivo.
+const MAX_BYTES = 10 * 1024 * 1024;
+
+// El cliente puede mentir en Content-Type (el input file lo toma del
+// navegador, no del contenido real); sin esto, subir un archivo declarado
+// "image/svg+xml" o "text/html" con <script> adentro y servirlo despues
+// desde este mismo dominio es XSS almacenado. Se valida contra los magic
+// bytes reales del buffer, igual que en
+// app/api/servicio-tecnico/ticket/adjuntos/route.ts.
+function detectImageMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  ) return "image/png";
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return "image/webp";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "image/gif";
+  return null;
+}
 
 // Ensure the new image storage columns exist (images live in MySQL so they survive deploys)
 async function ensureImageColumns() {
@@ -21,6 +52,9 @@ async function ensureImageColumns() {
 
 // GET: List product images
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES_LECTURA);
+  if (auth.error) return auth.error;
+
   try {
     await ensureImageColumns();
 
@@ -74,6 +108,9 @@ export async function GET(request: NextRequest) {
 
 // POST: Save a new product image (stored in MySQL, survives deploys)
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES_ESCRITURA);
+  if (auth.error) return auth.error;
+
   try {
     await ensureImageColumns();
 
@@ -94,6 +131,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (image.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: `La imagen supera el maximo de ${MAX_BYTES / 1024 / 1024} MB` },
+        { status: 400 }
+      );
+    }
+
     if (!created_by) {
       return NextResponse.json(
         { error: "created_by es obligatorio" },
@@ -102,7 +146,15 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await image.arrayBuffer());
-    const mime = image.type || "image/jpeg";
+    // Nunca image.type: eso lo declara el cliente y no dice nada del
+    // contenido real del archivo.
+    const mime = detectImageMime(buffer);
+    if (!mime) {
+      return NextResponse.json(
+        { error: "El archivo no es una imagen valida (JPEG, PNG, WebP o GIF)" },
+        { status: 400 }
+      );
+    }
 
     const insertResult = await query(
       `INSERT INTO product_images (odoo_product_id, product_code, model, brand, category, price, image_path, created_by, image_data, image_mime)
@@ -136,6 +188,9 @@ export async function POST(request: NextRequest) {
 
 // DELETE: Remove a product image (DB row only — no disk involved)
 export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES_ESCRITURA);
+  if (auth.error) return auth.error;
+
   try {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");

@@ -1,7 +1,11 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     // 1. Get categories actually used by saleable products
     const groups = await callOdooRPC<any[]>(

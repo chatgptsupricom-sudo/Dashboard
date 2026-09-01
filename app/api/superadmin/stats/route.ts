@@ -219,12 +219,16 @@
 //   }
 // }
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 // Fuerza a que la ruta sea dinámica y no se guarde en caché
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     // 1. OBTENER PARÁMETRO DE SEDE
     const { searchParams } = new URL(request.url);
