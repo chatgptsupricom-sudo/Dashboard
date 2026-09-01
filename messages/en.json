@@ -208,7 +208,7 @@
     "seg_ingreso": "Intake",
     "seg_egreso": "Dispatch",
     "seg_estadisticas": "RMA statistics",
-    "seg_personal": "Staff (Security / RMA)",
+    "seg_personal": "Staff",
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
