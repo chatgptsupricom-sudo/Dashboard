@@ -186,6 +186,10 @@ export async function GET(
     padding: 8px 16px; font-size: 13px; cursor: pointer;
     border: 1px solid #741DFE; background: #741DFE; color: #fff; border-radius: 6px;
   }
+  /* Fuera de .toolbar (que es no-print) para que el logo salga tambien en el
+     comprobante impreso/exportado, no solo en la vista de pantalla. */
+  .letterhead { text-align: center; margin-bottom: 8px; }
+  .letterhead img { height: 44px; width: auto; }
   h1 { font-size: 17px; text-align: center; margin: 0 0 4px; text-transform: uppercase; }
   .nd { text-align: center; font-size: 12px; color: #b00; font-weight: 700; margin-bottom: 16px; }
   h2 { font-size: 12px; text-transform: uppercase; background: #d9d9d9; padding: 4px 8px; margin: 18px 0 8px; }
@@ -221,6 +225,10 @@ export async function GET(
 <body>
   <div class="toolbar no-print">
     <button onclick="window.print()">Imprimir</button>
+  </div>
+
+  <div class="letterhead">
+    <img src="/Supricom-logo.png" alt="Supricom">
   </div>
 
   <h1>Recepci&oacute;n y Despacho de RMA</h1>
