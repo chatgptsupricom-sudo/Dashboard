@@ -700,6 +700,7 @@
     "subtitle": "Repórtala aquí en un par de minutos. Con tu número de factura buscamos tus productos y le pasamos el caso a nuestro equipo técnico.",
     "chooseBranchTitle": "¿En qué sucursal compraste?",
     "chooseBranchSubtitle": "Elige tu sucursal para continuar.",
+    "chooseBranchGo": "Continuar",
     "sucursalBadge": "Sucursal {nombre}",
     "sucursalBadgeChange": "Cambiar",
     "report": {
@@ -712,10 +713,14 @@
       "title": "Consultar mi reporte",
       "desc": "Revisa en qué va un reporte que ya nos enviaste.",
       "hint": "Necesitas tu número de ticket.",
-      "cta": "Consultar mi reporte"
+      "cta": "Consultar mi reporte",
+      "lead": "¿Ya enviaste un reporte? Consúltalo"
     },
     "needs": {
       "title": "¿Qué necesitas para reportar?",
+      "kicker": "Supricom · Servicio Técnico",
+      "cardTitle": "Antes de empezar",
+      "time": "Son unos 2 minutos",
       "invoice": "Tu número de factura",
       "invoiceDesc": "Está en la parte superior de la factura que te entregamos con el producto.",
       "fault": "Qué le pasa al equipo",
