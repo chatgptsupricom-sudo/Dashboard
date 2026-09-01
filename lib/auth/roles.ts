@@ -17,24 +17,30 @@ import { jwtSecretBytes } from "@/lib/secretos";
  */
 const JWT_SECRET = jwtSecretBytes();
 
-export async function requireRoles(
+async function verificarSesion(
   request: NextRequest,
-  roles: string[],
 ): Promise<{ payload?: any; error?: NextResponse }> {
   const token = request.cookies.get("token")?.value;
   if (!token) {
     return { error: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
   }
 
-  let payload: any;
   try {
     const result = await jwtVerify(token, JWT_SECRET);
-    payload = result.payload;
+    return { payload: result.payload };
   } catch {
     return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };
   }
+}
 
-  const userRole = ((payload.role as string) || "").toLowerCase().trim();
+export async function requireRoles(
+  request: NextRequest,
+  roles: string[],
+): Promise<{ payload?: any; error?: NextResponse }> {
+  const sesion = await verificarSesion(request);
+  if (sesion.error) return sesion;
+
+  const userRole = ((sesion.payload!.role as string) || "").toLowerCase().trim();
   const permitidos = roles.map((r) => r.toLowerCase().trim());
   if (userRole !== "superadmin" && !permitidos.includes(userRole)) {
     return {
@@ -42,5 +48,23 @@ export async function requireRoles(
     };
   }
 
-  return { payload };
+  return sesion;
+}
+
+/**
+ * Exige solo una sesion valida, sin restringir por rol.
+ *
+ * Para endpoints que de verdad usan varios roles distintos (ej. la pagina
+ * generica de "Mis actividades" que ve casi cualquiera) enumerar los roles
+ * uno por uno es fragil: los strings reales en la tabla `roles` no siempre
+ * coinciden con el enum UserRole (el login acepta indistintamente
+ * "vendedor" y "seller" para el mismo rol — ver app/api/auth/login/route.ts
+ * — y hay mas casos de casing/alias parecidos). Enumerar `Object.values
+ * (UserRole)` como sustituto de "cualquiera" deja afuera a quien tenga el
+ * alias que el enum no contempla.
+ */
+export async function requireSession(
+  request: NextRequest,
+): Promise<{ payload?: any; error?: NextResponse }> {
+  return verificarSesion(request);
 }

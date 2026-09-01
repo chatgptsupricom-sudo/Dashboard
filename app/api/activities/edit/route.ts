@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/auth/roles";
-import { UserRole } from "@/lib/types";
+import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 // Sincronización con la declaración global de WebSockets del proyecto
@@ -9,7 +8,7 @@ declare global {
 }
 
 export async function PUT(req: NextRequest) {
-  const auth = await requireRoles(req, Object.values(UserRole));
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {

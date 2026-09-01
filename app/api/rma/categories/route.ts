@@ -2,8 +2,11 @@ import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
+// Tambien lo usa /adminleads/banco-imagenes para el filtro de categoria
+// (busqueda generica de categorias de producto en Odoo, no algo exclusivo
+// de RMA) — ver app/[locale]/adminleads/banco-imagenes/page.tsx.
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["rma"]);
+  const auth = await requireRoles(request, ["rma", "adminleads"]);
   if (auth.error) return auth.error;
 
   try {
