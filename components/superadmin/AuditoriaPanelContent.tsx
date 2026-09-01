@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 type LogRow = {
   id: number;
@@ -28,7 +28,7 @@ type LogRow = {
   user_name: string | null;
   user_role: string | null;
   method: string;
-  path: string;
+  path: string | null;
   table_name: string | null;
   record_id: string | null;
   sql_text: string | null;
@@ -39,10 +39,12 @@ type LogRow = {
 };
 
 const METODO_COLOR: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  INSERT: "default",
+  UPDATE: "secondary",
+  DELETE: "destructive",
   POST: "default",
   PUT: "secondary",
   PATCH: "secondary",
-  DELETE: "destructive",
 };
 
 // Solo muestra los campos que de verdad cambiaron entre antes y despues —
@@ -77,8 +79,12 @@ function parseJson(raw: string | null): Record<string, any> | null {
   }
 }
 
-export default function AuditoriaCompletaPage() {
-  const t = useTranslations("superadmin.auditoria_completa");
+// Contenido compartido por app/[locale]/superadmin/auditoria_panel y
+// app/[locale]/gerente_operaciones/auditoria_panel — mismo endpoint
+// (/api/superadmin/auditoria_panel), misma UI, para no duplicar ~250
+// líneas entre ambas carpetas de rol.
+export default function AuditoriaPanelContent() {
+  const t = useTranslations("superadmin.auditoria_panel");
 
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [tablas, setTablas] = useState<string[]>([]);
@@ -100,7 +106,7 @@ export default function AuditoriaCompletaPage() {
       if (tabla) params.set("table", tabla);
       if (metodo) params.set("method", metodo);
 
-      const res = await fetch(`/api/superadmin/system-audit?${params}`);
+      const res = await fetch(`/api/superadmin/auditoria_panel?${params}`);
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs);
@@ -156,9 +162,8 @@ export default function AuditoriaCompletaPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("todos_los_metodos")}</SelectItem>
-            <SelectItem value="POST">POST</SelectItem>
-            <SelectItem value="PUT">PUT</SelectItem>
-            <SelectItem value="PATCH">PATCH</SelectItem>
+            <SelectItem value="INSERT">INSERT</SelectItem>
+            <SelectItem value="UPDATE">UPDATE</SelectItem>
             <SelectItem value="DELETE">DELETE</SelectItem>
           </SelectContent>
         </Select>
@@ -182,7 +187,6 @@ export default function AuditoriaCompletaPage() {
                   <TableHead>{t("metodo")}</TableHead>
                   <TableHead>{t("tabla")}</TableHead>
                   <TableHead>{t("registro")}</TableHead>
-                  <TableHead>{t("ruta")}</TableHead>
                   <TableHead className="text-right">{t("fecha")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -194,9 +198,8 @@ export default function AuditoriaCompletaPage() {
                   const abierto = expandido === log.id;
 
                   return (
-                    <>
+                    <Fragment key={log.id}>
                       <TableRow
-                        key={log.id}
                         className="cursor-pointer hover:bg-zinc-50/50"
                         onClick={() => setExpandido(abierto ? null : log.id)}
                       >
@@ -226,16 +229,13 @@ export default function AuditoriaCompletaPage() {
                         <TableCell className="font-mono text-xs">
                           {log.record_id || "—"}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-zinc-500 max-w-[240px] truncate">
-                          {log.path}
-                        </TableCell>
                         <TableCell className="text-right text-xs text-zinc-400">
                           {new Date(log.created_at).toLocaleString()}
                         </TableCell>
                       </TableRow>
                       {abierto && (
                         <TableRow key={`${log.id}-detalle`}>
-                          <TableCell colSpan={7} className="bg-zinc-50/70 p-5">
+                          <TableCell colSpan={6} className="bg-zinc-50/70 p-5">
                             {cambios.length > 0 ? (
                               <div className="space-y-2">
                                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -283,7 +283,7 @@ export default function AuditoriaCompletaPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>

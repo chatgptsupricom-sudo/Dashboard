@@ -1,33 +1,113 @@
-import mysql from "mysql2/promise"; // Asegúrate de tener instalado mysql2
+import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * GET /api/superadmin/auditoria_panel
+ *
+ * Lee system_audit_log (ver lib/audit/logger.ts) — el registro genérico de
+ * TODA escritura (INSERT/UPDATE/DELETE) que pasa por lib/db.ts::query(),
+ * capturado automáticamente, no por llamadas manuales. Reemplaza el
+ * SELECT * FROM audit_logs original (esa tabla era específica de
+ * reasignación de leads y quedaba fuera del resto del panel).
+ *
+ * Paginación y filtros en SQL, no en el cliente — la tabla puede crecer
+ * mucho más rápido que la vieja `audit_logs` al cubrir todo el panel.
+ */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {
-    // Configura tu conexión (usa variables de entorno en producción)
-    const connection = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25", 10)));
+    const offset = (page - 1) * limit;
+
+    const userId = searchParams.get("user_id") || "";
+    const tableName = searchParams.get("table") || "";
+    const method = searchParams.get("method") || "";
+    const dateFrom = searchParams.get("date_from") || "";
+    const dateTo = searchParams.get("date_to") || "";
+    const search = searchParams.get("search") || "";
+
+    const where: string[] = ["1=1"];
+    const params: any[] = [];
+
+    if (userId) {
+      where.push("user_id = ?");
+      params.push(userId);
+    }
+    if (tableName) {
+      where.push("table_name = ?");
+      params.push(tableName);
+    }
+    if (method) {
+      where.push("method = ?");
+      params.push(method.toUpperCase());
+    }
+    if (dateFrom) {
+      where.push("created_at >= ?");
+      params.push(`${dateFrom} 00:00:00`);
+    }
+    if (dateTo) {
+      where.push("created_at <= ?");
+      params.push(`${dateTo} 23:59:59`);
+    }
+    if (search) {
+      where.push("(user_name LIKE ? OR table_name LIKE ?)");
+      const s = `%${search}%`;
+      params.push(s, s);
+    }
+
+    const whereSql = where.join(" AND ");
+
+    const countResult = await query(
+      `SELECT COUNT(*) as total FROM system_audit_log WHERE ${whereSql}`,
+      params,
+    );
+    const total = countResult.rows[0]?.total || 0;
+
+    const rowsResult = await query(
+      `SELECT id, created_at, user_id, user_name, user_role, method, path,
+              table_name, record_id, sql_text, sql_params, before_data, after_data, status
+       FROM system_audit_log
+       WHERE ${whereSql}
+       ORDER BY created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      params,
+    );
+
+    // Tablas distintas presentes en el log — para poblar el filtro sin un
+    // segundo viaje de ida y vuelta del cliente.
+    const tablesResult = await query(
+      `SELECT DISTINCT table_name FROM system_audit_log WHERE table_name IS NOT NULL ORDER BY table_name`,
+    );
+
+    return NextResponse.json({
+      success: true,
+      logs: rowsResult.rows,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      tables: tablesResult.rows.map((r: any) => r.table_name),
     });
-
-    // Consultar todos los logs ordenados por fecha
-    const [rows] = await connection.execute(
-      "SELECT * FROM audit_logs ORDER BY created_at DESC",
-    );
-
-    await connection.end();
-
-    return NextResponse.json(rows);
-  } catch (error) {
-    console.error("Error al obtener logs:", error);
-    return NextResponse.json(
-      { error: "Error al consultar logs" },
-      { status: 500 },
-    );
+  } catch (error: any) {
+    // Si system_audit_log todavía no existe (nadie ha hecho ninguna
+    // escritura desde que se agregó esto), se devuelve una lista vacía en
+    // vez de un 500 — la tabla se crea sola en la primera mutación real
+    // (ver lib/db.ts::asegurarTablaAuditoria).
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return NextResponse.json({
+        success: true,
+        logs: [],
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        tables: [],
+      });
+    }
+    console.error("Error GET auditoria_panel:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
