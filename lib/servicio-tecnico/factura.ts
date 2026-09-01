@@ -3,6 +3,7 @@ import {
   type ResultadoGarantia,
 } from "@/lib/garantia";
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
 
 /**
  * Búsqueda de una factura de cliente en Odoo y de los seriales que se le
@@ -55,6 +56,14 @@ export interface ItemFactura {
   despacho: string;
   /** Estado de garantía al momento de la consulta (issue #29). */
   garantia: ResultadoGarantia;
+  /**
+   * Ya existe un caso de RMA para este item en esta factura (issue #47).
+   * Deliberadamente NO se expone nada más del caso (estado, diagnóstico,
+   * teléfono): esta consulta es pública, así que lo único seguro de mostrar
+   * es que existe y su número, que el propio cliente ya tiene.
+   */
+  ya_reportado: boolean;
+  rma_case_number: string | null;
 }
 
 export interface FacturaResumen {
@@ -237,7 +246,7 @@ export async function buscarFacturaConSeriales(
   const lineasConProducto = lineas.filter((l) => m2oId(l.product_id) !== null);
 
   const [items, cliente] = await Promise.all([
-    armarItems(lineasConProducto, factura.invoice_date || null),
+    armarItems(lineasConProducto, factura.invoice_date || null, factura.name || ""),
     leerCliente(m2oId(factura.partner_id)),
   ]);
 
@@ -349,6 +358,7 @@ async function leerCliente(partnerId: number | null) {
 async function armarItems(
   lineas: any[],
   fechaFactura: string | null,
+  facturaNombre: string,
 ): Promise<ItemFactura[]> {
   const productoIds = [
     ...new Set(lineas.map((l) => m2oId(l.product_id)!).filter(Boolean)),
@@ -400,6 +410,8 @@ async function armarItems(
         serial: "",
         cantidad: facturado,
         despacho: "",
+        ya_reportado: false,
+        rma_case_number: null,
       });
       continue;
     }
@@ -416,6 +428,8 @@ async function armarItems(
           serial: mov.serial,
           cantidad: 1,
           despacho: mov.despacho,
+          ya_reportado: false,
+          rma_case_number: null,
         });
       } else {
         sinSerial.set(mov.despacho, (sinSerial.get(mov.despacho) ?? 0) + mov.cantidad);
@@ -429,11 +443,80 @@ async function armarItems(
         serial: "",
         cantidad,
         despacho,
+        ya_reportado: false,
+        rma_case_number: null,
       });
     }
   }
 
+  marcarYaReportados(items, await casosExistentes(facturaNombre));
   return items;
+}
+
+/**
+ * Casos de RMA que ya existen para esta factura, sin importar si se crearon
+ * desde el portal o el módulo interno (issue #47): si un técnico ya abrió el
+ * caso a mano, el cliente tampoco debería crear un duplicado desde el portal.
+ *
+ * Falla abierta a "sin casos": una consulta de factura no puede reventar
+ * porque la tabla de RMA esté momentáneamente inaccesible.
+ */
+async function casosExistentes(
+  facturaNombre: string,
+): Promise<{ serial: string; productoId: number | null; caso: string }[]> {
+  if (!facturaNombre) return [];
+  try {
+    const { rows } = await query(
+      `SELECT serial, odoo_product_id, case_number FROM rma_cases WHERE invoice_number = ?`,
+      [facturaNombre],
+    );
+    // Sin trim(): el serial de Odoo a veces trae espacios finales de verdad
+    // (ver la corrección de item_id en app/api/servicio-tecnico/ticket/route.ts)
+    // y se guarda tal cual en `rma_cases.serial`. item.serial tampoco se
+    // recorta en ningún otro punto del flujo, así que el cruce tiene que ser
+    // byte a byte para no fallar justo en las facturas con ese problema.
+    return (rows as any[]).map((r) => ({
+      serial: r.serial || "",
+      productoId: r.odoo_product_id ?? null,
+      caso: r.case_number,
+    }));
+  } catch (e: any) {
+    console.error("[factura] casosExistentes:", e.message);
+    return [];
+  }
+}
+
+/**
+ * Cruza los items con los casos ya existentes y marca `ya_reportado` in
+ * place. Con serial, el cruce es exacto (mismo criterio con el que se separó
+ * "un item por serial" más arriba). Sin serial —el producto no lo lleva, o el
+ * despacho no lo registró— solo se puede cruzar por producto, así que un
+ * segundo item sin serial del mismo producto en la misma factura también
+ * queda marcado aunque sea una unidad distinta: es la mejor aproximación
+ * posible sin un identificador por unidad.
+ */
+function marcarYaReportados(
+  items: ItemFactura[],
+  casos: { serial: string; productoId: number | null; caso: string }[],
+): void {
+  if (!casos.length) return;
+
+  const porSerial = new Map<string, string>();
+  const porProducto = new Map<number, string>();
+  for (const c of casos) {
+    if (c.serial) porSerial.set(c.serial, c.caso);
+    else if (c.productoId) porProducto.set(c.productoId, c.caso);
+  }
+
+  for (const item of items) {
+    const caso = item.serial
+      ? porSerial.get(item.serial)
+      : porProducto.get(item.producto_id);
+    if (caso) {
+      item.ya_reportado = true;
+      item.rma_case_number = caso;
+    }
+  }
 }
 
 async function leerProductos(ids: number[]) {
