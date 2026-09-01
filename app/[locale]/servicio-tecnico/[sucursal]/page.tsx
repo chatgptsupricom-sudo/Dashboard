@@ -77,7 +77,7 @@ export default async function ServicioTecnicoLanding({
       <p className="mt-10 text-sm text-[color:var(--portal-muted)]">
         {t("help.text")}{" "}
         <a
-          href="tel:+584228008204"
+          href="mailto:soporte.tecnico@supricom.com.ve"
           className="portal-link-underline font-semibold text-[color:var(--portal-primary)]"
         >
           {t("help.cta")}

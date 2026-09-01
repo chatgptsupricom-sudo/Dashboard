@@ -669,7 +669,7 @@
       "notFound": "No encontramos esa factura. Verifica el número; si estás seguro de que está bien, escríbenos y lo revisamos contigo.",
       "networkError": "No pudimos conectarnos. Revisa tu conexión e inténtalo de nuevo.",
       "sendError": "No pudimos enviar tu reporte. Inténtalo de nuevo.",
-      "callInstead": "Llamar a Supricom",
+      "emailInstead": "Escribir a soporte técnico",
       "multipleTitle": "Encontramos más de una factura con ese número",
       "multipleHelp": "Elige la tuya para continuar.",
       "productTitle": "¿Qué producto presenta la falla?",
@@ -724,7 +724,7 @@
     },
     "help": {
       "text": "¿No encuentras tu factura o necesitas ayuda?",
-      "cta": "Llámanos al +58 422 8008204"
+      "cta": "Escríbenos a soporte.tecnico@supricom.com.ve"
     },
     "soon": "Esta sección está en desarrollo. Mientras tanto, comunícate con nosotros por teléfono y con gusto te atendemos.",
     "back": "Volver",

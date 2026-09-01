@@ -687,7 +687,7 @@
       "notFound": "We couldn't find that invoice. Check the number; if you're sure it's right, get in touch and we'll look into it with you.",
       "networkError": "We couldn't connect. Check your connection and try again.",
       "sendError": "We couldn't send your report. Please try again.",
-      "callInstead": "Call Supricom",
+      "emailInstead": "Email technical support",
       "multipleTitle": "We found more than one invoice with that number",
       "multipleHelp": "Pick yours to continue.",
       "productTitle": "Which product has the problem?",
@@ -742,7 +742,7 @@
     },
     "help": {
       "text": "Can't find your invoice or need a hand?",
-      "cta": "Call us at +58 422 8008204"
+      "cta": "Email us at soporte.tecnico@supricom.com.ve"
     },
     "soon": "This section is under development. In the meantime, give us a call and we'll gladly help you.",
     "back": "Back",

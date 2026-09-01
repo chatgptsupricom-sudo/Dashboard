@@ -11,7 +11,7 @@ import {
   ArrowRight,
   Check,
   Loader2,
-  Phone,
+  Mail,
   Search,
 } from "lucide-react";
 import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
@@ -20,7 +20,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const TELEFONO = "+584228008204";
+const EMAIL_SOPORTE = "soporte.tecnico@supricom.com.ve";
 
 type Item = {
   id: string;
@@ -392,7 +392,7 @@ export function ReporteForm({
             </div>
           )}
 
-          {errorBusqueda && <Aviso texto={errorBusqueda} ayuda={t("form.callInstead")} />}
+          {errorBusqueda && <Aviso texto={errorBusqueda} ayuda={t("form.emailInstead")} />}
         </section>
       )}
 
@@ -634,7 +634,7 @@ export function ReporteForm({
             onDisponible={setCaptchaActivo}
           />
 
-          {errorEnvio && <Aviso texto={errorEnvio} ayuda={t("form.callInstead")} />}
+          {errorEnvio && <Aviso texto={errorEnvio} ayuda={t("form.emailInstead")} />}
 
           <button
             type="button"
@@ -789,10 +789,10 @@ function Aviso({ texto, ayuda }: { texto: string; ayuda: string }) {
         <span>{texto}</span>
       </p>
       <a
-        href={`tel:${TELEFONO}`}
+        href={`mailto:${EMAIL_SOPORTE}`}
         className="portal-btn portal-btn-outline mt-3 w-full"
       >
-        <Phone className="h-4 w-4" aria-hidden />
+        <Mail className="h-4 w-4" aria-hidden />
         {ayuda}
       </a>
     </div>
