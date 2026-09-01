@@ -1,4 +1,4 @@
-import mysql from "mysql2/promise";
+import { query } from "@/lib/db";
 import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -6,14 +6,6 @@ import { NextRequest, NextResponse } from "next/server";
 declare global {
   var io: any;
 }
-
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-});
 
 export async function POST(req: NextRequest) {
   const auth = await requireSession(req);
@@ -37,10 +29,11 @@ export async function POST(req: NextRequest) {
     const assigned_by = body.assigned_by ?? null;
 
     // 1. OBTENER DATOS DEL USUARIO DESDE users_config
-    const [users]: any = await pool.execute(
+    const usersResult = await query(
       "SELECT id, role_id, cids FROM users_config WHERE email = ?",
       [user_email],
     );
+    const users = usersResult.rows;
 
     let user_id = body.user_id ?? null;
     let role_id = body.role_id ?? null;
@@ -53,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. INSERTAR EN ACTIVITIES
-    const [result]: any = await pool.execute(
+    const insertResult = await query(
       `INSERT INTO activities
       (user_id, role_id, cids, description, user_email, action_type, status, observacion, due_date, assigned_by, title)
       VALUES (?, ?, ?, ?, ?, 'TASK', 'pending', ?, ?, ?, ?)`,
@@ -80,7 +73,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. AUDITORÍA
-    await pool.execute(
+    await query(
       `INSERT INTO audit_logs (user_id, user_name, role, action, changes, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
       [
         user_id ?? 0,
@@ -91,7 +84,7 @@ export async function POST(req: NextRequest) {
       ],
     );
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: (insertResult.rows as any).insertId });
   } catch (error) {
     console.error("Error al insertar actividad:", error);
     return NextResponse.json(

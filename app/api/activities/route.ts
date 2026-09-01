@@ -121,7 +121,7 @@
 //     );
 //   }
 // }
-import { db } from "@/lib/db"; // Importación centralizada
+import { query } from "@/lib/db"; // Importación centralizada
 import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
     const userId = searchParams.get("userId");
 
     // Consulta con cálculo de días restantes para alertas
-    let query = `
+    let sql = `
       SELECT
         a.id, a.title, a.description, a.status, a.due_date,
         DATEDIFF(a.due_date, CURDATE()) as days_left,
@@ -155,13 +155,13 @@ export async function GET(req: NextRequest) {
 
     const params: any[] = [];
     if (userId) {
-      query += " AND a.user_id = ?";
+      sql += " AND a.user_id = ?";
       params.push(userId);
     }
-    query += " ORDER BY a.created_at DESC";
+    sql += " ORDER BY a.created_at DESC";
 
-    const [rows] = await db.execute(query, params);
-    return NextResponse.json(rows);
+    const result = await query(sql, params);
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error("API GET Error:", error);
     return NextResponse.json(
@@ -179,13 +179,13 @@ export async function PATCH(req: NextRequest) {
     const { id, status, observacion } = await req.json();
 
     if (status) {
-      await db.execute("UPDATE activities SET status = ? WHERE id = ?", [
+      await query("UPDATE activities SET status = ? WHERE id = ?", [
         status,
         id,
       ]);
     }
     if (observacion !== undefined) {
-      await db.execute("UPDATE activities SET observacion = ? WHERE id = ?", [
+      await query("UPDATE activities SET observacion = ? WHERE id = ?", [
         observacion,
         id,
       ]);
@@ -218,7 +218,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Título requerido" }, { status: 400 });
 
     // Inserción de la nueva actividad
-    const [result]: any = await db.execute(
+    const result = await query(
       `INSERT INTO activities
       (user_id, role_id, cids, description, user_email, action_type, status, due_date, assigned_by, title)
       VALUES (?, ?, ?, ?, ?, 'TASK', 'pending', ?, ?, ?)`,
@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
       global.io.emit("activity-updated", { action: "CREATED" });
     }
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: (result.rows as any).insertId });
   } catch (error) {
     console.error("API POST Error:", error);
     return NextResponse.json(

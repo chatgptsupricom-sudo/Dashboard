@@ -633,6 +633,14 @@ export function Sidebar({
                           href: `${basePath}/auditoria_panel`,
                           permission: "auditoria_panel",
                         },
+                        {
+                          label: t("auditoria_completa"),
+                          href: `${basePath}/auditoria-completa`,
+                          // Mismo permiso que auditoria_panel: misma audiencia
+                          // (superadmin + gerente de operaciones), no hace
+                          // falta un permiso nuevo en la config de roles.
+                          permission: "auditoria_panel",
+                        },
                       ].map((subItem, index) => {
                         if (!allowedSections.includes(subItem.permission))
                           return null;
