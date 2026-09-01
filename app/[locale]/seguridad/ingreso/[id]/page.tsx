@@ -36,6 +36,8 @@ type Ingreso = {
   accesorios_integros: number;
   sin_manipulacion: number;
   recibido_por: string;
+  recibido_seguridad_nombre: string | null;
+  recibido_rma_nombre: string | null;
   nd_numero: string | null;
   foto_estado_url: string | null;
   created_at: string;
@@ -467,18 +469,23 @@ export default function IngresoDetailPage() {
           )}
         </section>
 
-        {/* Received by card */}
+        {/* Received by card — dos firmantes, uno por lado del mostrador (#50).
+            Filas viejas sin los campos nuevos caen al `recibido_por` de antes. */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-3">
             {td("section_recibido")}
           </h2>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-violet-100 shrink-0">
-              <ShieldCheck className="w-4 h-4 text-violet-600" />
-            </div>
-            <p className="text-sm text-slate-800 font-medium">
-              {ingreso.recibido_por}
-            </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RecibidoPor
+              label={td("recibido_seguridad")}
+              nombre={
+                ingreso.recibido_seguridad_nombre || ingreso.recibido_por || "—"
+              }
+            />
+            <RecibidoPor
+              label={td("recibido_rma")}
+              nombre={ingreso.recibido_rma_nombre || "—"}
+            />
           </div>
         </section>
 
@@ -810,6 +817,22 @@ function DataField({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+function RecibidoPor({ label, nombre }: { label: string; nombre: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
+      <div className="p-2 rounded-xl bg-violet-100 shrink-0">
+        <ShieldCheck className="w-4 h-4 text-violet-600" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          {label}
+        </p>
+        <p className="text-sm text-slate-800 font-medium truncate">{nombre}</p>
+      </div>
     </div>
   );
 }

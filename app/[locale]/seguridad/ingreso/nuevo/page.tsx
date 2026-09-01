@@ -9,11 +9,9 @@ import {
   ClipboardList,
   Loader2,
   Search,
-  ShieldCheck,
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuthStore } from "@/lib/stores/auth.store";
 import FileUploadField from "@/components/seguridad/FileUploadField";
 
 function todayISO() {
@@ -44,8 +42,13 @@ type FormState = {
   descripcion_falla: string;
   accesorios_integros: boolean | null;
   sin_manipulacion: boolean | null;
-  recibido_por: string;
+  // Quién recibió el equipo, por cada lado del mostrador (#50). Se eligen de
+  // los catálogos de personal; ya no es texto libre.
+  recibido_seguridad_nombre: string;
+  recibido_rma_nombre: string;
 };
+
+type Persona = { id: number; nombre: string };
 
 const MAX = {
   nd_numero: 50,
@@ -64,7 +67,6 @@ export default function NuevoIngresoPage() {
   const params = useParams();
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
-  const { user } = useAuthStore();
 
   const base = `/${locale}/seguridad`;
   const ticketInputUrl = (caseNumber: string) =>
@@ -80,8 +82,12 @@ export default function NuevoIngresoPage() {
     descripcion_falla: "",
     accesorios_integros: null,
     sin_manipulacion: null,
-    recibido_por: user?.name || "",
+    recibido_seguridad_nombre: "",
+    recibido_rma_nombre: "",
   });
+
+  const [personalSeguridad, setPersonalSeguridad] = useState<Persona[]>([]);
+  const [personalRma, setPersonalRma] = useState<Persona[]>([]);
 
   const [ticketQuery, setTicketQuery] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -95,11 +101,23 @@ export default function NuevoIngresoPage() {
   const [fotoError, setFotoError] = useState<string | null>(null);
   const [uploadingFoto, setUploadingFoto] = useState(false);
 
+  // Catálogos de personal para los selects "Recibió por Seguridad / RMA" (#50).
   useEffect(() => {
-    if (user?.name && !form.recibido_por) {
-      setForm((prev) => ({ ...prev, recibido_por: user.name }));
-    }
-  }, [user?.name]);
+    const cargar = async (rol: "seguridad" | "rma") => {
+      try {
+        const res = await fetch(
+          `/api/seguridad/catalogo/personal?rol=${rol}`,
+        );
+        if (!res.ok) return [];
+        const json = await res.json();
+        return (json.personal || []) as Persona[];
+      } catch {
+        return [];
+      }
+    };
+    void cargar("seguridad").then(setPersonalSeguridad);
+    void cargar("rma").then(setPersonalRma);
+  }, []);
 
   // El panel de equipos por llegar manda aqui con ?ticket=0042 ya buscado,
   // para no teclear el numero dos veces. Se lee de window y no con
@@ -158,7 +176,11 @@ export default function NuevoIngresoPage() {
     e.preventDefault();
     setSubmitError(null);
 
-    if (!form.cliente_nombre.trim() || !form.recibido_por.trim()) {
+    if (
+      !form.cliente_nombre.trim() ||
+      !form.recibido_seguridad_nombre.trim() ||
+      !form.recibido_rma_nombre.trim()
+    ) {
       setSubmitError(tf("error_required"));
       return;
     }
@@ -193,7 +215,11 @@ export default function NuevoIngresoPage() {
       descripcion_falla: form.descripcion_falla.trim() || undefined,
       accesorios_integros: form.accesorios_integros,
       sin_manipulacion: form.sin_manipulacion,
-      recibido_por: form.recibido_por.trim().slice(0, 200),
+      recibido_seguridad_nombre: form.recibido_seguridad_nombre.trim().slice(0, 200),
+      recibido_rma_nombre: form.recibido_rma_nombre.trim().slice(0, 200),
+      // `recibido_por` se conserva por el sistema de calificación y los KPIs
+      // que ya dependen de él: es el de Seguridad, que es quien se califica.
+      recibido_por: form.recibido_seguridad_nombre.trim().slice(0, 200),
     };
     if (ticket?.id) {
       payload.rma_case_id = ticket.id;
@@ -540,29 +566,33 @@ export default function NuevoIngresoPage() {
             </div>
           </section>
 
-          {/* Section D: Received by */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-3">
+          {/* Section D: Received by — dos firmantes, uno por lado del
+              mostrador (#50). Salen de los catálogos de personal. */}
+          <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+            <h2 className="text-sm font-bold text-slate-900">
               {tf("section_received_by")}
             </h2>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-violet-100 shrink-0">
-                <ShieldCheck className="w-4 h-4 text-violet-600" />
-              </div>
-              <div className="flex-1">
-                <input
-                  type="text"
-                  value={form.recibido_por}
-                  onChange={(e) => update("recibido_por", e.target.value)}
-                  className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                  required
-                  maxLength={200}
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {tf("recibido_por_help")}
-                </p>
-              </div>
-            </div>
+
+            <PersonaSelect
+              label={tf("recibido_seguridad")}
+              value={form.recibido_seguridad_nombre}
+              onChange={(v) => update("recibido_seguridad_nombre", v)}
+              opciones={personalSeguridad}
+              placeholder={tf("recibido_placeholder")}
+              vacio={tf("recibido_sin_catalogo")}
+              gestionarHref={`/${locale}/seguridad/config/personal`}
+              gestionarLabel={tf("recibido_gestionar")}
+            />
+            <PersonaSelect
+              label={tf("recibido_rma")}
+              value={form.recibido_rma_nombre}
+              onChange={(v) => update("recibido_rma_nombre", v)}
+              opciones={personalRma}
+              placeholder={tf("recibido_placeholder")}
+              vacio={tf("recibido_sin_catalogo")}
+              gestionarHref={`/${locale}/seguridad/config/personal`}
+              gestionarLabel={tf("recibido_gestionar")}
+            />
           </section>
 
           {submitError && (
@@ -595,6 +625,75 @@ export default function NuevoIngresoPage() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PersonaSelect({
+  label,
+  value,
+  onChange,
+  opciones,
+  placeholder,
+  vacio,
+  gestionarHref,
+  gestionarLabel,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  opciones: Persona[];
+  placeholder: string;
+  vacio: string;
+  gestionarHref: string;
+  gestionarLabel: string;
+}) {
+  // Si el catálogo está vacío no hay nada que elegir: se manda a la pantalla
+  // de administración en vez de dejar un select muerto.
+  const sinOpciones = opciones.length === 0;
+  // El valor guardado podría no estar en la lista actual (alguien dado de baja
+  // después de empezar el acta). Se muestra igual para no perder la selección.
+  const faltaValor = value !== "" && !opciones.some((o) => o.nombre === value);
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+        {label} <span className="text-red-500">*</span>
+      </label>
+      {sinOpciones ? (
+        <p className="text-sm text-slate-500">
+          {vacio}{" "}
+          <Link
+            href={gestionarHref}
+            className="font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+          >
+            {gestionarLabel}
+          </Link>
+        </p>
+      ) : (
+        <>
+          <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            required
+            className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+          >
+            <option value="">{placeholder}</option>
+            {faltaValor && <option value={value}>{value}</option>}
+            {opciones.map((o) => (
+              <option key={o.id} value={o.nombre}>
+                {o.nombre}
+              </option>
+            ))}
+          </select>
+          <Link
+            href={gestionarHref}
+            className="inline-block mt-1 text-[11px] font-semibold text-slate-400 hover:text-[color:var(--portal-primary,#741DFE)]"
+          >
+            {gestionarLabel}
+          </Link>
+        </>
+      )}
     </div>
   );
 }
