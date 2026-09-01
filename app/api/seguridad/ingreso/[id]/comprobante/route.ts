@@ -173,29 +173,74 @@ export async function GET(
 <title>Recepci&oacute;n de RMA N.&ordm; ${ingresoId}</title>
 <style>
   * { box-sizing: border-box; }
+  html { background: #f1eefb; }
   body {
     font-family: Arial, Helvetica, sans-serif;
-    color: #111;
-    max-width: 760px;
+    color: #1a1523;
+    max-width: 800px;
     margin: 0 auto;
-    padding: 24px;
+    padding: 28px 0 48px;
     font-size: 12px;
   }
-  .toolbar { text-align: right; margin-bottom: 12px; }
+  .toolbar { text-align: right; margin-bottom: 12px; padding: 0 24px; }
   .toolbar button {
     padding: 8px 16px; font-size: 13px; cursor: pointer;
     border: 1px solid #741DFE; background: #741DFE; color: #fff; border-radius: 6px;
   }
-  /* Fuera de .toolbar (que es no-print) para que el logo salga tambien en el
-     comprobante impreso/exportado, no solo en la vista de pantalla. */
-  .letterhead { text-align: center; margin-bottom: 8px; }
-  .letterhead img { height: 44px; width: auto; }
-  h1 { font-size: 17px; text-align: center; margin: 0 0 4px; text-transform: uppercase; }
-  .nd { text-align: center; font-size: 12px; color: #b00; font-weight: 700; margin-bottom: 16px; }
-  h2 { font-size: 12px; text-transform: uppercase; background: #d9d9d9; padding: 4px 8px; margin: 18px 0 8px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #999; padding: 5px 8px; text-align: left; vertical-align: top; }
-  th { background: #d9d9d9; width: 34%; font-size: 11px; text-transform: uppercase; }
+  /* La "hoja" en si: en pantalla se ve como una hoja de papel flotando sobre
+     el fondo lila; en impresion pierde el marco/sombra y ocupa toda la
+     pagina, que es como se ve un papel real. */
+  .paper {
+    background: #fff;
+    border: 1px solid #e4defa;
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(76, 20, 176, 0.08);
+    padding: 32px 40px 40px;
+  }
+  .letterhead {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #741DFE;
+  }
+  .letterhead img { height: 40px; width: auto; }
+  h1 {
+    font-size: 18px;
+    text-align: center;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #1a1523;
+  }
+  .nd {
+    display: block;
+    width: fit-content;
+    margin: 0 auto 22px;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: #fdeaea;
+    color: #b42318;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  h2 {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #4c14b0;
+    background: #f3ecff;
+    border-left: 3px solid #741DFE;
+    padding: 6px 10px;
+    margin: 22px 0 10px;
+    border-radius: 0 6px 6px 0;
+  }
+  table { width: 100%; border-collapse: collapse; border: 1px solid #e2e2e8; border-radius: 8px; overflow: hidden; }
+  th, td { border: 1px solid #e2e2e8; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #faf9fc; width: 34%; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #55506b; font-weight: 700; }
   .checks td { text-align: center; }
   .checks th { width: auto; text-align: center; }
   .ok { color: #067647; font-weight: 700; }
@@ -205,7 +250,7 @@ export async function GET(
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 28px 24px;
-    margin-top: 40px;
+    margin-top: 14px;
     page-break-inside: avoid;
   }
   .sig { text-align: center; font-size: 11px; }
@@ -213,11 +258,21 @@ export async function GET(
      el papel impreso no deja hueco para firmarla a mano. */
   .sig .trazo { height: 64px; display: flex; align-items: flex-end; justify-content: center; }
   .sig .trazo img { max-height: 62px; max-width: 100%; }
-  .sig .name { border-top: 1px solid #111; padding-top: 6px; font-weight: 700; font-size: 12px; }
+  .sig .name { border-top: 1px solid #cfc9e6; padding-top: 6px; font-weight: 700; font-size: 12px; }
   .sig .cargo { color: #555; font-size: 10px; }
   .sig .cuando { color: #888; font-size: 9px; margin-top: 2px; }
+  .footer-note {
+    margin-top: 28px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e2e8;
+    text-align: center;
+    font-size: 9.5px;
+    color: #9993ad;
+  }
   @media print {
-    body { padding: 0; }
+    html { background: #fff; }
+    body { padding: 0; max-width: none; }
+    .paper { border: none; border-radius: 0; box-shadow: none; padding: 0 8px; }
     .toolbar, .no-print { display: none !important; }
   }
 </style>
@@ -227,54 +282,59 @@ export async function GET(
     <button onclick="window.print()">Imprimir</button>
   </div>
 
-  <div class="letterhead">
-    <img src="/Supricom-logo.png" alt="Supricom">
-  </div>
+  <div class="paper">
+    <div class="letterhead">
+      <img src="/Supricom-logo.png" alt="Supricom">
+    </div>
 
-  <h1>Recepci&oacute;n y Despacho de RMA</h1>
-  <div class="nd">ND - ${esc(ndParaImprimir(i.nd_numero)) || "&nbsp;"}</div>
+    <h1>Recepci&oacute;n y Despacho de RMA</h1>
+    <div class="nd">ND - ${esc(ndParaImprimir(i.nd_numero)) || "&nbsp;"}</div>
 
-  <table>
-    <tr><th>Fecha de entrega (almac&eacute;n)</th><td>${fechaLarga(i.fecha_entrega)}</td></tr>
-    <tr><th>N.&ordm; factura de venta</th><td>${esc(i.factura_numero) || "&mdash;"}</td></tr>
-    <tr><th>Cliente</th><td>${esc(i.cliente_nombre)}</td></tr>
-    <tr><th>Hardware</th><td>${esc(i.hardware) || "&mdash;"}</td></tr>
-    <tr><th>N&uacute;mero de serie o c&oacute;digo</th><td>${esc(i.serial) || "&mdash;"}</td></tr>
-  </table>
+    <table>
+      <tr><th>Fecha de entrega (almac&eacute;n)</th><td>${fechaLarga(i.fecha_entrega)}</td></tr>
+      <tr><th>N.&ordm; factura de venta</th><td>${esc(i.factura_numero) || "&mdash;"}</td></tr>
+      <tr><th>Cliente</th><td>${esc(i.cliente_nombre)}</td></tr>
+      <tr><th>Hardware</th><td>${esc(i.hardware) || "&mdash;"}</td></tr>
+      <tr><th>N&uacute;mero de serie o c&oacute;digo</th><td>${esc(i.serial) || "&mdash;"}</td></tr>
+    </table>
 
-  <h2>Descripci&oacute;n de la falla</h2>
-  <table><tr><td class="falla">${esc(i.descripcion_falla) || "&mdash;"}</td></tr></table>
+    <h2>Descripci&oacute;n de la falla</h2>
+    <table><tr><td class="falla">${esc(i.descripcion_falla) || "&mdash;"}</td></tr></table>
 
-  <h2>Verificaci&oacute;n de estado</h2>
-  <table class="checks">
-    <tr>
-      <th>Accesorios &iacute;ntegros</th>
-      <th>Sin manipulaci&oacute;n</th>
-    </tr>
-    <tr>
-      <td>${check(i.accesorios_integros)}</td>
-      <td>${check(i.sin_manipulacion)}</td>
-    </tr>
-  </table>
+    <h2>Verificaci&oacute;n de estado</h2>
+    <table class="checks">
+      <tr>
+        <th>Accesorios &iacute;ntegros</th>
+        <th>Sin manipulaci&oacute;n</th>
+      </tr>
+      <tr>
+        <td>${check(i.accesorios_integros)}</td>
+        <td>${check(i.sin_manipulacion)}</td>
+      </tr>
+    </table>
 
-  <table style="margin-top:12px">
-    <tr><th>Garant&iacute;a (del ticket de RMA)</th><td>${garantiaTexto}</td></tr>
-  </table>
+    <table style="margin-top:12px">
+      <tr><th>Garant&iacute;a (del ticket de RMA)</th><td>${garantiaTexto}</td></tr>
+    </table>
 
-  <table style="margin-top:12px">
-    <tr>
-      <th>Recibi&oacute; por Seguridad</th>
-      <td>${esc(i.recibido_seguridad_nombre || i.recibido_por) || "&mdash;"}</td>
-    </tr>
-    <tr>
-      <th>Recibi&oacute; por RMA</th>
-      <td>${esc(i.recibido_rma_nombre) || "&mdash;"}</td>
-    </tr>
-    <tr><th>Fecha de despacho</th><td>${fechaDespacho ? fechaLarga(fechaDespacho) : "&mdash;"}</td></tr>
-  </table>
+    <table style="margin-top:12px">
+      <tr>
+        <th>Recibi&oacute; por Seguridad</th>
+        <td>${esc(i.recibido_seguridad_nombre || i.recibido_por) || "&mdash;"}</td>
+      </tr>
+      <tr>
+        <th>Recibi&oacute; por RMA</th>
+        <td>${esc(i.recibido_rma_nombre) || "&mdash;"}</td>
+      </tr>
+      <tr><th>Fecha de despacho</th><td>${fechaDespacho ? fechaLarga(fechaDespacho) : "&mdash;"}</td></tr>
+    </table>
 
-  <div class="signatures">
-    ${bloquesFirma}
+    <h2>Firmas</h2>
+    <div class="signatures">
+      ${bloquesFirma}
+    </div>
+
+    <p class="footer-note">Supricom Venezuela &middot; Documento generado por el sistema &middot; ND ${esc(ndParaImprimir(i.nd_numero)) || String(ingresoId)}</p>
   </div>
 </body>
 </html>`;
