@@ -366,6 +366,7 @@ export default function MercanciaDetalle({
               actaId={mov.id}
               roles={["seguridad"]}
               nombresSugeridos={{ seguridad: user?.name }}
+              permitirRehacer={rol === "superadmin"}
             />
 
             {/* Calificacion de cada almacenista que cargo (issue #43: puede ser mas de uno) */}

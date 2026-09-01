@@ -2307,8 +2307,8 @@
     "back": "Back",
     "firmas": {
       "titulo": "Record signatures",
-      "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished.",
-      "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished.",
+      "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished and cannot be changed.",
+      "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished and cannot be changed.",
       "completa": "Complete",
       "faltan": "{count, plural, =1 {# signature missing} other {# signatures missing}}",
       "firmado": "Signed",
@@ -2316,6 +2316,7 @@
       "firmar": "Sign",
       "rehacer": "Redo",
       "borrar": "Delete signature",
+      "bloqueada": "Saved",
       "sin_nombre": "Unassigned",
       "nombre": "Name of the signer",
       "trazo": "Sign here with your finger",

@@ -383,6 +383,9 @@ export default function DespachoDetailPage() {
             seguridad: user?.name,
             cliente: despacho.cliente_retira || undefined,
           }}
+          permitirRehacer={
+            (user?.role || "").toLowerCase().trim() === "superadmin"
+          }
         />
 
         {/* Facturas card */}
