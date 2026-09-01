@@ -1,4 +1,10 @@
-import { ArrowRight, Camera, FileText, Search, Wrench } from "lucide-react";
+import {
+  ArrowRight,
+  Camera,
+  Clock,
+  FileText,
+  Wrench,
+} from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 
@@ -8,148 +14,94 @@ export default async function ServicioTecnicoLanding({
   params: Promise<{ locale: string; sucursal: string }>;
 }) {
   const { locale, sucursal } = await params;
-  const t = await getTranslations({
-    locale,
-    namespace: "servicioTecnico",
-  });
+  const t = await getTranslations({ locale, namespace: "servicioTecnico" });
 
   const base = `/${locale}/servicio-tecnico/${sucursal}`;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-10 sm:py-16">
-      <section className="max-w-2xl">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--portal-primary)]">
-          {t("eyebrow")}
-        </p>
-        <h1 className="mt-3 text-[2rem] leading-tight sm:text-[2.75rem]">
-          {t("title")}
-        </h1>
-        <p className="mt-4 text-[color:var(--portal-muted)] sm:text-lg">
-          {t("subtitle")}
-        </p>
-      </section>
+    <div className="pt-page min-h-full">
+      <div className="pt-shell">
+        <div className="pt-hero">
+          {/* Discurso + acciones */}
+          <div>
+            <p className="pt-eyebrow">{t("eyebrow")}</p>
+            <h1 className="pt-display mt-4">{t("title")}</h1>
+            <p className="pt-lede">{t("subtitle")}</p>
 
-      {/* Las dos opciones del portal. */}
-      <section className="mt-10 grid gap-5 sm:mt-12 sm:grid-cols-2">
-        <OptionCard
-          href={`${base}/nuevo`}
-          icon={<Wrench className="h-6 w-6" aria-hidden />}
-          title={t("report.title")}
-          description={t("report.desc")}
-          hint={t("report.hint")}
-          cta={t("report.cta")}
-          variant="primary"
-        />
-        <OptionCard
-          href={`${base}/consultar`}
-          icon={<Search className="h-6 w-6" aria-hidden />}
-          title={t("check.title")}
-          description={t("check.desc")}
-          hint={t("check.hint")}
-          cta={t("check.cta")}
-          variant="outline"
-        />
-      </section>
+            <Link href={`${base}/nuevo`} className="pt-primary">
+              {t("report.cta")}
+              <ArrowRight className="h-5 w-5" aria-hidden />
+            </Link>
 
-      {/* Qué debe tener a mano antes de empezar: evita que abandone a mitad
-          del formulario porque no encuentra la factura. */}
-      <section className="mt-14 rounded-[10px] border border-[color:var(--portal-line)] bg-[color:var(--portal-surface-soft)] p-6 sm:mt-16 sm:p-8">
-        <h2 className="text-lg sm:text-xl">{t("needs.title")}</h2>
-        <ul className="mt-6 grid gap-6 sm:grid-cols-3">
-          <NeedItem
-            icon={<FileText className="h-5 w-5" aria-hidden />}
-            title={t("needs.invoice")}
-            description={t("needs.invoiceDesc")}
-          />
-          <NeedItem
-            icon={<Wrench className="h-5 w-5" aria-hidden />}
-            title={t("needs.fault")}
-            description={t("needs.faultDesc")}
-          />
-          <NeedItem
-            icon={<Camera className="h-5 w-5" aria-hidden />}
-            title={t("needs.media")}
-            description={t("needs.mediaDesc")}
-          />
-        </ul>
-      </section>
+            <div>
+              <Link href={`${base}/consultar`} className="pt-secondary">
+                <span>{t("check.lead")}</span>
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </div>
 
-      <p className="mt-10 text-sm text-[color:var(--portal-muted)]">
-        {t("help.text")}{" "}
-        <a
-          href="mailto:soporte.tecnico@supricom.com.ve"
-          className="portal-link-underline font-semibold text-[color:var(--portal-primary)]"
-        >
-          {t("help.cta")}
-        </a>
-      </p>
+            <p className="pt-help">
+              {t("help.text")}{" "}
+              <a href="mailto:soporte.tecnico@supricom.com.ve">
+                {t("help.cta")}
+              </a>
+            </p>
+          </div>
+
+          {/* Comprobante: qué tener a mano antes de empezar */}
+          <aside className="pt-ticket">
+            <div className="pt-ticket__strip" aria-hidden />
+            <div className="pt-ticket__body">
+              <p className="pt-ticket__kicker">{t("needs.kicker")}</p>
+              <p className="pt-ticket__title">{t("needs.cardTitle")}</p>
+
+              <div className="pt-ticket__list">
+                <TicketRow
+                  icon={<FileText className="h-[1.05rem] w-[1.05rem]" aria-hidden />}
+                  title={t("needs.invoice")}
+                  desc={t("needs.invoiceDesc")}
+                />
+                <TicketRow
+                  icon={<Wrench className="h-[1.05rem] w-[1.05rem]" aria-hidden />}
+                  title={t("needs.fault")}
+                  desc={t("needs.faultDesc")}
+                />
+                <TicketRow
+                  icon={<Camera className="h-[1.05rem] w-[1.05rem]" aria-hidden />}
+                  title={t("needs.media")}
+                  desc={t("needs.mediaDesc")}
+                />
+              </div>
+            </div>
+
+            <div className="pt-ticket__tear" aria-hidden />
+            <p className="pt-ticket__foot">
+              <Clock className="h-4 w-4" aria-hidden />
+              {t("needs.time")}
+            </p>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }
 
-function OptionCard({
-  href,
+function TicketRow({
   icon,
   title,
-  description,
-  hint,
-  cta,
-  variant,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  hint: string;
-  cta: string;
-  variant: "primary" | "outline";
-}) {
-  return (
-    <Link href={href} className="portal-card group">
-      <span
-        className="flex h-12 w-12 items-center justify-center rounded-[10px] bg-[color:var(--portal-primary-soft)] text-[color:var(--portal-primary)]"
-        aria-hidden
-      >
-        {icon}
-      </span>
-      <h2 className="mt-5 text-xl">{title}</h2>
-      <p className="mt-2 text-[color:var(--portal-muted)]">{description}</p>
-      <p className="mt-4 text-sm text-[color:var(--portal-muted)]">{hint}</p>
-      <span
-        className={`portal-btn mt-6 w-full ${
-          variant === "primary" ? "portal-btn-primary" : "portal-btn-outline"
-        }`}
-      >
-        {cta}
-        <ArrowRight
-          className="h-4 w-4 transition-transform group-hover:translate-x-0.5"
-          aria-hidden
-        />
-      </span>
-    </Link>
-  );
-}
-
-function NeedItem({
-  icon,
-  title,
-  description,
+  desc,
 }: {
   icon: React.ReactNode;
   title: string;
-  description: string;
+  desc: string;
 }) {
   return (
-    <li className="flex gap-3">
-      <span className="mt-0.5 shrink-0 text-[color:var(--portal-primary)]" aria-hidden>
-        {icon}
+    <div className="pt-ticket__row">
+      {icon}
+      <span>
+        <b>{title}</b>
+        <p>{desc}</p>
       </span>
-      <div>
-        <p className="font-semibold">{title}</p>
-        <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-          {description}
-        </p>
-      </div>
-    </li>
+    </div>
   );
 }

@@ -19,39 +19,30 @@ export default async function ElegirSucursalPage({
   const sucursales = sucursalesPermitidas();
 
   return (
-    <div className="mx-auto max-w-2xl px-5 py-10 sm:py-16">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--portal-primary)]">
-        {t("eyebrow")}
-      </p>
-      <h1 className="mt-3 text-[2rem] leading-tight sm:text-[2.75rem]">
-        {t("chooseBranchTitle")}
-      </h1>
-      <p className="mt-4 text-[color:var(--portal-muted)] sm:text-lg">
-        {t("chooseBranchSubtitle")}
-      </p>
+    <div className="pt-page min-h-full">
+      <div className="pt-shell" style={{ maxWidth: "48rem" }}>
+        <p className="pt-eyebrow">{t("eyebrow")}</p>
+        <h1 className="pt-display mt-4">{t("chooseBranchTitle")}</h1>
+        <p className="pt-lede">{t("chooseBranchSubtitle")}</p>
 
-      <div className="mt-10 grid gap-4">
-        {sucursales.map((s) => (
-          <Link
-            key={s.cid}
-            href={`/${locale}/servicio-tecnico/${s.slug}`}
-            className="portal-card group flex items-center justify-between"
-          >
-            <span className="flex items-center gap-3">
-              <span
-                className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-[color:var(--portal-primary-soft)] text-[color:var(--portal-primary)]"
-                aria-hidden
-              >
+        <div className="pt-branches">
+          {sucursales.map((s) => (
+            <Link
+              key={s.cid}
+              href={`/${locale}/servicio-tecnico/${s.slug}`}
+              className="pt-branch group"
+            >
+              <span className="pt-branch__pin" aria-hidden>
                 <MapPin className="h-5 w-5" aria-hidden />
               </span>
-              <span className="text-lg font-semibold">{s.nombre}</span>
-            </span>
-            <ArrowRight
-              className="h-5 w-5 text-[color:var(--portal-muted)] transition-transform group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </Link>
-        ))}
+              <span className="pt-branch__name">{s.nombre}</span>
+              <span className="pt-branch__go">
+                {t("chooseBranchGo")}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
