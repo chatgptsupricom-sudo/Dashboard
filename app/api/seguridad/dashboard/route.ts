@@ -66,7 +66,6 @@ export async function GET(request: NextRequest) {
       ingresosPendientesRes,
       topAlmacenistasRes,
       ingresosSinDespachoRes,
-      garantiasDenegadasRes,
     ] = await Promise.all([
       query(
         `SELECT COUNT(*) AS total FROM seguridad_ingresos
@@ -175,15 +174,27 @@ export async function GET(request: NextRequest) {
          ${cids !== null ? "AND i.cids = ?" : ""}`,
         paramCids,
       ),
-      query(
-        `SELECT COUNT(*) AS total
-         FROM seguridad_ingresos
-         WHERE falla_cubierta_garantia = 0
-           AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-           ${cids !== null ? "AND cids = ?" : ""}`,
-        paramCids,
-      ),
     ]);
+
+    // Seguridad ya no marca "falla cubierta por garantía" en el ingreso (#48).
+    // La señal equivalente ahora es el estado de garantía CONGELADO en el
+    // ticket de RMA: ingresos cuyo ticket llegó con garantía vencida. Va aparte
+    // del Promise.all y con su propio catch: si esta base no tiene todavía las
+    // columnas de garantía del portal, el resto del panel no debe caerse.
+    let garantiasDenegadasRes: any = { rows: [{ total: 0 }] };
+    try {
+      garantiasDenegadasRes = await query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_ingresos i
+         JOIN rma_cases rc ON rc.id = i.rma_case_id
+         WHERE rc.garantia_estado = 'vencida'
+           AND i.fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+           ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
+      );
+    } catch (e: any) {
+      console.warn("garantías denegadas no disponible:", e?.message);
+    }
 
     const ingresosHoy = Number(ingresosHoyRes.rows[0]?.total || 0);
     const ingresosAyer = Number(ingresosAyerRes.rows[0]?.total || 0);

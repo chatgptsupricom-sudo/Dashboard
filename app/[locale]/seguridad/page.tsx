@@ -41,8 +41,6 @@ type DashboardData = {
     recibido_por: string;
     accesorios_integros: number;
     sin_manipulacion: number;
-    dentro_de_fecha: number;
-    falla_cubierta_garantia: number;
     despacho_id: number | null;
   }>;
   despachos_recientes: Array<{

@@ -2093,7 +2093,15 @@
         "adjunto_imagen": "Imagen",
         "adjunto_video": "Video",
         "print": "Imprimir acta",
-        "label_nd": "N.º ND"
+        "label_nd": "N.º ND",
+        "section_garantia": "Garantía",
+        "garantia_desde_ticket": "Del ticket de RMA, congelada al momento del reporte",
+        "garantia_vence": "Vence el",
+        "garantia_sin_ticket": "Sin ticket del portal vinculado: la garantía se evalúa en RMA.",
+        "warranty_en_garantia": "En garantía",
+        "warranty_vencida": "Vencida",
+        "warranty_vida_util": "Vida útil",
+        "warranty_indeterminada": "Sin determinar"
       }
     },
     "despacho": {

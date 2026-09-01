@@ -35,8 +35,6 @@ type Ingreso = {
   descripcion_falla: string | null;
   accesorios_integros: number;
   sin_manipulacion: number;
-  dentro_de_fecha: number;
-  falla_cubierta_garantia: number;
   recibido_por: string;
   nd_numero: string | null;
   foto_estado_url: string | null;
@@ -51,6 +49,12 @@ type RmaCase = {
   /** Se lee del ticket, no se copia al ingreso: si el cliente lo corrige en
    *  RMA, el acta tiene que mostrar el corregido. */
   client_phone: string | null;
+  /** Garantía CONGELADA al momento del reporte (#48). Seguridad ya no la
+   *  evalúa en el mostrador: se muestra tal cual la resolvió el portal. */
+  garantia_estado: string | null;
+  garantia_meses: number | null;
+  garantia_vence: string | null;
+  garantia_marca: string | null;
 } | null;
 
 type Adjunto = {
@@ -424,19 +428,43 @@ export default function IngresoDetailPage() {
               yes={tf("yes")}
               no={tf("no")}
             />
-            <CheckField
-              label={tf("check_fecha")}
-              value={ingreso.dentro_de_fecha}
-              yes={tf("yes")}
-              no={tf("no")}
-            />
-            <CheckField
-              label={tf("check_garantia")}
-              value={ingreso.falla_cubierta_garantia}
-              yes={tf("yes")}
-              no={tf("no")}
-            />
           </div>
+        </section>
+
+        {/* Garantía — CONGELADA en el ticket del portal al momento del reporte
+            (#48). Seguridad ya no la evalúa en el mostrador; acá se muestra
+            tal cual la resolvió el portal para que el cliente y el técnico
+            vean el mismo dato. */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              {td("section_garantia")}
+            </h2>
+            {ingreso.rma_case_id && (
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                {td("garantia_desde_ticket")}
+              </span>
+            )}
+          </div>
+          {ingreso.rma_case_id && rmaCase ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <GarantiaBadge estado={rmaCase.garantia_estado} />
+              {rmaCase.garantia_marca && (
+                <span className="text-xs text-slate-500">
+                  {rmaCase.garantia_marca}
+                  {rmaCase.garantia_meses ? ` · ${rmaCase.garantia_meses}m` : ""}
+                </span>
+              )}
+              {rmaCase.garantia_vence && (
+                <span className="text-xs text-slate-500">
+                  · {td("garantia_vence")}{" "}
+                  {String(rmaCase.garantia_vence).slice(0, 10)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{td("garantia_sin_ticket")}</p>
+          )}
         </section>
 
         {/* Received by card */}
@@ -783,6 +811,26 @@ function DataField({
         {value}
       </dd>
     </div>
+  );
+}
+
+function GarantiaBadge({ estado }: { estado: string | null }) {
+  const td = useTranslations("seguridad.ingreso.detail");
+  const key = estado || "indeterminada";
+  const clase =
+    key === "en_garantia"
+      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+      : key === "vida_util"
+        ? "bg-violet-100 text-violet-700 border-violet-200"
+        : key === "vencida"
+          ? "bg-amber-100 text-amber-800 border-amber-200"
+          : "bg-slate-100 text-slate-600 border-slate-200";
+  return (
+    <span
+      className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md border ${clase}`}
+    >
+      {td(`warranty_${key}`)}
+    </span>
   );
 }
 

@@ -44,8 +44,6 @@ type FormState = {
   descripcion_falla: string;
   accesorios_integros: boolean | null;
   sin_manipulacion: boolean | null;
-  dentro_de_fecha: boolean | null;
-  falla_cubierta_garantia: boolean | null;
   recibido_por: string;
 };
 
@@ -82,8 +80,6 @@ export default function NuevoIngresoPage() {
     descripcion_falla: "",
     accesorios_integros: null,
     sin_manipulacion: null,
-    dentro_de_fecha: null,
-    falla_cubierta_garantia: null,
     recibido_por: user?.name || "",
   });
 
@@ -167,14 +163,17 @@ export default function NuevoIngresoPage() {
       return;
     }
 
-    // Los 4 checks de la planilla exigen respuesta explícita. Antes venían
-    // pre-marcados en "sí", así que se podía enviar el ingreso sin haber
-    // revisado nada y quedaba registrado que el equipo llegó completo.
+    // Los checks de estado de la planilla exigen respuesta explícita. Antes
+    // venían pre-marcados en "sí", así que se podía enviar el ingreso sin
+    // haber revisado nada y quedaba registrado que el equipo llegó completo.
+    //
+    // "Dentro de la fecha de garantía" y "Falla cubierta por garantía" ya no
+    // se preguntan acá (#48): esa evaluación viene resuelta y congelada en el
+    // ticket de RMA y se muestra en el detalle, no es algo que Seguridad
+    // decida en el mostrador.
     const sinResponder = [
       form.accesorios_integros,
       form.sin_manipulacion,
-      form.dentro_de_fecha,
-      form.falla_cubierta_garantia,
     ].some((v) => v === null);
 
     if (sinResponder) {
@@ -194,8 +193,6 @@ export default function NuevoIngresoPage() {
       descripcion_falla: form.descripcion_falla.trim() || undefined,
       accesorios_integros: form.accesorios_integros,
       sin_manipulacion: form.sin_manipulacion,
-      dentro_de_fecha: form.dentro_de_fecha,
-      falla_cubierta_garantia: form.falla_cubierta_garantia,
       recibido_por: form.recibido_por.trim().slice(0, 200),
     };
     if (ticket?.id) {
@@ -500,7 +497,7 @@ export default function NuevoIngresoPage() {
             </div>
           </section>
 
-          {/* Section C: 4 checks */}
+          {/* Section C: checks de estado */}
           <section className="bg-white border border-slate-200 rounded-[10px] p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-4">
               {tf("section_checks")}
@@ -517,20 +514,6 @@ export default function NuevoIngresoPage() {
                 label={tf("check_manipulacion")}
                 value={form.sin_manipulacion}
                 onChange={(v) => update("sin_manipulacion", v)}
-                yes={tf("yes")}
-                no={tf("no")}
-              />
-              <CheckRow
-                label={tf("check_fecha")}
-                value={form.dentro_de_fecha}
-                onChange={(v) => update("dentro_de_fecha", v)}
-                yes={tf("yes")}
-                no={tf("no")}
-              />
-              <CheckRow
-                label={tf("check_garantia")}
-                value={form.falla_cubierta_garantia}
-                onChange={(v) => update("falla_cubierta_garantia", v)}
                 yes={tf("yes")}
                 no={tf("no")}
               />

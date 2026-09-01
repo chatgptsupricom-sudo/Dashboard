@@ -2104,7 +2104,15 @@
         "adjunto_imagen": "Image",
         "adjunto_video": "Video",
         "print": "Print record",
-        "label_nd": "ND no."
+        "label_nd": "ND no.",
+        "section_garantia": "Warranty",
+        "garantia_desde_ticket": "From the RMA ticket, frozen at report time",
+        "garantia_vence": "Expires on",
+        "garantia_sin_ticket": "No portal ticket linked: warranty is assessed in RMA.",
+        "warranty_en_garantia": "In warranty",
+        "warranty_vencida": "Expired",
+        "warranty_vida_util": "Service life",
+        "warranty_indeterminada": "Undetermined"
       }
     },
     "despacho": {

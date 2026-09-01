@@ -48,8 +48,6 @@ type Ingreso = {
   serial: string | null;
   accesorios_integros: number;
   sin_manipulacion: number;
-  dentro_de_fecha: number;
-  falla_cubierta_garantia: number;
   recibido_por: string;
   factura_numero: string | null;
 };
@@ -604,18 +602,6 @@ export default function DespachoDetailPage() {
                     <CheckField
                       label={tfl("check_manipulacion")}
                       value={ingreso.sin_manipulacion}
-                      yes={tfl("yes")}
-                      no={tfl("no")}
-                    />
-                    <CheckField
-                      label={tfl("check_fecha")}
-                      value={ingreso.dentro_de_fecha}
-                      yes={tfl("yes")}
-                      no={tfl("no")}
-                    />
-                    <CheckField
-                      label={tfl("check_garantia")}
-                      value={ingreso.falla_cubierta_garantia}
                       yes={tfl("yes")}
                       no={tfl("no")}
                     />

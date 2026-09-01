@@ -39,13 +39,16 @@ CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   hardware VARCHAR(200) DEFAULT NULL,
   serial VARCHAR(200) DEFAULT NULL,
   descripcion_falla TEXT DEFAULT NULL,
-  -- Los 4 checks de la planilla van NOT NULL y sin valor por defecto: con
+  -- Los checks de la planilla van NOT NULL y sin valor por defecto: con
   -- DEFAULT 1 se podia registrar un ingreso sin revisar nada y quedaba
   -- declarado que el equipo llego completo.
   accesorios_integros TINYINT(1) NOT NULL,
   sin_manipulacion TINYINT(1) NOT NULL,
-  dentro_de_fecha TINYINT(1) NOT NULL,
-  falla_cubierta_garantia TINYINT(1) NOT NULL,
+  -- dentro_de_fecha / falla_cubierta_garantia: ya no se piden en el formulario
+  -- (#48). La garantia viene congelada en el ticket de RMA. Se dejan NULL-ables
+  -- para el historico; ver sql/alter_seguridad_ingresos_quitar_checks_garantia.sql
+  dentro_de_fecha TINYINT(1) NULL DEFAULT NULL,
+  falla_cubierta_garantia TINYINT(1) NULL DEFAULT NULL,
   recibido_por VARCHAR(200) NOT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
   idempotency_key VARCHAR(64) DEFAULT NULL,
