@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { CheckCircle2, Loader2, PenLine, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Lock, PenLine, Trash2 } from "lucide-react";
 import SignaturePad from "@/components/seguridad/SignaturePad";
 
 /**
@@ -16,6 +16,11 @@ import SignaturePad from "@/components/seguridad/SignaturePad";
  * cuatro firmaran contra un unico boton "guardar", un toque en atras a mitad
  * de la ronda tiraria las tres firmas ya hechas y habria que empezar de nuevo
  * con el cliente esperando.
+ *
+ * Una vez guardada, la firma es DEFINITIVA (#49): no hay "Rehacer" ni borrar.
+ * El acta es la prueba de la empresa y una firma que se puede reescribir no
+ * prueba nada. Solo `superadmin` ve esos botones (`permitirRehacer`), como via
+ * de correccion de un error real; la API los rechaza para el resto.
  */
 
 const TODOS_LOS_ROLES = ["tecnico", "almacen", "seguridad", "cliente"] as const;
@@ -29,6 +34,7 @@ export default function FirmasActa({
   nombresSugeridos,
   roles = TODOS_LOS_ROLES as unknown as Rol[],
   readOnly = false,
+  permitirRehacer = false,
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -50,6 +56,11 @@ export default function FirmasActa({
    * API de captura (`POST`/`DELETE`) ni siquiera se llama.
    */
   readOnly?: boolean;
+  /**
+   * Muestra "Rehacer" / borrar sobre una firma ya guardada. Solo `superadmin`
+   * (#49): para el resto una firma guardada es definitiva.
+   */
+  permitirRehacer?: boolean;
 }) {
   const t = useTranslations("seguridad.firmas");
 
@@ -171,7 +182,7 @@ export default function FirmasActa({
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       {t("firmado")}
                     </span>
-                    {!readOnly && (
+                    {!readOnly && permitirRehacer && (
                       <>
                         <button
                           type="button"
@@ -189,6 +200,12 @@ export default function FirmasActa({
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>
+                    )}
+                    {!readOnly && !permitirRehacer && (
+                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                        <Lock className="w-3 h-3" />
+                        {t("bloqueada")}
+                      </span>
                     )}
                   </div>
                 </>

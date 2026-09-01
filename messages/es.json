@@ -2296,8 +2296,8 @@
     "back": "Volver",
     "firmas": {
       "titulo": "Firmas del acta",
-      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla.",
-      "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla.",
+      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla y no se puede modificar.",
+      "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla y no se puede modificar.",
       "completa": "Completa",
       "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
       "firmado": "Firmado",
@@ -2305,6 +2305,7 @@
       "firmar": "Firmar",
       "rehacer": "Rehacer",
       "borrar": "Borrar firma",
+      "bloqueada": "Guardada",
       "sin_nombre": "Sin asignar",
       "nombre": "Nombre de quien firma",
       "trazo": "Firme aquí con el dedo",
