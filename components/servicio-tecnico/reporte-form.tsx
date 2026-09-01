@@ -11,7 +11,7 @@ import {
   ArrowRight,
   Check,
   Loader2,
-  Phone,
+  Mail,
   Search,
 } from "lucide-react";
 import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
@@ -20,7 +20,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const TELEFONO = "+584228008204";
+const EMAIL_SOPORTE = "soporte.tecnico@supricom.com.ve";
 
 type Item = {
   id: string;
@@ -37,6 +37,8 @@ type Item = {
     estado: string;
     fecha_vencimiento: string | null;
   };
+  ya_reportado: boolean;
+  rma_case_number: string | null;
 };
 
 type Coincidencia = {
@@ -86,6 +88,9 @@ export function ReporteForm({
 
   // Paso 3
   const [serialManual, setSerialManual] = useState("");
+  // Checkbox que confirma que el cliente sabe que este item ya tiene un caso
+  // de RMA y quiere reportarlo otra vez de todas formas (issue #47).
+  const [confirmarReenvio, setConfirmarReenvio] = useState(false);
   const [falla, setFalla] = useState("");
   const [telefono, setTelefono] = useState("");
   const [adjuntos, setAdjuntos] = useState<AdjuntoEstado[]>([]);
@@ -138,7 +143,8 @@ export function ReporteForm({
   // aplicar.
   useEffect(() => {
     setSerialManual("");
-    setErrores((p) => ({ ...p, serialManual: "" }));
+    setConfirmarReenvio(false);
+    setErrores((p) => ({ ...p, serialManual: "", reenvio: "" }));
   }, [itemId]);
 
   // El error de "falta adjuntar una foto" solo se calcula al tocar "Enviar",
@@ -386,7 +392,7 @@ export function ReporteForm({
             </div>
           )}
 
-          {errorBusqueda && <Aviso texto={errorBusqueda} ayuda={t("form.callInstead")} />}
+          {errorBusqueda && <Aviso texto={errorBusqueda} ayuda={t("form.emailInstead")} />}
         </section>
       )}
 
@@ -426,15 +432,21 @@ export function ReporteForm({
                     <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">
                       {[i.marca, i.codigo].filter(Boolean).join(" · ")}
                     </span>
-                    {i.garantia && (
-                      <span className="mt-2 block">
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      {i.garantia && (
                         <GarantiaBadge
                           compacto
                           estado={textoGarantia(i.garantia).estado}
                           etiqueta={textoGarantia(i.garantia).etiqueta}
                         />
-                      </span>
-                    )}
+                      )}
+                      {i.ya_reportado && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          {t("form.duplicateBadge")}
+                        </span>
+                      )}
+                    </span>
                     <span className="mt-1 block text-sm">
                       {i.serial ? (
                         <span className="font-mono text-[color:var(--portal-primary)]">
@@ -480,6 +492,32 @@ export function ReporteForm({
               </span>
             )}
           </p>
+
+          {item.ya_reportado && (
+            <div className="mt-4 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="flex gap-2 font-semibold">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {t("form.duplicateWarningTitle", { caso: item.rma_case_number ?? "" })}
+              </p>
+              <p className="mt-1.5">{t("form.duplicateWarningDesc")}</p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2">
+                <input
+                  id="reenvio"
+                  type="checkbox"
+                  className="mt-0.5 accent-amber-700"
+                  checked={confirmarReenvio}
+                  onChange={(e) => {
+                    setConfirmarReenvio(e.target.checked);
+                    setErrores((p) => ({ ...p, reenvio: "" }));
+                  }}
+                />
+                <span>{t("form.duplicateConfirmLabel")}</span>
+              </label>
+              {errores.reenvio && (
+                <MensajeError id="reenvio-error" texto={errores.reenvio} />
+              )}
+            </div>
+          )}
 
           {item.garantia && (
             <div className="mt-4">
@@ -596,7 +634,7 @@ export function ReporteForm({
             onDisponible={setCaptchaActivo}
           />
 
-          {errorEnvio && <Aviso texto={errorEnvio} ayuda={t("form.callInstead")} />}
+          {errorEnvio && <Aviso texto={errorEnvio} ayuda={t("form.emailInstead")} />}
 
           <button
             type="button"
@@ -615,6 +653,12 @@ export function ReporteForm({
               // reportarse.
               if (item.lleva_serial && !item.serial && !serialManual.trim())
                 faltan.serialManual = t("form.serialManualRequired");
+              // Ya tiene un caso de RMA: no se bloquea el reenvio (puede ser
+              // una falla nueva o una que reaparece), pero hay que confirmar
+              // a proposito en vez de dejar que se cree un duplicado sin
+              // darse cuenta.
+              if (item.ya_reportado && !confirmarReenvio)
+                faltan.reenvio = t("form.duplicateConfirmRequired");
               if (!fallaValida) faltan.falla = t("form.faultTooShort");
               if (!telefonoValido) faltan.telefono = t("form.phoneRequired");
               // Solo se exige captcha si está configurado; si no, no se puede
@@ -745,10 +789,10 @@ function Aviso({ texto, ayuda }: { texto: string; ayuda: string }) {
         <span>{texto}</span>
       </p>
       <a
-        href={`tel:${TELEFONO}`}
+        href={`mailto:${EMAIL_SOPORTE}`}
         className="portal-btn portal-btn-outline mt-3 w-full"
       >
-        <Phone className="h-4 w-4" aria-hidden />
+        <Mail className="h-4 w-4" aria-hidden />
         {ayuda}
       </a>
     </div>

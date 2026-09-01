@@ -1,10 +1,9 @@
-import { Mail, Phone } from "lucide-react";
+import { Mail } from "lucide-react";
 import Link from "next/link";
 
 const SITIO = "https://supricom.com.ve";
 const LOGO = `${SITIO}/wp-content/uploads/2025/06/LOGO-SUPRICOM.png`;
-const TELEFONO = "+58 422 8008204";
-const EMAIL = "webstore.valencia@supricom.com.ve";
+const EMAIL = "soporte.tecnico@supricom.com.ve";
 
 export function PortalHeader({ locale }: { locale: string }) {
   return (
@@ -13,13 +12,6 @@ export function PortalHeader({ locale }: { locale: string }) {
           robarle la pantalla al contenido. */}
       <div className="portal-topbar hidden sm:block">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-end gap-x-6 gap-y-1 px-5 py-2 text-[13px] text-white">
-          <a
-            href={`tel:${TELEFONO.replace(/\s/g, "")}`}
-            className="flex items-center gap-1.5 hover:underline"
-          >
-            <Phone className="h-3.5 w-3.5" aria-hidden />
-            {TELEFONO}
-          </a>
           <a
             href={`mailto:${EMAIL}`}
             className="flex items-center gap-1.5 hover:underline"

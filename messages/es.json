@@ -653,6 +653,11 @@
       "serialManualRequired": "Necesitamos el serial para identificar tu equipo.",
       "attachmentsLabelRequired": "Fotos o video del equipo",
       "attachmentsRequired": "Adjunta al menos una foto o un video del equipo.",
+      "duplicateBadge": "Ya enviado a RMA",
+      "duplicateWarningTitle": "Este equipo ya tiene un reporte (caso {caso})",
+      "duplicateWarningDesc": "Ya existe un caso de RMA para este producto en esta factura. Si es una falla distinta o el problema volvió a aparecer, puedes reportarlo de nuevo.",
+      "duplicateConfirmLabel": "Sí, quiero enviar un nuevo reporte para este equipo de todas formas.",
+      "duplicateConfirmRequired": "Confirma que quieres reportarlo de nuevo.",
       "required": "Completa este campo para continuar.",
       "phoneRequired": "Necesitamos un número donde contactarte.",
       "captchaRequired": "Confirma que no eres un robot.",
@@ -664,7 +669,7 @@
       "notFound": "No encontramos esa factura. Verifica el número; si estás seguro de que está bien, escríbenos y lo revisamos contigo.",
       "networkError": "No pudimos conectarnos. Revisa tu conexión e inténtalo de nuevo.",
       "sendError": "No pudimos enviar tu reporte. Inténtalo de nuevo.",
-      "callInstead": "Llamar a Supricom",
+      "emailInstead": "Escribir a soporte técnico",
       "multipleTitle": "Encontramos más de una factura con ese número",
       "multipleHelp": "Elige la tuya para continuar.",
       "productTitle": "¿Qué producto presenta la falla?",
@@ -719,7 +724,7 @@
     },
     "help": {
       "text": "¿No encuentras tu factura o necesitas ayuda?",
-      "cta": "Llámanos al +58 422 8008204"
+      "cta": "Escríbenos a soporte.tecnico@supricom.com.ve"
     },
     "soon": "Esta sección está en desarrollo. Mientras tanto, comunícate con nosotros por teléfono y con gusto te atendemos.",
     "back": "Volver",

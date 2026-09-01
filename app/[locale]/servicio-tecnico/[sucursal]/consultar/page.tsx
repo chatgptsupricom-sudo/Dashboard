@@ -400,19 +400,10 @@ export default function ConsultarPage() {
               </p>
               <div className="flex flex-wrap gap-3">
                 <a
-                  href="https://wa.me/584228008204"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-semibold hover:bg-emerald-600 transition-colors"
-                >
-                  <span>WhatsApp</span>
-                  <span className="font-mono">+58 422 8008204</span>
-                </a>
-                <a
-                  href="mailto:webstore.valencia@supricom.com.ve"
+                  href="mailto:soporte.tecnico@supricom.com.ve"
                   className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
                 >
-                  <span>Email</span>
+                  <span>soporte.tecnico@supricom.com.ve</span>
                 </a>
               </div>
             </div>

@@ -1,7 +1,6 @@
-import { Mail, Phone } from "lucide-react";
+import { Mail } from "lucide-react";
 
-const TELEFONO = "+58 422 8008204";
-const EMAIL = "webstore.valencia@supricom.com.ve";
+const EMAIL = "soporte.tecnico@supricom.com.ve";
 
 export function PortalFooter() {
   return (
@@ -13,13 +12,6 @@ export function PortalFooter() {
         </p>
 
         <div className="mt-6 flex flex-col gap-2 text-sm sm:flex-row sm:gap-8">
-          <a
-            href={`tel:${TELEFONO.replace(/\s/g, "")}`}
-            className="flex items-center gap-2 font-semibold hover:text-[color:var(--portal-primary)]"
-          >
-            <Phone className="h-4 w-4" aria-hidden />
-            {TELEFONO}
-          </a>
           <a
             href={`mailto:${EMAIL}`}
             className="flex items-center gap-2 font-semibold break-all hover:text-[color:var(--portal-primary)]"
