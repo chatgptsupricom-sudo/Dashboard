@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { asegurarEsquemaPersonal } from "@/lib/seguridad/catalogoPersonal";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -131,7 +132,19 @@ export async function POST(request: NextRequest) {
     const clienteNombre = truncate(body.cliente_nombre, MAX.cliente_nombre);
     if (!clienteNombre) errors.push("cliente_nombre es obligatorio");
 
-    const recibidoPor = truncate(body.recibido_por, MAX.recibido_por);
+    // #50: quién recibió, por cada lado del mostrador. `recibido_por` (viejo,
+    // texto único) se sigue guardando para la calificación y los KPIs — es el
+    // de Seguridad. Se acepta que el cliente lo mande directo (cola offline con
+    // builds viejos) o que se derive del de Seguridad.
+    const recibidoSeguridad = truncate(
+      body.recibido_seguridad_nombre,
+      MAX.recibido_por,
+    );
+    const recibidoRma = truncate(body.recibido_rma_nombre, MAX.recibido_por);
+    const recibidoPor =
+      truncate(body.recibido_por, MAX.recibido_por) || recibidoSeguridad;
+    if (!recibidoSeguridad) errors.push("recibido_seguridad_nombre es obligatorio");
+    if (!recibidoRma) errors.push("recibido_rma_nombre es obligatorio");
     if (!recibidoPor) errors.push("recibido_por es obligatorio");
 
     const descripcionFalla = truncate(body.descripcion_falla, MAX.descripcion_falla);
@@ -223,14 +236,18 @@ export async function POST(request: NextRequest) {
     }
 
     await asegurarColumnasGarantiaNullables();
+    // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
+    // base todavía no las tiene (#50).
+    await asegurarEsquemaPersonal();
 
     const result = await query(
       `INSERT INTO seguridad_ingresos
         (rma_case_id, fecha_entrega, factura_numero, cliente_nombre, hardware, serial,
          descripcion_falla, accesorios_integros, sin_manipulacion,
-         recibido_por, foto_estado_url, idempotency_key,
+         recibido_por, recibido_seguridad_nombre, recibido_rma_nombre,
+         foto_estado_url, idempotency_key,
          nd_numero, cids)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rmaCaseId,
         fechaEntrega,
@@ -242,6 +259,8 @@ export async function POST(request: NextRequest) {
         body.accesorios_integros ? 1 : 0,
         body.sin_manipulacion ? 1 : 0,
         recibidoPor,
+        recibidoSeguridad,
+        recibidoRma,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
         // Correlativo que el almacen lleva a mano en la planilla de papel.

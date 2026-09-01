@@ -254,6 +254,14 @@ export async function GET(
   </table>
 
   <table style="margin-top:12px">
+    <tr>
+      <th>Recibi&oacute; por Seguridad</th>
+      <td>${esc(i.recibido_seguridad_nombre || i.recibido_por) || "&mdash;"}</td>
+    </tr>
+    <tr>
+      <th>Recibi&oacute; por RMA</th>
+      <td>${esc(i.recibido_rma_nombre) || "&mdash;"}</td>
+    </tr>
     <tr><th>Fecha de despacho</th><td>${fechaDespacho ? fechaLarga(fechaDespacho) : "&mdash;"}</td></tr>
   </table>
 

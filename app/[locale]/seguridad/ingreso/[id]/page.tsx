@@ -10,17 +10,13 @@ import {
   ExternalLink,
   Image as ImageIcon,
   Loader2,
-  MessageSquare,
   Printer,
-  Send as SendIcon,
   ShieldCheck,
-  Star as StarIcon,
   Ticket as TicketIcon,
   Video,
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 
@@ -36,6 +32,8 @@ type Ingreso = {
   accesorios_integros: number;
   sin_manipulacion: number;
   recibido_por: string;
+  recibido_seguridad_nombre: string | null;
+  recibido_rma_nombre: string | null;
   nd_numero: string | null;
   foto_estado_url: string | null;
   created_at: string;
@@ -65,14 +63,6 @@ type Adjunto = {
   created_at: string;
   url: string;
 };
-
-type Calificacion = {
-  id: number;
-  calificacion: number;
-  comentario: string | null;
-  calificado_por: string | null;
-  created_at: string;
-} | null;
 
 function fmtDate(value: string) {
   if (!value) return "—";
@@ -115,7 +105,6 @@ export default function IngresoDetailPage() {
   const t = useTranslations("seguridad");
   const tf = useTranslations("seguridad.ingreso.form");
   const td = useTranslations("seguridad.ingreso.detail");
-  const tc = useTranslations("seguridad.calificacion");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const id = params?.id as string;
@@ -128,11 +117,13 @@ export default function IngresoDetailPage() {
   // patron que `esAlmacen` en MercanciaDetalle.tsx: todo el contenido de
   // lectura queda visible, solo se ocultan los controles de captura.
   const esRma = (user?.role || "").toLowerCase().trim() === "rma";
+  // Solo superadmin puede rehacer una firma ya guardada (#49).
+  const esSuperadmin =
+    (user?.role || "").toLowerCase().trim() === "superadmin";
 
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
-  const [calificacion, setCalificacion] = useState<Calificacion>(null);
   const [loading, setLoading] = useState(true);
   // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
   // no del codigo, para no tener que desplegar el dia que cambie.
@@ -144,12 +135,6 @@ export default function IngresoDetailPage() {
       .catch(() => {});
   }, []);
   const [error, setError] = useState<string | null>(null);
-
-  const [draftRating, setDraftRating] = useState(0);
-  const [draftComment, setDraftComment] = useState("");
-  const [savingRating, setSavingRating] = useState(false);
-  const [ratingError, setRatingError] = useState<string | null>(null);
-  const [ratingSaved, setRatingSaved] = useState(false);
 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -171,7 +156,6 @@ export default function IngresoDetailPage() {
         }
         setIngreso(data.ingreso);
         setRmaCase(data.rma_case);
-        setCalificacion(data.calificacion ?? null);
 
         if (data.ingreso?.rma_case_id) {
           const adjRes = await fetch(`/api/seguridad/ingreso/${id}/adjuntos`);
@@ -214,58 +198,6 @@ export default function IngresoDetailPage() {
       if (url) URL.revokeObjectURL(url);
     };
   }, [id]);
-
-  const refetchCalificacion = async () => {
-    if (!id) return;
-    try {
-      const res = await fetch(`/api/seguridad/ingreso/${id}`);
-      const data = await res.json();
-      if (data.success) {
-        setCalificacion(data.calificacion ?? null);
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const submitCalificacion = async () => {
-    if (!ingreso || draftRating < 1) return;
-    setSavingRating(true);
-    setRatingError(null);
-    setRatingSaved(false);
-    const calificadoPor = user?.name || user?.email || "Seguridad";
-    try {
-      const res = await fetch("/api/seguridad/calificar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          almacenista_nombre: ingreso.recibido_por,
-          calificacion: draftRating,
-          relacionado_a: "ingreso",
-          relacionado_id: ingreso.id,
-          comentario: draftComment.trim() || null,
-          calificado_por: calificadoPor,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        if (res.status === 409) {
-          setRatingError(tc("duplicate_error"));
-        } else {
-          setRatingError(data.error || tc("error_save"));
-        }
-        return;
-      }
-      setRatingSaved(true);
-      setDraftRating(0);
-      setDraftComment("");
-      await refetchCalificacion();
-    } catch {
-      setRatingError(tc("error_save"));
-    } finally {
-      setSavingRating(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -408,6 +340,7 @@ export default function IngresoDetailPage() {
             cliente: ingreso.cliente_nombre,
           }}
           readOnly={esRma}
+          permitirRehacer={esSuperadmin}
         />
 
         {/* Checks card */}
@@ -467,126 +400,28 @@ export default function IngresoDetailPage() {
           )}
         </section>
 
-        {/* Received by card */}
+        {/* Received by card — dos firmantes, uno por lado del mostrador (#50).
+            Filas viejas sin los campos nuevos caen al `recibido_por` de antes. */}
         <section className="bg-white border border-slate-200 rounded-[10px] p-5">
           <h2 className="text-sm font-bold text-slate-900 mb-3">
             {td("section_recibido")}
           </h2>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-violet-100 shrink-0">
-              <ShieldCheck className="w-4 h-4 text-violet-600" />
-            </div>
-            <p className="text-sm text-slate-800 font-medium">
-              {ingreso.recibido_por}
-            </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RecibidoPor
+              label={td("recibido_seguridad")}
+              nombre={
+                ingreso.recibido_seguridad_nombre || ingreso.recibido_por || "—"
+              }
+            />
+            <RecibidoPor
+              label={td("recibido_rma")}
+              nombre={ingreso.recibido_rma_nombre || "—"}
+            />
           </div>
         </section>
 
-        {/* Calificación card */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
-              <StarIcon className="w-4 h-4 text-[color:var(--portal-primary,#741DFE)]" />
-              {tc("ingreso_title")}
-            </h2>
-            <span className="text-xs text-slate-400 hidden sm:inline">
-              {ingreso.recibido_por}
-            </span>
-          </div>
-
-          {calificacion ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                <StarRatingDisplay
-                  value={calificacion.calificacion}
-                  size="md"
-                  showValue
-                />
-                <span className="text-[11px] text-slate-500 ml-auto whitespace-nowrap">
-                  {tc("already_rated", {
-                    date: fmtDateTime(calificacion.created_at),
-                  })}
-                </span>
-              </div>
-              {calificacion.comentario && (
-                <div className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1 inline-flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3" />
-                    {tc("comment_label")}
-                  </p>
-                  <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {calificacion.comentario}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-slate-500">
-                {tc("calificado_por")}:{" "}
-                <span className="font-semibold text-slate-700">
-                  {calificacion.calificado_por || "—"}
-                </span>
-              </p>
-            </div>
-          ) : esRma ? (
-            <p className="text-sm text-slate-500 text-center py-4">
-              {tc("not_rated")}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50/40 px-3 py-4">
-                <StarRating
-                  value={draftRating}
-                  onChange={(v) => {
-                    setDraftRating(v);
-                    setRatingError(null);
-                    setRatingSaved(false);
-                  }}
-                  size="lg"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">
-                  {tc("comment_label")}
-                </label>
-                <textarea
-                  value={draftComment}
-                  onChange={(e) => setDraftComment(e.target.value)}
-                  placeholder={tc("comment_placeholder")}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 resize-none"
-                />
-              </div>
-              {ratingError && (
-                <p className="text-xs font-semibold text-red-600">
-                  {ratingError}
-                </p>
-              )}
-              {ratingSaved && (
-                <p className="text-xs font-semibold text-emerald-600">
-                  {tc("saved")}
-                </p>
-              )}
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <p className="text-[11px] text-slate-500 truncate">
-                  {tc("rate_for", { name: ingreso.recibido_por })}
-                </p>
-                <button
-                  type="button"
-                  onClick={submitCalificacion}
-                  disabled={savingRating || draftRating < 1}
-                  className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-                >
-                  {savingRating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <SendIcon className="w-4 h-4" />
-                  )}
-                  {savingRating ? tc("saving") : tc("save")}
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
+        {/* La calificación del Seguridad que recibió salió de esta vista (#49):
+            el ingreso es un acta, no un momento para puntuar a un compañero. */}
 
         {/* Foto del estado */}
         {fotoUrl && (
@@ -810,6 +645,22 @@ function DataField({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+function RecibidoPor({ label, nombre }: { label: string; nombre: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
+      <div className="p-2 rounded-xl bg-violet-100 shrink-0">
+        <ShieldCheck className="w-4 h-4 text-violet-600" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          {label}
+        </p>
+        <p className="text-sm text-slate-800 font-medium truncate">{nombre}</p>
+      </div>
     </div>
   );
 }

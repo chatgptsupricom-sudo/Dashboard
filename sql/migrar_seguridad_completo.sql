@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS seguridad_ingresos (
   dentro_de_fecha TINYINT(1) NULL DEFAULT NULL,
   falla_cubierta_garantia TINYINT(1) NULL DEFAULT NULL,
   recibido_por VARCHAR(200) NOT NULL,
+  -- #50: quien recibio por cada lado del mostrador. `recibido_por` se conserva
+  -- para la calificacion / KPIs (es el de Seguridad). Ver
+  -- sql/alter_seguridad_catalogo_personal.sql
+  recibido_seguridad_nombre VARCHAR(200) DEFAULT NULL,
+  recibido_rma_nombre VARCHAR(200) DEFAULT NULL,
   foto_estado_url VARCHAR(500) DEFAULT NULL,
   idempotency_key VARCHAR(64) DEFAULT NULL,
   -- Sucursal de quien registra (9=Valencia, 10=Caracas, 7=Panama), del mismo
@@ -247,6 +252,19 @@ CREATE TABLE IF NOT EXISTS seguridad_catalogo_choferes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_nombre_cids (nombre, cids),
   INDEX idx_cids (cids)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- #50 — personal de Seguridad / RMA. Alimenta los dos selects "Recibio por..."
+-- del formulario de ingreso. `activo` para dar de baja sin perder historico.
+CREATE TABLE IF NOT EXISTS seguridad_catalogo_personal (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  rol ENUM('seguridad','rma') NOT NULL,
+  cids INT DEFAULT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_nombre_rol_cids (nombre, rol, cids),
+  INDEX idx_rol_cids (rol, cids)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS seguridad_catalogo_unidades (
