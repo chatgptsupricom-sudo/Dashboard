@@ -122,8 +122,7 @@
 //   }
 // }
 import { db } from "@/lib/db"; // Importación centralizada
-import { requireRoles } from "@/lib/auth/roles";
-import { UserRole } from "@/lib/types";
+import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 // Declaración global para soporte de WebSocket en Next.js
@@ -133,10 +132,9 @@ declare global {
 
 // Usado por las 3 vistas de actividades (superadmin/gerente/estandar), asi
 // que el guard exige sesion valida de cualquier rol, no uno especifico.
-const TODOS_LOS_ROLES = Object.values(UserRole);
 
 export async function GET(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {
@@ -174,7 +172,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {
@@ -209,7 +207,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {

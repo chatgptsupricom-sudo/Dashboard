@@ -1,30 +1,4 @@
-// // lib/apiService.ts
-// export const requestActivity = async (data: {
-//   title: string;
-//   targetRole: string;
-//   message: string;
-// }) => {
-//   const res = await fetch("/api/superadmin/requests", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify(data),
-//   });
-//   return res.json();
-// };
 // lib/actividades/apiService.ts
-
-export const requestActivity = async (data: {
-  title: string;
-  targetRole: string;
-  message: string;
-}) => {
-  const res = await fetch("/api/superadmin/requests", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  return res.json();
-};
 
 /**
  * Obtiene las actividades asignadas AL usuario (Mis Actividades)

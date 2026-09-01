@@ -173,8 +173,7 @@
 // }
 // app/api/activities/assign/route.ts
 import { db } from "@/lib/db"; // Importación centralizada
-import { requireRoles } from "@/lib/auth/roles";
-import { UserRole } from "@/lib/types";
+import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 // Declaración para evitar errores de TypeScript con la propiedad global si usas socket.io
@@ -184,10 +183,9 @@ declare global {
 
 // Lo usan tanto la vista de superadmin como la estandar (asignar tareas
 // entre pares), asi que el guard exige sesion valida de cualquier rol.
-const TODOS_LOS_ROLES = Object.values(UserRole);
 
 export async function GET(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {
@@ -245,7 +243,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {
@@ -320,7 +318,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireRoles(req, TODOS_LOS_ROLES);
+  const auth = await requireSession(req);
   if (auth.error) return auth.error;
 
   try {
