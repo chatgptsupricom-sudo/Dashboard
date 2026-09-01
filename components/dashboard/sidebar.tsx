@@ -694,7 +694,6 @@ export function Sidebar({
                         { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
                         { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
                         { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
-                        { label: t("seg_personal"), href: `/${locale}/seguridad/config/personal` },
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se
@@ -725,6 +724,28 @@ export function Sidebar({
                   )}
                 </AnimatePresence>
               </div>
+            )}
+
+            {/* Personal de Seguridad / RMA: seccion propia, no cuelga de RMA —
+                alimenta los selects "Recibio por" del ingreso. */}
+            {allowedSections.includes("seguridad") && (
+              <Link
+                href={`/${locale}/seguridad/config/personal`}
+                onClick={() => {
+                  if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                }}
+              >
+                <div
+                  className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                    pathname.startsWith(`/${locale}/seguridad/config/personal`)
+                      ? `${accentColor} font-medium bg-white/5`
+                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                  }`}
+                >
+                  <Users size={20} className="text-slate-400" />
+                  <span className="text-sm">{t("seg_personal")}</span>
+                </div>
+              </Link>
             )}
 
             {/* Carga y descarga de camiones, con la calificacion del almacenista. */}
