@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL ?? "";
 const N8N_DELETE_WEBHOOK_URL = process.env.N8N_DELETE_WEBHOOK_URL ?? "";
@@ -52,17 +53,12 @@ async function fetchN8n(
 
 // ── N8N INTEGRATION ──────────────────────────────────────────────────────────
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
-    const {
-      messages,
-      messageType,
-      chatId,
-      userId,
-      userName,
-      userEmail,
-      userRole,
-    } = await request.json();
+    const { messages, messageType, chatId } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -77,6 +73,15 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    // userId/userName/userEmail/userRole se derivan del JWT verificado, NUNCA
+    // del body: n8n usa userRole para decidir que herramientas puede usar el
+    // agente, asi que confiar en lo que manda el cliente permitia
+    // autodeclararse superadmin ante ese flujo sin serlo de verdad.
+    const userId = auth.payload?.userId ?? auth.payload?.odooId;
+    const userName = auth.payload?.name;
+    const userEmail = auth.payload?.email;
+    const userRole = auth.payload?.role;
 
     // Último mensaje del usuario
     const lastUserMsg = [...messages]
@@ -165,7 +170,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const { chatId } = await request.json();
     if (!chatId) {

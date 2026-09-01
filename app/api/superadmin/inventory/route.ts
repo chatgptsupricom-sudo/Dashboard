@@ -1,10 +1,14 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 // 🔐 BYPASS SSL: Obligatorio para subdominios multi-nivel en Odoo Sh
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
 

@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 // Asegúrate de definir el pool usando process.env directamente aquí para depurar
 const pool = mysql.createPool({
@@ -9,7 +10,10 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const query = `
       SELECT

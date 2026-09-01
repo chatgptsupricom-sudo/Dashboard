@@ -1,7 +1,11 @@
 import { query } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const caseId = searchParams.get("case_id");
@@ -26,7 +30,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { case_id, detail, observations, images, created_by } = body;

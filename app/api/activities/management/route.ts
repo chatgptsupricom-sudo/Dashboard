@@ -1,7 +1,12 @@
 import { query } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { UserRole } from "@/lib/types";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, Object.values(UserRole));
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");

@@ -1,7 +1,11 @@
 import mysql from "mysql2/promise"; // Asegúrate de tener instalado mysql2
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     // Configura tu conexión (usa variables de entorno en producción)
     const connection = await mysql.createConnection({
