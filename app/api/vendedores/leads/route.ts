@@ -1,8 +1,9 @@
 import { normalizarCanal, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { requireSession } from "@/lib/auth/roles";
 
 declare global {
   var io: any;
@@ -60,7 +61,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const {
@@ -199,7 +203,10 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const {
@@ -320,7 +327,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
