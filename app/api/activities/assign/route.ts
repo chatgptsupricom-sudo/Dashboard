@@ -172,7 +172,7 @@
 //   }
 // }
 // app/api/activities/assign/route.ts
-import { db } from "@/lib/db"; // Importación centralizada
+import { query } from "@/lib/db"; // Importación centralizada
 import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
     const assignedBy = searchParams.get("assignedBy");
 
     // Consulta explícita y segura con cálculo de días restantes
-    let query = `
+    let sql = `
       SELECT
         a.id,
         a.title,
@@ -218,21 +218,21 @@ export async function GET(req: NextRequest) {
     // CONDICIONAL DE BÚSQUEDA:
     if (assignedBy) {
       // Filtramos exactamente por el nombre de quien asignó la tarea
-      query += " AND a.assigned_by = ?";
+      sql += " AND a.assigned_by = ?";
       params.push(assignedBy.trim());
     } else if (userId) {
       // Filtro tradicional: Mis tareas asignadas para mí mismo
-      query += " AND a.user_id = ?";
+      sql += " AND a.user_id = ?";
       params.push(userId);
     }
 
     // Ordenamos cronológicamente (las más nuevas primero)
-    query += " ORDER BY a.created_at DESC";
+    sql += " ORDER BY a.created_at DESC";
 
-    const [rows] = await db.execute(query, params);
+    const result = await query(sql, params);
 
     // Retornamos el arreglo de actividades encontradas
-    return NextResponse.json(rows);
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error("API GET Error en assign/route.ts:", error);
     return NextResponse.json(
@@ -261,10 +261,11 @@ export async function POST(req: NextRequest) {
     const admin_name = body.admin_name ?? "Sistema";
 
     if (user_id) {
-      const [users]: any = await db.execute(
+      const usersResult = await query(
         "SELECT email, role_id, cids FROM users_config WHERE id = ?",
         [user_id],
       );
+      const users = usersResult.rows;
       if (users.length > 0) {
         user_email = users[0].email;
         role_id = users[0].role_id;
@@ -274,7 +275,7 @@ export async function POST(req: NextRequest) {
 
     if (!user_email) user_email = "no-email@supricom.com";
 
-    const [result]: any = await db.execute(
+    const insertResult = await query(
       `INSERT INTO activities
       (user_id, role_id, cids, title, description, user_email, action_type, status, due_date, assigned_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -299,7 +300,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    await db.execute(
+    await query(
       `INSERT INTO audit_logs (user_id, user_name, role, action, changes, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
       [
         admin_id,
@@ -310,7 +311,7 @@ export async function POST(req: NextRequest) {
       ],
     );
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: (insertResult.rows as any).insertId });
   } catch (error) {
     console.error("Error en assign POST:", error);
     return NextResponse.json({ error: "Error al asignar" }, { status: 500 });
@@ -325,13 +326,13 @@ export async function PATCH(req: NextRequest) {
     const { id, status, observacion } = await req.json();
 
     if (status) {
-      await db.execute("UPDATE activities SET status = ? WHERE id = ?", [
+      await query("UPDATE activities SET status = ? WHERE id = ?", [
         status,
         id,
       ]);
     }
     if (observacion !== undefined) {
-      await db.execute("UPDATE activities SET observacion = ? WHERE id = ?", [
+      await query("UPDATE activities SET observacion = ? WHERE id = ?", [
         observacion,
         id,
       ]);

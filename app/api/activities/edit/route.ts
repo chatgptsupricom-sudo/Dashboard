@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { query } from "@/lib/db";
 import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest) {
       due_date && due_date.trim() !== "" ? due_date : null;
 
     // Ejecutamos la actualización limpia de los campos del modal
-    const query = `
+    const sql = `
       UPDATE activities
       SET
         title = ?,
@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest) {
       WHERE id = ?
     `;
 
-    await db.execute(query, [
+    await query(sql, [
       title.trim(),
       description ? description.trim() : "",
       formattedDueDate,

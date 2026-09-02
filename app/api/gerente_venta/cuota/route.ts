@@ -164,10 +164,17 @@ export async function POST(req: Request) {
     }
 
     const [seller]: any = await db.query(
-      "SELECT user_id FROM sellers WHERE id = ?",
+      "SELECT user_id, name FROM sellers WHERE id = ?",
       [seller_id],
     );
     const targetUserId = seller[0]?.user_id || 0;
+    const sellerName = seller[0]?.name || null;
+
+    const [prevCuota]: any = await db.query(
+      "SELECT cuota FROM cuota WHERE seller_id = ? ORDER BY created_at DESC LIMIT 1",
+      [seller_id],
+    );
+    const cuotaAnterior = prevCuota[0]?.cuota ?? null;
 
     await db.query(
       "INSERT INTO cuota (id, user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, ?, NOW())",
@@ -182,7 +189,12 @@ export async function POST(req: Request) {
           payload.name || "Sistema",
           payload.role || "Gerencia",
           "EDIT_CUOTA",
-          JSON.stringify({ seller_id, nueva_cuota: cuota }),
+          JSON.stringify({
+            seller_id,
+            seller_name: sellerName,
+            from: { cuota: cuotaAnterior },
+            to: { cuota },
+          }),
         ],
       );
     } catch (_) {}
