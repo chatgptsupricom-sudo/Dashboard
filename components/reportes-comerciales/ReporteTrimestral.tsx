@@ -28,6 +28,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -531,11 +534,58 @@ function TabResumen({ data }: { data: Reporte }) {
         />
         <GraficoBarras titulo="Venta por departamento" filas={data.porDepartamento} />
         <GraficoBarras titulo="Venta por vendedor" filas={data.porVendedor} />
+        <DonutProductos filas={data.rankingProductos} />
         {data.porMarca.length > 0 && (
           <GraficoBarras titulo="Venta por marca" filas={data.porMarca} />
         )}
       </div>
     </div>
+  );
+}
+
+function DonutProductos({ filas }: { filas: FilaRanking[] }) {
+  const top = filas.slice(0, 8);
+  const otros = filas.slice(8).reduce((s, f) => s + f.unidades, 0);
+  const datos = [
+    ...top.map((f) => ({ name: f.nombre, value: f.unidades })),
+    ...(otros > 0 ? [{ name: "Otros", value: Math.round(otros) }] : []),
+  ];
+  return (
+    <Card className="border-none shadow-sm rounded-2xl bg-white">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          Productos por unidades (top 8)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="h-[300px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={datos}
+              dataKey="value"
+              nameKey="name"
+              cx="40%"
+              cy="50%"
+              innerRadius={45}
+              outerRadius={90}
+              paddingAngle={2}
+            >
+              {datos.map((_, i) => (
+                <Cell key={i} fill={barColor(i)} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v: number) => [num(v), "Unidades"]} />
+            <Legend
+              layout="vertical"
+              align="right"
+              verticalAlign="middle"
+              wrapperStyle={{ fontSize: 10, maxWidth: 180 }}
+              formatter={(val: string) => (val.length > 32 ? val.slice(0, 32) + "…" : val)}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -547,6 +597,61 @@ interface EppRow {
   odoo_partner_id: number | null;
   meta_anual: number;
   activo: number;
+}
+
+function BarEpp({
+  rows,
+  realPorId,
+  trimestre,
+}: {
+  rows: EppRow[];
+  realPorId: Map<number, EppCalculada>;
+  trimestre: string;
+}) {
+  const datos = rows
+    .map((r) => {
+      const calc = realPorId.get(r.id);
+      const metaTrim = (Number(r.meta_anual) || 0) / 4;
+      return {
+        name: r.cliente_nombre.split("(")[0].trim(),
+        meta: Math.round(metaTrim),
+        real: Math.round(calc?.realTrimestre ?? 0),
+      };
+    })
+    .sort((a, b) => b.meta - a.meta);
+  return (
+    <Card className="border-none shadow-sm rounded-2xl bg-white">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          Meta del trimestre vs real por cuenta ({trimestre})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="h-[320px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={datos} margin={{ left: 0, right: 12, top: 8, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <XAxis
+              dataKey="name"
+              angle={-40}
+              textAnchor="end"
+              interval={0}
+              tick={{ fontSize: 9, fill: "#64748b" }}
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v) => (v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`)}
+              tick={{ fontSize: 10, fill: "#94a3b8" }}
+            />
+            <Tooltip formatter={(v: number) => `$${money(v)}`} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="meta" name="Meta trimestre" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="real" name="Real" fill="#2563eb" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
 }
 
 function TabEpp({
@@ -646,6 +751,8 @@ function TabEpp({
           {msg}
         </div>
       )}
+
+      {rows.length > 0 && <BarEpp rows={rows} realPorId={realPorId} trimestre={data.periodo.trimestre} />}
 
       <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
         <CardContent className="p-0">
