@@ -197,7 +197,7 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const { setUser, setToken } = useAuthStore();
+  const { setUser } = useAuthStore();
 
   const onFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,8 +227,8 @@ export function LoginForm() {
         return;
       }
 
-      // Éxito
-      setToken(result.token);
+      // Éxito — el token vive solo en la cookie httpOnly que ya puso el
+      // servidor, no se guarda nada del token en el cliente.
       setUser(result.user);
 
       // Redirección condicional por rol
