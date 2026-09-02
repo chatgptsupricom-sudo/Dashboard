@@ -97,6 +97,23 @@ function camposCambiadosLegacy(
   return cambios;
 }
 
+// Solo REASSIGN trae from/to (diffable). Las demás acciones viejas
+// (EDIT_CUOTA, CREATE_ACTIVITY, ASSIGN_TASK, UPDATE_MASSIVE_MOQ_COST)
+// guardan un `changes` plano sin esa forma — se muestra tal cual en vez de
+// forzarlo por el diff (que siempre daría "sin cambios").
+function detalleLegacyPlano(changes: Record<string, any> | null): { campo: string; valor: any }[] {
+  if (!changes) return [];
+  return Object.entries(changes)
+    .filter(([campo]) => campo !== "from" && campo !== "to" && campo !== "lead_name")
+    .map(([campo, valor]) => ({ campo, valor }));
+}
+
+function formatearValor(valor: any): string {
+  if (valor === null || valor === undefined) return "";
+  if (typeof valor === "object") return JSON.stringify(valor);
+  return String(valor);
+}
+
 function parseJson(raw: string | null): Record<string, any> | null {
   if (!raw) return null;
   try {
@@ -230,6 +247,7 @@ export default function AuditoriaPanelContent() {
                   const cambios = esLegacy
                     ? camposCambiadosLegacy(legacyChanges)
                     : camposCambiados(antes, despues);
+                  const detallePlano = esLegacy ? detalleLegacyPlano(legacyChanges) : [];
                   const hayDatos = esLegacy ? legacyChanges != null : antes || despues;
                   const abierto = expandido === log.id;
 
@@ -301,6 +319,22 @@ export default function AuditoriaPanelContent() {
                                         {c.despues === null || c.despues === undefined
                                           ? t("vacio")
                                           : String(c.despues)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : detallePlano.length > 0 ? (
+                              <div className="space-y-2">
+                                <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
+                                  {t("detalle")}
+                                </p>
+                                <div className="grid gap-1">
+                                  {detallePlano.map((d) => (
+                                    <div key={d.campo} className="grid grid-cols-[140px_1fr] gap-3 text-sm">
+                                      <span className="font-mono text-xs text-zinc-500">{d.campo}</span>
+                                      <span className="font-mono text-xs text-zinc-700 truncate">
+                                        {formatearValor(d.valor) || t("vacio")}
                                       </span>
                                     </div>
                                   ))}

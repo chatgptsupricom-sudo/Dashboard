@@ -1450,6 +1450,7 @@
       "registro": "Registro",
       "fecha": "Fecha",
       "campos_cambiados": "Campos que cambiaron",
+      "detalle": "Detalle",
       "sin_diff": "No se pudo capturar el detalle de qué cambió para este registro (queda igual el rastro de quién y cuándo).",
       "sin_cambios": "Se capturó el registro completo, pero ningún campo cambió de valor.",
       "vacio": "(vacío)",

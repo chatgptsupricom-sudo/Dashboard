@@ -1657,6 +1657,7 @@
       "registro": "Record",
       "fecha": "Date",
       "campos_cambiados": "Fields that changed",
+      "detalle": "Detail",
       "sin_diff": "Couldn't capture what changed for this record (who and when are still tracked).",
       "sin_cambios": "The full record was captured, but no field actually changed value.",
       "vacio": "(empty)",
