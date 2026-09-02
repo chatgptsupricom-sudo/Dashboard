@@ -1,14 +1,14 @@
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 export async function GET(request: Request) {
   try {
     const cookieHeader = request.headers.get("cookie");
     const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
     if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const userCids = payload.cids as number;
 
     const whereClause = userCids === 7 ? "WHERE s.cids = 7" : "WHERE (s.cids != 7 OR s.cids IS NULL)";

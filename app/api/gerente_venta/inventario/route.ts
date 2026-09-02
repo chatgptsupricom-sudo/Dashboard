@@ -1,8 +1,8 @@
 import { verifyToken } from "@/lib/jwt";
-import { callOdooRPC } from "@/lib/odoo";
+// Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
+// via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
+import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
-
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 export async function GET(request: NextRequest) {
   try {

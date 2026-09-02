@@ -44,18 +44,61 @@ const { createServer } = require("http");
 const { Server } = require("socket.io");
 const next = require("next");
 const cron = require("node-cron");
+const jwt = require("jsonwebtoken");
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
+// Mismo origen que la pagina que abre el socket, para cualquier deploy de
+// EasyPanel (el subdominio de prueba cambia con cada branch/entorno, asi
+// que no se puede dejar una lista fija de nombres) mas la produccion real y
+// localhost. Antes esto era `origin: true` (cualquier sitio), que con
+// `credentials: true` dejaba que una pagina externa abriera el socket
+// usando la cookie de sesion de quien la visitara y recibiera sus eventos.
+function origenPermitido(origin, callback) {
+  if (!origin) return callback(null, true);
+  try {
+    const host = new URL(origin).hostname;
+    const ok =
+      host === "localhost" ||
+      host.endsWith(".easypanel.host") ||
+      host.endsWith(".supricom.com.ve");
+    callback(null, ok);
+  } catch {
+    callback(null, false);
+  }
+}
+
+// El "quien sos" de cada socket se resuelve UNA vez, aca, verificando el
+// JWT de la cookie de sesion (la misma que ya manda el navegador en el
+// handshake por ser mismo origen) — nunca del valor que el cliente decida
+// mandar por `join_user_room`. Antes cualquiera podia unirse a la sala de
+// notificaciones de otro usuario adivinando su id numerico.
+function usuarioDelSocket(socket) {
+  try {
+    const cookieHeader = socket.handshake.headers.cookie || "";
+    const crudo = cookieHeader
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("token="));
+    if (!crudo) return null;
+    const token = decodeURIComponent(crudo.slice("token=".length));
+    const secret = (process.env.JWT_SECRET || "").trim();
+    if (!secret) return null;
+    const payload = jwt.verify(token, secret);
+    return payload.sub || null;
+  } catch {
+    return null;
+  }
+}
+
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => handle(req, res));
 
-  // Configuración de Socket.io con CORS permitido
   const io = new Server(httpServer, {
     cors: {
-      origin: true,
+      origin: origenPermitido,
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -66,9 +109,11 @@ app.prepare().then(() => {
 
   io.on("connection", (socket) => {
     console.log(`Cliente conectado: ${socket.id}`);
+    socket.data.userId = usuarioDelSocket(socket);
 
-    socket.on("join_user_room", (userId) => {
-      const room = `user_${userId}`;
+    socket.on("join_user_room", () => {
+      if (!socket.data.userId) return;
+      const room = `user_${socket.data.userId}`;
       socket.join(room);
       console.log(`Socket ${socket.id} unido a sala ${room}`);
     });

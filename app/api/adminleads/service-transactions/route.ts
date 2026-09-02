@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 export async function GET(request: Request) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = jwtSecretBytes();
     await jwtVerify(token, secret);
 
     const { searchParams } = new URL(request.url);
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = jwtSecretBytes();
     await jwtVerify(token, secret);
 
     const body = await request.json();
@@ -109,7 +110,7 @@ export async function DELETE(request: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = jwtSecretBytes();
     await jwtVerify(token, secret);
 
     const { searchParams } = new URL(request.url);

@@ -366,13 +366,15 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
 
-    // Obtener userId desde el JWT de la cookie (fuente de verdad)
-    // con fallback al query param para compatibilidad
+    // Obtener userId desde el JWT de la cookie (unica fuente de verdad — un
+    // fallback a ?userId= de la URL dejaba entrar sin cookie con solo
+    // adivinar un id).
     const token = request.cookies.get("token")?.value;
     const payload = verifyToken(token);
-    const mysqlId = payload
-      ? Number((payload as any).sub || (payload as any).userId || 0)
-      : Number(searchParams.get("userId") || 0);
+    if (!payload) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    const mysqlId = Number((payload as any).sub || 0);
 
     if (!mysqlId) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });

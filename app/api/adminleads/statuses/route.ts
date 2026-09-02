@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 // Crea la tabla si no existe
 async function ensureTable() {
@@ -35,7 +36,10 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const { name, color } = await request.json();
@@ -70,7 +74,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await request.json();
     // No permitir borrar estados por defecto
@@ -86,7 +93,10 @@ export async function DELETE(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id, color, swap_with } = await request.json();
 

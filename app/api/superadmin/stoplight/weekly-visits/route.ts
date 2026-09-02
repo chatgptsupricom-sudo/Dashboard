@@ -10,6 +10,41 @@ const JWT_SECRET = jwtSecretBytes();
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "visitas");
 
+// El nombre de archivo que manda el cliente nunca es confiable (permite
+// path traversal, ver issue de seguridad). El tipo real se detecta por los
+// primeros bytes, igual que en banco-imagenes/ticket-adjuntos, y la
+// extensión sale de una tabla fija a partir de ese tipo detectado — nunca
+// del nombre original.
+function detectImageMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  ) return "image/png";
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return "image/webp";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "image/gif";
+  return null;
+}
+
+const EXT_POR_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+// Defensa en profundidad: aunque el nombre ya no venga del cliente, se
+// confirma que la ruta final sigue dentro de UPLOAD_DIR antes de escribir
+// o borrar.
+function rutaDentroDe(base: string, target: string): boolean {
+  const resolved = path.resolve(target);
+  return resolved === path.resolve(base) || resolved.startsWith(path.resolve(base) + path.sep);
+}
+
 async function ensureTable() {
   await query(`CREATE TABLE IF NOT EXISTS weekly_visits (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -105,10 +140,17 @@ export async function POST(request: NextRequest) {
     let photoUrl: string | null = null;
 
     if (photo && photo.size > 0) {
-      const ext = photo.name.split(".").pop() || "jpg";
+      const buffer = Buffer.from(await photo.arrayBuffer());
+      const mime = detectImageMime(buffer);
+      if (!mime) {
+        return NextResponse.json({ error: "La foto debe ser una imagen JPEG, PNG, WebP o GIF válida" }, { status: 400 });
+      }
+      const ext = EXT_POR_MIME[mime];
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const filePath = path.join(UPLOAD_DIR, filename);
-      const buffer = Buffer.from(await photo.arrayBuffer());
+      if (!rutaDentroDe(UPLOAD_DIR, filePath)) {
+        return NextResponse.json({ error: "Nombre de archivo inválido" }, { status: 400 });
+      }
       await writeFile(filePath, buffer);
       photoUrl = `/uploads/visitas/${filename}`;
     }
@@ -152,7 +194,7 @@ export async function DELETE(request: NextRequest) {
     const row = existing.rows?.[0];
     if (row?.photo_url) {
       const filePath = path.join(process.cwd(), "public", row.photo_url);
-      if (existsSync(filePath)) await unlink(filePath);
+      if (rutaDentroDe(UPLOAD_DIR, filePath) && existsSync(filePath)) await unlink(filePath);
     }
 
     await query(`DELETE FROM weekly_visits WHERE id = ?`, [id]);
