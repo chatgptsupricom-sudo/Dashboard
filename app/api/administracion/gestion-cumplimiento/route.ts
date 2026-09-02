@@ -147,12 +147,14 @@ export async function GET(request: NextRequest) {
           formula: "Pendientes con +días del umbral / total pendientes × 100",
           peso: 3,
           metaTexto: `≤${metas.pct_legalizacion_vencida}% vencidos (+${metas.legalizacion_dias} días)`,
-          valor: legalizacion.pctVencidos,
+          valor: legalizacion?.pctVencidos ?? null,
           unidad: "%",
           frecuencia: "Mensual",
           responsable: "Administración",
-          fuente: "Odoo / Gastos (hr.expense)",
-          detalle: `${legalizacion.totalPendientes} reportes pendientes de legalizar por $${legalizacion.montoPendiente.toLocaleString("en-US")}; ${legalizacion.pendientesVencidos} con más de ${metas.legalizacion_dias} días. "Anticipos" y "viáticos" se reportan juntos: Odoo no los distingue como estados distintos.`,
+          fuente: "Odoo / Contabilidad (cuenta de anticipos a empleados)",
+          detalle: !legalizacion
+            ? "No se encontró la cuenta de anticipos a empleados de esta sede en el plan de cuentas (ver detalle de la sede en Odoo)."
+            : `${legalizacion.totalPendientes} con saldo pendiente por $${legalizacion.montoPendiente.toLocaleString("en-US")}; ${legalizacion.pendientesVencidos} con más de ${metas.legalizacion_dias} días desde el anticipo. Se mide por saldo contable (débito−crédito), no por hr.expense: Administración confirmó que esto se lleva por asiento directo. En Panamá los movimientos no tienen empleado asignado todavía, así que ahí se ve como un solo total agregado, no por persona.`,
         },
         {
           modo: "lower_better",
@@ -309,7 +311,7 @@ export async function GET(request: NextRequest) {
         area: categorias.find((c) => c.kpis.includes(k))?.categoria || "Administración",
         titulo: `${k.nombre}: ${k.valor}${k.unidad} (meta ${k.metaTexto})`,
         responsable: k.responsable,
-        montoAfectado: k.id === "legalizacion_pendiente" ? legalizacion.montoPendiente : null,
+        montoAfectado: k.id === "legalizacion_pendiente" ? (legalizacion?.montoPendiente ?? null) : null,
         fechaDeteccion: hoyDate.toISOString().split("T")[0],
         accion: k.detalle || "Revisar indicador",
         fechaCompromiso: null,
