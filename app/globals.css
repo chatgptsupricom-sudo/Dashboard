@@ -572,3 +572,408 @@
 .pt-branch:hover .pt-branch__go svg {
   transform: translateX(3px);
 }
+
+/* ---------------------------------------------------------------------------
+   Pantallas internas del portal: formulario de reporte, consulta de ticket y
+   confirmación. Hasta ahora usaban Tailwind suelto (slate/violet) o el estilo
+   plano viejo; acá pasan al mismo lenguaje de la landing — papel, Syne,
+   eyebrow con filete, el comprobante como objeto. Prefijo .pt-.
+   --------------------------------------------------------------------------- */
+.pt-shell--narrow {
+  max-width: 40rem;
+}
+
+/* Volver */
+.pt-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--portal-muted);
+  transition: color 0.15s ease;
+}
+.pt-back:hover {
+  color: var(--portal-primary);
+}
+.pt-back svg {
+  transition: transform 0.15s ease;
+}
+.pt-back:hover svg {
+  transform: translateX(-3px);
+}
+
+/* Título de pantalla interna: más chico que .pt-display pero misma familia. */
+.pt-h1 {
+  margin-top: 1.75rem;
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-size: clamp(1.85rem, 4.5vw, 2.55rem);
+  color: var(--portal-ink);
+  text-wrap: balance;
+}
+.pt-sub {
+  margin-top: 0.85rem;
+  max-width: 48ch;
+  color: var(--pt-ink-soft);
+  line-height: 1.6;
+}
+
+/* Pasos: círculos numerados unidos por una barra que se llena al avanzar. */
+.pt-steps {
+  display: flex;
+  align-items: center;
+  margin-top: 1.75rem;
+}
+.pt-steps__seg {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pt-steps__seg--grow {
+  flex: 1;
+}
+.pt-steps__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1.5px solid var(--portal-line-strong);
+  background: var(--portal-surface);
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--portal-muted);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.pt-steps__dot--active,
+.pt-steps__dot--done {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--portal-primary), var(--pt-brand-deep));
+  color: #fff;
+  box-shadow: 0 10px 22px -12px rgba(116, 29, 254, 0.9);
+}
+.pt-steps__label {
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--portal-muted);
+  white-space: nowrap;
+}
+.pt-steps__label--active {
+  color: var(--portal-primary);
+  font-weight: 700;
+}
+.pt-steps__bar {
+  flex: 1;
+  height: 2px;
+  margin: 0 0.55rem;
+  border-radius: 2px;
+  background: var(--portal-line);
+}
+.pt-steps__bar--done {
+  background: var(--portal-primary);
+}
+@media (max-width: 470px) {
+  .pt-steps__label:not(.pt-steps__label--active) {
+    display: none;
+  }
+}
+
+/* Tarjeta blanca estándar de las pantallas internas. */
+.pt-panel {
+  border-radius: 14px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  padding: 1.4rem;
+  box-shadow: 0 20px 44px -34px rgba(20, 18, 28, 0.35);
+}
+@media (min-width: 640px) {
+  .pt-panel {
+    padding: 1.75rem;
+  }
+}
+.pt-panel + .pt-panel {
+  margin-top: 1rem;
+}
+.pt-panel__eyebrow {
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--portal-muted);
+}
+
+/* Campos */
+.pt-label {
+  display: block;
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--portal-ink);
+}
+.pt-input,
+.pt-textarea {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid var(--portal-line-strong);
+  border-radius: 11px;
+  background: var(--portal-surface);
+  font-size: 1rem;
+  color: var(--portal-ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pt-input {
+  height: 46px;
+}
+.pt-textarea {
+  min-height: 7rem;
+  resize: vertical;
+  line-height: 1.55;
+}
+.pt-input:focus,
+.pt-textarea:focus {
+  outline: none;
+  border-color: var(--portal-primary);
+  box-shadow: 0 0 0 4px rgba(116, 29, 254, 0.14);
+}
+
+.pt-hint {
+  margin-top: 0.4rem;
+  font-size: 0.83rem;
+  color: var(--portal-muted);
+}
+.pt-error {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #b42318;
+}
+
+/* Botón de acción con el mismo peso del .pt-primary de la landing pero apto
+   para formularios (sin el margen enorme y sin el space-between). */
+.pt-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.9rem 1.35rem;
+  border-radius: 12px;
+  background: linear-gradient(100deg, var(--portal-primary), var(--pt-brand-deep));
+  color: #fff;
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  box-shadow: 0 16px 34px -20px rgba(116, 29, 254, 0.75);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+.pt-cta:hover {
+  box-shadow: 0 20px 40px -18px rgba(116, 29, 254, 0.85);
+}
+@media (hover: hover) {
+  .pt-cta:hover {
+    transform: translateY(-2px);
+  }
+}
+.pt-cta:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+.pt-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem;
+  border-radius: 11px;
+  border: 1px solid var(--portal-line-strong);
+  background: var(--portal-surface);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--portal-ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pt-ghost:hover {
+  border-color: var(--portal-primary);
+  background: var(--portal-primary-soft);
+}
+
+/* Opción con radio (elegir producto de la factura). */
+.pt-choice {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1.5px solid var(--portal-line-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.pt-choice:hover {
+  border-color: var(--portal-primary);
+}
+.pt-choice--on {
+  border-color: var(--portal-primary);
+  background: var(--portal-primary-soft);
+  box-shadow: 0 12px 30px -20px rgba(116, 29, 254, 0.6);
+}
+
+/* Lista de datos (resumen de factura / del reporte). */
+.pt-summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--portal-line);
+  font-size: 0.9rem;
+}
+.pt-summary__row:last-child {
+  border-bottom: 0;
+}
+.pt-summary__row dt {
+  color: var(--portal-muted);
+}
+.pt-summary__row dd {
+  text-align: right;
+  font-weight: 600;
+  color: var(--portal-ink);
+}
+
+/* Caja de contexto (qué sigue / contacto), en el verde del portal. */
+.pt-callout {
+  border-radius: 14px;
+  border: 1px solid var(--pt-mint);
+  background: var(--pt-mint-soft);
+  padding: 1.4rem;
+}
+@media (min-width: 640px) {
+  .pt-callout {
+    padding: 1.75rem;
+  }
+}
+.pt-callout__eyebrow {
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #076b62;
+}
+
+/* Número de caso, grande, con el degradado de marca. */
+.pt-code {
+  display: inline-block;
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.6rem, 4.5vw, 2.15rem);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: linear-gradient(120deg, var(--portal-primary), var(--pt-brand-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pt-copyrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pt-copyrow input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid var(--portal-line-strong);
+  border-radius: 10px;
+  background: var(--portal-surface-soft);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: var(--portal-ink);
+}
+
+/* Línea de tiempo del ticket. */
+.pt-timeline__item {
+  display: grid;
+  grid-template-columns: 0.9rem 1fr;
+  gap: 0.75rem;
+}
+.pt-timeline__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pt-timeline__node {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--portal-line-strong);
+  margin-top: 0.3rem;
+  flex-shrink: 0;
+}
+.pt-timeline__node--last {
+  background: var(--portal-primary);
+  box-shadow: 0 0 0 4px var(--portal-primary-soft);
+}
+.pt-timeline__stem {
+  width: 2px;
+  flex: 1;
+  background: var(--portal-line);
+  margin-top: 0.25rem;
+}
+.pt-timeline__body {
+  padding-bottom: 1.1rem;
+}
+
+/* El comprobante impreso de la confirmación: reusa la tira perforada y la
+   línea de corte del .pt-ticket de la landing, cerrando el círculo (lo que
+   se anunció "antes de empezar" vuelve como comprobante). */
+.pt-stub {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  box-shadow: 0 30px 60px -34px rgba(20, 18, 28, 0.45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pt-stub {
+    animation: pt-print 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+.pt-stub__strip {
+  height: 1.4rem;
+  background: radial-gradient(
+        circle 3px at 15px 50%,
+        var(--portal-surface) 98%,
+        transparent 100%
+      )
+      0 0 / 30px 100% repeat-x,
+    linear-gradient(0deg, var(--portal-primary), var(--pt-brand-deep));
+}
+.pt-stub__body {
+  padding: 1.5rem 1.5rem 0.5rem;
+  text-align: center;
+}
+.pt-stub__tear {
+  margin: 0.75rem 1.5rem 0;
+  border-top: 1.5px dashed var(--portal-line-strong);
+}
+.pt-stub__foot {
+  padding: 1rem 1.5rem 1.4rem;
+}

@@ -4,6 +4,7 @@ import {
   RESUMEN_KEY,
   type ResumenReporte,
 } from "@/lib/servicio-tecnico/resumen";
+import { Check, Copy } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -63,141 +64,112 @@ export default function ConfirmacionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white px-4 py-10 sm:py-16">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-100 mb-4">
-            <svg
-              className="w-8 h-8 text-violet-600"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2">
-            {t("confirmacion_titulo")}
-          </h1>
-          <p className="text-base text-slate-600">{t("confirmacion_subtitulo")}</p>
-        </div>
+    <div className="pt-page min-h-full">
+      <div className="pt-shell pt-shell--narrow">
+        <p className="pt-eyebrow">{t("eyebrow")}</p>
+        <h1 className="pt-h1">{t("confirmacion_titulo")}</h1>
+        <p className="pt-sub">{t("confirmacion_subtitulo")}</p>
 
-        {/* Numero de ticket */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-            {t("ticket_numero")}
-          </p>
-          <div className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl p-4">
-            <code className="text-2xl sm:text-3xl font-black text-violet-600 tracking-wider">
-              {caseNumber || "—"}
-            </code>
+        {/* El comprobante impreso: la tira perforada y la línea de corte del
+            .pt-ticket de la landing, ahora con el número de caso ya emitido. */}
+        <div className="pt-stub mt-8">
+          <div className="pt-stub__strip" aria-hidden />
+          <div className="pt-stub__body">
+            <p className="pt-panel__eyebrow">{t("ticket_numero")}</p>
+            <p className="mt-2">
+              <code className="pt-code">{caseNumber || "—"}</code>
+            </p>
             <button
               onClick={() => copy(caseNumber, setCopiedTicket)}
               disabled={!caseNumber}
-              className="px-4 py-2 text-sm font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="pt-ghost mt-4"
             >
-              {copiedTicket ? t("copiado") : t("copiar")}
+              {copiedTicket ? (
+                <>
+                  <Check className="h-4 w-4" aria-hidden />
+                  {t("copiado")}
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" aria-hidden />
+                  {t("copiar")}
+                </>
+              )}
             </button>
           </div>
-        </div>
-
-        {/* Enlace de consulta */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-            {t("enlace_consulta")}
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={consultationUrl}
-              className="flex-1 px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-mono truncate"
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
-            <button
-              onClick={() => copy(consultationUrl, setCopiedLink)}
-              disabled={!consultationUrl}
-              className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-            >
-              {copiedLink ? t("copiado") : t("copiar_enlace")}
-            </button>
-          </div>
-        </div>
-
-        {/* Resumen del reporte */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
-            {t("resumen")}
-          </p>
-          <dl className="space-y-3">
-            {product && (
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                <dt className="text-sm font-semibold text-slate-500">
-                  {t("producto")}
-                </dt>
-                <dd className="text-sm text-slate-900 sm:text-right break-words">
-                  {product}
-                </dd>
-              </div>
-            )}
-            {serial && (
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                <dt className="text-sm font-semibold text-slate-500">
-                  {t("serial")}
-                </dt>
-                <dd className="text-sm text-slate-900 sm:text-right font-mono break-words">
-                  {serial}
-                </dd>
-              </div>
-            )}
-            {invoice && (
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                <dt className="text-sm font-semibold text-slate-500">
-                  {t("factura")}
-                </dt>
-                <dd className="text-sm text-slate-900 sm:text-right font-mono">
-                  {invoice}
-                </dd>
-              </div>
-            )}
-            {phone && (
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                <dt className="text-sm font-semibold text-slate-500">
-                  {t("telefono")}
-                </dt>
-                <dd className="text-sm text-slate-900 sm:text-right font-mono">
-                  {phone}
-                </dd>
-              </div>
-            )}
-          </dl>
-        </div>
-
-        {/* Que sigue */}
-        <div className="bg-violet-50 rounded-2xl border border-violet-100 p-6 sm:p-8">
-          <p className="text-xs font-bold text-violet-700 uppercase tracking-wider mb-3">
-            {t("que_sigue")}
-          </p>
-          <p className="text-sm text-slate-700 mb-4">
-            {t("tiempo_respuesta")}
-          </p>
-          <div className="border-t border-violet-200 pt-4">
-            <p className="text-xs text-slate-500 mb-2">
-              {t("contacto_whatsapp")}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <a
-                href="mailto:soporte.tecnico@supricom.com.ve"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
+          <div className="pt-stub__tear" aria-hidden />
+          <div className="pt-stub__foot">
+            <p className="pt-panel__eyebrow">{t("enlace_consulta")}</p>
+            <div className="pt-copyrow mt-2">
+              <input
+                readOnly
+                value={consultationUrl}
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <button
+                onClick={() => copy(consultationUrl, setCopiedLink)}
+                disabled={!consultationUrl}
+                className="pt-ghost whitespace-nowrap"
               >
-                <span>soporte.tecnico@supricom.com.ve</span>
-              </a>
+                {copiedLink ? t("copiado") : t("copiar_enlace")}
+              </button>
             </div>
           </div>
         </div>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
+        {/* Resumen del reporte. Sólo si hay algo que mostrar: sin
+            sessionStorage (modo privado, enlace viejo) quedaría una tarjeta
+            vacía. */}
+        {(product || serial || invoice || phone) && (
+        <div className="pt-panel mt-4">
+          <p className="pt-panel__eyebrow">{t("resumen")}</p>
+          <dl className="mt-3">
+            {product && (
+              <div className="pt-summary__row">
+                <dt>{t("producto")}</dt>
+                <dd className="break-words">{product}</dd>
+              </div>
+            )}
+            {serial && (
+              <div className="pt-summary__row">
+                <dt>{t("serial")}</dt>
+                <dd className="font-mono break-words">{serial}</dd>
+              </div>
+            )}
+            {invoice && (
+              <div className="pt-summary__row">
+                <dt>{t("factura")}</dt>
+                <dd className="font-mono">{invoice}</dd>
+              </div>
+            )}
+            {phone && (
+              <div className="pt-summary__row">
+                <dt>{t("telefono")}</dt>
+                <dd className="font-mono">{phone}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+        )}
+
+        {/* Que sigue */}
+        <div className="pt-callout mt-4">
+          <p className="pt-callout__eyebrow">{t("que_sigue")}</p>
+          <p className="mt-2 text-sm text-[color:var(--portal-ink)]">
+            {t("tiempo_respuesta")}
+          </p>
+          <p className="mt-4 text-xs text-[color:var(--portal-muted)]">
+            {t("contacto_whatsapp")}
+          </p>
+          <a
+            href="mailto:soporte.tecnico@supricom.com.ve"
+            className="pt-ghost mt-2"
+          >
+            soporte.tecnico@supricom.com.ve
+          </a>
+        </div>
+
+        <p className="text-center text-xs text-[color:var(--portal-muted)] mt-6">
           {t("imprimible")}
         </p>
       </div>
