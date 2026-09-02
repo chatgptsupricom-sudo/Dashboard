@@ -709,7 +709,8 @@
       "attachmentsHelp": "A photo of the problem or the error code helps us solve it much faster.",
       "waitUploads": "Waiting for uploads to finish...",
       "sending": "Sending...",
-      "submit": "Send my report"
+      "submit": "Send my report",
+      "stepOf": "Step {n} of {total}"
     },
     "metaTitle": "Technical Service | Supricom",
     "metaDescription": "Report a problem with your device or check the status of a report you already sent.",

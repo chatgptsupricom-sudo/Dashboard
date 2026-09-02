@@ -606,12 +606,12 @@
 
 /* Título de pantalla interna: más chico que .pt-display pero misma familia. */
 .pt-h1 {
-  margin-top: 1.75rem;
+  margin-top: 1.5rem;
   font-family: var(--font-syne), Arial, sans-serif;
   font-weight: 800;
   letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-size: clamp(1.85rem, 4.5vw, 2.55rem);
+  line-height: 1.12;
+  font-size: clamp(1.7rem, 4.2vw, 2.4rem);
   color: var(--portal-ink);
   text-wrap: balance;
 }
@@ -620,71 +620,6 @@
   max-width: 48ch;
   color: var(--pt-ink-soft);
   line-height: 1.6;
-}
-
-/* Pasos: círculos numerados unidos por una barra que se llena al avanzar. */
-.pt-steps {
-  display: flex;
-  align-items: center;
-  margin-top: 1.75rem;
-}
-.pt-steps__seg {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.pt-steps__seg--grow {
-  flex: 1;
-}
-.pt-steps__dot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  flex-shrink: 0;
-  border-radius: 999px;
-  border: 1.5px solid var(--portal-line-strong);
-  background: var(--portal-surface);
-  font-family: var(--font-syne), Arial, sans-serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--portal-muted);
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-.pt-steps__dot--active,
-.pt-steps__dot--done {
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--portal-primary), var(--pt-brand-deep));
-  color: #fff;
-  box-shadow: 0 10px 22px -12px rgba(116, 29, 254, 0.9);
-}
-.pt-steps__label {
-  font-family: var(--font-manrope), Arial, sans-serif;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--portal-muted);
-  white-space: nowrap;
-}
-.pt-steps__label--active {
-  color: var(--portal-primary);
-  font-weight: 700;
-}
-.pt-steps__bar {
-  flex: 1;
-  height: 2px;
-  margin: 0 0.55rem;
-  border-radius: 2px;
-  background: var(--portal-line);
-}
-.pt-steps__bar--done {
-  background: var(--portal-primary);
-}
-@media (max-width: 470px) {
-  .pt-steps__label:not(.pt-steps__label--active) {
-    display: none;
-  }
 }
 
 /* Tarjeta blanca estándar de las pantallas internas. */
@@ -976,4 +911,144 @@
 }
 .pt-stub__foot {
   padding: 1rem 1.5rem 1.4rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Formulario de reporte (rediseño 2): más marca Supricom, menos "wizard
+   genérico". El progreso deja de ser círculos numerados y pasa a una pista
+   fina que se llena + migas de pan; el formulario vive en una tarjeta-
+   comprobante cuya tira superior usa la MISMA textura de papel tapiz que la
+   barra de supricom.com.ve.
+   --------------------------------------------------------------------------- */
+.pt-wallpaper {
+  background-image: url("https://supricom.com.ve/wp-content/uploads/2025/06/fondo-de-papel-tapiz-colorido-borroso-vivo-scaled.webp");
+  background-size: cover;
+  background-position: center;
+}
+
+/* Halo de color de la marca detrás del encabezado, muy tenue y difuminado
+   hacia abajo para no comerse la legibilidad. */
+.pt-page--brand {
+  position: relative;
+  isolation: isolate;
+}
+.pt-page--brand::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 340px;
+  z-index: -1;
+  background-image: url("https://supricom.com.ve/wp-content/uploads/2025/06/fondo-de-papel-tapiz-colorido-borroso-vivo-scaled.webp");
+  background-size: cover;
+  background-position: center;
+  opacity: 0.16;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.pt-formcard {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  box-shadow: 0 34px 64px -36px rgba(20, 18, 28, 0.45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pt-formcard {
+    animation: pt-print 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+
+/* Tira superior tipo comprobante: degradado de marca + perforación. La
+   textura de papel tapiz del sitio la aporta el halo del encabezado. */
+.pt-formcard__strip {
+  position: relative;
+  padding: 0.9rem 1.4rem;
+  background-image:
+    radial-gradient(
+        circle 3px at 16px calc(100% - 4px),
+        var(--portal-surface) 98%,
+        transparent 100%
+      ),
+    linear-gradient(96deg, var(--pt-brand-deep), var(--portal-primary));
+  background-size: 32px 12px, cover;
+  background-position: bottom left, center;
+  background-repeat: repeat-x, no-repeat;
+}
+.pt-formcard__striprow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #fff;
+}
+.pt-formcard__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pt-formcard__brand::before {
+  content: "";
+  width: 1.4rem;
+  height: 2px;
+  background: currentColor;
+}
+.pt-formcard__stepno {
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.pt-formcard__body {
+  padding: 1.5rem 1.35rem 1.7rem;
+}
+@media (min-width: 640px) {
+  .pt-formcard__body {
+    padding: 2rem 2rem 2.1rem;
+  }
+}
+
+/* Progreso editorial: pista + migas de pan (sin círculos). */
+.pt-progress__track {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--portal-line);
+  overflow: hidden;
+}
+.pt-progress__fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--portal-primary), var(--pt-brand-deep));
+  transition: width 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.pt-progress__crumbs {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--portal-muted) 50%, #ffffff);
+}
+.pt-progress__crumbs .is-done {
+  color: var(--portal-muted);
+}
+.pt-progress__crumbs .is-now {
+  color: var(--portal-primary);
+  font-weight: 700;
+}
+.pt-progress__sep {
+  margin: 0 0.45rem;
+  color: color-mix(in srgb, var(--portal-muted) 45%, #ffffff);
 }

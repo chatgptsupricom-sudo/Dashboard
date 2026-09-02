@@ -691,7 +691,8 @@
       "attachmentsHelp": "Una foto de la falla o del código de error nos ayuda a resolver mucho más rápido.",
       "waitUploads": "Esperando que suban los archivos...",
       "sending": "Enviando...",
-      "submit": "Enviar mi reporte"
+      "submit": "Enviar mi reporte",
+      "stepOf": "Paso {n} de {total}"
     },
     "metaTitle": "Servicio Técnico | Supricom",
     "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",

@@ -270,10 +270,12 @@ export function ReporteForm({
   const telefonoValido = telefono.replace(/\D/g, "").length >= 7;
   const subiendo = adjuntos.some((a) => a.status === "uploading");
 
+  const etiquetasPaso = [t("form.step1"), t("form.step2"), t("form.step3")];
+
   return (
-    <div className="pt-page min-h-full">
+    <div className="pt-page pt-page--brand min-h-full">
       <div className="pt-shell pt-shell--narrow">
-      <div className="mb-7">
+      <div className="mb-6">
         <Volver
           paso={paso}
           setPaso={setPaso}
@@ -282,11 +284,22 @@ export function ReporteForm({
           label={t("back")}
         />
       </div>
-      <p className="pt-eyebrow">{t("eyebrow")}</p>
-      <Pasos actual={paso} etiquetas={[t("form.step1"), t("form.step2"), t("form.step3")]} />
+
+      <div className="pt-formcard">
+        <div className="pt-formcard__strip">
+          <div className="pt-formcard__striprow">
+            <span className="pt-formcard__brand">{t("eyebrow")}</span>
+            <span className="pt-formcard__stepno">
+              {t("form.stepOf", { n: paso, total: etiquetasPaso.length })}
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-formcard__body">
+          <Pasos actual={paso} etiquetas={etiquetasPaso} />
 
       {paso === 1 && (
-        <section className="mt-8">
+        <section className="mt-2">
           <h1 className="pt-h1">{t("form.invoiceTitle")}</h1>
           <p className="pt-sub">{t("form.invoiceHelp")}</p>
 
@@ -395,7 +408,7 @@ export function ReporteForm({
       )}
 
       {paso === 2 && factura && (
-        <section className="mt-8">
+        <section className="mt-2">
           <h1 className="pt-h1">{t("form.productTitle")}</h1>
 
           <dl className="pt-panel mt-6">
@@ -475,7 +488,7 @@ export function ReporteForm({
       )}
 
       {paso === 3 && factura && item && (
-        <section className="mt-8">
+        <section className="mt-2">
           <h1 className="pt-h1">{t("form.faultTitle")}</h1>
 
           <p className="pt-panel mt-6 text-sm">
@@ -685,6 +698,8 @@ export function ReporteForm({
           </button>
         </section>
       )}
+        </div>
+      </div>
       </div>
     </div>
   );
@@ -736,49 +751,36 @@ function Volver({
 }
 
 function Pasos({ actual, etiquetas }: { actual: number; etiquetas: string[] }) {
+  const pct = Math.round((actual / etiquetas.length) * 100);
   return (
-    <ol className="pt-steps" aria-label={etiquetas.join(", ")}>
-      {etiquetas.map((etiqueta, i) => {
-        const n = i + 1;
-        const ultimo = i === etiquetas.length - 1;
-        const estado = n < actual ? "done" : n === actual ? "active" : "todo";
-        return (
-          <li
-            key={etiqueta}
-            className={`pt-steps__seg${ultimo ? "" : " pt-steps__seg--grow"}`}
-            aria-current={n === actual ? "step" : undefined}
-          >
-            <span
-              className={`pt-steps__dot${
-                estado === "active"
-                  ? " pt-steps__dot--active"
-                  : estado === "done"
-                    ? " pt-steps__dot--done"
-                    : ""
-              }`}
-            >
-              {estado === "done" ? (
-                <Check className="h-3.5 w-3.5" aria-hidden />
-              ) : (
-                n
+    <div
+      className="pt-progress"
+      role="progressbar"
+      aria-valuemin={1}
+      aria-valuemax={etiquetas.length}
+      aria-valuenow={actual}
+      aria-label={etiquetas.join(" › ")}
+    >
+      <div className="pt-progress__track">
+        <div className="pt-progress__fill" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="pt-progress__crumbs">
+        {etiquetas.map((etiqueta, i) => {
+          const n = i + 1;
+          const cls = n === actual ? "is-now" : n < actual ? "is-done" : undefined;
+          return (
+            <span key={etiqueta}>
+              <span className={cls}>{etiqueta}</span>
+              {i < etiquetas.length - 1 && (
+                <span className="pt-progress__sep" aria-hidden>
+                  ›
+                </span>
               )}
             </span>
-            <span
-              className={`pt-steps__label${
-                n === actual ? " pt-steps__label--active" : ""
-              }`}
-            >
-              {etiqueta}
-            </span>
-            {!ultimo && (
-              <span
-                className={`pt-steps__bar${n < actual ? " pt-steps__bar--done" : ""}`}
-              />
-            )}
-          </li>
-        );
-      })}
-    </ol>
+          );
+        })}
+      </p>
+    </div>
   );
 }
 
