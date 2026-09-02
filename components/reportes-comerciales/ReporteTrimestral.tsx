@@ -20,9 +20,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Save,
   Trash2,
-  TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -74,18 +72,7 @@ interface Reporte {
   epp: EppCalculada[];
   anio: number;
 }
-interface SnapshotHist {
-  trimestre: string;
-  marca: string;
-  total_venta: number;
-  total_unidades: number;
-  num_facturas: number;
-  num_clientes: number;
-  generado_por: string;
-  updated_at: string;
-}
-
-type Tab = "resumen" | "epp" | "historico";
+type Tab = "resumen" | "epp";
 
 const API = "/api/reportes-comerciales/trimestral";
 
@@ -111,6 +98,84 @@ function barColor(i: number): string {
   return ["#2563eb", "#0891b2", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#ca8a04"][i % 7];
 }
 
+/* Buscador de cliente: solo muestra sugerencias cuando se escribe algo. */
+function ClienteCombo({
+  clientes,
+  value,
+  onSelect,
+}: {
+  clientes: { id: number; nombre: string }[];
+  value: string;
+  onSelect: (c: { id: number; nombre: string }) => void;
+}) {
+  const [q, setQ] = useState(value);
+  const [abierto, setAbierto] = useState(false);
+
+  useEffect(() => setQ(value), [value]);
+
+  const seleccionValida = clientes.some((c) => c.nombre === value);
+
+  const sugerencias = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (t.length < 2) return [];
+    return clientes
+      .filter((c) => c.nombre.toLowerCase().includes(t))
+      .slice(0, 40);
+  }, [q, clientes]);
+
+  return (
+    <div className="relative mt-1">
+      <input
+        type="text"
+        autoComplete="off"
+        placeholder={clientes.length ? "Escribe para buscar el cliente…" : "Cargando clientes…"}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setAbierto(true);
+        }}
+        onFocus={() => setAbierto(true)}
+        onBlur={() => setTimeout(() => setAbierto(false), 150)}
+        className="w-full border rounded-lg px-3 py-2 text-sm"
+      />
+      {abierto && sugerencias.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg text-sm">
+          {sugerencias.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onSelect(c);
+                  setQ(c.nombre);
+                  setAbierto(false);
+                }}
+                className="block w-full text-left px-3 py-2 hover:bg-blue-50"
+              >
+                {c.nombre}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {abierto && q.trim().length >= 2 && sugerencias.length === 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg px-3 py-2 text-xs text-slate-400">
+          Sin coincidencias
+        </div>
+      )}
+      {value ? (
+        seleccionValida ? (
+          <span className="text-[11px] text-emerald-600 mt-1 block">✓ Cliente vinculado</span>
+        ) : (
+          <span className="text-[11px] text-amber-600 mt-1 block">
+            Elige un cliente de la lista para que el cruce sea exacto.
+          </span>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 export function ReporteTrimestral() {
   const opcionesTrimestre = useMemo(() => trimestresDisponibles(), []);
   const [trimestre, setTrimestre] = useState(() => formatTrimestre(trimestreActual()));
@@ -120,7 +185,6 @@ export function ReporteTrimestral() {
   const [data, setData] = useState<Reporte | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [guardando, setGuardando] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -152,24 +216,6 @@ export function ReporteTrimestral() {
   }, [trimestre, marca]);
 
   useEffect(() => cargar(), [cargar]);
-
-  const guardarCierre = async () => {
-    setGuardando(true);
-    setAviso(null);
-    try {
-      const r = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trimestre, marca }),
-      });
-      if (!r.ok) throw new Error((await r.json()).error || "Error al guardar");
-      setAviso("Cierre del trimestre guardado.");
-    } catch (e: any) {
-      setAviso(e.message || "No se pudo guardar el cierre");
-    } finally {
-      setGuardando(false);
-    }
-  };
 
   const exportar = async () => {
     setExportando(true);
@@ -245,14 +291,6 @@ export function ReporteTrimestral() {
             <RefreshCw size={16} />
           </button>
           <button
-            onClick={guardarCierre}
-            disabled={guardando || !data}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border rounded-xl shadow-sm hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all font-bold text-xs uppercase tracking-widest disabled:opacity-40"
-          >
-            {guardando ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            <span>Guardar cierre</span>
-          </button>
-          <button
             onClick={exportar}
             disabled={exportando || !data}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border rounded-xl shadow-sm hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all font-bold text-xs uppercase tracking-widest disabled:opacity-40"
@@ -278,7 +316,6 @@ export function ReporteTrimestral() {
           [
             ["resumen", "Resumen"],
             ["epp", "Cuentas EPP"],
-            ["historico", "Histórico"],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -318,7 +355,6 @@ export function ReporteTrimestral() {
         <>
           {tab === "resumen" && <TabResumen data={data} />}
           {tab === "epp" && <TabEpp data={data} marca={marca} onCambio={cargar} />}
-          {tab === "historico" && <TabHistorico marca={marca} />}
         </>
       )}
     </div>
@@ -706,41 +742,20 @@ function TabEpp({
             <DialogTitle>{editando?.id ? "Editar cuenta" : "Nueva cuenta EPP"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <label className="block">
+            <div>
               <span className="text-xs font-bold text-slate-500">Cliente (Panamá)</span>
-              <input
-                type="text"
-                list="epp-clientes-panama"
-                autoComplete="off"
-                placeholder={
-                  clientes.length ? "Escribe para buscar…" : "Cargando clientes…"
-                }
+              <ClienteCombo
+                clientes={clientes}
                 value={editando?.cliente_nombre || ""}
-                onChange={(e) =>
-                  setEditando((s) => {
-                    const nombre = e.target.value;
-                    const match = clientes.find((c) => c.nombre === nombre);
-                    return {
-                      ...s,
-                      cliente_nombre: nombre,
-                      odoo_partner_id: match ? match.id : null,
-                    };
-                  })
+                onSelect={(c) =>
+                  setEditando((s) => ({
+                    ...s,
+                    cliente_nombre: c.nombre,
+                    odoo_partner_id: c.id,
+                  }))
                 }
-                className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
               />
-              <datalist id="epp-clientes-panama">
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.nombre} />
-                ))}
-              </datalist>
-              {editando?.cliente_nombre &&
-                !clientes.some((c) => c.nombre === editando.cliente_nombre) && (
-                  <span className="text-[11px] text-amber-600 mt-1 block">
-                    Selecciona un cliente de la lista para que el cruce sea exacto.
-                  </span>
-                )}
-            </label>
+            </div>
             <label className="block">
               <span className="text-xs font-bold text-slate-500">Meta anual (USD)</span>
               <input
@@ -810,94 +825,3 @@ function TabEpp({
   );
 }
 
-/* ─────────────────────────── Tab Histórico ─────────────────────────── */
-
-function TabHistorico({ marca }: { marca: string }) {
-  const [hist, setHist] = useState<SnapshotHist[]>([]);
-  const [cargando, setCargando] = useState(true);
-
-  useEffect(() => {
-    setCargando(true);
-    fetch(`${API}?historico=1&marca=${encodeURIComponent(marca)}`)
-      .then((r) => r.json())
-      .then((j) => setHist(j.historico || []))
-      .finally(() => setCargando(false));
-  }, [marca]);
-
-  if (cargando)
-    return (
-      <div className="py-16 text-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600 inline" />
-      </div>
-    );
-
-  if (hist.length === 0)
-    return (
-      <div className="rounded-2xl bg-slate-50 border border-slate-100 p-8 text-center text-sm text-slate-400">
-        Aún no hay cierres guardados para {marca}. Usa "Guardar cierre" en un trimestre.
-      </div>
-    );
-
-  const chart = hist.map((h) => ({ name: h.trimestre, venta: Number(h.total_venta) }));
-
-  return (
-    <div className="space-y-6">
-      <Card className="border-none shadow-sm rounded-2xl bg-white">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-            <TrendingUp size={14} /> Venta por trimestre
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="h-[280px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chart} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#64748b" }} />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => (v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`)}
-                tick={{ fontSize: 10, fill: "#94a3b8" }}
-              />
-              <Tooltip formatter={(v: number) => [`$${money(v)}`, "Venta"]} />
-              <Bar dataKey="venta" radius={[6, 6, 0, 0]} fill="#2563eb" barSize={40} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <th className="px-4 py-3 text-left">Trimestre</th>
-                <th className="px-4 py-3 text-right">Venta</th>
-                <th className="px-4 py-3 text-right">Unidades</th>
-                <th className="px-4 py-3 text-right">Facturas</th>
-                <th className="px-4 py-3 text-right">Clientes</th>
-                <th className="px-4 py-3 text-left">Generado por</th>
-                <th className="px-4 py-3 text-left">Actualizado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hist.map((h) => (
-                <tr key={h.trimestre} className="border-b border-slate-50">
-                  <td className="px-4 py-2.5 font-bold text-slate-800 text-xs">{h.trimestre}</td>
-                  <td className="px-4 py-2.5 text-right text-xs font-black">${money(Number(h.total_venta))}</td>
-                  <td className="px-4 py-2.5 text-right text-xs">{num(Number(h.total_unidades))}</td>
-                  <td className="px-4 py-2.5 text-right text-xs">{num(Number(h.num_facturas))}</td>
-                  <td className="px-4 py-2.5 text-right text-xs">{num(Number(h.num_clientes))}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">{h.generado_por}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">
-                    {new Date(h.updated_at).toLocaleString("es-PA")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

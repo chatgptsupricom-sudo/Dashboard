@@ -17,6 +17,7 @@
  */
 
 import { callOdooRPC } from "@/lib/odoo";
+import { query } from "@/lib/db";
 import {
   formatTrimestre,
   limitesTrimestre,
@@ -27,6 +28,27 @@ import {
 
 /** Panama. Ver CLAUDE.md: 9=Valencia, 10=Caracas, 7=Panama. */
 export const COMPANY_ID_PANAMA = 7;
+
+/**
+ * Vendedores que no cuentan en el reporte (ni en el ranking ni en los totales).
+ * Comparado en forma normalizada.
+ */
+const VENDEDORES_EXCLUIDOS = ["hercilio camacho"];
+
+/**
+ * Clientes internos / inter-compania que se excluyen del reporte: cualquier
+ * partner cuyo nombre contenga uno de estos textos.
+ */
+const CLIENTES_EXCLUIDOS_SUBSTR = ["supricom", "office solution"];
+
+function clienteExcluido(nombre: string): boolean {
+  const n = (nombre || "").toLowerCase();
+  return CLIENTES_EXCLUIDOS_SUBSTR.some((s) => n.includes(s));
+}
+
+function vendedorExcluido(nombre: string): boolean {
+  return VENDEDORES_EXCLUIDOS.includes(normalizarNombre(nombre).toLowerCase());
+}
 
 /** Valor especial del selector de marca: no filtra. */
 export const MARCA_TODAS = "TODAS";
@@ -228,9 +250,7 @@ async function cargarLineas(
   ]);
   const partners = await readEnLotes("res.partner", partnerIds, ["state_id"]);
 
-  return {
-    sinProductosDeMarca: false,
-    lineas: crudas.map((l: any): LineaEnriquecida => {
+  const enriquecidas = crudas.map((l: any): LineaEnriquecida => {
       const mv = moves.get(l.move_id?.[0]) || {};
       const esNota = mv.move_type === "out_refund";
       const signo = esNota ? -1 : 1;
@@ -248,8 +268,13 @@ async function cargarLineas(
         unidades: signo * (Number(l.quantity) || 0),
         venta: signo * (Number(l.price_subtotal) || 0),
       };
-    }),
-  };
+    });
+
+  const lineas = enriquecidas.filter(
+    (l) => !clienteExcluido(l.clienteNombre) && !vendedorExcluido(l.vendedor),
+  );
+
+  return { sinProductosDeMarca: false, lineas };
 }
 
 function ranking(
@@ -430,8 +455,9 @@ export async function listarClientesPanama(): Promise<ClientePanama[]> {
   if (cacheClientes && Date.now() - cacheClientes.ts < TTL_CLIENTES_MS) {
     return cacheClientes.data;
   }
-  const grupos =
-    (await callOdooRPC<any[]>("account.move", "read_group", [
+
+  const [grupos, nombresVendedores] = await Promise.all([
+    callOdooRPC<any[]>("account.move", "read_group", [
       [
         ["move_type", "in", ["out_invoice", "out_refund"]],
         ["state", "=", "posted"],
@@ -440,18 +466,40 @@ export async function listarClientesPanama(): Promise<ClientePanama[]> {
       ],
       ["partner_id"],
       ["partner_id"],
-    ])) || [];
+    ]),
+    nombresDeVendedores(),
+  ]);
 
-  const data: ClientePanama[] = grupos
+  const data: ClientePanama[] = (grupos || [])
     .map((g: any) => ({
       id: g.partner_id?.[0] as number,
       nombre: (g.partner_id?.[1] as string) || "",
     }))
-    .filter((c) => c.id && c.nombre)
+    .filter(
+      (c) =>
+        c.id &&
+        c.nombre &&
+        !clienteExcluido(c.nombre) &&
+        !nombresVendedores.has(normalizarNombre(c.nombre)),
+    )
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   cacheClientes = { data, ts: Date.now() };
   return data;
+}
+
+/** Nombres (normalizados) de los vendedores, para no ofrecerlos como clientes. */
+async function nombresDeVendedores(): Promise<Set<string>> {
+  try {
+    const { rows } = await query(`SELECT name FROM sellers`);
+    return new Set(
+      (rows as any[])
+        .map((r) => normalizarNombre(r.name || ""))
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 function ordenarPorVenta(filas: FilaRanking[]): FilaRanking[] {
