@@ -2,7 +2,6 @@
 
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { rolePermissions, UserRole } from "@/lib/types";
-import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DndContext,
@@ -139,6 +138,17 @@ export function Sidebar({
 
   const [isEditingSidebar, setIsEditingSidebar] = useState(false);
   const [sidebarOrder, setSidebarOrder] = useState<string[]>([]);
+  // Acceso a "Reportes Comerciales": se pregunta al servidor (lista de correos
+  // en una env NO pública) para no depender del bundle del cliente.
+  const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/reportes-comerciales/acceso")
+      .then((r) => r.json())
+      .then((j) => setPuedeReportesComerciales(Boolean(j?.puede)))
+      .catch(() => {});
+  }, [user]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -197,15 +207,9 @@ export function Sidebar({
   const allowedSections = [...(permissions.sections || [])];
 
   // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
-  // vendedora concreta (lista blanca por correo en env). Ver
-  // lib/reportes-comerciales/acceso.ts.
-  if (
-    puedeVerReportesComerciales({
-      role: userRole as string,
-      email: (user as any).email,
-    }) &&
-    !allowedSections.includes("reportes_comerciales")
-  ) {
+  // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
+  // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
+  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
     allowedSections.push("reportes_comerciales");
   }
 
