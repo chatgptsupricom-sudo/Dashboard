@@ -141,7 +141,15 @@ export async function authenticateWithOdoo(
       headers: { "Content-Type": "application/json" },
     });
     return response.data.result || null;
-  } catch (error) {
+  } catch (error: any) {
+    console.error("❌ Error autenticando con Odoo:", error.message);
+    // Mismo problema que en callOdooRPC: sin este chequeo, un Odoo caído o
+    // apuntado a la instancia equivocada se confunde con "contraseña
+    // incorrecta" (login/route.ts devolvía "Credenciales inválidas" en
+    // ambos casos por igual).
+    if (!error.response) {
+      throw new OdooUnreachableError(error);
+    }
     return null;
   }
 }
