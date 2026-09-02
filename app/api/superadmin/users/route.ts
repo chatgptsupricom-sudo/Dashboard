@@ -27,10 +27,11 @@ export async function GET(request: NextRequest) {
     // 2. OBTENER VINCULACIONES DE USUARIOS CONFIG DESDE MYSQL (LEFT JOIN)
     let rolesMap = new Map();
     let userRoleNamesMap = new Map(); // Mapa para filtrar por nombre exacto en el cuadro
+    let userConfigMap = new Map(); // email -> {role_id, cids, display_name} para reasignar/editar
 
     try {
       const mysqlUsersResult = await query(`
-        SELECT uc.email, r.name as role_name, r.display_name
+        SELECT uc.email, uc.role_id, uc.cids, r.name as role_name, r.display_name
         FROM users_config uc
         JOIN roles r ON uc.role_id = r.id
       `);
@@ -46,6 +47,12 @@ export async function GET(request: NextRequest) {
       userRoleNamesMap = new Map(
         mysqlUsers.map((r: any) => [r.email.toLowerCase().trim(), r.role_name]),
       );
+      userConfigMap = new Map(
+        mysqlUsers.map((r: any) => [
+          r.email.toLowerCase().trim(),
+          { roleId: r.role_id, cids: r.cids, displayName: r.display_name || r.role_name },
+        ]),
+      );
     } catch (mysqlError) {
       console.error("MySQL Mappings Error:", mysqlError);
     }
@@ -59,24 +66,27 @@ export async function GET(request: NextRequest) {
       ["name", "login", "active", "login_date", "share", "company_ids"], // <--- AGREGADO
     ]);
 
-    // Obtener array de puros correos asignados localmente en minúsculas para limpiar el modal
-    const localUsersResult = await query("SELECT email FROM users_config");
-    const localUsers = localUsersResult?.rows || [];
-    const existingEmails: string[] = localUsers.map((u: any) =>
-      u.email ? u.email.toLowerCase().trim() : "",
-    );
-
-    // 4. FILTRAR USUARIOS HUÉRFANOS PARA EL MODAL (Solo los que NO tienen rol en el panel)
+    // 4. LISTA PARA EL MODAL: todos los usuarios de Odoo con login, ya tengan
+    // o no rol en el panel — antes se excluían los que ya tenían uno, así
+    // que no había forma de cambiarle el rol a alguien que ya lo tenía (el
+    // modal simplemente no lo dejaba elegir). Se les adjunta su rol/cids
+    // actual para poder editarlos, no solo asignar de cero.
     const availableUsers = odooUsers
-      .filter(
-        (ou) =>
-          ou.login && !existingEmails.includes(ou.login.toLowerCase().trim()),
-      )
-      .map((ou) => ({
-        id: ou.id,
-        name: ou.name,
-        email: ou.login.toLowerCase().trim(), // <--- ESTO ES LO QUE NECESITAMOS
-      }));
+      .filter((ou) => ou.login)
+      .map((ou) => {
+        const email = ou.login.toLowerCase().trim();
+        const actual = userConfigMap.get(email) as
+          | { roleId: number; cids: number | null; displayName: string }
+          | undefined;
+        return {
+          id: ou.id,
+          name: ou.name,
+          email,
+          currentRoleId: actual?.roleId != null ? String(actual.roleId) : null,
+          currentRoleName: actual?.displayName ?? null,
+          currentCids: actual?.cids != null ? String(actual.cids) : "",
+        };
+      });
 
     // 5. CRUZAR DATOS PARA LA TABLA PRINCIPAL
     const formattedUsers = odooUsers.map((u, index) => {
@@ -128,147 +138,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// export async function POST(request: Request) {
-//   try {
-//     const { email, role } = await request.json(); // 'role' contiene el ID numérico que viene de role.key
-
-//     if (!email || !role) {
-//       return NextResponse.json(
-//         { error: "Parámetros incompletos" },
-//         { status: 400 },
-//       );
-//     }
-
-//     const cleanEmail = email.toLowerCase().trim();
-//     const roleId = parseInt(role, 10);
-
-//     if (isNaN(roleId)) {
-//       return NextResponse.json(
-//         { error: "El ID del rol debe ser numérico" },
-//         { status: 400 }, // ❌ AQUÍ ES DONDE SE CONFIGURA EL BAD REQUEST
-//       );
-//     }
-
-//     // Comprobar existencia en users_config por email normalizado
-//     const checkUser = await query(
-//       "SELECT id FROM users_config WHERE LOWER(email) = ?",
-//       [cleanEmail],
-//     );
-//     const userExists = checkUser?.rows && checkUser.rows.length > 0;
-
-//     if (userExists) {
-//       await query(
-//         "UPDATE users_config SET role_id = ? WHERE LOWER(email) = ?",
-//         [roleId, cleanEmail],
-//       );
-//     } else {
-//       await query("INSERT INTO users_config (email, role_id) VALUES (?, ?)", [
-//         cleanEmail,
-//         roleId,
-//       ]);
-//     }
-
-//     return NextResponse.json({ success: true });
-//   } catch (error: any) {
-//     console.error("❌ Error en POST /api/superadmin/users:", error);
-//     return NextResponse.json({ error: error.message }, { status: 500 });
-//   }
-// }
-// export async function POST(request: Request) {
-//   try {
-//     const body = await request.json();
-//     console.log("Cuerpo recibido:", body);
-//     const { email, role, cids } = body;
-
-//     // Validación básica de entrada
-//     if (!email || !role) {
-//       return NextResponse.json(
-//         { error: "Parámetros incompletos" },
-//         { status: 400 },
-//       );
-//     }
-
-//     const cleanEmail = email.toLowerCase().trim();
-//     const roleId = parseInt(role, 10);
-
-//     // 1. OBTENER NOMBRE DESDE ODOO
-//     const odooUsers = await callOdooRPC<any[]>("res.users", "search_read", [
-//       [["login", "=", cleanEmail]],
-//       ["name"],
-//     ]);
-//     const userName =
-//       odooUsers.length > 0 && odooUsers[0].name ? odooUsers[0].name : "Usuario";
-
-//     // 2. GESTIONAR users_config (Búsqueda y Creación/Actualización)
-//     let localUserId: number;
-//     const checkUser = await query(
-//       "SELECT id FROM users_config WHERE LOWER(email) = ?",
-//       [cleanEmail],
-//     );
-
-//     if (checkUser?.rows && checkUser.rows.length > 0) {
-//       localUserId = checkUser.rows[0].id;
-//       await query(
-//         "UPDATE users_config SET role_id = ?, name = ? WHERE id = ?",
-//         [roleId, userName, localUserId],
-//       );
-//     } else {
-//       const insert = await query(
-//         "INSERT INTO users_config (email, name, role_id) VALUES (?, ?, ?)",
-//         [cleanEmail, userName, roleId],
-//       );
-//       // Captura segura del ID insertado
-//       localUserId = (insert as any).insertId || (insert as any).rows?.insertId;
-//     }
-
-//     // Refuerzo: Si localUserId sigue siendo undefined, recuperarlo de la base
-//     if (!localUserId) {
-//       const recovery = await query(
-//         "SELECT id FROM users_config WHERE LOWER(email) = ?",
-//         [cleanEmail],
-//       );
-//       localUserId = recovery?.rows[0]?.id;
-//     }
-
-//     // 3. GESTIONAR TABLA sellers
-//     // 3. GESTIONAR TABLA sellers
-//     if (roleId === 7 && localUserId) {
-//       // Si cids es una cadena vacía o undefined, enviamos null (para borrarlo si estaba lleno)
-//       // Si tiene contenido, enviamos el contenido tal cual.
-//       const safeCids =
-//         cids === undefined || cids === "" || cids === null ? null : cids;
-
-//       const safeUserId = localUserId;
-//       const safeName = userName || "Sin Nombre";
-//       const safeRoleId = roleId;
-
-//       const checkSeller = await query(
-//         "SELECT id FROM sellers WHERE user_id = ?",
-//         [safeUserId],
-//       );
-
-//       if (checkSeller?.rows && checkSeller.rows.length > 0) {
-//         // ACTUALIZACIÓN: Pasamos safeCids directamente.
-//         // Si es null, guardará NULL en la base de datos.
-//         await query(
-//           "UPDATE sellers SET name = ?, role = ?, cids = ?, activo = 1 WHERE user_id = ?",
-//           [safeName, safeRoleId, safeCids, safeUserId],
-//         );
-//       } else {
-//         // INSERCIÓN
-//         await query(
-//           "INSERT INTO sellers (user_id, name, role, cids, activo, created_at) VALUES (?, ?, ?, ?, 1, NOW())",
-//           [safeUserId, safeName, safeRoleId, safeCids],
-//         );
-//       }
-//     }
-
-//     return NextResponse.json({ success: true });
-//   } catch (error: any) {
-//     console.error("❌ Error final en POST:", error);
-//     return NextResponse.json({ error: error.message }, { status: 500 });
-//   }
-// }
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -295,6 +164,26 @@ export async function POST(request: NextRequest) {
     ]);
     const userName = odooUsers.length > 0 ? odooUsers[0].name : "Usuario";
 
+    // Mapeo de ciudades a IDs de CIDS (compania: 9 Valencia, 10 Caracas, 7
+    // Panama — ver sql/insert_role_rma.sql). Se calcula una sola vez y se
+    // usa tanto para users_config como para sellers: antes solo se guardaba
+    // en sellers y solo si roleId===7, así que login (que lee
+    // users_config.cids, ver app/api/auth/login/route.ts) nunca lo veía
+    // para NINGÚN rol, ni siquiera ese.
+    const cityMapping: Record<string, number> = {
+      Panama: 7,
+      Valencia: 9,
+      Caracas: 10,
+    };
+    let finalCids = cids;
+    if (cityMapping[cids]) {
+      finalCids = cityMapping[cids];
+    }
+    const safeCids =
+      finalCids === "" || finalCids === undefined || finalCids === null
+        ? null
+        : parseInt(finalCids, 10);
+
     // 2. GESTIONAR users_config (Forzando el ID de Odoo)
     const checkUser = await query("SELECT id FROM users_config WHERE id = ?", [
       userId,
@@ -302,38 +191,20 @@ export async function POST(request: NextRequest) {
 
     if (checkUser?.rows && checkUser.rows.length > 0) {
       await query(
-        "UPDATE users_config SET role_id = ?, name = ?, email = ? WHERE id = ?",
-        [roleId, userName, cleanEmail, userId],
+        "UPDATE users_config SET role_id = ?, name = ?, email = ?, cids = ? WHERE id = ?",
+        [roleId, userName, cleanEmail, safeCids, userId],
       );
     } else {
       // INSERTAMOS FORZANDO EL ID DE ODOO
       await query(
-        "INSERT INTO users_config (id, email, name, role_id) VALUES (?, ?, ?, ?)",
-        [userId, cleanEmail, userName, roleId],
+        "INSERT INTO users_config (id, email, name, role_id, cids) VALUES (?, ?, ?, ?, ?)",
+        [userId, cleanEmail, userName, roleId, safeCids],
       );
     }
 
-    // 3. GESTIONAR TABLA sellers (VINCULACIÓN)
+    // 3. GESTIONAR TABLA sellers (VINCULACIÓN) — además de users_config,
+    // el rol de vendedor lleva una fila propia en sellers (cuota, activo).
     if (roleId === 7) {
-      // Mapeo de ciudades a IDs de CIDS
-      const cityMapping: Record<string, number> = {
-        Panama: 7,
-        Valencia: 9,
-        Caracas: 10,
-      };
-
-      // Obtenemos el ID numérico si recibimos el nombre,
-      // o mantenemos el valor si ya viene como número/string numérico
-      let finalCids = cids;
-      if (cityMapping[cids]) {
-        finalCids = cityMapping[cids];
-      }
-
-      const safeCids =
-        finalCids === "" || finalCids === undefined || finalCids === null
-          ? null
-          : parseInt(finalCids, 10);
-
       const checkSeller = await query(
         "SELECT id FROM sellers WHERE user_id = ?",
         [userId],

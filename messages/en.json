@@ -127,6 +127,10 @@
       "select_city": "Branch / City",
       "cancel": "Cancel",
       "confirm": "Confirm Access",
+      "error_no_user": "Select a user.",
+      "error_no_role": "Select a role.",
+      "error_generic": "Couldn't save the change.",
+      "error_network": "Connection error, try again.",
       "loading": "Filtering clean accounts..."
     },
     "roles": {
