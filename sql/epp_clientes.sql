@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS epp_clientes (
   company_id INT NOT NULL,               -- 7 = Panama
   anio INT NOT NULL,                     -- las cuentas se revisan cada anio
   marca VARCHAR(60) NOT NULL DEFAULT 'EZVIZ',
-  cliente_nombre VARCHAR(255) NOT NULL,
-  odoo_partner_id INT NULL,              -- opcional: cruce exacto con res.partner
+  cliente_nombre VARCHAR(255) NOT NULL,  -- nombre del partner elegido en el desplegable
+  odoo_partner_id INT NULL,              -- res.partner.id — la vista lo exige al crear/editar; NULL solo para filas del seed
   meta_anual DECIMAL(15,2) NOT NULL DEFAULT 0,
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

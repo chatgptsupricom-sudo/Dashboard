@@ -528,6 +528,14 @@ function TabEpp({
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState<Partial<EppRow> | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [clientes, setClientes] = useState<{ id: number; nombre: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API}/clientes`)
+      .then((r) => r.json())
+      .then((j) => setClientes(j.clientes || []))
+      .catch(() => {});
+  }, []);
 
   const cargarEpp = useCallback(() => {
     setCargando(true);
@@ -699,15 +707,39 @@ function TabEpp({
           </DialogHeader>
           <div className="space-y-3">
             <label className="block">
-              <span className="text-xs font-bold text-slate-500">Nombre del cliente</span>
+              <span className="text-xs font-bold text-slate-500">Cliente (Panamá)</span>
               <input
                 type="text"
+                list="epp-clientes-panama"
+                autoComplete="off"
+                placeholder={
+                  clientes.length ? "Escribe para buscar…" : "Cargando clientes…"
+                }
                 value={editando?.cliente_nombre || ""}
                 onChange={(e) =>
-                  setEditando((s) => ({ ...s, cliente_nombre: e.target.value }))
+                  setEditando((s) => {
+                    const nombre = e.target.value;
+                    const match = clientes.find((c) => c.nombre === nombre);
+                    return {
+                      ...s,
+                      cliente_nombre: nombre,
+                      odoo_partner_id: match ? match.id : null,
+                    };
+                  })
                 }
                 className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
               />
+              <datalist id="epp-clientes-panama">
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.nombre} />
+                ))}
+              </datalist>
+              {editando?.cliente_nombre &&
+                !clientes.some((c) => c.nombre === editando.cliente_nombre) && (
+                  <span className="text-[11px] text-amber-600 mt-1 block">
+                    Selecciona un cliente de la lista para que el cruce sea exacto.
+                  </span>
+                )}
             </label>
             <label className="block">
               <span className="text-xs font-bold text-slate-500">Meta anual (USD)</span>
@@ -716,22 +748,6 @@ function TabEpp({
                 value={editando?.meta_anual ?? 0}
                 onChange={(e) =>
                   setEditando((s) => ({ ...s, meta_anual: Number(e.target.value) }))
-                }
-                className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-bold text-slate-500">
-                ID cliente en Odoo (opcional, cruce exacto)
-              </span>
-              <input
-                type="number"
-                value={editando?.odoo_partner_id ?? ""}
-                onChange={(e) =>
-                  setEditando((s) => ({
-                    ...s,
-                    odoo_partner_id: e.target.value ? Number(e.target.value) : null,
-                  }))
                 }
                 className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
               />
@@ -757,25 +773,32 @@ function TabEpp({
               Cancelar
             </button>
             <button
-              onClick={() =>
+              onClick={() => {
+                const match = clientes.find(
+                  (c) => c.nombre === editando?.cliente_nombre,
+                );
+                if (!match) {
+                  setMsg("Selecciona un cliente de la lista de Panamá.");
+                  return;
+                }
                 accion(
                   editando?.id != null
                     ? {
                         accion: "editar",
                         id: editando.id,
-                        cliente_nombre: editando.cliente_nombre,
+                        cliente_nombre: match.nombre,
                         meta_anual: editando.meta_anual,
-                        odoo_partner_id: editando.odoo_partner_id,
+                        odoo_partner_id: match.id,
                         activo: editando.activo ?? 1,
                       }
                     : {
                         accion: "crear",
-                        cliente_nombre: editando?.cliente_nombre,
+                        cliente_nombre: match.nombre,
                         meta_anual: editando?.meta_anual,
-                        odoo_partner_id: editando?.odoo_partner_id,
+                        odoo_partner_id: match.id,
                       },
                 )
-              }
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold"
             >
               Guardar

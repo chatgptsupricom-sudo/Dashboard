@@ -410,6 +410,50 @@ export async function construirReporteCompleto(
   return { reporte, detalle };
 }
 
+/* ─────────────────── Lista de clientes de Panamá ─────────────────── */
+
+export interface ClientePanama {
+  id: number;
+  nombre: string;
+}
+
+let cacheClientes: { data: ClientePanama[]; ts: number } | null = null;
+const TTL_CLIENTES_MS = 30 * 60 * 1000;
+
+/**
+ * Todos los partners que alguna vez tuvieron factura de cliente en Panamá
+ * (`company_id = 7`). Alimenta el desplegable de "Cuentas EPP" para que la
+ * selección sea por `partner_id` exacto y no dependa de escribir bien el nombre.
+ * Cacheado en memoria (el server es un proceso largo).
+ */
+export async function listarClientesPanama(): Promise<ClientePanama[]> {
+  if (cacheClientes && Date.now() - cacheClientes.ts < TTL_CLIENTES_MS) {
+    return cacheClientes.data;
+  }
+  const grupos =
+    (await callOdooRPC<any[]>("account.move", "read_group", [
+      [
+        ["move_type", "in", ["out_invoice", "out_refund"]],
+        ["state", "=", "posted"],
+        ["company_id", "=", COMPANY_ID_PANAMA],
+        ["partner_id", "!=", false],
+      ],
+      ["partner_id"],
+      ["partner_id"],
+    ])) || [];
+
+  const data: ClientePanama[] = grupos
+    .map((g: any) => ({
+      id: g.partner_id?.[0] as number,
+      nombre: (g.partner_id?.[1] as string) || "",
+    }))
+    .filter((c) => c.id && c.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  cacheClientes = { data, ts: Date.now() };
+  return data;
+}
+
 function ordenarPorVenta(filas: FilaRanking[]): FilaRanking[] {
   return [...filas].sort((a, b) => b.venta - a.venta);
 }
