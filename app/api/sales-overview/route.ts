@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,10 @@ const BLACKLIST = [
   "COBRO", "POLO", "GORRAS", "INSTALACION", "ENVOPLAST", "VARIOS", "PROMO",
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)

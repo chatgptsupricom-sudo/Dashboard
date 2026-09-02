@@ -118,8 +118,13 @@ export async function POST(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole === "gerente de operaciones") {
-      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
+    // Lista de permitidos (igual que el GET de app/api/superadmin/stoplight/
+    // route.ts, sin "gerente de operaciones" — ese rol es de solo lectura
+    // aca) en vez de bloquear un solo rol: antes cualquier OTRO rol
+    // autenticado (seguridad, rma...) tambien podia escribir.
+    const rolesConEscritura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar"];
+    if (!rolesConEscritura.includes(userRole)) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
     const formData = await request.formData();
@@ -177,8 +182,9 @@ export async function DELETE(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole === "gerente de operaciones") {
-      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
+    const rolesConEscritura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar"];
+    if (!rolesConEscritura.includes(userRole)) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
     const url = new URL(request.url);

@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { requireSession } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const CREATE_TABLE = `
@@ -19,14 +20,15 @@ async function ensureTable() {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
-      return NextResponse.json({ error: "userId requerido" }, { status: 400 });
-    }
+    // El id sale de la sesion, no del parametro — antes cualquiera podia
+    // leer o pisar el orden del sidebar de otro usuario con solo cambiar
+    // ?userId=.
+    const userId = auth.payload!.sub as string;
 
     const result = await query(
       "SELECT section_id, position FROM user_sidebar_order WHERE user_id = ? ORDER BY position ASC",
@@ -43,13 +45,20 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const body = await request.json();
-    const { userId, order } = body as { userId: number; order: string[] };
+    const { order } = body as { order: string[] };
+    // El id sale de la sesion, no del body — antes cualquiera podia
+    // sobreescribir el orden del sidebar de otro usuario con solo cambiar
+    // el userId que mandaba.
+    const userId = auth.payload!.sub as string;
 
-    if (!userId || !Array.isArray(order)) {
-      return NextResponse.json({ error: "userId y order[] requeridos" }, { status: 400 });
+    if (!Array.isArray(order)) {
+      return NextResponse.json({ error: "order[] requerido" }, { status: 400 });
     }
 
     await query("DELETE FROM user_sidebar_order WHERE user_id = ?", [userId]);

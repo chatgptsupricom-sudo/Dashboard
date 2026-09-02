@@ -1,7 +1,11 @@
 // app/api/reports/sellers/analyze/route.ts
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const auth = await requireRoles(req, ["superadmin", "gerente de operaciones", "gerencia de ventas"]);
+  if (auth.error) return auth.error;
+
   try {
     const { metrics, seller } = await req.json();
     const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
