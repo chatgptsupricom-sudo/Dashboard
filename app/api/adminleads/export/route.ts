@@ -2,6 +2,7 @@ import { canalNormalizadoSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,8 +14,7 @@ export async function GET(request: Request) {
     const cookieHeader = request.headers.get("cookie");
     const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
     if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     const userCids = payload.cids as number;
 
     const { searchParams } = new URL(request.url);

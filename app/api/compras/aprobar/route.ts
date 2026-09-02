@@ -1,8 +1,9 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 // import { Resend } from 'resend'; // Ejemplo usando Resend
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
+const JWT_SECRET = jwtSecretBytes();
 // const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {

@@ -5,6 +5,7 @@ import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 // 🛠️ PARCHE PARA NEXT.JS: Evita el crash de pdf-parse en el servidor
 // Simulamos los elementos del navegador que pdf-parse exige, ya que solo queremos texto.
@@ -121,10 +122,7 @@ export async function POST(request: Request) {
 
     if (token) {
       try {
-        const { payload } = await jwtVerify(
-          token,
-          new TextEncoder().encode(process.env.JWT_SECRET),
-        );
+        const { payload } = await jwtVerify(token, jwtSecretBytes());
 
         // --- ESTO TE DIRÁ QUÉ CAMPO USAR ---
         console.log("🔍 [DEBUG] Payload COMPLETO:", JSON.stringify(payload));

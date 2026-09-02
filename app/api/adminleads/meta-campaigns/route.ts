@@ -2,6 +2,7 @@ import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = jwtSecretBytes();
     const { payload } = await jwtVerify(token, secret);
     const userCids = payload.cids as number;
 
@@ -122,7 +123,7 @@ export async function PATCH(request: Request) {
     if (!token)
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = jwtSecretBytes();
     await jwtVerify(token, secret);
 
     const body = await request.json();

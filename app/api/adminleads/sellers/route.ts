@@ -1,12 +1,13 @@
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 async function getUserCids(request: Request): Promise<number | null> {
   const cookieHeader = request.headers.get("cookie");
   const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
   if (!token) return null;
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const secret = jwtSecretBytes();
   const { payload } = await jwtVerify(token, secret);
   return payload.cids as number;
 }

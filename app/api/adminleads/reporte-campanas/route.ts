@@ -12,6 +12,7 @@
 import { getCampaignMetrics, type CampaignAggregate } from "@/lib/campanas-meta";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -25,8 +26,7 @@ async function getUserCids(request: Request): Promise<number | null> {
     .find((c) => c.trim().startsWith("token="))
     ?.split("=")[1];
   if (!token) return null;
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const { payload } = await jwtVerify(token, secret);
+  const { payload } = await jwtVerify(token, jwtSecretBytes());
   return (payload.cids as number) ?? null;
 }
 
