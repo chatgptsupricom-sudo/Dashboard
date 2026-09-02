@@ -38,11 +38,27 @@ export async function ensureTablasReportesComerciales(): Promise<void> {
     num_facturas INT NOT NULL DEFAULT 0,
     num_clientes INT NOT NULL DEFAULT 0,
     payload_json LONGTEXT NOT NULL,
+    archivo_nombre VARCHAR(255) NULL,
+    archivo_b64 LONGTEXT NULL,
     generado_por VARCHAR(120),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_snap (company_id, marca, trimestre)
   )`);
+
+  // Para instalaciones que ya tenían la tabla sin las columnas del archivo.
+  // MySQL no soporta ADD COLUMN IF NOT EXISTS, así que se ignora el error de
+  // "columna duplicada" (1060).
+  for (const col of [
+    "ADD COLUMN archivo_nombre VARCHAR(255) NULL",
+    "ADD COLUMN archivo_b64 LONGTEXT NULL",
+  ]) {
+    try {
+      await query(`ALTER TABLE reporte_trimestral_snapshots ${col}`);
+    } catch (e: any) {
+      if (e?.errno !== 1060) throw e;
+    }
+  }
 
   listo = true;
 }

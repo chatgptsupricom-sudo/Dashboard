@@ -8,6 +8,7 @@ import {
   COMPANY_ID_PANAMA,
   construirReporte,
 } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { generarYGuardarTrimestre } from "@/lib/reportes-comerciales/snapshot";
 import { ensureTablasReportesComerciales } from "@/lib/reportes-comerciales/tablas";
 
 export const runtime = "nodejs";
@@ -84,49 +85,14 @@ export async function POST(request: NextRequest) {
   if (s.error) return s.error;
 
   try {
-    await ensureTablasReportesComerciales();
     const body = await request.json();
     const trimestre: string = body.trimestre;
     const marca: string = (body.marca || "EZVIZ").toUpperCase();
     if (!trimestre) {
       return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
     }
-
-    const reporte = await construirReporte({ trimestre, marca });
-    const anio = anioDeTrimestre(reporte.periodo.trimestre);
-    const { rows: filasEpp } = await query(
-      `SELECT id, cliente_nombre, odoo_partner_id, meta_anual
-         FROM epp_clientes
-        WHERE company_id = ? AND anio = ? AND marca = ? AND activo = 1`,
-      [COMPANY_ID_PANAMA, anio, reporte.periodo.marca],
-    );
-    const epp = calcularEpp(reporte.rankingClientes, filasEpp as any);
     const generadoPor = (s.payload!.email as string) || (s.payload!.name as string) || "";
-
-    await query(
-      `INSERT INTO reporte_trimestral_snapshots
-         (company_id, marca, trimestre, total_venta, total_unidades, num_facturas, num_clientes, payload_json, generado_por)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         total_venta = VALUES(total_venta),
-         total_unidades = VALUES(total_unidades),
-         num_facturas = VALUES(num_facturas),
-         num_clientes = VALUES(num_clientes),
-         payload_json = VALUES(payload_json),
-         generado_por = VALUES(generado_por)`,
-      [
-        COMPANY_ID_PANAMA,
-        reporte.periodo.marca,
-        reporte.periodo.trimestre,
-        reporte.totales.venta,
-        Math.round(reporte.totales.unidades),
-        reporte.totales.facturas,
-        reporte.totales.clientes,
-        JSON.stringify({ ...reporte, epp }),
-        generadoPor,
-      ],
-    );
-
+    await generarYGuardarTrimestre({ trimestre, marca, generadoPor });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Error guardando cierre trimestral:", error);

@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS reporte_trimestral_snapshots (
   num_facturas INT NOT NULL DEFAULT 0,
   num_clientes INT NOT NULL DEFAULT 0,
   payload_json LONGTEXT NOT NULL,        -- rankings completos + EPP calculado
+  archivo_nombre VARCHAR(255) NULL,      -- nombre del .xlsx generado
+  archivo_b64 LONGTEXT NULL,             -- el .xlsx en base64 (lo toma n8n)
   generado_por VARCHAR(120),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
