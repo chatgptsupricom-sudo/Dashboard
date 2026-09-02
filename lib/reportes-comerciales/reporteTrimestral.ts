@@ -117,7 +117,6 @@ export interface ReporteTrimestral {
 export interface FilaDetalle {
   fecha: string; // YYYY/MM/DD
   numero: string;
-  cuenta: string; // ref del partner en Odoo (código de cliente)
   cliente: string;
   linea: string; // marca
   articulo: string; // nombre del producto sin el prefijo [código]
@@ -130,7 +129,6 @@ export interface FilaDetalle {
 interface LineaEnriquecida {
   fecha: string;
   numero: string;
-  cuenta: string;
   clienteNombre: string;
   clienteId: number | null;
   productoNombre: string;
@@ -271,7 +269,7 @@ async function cargarLineas(
     "name",
     "invoice_date",
   ]);
-  const partners = await readEnLotes("res.partner", partnerIds, ["state_id", "ref"]);
+  const partners = await readEnLotes("res.partner", partnerIds, ["state_id"]);
 
   const enriquecidas = crudas.map((l: any): LineaEnriquecida => {
       const mv = moves.get(l.move_id?.[0]) || {};
@@ -282,7 +280,6 @@ async function cargarLineas(
       return {
         fecha: mv.invoice_date || "",
         numero: mv.name || "",
-        cuenta: pt.ref ? String(pt.ref) : "",
         clienteNombre: l.partner_id?.[1] || "(sin cliente)",
         clienteId: l.partner_id?.[0] || null,
         productoNombre: limpiarProducto(l.product_id?.[1] || "") || "(sin producto)",
@@ -456,7 +453,6 @@ export async function construirReporteCompleto(
     .map((l) => ({
       fecha: (l.fecha || "").replace(/-/g, "/"),
       numero: l.numero,
-      cuenta: l.cuenta,
       cliente: l.clienteNombre,
       linea: lineaDe(l),
       articulo: l.productoNombre,

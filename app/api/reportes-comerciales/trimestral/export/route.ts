@@ -90,34 +90,79 @@ export async function GET(request: NextRequest) {
     wsPiv.getColumn(8).numFmt = "#,##0.00";
     wsPiv.views = [{ state: "frozen", ySplit: 1 }];
 
-    // ── Hoja 2: EPP ──
+    // ── Hoja 2: EPP (formato del reporte de referencia) ──
     const wsEpp = wb.addWorksheet("EPP");
+    const VERDE = "FFC6EFCE";
+    const ROJO = "FFFFC7CE";
+    const AMBAR_HDR = "FFFFD966";
     wsEpp.columns = [
-      { key: "cliente", header: "Cliente", width: 46 },
-      { key: "meta_anual", header: "Meta Anual", width: 16 },
-      { key: "meta_trim", header: "Meta Trimestre", width: 16 },
-      { key: "real", header: "Real del Trimestre", width: 18 },
-      { key: "cumplimiento", header: "Cumplimiento", width: 14 },
+      { header: "N°", width: 6 },
+      { header: "Cliente", width: 48 },
+      { header: `Meta Anual ${reporte.periodo.trimestre.slice(0, 4)}`, width: 18 },
+      { header: `Trimestre ${q}`, width: 16 },
+      { header: `Cumplimiento de Q${q}`, width: 18 },
     ];
-    epp.forEach((c) =>
-      wsEpp.addRow({
-        cliente: c.clienteNombre,
-        meta_anual: c.metaAnual,
-        meta_trim: c.metaTrimestre,
-        real: c.realTrimestre,
-        cumplimiento: c.cumplimiento,
-      }),
+    epp.forEach((c, i) =>
+      wsEpp.addRow([i + 1, c.clienteNombre, c.metaAnual, c.metaTrimestre, c.realTrimestre]),
     );
-    ["meta_anual", "meta_trim", "real"].forEach((k) => (wsEpp.getColumn(k).numFmt = "#,##0.00"));
-    wsEpp.getColumn("cumplimiento").numFmt = "0.0%";
-    encabezar(wsEpp);
+    const nEpp = epp.length;
+    const totMetaAnual = epp.reduce((s, c) => s + c.metaAnual, 0);
+    const totMetaTrim = epp.reduce((s, c) => s + c.metaTrimestre, 0);
+    const totReal = epp.reduce((s, c) => s + c.realTrimestre, 0);
+    // fila resumen: % de cumplimiento del trimestre y del año
+    wsEpp.addRow([
+      "",
+      "Cumplimiento global",
+      totMetaTrim ? totReal / totMetaTrim : 0,
+      totMetaAnual ? totReal / totMetaAnual : 0,
+      totReal,
+    ]);
+    const filaResumen = nEpp + 2;
+
+    // header ámbar
+    wsEpp.getRow(1).eachCell((cell: any) => {
+      cell.font = { bold: true, color: { argb: "FF1F2937" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AMBAR_HDR } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    });
+    // formatos: $ en C y D, texto rojo en Meta Anual; $ en E; % en el resumen
+    for (let r = 2; r <= nEpp + 1; r++) {
+      wsEpp.getCell(r, 3).numFmt = '"$" #,##0.00';
+      wsEpp.getCell(r, 3).font = { color: { argb: "FFC00000" } };
+      wsEpp.getCell(r, 4).numFmt = '"$" #,##0.00';
+      wsEpp.getCell(r, 5).numFmt = '"$" #,##0.00';
+    }
+    wsEpp.getCell(filaResumen, 3).numFmt = "0.00%";
+    wsEpp.getCell(filaResumen, 4).numFmt = "0.00%";
+    wsEpp.getCell(filaResumen, 5).numFmt = '"$" #,##0.00';
+    wsEpp.getRow(filaResumen).font = { bold: true };
+
+    // color scale rojo→amarillo→verde sobre "Cumplimiento de Q" (monto real)
+    wsEpp.addConditionalFormatting({
+      ref: `E2:E${nEpp + 1}`,
+      rules: [
+        {
+          type: "colorScale",
+          cfvo: [{ type: "min" }, { type: "percentile", value: 50 }, { type: "max" }],
+          color: [{ argb: "FFF8696B" }, { argb: "FFFFEB84" }, { argb: "FF63BE7B" }],
+        } as any,
+      ],
+    });
+    // Trimestre: verde si ya alcanzó la meta del trimestre, rojo si va < 30%
+    wsEpp.addConditionalFormatting({
+      ref: `D2:D${nEpp + 1}`,
+      rules: [
+        { type: "expression", formulae: ["$E2>=$D2"], style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: VERDE } } } } as any,
+        { type: "expression", formulae: ["$E2<$D2*0.3"], style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: ROJO } } } } as any,
+      ],
+    });
+    wsEpp.views = [{ state: "frozen", ySplit: 1 }];
 
     // ── Hoja 3: "Ventas - Devoluciones" — detalle linea a linea ──
     const wsDet = wb.addWorksheet("Ventas - Devoluciones");
     wsDet.columns = [
       { key: "fecha", header: "Fecha", width: 12 },
       { key: "numero", header: "Numero", width: 18 },
-      { key: "cuenta", header: "Cuenta", width: 10 },
       { key: "cliente", header: "Cliente", width: 42 },
       { key: "linea", header: "Linea", width: 14 },
       { key: "articulo", header: "Articulo", width: 60 },
