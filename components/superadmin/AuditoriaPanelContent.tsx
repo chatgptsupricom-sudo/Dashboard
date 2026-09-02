@@ -97,14 +97,15 @@ function camposCambiadosLegacy(
   return cambios;
 }
 
-// Solo REASSIGN trae from/to (diffable). Las demás acciones viejas
-// (EDIT_CUOTA, CREATE_ACTIVITY, ASSIGN_TASK, UPDATE_MASSIVE_MOQ_COST)
-// guardan un `changes` plano sin esa forma — se muestra tal cual en vez de
-// forzarlo por el diff (que siempre daría "sin cambios").
+// Solo REASSIGN y EDIT_CUOTA (desde este cambio) traen from/to diffable.
+// Las demás acciones viejas (CREATE_ACTIVITY, ASSIGN_TASK,
+// UPDATE_MASSIVE_MOQ_COST), y las filas EDIT_CUOTA de antes de este
+// cambio, guardan un `changes` plano sin esa forma — se muestra tal cual
+// en vez de forzarlo por el diff (que siempre daría "sin cambios").
 function detalleLegacyPlano(changes: Record<string, any> | null): { campo: string; valor: any }[] {
   if (!changes) return [];
   return Object.entries(changes)
-    .filter(([campo]) => campo !== "from" && campo !== "to" && campo !== "lead_name")
+    .filter(([campo]) => !["from", "to", "lead_name", "seller_name"].includes(campo))
     .map(([campo, valor]) => ({ campo, valor }));
 }
 
@@ -293,6 +294,11 @@ export default function AuditoriaPanelContent() {
                             {esLegacy && legacyChanges?.lead_name && (
                               <p className="mb-3 text-xs text-zinc-500">
                                 {t("contexto_lead", { lead: legacyChanges.lead_name })}
+                              </p>
+                            )}
+                            {esLegacy && !legacyChanges?.lead_name && legacyChanges?.seller_name && (
+                              <p className="mb-3 text-xs text-zinc-500">
+                                {t("contexto_vendedor", { vendedor: legacyChanges.seller_name })}
                               </p>
                             )}
                             {cambios.length > 0 ? (

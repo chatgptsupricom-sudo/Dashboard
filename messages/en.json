@@ -1664,6 +1664,7 @@
       "ver_sql_crudo": "View raw SQL statement",
       "total_registros": "{total} records total",
       "contexto_lead": "Lead: {lead}",
+      "contexto_vendedor": "Seller: {vendedor}",
       "origen_legacy": "-- Historical lead reassignment audit (audit_logs table, no SQL statement)"
     },
     "integracion_pago": {

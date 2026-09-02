@@ -1457,6 +1457,7 @@
       "ver_sql_crudo": "Ver la sentencia SQL",
       "total_registros": "{total} registros en total",
       "contexto_lead": "Lead: {lead}",
+      "contexto_vendedor": "Vendedor: {vendedor}",
       "origen_legacy": "-- Auditoría histórica de reasignación de leads (tabla audit_logs, sin sentencia SQL)"
     },
     "catalogo": {
