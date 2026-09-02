@@ -99,13 +99,14 @@ export async function GET(request: NextRequest) {
     );
     const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
+    // Tasa de cierre cruda: facturadas / órdenes
     const efectividad = totalOrdenes > 0 ? Math.round((totalFacturadas / totalOrdenes) * 100) : 0;
-    const efectividadPct = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : 0;
+    // % de cumplimiento de la meta (si hay meta configurada)
+    const cumplimientoMeta = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : null;
 
     const sellerSemanas = semanasData.map((sem, i) => {
       const esFuturo = semanas[i].inicio > now;
-      const efectividadActual = sem.ordenes > 0 ? (sem.facturadas / sem.ordenes) * 100 : null;
-      const efectividadSem = efectividadActual !== null && metaEfectividad > 0 ? Math.round((efectividadActual / metaEfectividad) * 100) : null;
+      const efectividadSem = sem.ordenes > 0 ? Math.round((sem.facturadas / sem.ordenes) * 100) : null;
       return {
         numero: i + 1,
         label: semanas[i].label,
@@ -121,14 +122,16 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         mes,
-        global: { ordenes: totalOrdenes, facturadas: totalFacturadas, efectividad: efectividadPct },
+        metaEfectividad,
+        global: { ordenes: totalOrdenes, facturadas: totalFacturadas, efectividad, cumplimientoMeta },
         sellers: [{
           nombre: sellers[0].name,
           ordenes: totalOrdenes,
           facturadas: totalFacturadas,
           montoOrdenes: Math.round(totalMonto * 100) / 100,
           montoFacturadas: Math.round(totalMontoFact * 100) / 100,
-          efectividad: efectividadPct,
+          efectividad,
+          cumplimientoMeta,
           semanas: sellerSemanas,
         }],
       },

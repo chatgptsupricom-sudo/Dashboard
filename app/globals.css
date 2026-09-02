@@ -249,3 +249,326 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ---------------------------------------------------------------------------
+   Rediseño de las pantallas de entrada del portal (landing + elegir sucursal).
+   Todo con prefijo .pt- y sin tocar los tokens/clases que usan el formulario y
+   la consulta de ticket (esas pantallas siguen con el estilo anterior).
+   El elemento firma: la tarjeta-comprobante ("stub"), que rima con la factura
+   que el cliente va a sacar y con el ticket de RMA que recibe de vuelta.
+   --------------------------------------------------------------------------- */
+.portal-supricom {
+  --pt-paper: #faf8ff;
+  --pt-brand-deep: #4a12ac;
+  --pt-mint: #0a9a8d;
+  --pt-mint-soft: #e2f6f3;
+  --pt-ink-soft: #423c55;
+}
+
+.pt-page {
+  background-color: var(--pt-paper);
+}
+
+.pt-shell {
+  margin: 0 auto;
+  max-width: 68rem;
+  padding: 2rem 1.25rem 3.5rem;
+}
+@media (min-width: 640px) {
+  .pt-shell {
+    padding: 3rem 1.5rem 4.5rem;
+  }
+}
+
+.pt-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--portal-primary);
+}
+.pt-eyebrow::before {
+  content: "";
+  width: 1.75rem;
+  height: 2px;
+  background: currentColor;
+}
+
+.pt-display {
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  font-size: clamp(2.35rem, 6vw, 3.9rem);
+  color: var(--portal-ink);
+  text-wrap: balance;
+}
+
+.pt-lede {
+  max-width: 44ch;
+  margin-top: 1.25rem;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--pt-ink-soft);
+}
+
+/* Hero: en escritorio, el discurso a la izquierda y el comprobante a la
+   derecha; en móvil, uno debajo del otro. */
+.pt-hero {
+  display: grid;
+  gap: 2.5rem;
+  margin-top: 2.75rem;
+}
+@media (min-width: 900px) {
+  .pt-hero {
+    grid-template-columns: minmax(0, 1fr) 20.5rem;
+    gap: 3.5rem;
+    align-items: start;
+    margin-top: 3.5rem;
+  }
+}
+
+/* Acción principal: un bloque, no una tarjeta más entre varias. */
+.pt-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  margin-top: 2.25rem;
+  padding: 1rem 1.35rem;
+  border-radius: 13px;
+  background: linear-gradient(
+    100deg,
+    var(--portal-primary),
+    var(--pt-brand-deep)
+  );
+  color: #fff;
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  box-shadow: 0 18px 38px -20px rgba(116, 29, 254, 0.7);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.pt-primary:hover {
+  box-shadow: 0 22px 44px -18px rgba(116, 29, 254, 0.8);
+}
+@media (hover: hover) {
+  .pt-primary:hover {
+    transform: translateY(-2px);
+  }
+}
+.pt-primary svg {
+  transition: transform 0.16s ease;
+  flex-shrink: 0;
+}
+.pt-primary:hover svg {
+  transform: translateX(3px);
+}
+
+/* Acción secundaria: consultar un reporte ya enviado. Menor peso, con el
+   acento verde para separarla del morado de "reportar". */
+.pt-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  font-weight: 600;
+  color: var(--pt-mint);
+}
+.pt-secondary span {
+  border-bottom: 1.5px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.pt-secondary:hover span {
+  border-color: currentColor;
+}
+.pt-secondary svg {
+  transition: transform 0.15s ease;
+}
+.pt-secondary:hover svg {
+  transform: translateX(2px);
+}
+
+.pt-help {
+  margin-top: 2.75rem;
+  font-size: 0.9rem;
+  color: var(--portal-muted);
+}
+.pt-help a {
+  font-weight: 600;
+  color: var(--portal-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --- El comprobante (elemento firma) --- */
+.pt-ticket {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  box-shadow: 0 24px 50px -32px rgba(20, 18, 28, 0.4);
+}
+@media (min-width: 900px) {
+  .pt-ticket {
+    position: sticky;
+    top: 1.5rem;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pt-ticket {
+    animation: pt-print 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+@keyframes pt-print {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+/* Tira superior tipo alimentación de impresora, con perforaciones. */
+.pt-ticket__strip {
+  height: 1.5rem;
+  background: radial-gradient(
+        circle 3px at 15px 50%,
+        var(--portal-surface) 98%,
+        transparent 100%
+      )
+      0 0 / 30px 100% repeat-x,
+    linear-gradient(0deg, var(--portal-primary), var(--portal-primary));
+}
+
+.pt-ticket__body {
+  padding: 1.25rem 1.4rem 0;
+}
+.pt-ticket__kicker {
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--portal-muted);
+}
+.pt-ticket__title {
+  margin-top: 0.15rem;
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--portal-ink);
+}
+
+.pt-ticket__list {
+  margin: 1rem 0 1.15rem;
+  display: grid;
+  gap: 0.95rem;
+}
+.pt-ticket__row {
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  gap: 0.65rem;
+}
+.pt-ticket__row svg {
+  margin-top: 0.15rem;
+  color: var(--portal-primary);
+}
+.pt-ticket__row b {
+  font-weight: 650;
+  font-size: 0.92rem;
+  color: var(--portal-ink);
+}
+.pt-ticket__row p {
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--portal-muted);
+}
+
+/* Línea de corte: el gesto de "comprobante" que se desprende. */
+.pt-ticket__tear {
+  margin: 0.35rem 1.4rem 0;
+  border-top: 1.5px dashed var(--portal-line-strong);
+}
+
+.pt-ticket__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.95rem 1.4rem 1.15rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--pt-mint);
+}
+.pt-ticket__foot svg {
+  flex-shrink: 0;
+}
+
+/* --- Elegir sucursal --- */
+.pt-branches {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2.75rem;
+}
+@media (min-width: 720px) {
+  .pt-branches {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.pt-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.4rem 1.4rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.pt-branch:hover {
+  border-color: var(--portal-primary);
+  box-shadow: 0 20px 40px -26px rgba(116, 29, 254, 0.6);
+}
+@media (hover: hover) {
+  .pt-branch:hover {
+    transform: translateY(-3px);
+  }
+}
+.pt-branch__pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
+}
+.pt-branch__name {
+  font-family: var(--font-syne), Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.4rem;
+  color: var(--portal-ink);
+}
+.pt-branch__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--portal-primary);
+}
+.pt-branch__go svg {
+  transition: transform 0.15s ease;
+}
+.pt-branch:hover .pt-branch__go svg {
+  transform: translateX(3px);
+}

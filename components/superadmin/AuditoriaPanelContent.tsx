@@ -36,6 +36,10 @@ type LogRow = {
   before_data: string | null;
   after_data: string | null;
   status: string;
+  // "legacy" = viene de la tabla vieja audit_logs (solo reasignación de
+  // leads, antes/después vienen del JSON `changes`, no de before/after_data
+  // reales). "system" = viene de system_audit_log.
+  source: "legacy" | "system";
 };
 
 const METODO_COLOR: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -45,6 +49,7 @@ const METODO_COLOR: Record<string, "default" | "secondary" | "destructive" | "ou
   POST: "default",
   PUT: "secondary",
   PATCH: "secondary",
+  REASSIGN: "outline",
 };
 
 // Solo muestra los campos que de verdad cambiaron entre antes y despues —
@@ -70,6 +75,28 @@ function camposCambiados(
   return cambios;
 }
 
+// audit_logs (legacy) no guarda before/after_data reales — guarda un JSON
+// `changes: {lead_name, from: {...}, to: {...}}` armado a mano por el
+// endpoint de reasignación de leads. Se reusa el mismo diff visual
+// comparando directamente from/to.
+function camposCambiadosLegacy(
+  changes: Record<string, any> | null,
+): { campo: string; antes: any; despues: any }[] {
+  if (!changes) return [];
+  const from = changes.from ?? {};
+  const to = changes.to ?? {};
+  const claves = new Set([...Object.keys(from), ...Object.keys(to)]);
+  const cambios: { campo: string; antes: any; despues: any }[] = [];
+  for (const campo of claves) {
+    const a = from[campo];
+    const d = to[campo];
+    if (JSON.stringify(a) !== JSON.stringify(d)) {
+      cambios.push({ campo, antes: a, despues: d });
+    }
+  }
+  return cambios;
+}
+
 function parseJson(raw: string | null): Record<string, any> | null {
   if (!raw) return null;
   try {
@@ -88,6 +115,7 @@ export default function AuditoriaPanelContent() {
 
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [tablas, setTablas] = useState<string[]>([]);
+  const [metodos, setMetodos] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
@@ -113,6 +141,7 @@ export default function AuditoriaPanelContent() {
         setTotal(data.total);
         setTotalPages(data.totalPages);
         setTablas(data.tables);
+        setMetodos(data.methods ?? []);
       }
     } catch {
       // se deja la tabla como estaba; no hay nada mas que hacer sin conexion
@@ -162,9 +191,11 @@ export default function AuditoriaPanelContent() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("todos_los_metodos")}</SelectItem>
-            <SelectItem value="INSERT">INSERT</SelectItem>
-            <SelectItem value="UPDATE">UPDATE</SelectItem>
-            <SelectItem value="DELETE">DELETE</SelectItem>
+            {metodos.map((m) => (
+              <SelectItem key={m} value={m}>
+                {m}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -192,9 +223,14 @@ export default function AuditoriaPanelContent() {
               </TableHeader>
               <TableBody>
                 {logs.map((log) => {
-                  const antes = parseJson(log.before_data);
-                  const despues = parseJson(log.after_data);
-                  const cambios = camposCambiados(antes, despues);
+                  const esLegacy = log.source === "legacy";
+                  const legacyChanges = esLegacy ? parseJson(log.sql_params) : null;
+                  const antes = esLegacy ? null : parseJson(log.before_data);
+                  const despues = esLegacy ? null : parseJson(log.after_data);
+                  const cambios = esLegacy
+                    ? camposCambiadosLegacy(legacyChanges)
+                    : camposCambiados(antes, despues);
+                  const hayDatos = esLegacy ? legacyChanges != null : antes || despues;
                   const abierto = expandido === log.id;
 
                   return (
@@ -236,6 +272,11 @@ export default function AuditoriaPanelContent() {
                       {abierto && (
                         <TableRow key={`${log.id}-detalle`}>
                           <TableCell colSpan={6} className="bg-zinc-50/70 p-5">
+                            {esLegacy && legacyChanges?.lead_name && (
+                              <p className="mb-3 text-xs text-zinc-500">
+                                {t("contexto_lead", { lead: legacyChanges.lead_name })}
+                              </p>
+                            )}
                             {cambios.length > 0 ? (
                               <div className="space-y-2">
                                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -267,7 +308,7 @@ export default function AuditoriaPanelContent() {
                               </div>
                             ) : (
                               <p className="text-sm text-zinc-400">
-                                {antes || despues ? t("sin_cambios") : t("sin_diff")}
+                                {hayDatos ? t("sin_cambios") : t("sin_diff")}
                               </p>
                             )}
                             <details className="mt-4">
@@ -275,7 +316,7 @@ export default function AuditoriaPanelContent() {
                                 {t("ver_sql_crudo")}
                               </summary>
                               <pre className="mt-2 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-[11px] text-zinc-100">
-                                {log.sql_text?.trim()}
+                                {log.sql_text?.trim() || (esLegacy ? t("origen_legacy") : "")}
                                 {"\n"}
                                 {log.sql_params}
                               </pre>

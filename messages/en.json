@@ -208,7 +208,7 @@
     "seg_ingreso": "Intake",
     "seg_egreso": "Dispatch",
     "seg_estadisticas": "RMA statistics",
-    "seg_personal": "Staff (Security / RMA)",
+    "seg_personal": "Staff",
     "seg_merc_ingresos": "Inbound",
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
@@ -718,6 +718,7 @@
     "subtitle": "Report it here in a couple of minutes. With your invoice number we look up your products and hand the case to our technical team.",
     "chooseBranchTitle": "Which branch did you buy from?",
     "chooseBranchSubtitle": "Choose your branch to continue.",
+    "chooseBranchGo": "Continue",
     "sucursalBadge": "{nombre} branch",
     "sucursalBadgeChange": "Change",
     "report": {
@@ -730,10 +731,14 @@
       "title": "Check my report",
       "desc": "See the status of a report you already sent us.",
       "hint": "You will need your ticket number.",
-      "cta": "Check my report"
+      "cta": "Check my report",
+      "lead": "Already sent a report? Check it"
     },
     "needs": {
       "title": "What you need to report",
+      "kicker": "Supricom · Technical Service",
+      "cardTitle": "Before you start",
+      "time": "It takes about 2 minutes",
       "invoice": "Your invoice number",
       "invoiceDesc": "You will find it at the top of the invoice we handed you with the product.",
       "fault": "What is wrong with the device",
@@ -1656,7 +1661,9 @@
       "sin_cambios": "The full record was captured, but no field actually changed value.",
       "vacio": "(empty)",
       "ver_sql_crudo": "View raw SQL statement",
-      "total_registros": "{total} records total"
+      "total_registros": "{total} records total",
+      "contexto_lead": "Lead: {lead}",
+      "origen_legacy": "-- Historical lead reassignment audit (audit_logs table, no SQL statement)"
     },
     "integracion_pago": {
       "title": "Payment Integration",
