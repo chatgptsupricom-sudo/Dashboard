@@ -914,17 +914,11 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Formulario de reporte (rediseño 2): más marca Supricom, menos "wizard
-   genérico". El progreso deja de ser círculos numerados y pasa a una pista
-   fina que se llena + migas de pan; el formulario vive en una tarjeta-
-   comprobante cuya tira superior usa la MISMA textura de papel tapiz que la
-   barra de supricom.com.ve.
+   Formulario de reporte: más marca Supricom, menos "wizard genérico". El
+   progreso es una pista fina que se llena + migas de pan (sin círculos
+   numerados). La marca la da el halo tenue del papel tapiz del sitio detrás
+   del encabezado; la tarjeta en sí es limpia.
    --------------------------------------------------------------------------- */
-.pt-wallpaper {
-  background-image: url("https://supricom.com.ve/wp-content/uploads/2025/06/fondo-de-papel-tapiz-colorido-borroso-vivo-scaled.webp");
-  background-size: cover;
-  background-position: center;
-}
 
 /* Halo de color de la marca detrás del encabezado, muy tenue y difuminado
    hacia abajo para no comerse la legibilidad. */
@@ -936,12 +930,12 @@
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
-  height: 340px;
+  height: 300px;
   z-index: -1;
   background-image: url("https://supricom.com.ve/wp-content/uploads/2025/06/fondo-de-papel-tapiz-colorido-borroso-vivo-scaled.webp");
   background-size: cover;
   background-position: center;
-  opacity: 0.16;
+  opacity: 0.14;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
   pointer-events: none;
@@ -949,64 +943,10 @@
 
 .pt-formcard {
   position: relative;
-  overflow: hidden;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid var(--portal-line);
   background: var(--portal-surface);
-  box-shadow: 0 34px 64px -36px rgba(20, 18, 28, 0.45);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .pt-formcard {
-    animation: pt-print 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  }
-}
-
-/* Tira superior tipo comprobante: degradado de marca + perforación. La
-   textura de papel tapiz del sitio la aporta el halo del encabezado. */
-.pt-formcard__strip {
-  position: relative;
-  padding: 0.9rem 1.4rem;
-  background-image:
-    radial-gradient(
-        circle 3px at 16px calc(100% - 4px),
-        var(--portal-surface) 98%,
-        transparent 100%
-      ),
-    linear-gradient(96deg, var(--pt-brand-deep), var(--portal-primary));
-  background-size: 32px 12px, cover;
-  background-position: bottom left, center;
-  background-repeat: repeat-x, no-repeat;
-}
-.pt-formcard__striprow {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  color: #fff;
-}
-.pt-formcard__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--font-manrope), Arial, sans-serif;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-.pt-formcard__brand::before {
-  content: "";
-  width: 1.4rem;
-  height: 2px;
-  background: currentColor;
-}
-.pt-formcard__stepno {
-  font-family: var(--font-syne), Arial, sans-serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  box-shadow: 0 28px 56px -38px rgba(20, 18, 28, 0.4);
 }
 
 .pt-formcard__body {
@@ -1016,6 +956,28 @@
   .pt-formcard__body {
     padding: 2rem 2rem 2.1rem;
   }
+}
+
+/* Fila de contexto: "Servicio Técnico" a la izquierda, "Paso N de 3" a la
+   derecha, ambos en morado sobre la tarjeta blanca. */
+.pt-formcard__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.pt-formcard__stepno {
+  font-family: var(--font-manrope), Arial, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--portal-muted);
+  white-space: nowrap;
+}
+
+.pt-progress {
+  margin-top: 1.1rem;
 }
 
 /* Progreso editorial: pista + migas de pan (sin círculos). */

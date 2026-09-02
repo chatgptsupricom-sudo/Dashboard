@@ -286,16 +286,13 @@ export function ReporteForm({
       </div>
 
       <div className="pt-formcard">
-        <div className="pt-formcard__strip">
-          <div className="pt-formcard__striprow">
-            <span className="pt-formcard__brand">{t("eyebrow")}</span>
+        <div className="pt-formcard__body">
+          <div className="pt-formcard__meta">
+            <span className="pt-eyebrow">{t("eyebrow")}</span>
             <span className="pt-formcard__stepno">
               {t("form.stepOf", { n: paso, total: etiquetasPaso.length })}
             </span>
           </div>
-        </div>
-
-        <div className="pt-formcard__body">
           <Pasos actual={paso} etiquetas={etiquetasPaso} />
 
       {paso === 1 && (
