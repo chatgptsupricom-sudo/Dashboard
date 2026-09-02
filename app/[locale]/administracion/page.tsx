@@ -293,8 +293,11 @@ export default function SaludAdministrativaPage() {
   const [gastos, setGastos] = useState<RespuestaGastos | null>(null);
   const [gestionCumplimiento, setGestionCumplimiento] =
     useState<RespuestaGestionCumplimiento | null>(null);
-  const [gestionCumplimientoOdooCaido, setGestionCumplimientoOdooCaido] =
-    useState(false);
+  // Areas cuyo ultimo fetch fallo especificamente porque Odoo no respondio
+  // (OdooUnreachableError) — distinto de "sin fuente de datos todavia". Las
+  // 3 rutas (salud-financiera, gastos, gestion-cumplimiento) devuelven la
+  // misma forma { success:false, odooUnreachable:true } para esto.
+  const [areasOdooCaido, setAreasOdooCaido] = useState<string[]>([]);
   const [seguimientos, setSeguimientos] = useState<
     Record<string, SeguimientoAlerta>
   >({});
@@ -324,15 +327,21 @@ export default function SaludAdministrativaPage() {
       // de dejar la pagina en blanco por un area caida.
       setGastos(jGastos.success ? jGastos : null);
       setGestionCumplimiento(jGC.success ? jGC : null);
-      setGestionCumplimientoOdooCaido(
-        !jGC.success && (jGC as RespuestaOdooCaido).odooUnreachable === true,
+      const caido = (r: any) =>
+        !r.success && (r as RespuestaOdooCaido).odooUnreachable === true;
+      setAreasOdooCaido(
+        [
+          caido(jFin) && "Cuentas por Cobrar/Pagar y Tesorería",
+          caido(jGastos) && "Gastos y Presupuesto",
+          caido(jGC) && "Gestión Administrativa y Cumplimiento y Control",
+        ].filter((x): x is string => Boolean(x)),
       );
       setSeguimientos(jSeg.success ? jSeg.seguimientos : {});
     } catch {
       setData(null);
       setGastos(null);
       setGestionCumplimiento(null);
-      setGestionCumplimientoOdooCaido(false);
+      setAreasOdooCaido([]);
       setSeguimientos({});
     }
     setLoading(false);
@@ -553,11 +562,12 @@ export default function SaludAdministrativaPage() {
                     esta instancia de Odoo — ver issue #8.
                   </p>
                 )}
-                {gestionCumplimientoOdooCaido && (
+                {areasOdooCaido.length > 0 && (
                   <p className="text-red-600 font-medium">
-                    Gestión Administrativa y Cumplimiento y Control no se
-                    pudieron calcular: Odoo no respondió. Esto NO significa que
-                    falte configurar algo — reintenta en un momento.
+                    {areasOdooCaido.join(", ")} no se{" "}
+                    {areasOdooCaido.length > 1 ? "pudieron" : "pudo"} calcular:
+                    Odoo no respondió. Esto NO significa que falte configurar
+                    algo — reintenta en un momento.
                   </p>
                 )}
               </div>

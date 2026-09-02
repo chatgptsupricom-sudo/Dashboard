@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { OdooUnreachableError } from "@/lib/odoo";
 import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
 import {
   ensurePresupuestoTable,
@@ -352,6 +353,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error en API Gastos Administracion:", error.message);
+    // Distinto de "Error interno": esto significa que Odoo no respondió
+    // (caído, sin red, timeout) — sin esto, el frontend no puede
+    // distinguirlo de "no hay fuente de datos" (mismo bug ya corregido en
+    // login y en gestion-cumplimiento).
+    if (error instanceof OdooUnreachableError) {
+      return NextResponse.json(
+        { success: false, error: "No se pudo conectar con Odoo", odooUnreachable: true },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
