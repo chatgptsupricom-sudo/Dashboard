@@ -222,6 +222,43 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL (Panama)
+  // ==========================================
+
+  // Dia 5 de enero/abril/julio/octubre a las 06:00: genera el reporte del
+  // trimestre que acaba de cerrar, lo guarda y (si hay webhook) lo manda a n8n.
+  // El dia 5 da margen para que entren facturas rezagadas antes de congelar.
+  cron.schedule(
+    "0 6 5 1,4,7,10 *",
+    async () => {
+      console.log(
+        `[${new Date().toISOString()}] Generando cierre del reporte trimestral...`,
+      );
+      try {
+        const response = await fetch(
+          `http://localhost:${PORT}/api/cron/reporte-trimestral`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+          },
+        );
+        const data = await response.json();
+        if (response.ok) {
+          console.log("Cierre trimestral listo:", JSON.stringify(data));
+        } else {
+          console.error("Fallo el cierre trimestral:", data);
+        }
+      } catch (error) {
+        console.error("Error de red en el cierre trimestral:", error.message);
+      }
+    },
+    {
+      scheduled: true,
+      timezone: "America/Caracas",
+    },
+  );
+
+  // ==========================================
   // INICIO DEL SERVIDOR
   // ==========================================
   httpServer.listen(PORT, (err) => {
@@ -232,6 +269,9 @@ app.prepare().then(() => {
     );
     console.log(
       `> Cron programado: alerta de pendientes de despacho, L-V 10:00 AM (America/Caracas)`,
+    );
+    console.log(
+      `> Cron programado: cierre del reporte trimestral, dia 5 de ene/abr/jul/oct 06:00 (America/Caracas)`,
     );
   });
 });

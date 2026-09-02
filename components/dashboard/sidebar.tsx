@@ -138,6 +138,17 @@ export function Sidebar({
 
   const [isEditingSidebar, setIsEditingSidebar] = useState(false);
   const [sidebarOrder, setSidebarOrder] = useState<string[]>([]);
+  // Acceso a "Reportes Comerciales": se pregunta al servidor (lista de correos
+  // en una env NO pública) para no depender del bundle del cliente.
+  const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/reportes-comerciales/acceso")
+      .then((r) => r.json())
+      .then((j) => setPuedeReportesComerciales(Boolean(j?.puede)))
+      .catch(() => {});
+  }, [user]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -193,7 +204,14 @@ export function Sidebar({
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
-  const allowedSections = permissions.sections || [];
+  const allowedSections = [...(permissions.sections || [])];
+
+  // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
+  // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
+  // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
+  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+    allowedSections.push("reportes_comerciales");
+  }
 
   // Definición del menú base
   const menuItems = [
@@ -221,6 +239,7 @@ export function Sidebar({
     { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
     { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },

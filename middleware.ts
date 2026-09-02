@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { routing } from "./i18n.config";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -75,7 +76,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
     pathname.includes("/administracion") ||
-    pathname.includes("/seguridad");
+    pathname.includes("/seguridad") ||
+    pathname.includes("/reportes-comerciales");
 
   if (isProtectedPath) {
     if (!token) {
@@ -145,6 +147,22 @@ export default async function middleware(request: NextRequest) {
         !isGerenciaVentas &&
         !isAsistenteVentas &&
         !isSuperAdmin
+      ) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/dashboard`, request.url),
+        );
+      }
+
+      // 3b. Reportes Comerciales (seccion propia). La encargada es una vendedora
+      // que conserva su rol `vendedor`, pero no todos los vendedores entran:
+      // acceso = superadmin / gerencia de ventas, o correo en
+      // NEXT_PUBLIC_REPORTES_COMERCIALES_EMAILS (ver lib/reportes-comerciales/acceso.ts).
+      if (
+        pathname.includes("/reportes-comerciales") &&
+        !puedeVerReportesComerciales({
+          role: userRole,
+          email: (payload.email as string) || "",
+        })
       ) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
