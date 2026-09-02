@@ -46,6 +46,10 @@ export async function GET(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && userRole !== "gerente de operaciones") {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
 
     const accessToken = await getValidAccessToken();
     if (!accessToken) return NextResponse.json({ error: "No conectado" }, { status: 401 });
