@@ -66,6 +66,7 @@ export const rolePermissions: RolePermissions = {
       "cuota", // Gestión de cuotas de vendedores
       "MapaClientes", // Mapa de Clientes
       "spiff", // Gestión de spiffs por marca
+      "reportes_comerciales", // Sección Reportes Comerciales (trimestral Panamá por marca)
       "reporte_diario", // Reporte Diario de Ventas
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "rma", // Servicio Técnico / RMA
@@ -163,7 +164,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reportes_comerciales", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
