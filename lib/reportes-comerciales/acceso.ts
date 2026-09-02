@@ -6,14 +6,14 @@
  * deben ver esta seccion. Por eso el acceso no se puede resolver solo por rol:
  *
  *   - `superadmin` y `gerencia de ventas`: siempre.
- *   - Cualquier otro: solo si su correo esta en
- *     NEXT_PUBLIC_REPORTES_COMERCIALES_EMAILS (separado por comas).
+ *   - Cualquier otro: solo si su correo esta en la lista de la env
+ *     REPORTES_COMERCIALES_EMAILS (separado por comas).
  *
- * Se usa el prefijo NEXT_PUBLIC_ a proposito: el sidebar (cliente), el
- * middleware y las rutas de API tienen que evaluar exactamente lo mismo. Los
- * correos quedan visibles en el bundle del cliente — son correos internos de
- * trabajo, es un compromiso aceptable frente a crear una tabla y un endpoint
- * solo para esto.
+ * La env se lee en el SERVIDOR (middleware, rutas de API, guard de la pagina y
+ * el endpoint /acceso que consulta el sidebar). Por eso NO lleva el prefijo
+ * NEXT_PUBLIC_: asi se puede cambiar la lista de correos con un simple restart,
+ * sin reconstruir la app. Se mantiene NEXT_PUBLIC_REPORTES_COMERCIALES_EMAILS
+ * como fallback para no romper instalaciones que ya la tenian configurada.
  *
  * Este modulo es puro (sin imports de Node) para que el middleware lo pueda
  * importar.
@@ -22,7 +22,11 @@
 const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas"];
 
 export function correosAutorizados(): string[] {
-  return (process.env.NEXT_PUBLIC_REPORTES_COMERCIALES_EMAILS || "")
+  const crudo =
+    process.env.REPORTES_COMERCIALES_EMAILS ||
+    process.env.NEXT_PUBLIC_REPORTES_COMERCIALES_EMAILS ||
+    "";
+  return crudo
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
