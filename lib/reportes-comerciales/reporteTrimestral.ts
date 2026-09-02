@@ -115,10 +115,12 @@ export interface ReporteTrimestral {
 }
 
 export interface FilaDetalle {
-  fecha: string;
+  fecha: string; // YYYY/MM/DD
   numero: string;
+  cuenta: string; // ref del partner en Odoo (código de cliente)
   cliente: string;
-  producto: string;
+  linea: string; // marca
+  articulo: string; // nombre del producto sin el prefijo [código]
   vendedor: string;
   departamento: string;
   unidades: number;
@@ -128,6 +130,7 @@ export interface FilaDetalle {
 interface LineaEnriquecida {
   fecha: string;
   numero: string;
+  cuenta: string;
   clienteNombre: string;
   clienteId: number | null;
   productoNombre: string;
@@ -148,6 +151,26 @@ export function normalizarNombre(s: string): string {
     .replace(/\./g, "")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+/** Quita el sufijo " (v)" / " (V)" de los nombres de vendedor. */
+function limpiarVendedor(s: string): string {
+  return (s || "").replace(/\s*\((?:v|V)\)\s*$/i, "").trim();
+}
+
+/** "PANAMA (PA)" -> "Panama". Quita el paréntesis y pone Capital Case. */
+function limpiarDepartamento(s: string): string {
+  const base = (s || "").split("(")[0].trim();
+  return base
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+/** "[CS-H6C-...] EZVIZ H6C PRO 2K" -> "EZVIZ H6C PRO 2K". */
+function limpiarProducto(s: string): string {
+  return (s || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
 }
 
 /** search_read paginado (Odoo no devuelve mas de unos miles por llamada). */
@@ -248,7 +271,7 @@ async function cargarLineas(
     "name",
     "invoice_date",
   ]);
-  const partners = await readEnLotes("res.partner", partnerIds, ["state_id"]);
+  const partners = await readEnLotes("res.partner", partnerIds, ["state_id", "ref"]);
 
   const enriquecidas = crudas.map((l: any): LineaEnriquecida => {
       const mv = moves.get(l.move_id?.[0]) || {};
@@ -259,12 +282,13 @@ async function cargarLineas(
       return {
         fecha: mv.invoice_date || "",
         numero: mv.name || "",
+        cuenta: pt.ref ? String(pt.ref) : "",
         clienteNombre: l.partner_id?.[1] || "(sin cliente)",
         clienteId: l.partner_id?.[0] || null,
-        productoNombre: l.product_id?.[1] || "(sin producto)",
+        productoNombre: limpiarProducto(l.product_id?.[1] || "") || "(sin producto)",
         productoId: l.product_id?.[0] || null,
-        vendedor: mv.invoice_user_id?.[1] || "(sin vendedor)",
-        departamento: depto || DEPARTAMENTO_SIN_ASIGNAR,
+        vendedor: limpiarVendedor(mv.invoice_user_id?.[1] || "") || "(sin vendedor)",
+        departamento: depto ? limpiarDepartamento(depto) : DEPARTAMENTO_SIN_ASIGNAR,
         unidades: signo * (Number(l.quantity) || 0),
         venta: signo * (Number(l.price_subtotal) || 0),
       };
@@ -419,12 +443,23 @@ export async function construirReporteCompleto(
   const { t, marca, lineas, lineasPrev } = await cargarActualYPrev(opts);
   const reporte = await armarReporte(t, marca, lineas, lineasPrev);
 
+  // Columna "Linea" = marca. Si el reporte es de una sola marca, es esa; si es
+  // "TODAS", se resuelve por producto.
+  const esTodas = marca.toUpperCase() === MARCA_TODAS;
+  const marcaPorId = esTodas ? await marcasDeProductos(lineas) : null;
+  const lineaDe = (l: LineaEnriquecida) =>
+    esTodas
+      ? (l.productoId ? marcaPorId!.get(l.productoId) || "" : "")
+      : marca.toUpperCase();
+
   const detalle: FilaDetalle[] = lineas
     .map((l) => ({
-      fecha: l.fecha,
+      fecha: (l.fecha || "").replace(/-/g, "/"),
       numero: l.numero,
+      cuenta: l.cuenta,
       cliente: l.clienteNombre,
-      producto: l.productoNombre,
+      linea: lineaDe(l),
+      articulo: l.productoNombre,
       vendedor: l.vendedor,
       departamento: l.departamento,
       unidades: redondear(l.unidades),

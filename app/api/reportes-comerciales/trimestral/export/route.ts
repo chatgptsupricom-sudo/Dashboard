@@ -44,74 +44,53 @@ export async function GET(request: NextRequest) {
 
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
+    const HEADER = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: AZUL } } };
+    const q = reporte.periodo.trimestre.split("-Q")[1] || "";
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
     const encabezar = (ws: any) => {
       ws.getRow(1).eachCell((cell: any) => {
-        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AZUL } };
+        Object.assign(cell, HEADER);
         cell.alignment = { vertical: "middle", horizontal: "center" };
       });
       ws.views = [{ state: "frozen", ySplit: 1 }];
     };
 
-    // Hoja 1: detalle linea a linea (equivale a "Ventas - Devoluciones")
-    const wsDet = wb.addWorksheet("Ventas - Devoluciones");
-    wsDet.columns = [
-      { key: "fecha", header: "Fecha", width: 12 },
-      { key: "numero", header: "Numero", width: 18 },
-      { key: "cliente", header: "Cliente", width: 42 },
-      { key: "producto", header: "Producto", width: 55 },
-      { key: "vendedor", header: "Vendedor", width: 24 },
-      { key: "departamento", header: "Departamento", width: 20 },
-      { key: "unidades", header: "Unidades", width: 12 },
-      { key: "venta", header: "Venta", width: 14 },
+    // ── Hoja 1: "VENTA TRIMESTRAL Qn" — las 4 tablas, una al lado de la otra ──
+    const wsPiv = wb.addWorksheet(`VENTA TRIMESTRAL Q${q}`.trim());
+    wsPiv.columns = [
+      { width: 46 }, { width: 15 }, { width: 3 },
+      { width: 60 }, { width: 16 }, { width: 3 },
+      { width: 20 }, { width: 15 },
     ];
-    detalle.forEach((d) => wsDet.addRow(d));
-    wsDet.getColumn("venta").numFmt = "#,##0.00";
-    encabezar(wsDet);
-
-    // Hoja 2: las 4 tablas (equivale a "VENTA TRIMESTRAL")
-    const wsPiv = wb.addWorksheet("Venta Trimestral");
-    const bloque = (titulo: string, cols: string[], filas: any[][]) => {
-      wsPiv.addRow([titulo]);
-      const hdr = wsPiv.addRow(cols);
-      hdr.eachCell((c: any) => {
-        c.font = { bold: true, color: { argb: "FFFFFFFF" } };
-        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AZUL } };
-      });
-      filas.forEach((f) => wsPiv.addRow(f));
-      wsPiv.addRow([]);
-    };
-    wsPiv.columns = [{ width: 46 }, { width: 16 }, { width: 14 }];
-    bloque(
-      "Ranking de Clientes (por Venta)",
-      ["Cliente", "Venta", "Unidades"],
-      reporte.rankingClientes.map((f) => [f.nombre, f.venta, f.unidades]),
-    );
-    bloque(
-      "Ranking de Productos (por Unidades)",
-      ["Producto", "Unidades", "Venta"],
-      reporte.rankingProductos.map((f) => [f.nombre, f.unidades, f.venta]),
-    );
-    bloque(
-      "Venta por Departamento",
-      ["Departamento", "Venta", "Unidades"],
-      reporte.porDepartamento.map((f) => [f.nombre, f.venta, f.unidades]),
-    );
-    bloque(
-      "Venta por Vendedor",
-      ["Vendedor", "Venta", "Unidades"],
-      reporte.porVendedor.map((f) => [f.nombre, f.venta, f.unidades]),
-    );
-    if (reporte.porMarca.length > 0) {
-      bloque(
-        "Venta por Marca",
-        ["Marca", "Venta", "Unidades"],
-        reporte.porMarca.map((f) => [f.nombre, f.venta, f.unidades]),
+    // coloca una sub-tabla en (fila, col) con encabezado; devuelve la fila libre siguiente
+    const bloque = (fila: number, col: number, headers: string[], filas: any[][]) => {
+      headers.forEach((h, i) => Object.assign(wsPiv.getCell(fila, col + i), { value: h }, HEADER));
+      filas.forEach((f, r) =>
+        f.forEach((v, i) => (wsPiv.getCell(fila + 1 + r, col + i).value = v)),
       );
-    }
+      return fila + 1 + filas.length;
+    };
+    const totVta = (fs: { venta: number }[]) => round2(fs.reduce((s, f) => s + f.venta, 0));
 
-    // Hoja 3: EPP
+    bloque(1, 1, ["Cliente", "Suma de Venta"], reporte.rankingClientes.map((f) => [f.nombre, f.venta]));
+    bloque(1, 4, ["Producto", "Suma de Unidades"], reporte.rankingProductos.map((f) => [f.nombre, f.unidades]));
+    const finDepto = bloque(1, 7, ["Departamento", "Suma de Venta"], [
+      ...reporte.porDepartamento.map((f) => [f.nombre, f.venta]),
+      ["Total general", totVta(reporte.porDepartamento)],
+    ]);
+    const finVend = bloque(finDepto + 2, 7, ["Vendedor", "Suma de Venta"], [
+      ...reporte.porVendedor.map((f) => [f.nombre, f.venta]),
+      ["Total general", totVta(reporte.porVendedor)],
+    ]);
+    if (reporte.porMarca.length > 0) {
+      bloque(finVend + 2, 7, ["Marca", "Suma de Venta"], reporte.porMarca.map((f) => [f.nombre, f.venta]));
+    }
+    wsPiv.getColumn(2).numFmt = "#,##0.00";
+    wsPiv.getColumn(8).numFmt = "#,##0.00";
+    wsPiv.views = [{ state: "frozen", ySplit: 1 }];
+
+    // ── Hoja 2: EPP ──
     const wsEpp = wb.addWorksheet("EPP");
     wsEpp.columns = [
       { key: "cliente", header: "Cliente", width: 46 },
@@ -132,6 +111,24 @@ export async function GET(request: NextRequest) {
     ["meta_anual", "meta_trim", "real"].forEach((k) => (wsEpp.getColumn(k).numFmt = "#,##0.00"));
     wsEpp.getColumn("cumplimiento").numFmt = "0.0%";
     encabezar(wsEpp);
+
+    // ── Hoja 3: "Ventas - Devoluciones" — detalle linea a linea ──
+    const wsDet = wb.addWorksheet("Ventas - Devoluciones");
+    wsDet.columns = [
+      { key: "fecha", header: "Fecha", width: 12 },
+      { key: "numero", header: "Numero", width: 18 },
+      { key: "cuenta", header: "Cuenta", width: 10 },
+      { key: "cliente", header: "Cliente", width: 42 },
+      { key: "linea", header: "Linea", width: 14 },
+      { key: "articulo", header: "Articulo", width: 60 },
+      { key: "vendedor", header: "Vendedor", width: 22 },
+      { key: "departamento", header: "Departamento", width: 16 },
+      { key: "unidades", header: "Unidades", width: 10 },
+      { key: "venta", header: "Venta", width: 12 },
+    ];
+    detalle.forEach((d) => wsDet.addRow(d));
+    wsDet.getColumn("venta").numFmt = "#,##0.00";
+    encabezar(wsDet);
 
     const buffer = await wb.xlsx.writeBuffer();
     const hoy = new Date().toISOString().slice(0, 10);
