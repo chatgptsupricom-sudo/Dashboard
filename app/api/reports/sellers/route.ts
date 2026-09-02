@@ -1,14 +1,21 @@
 import { query } from "@/lib/db";
+import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    // Unica fuente de verdad: el JWT de la cookie — antes esta ruta confiaba
+    // directo en ?userId= de la URL sin pedir ninguna sesion.
+    const token = request.cookies.get("token")?.value;
+    const payload = verifyToken(token);
+    if (!payload) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    const userId = (payload as any).sub;
 
     if (!userId) {
-      return NextResponse.json({ error: "Falta el userId" }, { status: 400 });
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
     const { rows } = await query(
