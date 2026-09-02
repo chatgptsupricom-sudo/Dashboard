@@ -98,21 +98,68 @@ function camposCambiadosLegacy(
 }
 
 // Solo REASSIGN y EDIT_CUOTA (desde este cambio) traen from/to diffable.
-// Las demás acciones viejas (CREATE_ACTIVITY, ASSIGN_TASK,
-// UPDATE_MASSIVE_MOQ_COST), y las filas EDIT_CUOTA de antes de este
-// cambio, guardan un `changes` plano sin esa forma — se muestra tal cual
-// en vez de forzarlo por el diff (que siempre daría "sin cambios").
+// Las demás acciones viejas (CREATE_ACTIVITY, ASSIGN_TASK), y las filas
+// EDIT_CUOTA de antes de este cambio, guardan un `changes` plano sin esa
+// forma — se muestra tal cual en vez de forzarlo por el diff (que siempre
+// daría "sin cambios").
 function detalleLegacyPlano(changes: Record<string, any> | null): { campo: string; valor: any }[] {
   if (!changes) return [];
   return Object.entries(changes)
-    .filter(([campo]) => !["from", "to", "lead_name", "seller_name"].includes(campo))
+    .filter(([campo]) => !["from", "to", "lead_name", "seller_name", "actualizados"].includes(campo))
     .map(([campo, valor]) => ({ campo, valor }));
+}
+
+// UPDATE_MASSIVE_MOQ_COST guarda `changes: {actualizados: [{sku,
+// moq_anterior, moq_nuevo, costo_anterior, costo_nuevo}, ...]}` — una
+// edición masiva, un SKU por fila, no un solo objeto from/to. Se arma un
+// diff por SKU en vez de forzarlo por camposCambiadosLegacy.
+function filasMoq(
+  changes: Record<string, any> | null,
+): { sku: string; cambios: { campo: string; antes: any; despues: any }[] }[] | null {
+  if (!changes || !Array.isArray(changes.actualizados)) return null;
+  return changes.actualizados.map((item: any) => {
+    const cambios: { campo: string; antes: any; despues: any }[] = [];
+    if (JSON.stringify(item.moq_anterior) !== JSON.stringify(item.moq_nuevo)) {
+      cambios.push({ campo: "cantidad", antes: item.moq_anterior, despues: item.moq_nuevo });
+    }
+    if (JSON.stringify(item.costo_anterior) !== JSON.stringify(item.costo_nuevo)) {
+      cambios.push({ campo: "costo", antes: item.costo_anterior, despues: item.costo_nuevo });
+    }
+    return { sku: item.sku, cambios };
+  });
 }
 
 function formatearValor(valor: any): string {
   if (valor === null || valor === undefined) return "";
   if (typeof valor === "object") return JSON.stringify(valor);
   return String(valor);
+}
+
+// Una fila "campo: antes -> despues" — la usa tanto el diff de nivel
+// registro como el diff por SKU de UPDATE_MASSIVE_MOQ_COST.
+function FilaDiff({
+  campo,
+  antes,
+  despues,
+  vacio,
+}: {
+  campo: string;
+  antes: any;
+  despues: any;
+  vacio: string;
+}) {
+  return (
+    <div className="grid grid-cols-[140px_1fr_auto_1fr] items-center gap-3 text-sm">
+      <span className="font-mono text-xs text-zinc-500">{campo}</span>
+      <span className="rounded-md bg-red-50 px-2 py-1 font-mono text-xs text-red-700 truncate">
+        {antes === null || antes === undefined ? vacio : String(antes)}
+      </span>
+      <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+      <span className="rounded-md bg-emerald-50 px-2 py-1 font-mono text-xs text-emerald-700 truncate">
+        {despues === null || despues === undefined ? vacio : String(despues)}
+      </span>
+    </div>
+  );
 }
 
 function parseJson(raw: string | null): Record<string, any> | null {
@@ -249,6 +296,7 @@ export default function AuditoriaPanelContent() {
                     ? camposCambiadosLegacy(legacyChanges)
                     : camposCambiados(antes, despues);
                   const detallePlano = esLegacy ? detalleLegacyPlano(legacyChanges) : [];
+                  const filasMoqDeEsteLog = esLegacy ? filasMoq(legacyChanges) : null;
                   const hayDatos = esLegacy ? legacyChanges != null : antes || despues;
                   const abierto = expandido === log.id;
 
@@ -301,32 +349,48 @@ export default function AuditoriaPanelContent() {
                                 {t("contexto_vendedor", { vendedor: legacyChanges.seller_name })}
                               </p>
                             )}
-                            {cambios.length > 0 ? (
+                            {filasMoqDeEsteLog ? (
+                              <div className="space-y-4">
+                                <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
+                                  {t("campos_cambiados")}
+                                </p>
+                                {filasMoqDeEsteLog.map((fila, i) => (
+                                  <div key={`${fila.sku}-${i}`} className="space-y-1">
+                                    <p className="font-mono text-xs font-semibold text-zinc-600">
+                                      {fila.sku}
+                                    </p>
+                                    <div className="grid gap-2 pl-2">
+                                      {fila.cambios.length > 0 ? (
+                                        fila.cambios.map((c) => (
+                                          <FilaDiff
+                                            key={c.campo}
+                                            campo={c.campo}
+                                            antes={c.antes}
+                                            despues={c.despues}
+                                            vacio={t("vacio")}
+                                          />
+                                        ))
+                                      ) : (
+                                        <p className="text-xs text-zinc-400">{t("sin_cambios")}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : cambios.length > 0 ? (
                               <div className="space-y-2">
                                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
                                   {t("campos_cambiados")}
                                 </p>
                                 <div className="grid gap-2">
                                   {cambios.map((c) => (
-                                    <div
+                                    <FilaDiff
                                       key={c.campo}
-                                      className="grid grid-cols-[140px_1fr_auto_1fr] items-center gap-3 text-sm"
-                                    >
-                                      <span className="font-mono text-xs text-zinc-500">
-                                        {c.campo}
-                                      </span>
-                                      <span className="rounded-md bg-red-50 px-2 py-1 font-mono text-xs text-red-700 truncate">
-                                        {c.antes === null || c.antes === undefined
-                                          ? t("vacio")
-                                          : String(c.antes)}
-                                      </span>
-                                      <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
-                                      <span className="rounded-md bg-emerald-50 px-2 py-1 font-mono text-xs text-emerald-700 truncate">
-                                        {c.despues === null || c.despues === undefined
-                                          ? t("vacio")
-                                          : String(c.despues)}
-                                      </span>
-                                    </div>
+                                      campo={c.campo}
+                                      antes={c.antes}
+                                      despues={c.despues}
+                                      vacio={t("vacio")}
+                                    />
                                   ))}
                                 </div>
                               </div>
