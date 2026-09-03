@@ -38,7 +38,7 @@ export async function generarYGuardarTrimestre(opts: {
   const anio = parseInt(reporte.periodo.trimestre.slice(0, 4), 10);
 
   const { rows: filasEpp } = await query(
-    `SELECT id, cliente_nombre, odoo_partner_id, meta_anual
+    `SELECT id, cliente_nombre, odoo_partner_id, razones_sociales, meta_anual
        FROM epp_clientes
       WHERE company_id = ? AND anio = ? AND marca = ? AND activo = 1
       ORDER BY meta_anual DESC`,

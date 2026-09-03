@@ -101,37 +101,39 @@ function barColor(i: number): string {
   return ["#2563eb", "#0891b2", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#ca8a04"][i % 7];
 }
 
-/* Buscador de cliente: solo muestra sugerencias cuando se escribe algo. */
+interface RazonUI {
+  id: number | null;
+  nombre: string;
+}
+
+/**
+ * Buscador de razón social (partner de Odoo). Solo sugiere al escribir ≥2
+ * caracteres. Al elegir una, la limpia para poder agregar la siguiente.
+ */
 function ClienteCombo({
   clientes,
-  value,
   onSelect,
+  placeholder = "Escribe para buscar la razón social…",
 }: {
   clientes: { id: number; nombre: string }[];
-  value: string;
   onSelect: (c: { id: number; nombre: string }) => void;
+  placeholder?: string;
 }) {
-  const [q, setQ] = useState(value);
+  const [q, setQ] = useState("");
   const [abierto, setAbierto] = useState(false);
-
-  useEffect(() => setQ(value), [value]);
-
-  const seleccionValida = clientes.some((c) => c.nombre === value);
 
   const sugerencias = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (t.length < 2) return [];
-    return clientes
-      .filter((c) => c.nombre.toLowerCase().includes(t))
-      .slice(0, 40);
+    return clientes.filter((c) => c.nombre.toLowerCase().includes(t)).slice(0, 40);
   }, [q, clientes]);
 
   return (
-    <div className="relative mt-1">
+    <div className="relative">
       <input
         type="text"
         autoComplete="off"
-        placeholder={clientes.length ? "Escribe para buscar el cliente…" : "Cargando clientes…"}
+        placeholder={clientes.length ? placeholder : "Cargando clientes…"}
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
@@ -150,7 +152,7 @@ function ClienteCombo({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onSelect(c);
-                  setQ(c.nombre);
+                  setQ("");
                   setAbierto(false);
                 }}
                 className="block w-full text-left px-3 py-2 hover:bg-blue-50"
@@ -166,15 +168,6 @@ function ClienteCombo({
           Sin coincidencias
         </div>
       )}
-      {value ? (
-        seleccionValida ? (
-          <span className="text-[11px] text-emerald-600 mt-1 block">✓ Cliente vinculado</span>
-        ) : (
-          <span className="text-[11px] text-amber-600 mt-1 block">
-            Elige un cliente de la lista para que el cruce sea exacto.
-          </span>
-        )
-      ) : null}
     </div>
   );
 }
@@ -595,8 +588,13 @@ interface EppRow {
   id: number;
   cliente_nombre: string;
   odoo_partner_id: number | null;
+  razones_sociales: RazonUI[];
   meta_anual: number;
   activo: number;
+}
+
+interface EppEdit extends Partial<EppRow> {
+  razones?: RazonUI[];
 }
 
 function BarEpp({
@@ -667,7 +665,7 @@ function TabEpp({
   const [anio, setAnio] = useState(data.anio);
   const [rows, setRows] = useState<EppRow[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [editando, setEditando] = useState<Partial<EppRow> | null>(null);
+  const [editando, setEditando] = useState<EppEdit | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [clientes, setClientes] = useState<{ id: number; nombre: string }[]>([]);
 
@@ -737,7 +735,7 @@ function TabEpp({
               <RefreshCw size={14} /> Copiar de {anio - 1}
             </button>
             <button
-              onClick={() => setEditando({ cliente_nombre: "", meta_anual: 0, odoo_partner_id: null })}
+              onClick={() => setEditando({ cliente_nombre: "", meta_anual: 0, razones: [] })}
               className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-blue-700"
             >
               <Plus size={14} /> Agregar cuenta
@@ -796,6 +794,14 @@ function TabEpp({
                           {row.activo === 0 && (
                             <span className="ml-2 text-[9px] text-slate-400 uppercase">inactivo</span>
                           )}
+                          {(row.razones_sociales?.length ?? 0) > 1 && (
+                            <span
+                              className="ml-2 text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full"
+                              title={row.razones_sociales.map((r) => r.nombre).join("\n")}
+                            >
+                              {row.razones_sociales.length} razones sociales
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-700">
                           ${money(Number(row.meta_anual))}
@@ -818,7 +824,9 @@ function TabEpp({
                         {puedeEditar && (
                           <td className="px-4 py-2.5 text-right whitespace-nowrap">
                             <button
-                              onClick={() => setEditando(row)}
+                              onClick={() =>
+                                setEditando({ ...row, razones: row.razones_sociales || [] })
+                              }
                               className="p-1.5 text-slate-400 hover:text-blue-600"
                             >
                               <Pencil size={14} />
@@ -846,23 +854,65 @@ function TabEpp({
       <Dialog open={!!editando} onOpenChange={(o) => !o && setEditando(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editando?.id ? "Editar cuenta" : "Nueva cuenta EPP"}</DialogTitle>
+            <DialogTitle>{editando?.id ? "Editar cuenta EPP" : "Nueva cuenta EPP"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <span className="text-xs font-bold text-slate-500">Cliente (Panamá)</span>
-              <ClienteCombo
-                clientes={clientes}
-                value={editando?.cliente_nombre || ""}
-                onSelect={(c) =>
-                  setEditando((s) => ({
-                    ...s,
-                    cliente_nombre: c.nombre,
-                    odoo_partner_id: c.id,
-                  }))
-                }
-              />
+              <span className="text-xs font-bold text-slate-500">
+                Razones sociales (Odoo) — se suman todas para el avance
+              </span>
+              {(editando?.razones?.length ?? 0) > 0 && (
+                <ul className="mt-1 space-y-1">
+                  {editando!.razones!.map((r, i) => (
+                    <li
+                      key={`${r.id ?? "n"}-${i}`}
+                      className="flex items-center justify-between bg-slate-50 border rounded-lg px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="truncate">{r.nombre}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditando((s) => ({
+                            ...s,
+                            razones: (s?.razones || []).filter((_, j) => j !== i),
+                          }))
+                        }
+                        className="ml-2 text-slate-400 hover:text-red-600 shrink-0"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-1">
+                <ClienteCombo
+                  clientes={clientes}
+                  placeholder="Agregar razón social…"
+                  onSelect={(c) =>
+                    setEditando((s) => {
+                      const razones = s?.razones || [];
+                      if (razones.some((r) => r.id === c.id)) return s;
+                      return { ...s, razones: [...razones, { id: c.id, nombre: c.nombre }] };
+                    })
+                  }
+                />
+              </div>
             </div>
+            <label className="block">
+              <span className="text-xs font-bold text-slate-500">
+                Nombre de la cuenta (opcional)
+              </span>
+              <input
+                type="text"
+                value={editando?.cliente_nombre || ""}
+                placeholder={editando?.razones?.[0]?.nombre || "Por defecto, la primera razón social"}
+                onChange={(e) =>
+                  setEditando((s) => ({ ...s, cliente_nombre: e.target.value }))
+                }
+                className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
+              />
+            </label>
             <label className="block">
               <span className="text-xs font-bold text-slate-500">Meta anual (USD)</span>
               <input
@@ -896,30 +946,20 @@ function TabEpp({
             </button>
             <button
               onClick={() => {
-                const match = clientes.find(
-                  (c) => c.nombre === editando?.cliente_nombre,
-                );
-                if (!match) {
-                  setMsg("Selecciona un cliente de la lista de Panamá.");
+                const razones = editando?.razones || [];
+                if (razones.length === 0) {
+                  setMsg("Agrega al menos una razón social.");
                   return;
                 }
-                accion(
-                  editando?.id != null
-                    ? {
-                        accion: "editar",
-                        id: editando.id,
-                        cliente_nombre: match.nombre,
-                        meta_anual: editando.meta_anual,
-                        odoo_partner_id: match.id,
-                        activo: editando.activo ?? 1,
-                      }
-                    : {
-                        accion: "crear",
-                        cliente_nombre: match.nombre,
-                        meta_anual: editando?.meta_anual,
-                        odoo_partner_id: match.id,
-                      },
-                )
+                const label = (editando?.cliente_nombre || razones[0].nombre).trim();
+                accion({
+                  accion: editando?.id != null ? "editar" : "crear",
+                  ...(editando?.id != null ? { id: editando.id } : {}),
+                  cliente_nombre: label,
+                  meta_anual: editando?.meta_anual ?? 0,
+                  razones_sociales: razones,
+                  activo: editando?.activo ?? 1,
+                });
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold"
             >
