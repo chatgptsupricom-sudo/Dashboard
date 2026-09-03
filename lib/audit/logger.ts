@@ -53,8 +53,15 @@ async function resolverActor(): Promise<{
 
 const MAX_STRING_LEN = 2000;
 
-function sanitizarValor(v: unknown): unknown {
+// Nombres de columna que nunca deben llegar en claro al log (ej.
+// google_tokens.access_token/refresh_token, visibles en el panel de
+// auditoria para roles no-superadmin). Coincide por substring, no exacto,
+// para cubrir variantes (access_token, refresh_token, api_key, etc.).
+const CAMPOS_SECRETOS = /token|secret|password|contrasena|contraseña|credential|api[_-]?key/i;
+
+function sanitizarValor(v: unknown, campo?: string | null): unknown {
   if (v === null || v === undefined) return v;
+  if (campo && CAMPOS_SECRETOS.test(campo)) return "[redactado]";
   if (Buffer.isBuffer(v)) return `[binario omitido, ${v.length} bytes]`;
   if (typeof v === "string" && v.length > MAX_STRING_LEN) {
     return `${v.slice(0, MAX_STRING_LEN)}… [truncado, ${v.length} caracteres]`;
@@ -66,9 +73,54 @@ function sanitizarFila(row: unknown): Record<string, unknown> | null {
   if (!row || typeof row !== "object") return null;
   const out: Record<string, unknown> = {};
   for (const [k, val] of Object.entries(row as Record<string, unknown>)) {
-    out[k] = sanitizarValor(val);
+    out[k] = sanitizarValor(val, k);
   }
   return out;
+}
+
+// Para sql_params (array posicional, sin nombre de columna) hace falta
+// mapear cada `?` de la sentencia a su columna. Solo cubre el patron
+// dominante confirmado en el repo (columnas explicitas en INSERT, `col = ?`
+// en UPDATE) — mismo criterio conservador que extraerWhereSimple: si no
+// matchea, esa posicion queda sin nombre y sanitizarValor solo aplica el
+// chequeo de largo/buffer, igual que antes de este cambio.
+function extraerColumnasParaParams(sql: string, accion: Accion): (string | null)[] {
+  if (accion === "INSERT") {
+    // Solo la primera tupla VALUES(...) (ignora ON DUPLICATE KEY UPDATE):
+    // hay que casar cada columna con su valor porque no todos son `?` (ej.
+    // "INSERT INTO google_tokens (provider, access_token, ...) VALUES
+    // ('google', ?, ...)" — provider es literal, no ocupa una posicion en
+    // params).
+    const m = sql.match(/INSERT\s+(?:IGNORE\s+)?INTO\s+`?\w+`?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+    if (!m) return [];
+    const columnas = m[1].split(",").map((c) => c.trim().replace(/`/g, ""));
+    const valores = m[2].split(",").map((v) => v.trim());
+    const resultado: (string | null)[] = [];
+    for (let i = 0; i < valores.length; i++) {
+      if (valores[i] === "?") resultado.push(columnas[i] ?? null);
+    }
+    return resultado;
+  }
+  if (accion === "UPDATE") {
+    const setMatch = sql.match(/UPDATE\s+`?\w+`?\s+SET\s+([\s\S]+?)(?:\bWHERE\b|$)/i);
+    const whereMatch = sql.match(/\bWHERE\b([\s\S]+)$/i);
+    const resultado: (string | null)[] = [];
+    if (setMatch) {
+      for (const parte of setMatch[1].split(",")) {
+        const pm = parte.match(/`?(\w+)`?\s*=\s*\?/);
+        if (pm) resultado.push(pm[1]);
+      }
+    }
+    if (whereMatch) {
+      const wParts = whereMatch[1].match(/`?(\w+)`?\s*=\s*\?/g) || [];
+      for (const w of wParts) {
+        const wm = w.match(/`?(\w+)`?\s*=\s*\?/)!;
+        resultado.push(wm[1]);
+      }
+    }
+    return resultado;
+  }
+  return [];
 }
 
 type Accion = "INSERT" | "UPDATE" | "DELETE";
@@ -188,6 +240,9 @@ export async function registrarMutacion(
       }
     }
 
+    const columnasParams = extraerColumnasParaParams(sql, accion);
+    const paramsSanitizados = p.map((val, i) => sanitizarValor(val, columnasParams[i]));
+
     await db.execute(
       `INSERT INTO system_audit_log
         (user_id, user_name, user_role, method, path, table_name, record_id, sql_text, sql_params, before_data, after_data, status)
@@ -205,7 +260,7 @@ export async function registrarMutacion(
         tabla,
         recordId,
         sql,
-        JSON.stringify(p),
+        JSON.stringify(paramsSanitizados),
         antes ? JSON.stringify(antes) : null,
         despues ? JSON.stringify(despues) : null,
       ],
