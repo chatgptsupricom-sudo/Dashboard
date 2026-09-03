@@ -1,7 +1,11 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/roles";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get("company_id");

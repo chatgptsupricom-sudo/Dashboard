@@ -51,8 +51,14 @@ function tablasParaAcciones(acciones: string[]): string[] {
 const MAX_FETCH = 2000;
 
 function parseFilters(searchParams: URLSearchParams) {
-  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25", 10)));
+  // parseInt de un ?page=/?limit= no numerico da NaN, y NaN se propaga por
+  // offset/fetchLimit hasta el LIMIT ${...} interpolado (no parametrizado)
+  // de fetchSystemLogs/fetchLegacyLogs, tirando un 500. Se valida con
+  // Number.isFinite antes de aceptar el valor.
+  const pageParam = parseInt(searchParams.get("page") || "1", 10);
+  const limitParam = parseInt(searchParams.get("limit") || "25", 10);
+  const page = Math.max(1, Number.isFinite(pageParam) ? pageParam : 1);
+  const limit = Math.min(100, Math.max(1, Number.isFinite(limitParam) ? limitParam : 25));
   return {
     page,
     limit,

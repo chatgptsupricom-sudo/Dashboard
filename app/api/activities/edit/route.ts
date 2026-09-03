@@ -32,6 +32,22 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    // Solo el dueño de la tarea, quien la asigno o superadmin pueden
+    // editarla (mismo criterio que app/api/activities/route.ts PATCH).
+    const ownerRows = await query("SELECT user_id, assigned_by FROM activities WHERE id = ?", [id]);
+    const activity = ownerRows.rows?.[0];
+    if (!activity) {
+      return NextResponse.json({ error: "Actividad no encontrada" }, { status: 404 });
+    }
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    const callerId = String(auth.payload!.sub ?? auth.payload!.uid ?? "");
+    const callerName = ((auth.payload!.name as string) || "").trim().toLowerCase();
+    const isOwner = String(activity.user_id) === callerId;
+    const isAssigner = ((activity.assigned_by as string) || "").trim().toLowerCase() === callerName;
+    if (callerRole !== "superadmin" && !isOwner && !isAssigner) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
     // Formateamos la fecha: si el input date del modal viene vacío, mandamos NULL a MySQL
     const formattedDueDate =
       due_date && due_date.trim() !== "" ? due_date : null;

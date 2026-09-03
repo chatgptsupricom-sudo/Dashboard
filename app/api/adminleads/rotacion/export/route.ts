@@ -1,4 +1,3 @@
-import { verifyToken } from "@/lib/jwt";
 import {
   calcularRotacion,
   resolverCompanies,
@@ -6,6 +5,7 @@ import {
   type FilaRotacion,
 } from "@/lib/adminleads/rotacion";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -24,13 +24,11 @@ const ESTADO_LABEL: Record<EstadoRotacion, string> = {
  * mismos filtros que la tabla (se pasan por query). Solo cantidades físicas.
  */
 export async function GET(request: NextRequest) {
-  try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    const payload = verifyToken(token);
-    if (!payload) return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
 
-    const companies = resolverCompanies(payload);
+  try {
+    const companies = resolverCompanies(auth.payload!);
     if (!companies) {
       return NextResponse.json({ error: "Sin sucursal asignada" }, { status: 403 });
     }

@@ -1,20 +1,15 @@
-import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
-    // 1. AUTENTICACIÓN
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const payload = verifyToken(token);
-    if (!payload)
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-
+    const payload = auth.payload!;
     // 2. CONFIGURACIÓN DE FECHAS (Global para toda la función)
     const { searchParams } = new URL(request.url);
     const start =

@@ -22,9 +22,8 @@ import {
   type IgSnapshot,
 } from "@/lib/instagram";
 import { filterByCids, getAdAccounts } from "@/lib/meta";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -32,17 +31,6 @@ const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ];
-
-async function getUserCids(request: Request): Promise<number | null> {
-  const cookieHeader = request.headers.get("cookie");
-  const token = cookieHeader
-    ?.split(";")
-    .find((c) => c.trim().startsWith("token="))
-    ?.split("=")[1];
-  if (!token) return null;
-  const { payload } = await jwtVerify(token, jwtSecretBytes());
-  return (payload.cids as number) ?? null;
-}
 
 function toDate(iso: string): Date {
   return new Date(`${iso}T00:00:00Z`);
@@ -516,12 +504,12 @@ function construirPrioridades(datos: {
   return p;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const userCids = await getUserCids(request);
-    if (userCids === null) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const userCids = (auth.payload!.cids as number) ?? null;
 
     const { searchParams } = new URL(request.url);
     const sede = searchParams.get("sede");
@@ -924,12 +912,12 @@ export async function GET(request: Request) {
  * Sin cuerpo: sincroniza lo que entregue la API. Con cuerpo: carga manual de las
  * metricas que hoy la app de Meta no puede leer (origen = 'manual').
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const userCids = await getUserCids(request);
-    if (userCids === null) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const userCids = (auth.payload!.cids as number) ?? null;
 
     const body = await request.json().catch(() => ({}));
     const periodo: string = body.periodo || new Date().toISOString().slice(0, 7);

@@ -1,17 +1,13 @@
-import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 401 });
-
-    const payload = verifyToken(token);
-    if (!payload)
-      return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 401 });
-
+    const payload = auth.payload!;
     const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
 
     let companyFilter: any[];

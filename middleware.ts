@@ -25,9 +25,60 @@ const HOSTS_DEL_PORTAL = (
   .map((h) => h.trim().toLowerCase())
   .filter(Boolean);
 
+const METODOS_ESCRITURA = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// Mismo criterio que origenPermitido() en server.js (ahi para el handshake
+// de Socket.io, aca para el header Origin de fetch/XHR/form): localhost,
+// *.easypanel.host, *.supricom.com.ve.
+function origenDePanelPermitido(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host.endsWith(".easypanel.host") ||
+      host.endsWith(".supricom.com.ve")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Defensa en profundidad contra CSRF para /api/*: el matcher de abajo
+ * excluye /api del resto del middleware (auth por cookie de sesion + rol,
+ * pensado para paginas), asi que hoy ninguna API tiene chequeo de Origin —
+ * la unica proteccion contra un POST/PUT/PATCH/DELETE forjado desde otro
+ * sitio es que la cookie de sesion usa sameSite=lax (ver
+ * app/api/auth/login/route.ts). Es agregado, no reemplazo: sameSite=lax
+ * sigue siendo la barrera principal.
+ *
+ * Solo bloquea cuando el header Origin SI viene y NO matchea el allowlist
+ * — si el header no viene (curl, llamada servidor-a-servidor, navegador
+ * viejo) se deja pasar, igual que origenPermitido() en server.js, para no
+ * arriesgar romper trafico legitimo por un falso negativo. GET/HEAD no se
+ * tocan: no hay ninguna ruta GET que mute datos (confirmado en el estudio
+ * de seguridad), asi que no hay nada que este chequeo proteja ahi.
+ */
+function verificarOrigenApi(request: NextRequest): NextResponse {
+  if (!METODOS_ESCRITURA.has(request.method.toUpperCase())) {
+    return NextResponse.next();
+  }
+  const origin = request.headers.get("origin");
+  if (!origin) return NextResponse.next();
+  if (!origenDePanelPermitido(origin)) {
+    return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
+  }
+  return NextResponse.next();
+}
+
 export default async function middleware(request: NextRequest) {
-  const response = intlMiddleware(request);
   const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith("/api/")) {
+    return verificarOrigenApi(request);
+  }
+
+  const response = intlMiddleware(request);
 
   const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
 
@@ -307,6 +358,9 @@ export default async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Excluimos las rutas que no queremos que pase por el middleware
-  matcher: ["/((?!api|_next|_vercel|.*\\..*).*)"],
+  // Las paginas siguen excluyendo /api (ese tramo del middleware es
+  // auth-por-cookie con redirects, pensado para paginas). /api/:path* es un
+  // segundo matcher aparte, solo para el chequeo de Origin de
+  // verificarOrigenApi() — ver el branch al inicio de middleware().
+  matcher: ["/((?!api|_next|_vercel|.*\\..*).*)", "/api/:path*"],
 };

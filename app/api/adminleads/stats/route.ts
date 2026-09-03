@@ -204,17 +204,15 @@
 // }
 import { canalNormalizadoSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    const { payload } = await jwtVerify(token, jwtSecretBytes());
-    const userCids = payload.cids as number;
+    const userCids = auth.payload!.cids as number;
 
     const { searchParams } = new URL(request.url);
     const sellerId = searchParams.get("seller_id");

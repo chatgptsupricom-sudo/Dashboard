@@ -157,6 +157,29 @@ export async function POST(request: NextRequest) {
     const roleId = parseInt(role, 10);
     const userId = parseInt(odooId, 10); // Este es el ID de Odoo
 
+    // Un gerente de operaciones puede llegar hasta aca (comparte el guard de
+    // arriba con superadmin), pero no debe poder otorgarse a si mismo (ni a
+    // nadie) el rol superadmin, ni tocar una cuenta que ya es superadmin —
+    // antes bastaba con mandar el roleId de superadmin (visible en el GET de
+    // esta misma ruta) para autoescalarse o pisar a un superadmin existente.
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    if (callerRole !== "superadmin") {
+      const targetRoleResult = await query("SELECT name FROM roles WHERE id = ?", [roleId]);
+      const targetRoleName = ((targetRoleResult?.rows?.[0]?.name as string) || "").toLowerCase().trim();
+      if (targetRoleName === "superadmin") {
+        return NextResponse.json({ error: "No autorizado para otorgar ese rol" }, { status: 403 });
+      }
+
+      const currentRoleResult = await query(
+        `SELECT r.name FROM users_config uc JOIN roles r ON uc.role_id = r.id WHERE uc.id = ?`,
+        [userId],
+      );
+      const currentRoleName = ((currentRoleResult?.rows?.[0]?.name as string) || "").toLowerCase().trim();
+      if (currentRoleName === "superadmin") {
+        return NextResponse.json({ error: "No autorizado para modificar esa cuenta" }, { status: 403 });
+      }
+    }
+
     // 1. OBTENER NOMBRE DESDE ODOO
     const odooUsers = await callOdooRPC<any[]>("res.users", "search_read", [
       [["id", "=", userId]],
