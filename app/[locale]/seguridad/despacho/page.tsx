@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { StarRatingDisplay } from "@/components/seguridad/StarRating";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 type Despacho = {
   id: number;
@@ -61,6 +62,10 @@ export default function DespachoListPage() {
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
   const base = `/${locale}/seguridad`;
+  // Mismo criterio que ingreso/page.tsx: superAdmin llega aca desde el
+  // desplegable "Seguridad" de solo lectura.
+  const { user } = useAuthStore();
+  const isReadOnly = (user?.role || "").toLowerCase().trim() === "superadmin";
 
   const [items, setItems] = useState<Despacho[]>([]);
   const [total, setTotal] = useState(0);
@@ -176,15 +181,17 @@ export default function DespachoListPage() {
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">{tl("export_excel")}</span>
             </button>
-          <Link
-            href={`${base}/despacho/nuevo`}
-            className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{tl("new_despacho")}</span>
-            <span className="sm:hidden">+</span>
-          </Link>
+          {!isReadOnly && (
+            <Link
+              href={`${base}/despacho/nuevo`}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
+              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{tl("new_despacho")}</span>
+              <span className="sm:hidden">+</span>
+            </Link>
+          )}
         </div>
         </div>
       </header>
