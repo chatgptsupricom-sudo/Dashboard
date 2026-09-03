@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { requireRoles } from "@/lib/auth/roles";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -13,7 +14,10 @@ const COMPANY_MAP: Record<number, string> = {
   10: "Caracas",
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const [resultSellers]: any = await db.query(
       "SELECT id, name, user_id, cids FROM sellers",
