@@ -1,21 +1,12 @@
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    await jwtVerify(token, secret);
-
     const services: any = await query(`
       SELECT
         sc.id,
@@ -57,19 +48,11 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    await jwtVerify(token, secret);
-
     const body = await request.json();
     const { service_name, cost_type, monthly_cost, currency } = body;
 
@@ -106,19 +89,11 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    await jwtVerify(token, secret);
-
     const body = await request.json();
 
     // Toggle paid: creates/removes transaction to accumulate monthly total
@@ -201,19 +176,11 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    await jwtVerify(token, secret);
-
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {

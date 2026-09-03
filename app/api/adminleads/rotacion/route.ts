@@ -1,6 +1,6 @@
-import { verifyToken } from "@/lib/jwt";
 import { calcularRotacion, resolverCompanies } from "@/lib/adminleads/rotacion";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,17 +13,11 @@ export const maxDuration = 60;
  * lib/adminleads/rotacion.ts).
  */
 export async function GET(request: NextRequest) {
-  try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
-      return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
-    }
-    const payload = verifyToken(token);
-    if (!payload) {
-      return NextResponse.json({ success: false, error: "Token inválido" }, { status: 401 });
-    }
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
 
-    const companies = resolverCompanies(payload);
+  try {
+    const companies = resolverCompanies(auth.payload!);
     if (!companies) {
       return NextResponse.json(
         { success: false, error: "Sin sucursal asignada" },

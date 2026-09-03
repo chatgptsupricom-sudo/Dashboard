@@ -257,8 +257,11 @@ export async function POST(req: NextRequest) {
     const description = body.description ?? null;
     const due_date = body.due_date ?? null;
     const assigned_by = body.assigned_by ?? null;
-    const admin_id = body.admin_id ?? 0;
-    const admin_name = body.admin_name ?? "Sistema";
+    // admin_id/admin_name salen de la sesion verificada, no del body: antes
+    // cualquiera podia mandar cualquier nombre y quedaba asi en el log de
+    // auditoria, falsificando quien asigno la tarea.
+    const admin_id = auth.payload!.sub ?? auth.payload!.uid ?? 0;
+    const admin_name = (auth.payload!.name as string) || "Sistema";
 
     if (user_id) {
       const usersResult = await query(
@@ -324,6 +327,21 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const { id, status, observacion } = await req.json();
+
+    // Mismo criterio de dueno/asignador que activities/route.ts PATCH.
+    const ownerRows = await query("SELECT user_id, assigned_by FROM activities WHERE id = ?", [id]);
+    const activity = ownerRows.rows?.[0];
+    if (!activity) {
+      return NextResponse.json({ error: "Actividad no encontrada" }, { status: 404 });
+    }
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    const callerId = String(auth.payload!.sub ?? auth.payload!.uid ?? "");
+    const callerName = ((auth.payload!.name as string) || "").trim().toLowerCase();
+    const isOwner = String(activity.user_id) === callerId;
+    const isAssigner = ((activity.assigned_by as string) || "").trim().toLowerCase() === callerName;
+    if (callerRole !== "superadmin" && !isOwner && !isAssigner) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     if (status) {
       await query("UPDATE activities SET status = ? WHERE id = ?", [

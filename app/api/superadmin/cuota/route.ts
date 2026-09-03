@@ -1,12 +1,8 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
 import { requireRoles } from "@/lib/auth/roles";
-
-const JWT_SECRET = jwtSecretBytes();
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -143,13 +139,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const auth = await requireRoles(req, ["superadmin"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+  try {
+    const payload = auth.payload!;
     const { seller_id, cuota } = await req.json();
 
     const [seller]: any = await db.query(

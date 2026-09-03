@@ -1,10 +1,7 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 const COMPANY_IDS_ALL = [9, 10, 7];
 const COMPANY_NAME_MAP: Record<number, string> = {
@@ -48,14 +45,12 @@ const normalize = (s: string) =>
     .trim()
     .replace(/\s+/g, " ");
 
-export async function GET(req: Request) {
-  try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, ["gerencia de ventas"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+  try {
+    const payload = auth.payload!;
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const userCids = payload.cids as number;
 

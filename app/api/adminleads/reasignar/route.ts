@@ -145,27 +145,21 @@
 //   }
 // }
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 declare global {
   var io: any;
 }
 
-export async function PATCH(request: Request) {
-  try {
-    // 1. Autenticación (Mantén tu lógica actual)
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, jwtSecretBytes());
+  try {
+    const payload = auth.payload!;
     const userCids = payload.cids as number;
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
 
     // 2. Obtener datos
     const body = await request.json();
@@ -197,9 +191,12 @@ export async function PATCH(request: Request) {
         { status: 404 },
       );
 
-    if (userCids === 7 && currentLead.new_seller_cids !== 7)
+    // Simetrico para las 3 sucursales, no solo Panama (antes cids 9/10
+    // podian reasignar leads a cualquier vendedor de cualquier sucursal;
+    // superadmin sigue sin restriccion de sucursal).
+    if (userRole !== "superadmin" && userCids && currentLead.new_seller_cids !== userCids)
       return NextResponse.json(
-        { error: "No autorizado: el vendedor no pertenece a Panama" },
+        { error: "No autorizado: el vendedor no pertenece a tu sucursal" },
         { status: 403 },
       );
 

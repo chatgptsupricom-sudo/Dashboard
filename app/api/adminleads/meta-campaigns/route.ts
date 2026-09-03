@@ -1,22 +1,14 @@
 import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    const { payload } = await jwtVerify(token, secret);
-    const userCids = payload.cids as number;
+    const userCids = auth.payload!.cids as number;
 
     const { searchParams } = new URL(request.url);
     const sede = searchParams.get("sede");
@@ -113,19 +105,11 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split(";")
-      .find((c) => c.trim().startsWith("token="))
-      ?.split("=")[1];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const secret = jwtSecretBytes();
-    await jwtVerify(token, secret);
-
     const body = await request.json();
     const { campaign_name, impressions, clicks, leads_from_ads, calificados, no_calificados, ventas_cerradas, recaudo_usd } = body;
 

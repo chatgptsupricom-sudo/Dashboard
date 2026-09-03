@@ -178,6 +178,24 @@ export async function PATCH(req: NextRequest) {
   try {
     const { id, status, observacion } = await req.json();
 
+    // Solo el dueño de la tarea (user_id), quien la asigno (assigned_by
+    // guarda el nombre de quien la creo, ver AssignActivityModal.tsx) o
+    // superadmin pueden tocarla: antes cualquier sesion autenticada podia
+    // cerrar/editar la tarea de cualquier otro con solo cambiar el id.
+    const ownerRows = await query("SELECT user_id, assigned_by FROM activities WHERE id = ?", [id]);
+    const activity = ownerRows.rows?.[0];
+    if (!activity) {
+      return NextResponse.json({ error: "Actividad no encontrada" }, { status: 404 });
+    }
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    const callerId = String(auth.payload!.sub ?? auth.payload!.uid ?? "");
+    const callerName = ((auth.payload!.name as string) || "").trim().toLowerCase();
+    const isOwner = String(activity.user_id) === callerId;
+    const isAssigner = ((activity.assigned_by as string) || "").trim().toLowerCase() === callerName;
+    if (callerRole !== "superadmin" && !isOwner && !isAssigner) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
     if (status) {
       await query("UPDATE activities SET status = ? WHERE id = ?", [
         status,

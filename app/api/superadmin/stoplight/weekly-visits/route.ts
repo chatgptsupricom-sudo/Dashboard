@@ -73,6 +73,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    // Mismo criterio de lectura que superadmin/stoplight/route.ts: el POST/DELETE
+    // de este archivo ya tenian su lista de roles, a este GET se le habia
+    // quedado afuera (cualquier autenticado veia visitas de cualquier sucursal).
+    const userRoleGet = ((payload.role as string) || "").toLowerCase().trim();
+    const rolesConLectura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar", "gerente de operaciones"];
+    if (!rolesConLectura.includes(userRoleGet)) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");

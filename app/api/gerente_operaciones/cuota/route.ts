@@ -1,19 +1,14 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
-const JWT_SECRET = jwtSecretBytes();
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, ["gerente de operaciones"]);
+  if (auth.error) return auth.error;
 
-export async function GET(req: Request) {
   try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const payload = auth.payload!;
     const userCids = payload.cids as number;
 
     // 1. Obtener vendedores de la DB local
@@ -92,14 +87,12 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
-  try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const auth = await requireRoles(req, ["gerente de operaciones"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+  try {
+    const payload = auth.payload!;
     const { seller_id, cuota } = await req.json();
 
     const firstDayOfMonth = new Date(
