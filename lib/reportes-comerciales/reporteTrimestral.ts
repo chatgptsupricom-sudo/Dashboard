@@ -544,14 +544,47 @@ function ordenarPorUnidades(filas: FilaRanking[]): FilaRanking[] {
  * Cruza el ranking de clientes con las cuentas EPP (metas anuales) y calcula
  * meta trimestral, real y cumplimiento.
  */
+export interface RazonSocial {
+  id: number | null;
+  nombre: string;
+}
+
 export interface CuentaEppCalculada {
   id: number;
   clienteNombre: string;
   odooPartnerId: number | null;
+  razones: RazonSocial[];
   metaAnual: number;
   metaTrimestre: number;
   realTrimestre: number;
   cumplimiento: number; // 0..1+
+}
+
+/**
+ * Razones sociales (partners de Odoo) que suman a una cuenta EPP. Si la fila no
+ * tiene `razones_sociales` (registros viejos), cae a su partner/nombre único.
+ */
+export function parseRazonesSociales(
+  raw: string | null | undefined,
+  fallback: { odoo_partner_id: number | null; cliente_nombre: string },
+): RazonSocial[] {
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const limpio = arr
+          .map((r: any) => ({
+            id: r?.id != null && r.id !== "" ? Number(r.id) : null,
+            nombre: String(r?.nombre || "").trim(),
+          }))
+          .filter((r: RazonSocial) => r.id != null || r.nombre);
+        if (limpio.length > 0) return limpio;
+      }
+    } catch {
+      /* json inválido → fallback */
+    }
+  }
+  return [{ id: fallback.odoo_partner_id ?? null, nombre: fallback.cliente_nombre }];
 }
 
 export function calcularEpp(
@@ -561,6 +594,7 @@ export function calcularEpp(
     cliente_nombre: string;
     odoo_partner_id: number | null;
     meta_anual: number | string;
+    razones_sociales?: string | null;
   }>,
 ): CuentaEppCalculada[] {
   const porId = new Map<number, number>();
@@ -571,16 +605,21 @@ export function calcularEpp(
   }
 
   return filasEpp.map((f) => {
+    const razones = parseRazonesSociales(f.razones_sociales, f);
+    let real = 0;
+    for (const rz of razones) {
+      real +=
+        (rz.id != null ? porId.get(rz.id) : undefined) ??
+        porNombre.get(normalizarNombre(rz.nombre)) ??
+        0;
+    }
     const metaAnual = Number(f.meta_anual) || 0;
     const metaTrimestre = redondear(metaAnual / 4);
-    const real =
-      (f.odoo_partner_id != null ? porId.get(f.odoo_partner_id) : undefined) ??
-      porNombre.get(normalizarNombre(f.cliente_nombre)) ??
-      0;
     return {
       id: f.id,
       clienteNombre: f.cliente_nombre,
       odooPartnerId: f.odoo_partner_id ?? null,
+      razones,
       metaAnual,
       metaTrimestre,
       realTrimestre: redondear(real),

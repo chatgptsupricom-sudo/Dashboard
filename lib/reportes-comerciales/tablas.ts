@@ -21,6 +21,7 @@ export async function ensureTablasReportesComerciales(): Promise<void> {
     marca VARCHAR(60) NOT NULL DEFAULT 'EZVIZ',
     cliente_nombre VARCHAR(255) NOT NULL,
     odoo_partner_id INT NULL,
+    razones_sociales LONGTEXT NULL,
     meta_anual DECIMAL(15,2) NOT NULL DEFAULT 0,
     activo TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -46,15 +47,17 @@ export async function ensureTablasReportesComerciales(): Promise<void> {
     UNIQUE KEY uniq_snap (company_id, marca, trimestre)
   )`);
 
-  // Para instalaciones que ya tenían la tabla sin las columnas del archivo.
-  // MySQL no soporta ADD COLUMN IF NOT EXISTS, así que se ignora el error de
-  // "columna duplicada" (1060).
-  for (const col of [
-    "ADD COLUMN archivo_nombre VARCHAR(255) NULL",
-    "ADD COLUMN archivo_b64 LONGTEXT NULL",
-  ]) {
+  // Para instalaciones que ya tenían las tablas sin columnas nuevas. MySQL no
+  // soporta ADD COLUMN IF NOT EXISTS, así que se ignora el error de "columna
+  // duplicada" (1060).
+  const alters: [string, string][] = [
+    ["reporte_trimestral_snapshots", "ADD COLUMN archivo_nombre VARCHAR(255) NULL"],
+    ["reporte_trimestral_snapshots", "ADD COLUMN archivo_b64 LONGTEXT NULL"],
+    ["epp_clientes", "ADD COLUMN razones_sociales LONGTEXT NULL"],
+  ];
+  for (const [tabla, col] of alters) {
     try {
-      await query(`ALTER TABLE reporte_trimestral_snapshots ${col}`);
+      await query(`ALTER TABLE ${tabla} ${col}`);
     } catch (e: any) {
       if (e?.errno !== 1060) throw e;
     }
