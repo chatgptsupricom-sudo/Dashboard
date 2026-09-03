@@ -185,6 +185,7 @@
     "sugerencia_compras": "Purchase Suggestions",
     "menor_rotacion": "Lowest Rotation",
     "mayor_rotacion": "Highest Rotation",
+    "pareto_80_20": "80/20 Curve",
     "moq": "MOQ",
     "cobertura_stock": "Stock Coverage",
     "rotacion_categoria": "Rotation by Category",

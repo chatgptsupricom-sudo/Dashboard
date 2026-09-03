@@ -254,6 +254,7 @@ export const rolePermissions: RolePermissions = {
       "rotacion_categoria",
       "tendencia",
       "stoplight_reports",
+      "pareto_80_20",
     ],
   },
   [UserRole.RMA]: {

@@ -243,6 +243,7 @@ export function Sidebar({
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
+    { id: "pareto_80_20", label: t("pareto_80_20"), icon: PieChart, slug: "/pareto-80-20" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
@@ -339,9 +340,10 @@ export function Sidebar({
     allowedSections.includes("mayor_rotacion") ||
     allowedSections.includes("cobertura") ||
     allowedSections.includes("rotacion_categoria") ||
-    allowedSections.includes("tendencia");
+    allowedSections.includes("tendencia") ||
+    allowedSections.includes("pareto_80_20");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
@@ -868,6 +870,11 @@ export function Sidebar({
                           label: t("mayor_rotacion"),
                           href: `/${locale}/compras/mayor_rotacion`,
                           permission: "mayor_rotacion",
+                        },
+                        {
+                          label: t("pareto_80_20"),
+                          href: `/${locale}/compras/pareto-80-20`,
+                          permission: "pareto_80_20",
                         },
                         {
                           label: t("cobertura_stock"),
