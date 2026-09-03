@@ -119,6 +119,7 @@ export function Sidebar({
   const [isCxCOpen, setIsCxCOpen] = useState(false);
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
+  const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
 
   useEffect(() => {
@@ -367,6 +368,10 @@ export function Sidebar({
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
         !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
+        // "Servicio Tecnico" (id: "rma") pasa a vivir dentro del desplegable
+        // "RMA" (seg_grupo_rma) para superAdmin, en vez de como item plano
+        // aparte -- quedaban dos entradas separadas para el mismo dominio.
+        !(userRole === "superAdmin" && item.id === "rma") &&
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
@@ -710,12 +715,23 @@ export function Sidebar({
                       exit={{ opacity: 0, height: 0 }}
                       className="pl-9 space-y-1 overflow-hidden"
                     >
-                      {[
-                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
-                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
-                        { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
-                        { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
-                      ].map((sub, index) => {
+                      {(userRole === "superAdmin"
+                        ? [
+                            // Para superAdmin este desplegable es solo el dominio de
+                            // tickets de RMA: "Servicio Tecnico" vivia como item plano
+                            // aparte (id: "rma", ver el filtro de availableItems mas
+                            // arriba que ahora lo excluye para este rol). Ingreso/Egreso/
+                            // Estadisticas/Por-llegar (operacion de almacen) se mudaron
+                            // al desplegable "Seguridad" aparte, mas abajo.
+                            { label: t("rma"), href: `/${locale}/rma` },
+                          ]
+                        : [
+                            { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                            { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                            { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
+                            { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
+                          ]
+                      ).map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se
                         // compara exacto o marcaria siempre.
@@ -723,6 +739,66 @@ export function Sidebar({
                         const isSubActive = esPanel
                           ? pathname === sub.href
                           : pathname.startsWith(sub.href);
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Vista de solo lectura para superAdmin: mismos Ingreso/Egreso que
+                opera el rol Seguridad arriba, en un desplegable propio y
+                separado de "RMA" (que para superAdmin ya quedo reducido a
+                Servicio Tecnico). El "solo lectura" lo aplican las paginas de
+                destino segun el rol de la sesion (userRole === "superAdmin"),
+                no un chequeo de permisos nuevo — superAdmin ya podia entrar a
+                esas rutas; ahora ya no ve los botones de crear/calificar. */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsSeguridadOpen(!isSeguridadOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Shield size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seguridad")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isSeguridadOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isSeguridadOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                      ].map((sub, index) => {
+                        const isSubActive = pathname === sub.href;
 
                         return (
                           <Link

@@ -128,6 +128,9 @@ export default function DespachoDetailPage() {
   const base = `/${locale}/seguridad`;
 
   const { user } = useAuthStore();
+  // superAdmin llega aca desde el desplegable "Seguridad" de solo lectura del
+  // sidebar: puede ver si ya se califico, pero no calificar el.
+  const isReadOnly = (user?.role || "").toLowerCase().trim() === "superadmin";
 
   const [despacho, setDespacho] = useState<Despacho | null>(null);
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
@@ -383,6 +386,7 @@ export default function DespachoDetailPage() {
             seguridad: user?.name,
             cliente: despacho.cliente_retira || undefined,
           }}
+          readOnly={isReadOnly}
           permitirRehacer={
             (user?.role || "").toLowerCase().trim() === "superadmin"
           }
@@ -471,6 +475,8 @@ export default function DespachoDetailPage() {
                 </span>
               </p>
             </div>
+          ) : isReadOnly ? (
+            <p className="text-sm text-slate-500">{tc("not_rated")}</p>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50/40 px-3 py-4">

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { StarRatingDisplay } from "@/components/seguridad/StarRating";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 type Ingreso = {
   id: number;
@@ -58,6 +59,11 @@ export default function IngresoListPage() {
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
   const base = `/${locale}/seguridad`;
+  // superAdmin llega a este listado desde el desplegable "Seguridad" del
+  // sidebar, pensado como vista de solo lectura — el rol Seguridad sigue
+  // pudiendo crear ingresos con total normalidad.
+  const { user } = useAuthStore();
+  const isReadOnly = (user?.role || "").toLowerCase().trim() === "superadmin";
 
   const [items, setItems] = useState<Ingreso[]>([]);
   const [total, setTotal] = useState(0);
@@ -179,15 +185,17 @@ export default function IngresoListPage() {
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">{tl("export_excel")}</span>
             </button>
-          <Link
-            href={`${base}/ingreso/nuevo`}
-            className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
-            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{tl("new_ingreso")}</span>
-            <span className="sm:hidden">+</span>
-          </Link>
+          {!isReadOnly && (
+            <Link
+              href={`${base}/ingreso/nuevo`}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors"
+              style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{tl("new_ingreso")}</span>
+              <span className="sm:hidden">+</span>
+            </Link>
+          )}
         </div>
         </div>
       </header>
