@@ -25,9 +25,9 @@ Panel administrativo SUPRICOM. Next.js 16 (App Router) + TypeScript + MySQL + Od
 `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` (MySQL) · `NEXT_PUBLIC_ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` · `JWT_SECRET`, `JWT_EXPIRATION` · `CRON_SECRET` · `WEBHOOK_SECRET` · `N8N_LEAD_WEBHOOK_URL`, `N8N_REASSIGN_WEBHOOK_URL` · `OPENAI_API_KEY` / `OPENROUTER_API_KEY` (agente IA y reportes) · `NEXT_PUBLIC_SOCKET_URL`.
 
 Gotchas:
-- Existen secrets hardcodeados como fallback en el código (JWT_SECRET, ODOO_API_KEY). No añadir más ni quitarlos sin reemplazo.
+- `JWT_SECRET`/`ODOO_API_KEY` no tienen fallback hardcodeado: `lib/secretos.ts` falla cerrado (secreto aleatorio de un solo uso / string vacío) si la env var falta, y loguea el error. No reintroducir un fallback fijo — es lo que este archivo reemplazó.
 - `target_company_id` (cids) en agentes/reportes: 9=Valencia (default), 10=Caracas, 7=Panamá (`lib/tools.ts`).
-- Varias rutas (inventario ×3, agenteia) hacen `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"` al inicio — quirk de dev, respetarlo.
+- Ninguna ruta desactiva la verificación TLS globalmente (`NODE_TLS_REJECT_UNAUTHORIZED`) — las que antes lo hacían (inventario ×3, agenteia) usan `callOdooRPCInsecure()` en `lib/odoo.ts`, que aplica un `https.Agent({rejectUnauthorized:false})` scoped a esa llamada puntual, no al proceso.
 
 ## Docs
 
