@@ -100,6 +100,7 @@ type ContadoCreditoData = {
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
 type Modo = "facturado" | "cobrado";
+type Filtro = { tipo?: "contado" | "credito"; dias?: number; journalId?: number };
 
 export default function ContadoCreditoPage() {
   const { user } = useAuthStore();
@@ -118,8 +119,12 @@ export default function ContadoCreditoPage() {
 
   const userCids = (user as any)?.cids;
 
-  // Modal 1: clientes de un grupo (contado / credito / bucket)
-  const [clientesModal, setClientesModal] = useState<{ open: boolean; titulo: string; clientes: ClienteDetalle[] }>({ open: false, titulo: "", clientes: [] });
+  // Modal 1: clientes de un grupo (contado / credito / bucket / banco).
+  // filtro viaja hasta el modal de cobros para que "Cobros -- Cliente X" solo
+  // muestre los abonos de ESA card, no todo el mes del cliente mezclado
+  // (antes: entrar desde la card de "21 dias" mostraba tambien sus abonos
+  // a 30 dias, porque el modal de cobros no sabia de que card venia).
+  const [clientesModal, setClientesModal] = useState<{ open: boolean; titulo: string; clientes: ClienteDetalle[]; filtro: Filtro }>({ open: false, titulo: "", clientes: [], filtro: {} });
 
   // Modal 2: facturas del mes de un cliente
   const [facturasModal, setFacturasModal] = useState<{ open: boolean; partnerId: number; partnerName: string }>({ open: false, partnerId: 0, partnerName: "" });
@@ -161,13 +166,13 @@ export default function ContadoCreditoPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const openClientes = (titulo: string, clientes: ClienteDetalle[]) => {
-    setClientesModal({ open: true, titulo, clientes });
+  const openClientes = (titulo: string, clientes: ClienteDetalle[], filtro: Filtro = {}) => {
+    setClientesModal({ open: true, titulo, clientes, filtro });
   };
 
   const facturasFetchIdRef = useRef(0);
 
-  const openFacturasCliente = useCallback(async (partnerId: number, partnerName: string) => {
+  const openFacturasCliente = useCallback(async (partnerId: number, partnerName: string, filtro: Filtro) => {
     const fetchId = ++facturasFetchIdRef.current;
     setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: true, partnerId, partnerName });
@@ -180,6 +185,9 @@ export default function ContadoCreditoPage() {
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
       params.set("modo", modo);
+      if (filtro.journalId !== undefined) params.set("journalId", String(filtro.journalId));
+      else if (filtro.dias !== undefined) params.set("dias", String(filtro.dias));
+      else if (filtro.tipo) params.set("tipo", filtro.tipo);
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito/facturas-cliente?${params}`);
       const json = await res.json();
       if (fetchId !== facturasFetchIdRef.current) return;
@@ -354,7 +362,7 @@ export default function ContadoCreditoPage() {
           {/* Contado vs Credito + grafica de torta */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <button
-              onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle)}
+              onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle, { tipo: "contado" })}
               className="text-left bg-white border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
             >
               <div className="flex items-center gap-2 text-emerald-700">
@@ -366,7 +374,7 @@ export default function ContadoCreditoPage() {
               <p className="text-xs text-slate-500 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
             </button>
             <button
-              onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle)}
+              onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle, { tipo: "credito" })}
               className="text-left bg-white border border-blue-200 bg-blue-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
             >
               <div className="flex items-center gap-2 text-blue-700">
@@ -398,7 +406,7 @@ export default function ContadoCreditoPage() {
                   {data.buckets.map((b) => (
                     <button
                       key={String(b.dias)}
-                      onClick={() => openClientes(`Clientes — ${bucketLabel(b)}`, b.clientesDetalle)}
+                      onClick={() => openClientes(`Clientes — ${bucketLabel(b)}`, b.clientesDetalle, { dias: b.dias })}
                       className="text-left bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition cursor-pointer"
                     >
                       <p className="text-xs text-slate-500 uppercase tracking-wide">{bucketLabel(b)}</p>
@@ -437,7 +445,7 @@ export default function ContadoCreditoPage() {
                   {data.bancos.map((b, i) => (
                     <button
                       key={b.journalId}
-                      onClick={() => openClientes(`Clientes — ${b.journalName}`, b.clientesDetalle)}
+                      onClick={() => openClientes(`Clientes — ${b.journalName}`, b.clientesDetalle, { journalId: b.journalId })}
                       className="text-left bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5">
@@ -487,7 +495,7 @@ export default function ContadoCreditoPage() {
                 {clientesModal.clientes.map((c) => (
                   <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4">
-                      <button onClick={() => openFacturasCliente(c.partnerId, c.partnerName)} className="font-semibold text-blue-600 hover:underline text-left">
+                      <button onClick={() => openFacturasCliente(c.partnerId, c.partnerName, clientesModal.filtro)} className="font-semibold text-blue-600 hover:underline text-left">
                         {c.partnerName}
                       </button>
                     </td>
