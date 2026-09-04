@@ -27,9 +27,20 @@ async function ensureTable() {
       INDEX idx_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  // aspect_ratio reemplaza a "resolution" (ese campo no existe en la API real de
+  // Seedream 5 Pro Image-to-Image; se deja la columna vieja sin usar para no
+  // migrar datos de prueba).
+  try {
+    await query(`ALTER TABLE designer_ai_jobs ADD COLUMN aspect_ratio VARCHAR(10) NOT NULL DEFAULT '1:1'`);
+  } catch (e: any) {
+    if (!e.message?.includes("Duplicate column")) {
+      console.error("ensureTable(aspect_ratio):", e.message);
+    }
+  }
 }
 
 const DEFAULT_MODEL = process.env.KIE_SEEDREAM_MODEL || "seedream/5-pro-image-to-image";
+const ASPECT_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2"];
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -54,7 +65,7 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await query(
-      `SELECT id, prompt, model, resolution, status, result_urls, fail_msg, created_by, created_at,
+      `SELECT id, prompt, model, aspect_ratio, status, result_urls, fail_msg, created_by, created_at,
               CONCAT('/api/disenador/ia-imagen/source/', id) AS source_url
        FROM designer_ai_jobs ${where}
        ORDER BY created_at DESC LIMIT ${limit}`,
@@ -75,7 +86,7 @@ export async function GET(request: NextRequest) {
 
 // POST: crea un job de edición con IA.
 // FormData:
-//   created_by, prompt, resolution ("1K"|"2K"), variations (1-4)
+//   created_by, prompt, aspect_ratio ("1:1"|"4:3"|"3:4"|"16:9"|"9:16"|"2:3"|"3:2")
 //   image             -> File nueva a editar, ó
 //   source_design_id  -> id de un diseño ya guardado en el catálogo
 export async function POST(request: NextRequest) {
@@ -84,8 +95,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const created_by = (formData.get("created_by") as string) || "";
     const prompt = ((formData.get("prompt") as string) || "").trim();
-    const resolution = (formData.get("resolution") as string) === "2K" ? "2K" : "1K";
-    const variations = Math.min(4, Math.max(1, parseInt((formData.get("variations") as string) || "1", 10)));
+    const aspectRatioInput = (formData.get("aspect_ratio") as string) || "1:1";
+    const aspect_ratio = ASPECT_RATIOS.includes(aspectRatioInput) ? aspectRatioInput : "1:1";
     const image = formData.get("image") as File | null;
     const sourceDesignId = formData.get("source_design_id") as string | null;
 
@@ -116,9 +127,9 @@ export async function POST(request: NextRequest) {
 
     // 1) Insertamos el job ya con la imagen fuente, para poder construir su URL pública.
     const insertResult = await query(
-      `INSERT INTO designer_ai_jobs (created_by, prompt, model, resolution, source_image_data, source_image_mime, status)
+      `INSERT INTO designer_ai_jobs (created_by, prompt, model, aspect_ratio, source_image_data, source_image_mime, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [created_by, prompt, DEFAULT_MODEL, resolution, buffer, mime]
+      [created_by, prompt, DEFAULT_MODEL, aspect_ratio, buffer, mime]
     );
     const jobId = (insertResult.rows as any)?.insertId;
 
@@ -134,8 +145,10 @@ export async function POST(request: NextRequest) {
       const taskId = await kieCreateTask({
         prompt,
         image_urls: [sourceUrl],
-        size: resolution,
-        max_images: variations,
+        aspect_ratio,
+        quality: "basic",
+        output_format: "png",
+        nsfw_checker: true,
       });
       await query(`UPDATE designer_ai_jobs SET kie_task_id = ?, status = 'processing' WHERE id = ?`, [taskId, jobId]);
       return NextResponse.json({ success: true, jobId }, { status: 201 });

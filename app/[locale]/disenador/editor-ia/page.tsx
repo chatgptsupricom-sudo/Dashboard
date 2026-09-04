@@ -72,8 +72,7 @@ export default function EditorIaPage() {
 
   // Formulario
   const [prompt, setPrompt] = useState("");
-  const [resolution, setResolution] = useState<"1K" | "2K">("1K");
-  const [variations, setVariations] = useState(1);
+  const [aspectRatio, setAspectRatio] = useState("1:1");
 
   // Job activo
   const [job, setJob] = useState<AiJob | null>(null);
@@ -179,8 +178,7 @@ export default function EditorIaPage() {
       const fd = new FormData();
       fd.append("created_by", user.name);
       fd.append("prompt", prompt.trim());
-      fd.append("resolution", resolution);
-      fd.append("variations", String(variations));
+      fd.append("aspect_ratio", aspectRatio);
       if (sourceFile) fd.append("image", sourceFile);
       if (sourceDesignId) fd.append("source_design_id", String(sourceDesignId));
 
@@ -307,30 +305,21 @@ export default function EditorIaPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Resolución</Label>
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value as "1K" | "2K")}
-                  className="mt-1 w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                >
-                  <option value="1K">1K (más económico)</option>
-                  <option value="2K">2K</option>
-                </select>
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Variaciones</Label>
-                <select
-                  value={variations}
-                  onChange={(e) => setVariations(Number(e.target.value))}
-                  className="mt-1 w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                >
-                  {[1, 2, 3, 4].map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Proporción</Label>
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="mt-1 w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+              >
+                <option value="1:1">Cuadrada (1:1)</option>
+                <option value="4:3">4:3</option>
+                <option value="3:4">3:4 (vertical)</option>
+                <option value="16:9">16:9 (panorámica)</option>
+                <option value="9:16">9:16 (vertical)</option>
+                <option value="2:3">2:3 (vertical)</option>
+                <option value="3:2">3:2</option>
+              </select>
             </div>
 
             <Button
