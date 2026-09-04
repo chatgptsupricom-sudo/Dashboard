@@ -298,6 +298,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "catalogo_disenador",
       "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
+      "editor_ia_disenador", // Editor con IA (Seedream vía KIE)
       "vista_custom",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],

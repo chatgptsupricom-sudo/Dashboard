@@ -1,23 +1,10 @@
 import { query } from "@/lib/db";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { NextRequest, NextResponse } from "next/server";
 
 // Catálogo de diseños del Diseñador. Las imágenes viven en MySQL (LONGBLOB) para
 // que sobrevivan a los deploys, igual que el Banco de Flyers (product_images).
-async function ensureTable() {
-  await query(`
-    CREATE TABLE IF NOT EXISTS designer_designs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      title VARCHAR(255) NOT NULL DEFAULT '',
-      folder VARCHAR(255) NULL,
-      image_data LONGBLOB NULL,
-      image_mime VARCHAR(100) NULL,
-      created_by VARCHAR(255) NOT NULL DEFAULT '',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_folder (folder),
-      INDEX idx_created_at (created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  `);
-}
+const ensureTable = ensureDesignerDesignsTable;
 
 // GET: lista paginada del catálogo (sin el binario, que es pesado).
 export async function GET(request: NextRequest) {

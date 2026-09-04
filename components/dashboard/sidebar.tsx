@@ -53,6 +53,7 @@ import {
   Send,
   Inbox,
   PackageCheck,
+  Sparkles,
   Star,
   ShieldCheck,
   Target,
@@ -279,6 +280,7 @@ export function Sidebar({
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
     { id: "catalogo_disenos", label: "Mis Diseños", icon: Palette, slug: "/disenos" },
+    { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
     // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
     // /superadmin y generaria enlaces rotos con slugs relativos.
