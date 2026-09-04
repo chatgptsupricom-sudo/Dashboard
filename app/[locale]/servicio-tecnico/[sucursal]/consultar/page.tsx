@@ -2,7 +2,7 @@
 
 import { useSearchParams, useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
@@ -152,36 +152,29 @@ export default function ConsultarPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white px-4 py-10 sm:py-16">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-100 mb-4">
-            <svg
-              className="w-8 h-8 text-violet-600"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2">
-            {t("consultar_titulo")}
-          </h1>
-          <p className="text-base text-slate-600">{t("consultar_subtitulo")}</p>
+    <div className="pt-page min-h-full">
+      <div className="pt-shell pt-shell--narrow">
+        <div className="mb-7">
+          <Link
+            href={`/${locale}/servicio-tecnico/${sucursal}`}
+            className="pt-back"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            {t("consultar_link_volver")}
+          </Link>
         </div>
 
+        {/* Header */}
+        <p className="pt-eyebrow">{t("eyebrow")}</p>
+        <h1 className="pt-h1">{t("consultar_titulo")}</h1>
+        <p className="pt-sub">{t("consultar_subtitulo")}</p>
+
+        <div className="mt-8">
         {/* Cargando el ticket del token de la URL. Sin esto, entre el clic en
             el enlace y la respuesta del servidor solo se veia el titulo, sin
             ninguna pista de que la pagina estaba haciendo algo. */}
         {tokenFromUrl && buscando && !ticket && (
-          <div className="flex items-center justify-center gap-2 py-10 text-slate-500">
+          <div className="flex items-center justify-center gap-2 py-10 text-[color:var(--portal-muted)]">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
             <span className="text-sm font-medium">{t("consultar_buscando")}</span>
           </div>
@@ -192,12 +185,9 @@ export default function ConsultarPage() {
             invalido dejaba al cliente sin formulario, sin mensaje y sin forma
             de reintentar — solo el titulo, un callejon sin salida. */}
         {!ticket && (!tokenFromUrl || error) && (
-          <form
-            onSubmit={handleBuscar}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-4 space-y-4"
-          >
+          <form onSubmit={handleBuscar} className="pt-panel">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+              <label className="pt-label">
                 {t("consultar_label_numero")}
               </label>
               <input
@@ -206,12 +196,12 @@ export default function ConsultarPage() {
                 value={numero}
                 onChange={(e) => setNumero(e.target.value)}
                 placeholder={t("consultar_placeholder_numero")}
-                className="w-full px-4 py-3 border border-slate-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="pt-input"
                 autoComplete="off"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+            <div className="mt-5">
+              <label className="pt-label">
                 {t("consultar_label_factura")}
               </label>
               <input
@@ -219,21 +209,22 @@ export default function ConsultarPage() {
                 value={factura}
                 onChange={(e) => setFactura(e.target.value)}
                 placeholder={t("consultar_placeholder_factura")}
-                className="w-full px-4 py-3 border border-slate-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-violet-500 font-mono"
+                className="pt-input font-mono"
                 autoComplete="off"
               />
             </div>
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
-                {error}
-              </p>
+              <p className="pt-error mt-4">{error}</p>
             )}
-            <button
-              type="submit"
-              disabled={buscando}
-              className="w-full px-4 py-3 bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {buscando ? t("consultar_buscando") : t("consultar_boton")}
+            <button type="submit" disabled={buscando} className="pt-cta mt-6">
+              {buscando ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  {t("consultar_buscando")}
+                </>
+              ) : (
+                t("consultar_boton")
+              )}
             </button>
           </form>
         )}
@@ -242,20 +233,18 @@ export default function ConsultarPage() {
         {ticket && (
           <div className="space-y-4">
             {/* Estatus card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            <div className="pt-panel">
+              <p className="pt-panel__eyebrow">
                 {t("consultar_status_titulo")}
               </p>
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <code className="text-2xl sm:text-3xl font-black text-violet-600 tracking-wider">
-                  {ticket.case_number}
-                </code>
+              <div className="mt-1 mb-5">
+                <code className="pt-code">{ticket.case_number}</code>
               </div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              <p className="pt-panel__eyebrow">
                 {t("consultar_status_label")}
               </p>
               <div
-                className={`inline-flex items-center px-4 py-2 rounded-xl border text-sm font-semibold ${
+                className={`mt-2 inline-flex items-center px-4 py-2 rounded-xl border text-sm font-semibold ${
                   STATUS_COLORS[ticket.status] || STATUS_COLORS.recibido
                 }`}
               >
@@ -292,95 +281,74 @@ export default function ConsultarPage() {
             </div>
 
             {/* Datos del reporte */}
-
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
+            <div className="pt-panel">
+              <p className="pt-panel__eyebrow">
                 {t("consultar_datos_reporte")}
               </p>
-              <dl className="space-y-3">
+              <dl className="mt-3">
                 {ticket.product_name && (
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                    <dt className="text-sm font-semibold text-slate-500">
-                      {t("consultar_producto")}
-                    </dt>
-                    <dd className="text-sm text-slate-900 sm:text-right break-words">
-                      {ticket.product_name}
-                    </dd>
+                  <div className="pt-summary__row">
+                    <dt>{t("consultar_producto")}</dt>
+                    <dd className="break-words">{ticket.product_name}</dd>
                   </div>
                 )}
                 {ticket.invoice_number && (
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                    <dt className="text-sm font-semibold text-slate-500">
-                      {t("consultar_factura")}
-                    </dt>
-                    <dd className="text-sm text-slate-900 sm:text-right font-mono">
-                      {ticket.invoice_number}
-                    </dd>
+                  <div className="pt-summary__row">
+                    <dt>{t("consultar_factura")}</dt>
+                    <dd className="font-mono">{ticket.invoice_number}</dd>
                   </div>
                 )}
                 {ticket.serial && (
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                    <dt className="text-sm font-semibold text-slate-500">
-                      Serial
-                    </dt>
-                    <dd className="text-sm text-slate-900 sm:text-right font-mono">
-                      {ticket.serial}
-                    </dd>
+                  <div className="pt-summary__row">
+                    <dt>Serial</dt>
+                    <dd className="font-mono">{ticket.serial}</dd>
                   </div>
                 )}
                 {ticket.client_phone_masked && (
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                    <dt className="text-sm font-semibold text-slate-500">
-                      Teléfono
-                    </dt>
-                    <dd className="text-sm text-slate-900 sm:text-right font-mono">
-                      {ticket.client_phone_masked}
-                    </dd>
+                  <div className="pt-summary__row">
+                    <dt>Teléfono</dt>
+                    <dd className="font-mono">{ticket.client_phone_masked}</dd>
                   </div>
                 )}
-                <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4 py-2 border-b border-slate-100 last:border-0">
-                  <dt className="text-sm font-semibold text-slate-500">
-                    {t("consultar_fecha_creacion")}
-                  </dt>
-                  <dd className="text-sm text-slate-900 sm:text-right">
-                    {new Date(ticket.created_at).toLocaleString("es-VE")}
-                  </dd>
+                <div className="pt-summary__row">
+                  <dt>{t("consultar_fecha_creacion")}</dt>
+                  <dd>{new Date(ticket.created_at).toLocaleString("es-VE")}</dd>
                 </div>
               </dl>
             </div>
 
             {/* Timeline */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
+            <div className="pt-panel">
+              <p className="pt-panel__eyebrow">
                 {t("consultar_timeline_titulo")}
               </p>
               {ticket.timeline.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-4">
+                <p className="mt-3 text-sm text-[color:var(--portal-muted)] text-center py-4">
                   {t("consultar_sin_historial")}
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="mt-4">
                   {ticket.timeline.map((h, idx) => (
-                    <div key={idx} className="flex gap-3">
-                      <div className="flex flex-col items-center">
+                    <div key={idx} className="pt-timeline__item">
+                      <div className="pt-timeline__rail">
                         <div
-                          className={`w-3 h-3 rounded-full ${
+                          className={`pt-timeline__node ${
                             idx === ticket.timeline.length - 1
-                              ? "bg-violet-500"
-                              : "bg-slate-300"
+                              ? "pt-timeline__node--last"
+                              : ""
                           }`}
                         />
                         {idx < ticket.timeline.length - 1 && (
-                          <div className="w-0.5 flex-1 bg-slate-200 mt-1" />
+                          <div className="pt-timeline__stem" />
                         )}
                       </div>
-                      <div className="pb-4 flex-1">
-                        <p className="text-sm font-medium text-slate-700">
+                      <div className="pt-timeline__body">
+                        <p className="text-sm font-semibold text-[color:var(--portal-ink)]">
                           {h.from_status
                             ? `${etiquetaEstado(h.from_status)} → ${etiquetaEstado(h.to_status)}`
                             : etiquetaEstado(h.to_status)}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[color:var(--portal-muted)] mt-1">
                           {new Date(h.created_at).toLocaleString("es-VE")}
                         </p>
                       </div>
@@ -391,40 +359,42 @@ export default function ConsultarPage() {
             </div>
 
             {/* Contacto */}
-            <div className="bg-violet-50 rounded-2xl border border-violet-100 p-6 sm:p-8">
-              <p className="text-xs font-bold text-violet-700 uppercase tracking-wider mb-3">
+            <div className="pt-callout">
+              <p className="pt-callout__eyebrow">
                 {t("consultar_contacto_titulo")}
               </p>
-              <p className="text-sm text-slate-700 mb-4">
+              <p className="mt-2 text-sm text-[color:var(--portal-ink)]">
                 {t("consultar_contacto_desc")}
               </p>
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href="mailto:soporte.tecnico@supricom.com.ve"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
-                >
-                  <span>soporte.tecnico@supricom.com.ve</span>
-                </a>
-              </div>
+              <a
+                href="mailto:soporte.tecnico@supricom.com.ve"
+                className="pt-ghost mt-4"
+              >
+                soporte.tecnico@supricom.com.ve
+              </a>
             </div>
 
             {/* Botones de navegacion */}
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <Link
                 href={`/${locale}/servicio-tecnico/${sucursal}`}
-                className="inline-flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
+                className="pt-ghost flex-1"
               >
+                <ArrowLeft className="h-4 w-4" aria-hidden />
                 {t("consultar_link_volver")}
               </Link>
               <Link
                 href={`/${locale}/servicio-tecnico/${sucursal}/nuevo`}
-                className="inline-flex items-center justify-center px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors"
+                className="pt-cta"
+                style={{ flex: 1 }}
               >
                 {t("consultar_link_nuevo_reporte")}
+                <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

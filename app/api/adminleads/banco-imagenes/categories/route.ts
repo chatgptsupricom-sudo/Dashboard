@@ -1,7 +1,16 @@
 import { query } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, [
+    "adminleads",
+    "gerente de operaciones",
+    "vendedor",
+    "seller",
+  ]);
+  if (auth.error) return auth.error;
+
   try {
     const result = await query(
       `SELECT DISTINCT category FROM product_images WHERE category IS NOT NULL AND category != '' ORDER BY category ASC`

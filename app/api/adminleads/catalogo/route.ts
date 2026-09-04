@@ -1,29 +1,18 @@
-import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
   9: 9, // Valencia
   10: 10, // Caracas
 };
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader
-      ?.split("; ")
-      .find((row) => row.startsWith("token="))
-      ?.split("=")[1];
-
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 403 });
-    }
-
+    const payload = auth.payload!;
     const { searchParams } = new URL(request.url);
     const sedeParam = searchParams.get("sede") || "9";
     const companyId = parseInt(sedeParam);

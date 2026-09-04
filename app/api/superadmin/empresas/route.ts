@@ -1,7 +1,18 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+// Usado tambien por SpiffManager (gerente_venta y gerente_operaciones), no
+// solo por superadmin — ver components/spiff/spiff-manager.tsx.
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, [
+    "superadmin",
+    "gerencia de ventas",
+    "asistente de ventas",
+    "gerente de operaciones",
+  ]);
+  if (auth.error) return auth.error;
+
   try {
     const companies = await callOdooRPC<any[]>(
       "res.company",

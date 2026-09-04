@@ -1,5 +1,14 @@
 import axios from "axios";
+import https from "https";
 import { odooApiKey } from "@/lib/secretos";
+
+// Agente TLS relajado, solo para las llamadas que lo piden explicitamente
+// (ver callOdooRPCInsecure). Nunca toca process.env.NODE_TLS_REJECT_
+// UNAUTHORIZED: esa variable es global al proceso completo de Node, asi
+// que una vez seteada afecta TODAS las llamadas HTTPS salientes del
+// servidor (incluidas las de OpenAI/Meta con sus propias claves) durante
+// el resto de su vida, no solo la llamada puntual que la necesitaba.
+const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
  * Se lanza cuando Odoo no respondió en absoluto (caído, sin red, timeout,
@@ -68,11 +77,12 @@ const ODOO_UID = Number(process.env.ODOO_UID) || 388;
 //       id: Date.now(),
 //     };
 // En lib/odoo.ts
-export async function callOdooRPC<T>(
+async function callOdooRPCInternal<T>(
   model: string,
   method: string,
-  args: any[] = [], // Aquí llega [[...]]
-  kwargs: Record<string, any> = {}, // Aquí llegan { fields, limit, context }
+  args: any[],
+  kwargs: Record<string, any>,
+  httpsAgent: https.Agent | undefined,
 ): Promise<T | null> {
   try {
     const payload = {
@@ -102,7 +112,7 @@ export async function callOdooRPC<T>(
         params: payload.params,
         id: Date.now(),
       },
-      { headers: { "Content-Type": "application/json" } },
+      { headers: { "Content-Type": "application/json" }, httpsAgent },
     );
 
     return response.data.result as T;
@@ -117,6 +127,32 @@ export async function callOdooRPC<T>(
     }
     return null;
   }
+}
+
+export async function callOdooRPC<T>(
+  model: string,
+  method: string,
+  args: any[] = [], // Aquí llega [[...]]
+  kwargs: Record<string, any> = {}, // Aquí llegan { fields, limit, context }
+): Promise<T | null> {
+  return callOdooRPCInternal<T>(model, method, args, kwargs, undefined);
+}
+
+/**
+ * Igual que callOdooRPC, pero sin validar el certificado TLS de Odoo — solo
+ * para las rutas que documentaron necesitarlo (subdominios multi-nivel de
+ * Odoo Sh). El agente inseguro se pasa por-request via el `httpsAgent` de
+ * axios, así que solo afecta esta llamada puntual — nunca el proceso
+ * completo, a diferencia de setear `process.env.NODE_TLS_REJECT_
+ * UNAUTHORIZED` (lo que hacían estas rutas antes).
+ */
+export async function callOdooRPCInsecure<T>(
+  model: string,
+  method: string,
+  args: any[] = [],
+  kwargs: Record<string, any> = {},
+): Promise<T | null> {
+  return callOdooRPCInternal<T>(model, method, args, kwargs, insecureAgent);
 }
 
 /**

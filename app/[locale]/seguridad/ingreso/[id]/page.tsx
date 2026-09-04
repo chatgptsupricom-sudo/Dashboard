@@ -339,7 +339,7 @@ export default function IngresoDetailPage() {
             seguridad: user?.name,
             cliente: ingreso.cliente_nombre,
           }}
-          readOnly={esRma}
+          readOnly={esRma || esSuperadmin}
           permitirRehacer={esSuperadmin}
         />
 

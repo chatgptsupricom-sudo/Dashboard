@@ -121,17 +121,14 @@
 "use client";
 
 import type { AuthUser } from "@/lib/types";
-import Cookies from "js-cookie";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 interface AuthStore {
   user: AuthUser | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   setUser: (user: AuthUser | null) => void;
-  setToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
   initializeFromToken: () => Promise<void>; // Ajustado: ya no necesita token por parámetro
@@ -141,31 +138,22 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
       isLoading: true, // Empezamos en true
       isAuthenticated: false,
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
 
-      setToken: (token) => {
-        set({ token });
-        if (token) {
-          Cookies.set("token", token, {
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "Lax",
-            expires: 7,
-            path: "/",
-          });
-        } else {
-          Cookies.remove("token");
-        }
-      },
-
       setLoading: (loading) => set({ isLoading: loading }),
 
+      // El JWT nunca pasa por el cliente (ni el store, ni una cookie propia
+      // no-httpOnly): vive solo en la cookie httpOnly que pone el servidor.
+      // Por eso cerrar sesion tiene que ser una llamada al servidor — antes
+      // esto solo limpiaba el estado de Zustand y no existia ningun
+      // endpoint que borrara esa cookie, asi que "cerrar sesion" no
+      // invalidaba nada del lado del servidor.
       logout: () => {
-        set({ user: null, token: null, isAuthenticated: false });
-        Cookies.remove("token");
+        set({ user: null, isAuthenticated: false });
+        fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
       },
 
       initializeFromToken: async () => {

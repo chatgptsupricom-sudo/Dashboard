@@ -1,16 +1,14 @@
-import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 export async function GET(request: NextRequest) {
-  try {
-    // 1. AUTENTICACIÓN Y PARÁMETROS
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const auth = await requireRoles(request, ["gerente de operaciones"]);
+  if (auth.error) return auth.error;
 
-    const payload = verifyToken(token);
-    if (!payload || !payload.cids) {
+  try {
+    const payload = auth.payload!;
+    if (!payload.cids) {
       return NextResponse.json(
         { error: "Empresa no definida" },
         { status: 403 },

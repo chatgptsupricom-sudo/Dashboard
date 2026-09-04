@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
@@ -21,6 +22,9 @@ function getAgingBand(daysOverdue: number): string {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";

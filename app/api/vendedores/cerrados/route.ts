@@ -1,7 +1,8 @@
 import { query } from "@/lib/db";
 import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { requireSession } from "@/lib/auth/roles";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -57,7 +58,10 @@ export async function GET(request: Request) {
 }
 
 // El PATCH se mantiene igual para permitir actualizar el status si es necesario
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { id, status } = body;

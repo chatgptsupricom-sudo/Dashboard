@@ -33,7 +33,11 @@ export function SignaturePad({
 
   const lastPointRef = useRef<Point | null>(null);
   const hasContentRef = useRef(false);
-  const notifiedRef = useRef(false);
+  // Puntos crudos (pixeles de canvas, sin dividir por dpr) de cada trazo, para
+  // poder reconstruirlos en un canvas aparte al exportar — ver
+  // exportarTrazoTransparente().
+  const trazoActualRef = useRef<Point[]>([]);
+  const trazosRef = useRef<Point[][]>([]);
   const sizeRef = useRef({ cssWidth: 0, cssHeight: height, dpr: 1 });
   const isEmptyRef = useRef(true);
   const isDrawingRef = useRef(false);
@@ -137,7 +141,8 @@ export function SignaturePad({
       setupCanvas();
       if (!wasEmpty) {
         hasContentRef.current = false;
-        notifiedRef.current = false;
+        trazoActualRef.current = [];
+        trazosRef.current = [];
         isEmptyRef.current = true;
         setIsEmpty(true);
         onChangeRef.current?.(null);
@@ -156,8 +161,9 @@ export function SignaturePad({
     setIsEmpty(true);
     isEmptyRef.current = true;
     hasContentRef.current = false;
-    notifiedRef.current = false;
     lastPointRef.current = null;
+    trazoActualRef.current = [];
+    trazosRef.current = [];
     setIsDrawing(false);
     isDrawingRef.current = false;
 
@@ -167,6 +173,68 @@ export function SignaturePad({
 
     onChangeRef.current?.(null);
   }, [drawBaseline, paintBackground]);
+
+  // Redibuja un trazo (puntos crudos, sin dividir por dpr) sobre `ctx` con el
+  // mismo algoritmo de suavizado que el dibujo en vivo (linea recta al primer
+  // punto, luego curvas cuadraticas por el punto medio) — tiene que coincidir
+  // exacto o la firma exportada se ve distinta a la que el firmante vio.
+  const redibujarTrazo = useCallback((ctx: CanvasRenderingContext2D, dpr: number, puntos: Point[]) => {
+    if (puntos.length === 0) return;
+    ctx.beginPath();
+    ctx.moveTo(puntos[0].x / dpr, puntos[0].y / dpr);
+    let anterior = puntos[0];
+    for (let i = 1; i < puntos.length; i++) {
+      const actual = puntos[i];
+      const anteriorX = anterior.x / dpr;
+      const anteriorY = anterior.y / dpr;
+      const actualX = actual.x / dpr;
+      const actualY = actual.y / dpr;
+      if (i === 1) {
+        ctx.lineTo(actualX, actualY);
+      } else {
+        const midX = (anteriorX + actualX) / 2;
+        const midY = (anteriorY + actualY) / 2;
+        ctx.quadraticCurveTo(anteriorX, anteriorY, midX, midY);
+      }
+      anterior = actual;
+    }
+    ctx.stroke();
+  }, []);
+
+  // Exporta SOLO la tinta, sobre un canvas nuevo sin pintar (fondo
+  // transparente de verdad): el canvas visible tiene fondo blanco solido a
+  // proposito (para que el firmante vea donde esta escribiendo sobre la
+  // linea guia), pero eso mismo hacia que toDataURL() exportara un
+  // rectangulo blanco opaco en vez de una firma recortable. Word/PDF/el
+  // comprobante impreso mostraban un bloque blanco tapando la linea de firma
+  // que hay debajo.
+  const exportarTrazoTransparente = useCallback((): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || trazosRef.current.length === 0) return null;
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return null;
+
+    // El canvas visible dibuja en coordenadas CSS (puntos/dpr) bajo un
+    // ctx.setTransform(dpr,...) que las reescala a pixeles reales — el
+    // resultado rasterizado es identico a dibujar directamente en pixeles
+    // reales (puntos/1) con el lineWidth ya multiplicado por dpr, que es lo
+    // que hace este canvas sin transform ninguno. Por eso dpr=1 aca.
+    const { dpr } = sizeRef.current;
+    ctx.strokeStyle = PEN_COLOR;
+    ctx.lineWidth = 2 * dpr;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (const trazo of trazosRef.current) {
+      redibujarTrazo(ctx, 1, trazo);
+    }
+
+    return offscreen.toDataURL("image/png");
+  }, [redibujarTrazo]);
 
   const getPos = (
     e: React.PointerEvent<HTMLCanvasElement>,
@@ -200,6 +268,7 @@ export function SignaturePad({
     setIsDrawing(true);
     isDrawingRef.current = true;
     lastPointRef.current = pos;
+    trazoActualRef.current = [pos];
 
     const { dpr } = sizeRef.current;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -228,6 +297,7 @@ export function SignaturePad({
     const last = lastPointRef.current;
     if (!last) {
       lastPointRef.current = pos;
+      trazoActualRef.current.push(pos);
       ctx.lineTo(posX, posY);
       ctx.stroke();
       hasContentRef.current = true;
@@ -242,6 +312,7 @@ export function SignaturePad({
     ctx.stroke();
 
     lastPointRef.current = pos;
+    trazoActualRef.current.push(pos);
     hasContentRef.current = true;
   };
 
@@ -264,13 +335,17 @@ export function SignaturePad({
     isDrawingRef.current = false;
     lastPointRef.current = null;
 
-    if (hasContentRef.current && !notifiedRef.current && canvas) {
-      notifiedRef.current = true;
+    if (trazoActualRef.current.length > 1) {
+      trazosRef.current.push(trazoActualRef.current);
+    }
+    trazoActualRef.current = [];
+
+    if (hasContentRef.current && canvas) {
       if (isEmptyRef.current) {
         isEmptyRef.current = false;
         setIsEmpty(false);
       }
-      onChangeRef.current?.(canvas.toDataURL("image/png"));
+      onChangeRef.current?.(exportarTrazoTransparente());
     }
   };
 

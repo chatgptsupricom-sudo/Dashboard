@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
     const token = request.cookies.get("token")?.value;
     if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const uid = payload.uid as number;
 
     const url = new URL(request.url);
     const invoiceId = url.searchParams.get("invoice_id");
@@ -26,6 +27,12 @@ export async function GET(request: NextRequest) {
     if (!invoiceData || invoiceData.length === 0) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 });
 
     const invoice = invoiceData[0];
+
+    // Ruta de vendedores: solo la factura de sus propias ventas, nunca la
+    // de otro vendedor por id.
+    if (invoice.invoice_user_id?.[0] !== uid) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
     const lines = await callOdooRPC<any[]>(
       "account.move.line", "search_read",
       [[["move_id", "=", parseInt(invoiceId, 10)], ["display_type", "=", "product"], ["product_id", "!=", false]]],

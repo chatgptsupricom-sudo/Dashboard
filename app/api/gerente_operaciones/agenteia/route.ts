@@ -1,8 +1,11 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
+// Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
+// via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
+import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { jwtSecretBytes } from "@/lib/secretos";
 
 // 🛠️ PARCHE PARA NEXT.JS: Evita el crash de pdf-parse en el servidor
 // Simulamos los elementos del navegador que pdf-parse exige, ya que solo queremos texto.
@@ -14,9 +17,6 @@ if (typeof global !== "undefined") {
 
 // Ahora sí podemos requerir pdf-parse sin que colapse el entorno de Node
 const pdf = require("pdf-parse");
-
-// 🔐 BYPASS SSL PARA ENTORNO DE PRUEBAS / ODOO SH DEV
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 /**
  * El cliente se crea al usarlo, no al importar el modulo.
@@ -122,10 +122,7 @@ export async function POST(request: Request) {
 
     if (token) {
       try {
-        const { payload } = await jwtVerify(
-          token,
-          new TextEncoder().encode(process.env.JWT_SECRET),
-        );
+        const { payload } = await jwtVerify(token, jwtSecretBytes());
 
         // --- ESTO TE DIRÁ QUÉ CAMPO USAR ---
         console.log("🔍 [DEBUG] Payload COMPLETO:", JSON.stringify(payload));

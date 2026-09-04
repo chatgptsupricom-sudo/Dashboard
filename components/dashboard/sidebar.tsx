@@ -122,6 +122,7 @@ export function Sidebar({
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
   const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
+  const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
 
   useEffect(() => {
@@ -141,6 +142,17 @@ export function Sidebar({
 
   const [isEditingSidebar, setIsEditingSidebar] = useState(false);
   const [sidebarOrder, setSidebarOrder] = useState<string[]>([]);
+  // Acceso a "Reportes Comerciales": se pregunta al servidor (lista de correos
+  // en una env NO pública) para no depender del bundle del cliente.
+  const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/reportes-comerciales/acceso")
+      .then((r) => r.json())
+      .then((j) => setPuedeReportesComerciales(Boolean(j?.puede)))
+      .catch(() => {});
+  }, [user]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -196,7 +208,14 @@ export function Sidebar({
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
-  const allowedSections = permissions.sections || [];
+  const allowedSections = [...(permissions.sections || [])];
+
+  // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
+  // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
+  // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
+  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+    allowedSections.push("reportes_comerciales");
+  }
 
   // Definición del menú base
   const menuItems = [
@@ -218,15 +237,18 @@ export function Sidebar({
     { id: "cierres", label: t("cierres"), icon: FileText, slug: "/Cierres" },
     { id: "top_clientes", label: t("top_clientes"), icon: Trophy, slug: "/top-clientes" },
     { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
+    { id: "cxc_contado_credito", label: t("cxc_contado_credito"), icon: PieChart, slug: "/cuentas-por-cobrar/contado-credito", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
     { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
     { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
+    { id: "pareto_80_20", label: t("pareto_80_20"), icon: PieChart, slug: "/pareto-80-20" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
@@ -325,16 +347,17 @@ export function Sidebar({
     allowedSections.includes("mayor_rotacion") ||
     allowedSections.includes("cobertura") ||
     allowedSections.includes("rotacion_categoria") ||
-    allowedSections.includes("tendencia");
+    allowedSections.includes("tendencia") ||
+    allowedSections.includes("pareto_80_20");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia"];
+  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
@@ -356,6 +379,10 @@ export function Sidebar({
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
         !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
+        // "Servicio Tecnico" (id: "rma") pasa a vivir dentro del desplegable
+        // "RMA" (seg_grupo_rma) para superAdmin, en vez de como item plano
+        // aparte -- quedaban dos entradas separadas para el mismo dominio.
+        !(userRole === "superAdmin" && item.id === "rma") &&
         (isComprasRole ||
           !hasComprasPermission ||
           !comprasDropdownIds.includes(item.id)) &&
@@ -701,12 +728,23 @@ export function Sidebar({
                       exit={{ opacity: 0, height: 0 }}
                       className="pl-9 space-y-1 overflow-hidden"
                     >
-                      {[
-                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
-                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
-                        { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
-                        { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
-                      ].map((sub, index) => {
+                      {(userRole === "superAdmin"
+                        ? [
+                            // Para superAdmin este desplegable es solo el dominio de
+                            // tickets de RMA: "Servicio Tecnico" vivia como item plano
+                            // aparte (id: "rma", ver el filtro de availableItems mas
+                            // arriba que ahora lo excluye para este rol). Ingreso/Egreso/
+                            // Estadisticas/Por-llegar (operacion de almacen) se mudaron
+                            // al desplegable "Seguridad" aparte, mas abajo.
+                            { label: t("rma"), href: `/${locale}/rma` },
+                          ]
+                        : [
+                            { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                            { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                            { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
+                            { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
+                          ]
+                      ).map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se
                         // compara exacto o marcaria siempre.
@@ -714,6 +752,66 @@ export function Sidebar({
                         const isSubActive = esPanel
                           ? pathname === sub.href
                           : pathname.startsWith(sub.href);
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Vista de solo lectura para superAdmin: mismos Ingreso/Egreso que
+                opera el rol Seguridad arriba, en un desplegable propio y
+                separado de "RMA" (que para superAdmin ya quedo reducido a
+                Servicio Tecnico). El "solo lectura" lo aplican las paginas de
+                destino segun el rol de la sesion (userRole === "superAdmin"),
+                no un chequeo de permisos nuevo — superAdmin ya podia entrar a
+                esas rutas; ahora ya no ve los botones de crear/calificar. */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsSeguridadOpen(!isSeguridadOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Shield size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seguridad")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isSeguridadOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isSeguridadOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                      ].map((sub, index) => {
+                        const isSubActive = pathname === sub.href;
 
                         return (
                           <Link
@@ -861,6 +959,11 @@ export function Sidebar({
                           label: t("mayor_rotacion"),
                           href: `/${locale}/compras/mayor_rotacion`,
                           permission: "mayor_rotacion",
+                        },
+                        {
+                          label: t("pareto_80_20"),
+                          href: `/${locale}/compras/pareto-80-20`,
+                          permission: "pareto_80_20",
                         },
                         {
                           label: t("cobertura_stock"),
@@ -1020,6 +1123,11 @@ export function Sidebar({
                           label: "Alertas",
                           href: `/${locale}/cuentas-por-cobrar/alertas`,
                           permission: "cxc_alerts",
+                        },
+                        {
+                          label: "Contado/Crédito",
+                          href: `/${locale}/cuentas-por-cobrar/contado-credito`,
+                          permission: "cxc_contado_credito",
                         },
                         {
                           label: "Stoplight Report",

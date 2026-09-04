@@ -1,21 +1,13 @@
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
-async function getUserCids(request: Request): Promise<number | null> {
-  const cookieHeader = request.headers.get("cookie");
-  const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
-  if (!token) return null;
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const { payload } = await jwtVerify(token, secret);
-  return payload.cids as number;
-}
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
 
-export async function GET(request: Request) {
   try {
-    const userCids = await getUserCids(request);
-    if (userCids === null)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const userCids = auth.payload!.cids as number;
 
     const sql =
       userCids === 7
@@ -29,20 +21,24 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const userCids = await getUserCids(request);
-    if (userCids === null)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const userCids = auth.payload!.cids as number;
+    const userRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
 
     const { id, activo } = await request.json();
     if (id === undefined || activo === undefined)
       return NextResponse.json({ error: "Faltan parámetros" }, { status: 400 });
 
-    if (userCids === 7) {
+    // Simetrico para las 3 sucursales (antes solo Panama estaba protegida;
+    // superadmin sigue sin restriccion de sucursal).
+    if (userRole !== "superadmin" && userCids) {
       const check: any = await query(`SELECT cids FROM sellers WHERE id = ?`, [id]);
       const seller = (check.rows || check)?.[0];
-      if (!seller || seller.cids !== 7)
+      if (!seller || seller.cids !== userCids)
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 

@@ -66,7 +66,11 @@
       "select_role_placeholder": "Seleccionar rol de la base de datos...",
       "cancel": "Cancelar",
       "confirm": "Confirmar Acceso",
-      "select_city": "Sede / Ciudad"
+      "select_city": "Sede / Ciudad",
+      "error_no_user": "Selecciona un usuario.",
+      "error_no_role": "Selecciona un rol.",
+      "error_generic": "No se pudo guardar el cambio.",
+      "error_network": "Error de conexión, intenta de nuevo."
     },
     "loading": {
       "alert": "Sincronizando Alertas...",
@@ -156,12 +160,15 @@
     "cierres": "Cierres",
     "top_clientes": "Top Clientes",
     "cuentas_por_cobrar": "Cuentas por Cobrar",
+    "cxc_contado_credito": "Contado/Crédito",
     "estado_cuenta": "Estado de Cuentas",
     "spiff": "Spiff",
     "reporte_diario": "Reporte Diario",
+    "reportes_comerciales": "Reportes Comerciales",
     "sugerencia_compras": "Sugerencia de compras",
     "menor_rotacion": "Menor Rotación",
     "mayor_rotacion": "Mayor Rotación",
+    "pareto_80_20": "Curva 80/20",
     "moq": "MOQ",
     "cobertura_stock": "Cobertura de Stock",
     "rotacion_categoria": "Rotación por Categoría",
@@ -691,7 +698,8 @@
       "attachmentsHelp": "Una foto de la falla o del código de error nos ayuda a resolver mucho más rápido.",
       "waitUploads": "Esperando que suban los archivos...",
       "sending": "Enviando...",
-      "submit": "Enviar mi reporte"
+      "submit": "Enviar mi reporte",
+      "stepOf": "Paso {n} de {total}"
     },
     "metaTitle": "Servicio Técnico | Supricom",
     "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",
@@ -700,6 +708,7 @@
     "subtitle": "Repórtala aquí en un par de minutos. Con tu número de factura buscamos tus productos y le pasamos el caso a nuestro equipo técnico.",
     "chooseBranchTitle": "¿En qué sucursal compraste?",
     "chooseBranchSubtitle": "Elige tu sucursal para continuar.",
+    "chooseBranchGo": "Continuar",
     "sucursalBadge": "Sucursal {nombre}",
     "sucursalBadgeChange": "Cambiar",
     "report": {
@@ -712,10 +721,14 @@
       "title": "Consultar mi reporte",
       "desc": "Revisa en qué va un reporte que ya nos enviaste.",
       "hint": "Necesitas tu número de ticket.",
-      "cta": "Consultar mi reporte"
+      "cta": "Consultar mi reporte",
+      "lead": "¿Ya enviaste un reporte? Consúltalo"
     },
     "needs": {
       "title": "¿Qué necesitas para reportar?",
+      "kicker": "Supricom · Servicio Técnico",
+      "cardTitle": "Antes de empezar",
+      "time": "Son unos 2 minutos",
       "invoice": "Tu número de factura",
       "invoiceDesc": "Está en la parte superior de la factura que te entregamos con el producto.",
       "fault": "Qué le pasa al equipo",
@@ -1429,16 +1442,31 @@
       "hoy": "Hoy"
     },
     "auditoria_panel": {
-      "title": "Historial de Auditoría del Panel",
-      "buscar": "Buscar por usuario...",
-      "todos_roles": "Todos los roles",
+      "title": "Auditoría del Panel",
+      "subtitle": "Cada creación, edición o eliminación registrada en el panel: quién, cuándo, qué cambió y qué había antes.",
+      "buscar_placeholder": "Buscar por usuario o tabla...",
+      "tabla_placeholder": "Tabla",
+      "todas_las_tablas": "Todas las tablas",
+      "metodo_placeholder": "Acción",
+      "todos_los_metodos": "Todas las acciones",
+      "cargando": "Cargando...",
+      "sin_resultados": "No hay registros con estos filtros.",
       "usuario": "Usuario",
-      "rol": "Rol",
-      "accion": "Acción",
-      "detalles": "Detalles (JSON)",
+      "usuario_desconocido": "Usuario desconocido",
+      "metodo": "Acción",
+      "tabla": "Tabla",
+      "registro": "Registro",
       "fecha": "Fecha",
-      "todos": "TODOS",
-      "vendedor_option": "Vendedor"
+      "campos_cambiados": "Campos que cambiaron",
+      "detalle": "Detalle",
+      "sin_diff": "No se pudo capturar el detalle de qué cambió para este registro (queda igual el rastro de quién y cuándo).",
+      "sin_cambios": "Se capturó el registro completo, pero ningún campo cambió de valor.",
+      "vacio": "(vacío)",
+      "ver_sql_crudo": "Ver la sentencia SQL",
+      "total_registros": "{total} registros en total",
+      "contexto_lead": "Lead: {lead}",
+      "contexto_vendedor": "Vendedor: {vendedor}",
+      "origen_legacy": "-- Auditoría histórica de reasignación de leads (tabla audit_logs, sin sentencia SQL)"
     },
     "catalogo": {
       "title": "Catálogo de Productos",

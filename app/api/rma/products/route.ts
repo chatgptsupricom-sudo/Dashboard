@@ -1,7 +1,14 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
+// Tambien lo usa /adminleads/banco-imagenes para buscar/filtrar productos
+// (busqueda generica de productos en Odoo, no algo exclusivo de RMA) — ver
+// app/[locale]/adminleads/banco-imagenes/page.tsx.
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma", "adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";

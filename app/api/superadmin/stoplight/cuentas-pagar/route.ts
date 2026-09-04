@@ -1,5 +1,6 @@
 import { callOdooRPC, OdooUnreachableError } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -41,6 +42,9 @@ function getAgingBand(daysOverdue: number): string {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";

@@ -1,16 +1,14 @@
 // app/api/sellers/route.ts
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/roles";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
-    const cookieHeader = request.headers.get("cookie");
-    const token = cookieHeader?.split(";").find((c) => c.trim().startsWith("token="))?.split("=")[1];
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    const userCids = payload.cids as number;
+    const userCids = auth.payload!.cids as number;
 
     const sql =
       userCids === 7

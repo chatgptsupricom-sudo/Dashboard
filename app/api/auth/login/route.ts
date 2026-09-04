@@ -137,8 +137,11 @@ export async function POST(req: Request) {
       cids: normalizedUser.cids,
     });
 
-    // 6. Respuesta con cookie
-    const response = NextResponse.json({ user: normalizedUser, token });
+    // 6. Respuesta con cookie — el token va SOLO en la cookie httpOnly, nunca
+    // en el body: antes el cliente lo guardaba en localStorage (via el store
+    // de Zustand), lo que dejaba cualquier XSS robar una sesion de 7 dias
+    // pese al httpOnly de la cookie.
+    const response = NextResponse.json({ user: normalizedUser });
 
     response.cookies.set("token", token, {
       httpOnly: true,

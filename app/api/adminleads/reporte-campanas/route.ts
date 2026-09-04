@@ -10,25 +10,13 @@
 // exactamente los mismos que muestra el tab de Campanas Meta.
 
 import { getCampaignMetrics, type CampaignAggregate } from "@/lib/campanas-meta";
-import { jwtVerify } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Margen bruto por defecto para el ROAS ajustado; se puede pasar por query. */
 const MARGEN_DEFECTO = 10;
-
-async function getUserCids(request: Request): Promise<number | null> {
-  const cookieHeader = request.headers.get("cookie");
-  const token = cookieHeader
-    ?.split(";")
-    .find((c) => c.trim().startsWith("token="))
-    ?.split("=")[1];
-  if (!token) return null;
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const { payload } = await jwtVerify(token, secret);
-  return (payload.cids as number) ?? null;
-}
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
@@ -150,12 +138,12 @@ function economiaDeCampana(c: CampaignAggregate, margenPct: number) {
   ];
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
-    const userCids = await getUserCids(request);
-    if (userCids === null) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const userCids = (auth.payload!.cids as number) ?? null;
 
     const { searchParams } = new URL(request.url);
     const sede = searchParams.get("sede");

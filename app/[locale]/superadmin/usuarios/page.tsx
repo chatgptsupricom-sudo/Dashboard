@@ -45,6 +45,7 @@ export default function UserManagement() {
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedCids, setSelectedCids] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
+  const [assignError, setAssignError] = useState("");
   const safeCids =
     selectedCids !== undefined && selectedCids !== "" ? selectedCids : null;
 
@@ -130,6 +131,7 @@ export default function UserManagement() {
   const handleOpenModal = async () => {
     setIsOpen(true);
     setLoadingModal(true);
+    setAssignError("");
     try {
       const res = await fetch("/api/superadmin/users");
       const data = await res.json();
@@ -144,27 +146,29 @@ export default function UserManagement() {
 
   // Función para asignar rol a un usuario seleccionado
   const handleAssignRole = async () => {
-    // Diagnóstico visual
-    console.log("DEBUG - Usuario seleccionado:", selectedUser);
+    setAssignError("");
 
     if (!selectedUser) {
-      console.error("❌ No se seleccionó ningún usuario");
+      setAssignError(t("modal.error_no_user"));
       return;
     }
     if (!selectedRole) {
-      console.error("❌ No se seleccionó ningún rol");
+      setAssignError(t("modal.error_no_role"));
       return;
     }
 
-    // Rescate inteligente: busca el email en varias posibles ubicaciones
+    // Rescate inteligente: busca el email en varias posibles ubicaciones.
+    // `email` primero — `subLabel` ya no es un email limpio, ahora puede
+    // traer " — <rol actual>" pegado para mostrarlo en la lista.
     const emailToUse =
-      selectedUser.subLabel || selectedUser.email || selectedUser.login;
+      selectedUser.email || selectedUser.subLabel || selectedUser.login;
 
     if (!emailToUse) {
       console.error(
         "❌ El usuario seleccionado no tiene un email válido. Objeto:",
         selectedUser,
       );
+      setAssignError(t("modal.error_generic"));
       return;
     }
 
@@ -191,11 +195,15 @@ export default function UserManagement() {
         setSelectedCity("");
         fetchData();
       } else {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
         console.error("❌ Error de la API:", errorData);
+        setAssignError(
+          errorData?.error || t("modal.error_generic") || "No se pudo guardar el cambio.",
+        );
       }
     } catch (err) {
       console.error("❌ Error de red:", err);
+      setAssignError(t("modal.error_network") || "Error de conexión, intenta de nuevo.");
     } finally {
       setSubmitting(false);
     }
@@ -491,15 +499,37 @@ export default function UserManagement() {
                     options={odooUsersClean.map((u) => ({
                       key: u.id,
                       label: u.name,
-                      subLabel: u.email, // <--- AHORA SÍ RECIBIRÁ EL EMAIL CORRECTAMENTE
+                      email: u.email,
+                      // Muestra el rol actual (si ya tiene uno) para que se
+                      // pueda distinguir "asignar de cero" de "reasignar" en
+                      // la misma lista — antes esta lista solo traía a
+                      // quienes NO tenían rol, así que reasignar a alguien
+                      // ya asignado no aparecía como opción. Ojo: es solo
+                      // texto para mostrar — el email real que se envía al
+                      // guardar viene del campo `email` de arriba, no de
+                      // este subLabel.
+                      subLabel: u.currentRoleName
+                        ? `${u.email} — ${u.currentRoleName}`
+                        : u.email,
                       cids: Array.isArray(u.company_ids)
                         ? u.company_ids.join(",")
                         : "",
+                      currentRoleId: u.currentRoleId || "",
+                      currentCids: u.currentCids || "",
                     }))}
                     onSelect={(opt: any) => {
                       setSelectedUser(opt);
-                      setSelectedCids(opt.cids || "");
-                      setSelectedCity(opt.cids || "");
+                      setAssignError("");
+                      // Si ya tiene rol/cids guardados en el panel, se usan
+                      // esos como punto de partida (más confiables que el
+                      // company_ids de Odoo, que es solo una sugerencia
+                      // inicial para gente sin rol todavía).
+                      setSelectedRole(opt.currentRoleId || "");
+                      const cidsInicial = opt.currentRoleId
+                        ? opt.currentCids
+                        : opt.cids;
+                      setSelectedCids(cidsInicial || "");
+                      setSelectedCity(cidsInicial || "");
                     }}
                     searchable={true}
                   />
@@ -548,6 +578,12 @@ export default function UserManagement() {
                     searchable={false}
                   />
                 </div>
+              )}
+
+              {assignError && (
+                <p className="px-6 pb-2 text-xs font-bold text-red-600">
+                  {assignError}
+                </p>
               )}
 
               {/* Botones de control */}

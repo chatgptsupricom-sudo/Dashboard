@@ -1,8 +1,6 @@
 import { query } from "@/lib/db";
-import { jwtVerify } from "jose";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "supricom_jwt_secret_2024");
 
 const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 
@@ -31,6 +29,9 @@ async function ensureTable() {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin", "gerencia de ventas", "compras", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
@@ -85,14 +86,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin", "gerencia de ventas", "compras", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && userRole !== "gerente de operaciones") return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-
     await ensureTable();
 
     const body = await request.json();

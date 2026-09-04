@@ -1,21 +1,43 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000/api/auth/google/callback";
 
+// El state cookie es de un solo uso: se limpia en cada redirect de salida,
+// falle o no el flujo, para que no quede reutilizable.
+function redirectClearingState(request: NextRequest, path: string): NextResponse {
+  const response = NextResponse.redirect(new URL(path, request.url));
+  response.cookies.delete("google_oauth_state");
+  return response;
+}
+
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
+  const state = url.searchParams.get("state");
+  const expectedState = request.cookies.get("google_oauth_state")?.value;
+
+  // El `state` confirma que este callback corresponde a un flujo que ESTE
+  // navegador arranco de verdad (ver /api/auth/google) y no a un enlace
+  // armado a mano por otra persona para que un superadmin logueado le
+  // pise el token de Google a la empresa con el de otra cuenta.
+  if (!state || !expectedState || state !== expectedState) {
+    return redirectClearingState(request, "/es/superadmin/StoplightReport?google_error=invalid_state");
+  }
 
   if (error) {
-    return NextResponse.redirect(new URL(`/es/superadmin/StoplightReport?google_error=${error}`, request.url));
+    return redirectClearingState(request, `/es/superadmin/StoplightReport?google_error=${error}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/es/superadmin/StoplightReport?google_error=no_code", request.url));
+    return redirectClearingState(request, "/es/superadmin/StoplightReport?google_error=no_code");
   }
 
   try {
@@ -35,7 +57,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error("Google token error:", tokenData);
-      return NextResponse.redirect(new URL(`/es/superadmin/StoplightReport?google_error=${tokenData.error}`, request.url));
+      return redirectClearingState(request, `/es/superadmin/StoplightReport?google_error=${tokenData.error}`);
     }
 
     await query(`CREATE TABLE IF NOT EXISTS google_tokens (
@@ -69,9 +91,9 @@ export async function GET(request: NextRequest) {
       ]
     );
 
-    return NextResponse.redirect(new URL("/es/superadmin/StoplightReport?google_connected=success", request.url));
+    return redirectClearingState(request, "/es/superadmin/StoplightReport?google_connected=success");
   } catch (err: any) {
     console.error("Google callback error:", err.message);
-    return NextResponse.redirect(new URL(`/es/superadmin/StoplightReport?google_error=${encodeURIComponent(err.message)}`, request.url));
+    return redirectClearingState(request, `/es/superadmin/StoplightReport?google_error=${encodeURIComponent(err.message)}`);
   }
 }

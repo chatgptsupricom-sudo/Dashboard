@@ -1,20 +1,15 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
+import { requireRoles } from "@/lib/auth/roles";
 
-const JWT_SECRET = jwtSecretBytes();
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, ["gerencia de ventas"]);
+  if (auth.error) return auth.error;
 
-export async function GET(req: Request) {
   try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const payload = auth.payload!;
     const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
     const userCids = payload.cids as number;
     const sellerCidsFilter = userCids ? [userCids] : isSuperAdmin ? [9, 10, 7] : null;
@@ -138,14 +133,12 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
-  try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const auth = await requireRoles(req, ["gerencia de ventas"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+  try {
+    const payload = auth.payload!;
     const { seller_id, cuota } = await req.json();
 
     const nowPost = new Date();
@@ -164,10 +157,17 @@ export async function POST(req: Request) {
     }
 
     const [seller]: any = await db.query(
-      "SELECT user_id FROM sellers WHERE id = ?",
+      "SELECT user_id, name FROM sellers WHERE id = ?",
       [seller_id],
     );
     const targetUserId = seller[0]?.user_id || 0;
+    const sellerName = seller[0]?.name || null;
+
+    const [prevCuota]: any = await db.query(
+      "SELECT cuota FROM cuota WHERE seller_id = ? ORDER BY created_at DESC LIMIT 1",
+      [seller_id],
+    );
+    const cuotaAnterior = prevCuota[0]?.cuota ?? null;
 
     await db.query(
       "INSERT INTO cuota (id, user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, ?, NOW())",
@@ -182,7 +182,12 @@ export async function POST(req: Request) {
           payload.name || "Sistema",
           payload.role || "Gerencia",
           "EDIT_CUOTA",
-          JSON.stringify({ seller_id, nueva_cuota: cuota }),
+          JSON.stringify({
+            seller_id,
+            seller_name: sellerName,
+            from: { cuota: cuotaAnterior },
+            to: { cuota },
+          }),
         ],
       );
     } catch (_) {}

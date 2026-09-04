@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
-import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 // Asegúrate de definir el pool usando process.env directamente aquí para depurar
 const pool = mysql.createPool({
@@ -9,7 +10,13 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
-export async function GET() {
+// El item "actividad" del sidebar (/gestion/actividades) lo ve casi
+// cualquier rol autenticado, y esa pagina llama a este endpoint — no es
+// exclusivo de superadmin/gerente de operaciones pese al nombre de la ruta.
+export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.error) return auth.error;
+
   try {
     const query = `
       SELECT

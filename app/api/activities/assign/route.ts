@@ -172,15 +172,22 @@
 //   }
 // }
 // app/api/activities/assign/route.ts
-import { db } from "@/lib/db"; // Importación centralizada
-import { NextResponse } from "next/server";
+import { query } from "@/lib/db"; // Importación centralizada
+import { requireSession } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 // Declaración para evitar errores de TypeScript con la propiedad global si usas socket.io
 declare global {
   var io: any;
 }
 
-export async function GET(req: Request) {
+// Lo usan tanto la vista de superadmin como la estandar (asignar tareas
+// entre pares), asi que el guard exige sesion valida de cualquier rol.
+
+export async function GET(req: NextRequest) {
+  const auth = await requireSession(req);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
@@ -189,7 +196,7 @@ export async function GET(req: Request) {
     const assignedBy = searchParams.get("assignedBy");
 
     // Consulta explícita y segura con cálculo de días restantes
-    let query = `
+    let sql = `
       SELECT
         a.id,
         a.title,
@@ -211,21 +218,21 @@ export async function GET(req: Request) {
     // CONDICIONAL DE BÚSQUEDA:
     if (assignedBy) {
       // Filtramos exactamente por el nombre de quien asignó la tarea
-      query += " AND a.assigned_by = ?";
+      sql += " AND a.assigned_by = ?";
       params.push(assignedBy.trim());
     } else if (userId) {
       // Filtro tradicional: Mis tareas asignadas para mí mismo
-      query += " AND a.user_id = ?";
+      sql += " AND a.user_id = ?";
       params.push(userId);
     }
 
     // Ordenamos cronológicamente (las más nuevas primero)
-    query += " ORDER BY a.created_at DESC";
+    sql += " ORDER BY a.created_at DESC";
 
-    const [rows] = await db.execute(query, params);
+    const result = await query(sql, params);
 
     // Retornamos el arreglo de actividades encontradas
-    return NextResponse.json(rows);
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error("API GET Error en assign/route.ts:", error);
     return NextResponse.json(
@@ -235,7 +242,10 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const auth = await requireSession(req);
+  if (auth.error) return auth.error;
+
   try {
     const body = await req.json();
 
@@ -247,14 +257,18 @@ export async function POST(req: Request) {
     const description = body.description ?? null;
     const due_date = body.due_date ?? null;
     const assigned_by = body.assigned_by ?? null;
-    const admin_id = body.admin_id ?? 0;
-    const admin_name = body.admin_name ?? "Sistema";
+    // admin_id/admin_name salen de la sesion verificada, no del body: antes
+    // cualquiera podia mandar cualquier nombre y quedaba asi en el log de
+    // auditoria, falsificando quien asigno la tarea.
+    const admin_id = auth.payload!.sub ?? auth.payload!.uid ?? 0;
+    const admin_name = (auth.payload!.name as string) || "Sistema";
 
     if (user_id) {
-      const [users]: any = await db.execute(
+      const usersResult = await query(
         "SELECT email, role_id, cids FROM users_config WHERE id = ?",
         [user_id],
       );
+      const users = usersResult.rows;
       if (users.length > 0) {
         user_email = users[0].email;
         role_id = users[0].role_id;
@@ -264,7 +278,7 @@ export async function POST(req: Request) {
 
     if (!user_email) user_email = "no-email@supricom.com";
 
-    const [result]: any = await db.execute(
+    const insertResult = await query(
       `INSERT INTO activities
       (user_id, role_id, cids, title, description, user_email, action_type, status, due_date, assigned_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -289,7 +303,7 @@ export async function POST(req: Request) {
       });
     }
 
-    await db.execute(
+    await query(
       `INSERT INTO audit_logs (user_id, user_name, role, action, changes, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
       [
         admin_id,
@@ -300,25 +314,43 @@ export async function POST(req: Request) {
       ],
     );
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: (insertResult.rows as any).insertId });
   } catch (error) {
     console.error("Error en assign POST:", error);
     return NextResponse.json({ error: "Error al asignar" }, { status: 500 });
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
+  const auth = await requireSession(req);
+  if (auth.error) return auth.error;
+
   try {
     const { id, status, observacion } = await req.json();
 
+    // Mismo criterio de dueno/asignador que activities/route.ts PATCH.
+    const ownerRows = await query("SELECT user_id, assigned_by FROM activities WHERE id = ?", [id]);
+    const activity = ownerRows.rows?.[0];
+    if (!activity) {
+      return NextResponse.json({ error: "Actividad no encontrada" }, { status: 404 });
+    }
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    const callerId = String(auth.payload!.sub ?? auth.payload!.uid ?? "");
+    const callerName = ((auth.payload!.name as string) || "").trim().toLowerCase();
+    const isOwner = String(activity.user_id) === callerId;
+    const isAssigner = ((activity.assigned_by as string) || "").trim().toLowerCase() === callerName;
+    if (callerRole !== "superadmin" && !isOwner && !isAssigner) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
     if (status) {
-      await db.execute("UPDATE activities SET status = ? WHERE id = ?", [
+      await query("UPDATE activities SET status = ? WHERE id = ?", [
         status,
         id,
       ]);
     }
     if (observacion !== undefined) {
-      await db.execute("UPDATE activities SET observacion = ? WHERE id = ?", [
+      await query("UPDATE activities SET observacion = ? WHERE id = ?", [
         observacion,
         id,
       ]);

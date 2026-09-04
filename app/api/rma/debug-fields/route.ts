@@ -1,7 +1,11 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code") || "";

@@ -270,26 +270,38 @@ export function ReporteForm({
   const telefonoValido = telefono.replace(/\D/g, "").length >= 7;
   const subiendo = adjuntos.some((a) => a.status === "uploading");
 
+  const etiquetasPaso = [t("form.step1"), t("form.step2"), t("form.step3")];
+
   return (
-    <div className="mx-auto max-w-2xl px-5 py-8 sm:py-12">
-      <Volver
-        paso={paso}
-        setPaso={setPaso}
-        locale={locale}
-        sucursalSlug={sucursalSlug}
-        label={t("back")}
-      />
-      <Pasos actual={paso} etiquetas={[t("form.step1"), t("form.step2"), t("form.step3")]} />
+    <div className="pt-page pt-page--brand min-h-full">
+      <div className="pt-shell pt-shell--narrow">
+      <div className="mb-6">
+        <Volver
+          paso={paso}
+          setPaso={setPaso}
+          locale={locale}
+          sucursalSlug={sucursalSlug}
+          label={t("back")}
+        />
+      </div>
+
+      <div className="pt-formcard">
+        <div className="pt-formcard__body">
+          <div className="pt-formcard__meta">
+            <span className="pt-eyebrow">{t("eyebrow")}</span>
+            <span className="pt-formcard__stepno">
+              {t("form.stepOf", { n: paso, total: etiquetasPaso.length })}
+            </span>
+          </div>
+          <Pasos actual={paso} etiquetas={etiquetasPaso} />
 
       {paso === 1 && (
-        <section className="mt-8">
-          <h1 className="text-[1.75rem] sm:text-[2.25rem]">{t("form.invoiceTitle")}</h1>
-          <p className="mt-3 text-[color:var(--portal-muted)]">
-            {t("form.invoiceHelp")}
-          </p>
+        <section className="mt-2">
+          <h1 className="pt-h1">{t("form.invoiceTitle")}</h1>
+          <p className="pt-sub">{t("form.invoiceHelp")}</p>
 
           <form
-            className="mt-6"
+            className="mt-7"
             onSubmit={(e) => {
               e.preventDefault();
               const faltan: Record<string, string> = {};
@@ -303,12 +315,12 @@ export function ReporteForm({
               buscarFactura(numero, rif);
             }}
           >
-            <label htmlFor="numero" className="block text-sm font-semibold">
+            <label htmlFor="numero" className="pt-label">
               {t("form.invoiceLabel")}
             </label>
             <input
               id="numero"
-              className="portal-field mt-2"
+              className="pt-input"
               value={numero}
               onChange={(e) => {
                 setNumero(e.target.value);
@@ -323,12 +335,12 @@ export function ReporteForm({
             />
             {errores.numero && <MensajeError id="numero-error" texto={errores.numero} />}
 
-            <label htmlFor="rif" className="mt-5 block text-sm font-semibold">
+            <label htmlFor="rif" className="pt-label mt-5">
               {t("form.rifLabel")}
             </label>
             <input
               id="rif"
-              className="portal-field mt-2"
+              className="pt-input"
               value={rif}
               onChange={(e) => {
                 setRif(e.target.value);
@@ -341,13 +353,11 @@ export function ReporteForm({
               enterKeyHint="search"
             />
             {errores.rif && <MensajeError id="rif-error" texto={errores.rif} />}
-            <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-              {t("form.rifHelp")}
-            </p>
+            <p className="pt-hint">{t("form.rifHelp")}</p>
 
             <button
               type="submit"
-              className="portal-btn portal-btn-primary mt-5 w-full"
+              className="pt-cta mt-6"
               disabled={buscando}
             >
               {buscando ? (
@@ -365,11 +375,9 @@ export function ReporteForm({
           </form>
 
           {coincidencias && (
-            <div className="mt-6 rounded-[10px] border border-[color:var(--portal-line)] p-4">
+            <div className="pt-panel mt-6">
               <p className="text-sm font-semibold">{t("form.multipleTitle")}</p>
-              <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-                {t("form.multipleHelp")}
-              </p>
+              <p className="pt-hint">{t("form.multipleHelp")}</p>
               <ul className="mt-3 space-y-2">
                 {coincidencias.map((c) => (
                   <li key={c.numero}>
@@ -379,7 +387,7 @@ export function ReporteForm({
                         setNumero(c.numero);
                         buscarFactura(c.numero, rif);
                       }}
-                      className="w-full rounded-[10px] border border-[color:var(--portal-line)] px-4 py-3 text-left hover:border-[color:var(--portal-primary)]"
+                      className="w-full rounded-[11px] border border-[color:var(--portal-line-strong)] px-4 py-3 text-left transition-colors hover:border-[color:var(--portal-primary)] hover:bg-[color:var(--portal-primary-soft)]"
                     >
                       <span className="font-semibold">{c.numero}</span>
                       <span className="block text-sm text-[color:var(--portal-muted)]">
@@ -397,10 +405,10 @@ export function ReporteForm({
       )}
 
       {paso === 2 && factura && (
-        <section className="mt-8">
-          <h1 className="text-[1.75rem] sm:text-[2.25rem]">{t("form.productTitle")}</h1>
+        <section className="mt-2">
+          <h1 className="pt-h1">{t("form.productTitle")}</h1>
 
-          <dl className="mt-5 rounded-[10px] bg-[color:var(--portal-surface-soft)] p-4 text-sm">
+          <dl className="pt-panel mt-6">
             <Dato etiqueta={t("form.invoiceLabel")} valor={factura.factura.numero} />
             <Dato etiqueta={t("form.client")} valor={factura.cliente.nombre} />
             {factura.factura.fecha && (
@@ -408,17 +416,13 @@ export function ReporteForm({
             )}
           </dl>
 
-          <p className="mt-6 text-[color:var(--portal-muted)]">{t("form.productHelp")}</p>
+          <p className="pt-sub mt-6">{t("form.productHelp")}</p>
 
           <ul className="mt-4 space-y-3">
             {factura.items.map((i) => (
               <li key={i.id}>
                 <label
-                  className={`flex cursor-pointer gap-3 rounded-[10px] border p-4 transition-colors ${
-                    itemId === i.id
-                      ? "border-[color:var(--portal-primary)] bg-[color:var(--portal-primary-soft)]"
-                      : "border-[color:var(--portal-line)]"
-                  }`}
+                  className={`pt-choice ${itemId === i.id ? "pt-choice--on" : ""}`}
                 >
                   <input
                     type="radio"
@@ -470,7 +474,7 @@ export function ReporteForm({
 
           <button
             type="button"
-            className="portal-btn portal-btn-primary mt-6 w-full"
+            className="pt-cta mt-7"
             disabled={!itemId}
             onClick={() => setPaso(3)}
           >
@@ -481,10 +485,10 @@ export function ReporteForm({
       )}
 
       {paso === 3 && factura && item && (
-        <section className="mt-8">
-          <h1 className="text-[1.75rem] sm:text-[2.25rem]">{t("form.faultTitle")}</h1>
+        <section className="mt-2">
+          <h1 className="pt-h1">{t("form.faultTitle")}</h1>
 
-          <p className="mt-4 rounded-[10px] bg-[color:var(--portal-surface-soft)] p-4 text-sm">
+          <p className="pt-panel mt-6 text-sm">
             <span className="font-semibold">{item.nombre}</span>
             {item.serial && (
               <span className="mt-1 block font-mono text-[color:var(--portal-muted)]">
@@ -530,15 +534,15 @@ export function ReporteForm({
           )}
 
           {!item.serial && (
-            <div className="mt-5">
-              <label htmlFor="serialManual" className="text-sm font-semibold">
+            <div className="mt-6">
+              <label htmlFor="serialManual" className="pt-label">
                 {item.lleva_serial
                   ? t("form.serialManualLabel")
                   : t("form.serialManualLabelOpcional")}
               </label>
               <input
                 id="serialManual"
-                className="portal-field mt-2 font-mono"
+                className="pt-input font-mono"
                 value={serialManual}
                 onChange={(e) => {
                   setSerialManual(e.target.value);
@@ -551,7 +555,7 @@ export function ReporteForm({
               {errores.serialManual && (
                 <MensajeError id="serialManual-error" texto={errores.serialManual} />
               )}
-              <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
+              <p className="pt-hint">
                 {item.lleva_serial
                   ? t("form.serialManualHelp")
                   : t("form.serialManualHelpOpcional")}
@@ -560,13 +564,13 @@ export function ReporteForm({
           )}
 
           <div className="mt-6">
-            <label htmlFor="falla" className="text-sm font-semibold">
+            <label htmlFor="falla" className="pt-label">
               {t("form.faultLabel")}
             </label>
             <textarea
               id="falla"
               rows={5}
-              className="mt-2 w-full rounded-[10px] border border-[color:var(--portal-line)] p-3 focus:border-[color:var(--portal-primary)] focus:outline-none"
+              className="pt-textarea"
               value={falla}
               onChange={(e) => {
                 setFalla(e.target.value);
@@ -580,15 +584,15 @@ export function ReporteForm({
             )}
           </div>
 
-          <div className="mt-5">
-            <label htmlFor="telefono" className="text-sm font-semibold">
+          <div className="mt-6">
+            <label htmlFor="telefono" className="pt-label">
               {t("form.phoneLabel")}
             </label>
             <input
               id="telefono"
               type="tel"
               inputMode="tel"
-              className="portal-field mt-2"
+              className="pt-input"
               value={telefono}
               onChange={(e) => {
                 setTelefono(e.target.value);
@@ -603,17 +607,15 @@ export function ReporteForm({
               <MensajeError id="captcha-error" texto={errores.captcha} />
             )}
             {factura.cliente.telefono && (
-              <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
+              <p className="pt-hint">
                 {t("form.phoneOnFile", { telefono: factura.cliente.telefono })}
               </p>
             )}
           </div>
 
           <div className="mt-6">
-            <p className="text-sm font-semibold">{t("form.attachmentsLabelRequired")}</p>
-            <p className="mt-1 text-sm text-[color:var(--portal-muted)]">
-              {t("form.attachmentsHelp")}
-            </p>
+            <p className="pt-label">{t("form.attachmentsLabelRequired")}</p>
+            <p className="pt-hint">{t("form.attachmentsHelp")}</p>
             <div className="mt-3">
               <AttachmentUploader
                 trackingToken={uploadToken}
@@ -638,7 +640,7 @@ export function ReporteForm({
 
           <button
             type="button"
-            className="portal-btn portal-btn-primary mt-6 w-full"
+            className="pt-cta mt-7"
             // Se deshabilita solo mientras hay algo en curso. Lo que falte por
             // llenar se avisa con un mensaje al tocar, no dejando el botón
             // muerto sin explicación.
@@ -693,13 +695,16 @@ export function ReporteForm({
           </button>
         </section>
       )}
+        </div>
+      </div>
+      </div>
     </div>
   );
 }
 
 function MensajeError({ id, texto }: { id: string; texto: string }) {
   return (
-    <p id={id} role="alert" className="mt-1.5 flex items-start gap-1.5 text-sm text-[#b42318]">
+    <p id={id} role="alert" className="pt-error">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
       {texto}
     </p>
@@ -723,7 +728,7 @@ function Volver({
     return (
       <a
         href={`/${locale}/servicio-tecnico/${sucursalSlug}`}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--portal-muted)] hover:text-[color:var(--portal-primary)]"
+        className="pt-back"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />
         {label}
@@ -734,7 +739,7 @@ function Volver({
     <button
       type="button"
       onClick={() => setPaso((paso - 1) as 1 | 2 | 3)}
-      className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--portal-muted)] hover:text-[color:var(--portal-primary)]"
+      className="pt-back"
     >
       <ArrowLeft className="h-4 w-4" aria-hidden />
       {label}
@@ -743,47 +748,51 @@ function Volver({
 }
 
 function Pasos({ actual, etiquetas }: { actual: number; etiquetas: string[] }) {
+  const pct = Math.round((actual / etiquetas.length) * 100);
   return (
-    <ol className="mt-6 flex gap-2" aria-label={etiquetas.join(", ")}>
-      {etiquetas.map((etiqueta, i) => {
-        const n = i + 1;
-        return (
-          <li key={etiqueta} className="flex-1">
-            <span
-              className={`block h-1 rounded-full ${
-                n <= actual
-                  ? "bg-[color:var(--portal-primary)]"
-                  : "bg-[color:var(--portal-line)]"
-              }`}
-            />
-            <span
-              className={`mt-2 block text-xs ${
-                n === actual
-                  ? "font-semibold text-[color:var(--portal-primary)]"
-                  : "text-[color:var(--portal-muted)]"
-              }`}
-            >
-              {etiqueta}
+    <div
+      className="pt-progress"
+      role="progressbar"
+      aria-valuemin={1}
+      aria-valuemax={etiquetas.length}
+      aria-valuenow={actual}
+      aria-label={etiquetas.join(" › ")}
+    >
+      <div className="pt-progress__track">
+        <div className="pt-progress__fill" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="pt-progress__crumbs">
+        {etiquetas.map((etiqueta, i) => {
+          const n = i + 1;
+          const cls = n === actual ? "is-now" : n < actual ? "is-done" : undefined;
+          return (
+            <span key={etiqueta}>
+              <span className={cls}>{etiqueta}</span>
+              {i < etiquetas.length - 1 && (
+                <span className="pt-progress__sep" aria-hidden>
+                  ›
+                </span>
+              )}
             </span>
-          </li>
-        );
-      })}
-    </ol>
+          );
+        })}
+      </p>
+    </div>
   );
 }
 
 function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
-    <div className="flex justify-between gap-4 py-1">
-      <dt className="text-[color:var(--portal-muted)]">{etiqueta}</dt>
-      <dd className="text-right font-semibold">{valor}</dd>
+    <div className="pt-summary__row">
+      <dt>{etiqueta}</dt>
+      <dd>{valor}</dd>
     </div>
   );
 }
 
 function Aviso({ texto, ayuda }: { texto: string; ayuda: string }) {
   return (
-    <div className="mt-6 rounded-[10px] border border-[color:var(--portal-line)] bg-[color:var(--portal-surface-soft)] p-4">
+    <div className="pt-panel mt-6">
       <p className="flex gap-2 text-sm">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <span>{texto}</span>

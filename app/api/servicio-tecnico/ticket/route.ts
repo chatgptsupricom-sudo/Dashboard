@@ -7,8 +7,10 @@ import { verificarCaptcha } from "@/lib/servicio-tecnico/captcha";
 import {
   aplicarLimites,
   consultarLimite,
+  limitar,
   obtenerIp,
   registrarUso,
+  respuesta429,
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { NextRequest, NextResponse } from "next/server";
@@ -612,6 +614,17 @@ export async function GET(request: NextRequest) {
     if (numero.length > 20 || factura.length > 100) {
       return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 400 });
     }
+
+    // Limite aparte, clavado en la factura y no en la IP: el ataque real es
+    // mantener una factura conocida fija y barrer los ~10.000 numero de caso
+    // posibles hasta acertar — eso evade el limite por IP de arriba con solo
+    // rotar de IP, pero no evade este, porque la factura que el atacante ya
+    // conoce no cambia entre intentos.
+    const limiteFactura = limitar(
+      `ticket-consultar-factura:${factura}`,
+      { max: 15, ventanaSegundos: 3600 },
+    );
+    if (!limiteFactura.ok) return respuesta429(limiteFactura.esperaSegundos);
 
     // Solo tickets del portal. Los internos no son accesibles publicamente.
     // Validamos case_number + invoice_number en una sola consulta para evitar

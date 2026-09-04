@@ -1,10 +1,14 @@
 import { query } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
 
@@ -61,9 +65,12 @@ export async function GET(
 }
 
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -134,9 +141,12 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
 

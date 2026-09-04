@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");
@@ -197,19 +201,18 @@ export async function GET(request: NextRequest) {
 
     // 6. Build response
     const result = Object.values(sellerDataMap).map((seller) => {
+      // Tasa de cierre cruda: facturadas / órdenes
       const efectividad = seller.ordenes > 0
         ? Math.round((seller.facturadas / seller.ordenes) * 100)
         : 0;
-      const efectividadPct = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : 0;
+      // % de cumplimiento de la meta (si hay meta configurada)
+      const cumplimientoMeta = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : null;
 
       const semanasCalc = seller.semanas.map((sem, i) => {
         const semanaInicio = semanas[i].inicio;
         const esFuturo = semanaInicio > now;
-        const efectividadActual = sem.ordenes > 0
-          ? (sem.facturadas / sem.ordenes) * 100
-          : null;
-        const efectividadSem = efectividadActual !== null && metaEfectividad > 0
-          ? Math.round((efectividadActual / metaEfectividad) * 100)
+        const efectividadSem = sem.ordenes > 0
+          ? Math.round((sem.facturadas / sem.ordenes) * 100)
           : null;
         return {
           numero: i + 1,
@@ -228,7 +231,8 @@ export async function GET(request: NextRequest) {
         facturadas: seller.facturadas,
         montoOrdenes: Math.round(seller.montoOrdenes * 100) / 100,
         montoFacturadas: Math.round(seller.montoFacturadas * 100) / 100,
-        efectividad: efectividadPct,
+        efectividad,
+        cumplimientoMeta,
         semanas: semanasCalc,
       };
     });
@@ -239,7 +243,7 @@ export async function GET(request: NextRequest) {
     const globalOrdenes = result.reduce((sum, s) => sum + s.ordenes, 0);
     const globalFacturadas = result.reduce((sum, s) => sum + s.facturadas, 0);
     const globalEfectividad = globalOrdenes > 0 ? Math.round((globalFacturadas / globalOrdenes) * 100) : 0;
-    const globalEfectividadPct = metaEfectividad > 0 ? Math.round((globalEfectividad / metaEfectividad) * 100) : 0;
+    const globalCumplimientoMeta = metaEfectividad > 0 ? Math.round((globalEfectividad / metaEfectividad) * 100) : null;
 
     return NextResponse.json({
       success: true,
@@ -249,10 +253,12 @@ export async function GET(request: NextRequest) {
         periodoLabel,
         fechaInicio,
         fechaFin,
+        metaEfectividad,
         global: {
           ordenes: globalOrdenes,
           facturadas: globalFacturadas,
-          efectividad: globalEfectividadPct,
+          efectividad: globalEfectividad,
+          cumplimientoMeta: globalCumplimientoMeta,
         },
         sellers: result,
       },

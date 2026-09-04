@@ -1,11 +1,8 @@
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { requireRoles } from "@/lib/auth/roles";
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -13,7 +10,10 @@ const COMPANY_MAP: Record<number, string> = {
   10: "Caracas",
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const [resultSellers]: any = await db.query(
       "SELECT id, name, user_id, cids FROM sellers",
@@ -139,20 +139,25 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader.split("token=")[1]?.split(";")[0];
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const auth = await requireRoles(req, ["superadmin"]);
+  if (auth.error) return auth.error;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+  try {
+    const payload = auth.payload!;
     const { seller_id, cuota } = await req.json();
 
     const [seller]: any = await db.query(
-      "SELECT user_id FROM sellers WHERE id = ?",
+      "SELECT user_id, name FROM sellers WHERE id = ?",
       [seller_id],
     );
     const targetUserId = seller[0]?.user_id || 0;
+    const sellerName = seller[0]?.name || null;
+
+    const [prevCuota]: any = await db.query(
+      "SELECT cuota FROM cuota WHERE seller_id = ? ORDER BY created_at DESC LIMIT 1",
+      [seller_id],
+    );
+    const cuotaAnterior = prevCuota[0]?.cuota ?? null;
 
     await db.query(
       "INSERT INTO cuota (id, user_id, seller_id, cuota, created_at) VALUES (?, ?, ?, ?, NOW())",
@@ -167,7 +172,12 @@ export async function POST(req: NextRequest) {
           payload.name || "Sistema",
           payload.role || "SuperAdmin",
           "EDIT_CUOTA",
-          JSON.stringify({ seller_id, nueva_cuota: cuota }),
+          JSON.stringify({
+            seller_id,
+            seller_name: sellerName,
+            from: { cuota: cuotaAnterior },
+            to: { cuota },
+          }),
         ],
       );
     } catch (_) {}

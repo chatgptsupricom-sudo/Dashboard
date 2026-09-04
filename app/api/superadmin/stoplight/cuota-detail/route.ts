@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");

@@ -1,7 +1,14 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+// Tambien lo usa /adminleads/banco-imagenes para el filtro de categoria
+// (busqueda generica de categorias de producto en Odoo, no algo exclusivo
+// de RMA) — ver app/[locale]/adminleads/banco-imagenes/page.tsx.
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma", "adminleads"]);
+  if (auth.error) return auth.error;
+
   try {
     // 1. Get categories actually used by saleable products
     const groups = await callOdooRPC<any[]>(

@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
 const dbConfig = {
   host: process.env.DB_HOST,
@@ -8,7 +9,10 @@ const dbConfig = {
   database: process.env.DB_NAME,
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
+
   try {
     const connection = await mysql.createConnection(dbConfig);
 

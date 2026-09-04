@@ -1,9 +1,13 @@
 // app/api/reports/sellers/stats/route.ts
 import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, ["superadmin", "gerente de operaciones", "gerencia de ventas"]);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(req.url);
     const sellerName = searchParams.get("sellerName");
