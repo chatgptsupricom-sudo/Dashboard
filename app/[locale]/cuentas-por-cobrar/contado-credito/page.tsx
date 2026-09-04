@@ -59,7 +59,7 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className={`relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col ${wide ? "w-full max-w-4xl" : "w-full max-w-2xl"}`}
+        className={`relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col tabular-nums ${wide ? "w-full max-w-4xl" : "w-full max-w-2xl"}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
@@ -208,7 +208,7 @@ export default function ContadoCreditoPage() {
   })) : [];
 
   return (
-    <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 md:p-6 max-w-[1600px] mx-auto tabular-nums">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Contado / Crédito</h1>
