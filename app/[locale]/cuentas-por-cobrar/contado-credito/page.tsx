@@ -45,6 +45,14 @@ function formatDate(dateStr: string | null): string {
 }
 
 function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
+  // Bloquea el scroll de la pagina de fondo mientras el modal esta activo
+  // (mismo patron que components/superadmin/ComprasDetailModal.tsx).
+  useEffect(() => {
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" onClick={onClose}>
