@@ -71,6 +71,7 @@ export const rolePermissions: RolePermissions = {
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
+      "catalogo_disenos", // Catálogo de Diseños del Diseñador
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -293,6 +294,7 @@ export const rolePermissions: RolePermissions = {
       "sales_dashboard",
       "actividad",
       "catalogo_disenador",
+      "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
       "vista_custom",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],
