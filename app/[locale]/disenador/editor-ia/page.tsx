@@ -27,6 +27,7 @@ import {
   ImageOff,
   Search,
   AlertTriangle,
+  WandSparkles,
 } from "lucide-react";
 
 interface CatalogDesign {
@@ -73,6 +74,7 @@ export default function EditorIaPage() {
   // Formulario
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [improvingPrompt, setImprovingPrompt] = useState(false);
 
   // Job activo
   const [job, setJob] = useState<AiJob | null>(null);
@@ -170,6 +172,27 @@ export default function EditorIaPage() {
   }, [job, fetchRecent]);
 
   // ── Generar ────────────────────────────────────────────────────────────────
+  // ── Mejorar el prompt con Claude ───────────────────────────────────────────
+  const handleImprovePrompt = async () => {
+    if (!sourceFile && !sourceDesignId) return;
+    setImprovingPrompt(true);
+    try {
+      const fd = new FormData();
+      fd.append("draft", prompt.trim());
+      if (sourceFile) fd.append("image", sourceFile);
+      if (sourceDesignId) fd.append("source_design_id", String(sourceDesignId));
+
+      const res = await fetch("/api/disenador/ia-imagen/mejorar-prompt", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || `HTTP ${res.status}`);
+      setPrompt(data.prompt);
+    } catch (e: any) {
+      alert("No se pudo mejorar el prompt: " + e.message);
+    } finally {
+      setImprovingPrompt(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!user?.name || (!sourceFile && !sourceDesignId) || prompt.trim().length < 3) return;
     setSubmitting(true);
@@ -295,7 +318,24 @@ export default function EditorIaPage() {
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-slate-700">Prompt</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium text-slate-700">Prompt</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleImprovePrompt}
+                  disabled={(!sourceFile && !sourceDesignId) || improvingPrompt}
+                  className="h-7 text-xs text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-2"
+                >
+                  {improvingPrompt ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <WandSparkles className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Mejorar con IA
+                </Button>
+              </div>
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -303,6 +343,9 @@ export default function EditorIaPage() {
                 rows={4}
                 className="mt-1"
               />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Escribe una idea (puede ser vaga) y usa "Mejorar con IA" — Claude mira la imagen y redacta un prompt más específico.
+              </p>
             </div>
 
             <div>
