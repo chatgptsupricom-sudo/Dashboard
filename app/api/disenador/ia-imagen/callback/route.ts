@@ -2,6 +2,10 @@ import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
 // KIE llama a esta URL cuando termina un job (callBackUrl en createTask).
+//
+// SIN requireRoles a proposito: la llama KIE desde internet, sin cookie de
+// sesion. Solo escribe sobre el job cuyo kie_task_id venga en el cuerpo, que
+// es un id que genera KIE; no expone datos en la respuesta.
 // El polling desde /api/disenador/ia-imagen/[id] sigue funcionando igual como
 // respaldo, así que si el callback llega tarde o no llega, no se rompe nada.
 // Siempre respondemos 200 para que KIE no reintente indefinidamente.

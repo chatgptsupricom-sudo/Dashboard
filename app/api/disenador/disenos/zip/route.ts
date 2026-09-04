@@ -1,6 +1,9 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import JSZip from "jszip";
 import { NextRequest, NextResponse } from "next/server";
+
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -17,6 +20,9 @@ function sanitize(name: string) {
 
 // POST { ids: number[] } -> devuelve un .zip con los diseños seleccionados.
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const ids = (Array.isArray(body.ids) ? body.ids : [])

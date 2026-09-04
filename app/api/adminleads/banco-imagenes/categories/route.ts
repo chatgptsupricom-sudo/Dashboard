@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     "gerente de operaciones",
     "vendedor",
     "seller",
+    "diseñador",
   ]);
   if (auth.error) return auth.error;
 

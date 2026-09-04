@@ -5,7 +5,7 @@ import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller"];
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador"];
 
 // SVG queda fuera a propósito: a diferencia de JPEG/PNG/WebP/GIF, un SVG
 // puede llevar <script> embebido que el navegador ejecuta si alguien abre

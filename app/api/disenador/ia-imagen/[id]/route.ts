@@ -1,12 +1,18 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { kieGetTask } from "@/lib/kie";
 import { NextRequest, NextResponse } from "next/server";
 
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
+
 // GET: consulta/actualiza el estado de un job (polling desde el frontend).
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
     const r = await query(
