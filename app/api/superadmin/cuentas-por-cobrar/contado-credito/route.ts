@@ -33,9 +33,12 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
 
 // Forma comun que alimenta la clasificacion contado/credito, sin importar
-// si el monto viene de una factura entera, la porcion pagada de una
-// factura, o un abono conciliado puntual.
-type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined };
+// si el monto viene de una factura entera o de un abono conciliado
+// puntual. esDelMes distingue, para el modo "cobrado", si lo cobrado
+// corresponde a una factura emitida ese mismo mes o a una de un mes
+// anterior (deuda vieja que se termino de cobrar ahora) -- es lo que
+// pidio cobranza para no confundir "cuanto entro" con "de que factura".
+type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined; esDelMes: boolean; journalId: number | undefined; journalName: string };
 
 async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   const invoicesRaw = await fetchPaginated(
@@ -57,40 +60,19 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       partnerId: inv.partner_id[0],
       partnerName: inv.partner_id[1] || "Sin cliente",
       paymentTermId: inv.invoice_payment_term_id?.[0],
+      esDelMes: true,
+      journalId: undefined,
+      journalName: "",
     }));
-}
-
-async function renglonesCobradoFacturas(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
-  const invoicesRaw = await fetchPaginated(
-    "account.move",
-    [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
-      ["company_id", "in", companyIds],
-      ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
-      ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
-    ],
-    ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_payment_term_id"],
-  );
-
-  return invoicesRaw
-    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
-    .map((inv) => {
-      const amountTotal = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
-      const residual = inv.move_type === "out_refund" ? -(inv.amount_residual || 0) : (inv.amount_residual || 0);
-      return {
-        monto: amountTotal - residual,
-        partnerId: inv.partner_id[0],
-        partnerName: inv.partner_id[1] || "Sin cliente",
-        paymentTermId: inv.invoice_payment_term_id?.[0],
-      };
-    });
 }
 
 // Dinero que efectivamente entro el mes, sin importar cuando se emitio la
 // factura que salda -- mismo mecanismo de conciliacion que ya usa
 // app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
 // emparejado con el lado factura y el lado pago), reutilizado tal cual.
+// Es la unica fuente para "Cobrado": coincide con el reporte "Integracion
+// de Pagos" que ya usa cobranza para verificar (confirmado con un cliente
+// real, mismo monto centavo a centavo).
 async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   // No filtramos account.partial.reconcile por fecha en el dominio: el
   // campo que representa la "fecha de abono" (paymentMove.date) vive en
@@ -120,7 +102,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id"],
+    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -147,11 +129,22 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
 
+    const fechaFactura = (invoiceMove.invoice_date || "").split(" ")[0].split("T")[0];
+    // "Del mes" = factura emitida en el mismo mes que se selecciono (o
+    // despues, caso raro de pago adelantado). "Anterior" = deuda de un
+    // mes previo que se termino de cobrar ahora.
+    const esDelMes = !fechaFactura || fechaFactura >= startStr;
+
     renglones.push({
       monto: r.amount || 0,
       partnerId: invoiceMove.partner_id[0],
       partnerName: invoiceMove.partner_id[1] || "Sin cliente",
       paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
+      esDelMes,
+      // El "banco" es el diario del lado PAGO de la conciliacion (donde
+      // realmente entro el dinero), no el diario de la factura.
+      journalId: paymentMove.journal_id?.[0],
+      journalName: paymentMove.journal_id?.[1] || "Sin diario",
     });
   });
   return renglones;
@@ -170,7 +163,7 @@ export async function GET(request: NextRequest) {
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
     const modoParam = searchParams.get("modo");
-    const modo = (modoParam === "cobrado_facturas" || modoParam === "cobrado_dinero") ? modoParam : "facturado";
+    const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
 
     const now = new Date();
     let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
@@ -193,11 +186,9 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    const renglones = modo === "cobrado_dinero"
+    const renglones = modo === "cobrado"
       ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd)
-      : modo === "cobrado_facturas"
-        ? await renglonesCobradoFacturas(companyIds, monthStart, monthEnd)
-        : await renglonesFacturado(companyIds, monthStart, monthEnd);
+      : await renglonesFacturado(companyIds, monthStart, monthEnd);
 
     // ── Nombres de los plazos de pago vistos ──
     const ptIds = [...new Set(renglones.map((r) => r.paymentTermId).filter((id): id is number => Boolean(id)))];
@@ -223,6 +214,17 @@ export async function GET(request: NextRequest) {
     const contado = nuevoAcum();
     const credito = nuevoAcum();
     const bucketsPorDias = new Map<number, Acum>();
+    // Solo relevante en modo "cobrado": por que diario/banco entro el
+    // dinero (journal_id del lado pago de la conciliacion).
+    const bancosPorJournal = new Map<number, Acum>();
+    const bancoNombres = new Map<number, string>();
+    // Solo relevante en modo "cobrado": de lo cobrado, cuanto es de
+    // facturas de este mes vs de meses anteriores (deuda vieja cobrada
+    // ahora). Alimenta la barra de progreso del total en ese modo.
+    let delMesMonto = 0;
+    let delMesFacturas = 0;
+    let anterioresMonto = 0;
+    let anterioresFacturas = 0;
 
     const acumular = (acum: Acum, monto: number, partnerId: number, partnerName: string) => {
       acum.monto += monto;
@@ -237,6 +239,20 @@ export async function GET(request: NextRequest) {
     };
 
     renglones.forEach((r) => {
+      if (r.esDelMes) {
+        delMesMonto += r.monto;
+        delMesFacturas += 1;
+      } else {
+        anterioresMonto += r.monto;
+        anterioresFacturas += 1;
+      }
+
+      if (r.journalId !== undefined) {
+        bancoNombres.set(r.journalId, r.journalName);
+        if (!bancosPorJournal.has(r.journalId)) bancosPorJournal.set(r.journalId, nuevoAcum());
+        acumular(bancosPorJournal.get(r.journalId)!, r.monto, r.partnerId, r.partnerName);
+      }
+
       const ptName = ptMap[r.paymentTermId ?? -1] || "Contado";
       const diasMatch = ptName.match(/(\d+)/);
 
@@ -272,6 +288,18 @@ export async function GET(request: NextRequest) {
         clientesDetalle: clientesDe(acum),
       }));
 
+    const bancos = [...bancosPorJournal.entries()]
+      .sort((a, b) => b[1].monto - a[1].monto)
+      .map(([journalId, acum]) => ({
+        journalId,
+        journalName: bancoNombres.get(journalId) || "Sin diario",
+        monto: round2(acum.monto),
+        pct: pct(acum.monto, totalFacturado),
+        facturas: acum.facturas,
+        clientes: acum.clientesMap.size,
+        clientesDetalle: clientesDe(acum),
+      }));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -290,7 +318,18 @@ export async function GET(request: NextRequest) {
           clientes: credito.clientesMap.size,
           clientesDetalle: clientesDe(credito),
         },
+        delMes: {
+          monto: round2(delMesMonto),
+          pct: pct(delMesMonto, totalFacturado),
+          facturas: delMesFacturas,
+        },
+        mesesAnteriores: {
+          monto: round2(anterioresMonto),
+          pct: pct(anterioresMonto, totalFacturado),
+          facturas: anterioresFacturas,
+        },
         buckets,
+        bancos,
         filters: {
           empresa,
           month: currentMonth + 1,
