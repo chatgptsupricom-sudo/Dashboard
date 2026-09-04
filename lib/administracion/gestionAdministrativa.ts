@@ -3,18 +3,20 @@ import { idsParaEmpresas, searchReadTodo, RefsAdminKpis } from "./odooRefs";
 /**
  * Gestión Administrativa (issue #8, 10 pts).
  *
- * Las tres áreas del documento ("documentos procesados a tiempo", "anticipos
+ * Las cuatro áreas del documento ("documentos procesados a tiempo", "anticipos
  * y viáticos pendientes de legalización", "tiempo promedio de procesamiento",
- * "cumplimiento de cierre mensual") se resuelven contra módulos estándar de
- * Odoo que ya estaban instalados o son gratuitos (Approvals, hr.expense,
- * Project), configurados por `supricom_admin_kpis` — ver ese módulo para el
- * detalle de categorías/equipo/proyectos que crea.
+ * "cumplimiento de cierre mensual") se resuelven contra Odoo: las tres
+ * primeras usan Approvals/Project configurados por `supricom_admin_kpis` (ver
+ * ese módulo para el detalle de categorías/equipo/proyectos que crea);
+ * "anticipos y viáticos" NO usa ese módulo, se lee directo de Contabilidad
+ * (ver comentario en `fetchLegalizacionPendiente`).
  *
- * "Anticipos" y "viáticos" se tratan como UNA sola fuente: ambos son
- * hr.expense.sheet pendiente de aprobar/legalizar, y Odoo no distingue esos
- * dos conceptos como estados distintos. El documento los lista como dos
- * líneas separadas; aquí se reportan juntos y se etiqueta así en la UI.
+ * "Anticipos" y "viáticos" se tratan como UNA sola fuente y NO usan
+ * hr.expense.sheet (ver `fetchLegalizacionPendiente` para el porqué):
+ * Administración confirmó que esto se lleva por asiento contable directo
+ * contra una cuenta de activo por sede, no por el módulo de Gastos.
  *
+
  * Caveat que aplica a "tiempo de procesamiento" en todo este archivo:
  * approval.request no guarda una fecha explícita de "cuándo se resolvió", así
  * que se usa `write_date - create_date` sobre el registro ya en estado
@@ -136,40 +138,118 @@ export async function fetchDocumentosATiempo(
 }
 
 /**
- * KPI "anticipos y viáticos pendientes de legalización". Pendiente = el
- * reporte de gastos no llegó a "approve"/"post"/"done" (sigue en
- * draft/submit). `umbralDias` es la antigüedad a partir de la cual un
- * pendiente se considera vencido — no lo definió Administración, se usa por
- * defecto el mismo criterio de "+30 días" que ya aplica Tesorería para
- * cartera vencida, y se etiqueta como proxy en la UI.
+ * Cuenta de activo donde cada sede registra anticipos/préstamos a empleados,
+ * una por `company_id` (ver COMPANY_MAP en empresas.ts — son las únicas 3
+ * sedes que existen en este panel). Se investigó a fondo antes de asumir
+ * hr.expense.sheet como fuente (que fue el diseño original): Administración
+ * aclaró que "anticipos y viáticos" NO pasan por el módulo de Gastos, se
+ * registran como asiento contable directo contra esta cuenta.
+ *
+ * Se identifica por `code`, no por id interno de Odoo: el id puede diferir
+ * entre bases (QA y producción son bases de datos distintas), el código
+ * contable es el identificador estable real.
+ *
+ * Ninguna de las 3 tiene `reconcile=True` salvo Valencia — verificado en
+ * producción real (no es dato viejo). Pero eso no bloquea el KPI: no hace
+ * falta el matching formal de Odoo, alcanza con el SALDO de la cuenta
+ * (débito - crédito), que es justo lo que Administración sigue a ojo hoy
+ * (confirmado con movimientos reales: anticipo se debita, cada cuota pagada
+ * se acredita, el saldo baja a cero solo).
+ */
+const CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA: Record<number, string> = {
+  9: "1.01.05.008", // Valencia - Prestamos Empleados
+  10: "1.01.05.103", // Caracas - Prestamos a Empleados
+  7: "1.01.04.001", // Panama - CxC Empleados
+};
+
+/**
+ * KPI "anticipos y viáticos pendientes de legalización". "Pendiente" = saldo
+ * (débito - crédito) todavía positivo en la cuenta de anticipos de esa sede,
+ * agrupado por contacto (`partner_id`) para poder contar cuántos empleados
+ * tienen algo pendiente. `umbralDias` mide la antigüedad desde el anticipo
+ * más viejo que todavía compone ese saldo (aproximado: no hace FIFO exacto
+ * entre varios anticipos de un mismo empleado, es la misma clase de proxy
+ * que ya se documenta en el resto de este archivo).
+ *
+ * Caveat real, solo en Panamá: sus 3 movimientos actuales no tienen
+ * `partner_id` asignado (el nombre del empleado solo está en el texto de la
+ * descripción) — todos caen en un único grupo agregado por sede en vez de
+ * uno por empleado. No es un bug: es fiel al dato tal como Panamá lo está
+ * cargando hoy. El día que empiecen a asignar el contacto, este mismo código
+ * ya los separa solo, sin tocar nada.
  */
 export async function fetchLegalizacionPendiente(
   companyIds: number[],
   umbralDias: number,
-): Promise<ResultadoLegalizacion> {
-  const sheets = await searchReadTodo(
-    "hr.expense.sheet",
+): Promise<ResultadoLegalizacion | null> {
+  const codigosBuscados = companyIds
+    .map((id) => CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA[id])
+    .filter((c): c is string => c !== undefined);
+  if (codigosBuscados.length === 0) return null;
+
+  const cuentas = await searchReadTodo(
+    "account.account",
     [
-      ["state", "in", ["draft", "submit"]],
       ["company_id", "in", companyIds],
+      ["code", "in", codigosBuscados],
     ],
-    ["id", "create_date", "total_amount"],
+    ["id"],
+  );
+  if (cuentas.length === 0) return null;
+
+  const lineas = await searchReadTodo(
+    "account.move.line",
+    [
+      ["account_id", "in", cuentas.map((c) => c.id)],
+      ["parent_state", "=", "posted"],
+    ],
+    ["account_id", "partner_id", "debit", "credit", "date"],
   );
 
+  // Agrupar por (cuenta, contacto). Sin contacto asignado (caso de Panamá
+  // hoy, ver comentario arriba) todas las líneas de esa cuenta caen juntas
+  // en un solo grupo agregado.
+  interface Grupo {
+    debito: number;
+    credito: number;
+    fechaOrigen: string | null; // fecha del anticipo (débito) mas viejo
+  }
+  const grupos = new Map<string, Grupo>();
+  for (const l of lineas) {
+    const partnerId = Array.isArray(l.partner_id) ? l.partner_id[0] : "sin_identificar";
+    const clave = `${l.account_id[0]}:${partnerId}`;
+    const g = grupos.get(clave) || { debito: 0, credito: 0, fechaOrigen: null };
+    g.debito += Number(l.debit) || 0;
+    g.credito += Number(l.credit) || 0;
+    if (Number(l.debit) > 0 && (g.fechaOrigen === null || l.date < g.fechaOrigen)) {
+      g.fechaOrigen = l.date;
+    }
+    grupos.set(clave, g);
+  }
+
+  const pendientes = Array.from(grupos.values())
+    .map((g) => ({
+      saldo: Math.round((g.debito - g.credito) * 100) / 100,
+      fechaOrigen: g.fechaOrigen,
+    }))
+    // Saldo <= 0: ya se terminó de pagar, no es "pendiente". El margen evita
+    // que redondeos de centavos lo cuenten como pendiente residual.
+    .filter((g) => g.saldo > 0.01);
+
   const hoyMs = Date.now();
-  const vencidos = sheets.filter((s) => {
-    const creado = new Date(s.create_date.replace(" ", "T") + "Z").getTime();
-    return (hoyMs - creado) / 86400000 > umbralDias;
+  const vencidos = pendientes.filter((p) => {
+    if (p.fechaOrigen === null) return false; // no debería pasar si saldo>0
+    const origen = new Date(p.fechaOrigen.replace(" ", "T") + "Z").getTime();
+    return (hoyMs - origen) / 86400000 > umbralDias;
   });
 
   return {
-    totalPendientes: sheets.length,
-    montoPendiente:
-      Math.round(sheets.reduce((s, x) => s + (Number(x.total_amount) || 0), 0) * 100) / 100,
+    totalPendientes: pendientes.length,
+    montoPendiente: Math.round(pendientes.reduce((s, p) => s + p.saldo, 0) * 100) / 100,
     pendientesVencidos: vencidos.length,
     pctVencidos:
-      sheets.length > 0
-        ? Math.round((vencidos.length / sheets.length) * 1000) / 10
+      pendientes.length > 0
+        ? Math.round((vencidos.length / pendientes.length) * 1000) / 10
         : null,
   };
 }

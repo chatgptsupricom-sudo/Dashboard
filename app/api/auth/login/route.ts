@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { generateToken } from "@/lib/jwt";
-import { authenticateWithOdoo, callOdooRPC } from "@/lib/odoo";
+import { authenticateWithOdoo, callOdooRPC, OdooUnreachableError } from "@/lib/odoo";
 import {
   aplicarLimites,
   consultarLimite,
@@ -38,7 +38,28 @@ export async function POST(req: Request) {
     const { email, password } = await req.json();
 
     // 1. Autenticación en Odoo
-    const odooUid = await authenticateWithOdoo(email, password);
+    // Log de diagnóstico: qué URL/DB de Odoo está usando este contenedor en
+    // runtime. NEXT_PUBLIC_ODOO_URL se hornea en build time, así que esto es
+    // la forma más directa de confirmar si un redeploy realmente tomó el
+    // valor nuevo (revisar en los logs del servidor, nunca en la respuesta).
+    console.log(
+      `[login] intento contra ODOO_URL=${process.env.NEXT_PUBLIC_ODOO_URL} ODOO_DB=${process.env.ODOO_DB}`,
+    );
+    let odooUid: number | null;
+    try {
+      odooUid = await authenticateWithOdoo(email, password);
+    } catch (odooError) {
+      if (odooError instanceof OdooUnreachableError) {
+        console.error(
+          `[login] Odoo inalcanzable (${process.env.NEXT_PUBLIC_ODOO_URL}) para intento desde ${obtenerIp(req)}`,
+        );
+        return NextResponse.json(
+          { error: "No se pudo conectar con Odoo. Intente de nuevo en un momento." },
+          { status: 503 },
+        );
+      }
+      throw odooError;
+    }
     if (!odooUid) {
       // Solo los fallos consumen cuota.
       registrarUso(req, "login-fallos", FALLOS);

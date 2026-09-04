@@ -45,6 +45,7 @@ import {
   Map,
   Megaphone,
   Package,
+  Palette,
   PieChart,
   Search,
   Settings2,
@@ -277,6 +278,7 @@ export function Sidebar({
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
+    { id: "catalogo_disenos", label: "Mis Diseños", icon: Palette, slug: "/disenos" },
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
     // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
     // /superadmin y generaria enlaces rotos con slugs relativos.
