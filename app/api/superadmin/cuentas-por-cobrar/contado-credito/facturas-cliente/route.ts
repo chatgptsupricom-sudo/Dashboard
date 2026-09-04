@@ -32,7 +32,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 
 type Factura = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
 
-async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, cobrado: boolean): Promise<Factura[]> {
+async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date): Promise<Factura[]> {
   const invoicesRaw = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
@@ -44,7 +44,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ]],
-    { fields: ["id", "name", "invoice_date", "move_type", "amount_total", "amount_residual", "invoice_payment_term_id"], order: "invoice_date desc" },
+    { fields: ["id", "name", "invoice_date", "move_type", "amount_total", "invoice_payment_term_id"], order: "invoice_date desc" },
   );
 
   const invoices = invoicesRaw || [];
@@ -59,22 +59,14 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
-  return invoices.map((inv) => {
-    const amountTotal = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
-    let monto = amountTotal;
-    if (cobrado) {
-      const residual = inv.move_type === "out_refund" ? -(inv.amount_residual || 0) : (inv.amount_residual || 0);
-      monto = amountTotal - residual;
-    }
-    return {
-      id: inv.id,
-      name: inv.name || "",
-      invoiceDate: inv.invoice_date || null,
-      moveType: inv.move_type,
-      amountTotal: round2(monto),
-      paymentTermName: ptMap[inv.invoice_payment_term_id?.[0]] || "Contado",
-    };
-  });
+  return invoices.map((inv) => ({
+    id: inv.id,
+    name: inv.name || "",
+    invoiceDate: inv.invoice_date || null,
+    moveType: inv.move_type,
+    amountTotal: round2(inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0)),
+    paymentTermName: ptMap[inv.invoice_payment_term_id?.[0]] || "Contado",
+  }));
 }
 
 // Abonos del cliente ese mes (fecha de conciliacion, no fecha de factura) --
@@ -176,7 +168,7 @@ export async function GET(request: NextRequest) {
     const monthParam = searchParams.get("month");
     const yearParam = searchParams.get("year");
     const modoParam = searchParams.get("modo");
-    const modo = (modoParam === "cobrado_facturas" || modoParam === "cobrado_dinero") ? modoParam : "facturado";
+    const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
 
     const now = new Date();
     const currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
@@ -190,9 +182,9 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    const facturas = modo === "cobrado_dinero"
+    const facturas = modo === "cobrado"
       ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd)
-      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, modo === "cobrado_facturas");
+      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd);
 
     const round2 = (n: number) => Math.round(n * 100) / 100;
 

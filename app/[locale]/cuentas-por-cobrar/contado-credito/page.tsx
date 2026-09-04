@@ -85,15 +85,18 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number };
+type Parcial = { monto: number; pct: number; facturas: number };
 type ContadoCreditoData = {
   totalFacturado: number;
   contado: Acumulado;
   credito: Acumulado;
+  delMes: Parcial;
+  mesesAnteriores: Parcial;
   buckets: Bucket[];
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
-type Modo = "facturado" | "cobrado_facturas" | "cobrado_dinero";
+type Modo = "facturado" | "cobrado";
 
 export default function ContadoCreditoPage() {
   const { user } = useAuthStore();
@@ -103,12 +106,12 @@ export default function ContadoCreditoPage() {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  // Facturado: lo emitido ese mes. Cobrado: lo que ya se pago, en 2
-  // variantes -- "de esas facturas" reusa el mismo conjunto de facturas del
-  // mes pero pesado por lo pagado, "dinero que entro el mes" es base caja
-  // real (fecha de abono, sin importar cuando se emitio la factura).
+  // Facturado: lo emitido ese mes. Cobrado: dinero que efectivamente entro
+  // el mes (fecha de conciliacion del pago, no fecha de la factura) --
+  // mismo criterio que el reporte "Integracion de Pagos" de Odoo que ya
+  // usa cobranza para verificar.
   const [modo, setModo] = useState<Modo>("facturado");
-  const esCobrado = modo !== "facturado";
+  const esCobrado = modo === "cobrado";
 
   const userCids = (user as any)?.cids;
 
@@ -219,9 +222,9 @@ export default function ContadoCreditoPage() {
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
-  const tituloTotal = modo === "facturado" ? "Total Facturado del Mes" : "Total Cobrado del Mes";
-  const tituloFacturasModal = modo === "cobrado_dinero" ? "Cobros" : "Facturas";
-  const etiquetaColFecha = modo === "cobrado_dinero" ? "Fecha de abono" : "Fecha";
+  const tituloTotal = esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
+  const tituloFacturasModal = esCobrado ? "Cobros" : "Facturas";
+  const etiquetaColFecha = esCobrado ? "Fecha de abono" : "Fecha";
 
   const pieData = data ? [
     { name: "Contado", value: data.contado.monto },
@@ -291,36 +294,18 @@ export default function ContadoCreditoPage() {
             Facturado
           </button>
           <button
-            onClick={() => { if (!esCobrado) setModo("cobrado_facturas"); }}
+            onClick={() => setModo("cobrado")}
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Cobrado
           </button>
         </div>
-        {esCobrado && (
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
-            {([
-              { value: "cobrado_facturas", label: "De esas facturas" },
-              { value: "cobrado_dinero", label: "Dinero que entró el mes" },
-            ] as { value: Modo; label: string }[]).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setModo(opt.value)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                  modo === opt.value ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {loading && data && (
         <div className="flex items-center gap-2 mb-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
           <RefreshCw size={14} className="animate-spin" />
-          {modo === "cobrado_dinero"
+          {esCobrado
             ? "Recalculando con los pagos del mes... esta vista puede tardar 15-20 segundos."
             : "Actualizando..."}
         </div>
@@ -332,14 +317,33 @@ export default function ContadoCreditoPage() {
         <div className="flex items-center justify-center h-64 text-slate-400">Sin datos para este período</div>
       ) : (
         <div className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
-          {/* Total facturado */}
+          {/* Total facturado / cobrado */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
-            <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
-              <div className="h-full bg-emerald-500" style={{ width: `${data.contado.pct}%` }} title={`Contado: ${data.contado.pct}%`} />
-              <div className="h-full bg-blue-500" style={{ width: `${data.credito.pct}%` }} title={`Crédito: ${data.credito.pct}%`} />
-            </div>
+            {esCobrado ? (
+              <>
+                <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
+                  <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`Facturas del mes: ${data.delMes.pct}%`} />
+                  <div className="h-full bg-amber-500" style={{ width: `${data.mesesAnteriores.pct}%` }} title={`Meses anteriores: ${data.mesesAnteriores.pct}%`} />
+                </div>
+                <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                    Facturas del mes: <span className="font-semibold text-slate-700">{formatCurrency(data.delMes.monto)}</span> ({data.delMes.pct}%)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                    Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
+                <div className="h-full bg-emerald-500" style={{ width: `${data.contado.pct}%` }} title={`Contado: ${data.contado.pct}%`} />
+                <div className="h-full bg-blue-500" style={{ width: `${data.credito.pct}%` }} title={`Crédito: ${data.credito.pct}%`} />
+              </div>
+            )}
           </div>
 
           {/* Contado vs Credito + grafica de torta */}
