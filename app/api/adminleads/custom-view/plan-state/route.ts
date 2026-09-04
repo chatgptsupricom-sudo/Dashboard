@@ -27,10 +27,30 @@ export const dynamic = "force-dynamic";
  *   POST { restore: <historyId> } -> { success, revision, pieces }
  */
 
+/** Una entrada de pieza valida: { checked?, moved?, colId? }. */
+function pareceEntradaDePieza(val: unknown): boolean {
+  if (!val || typeof val !== "object" || Array.isArray(val)) return false;
+  const v: any = val;
+  return "checked" in v || "moved" in v || "colId" in v;
+}
+
 function sanitizePieces(input: unknown): PlanContentState | null {
   if (!input || typeof input !== "object") return null;
   const src: any = input;
-  const rawPieces = src.pieces && typeof src.pieces === "object" ? src.pieces : {};
+
+  // Se aceptan las dos formas del payload:
+  //   anidada -> { pieces: { [id]: {...} } }   (la que devuelve el GET)
+  //   plana   -> { [id]: {...} }               (el estado tal cual lo tiene la app)
+  //
+  // Antes solo se leia `src.pieces`: si la app mandaba la forma plana, esto
+  // guardaba un estado VACIO y respondia success:true, asi que los marcados
+  // desaparecian al recargar sin ningun error a la vista.
+  let rawPieces: any = {};
+  if (src.pieces && typeof src.pieces === "object") {
+    rawPieces = src.pieces;
+  } else if (Object.values(src).some(pareceEntradaDePieza)) {
+    rawPieces = src;
+  }
   const pieces: PlanContentState["pieces"] = {};
   for (const [id, val] of Object.entries(rawPieces)) {
     if (!val || typeof val !== "object") continue;
@@ -94,6 +114,24 @@ export async function PUT(request: NextRequest) {
     const pieces = sanitizePieces(body?.pieces);
     if (!pieces) {
       return NextResponse.json({ success: false, error: "Estado invalido" }, { status: 400 });
+    }
+
+    // Si la app mando algo pero no sobrevivio ninguna pieza, el contrato del
+    // payload cambio: se avisa en el log en vez de guardar vacio en silencio.
+    const recibidas = body?.pieces && typeof body.pieces === "object"
+      ? Object.keys(body.pieces.pieces ?? body.pieces).length
+      : 0;
+    if (recibidas > 0 && Object.keys(pieces.pieces).length === 0) {
+      console.error(
+        "plan-state PUT: llegaron",
+        recibidas,
+        "claves pero ninguna es una pieza valida; no se guarda para no borrar el plan.",
+        JSON.stringify(body?.pieces).slice(0, 300),
+      );
+      return NextResponse.json(
+        { success: false, error: "Formato de estado no reconocido" },
+        { status: 400 },
+      );
     }
 
     const expectedRevision = Number(body?.revision);
