@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Building2,
@@ -93,6 +93,7 @@ type ContadoCreditoData = {
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
+type Modo = "facturado" | "cobrado_facturas" | "cobrado_dinero";
 
 export default function ContadoCreditoPage() {
   const { user } = useAuthStore();
@@ -102,6 +103,12 @@ export default function ContadoCreditoPage() {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  // Facturado: lo emitido ese mes. Cobrado: lo que ya se pago, en 2
+  // variantes -- "de esas facturas" reusa el mismo conjunto de facturas del
+  // mes pero pesado por lo pagado, "dinero que entro el mes" es base caja
+  // real (fecha de abono, sin importar cuando se emitio la factura).
+  const [modo, setModo] = useState<Modo>("facturado");
+  const esCobrado = modo !== "facturado";
 
   const userCids = (user as any)?.cids;
 
@@ -118,7 +125,16 @@ export default function ContadoCreditoPage() {
   const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
 
+  // "cobrado_dinero" es una consulta bastante mas pesada que las otras dos
+  // (trae todas las conciliaciones sin filtro de dominio en Odoo) -- si el
+  // usuario cambia de modo rapido, una respuesta vieja mas lenta podia
+  // llegar despues y pisar los datos del modo que quedo seleccionado. Este
+  // ref guarda cual fue el ultimo fetch disparado; solo ese puede escribir
+  // en el estado.
+  const fetchIdRef = useRef(0);
+
   const fetchData = useCallback(async () => {
+    const fetchId = ++fetchIdRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -126,14 +142,16 @@ export default function ContadoCreditoPage() {
       else if (userCids) params.set("userCids", String(userCids));
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
+      params.set("modo", modo);
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito?${params}`);
       const json = await res.json();
+      if (fetchId !== fetchIdRef.current) return;
       if (json.success) setData(json.data);
     } catch (e) {
       console.error("Error:", e);
     }
-    setLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear]);
+    if (fetchId === fetchIdRef.current) setLoading(false);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -141,7 +159,10 @@ export default function ContadoCreditoPage() {
     setClientesModal({ open: true, titulo, clientes });
   };
 
+  const facturasFetchIdRef = useRef(0);
+
   const openFacturasCliente = useCallback(async (partnerId: number, partnerName: string) => {
+    const fetchId = ++facturasFetchIdRef.current;
     setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: true, partnerId, partnerName });
     setFacturasLoading(true);
@@ -152,14 +173,16 @@ export default function ContadoCreditoPage() {
       else if (userCids) params.set("userCids", String(userCids));
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
+      params.set("modo", modo);
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito/facturas-cliente?${params}`);
       const json = await res.json();
+      if (fetchId !== facturasFetchIdRef.current) return;
       if (json.success) setFacturasData(json.data.facturas || []);
     } catch (e) {
       console.error(e);
     }
-    setFacturasLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear]);
+    if (fetchId === facturasFetchIdRef.current) setFacturasLoading(false);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo]);
 
   // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
   // (mismos datos ya cargados, sin volver a pedirlos).
@@ -195,6 +218,10 @@ export default function ContadoCreditoPage() {
   };
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
+
+  const tituloTotal = modo === "facturado" ? "Total Facturado del Mes" : "Total Cobrado del Mes";
+  const tituloFacturasModal = modo === "cobrado_dinero" ? "Cobros" : "Facturas";
+  const etiquetaColFecha = modo === "cobrado_dinero" ? "Fecha de abono" : "Fecha";
 
   const pieData = data ? [
     { name: "Contado", value: data.contado.monto },
@@ -255,15 +282,59 @@ export default function ContadoCreditoPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
+          <button
+            onClick={() => setModo("facturado")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${!esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            Facturado
+          </button>
+          <button
+            onClick={() => { if (!esCobrado) setModo("cobrado_facturas"); }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            Cobrado
+          </button>
+        </div>
+        {esCobrado && (
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
+            {([
+              { value: "cobrado_facturas", label: "De esas facturas" },
+              { value: "cobrado_dinero", label: "Dinero que entró el mes" },
+            ] as { value: Modo; label: string }[]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setModo(opt.value)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  modo === opt.value ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {loading && data && (
+        <div className="flex items-center gap-2 mb-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
+          <RefreshCw size={14} className="animate-spin" />
+          {modo === "cobrado_dinero"
+            ? "Recalculando con los pagos del mes... esta vista puede tardar 15-20 segundos."
+            : "Actualizando..."}
+        </div>
+      )}
+
       {loading && !data ? (
         <div className="flex items-center justify-center h-64 text-slate-400">Cargando...</div>
       ) : !data ? (
         <div className="flex items-center justify-center h-64 text-slate-400">Sin datos para este período</div>
       ) : (
-        <div className="space-y-6">
+        <div className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
           {/* Total facturado */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Total Facturado del Mes</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
             <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
               <div className="h-full bg-emerald-500" style={{ width: `${data.contado.pct}%` }} title={`Contado: ${data.contado.pct}%`} />
@@ -382,20 +453,20 @@ export default function ContadoCreditoPage() {
       </Modal>
 
       {/* Modal 2: facturas del cliente ese mes */}
-      <Modal open={facturasModal.open} onClose={closeAllModals} onBack={backToClientes} title={`Facturas — ${facturasModal.partnerName}`}>
+      <Modal open={facturasModal.open} onClose={closeAllModals} onBack={backToClientes} title={`${tituloFacturasModal} — ${facturasModal.partnerName}`}>
         {facturasLoading ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={24} className="animate-spin text-blue-500" />
           </div>
         ) : facturasData.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">Sin facturas este mes</div>
+          <div className="text-center py-8 text-slate-400">Sin {tituloFacturasModal.toLowerCase()} este mes</div>
         ) : (
           <div className="border border-slate-100 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50/80">
                   <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
-                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{etiquetaColFecha}</th>
                   <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Plazo</th>
                   <th className="text-right py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monto</th>
                 </tr>
