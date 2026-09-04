@@ -10,6 +10,7 @@ import {
   CreditCard,
   Users,
   X,
+  ArrowLeft,
   FileText,
   Package,
   Clock,
@@ -44,7 +45,7 @@ function formatDate(dateStr: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
-function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
+function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean; onClose: () => void; onBack?: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
   // Bloquea el scroll de la pagina de fondo mientras el modal esta activo
   // (mismo patron que components/superadmin/ComprasDetailModal.tsx).
   useEffect(() => {
@@ -62,8 +63,15 @@ function Modal({ open, onClose, title, children, wide }: { open: boolean; onClos
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-          <h2 className="text-lg font-bold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition">
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-lg hover:bg-slate-100 transition" title="Volver">
+                <ArrowLeft size={18} className="text-slate-500" />
+              </button>
+            )}
+            <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition" title="Cerrar">
             <X size={18} className="text-slate-500" />
           </button>
         </div>
@@ -153,8 +161,17 @@ export default function ContadoCreditoPage() {
     setFacturasLoading(false);
   }, [empresa, userCids, selectedMonth, selectedYear]);
 
-  const closeFacturasModal = () => {
+  // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
+  // (mismos datos ya cargados, sin volver a pedirlos).
+  const closeAllModals = () => {
+    setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: false, partnerId: 0, partnerName: "" });
+    setInvoiceModal({ open: false, invoiceId: 0 });
+  };
+
+  const backToClientes = () => {
+    setFacturasModal((prev) => ({ ...prev, open: false }));
+    setClientesModal((prev) => ({ ...prev, open: true }));
   };
 
   const openInvoiceDetail = useCallback(async (invoiceId: number) => {
@@ -172,7 +189,7 @@ export default function ContadoCreditoPage() {
     setInvoiceLoading(false);
   }, []);
 
-  const closeInvoiceModal = () => {
+  const backToFacturas = () => {
     setInvoiceModal({ open: false, invoiceId: 0 });
     setFacturasModal((prev) => ({ ...prev, open: true }));
   };
@@ -333,7 +350,7 @@ export default function ContadoCreditoPage() {
       )}
 
       {/* Modal 1: clientes del grupo */}
-      <Modal open={clientesModal.open} onClose={() => setClientesModal((prev) => ({ ...prev, open: false }))} title={clientesModal.titulo}>
+      <Modal open={clientesModal.open} onClose={closeAllModals} title={clientesModal.titulo}>
         {clientesModal.clientes.length === 0 ? (
           <div className="text-center py-8 text-slate-400">Sin clientes</div>
         ) : (
@@ -365,7 +382,7 @@ export default function ContadoCreditoPage() {
       </Modal>
 
       {/* Modal 2: facturas del cliente ese mes */}
-      <Modal open={facturasModal.open} onClose={closeFacturasModal} title={`Facturas — ${facturasModal.partnerName}`}>
+      <Modal open={facturasModal.open} onClose={closeAllModals} onBack={backToClientes} title={`Facturas — ${facturasModal.partnerName}`}>
         {facturasLoading ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={24} className="animate-spin text-blue-500" />
@@ -404,7 +421,7 @@ export default function ContadoCreditoPage() {
       </Modal>
 
       {/* Modal 3: detalle de factura */}
-      <Modal open={invoiceModal.open} onClose={closeInvoiceModal} title={`Factura ${invoiceDetail?.name || ""}`} wide>
+      <Modal open={invoiceModal.open} onClose={closeAllModals} onBack={backToFacturas} title={`Factura ${invoiceDetail?.name || ""}`} wide>
         {invoiceLoading ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={24} className="animate-spin text-blue-500" />
