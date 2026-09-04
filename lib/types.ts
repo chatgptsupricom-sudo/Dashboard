@@ -181,12 +181,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: [
-      "dashboard",
-      "salud_financiera",
-      "gastos_presupuesto",
-      "catalogo_disenos", // Mis Diseños, dentro del desplegable Marketing
-    ],
+    sections: ["dashboard", "salud_financiera", "gastos_presupuesto"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,
