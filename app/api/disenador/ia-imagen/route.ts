@@ -139,17 +139,22 @@ export async function POST(request: NextRequest) {
     const origin = new URL(request.url).origin;
     const ext = EXT_BY_MIME[mime] || "png";
     const sourceUrl = `${origin}/api/disenador/ia-imagen/source/${jobId}.${ext}`;
+    const callBackUrl = `${origin}/api/disenador/ia-imagen/callback`;
 
     // 3) Creamos la tarea en KIE.
     try {
-      const taskId = await kieCreateTask({
-        prompt,
-        image_urls: [sourceUrl],
-        aspect_ratio,
-        quality: "basic",
-        output_format: "png",
-        nsfw_checker: true,
-      });
+      const taskId = await kieCreateTask(
+        {
+          prompt,
+          image_urls: [sourceUrl],
+          aspect_ratio,
+          quality: "basic",
+          output_format: "png",
+          nsfw_checker: true,
+        },
+        DEFAULT_MODEL,
+        callBackUrl
+      );
       await query(`UPDATE designer_ai_jobs SET kie_task_id = ?, status = 'processing' WHERE id = ?`, [taskId, jobId]);
       return NextResponse.json({ success: true, jobId }, { status: 201 });
     } catch (kieError: any) {

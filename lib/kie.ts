@@ -16,20 +16,27 @@ function kieHeaders() {
 }
 
 // POST /api/v1/jobs/createTask -> crea la tarea de edición, devuelve taskId.
-export async function kieCreateTask(input: Record<string, any>, model = DEFAULT_MODEL): Promise<string> {
+export async function kieCreateTask(
+  input: Record<string, any>,
+  model = DEFAULT_MODEL,
+  callBackUrl?: string
+): Promise<string> {
   const res = await fetch(`${KIE_BASE_URL}/api/v1/jobs/createTask`, {
     method: "POST",
     headers: kieHeaders(),
-    body: JSON.stringify({ model, input }),
+    body: JSON.stringify(callBackUrl ? { model, callBackUrl, input } : { model, input }),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const detail = data?.data ? ` (${JSON.stringify(data.data).slice(0, 200)})` : "";
-    throw new Error((data?.msg || data?.message || `KIE createTask HTTP ${res.status}`) + detail);
-  }
+  const raw = await res.text();
+  let data: any = {};
+  try { data = JSON.parse(raw); } catch { /* raw no era JSON */ }
+
+  // TEMPORAL: mientras terminamos de integrar KIE, dejamos la respuesta cruda
+  // en el log del servidor para depurar sin adivinar el nombre exacto del campo.
+  console.error("KIE createTask raw response:", res.status, raw.slice(0, 1000));
+
   const taskId = data?.data?.taskId || data?.taskId;
-  if (!taskId) {
-    throw new Error(data?.msg || "KIE no devolvió taskId: " + JSON.stringify(data).slice(0, 300));
+  if (!res.ok || !taskId) {
+    throw new Error(`KIE createTask (HTTP ${res.status}): ${raw.slice(0, 500)}`);
   }
   return String(taskId);
 }
