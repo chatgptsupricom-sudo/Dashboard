@@ -1,11 +1,12 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
 
-// "Mejorar con IA": Claude (con visión) mira la imagen fuente + la idea en
+// "Mejorar con IA": GPT-4o (con visión) mira la imagen fuente + la idea en
 // borrador del diseñador y devuelve un prompt más específico para Seedream.
 // No genera ni edita imágenes — solo redacta la instrucción.
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
-const ANTHROPIC_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const OPENAI_MODEL = process.env.OPENAI_VISION_MODEL || "gpt-4o";
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 const SYSTEM_PROMPT =
   "Eres un asistente para diseñadores gráficos que preparan prompts para un modelo de edición de imágenes por IA (Seedream). " +
@@ -13,6 +14,17 @@ const SYSTEM_PROMPT =
   "Devuelve ÚNICAMENTE el prompt final en español: una instrucción específica, concreta y accionable que describa " +
   "exactamente qué cambiar en la imagen y qué mantener igual (pose, encuadre, marca, texto, etc. si aplica). " +
   "Sin explicaciones, sin comillas, sin markdown, sin prefijos como 'Prompt:'. Máximo 3 frases.";
+
+// El cliente se crea al usarlo, no al importar el módulo: así el build no
+// necesita OPENAI_API_KEY presente (new OpenAI({apiKey: undefined}) lanza al
+// instante) y, si falta en runtime, falla solo esta ruta con un error claro.
+let openaiClient: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
 
 // FormData: draft (opcional) + image (File) ó source_design_id.
 export async function POST(request: NextRequest) {
@@ -40,17 +52,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Falta la imagen" }, { status: 200 });
     }
 
-    if (!ANTHROPIC_IMAGE_TYPES.includes(mime)) {
+    if (!IMAGE_TYPES.includes(mime)) {
       return NextResponse.json(
         { success: false, error: "Formato de imagen no soportado para el asistente (usa PNG, JPG, WEBP o GIF)" },
         { status: 200 }
       );
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { success: false, error: "Falta configurar ANTHROPIC_API_KEY en el servidor" },
+        { success: false, error: "Falta configurar OPENAI_API_KEY en el servidor" },
         { status: 200 }
       );
     }
@@ -59,45 +70,23 @@ export async function POST(request: NextRequest) {
       ? `Idea del diseñador: "${draft}"`
       : "El diseñador no escribió una idea concreta: mira la imagen y sugiere una edición creativa y razonable.";
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 300,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mime, data: buffer.toString("base64") } },
-              { type: "text", text: userText },
-            ],
-          },
-        ],
-      }),
+    const completion = await getOpenAI().chat.completions.create({
+      model: OPENAI_MODEL,
+      max_tokens: 300,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: userText },
+            { type: "image_url", image_url: { url: `data:${mime};base64,${buffer.toString("base64")}` } },
+          ],
+        },
+      ],
     });
 
-    const raw = await res.text();
-    let data: any = {};
-    try { data = JSON.parse(raw); } catch { /* raw no era JSON */ }
-
-    if (!res.ok) {
-      console.error("Anthropic mejorar-prompt error:", res.status, raw.slice(0, 500));
-      throw new Error(data?.error?.message || `Anthropic HTTP ${res.status}`);
-    }
-
-    const text = (data?.content || [])
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
-      .join("\n")
-      .trim();
-
-    if (!text) throw new Error("Claude no devolvió texto");
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) throw new Error("El modelo no devolvió texto");
 
     return NextResponse.json({ success: true, prompt: text });
   } catch (error: any) {

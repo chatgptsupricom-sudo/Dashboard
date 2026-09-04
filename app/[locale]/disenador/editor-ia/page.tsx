@@ -344,7 +344,7 @@ export default function EditorIaPage() {
                 className="mt-1"
               />
               <p className="text-[11px] text-slate-400 mt-1">
-                Escribe una idea (puede ser vaga) y usa "Mejorar con IA" — Claude mira la imagen y redacta un prompt más específico.
+                Escribe una idea (puede ser vaga) y usa "Mejorar con IA" — la IA mira la imagen y redacta un prompt más específico.
               </p>
             </div>
 
