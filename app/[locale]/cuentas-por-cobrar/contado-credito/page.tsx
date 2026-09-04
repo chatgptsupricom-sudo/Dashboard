@@ -68,7 +68,7 @@ function Modal({ open, onClose, title, children, wide }: { open: boolean; onClos
 
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
-type Bucket = Acumulado & { dias: number | "Otros"; diasIncluidos: number[] };
+type Bucket = Acumulado & { dias: number };
 type ContadoCreditoData = {
   totalFacturado: number;
   contado: Acumulado;
@@ -169,7 +169,7 @@ export default function ContadoCreditoPage() {
     setFacturasModal((prev) => ({ ...prev, open: true }));
   };
 
-  const bucketLabel = (b: Bucket) => (b.dias === "Otros" ? `Otros (${b.diasIncluidos.join(", ")} días)` : `${b.dias} días`);
+  const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
   const pieData = data ? [
     { name: "Contado", value: data.contado.monto },
@@ -177,7 +177,7 @@ export default function ContadoCreditoPage() {
   ] : [];
 
   const barData = data ? data.buckets.map((b) => ({
-    label: b.dias === "Otros" ? `Otros` : `${b.dias}d`,
+    label: `${b.dias}d`,
     fullLabel: bucketLabel(b),
     monto: b.monto,
   })) : [];

@@ -28,8 +28,6 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   return result;
 }
 
-const BUCKETS_ESTANDAR = [7, 15, 30, 60, 90];
-
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -90,24 +88,24 @@ export async function GET(request: NextRequest) {
       } catch (_) {}
     }
 
-    // ── Clasificar contado/credito + acumular por bucket ──
+    // ── Clasificar contado/credito + acumular por plazo exacto ──
+    // Un card por cada plazo real que aparezca (7, 15, 21, 30, 45...),
+    // sin agrupar los que no matchean una lista fija en un "Otros" opaco.
     type ClientAcum = { partnerId: number; partnerName: string; monto: number; facturas: number };
     type Acum = {
       monto: number;
       facturas: number;
       clientesMap: Map<number, ClientAcum>;
-      diasVistos: Set<number>;
     };
-    const nuevoAcum = (): Acum => ({ monto: 0, facturas: 0, clientesMap: new Map(), diasVistos: new Set() });
+    const nuevoAcum = (): Acum => ({ monto: 0, facturas: 0, clientesMap: new Map() });
 
     const contado = nuevoAcum();
     const credito = nuevoAcum();
-    const bucketsPorDias = new Map<number | "Otros", Acum>();
+    const bucketsPorDias = new Map<number, Acum>();
 
-    const acumular = (acum: Acum, monto: number, partnerId: number, partnerName: string, dias?: number) => {
+    const acumular = (acum: Acum, monto: number, partnerId: number, partnerName: string) => {
       acum.monto += monto;
       acum.facturas += 1;
-      if (dias !== undefined) acum.diasVistos.add(dias);
       const c = acum.clientesMap.get(partnerId);
       if (c) {
         c.monto += monto;
@@ -132,9 +130,8 @@ export async function GET(request: NextRequest) {
       const dias = parseInt(diasMatch[1], 10);
       acumular(credito, monto, partnerId, partnerName);
 
-      const bucketKey: number | "Otros" = BUCKETS_ESTANDAR.includes(dias) ? dias : "Otros";
-      if (!bucketsPorDias.has(bucketKey)) bucketsPorDias.set(bucketKey, nuevoAcum());
-      acumular(bucketsPorDias.get(bucketKey)!, monto, partnerId, partnerName, dias);
+      if (!bucketsPorDias.has(dias)) bucketsPorDias.set(dias, nuevoAcum());
+      acumular(bucketsPorDias.get(dias)!, monto, partnerId, partnerName);
     });
 
     const totalFacturado = contado.monto + credito.monto;
@@ -147,16 +144,9 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => b.monto - a.monto);
 
     const buckets = [...bucketsPorDias.entries()]
-      .sort((a, b) => {
-        if (a[0] === "Otros") return 1;
-        if (b[0] === "Otros") return -1;
-        return (a[0] as number) - (b[0] as number);
-      })
+      .sort((a, b) => a[0] - b[0])
       .map(([dias, acum]) => ({
         dias,
-        // Solo tiene contenido para el bucket "Otros" -- los plazos reales
-        // que agrupa (ej. 21, 45), para no perder esa info como antes.
-        diasIncluidos: dias === "Otros" ? [...acum.diasVistos].sort((a, b) => a - b) : [],
         monto: round2(acum.monto),
         pct: pct(acum.monto, credito.monto),
         facturas: acum.facturas,
