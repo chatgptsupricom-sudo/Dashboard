@@ -521,8 +521,11 @@ export default function ContadoCreditoPage() {
                 </tr>
               </thead>
               <tbody>
-                {facturasData.map((f) => (
-                  <tr key={f.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                {facturasData.map((f, idx) => (
+                  // key con indice, no solo f.id: en modo "cobrado" el id es
+                  // el de la factura, y una misma factura puede tener mas de
+                  // un abono (fila) el mismo mes -- el id solo no es unico ahi.
+                  <tr key={`${f.id}-${idx}`} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4">
                       <button onClick={() => openInvoiceDetail(f.id)} className="font-semibold text-blue-600 hover:underline">
                         {f.name || `#${f.id}`}
