@@ -120,6 +120,7 @@ export function Sidebar({
   const [isVentasOpen, setIsVentasOpen] = useState(false);
   const [isCxCOpen, setIsCxCOpen] = useState(false);
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
+  const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -359,6 +360,11 @@ export function Sidebar({
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
+  // Rol Administración: sus entradas se agrupan en dos desplegables
+  // (Marketing y Administración) en vez de quedar sueltas en la lista plana.
+  const isAdministracion = normalizedUserRole === "administración";
+  const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
+  const marketingAdministracionIds = ["catalogo_disenos"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -384,6 +390,8 @@ export function Sidebar({
         (!showCxCDropdown || !cxcDropdownIds.includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
+        !(isAdministracion &&
+          [...administracionDropdownIds, ...marketingAdministracionIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -1232,8 +1240,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
-            {userRole === "superAdmin" && (
+            {/* Submenú Desplegable de MARKETING (superadmin y administración) */}
+            {(userRole === "superAdmin" || isAdministracion) && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsMarketingOpen(!isMarketingOpen)}
@@ -1257,9 +1265,64 @@ export function Sidebar({
                       exit={{ opacity: 0, height: 0 }}
                       className="pl-9 space-y-1 overflow-hidden"
                     >
+                      {(isAdministracion
+                        ? [{ label: "Mis Diseños", href: `/${locale}/administracion/disenos` }]
+                        : [
+                            { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                            { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                          ]
+                      ).map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de ADMINISTRACIÓN (rol administración) */}
+            {isAdministracion && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsAdministracionOpen(!isAdministracionOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Activity size={20} className="text-slate-400" />
+                    <span className="text-sm">Administración</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isAdministracionOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isAdministracionOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
                       {[
-                        { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
-                        { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                        { label: "Salud Administrativa", href: `/${locale}/administracion` },
+                        { label: "Gastos y Presupuesto", href: `/${locale}/administracion/gastos` },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
