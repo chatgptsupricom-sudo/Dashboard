@@ -31,6 +31,13 @@ async function ensureTable() {
 
 const DEFAULT_MODEL = process.env.KIE_SEEDREAM_MODEL || "seedream/5-pro-image-to-image";
 
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
 // GET: historial reciente de generaciones (para el panel "Recientes").
 export async function GET(request: NextRequest) {
   try {
@@ -116,8 +123,11 @@ export async function POST(request: NextRequest) {
     const jobId = (insertResult.rows as any)?.insertId;
 
     // 2) La fuente que KIE va a descargar es esta misma app (mismo host que sirvió la request).
+    // La URL lleva extensión porque KIE valida el tipo de archivo por la URL, no solo
+    // por el Content-Type de la respuesta (sin extensión responde "File type not supported").
     const origin = new URL(request.url).origin;
-    const sourceUrl = `${origin}/api/disenador/ia-imagen/source/${jobId}`;
+    const ext = EXT_BY_MIME[mime] || "png";
+    const sourceUrl = `${origin}/api/disenador/ia-imagen/source/${jobId}.${ext}`;
 
     // 3) Creamos la tarea en KIE.
     try {
@@ -131,7 +141,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, jobId }, { status: 201 });
     } catch (kieError: any) {
       await query(`UPDATE designer_ai_jobs SET status = 'fail', fail_msg = ? WHERE id = ?`, [kieError.message, jobId]);
-      return NextResponse.json({ error: kieError.message, jobId }, { status: 502 });
+      // 200 a propósito: un 5xx aquí hace que el proxy (Easypanel) reemplace el
+      // cuerpo con su página genérica de error en vez de dejar pasar este JSON.
+      return NextResponse.json({ success: false, error: kieError.message, jobId }, { status: 200 });
     }
   } catch (error: any) {
     console.error("POST /api/disenador/ia-imagen:", error.message);

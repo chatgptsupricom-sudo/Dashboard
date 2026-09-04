@@ -186,7 +186,7 @@ export default function EditorIaPage() {
 
       const res = await fetch("/api/disenador/ia-imagen", { method: "POST", body: fd });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!data.success) throw new Error(data.error || `HTTP ${res.status}`);
       setJob({ id: data.jobId, prompt: prompt.trim(), status: "processing", result_urls: [], fail_msg: null });
     } catch (e: any) {
       alert("No se pudo iniciar la generación: " + e.message);

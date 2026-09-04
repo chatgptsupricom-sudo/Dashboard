@@ -8,7 +8,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id: rawId } = await params;
+    // La URL lleva una extensión (ej. "6.png") para que KIE reconozca el tipo de
+    // archivo al descargarla; aquí solo nos interesa el id numérico.
+    const id = parseInt(rawId, 10);
+    if (!Number.isFinite(id)) {
+      return new Response("Not found", { status: 404 });
+    }
     const result = await query(
       `SELECT source_image_data, source_image_mime FROM designer_ai_jobs WHERE id = ?`,
       [id]
