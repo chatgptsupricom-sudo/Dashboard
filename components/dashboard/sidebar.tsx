@@ -337,11 +337,11 @@ export function Sidebar({
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
-  // Rol Administración: sus entradas se agrupan en dos desplegables
-  // (Marketing y Administración) en vez de quedar sueltas en la lista plana.
-  const isAdministracion = normalizedUserRole === "administración";
+  // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
+  // desplegable "Administración", y Mis Diseños dentro del de Marketing, en vez
+  // de quedar sueltos en la lista plana.
   const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
-  const marketingAdministracionIds = ["catalogo_disenos"];
+  const marketingSuperAdminIds = ["catalogo_disenos"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -363,8 +363,8 @@ export function Sidebar({
         (!showCxCDropdown || !cxcDropdownIds.includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
-        !(isAdministracion &&
-          [...administracionDropdownIds, ...marketingAdministracionIds].includes(item.id)) &&
+        !(isSuperAdminRole &&
+          [...administracionDropdownIds, ...marketingSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -1132,8 +1132,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de MARKETING (superadmin y administración) */}
-            {(userRole === "superAdmin" || isAdministracion) && (
+            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
+            {userRole === "superAdmin" && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsMarketingOpen(!isMarketingOpen)}
@@ -1157,13 +1157,11 @@ export function Sidebar({
                       exit={{ opacity: 0, height: 0 }}
                       className="pl-9 space-y-1 overflow-hidden"
                     >
-                      {(isAdministracion
-                        ? [{ label: "Mis Diseños", href: `/${locale}/administracion/disenos` }]
-                        : [
-                            { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
-                            { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
-                          ]
-                      ).map((subItem, index) => {
+                      {[
+                        { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                        { label: "Mis Diseños", href: `${basePath}/disenos` },
+                      ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
                           <Link
@@ -1187,8 +1185,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de ADMINISTRACIÓN (rol administración) */}
-            {isAdministracion && (
+            {/* Submenú Desplegable de ADMINISTRACIÓN (solo superadmin) */}
+            {userRole === "superAdmin" && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsAdministracionOpen(!isAdministracionOpen)}
