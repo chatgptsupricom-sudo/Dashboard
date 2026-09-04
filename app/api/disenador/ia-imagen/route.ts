@@ -7,6 +7,17 @@ import { NextRequest, NextResponse } from "next/server";
 // ahí, así no dependemos de su API de upload ni de que el diseño ya esté en el
 // catálogo. Solo funciona cuando esta app corre en un dominio públicamente
 // accesible (test/producción); no sirve desde un localhost sin túnel.
+
+// El host real (dashboard-test-dashboard...) viaja en x-forwarded-host: detrás
+// del proxy de Easypanel, request.url resuelve a la IP/puerto interno
+// (localhost:3000), que KIE no puede alcanzar para descargar la imagen fuente.
+function getPublicOrigin(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`;
+  return new URL(request.url).origin;
+}
+
 async function ensureTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS designer_ai_jobs (
@@ -136,7 +147,7 @@ export async function POST(request: NextRequest) {
     // 2) La fuente que KIE va a descargar es esta misma app (mismo host que sirvió la request).
     // La URL lleva extensión porque KIE valida el tipo de archivo por la URL, no solo
     // por el Content-Type de la respuesta (sin extensión responde "File type not supported").
-    const origin = new URL(request.url).origin;
+    const origin = getPublicOrigin(request);
     const ext = EXT_BY_MIME[mime] || "png";
     const sourceUrl = `${origin}/api/disenador/ia-imagen/source/${jobId}.${ext}`;
     const callBackUrl = `${origin}/api/disenador/ia-imagen/callback`;
