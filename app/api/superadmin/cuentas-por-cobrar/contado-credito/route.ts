@@ -8,6 +8,8 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
+const CUSTOMER_INVOICE_TYPES = new Set(["out_invoice", "out_refund"]);
+
 function getMonthStart(year: number, month: number): Date {
   return new Date(year, month, 1);
 }
@@ -28,6 +30,133 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   return result;
 }
 
+const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
+
+// Forma comun que alimenta la clasificacion contado/credito, sin importar
+// si el monto viene de una factura entera, la porcion pagada de una
+// factura, o un abono conciliado puntual.
+type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined };
+
+async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
+  const invoicesRaw = await fetchPaginated(
+    "account.move",
+    [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["company_id", "in", companyIds],
+      ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
+      ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
+    ],
+    ["id", "partner_id", "move_type", "amount_total", "invoice_payment_term_id"],
+  );
+
+  return invoicesRaw
+    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
+    .map((inv) => ({
+      monto: inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0),
+      partnerId: inv.partner_id[0],
+      partnerName: inv.partner_id[1] || "Sin cliente",
+      paymentTermId: inv.invoice_payment_term_id?.[0],
+    }));
+}
+
+async function renglonesCobradoFacturas(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
+  const invoicesRaw = await fetchPaginated(
+    "account.move",
+    [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["company_id", "in", companyIds],
+      ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
+      ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
+    ],
+    ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_payment_term_id"],
+  );
+
+  return invoicesRaw
+    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
+    .map((inv) => {
+      const amountTotal = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
+      const residual = inv.move_type === "out_refund" ? -(inv.amount_residual || 0) : (inv.amount_residual || 0);
+      return {
+        monto: amountTotal - residual,
+        partnerId: inv.partner_id[0],
+        partnerName: inv.partner_id[1] || "Sin cliente",
+        paymentTermId: inv.invoice_payment_term_id?.[0],
+      };
+    });
+}
+
+// Dinero que efectivamente entro el mes, sin importar cuando se emitio la
+// factura que salda -- mismo mecanismo de conciliacion que ya usa
+// app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
+// emparejado con el lado factura y el lado pago), reutilizado tal cual.
+async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
+  // No filtramos account.partial.reconcile por fecha en el dominio: el
+  // campo que representa la "fecha de abono" (paymentMove.date) vive en
+  // account.move, dos saltos mas alla del reconcile. Se filtra abajo, ya
+  // emparejado, por ese unico campo.
+  const reconciles = await fetchPaginated(
+    "account.partial.reconcile",
+    [],
+    ["amount", "debit_move_id", "credit_move_id"],
+  );
+  if (reconciles.length === 0) return [];
+
+  const lineIds = new Set<number>();
+  reconciles.forEach((r) => {
+    if (r.debit_move_id) lineIds.add(r.debit_move_id[0]);
+    if (r.credit_move_id) lineIds.add(r.credit_move_id[0]);
+  });
+
+  const lines = await callOdooRPC<any[]>(
+    "account.move.line", "search_read",
+    [[["id", "in", Array.from(lineIds)]]],
+    { fields: ["move_id"] },
+  );
+  const lineToMoveMap: Record<number, number> = {};
+  (lines || []).forEach((l) => { lineToMoveMap[l.id] = l.move_id[0]; });
+
+  const moves = await fetchPaginated(
+    "account.move",
+    [["company_id", "in", companyIds]],
+    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id"],
+  );
+  const moveMap: Record<number, any> = {};
+  moves.forEach((m) => { moveMap[m.id] = m; });
+
+  const startStr = monthStart.toISOString().split("T")[0];
+  const endStr = monthEnd.toISOString().split("T")[0];
+
+  const renglones: Renglon[] = [];
+  reconciles.forEach((r) => {
+    const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
+    const cMove = moveMap[lineToMoveMap[r.credit_move_id?.[0]]];
+    if (!dMove || !cMove) return;
+
+    const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
+    const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
+    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
+
+    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
+    const paymentMove = dIsCustomerInvoice ? cMove : dMove;
+
+    if (CUSTOMER_INVOICE_TYPES.has(paymentMove.move_type)) return;
+    if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
+
+    const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
+    if (fechaAbono < startStr || fechaAbono > endStr) return;
+
+    renglones.push({
+      monto: r.amount || 0,
+      partnerId: invoiceMove.partner_id[0],
+      partnerName: invoiceMove.partner_id[1] || "Sin cliente",
+      paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
+    });
+  });
+  return renglones;
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -40,6 +169,8 @@ export async function GET(request: NextRequest) {
     const yearParam = searchParams.get("year");
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
+    const modoParam = searchParams.get("modo");
+    const modo = (modoParam === "cobrado_facturas" || modoParam === "cobrado_dinero") ? modoParam : "facturado";
 
     const now = new Date();
     let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
@@ -62,24 +193,14 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    // ── Facturas del mes ──
-    const invoicesRaw = await fetchPaginated(
-      "account.move",
-      [
-        ["move_type", "in", ["out_invoice", "out_refund"]],
-        ["state", "=", "posted"],
-        ["company_id", "in", companyIds],
-        ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
-        ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
-      ],
-      ["id", "partner_id", "move_type", "amount_total", "invoice_payment_term_id"],
-    );
+    const renglones = modo === "cobrado_dinero"
+      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd)
+      : modo === "cobrado_facturas"
+        ? await renglonesCobradoFacturas(companyIds, monthStart, monthEnd)
+        : await renglonesFacturado(companyIds, monthStart, monthEnd);
 
-    const isSupricom = (inv: any) => (inv.partner_id?.[1] || "").toLowerCase().includes("supricom");
-    const invoices = invoicesRaw.filter((inv) => !isSupricom(inv) && inv.partner_id);
-
-    // ── Nombres de los plazos de pago usados este mes ──
-    const ptIds = [...new Set(invoices.map((f) => f.invoice_payment_term_id?.[0]).filter(Boolean))];
+    // ── Nombres de los plazos de pago vistos ──
+    const ptIds = [...new Set(renglones.map((r) => r.paymentTermId).filter((id): id is number => Boolean(id)))];
     let ptMap: Record<number, string> = {};
     if (ptIds.length > 0) {
       try {
@@ -115,23 +236,20 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    invoices.forEach((inv) => {
-      const monto = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
-      const partnerId = inv.partner_id[0];
-      const partnerName = inv.partner_id[1] || "Sin cliente";
-      const ptName = ptMap[inv.invoice_payment_term_id?.[0]] || "Contado";
+    renglones.forEach((r) => {
+      const ptName = ptMap[r.paymentTermId ?? -1] || "Contado";
       const diasMatch = ptName.match(/(\d+)/);
 
       if (!diasMatch) {
-        acumular(contado, monto, partnerId, partnerName);
+        acumular(contado, r.monto, r.partnerId, r.partnerName);
         return;
       }
 
       const dias = parseInt(diasMatch[1], 10);
-      acumular(credito, monto, partnerId, partnerName);
+      acumular(credito, r.monto, r.partnerId, r.partnerName);
 
       if (!bucketsPorDias.has(dias)) bucketsPorDias.set(dias, nuevoAcum());
-      acumular(bucketsPorDias.get(dias)!, monto, partnerId, partnerName);
+      acumular(bucketsPorDias.get(dias)!, r.monto, r.partnerId, r.partnerName);
     });
 
     const totalFacturado = contado.monto + credito.monto;
@@ -178,6 +296,7 @@ export async function GET(request: NextRequest) {
           month: currentMonth + 1,
           year: currentYear,
           companyIds,
+          modo,
         },
         updatedAt: new Date().toISOString(),
       },
