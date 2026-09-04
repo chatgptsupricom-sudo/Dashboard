@@ -101,15 +101,6 @@ export async function GET(request: NextRequest) {
 //   image             -> File nueva a editar, ó
 //   source_design_id  -> id de un diseño ya guardado en el catálogo
 export async function POST(request: NextRequest) {
-  // TEMPORAL: para depurar qué host ve la app detrás del proxy sin gastar un
-  // job de KIE. Quitar una vez confirmado el origin público correcto.
-  if (new URL(request.url).searchParams.get("debug_origin") === "1") {
-    return NextResponse.json({
-      computedOrigin: getPublicOrigin(request),
-      requestUrl: request.url,
-      headers: Object.fromEntries(request.headers.entries()),
-    });
-  }
   try {
     await ensureTable();
     const formData = await request.formData();

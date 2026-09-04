@@ -30,13 +30,12 @@ export async function kieCreateTask(
   let data: any = {};
   try { data = JSON.parse(raw); } catch { /* raw no era JSON */ }
 
-  // TEMPORAL: mientras terminamos de integrar KIE, dejamos la respuesta cruda
-  // en el log del servidor para depurar sin adivinar el nombre exacto del campo.
-  console.error("KIE createTask raw response:", res.status, raw.slice(0, 1000));
-
   const taskId = data?.data?.taskId || data?.taskId;
   if (!res.ok || !taskId) {
-    throw new Error(`KIE createTask (HTTP ${res.status}): ${raw.slice(0, 500)}`);
+    // Log completo para depurar; el mensaje que ve el diseñador es el de KIE
+    // cuando existe (más legible), o un recorte crudo si no vino "msg".
+    console.error("KIE createTask error:", res.status, raw.slice(0, 1000));
+    throw new Error(data?.msg || data?.message || raw.slice(0, 300) || `KIE createTask HTTP ${res.status}`);
   }
   return String(taskId);
 }
