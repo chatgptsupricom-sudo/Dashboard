@@ -283,6 +283,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_alerts",
       "cxc_search",
       "cxc_top_clients",
+      "cxc_contado_credito",
     ],
   },
   [UserRole.DISENADOR]: {
