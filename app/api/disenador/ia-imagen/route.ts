@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       const taskId = await kieCreateTask({
         prompt,
         image_urls: [sourceUrl],
-        image_resolution: resolution,
+        size: resolution,
         max_images: variations,
       });
       await query(`UPDATE designer_ai_jobs SET kie_task_id = ?, status = 'processing' WHERE id = ?`, [taskId, jobId]);

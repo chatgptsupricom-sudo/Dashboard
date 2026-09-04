@@ -24,7 +24,8 @@ export async function kieCreateTask(input: Record<string, any>, model = DEFAULT_
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.msg || data?.message || `KIE createTask HTTP ${res.status}`);
+    const detail = data?.data ? ` (${JSON.stringify(data.data).slice(0, 200)})` : "";
+    throw new Error((data?.msg || data?.message || `KIE createTask HTTP ${res.status}`) + detail);
   }
   const taskId = data?.data?.taskId || data?.taskId;
   if (!taskId) {
