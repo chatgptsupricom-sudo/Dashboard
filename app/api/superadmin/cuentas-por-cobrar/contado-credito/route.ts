@@ -91,42 +91,60 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Clasificar contado/credito + acumular por bucket ──
-    type Acum = { monto: number; facturas: number; clientes: Set<number> };
-    const nuevoAcum = (): Acum => ({ monto: 0, facturas: 0, clientes: new Set() });
+    type ClientAcum = { partnerId: number; partnerName: string; monto: number; facturas: number };
+    type Acum = {
+      monto: number;
+      facturas: number;
+      clientesMap: Map<number, ClientAcum>;
+      diasVistos: Set<number>;
+    };
+    const nuevoAcum = (): Acum => ({ monto: 0, facturas: 0, clientesMap: new Map(), diasVistos: new Set() });
 
     const contado = nuevoAcum();
     const credito = nuevoAcum();
     const bucketsPorDias = new Map<number | "Otros", Acum>();
 
+    const acumular = (acum: Acum, monto: number, partnerId: number, partnerName: string, dias?: number) => {
+      acum.monto += monto;
+      acum.facturas += 1;
+      if (dias !== undefined) acum.diasVistos.add(dias);
+      const c = acum.clientesMap.get(partnerId);
+      if (c) {
+        c.monto += monto;
+        c.facturas += 1;
+      } else {
+        acum.clientesMap.set(partnerId, { partnerId, partnerName, monto, facturas: 1 });
+      }
+    };
+
     invoices.forEach((inv) => {
       const monto = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
       const partnerId = inv.partner_id[0];
+      const partnerName = inv.partner_id[1] || "Sin cliente";
       const ptName = ptMap[inv.invoice_payment_term_id?.[0]] || "Contado";
       const diasMatch = ptName.match(/(\d+)/);
 
       if (!diasMatch) {
-        contado.monto += monto;
-        contado.facturas += 1;
-        contado.clientes.add(partnerId);
+        acumular(contado, monto, partnerId, partnerName);
         return;
       }
 
       const dias = parseInt(diasMatch[1], 10);
-      credito.monto += monto;
-      credito.facturas += 1;
-      credito.clientes.add(partnerId);
+      acumular(credito, monto, partnerId, partnerName);
 
       const bucketKey: number | "Otros" = BUCKETS_ESTANDAR.includes(dias) ? dias : "Otros";
       if (!bucketsPorDias.has(bucketKey)) bucketsPorDias.set(bucketKey, nuevoAcum());
-      const b = bucketsPorDias.get(bucketKey)!;
-      b.monto += monto;
-      b.facturas += 1;
-      b.clientes.add(partnerId);
+      acumular(bucketsPorDias.get(bucketKey)!, monto, partnerId, partnerName, dias);
     });
 
     const totalFacturado = contado.monto + credito.monto;
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const pct = (parte: number, total: number) => (total > 0 ? round2((parte / total) * 100) : 0);
+
+    const clientesDe = (acum: Acum) =>
+      [...acum.clientesMap.values()]
+        .map((c) => ({ ...c, monto: round2(c.monto) }))
+        .sort((a, b) => b.monto - a.monto);
 
     const buckets = [...bucketsPorDias.entries()]
       .sort((a, b) => {
@@ -136,10 +154,14 @@ export async function GET(request: NextRequest) {
       })
       .map(([dias, acum]) => ({
         dias,
+        // Solo tiene contenido para el bucket "Otros" -- los plazos reales
+        // que agrupa (ej. 21, 45), para no perder esa info como antes.
+        diasIncluidos: dias === "Otros" ? [...acum.diasVistos].sort((a, b) => a - b) : [],
         monto: round2(acum.monto),
         pct: pct(acum.monto, credito.monto),
         facturas: acum.facturas,
-        clientes: acum.clientes.size,
+        clientes: acum.clientesMap.size,
+        clientesDetalle: clientesDe(acum),
       }));
 
     return NextResponse.json({
@@ -150,13 +172,15 @@ export async function GET(request: NextRequest) {
           monto: round2(contado.monto),
           pct: pct(contado.monto, totalFacturado),
           facturas: contado.facturas,
-          clientes: contado.clientes.size,
+          clientes: contado.clientesMap.size,
+          clientesDetalle: clientesDe(contado),
         },
         credito: {
           monto: round2(credito.monto),
           pct: pct(credito.monto, totalFacturado),
           facturas: credito.facturas,
-          clientes: credito.clientes.size,
+          clientes: credito.clientesMap.size,
+          clientesDetalle: clientesDe(credito),
         },
         buckets,
         filters: {
