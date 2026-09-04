@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { kieCreateTask } from "@/lib/kie";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 // Editor con IA (Seedream vía KIE). Cada job guarda su propia imagen fuente en
@@ -50,6 +51,7 @@ async function ensureTable() {
   }
 }
 
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 const DEFAULT_MODEL = process.env.KIE_SEEDREAM_MODEL || "seedream/5-pro-image-to-image";
 const ASPECT_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2"];
 
@@ -62,6 +64,9 @@ const EXT_BY_MIME: Record<string, string> = {
 
 // GET: historial reciente de generaciones (para el panel "Recientes").
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const url = new URL(request.url);
@@ -101,6 +106,9 @@ export async function GET(request: NextRequest) {
 //   image             -> File nueva a editar, ó
 //   source_design_id  -> id de un diseño ya guardado en el catálogo
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const formData = await request.formData();

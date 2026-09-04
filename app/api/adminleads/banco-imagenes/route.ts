@@ -5,8 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 // Vendedores solo consultan (GET, desde /vendedores/banco-imagenes); subir y
 // borrar es cosa de adminleads/gerente de operaciones (y superadmin, que
 // siempre pasa via requireRoles).
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller"];
-const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones"];
+//
+// El diseñador tambien administra el banco completo: su pantalla
+// /disenador/banco-imagenes reexporta la de adminleads, asi que necesita
+// lectura y escritura. Sin el en estas listas la pantalla no cargaba nada.
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador"];
+const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones", "diseñador"];
 
 // Tamano maximo por archivo.
 const MAX_BYTES = 10 * 1024 * 1024;

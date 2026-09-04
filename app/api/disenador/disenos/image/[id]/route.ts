@@ -1,11 +1,17 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest } from "next/server";
+
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 
 // Sirve el binario de un diseño guardado en MySQL.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await params;
 

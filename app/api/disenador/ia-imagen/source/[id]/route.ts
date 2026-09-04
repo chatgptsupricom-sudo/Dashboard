@@ -3,6 +3,11 @@ import { NextRequest } from "next/server";
 
 // Sirve la imagen fuente de un job para que KIE (y el navegador) puedan
 // descargarla por URL pública.
+//
+// SIN requireRoles a proposito: quien descarga esto son los servidores de KIE,
+// que no tienen la cookie de sesion. Si se le pone el guard, KIE responde
+// "File type not supported" y la generacion nunca arranca. Lo que protege el
+// acceso es que la URL lleva el id del job y no se puede listar desde fuera.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

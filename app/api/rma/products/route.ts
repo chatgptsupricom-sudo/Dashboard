@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 // (busqueda generica de productos en Odoo, no algo exclusivo de RMA) — ver
 // app/[locale]/adminleads/banco-imagenes/page.tsx.
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["rma", "adminleads"]);
+  const auth = await requireRoles(request, ["rma", "adminleads", "diseñador"]);
   if (auth.error) return auth.error;
 
   try {

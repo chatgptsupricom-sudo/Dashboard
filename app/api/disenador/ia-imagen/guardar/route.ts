@@ -1,12 +1,18 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { NextRequest, NextResponse } from "next/server";
+
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 
 // POST: descarga un resultado de KIE y lo guarda como diseño permanente en el
 // catálogo (designer_designs). Solo se acepta una resultUrl que ya esté
 // registrada en el job (evita usar este endpoint para descargar cualquier URL
 // arbitraria — protección básica contra SSRF).
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const jobId = Number(body.jobId);

@@ -1,6 +1,11 @@
 import { query } from "@/lib/db";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+
+// El matcher del middleware excluye /api, asi que el guard va aqui.
+// superadmin siempre pasa via requireRoles.
+const ROLES = ["diseñador"];
 
 // Catálogo de diseños del Diseñador. Las imágenes viven en MySQL (LONGBLOB) para
 // que sobrevivan a los deploys, igual que el Banco de Flyers (product_images).
@@ -8,6 +13,9 @@ const ensureTable = ensureDesignerDesignsTable;
 
 // GET: lista paginada del catálogo (sin el binario, que es pesado).
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
 
@@ -73,6 +81,9 @@ export async function GET(request: NextRequest) {
 //   folders   -> JSON string[] alineado por índice con images
 //   created_by
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
 
@@ -121,6 +132,9 @@ export async function POST(request: NextRequest) {
 
 // PATCH: renombrar / recategorizar un diseño. JSON { id, title?, folder? }
 export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const body = await request.json();
@@ -151,6 +165,9 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE: ?id=1  ó  ?ids=1,2,3
 export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     await ensureTable();
     const url = new URL(request.url);

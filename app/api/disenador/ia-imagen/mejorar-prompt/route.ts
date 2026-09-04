@@ -1,6 +1,9 @@
 import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+
+const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 
 // "Mejorar con IA": GPT-4o (con visión) mira la imagen fuente + la idea en
 // borrador del diseñador y devuelve un prompt más específico para Seedream.
@@ -28,6 +31,9 @@ function getOpenAI(): OpenAI {
 
 // FormData: draft (opcional) + image (File) ó source_design_id.
 export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
   try {
     const formData = await request.formData();
     const draft = ((formData.get("draft") as string) || "").trim();
