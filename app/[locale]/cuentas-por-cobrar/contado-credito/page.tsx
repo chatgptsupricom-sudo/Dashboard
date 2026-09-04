@@ -34,6 +34,7 @@ const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const PIE_COLORS = ["#10b981", "#3b82f6"];
 const BAR_COLOR = "#3b82f6";
+const BANCO_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -85,6 +86,7 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number };
+type Banco = Acumulado & { journalId: number; journalName: string };
 type Parcial = { monto: number; pct: number; facturas: number };
 type ContadoCreditoData = {
   totalFacturado: number;
@@ -93,6 +95,7 @@ type ContadoCreditoData = {
   delMes: Parcial;
   mesesAnteriores: Parcial;
   buckets: Bucket[];
+  bancos: Banco[];
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
@@ -236,6 +239,8 @@ export default function ContadoCreditoPage() {
     fullLabel: bucketLabel(b),
     monto: b.monto,
   })) : [];
+
+  const bancoPieData = data ? data.bancos.map((b) => ({ name: b.journalName, value: b.monto })) : [];
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto tabular-nums">
@@ -417,6 +422,46 @@ export default function ContadoCreditoPage() {
                     <Tooltip formatter={(v: number) => formatCurrency(v)} labelFormatter={(_, p) => p?.[0]?.payload?.fullLabel || ""} />
                     <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
                   </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Cobrado por banco -- solo tiene sentido en modo Cobrado, el
+              "banco" es el diario del pago, y facturado no tiene pago. */}
+          {esCobrado && data.bancos.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <p className="text-sm font-semibold text-slate-700 mb-3">Cobrado por banco</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {data.bancos.map((b, i) => (
+                    <button
+                      key={b.journalId}
+                      onClick={() => openClientes(`Clientes — ${b.journalName}`, b.clientesDetalle)}
+                      className="text-left bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: BANCO_COLORS[i % BANCO_COLORS.length] }} />
+                        <p className="text-xs text-slate-500 uppercase tracking-wide truncate">{b.journalName}</p>
+                      </div>
+                      <p className="text-xl font-bold text-slate-800 mt-1">{b.pct}%</p>
+                      <p className="text-xs text-slate-600 mt-1">{formatCurrency(b.monto)}</p>
+                      <div className="flex items-center gap-1 mt-2 text-xs text-slate-400">
+                        <Users size={12} />
+                        {b.clientes} cliente{b.clientes !== 1 ? "s" : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={bancoPieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                      {bancoPieData.map((_, i) => <Cell key={i} fill={BANCO_COLORS[i % BANCO_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>

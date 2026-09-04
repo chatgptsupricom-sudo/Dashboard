@@ -38,7 +38,7 @@ const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes
 // corresponde a una factura emitida ese mismo mes o a una de un mes
 // anterior (deuda vieja que se termino de cobrar ahora) -- es lo que
 // pidio cobranza para no confundir "cuanto entro" con "de que factura".
-type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined; esDelMes: boolean };
+type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined; esDelMes: boolean; journalId: number | undefined; journalName: string };
 
 async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   const invoicesRaw = await fetchPaginated(
@@ -61,6 +61,8 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       partnerName: inv.partner_id[1] || "Sin cliente",
       paymentTermId: inv.invoice_payment_term_id?.[0],
       esDelMes: true,
+      journalId: undefined,
+      journalName: "",
     }));
 }
 
@@ -100,7 +102,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id"],
+    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -139,6 +141,10 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
       partnerName: invoiceMove.partner_id[1] || "Sin cliente",
       paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
       esDelMes,
+      // El "banco" es el diario del lado PAGO de la conciliacion (donde
+      // realmente entro el dinero), no el diario de la factura.
+      journalId: paymentMove.journal_id?.[0],
+      journalName: paymentMove.journal_id?.[1] || "Sin diario",
     });
   });
   return renglones;
@@ -208,6 +214,10 @@ export async function GET(request: NextRequest) {
     const contado = nuevoAcum();
     const credito = nuevoAcum();
     const bucketsPorDias = new Map<number, Acum>();
+    // Solo relevante en modo "cobrado": por que diario/banco entro el
+    // dinero (journal_id del lado pago de la conciliacion).
+    const bancosPorJournal = new Map<number, Acum>();
+    const bancoNombres = new Map<number, string>();
     // Solo relevante en modo "cobrado": de lo cobrado, cuanto es de
     // facturas de este mes vs de meses anteriores (deuda vieja cobrada
     // ahora). Alimenta la barra de progreso del total en ese modo.
@@ -235,6 +245,12 @@ export async function GET(request: NextRequest) {
       } else {
         anterioresMonto += r.monto;
         anterioresFacturas += 1;
+      }
+
+      if (r.journalId !== undefined) {
+        bancoNombres.set(r.journalId, r.journalName);
+        if (!bancosPorJournal.has(r.journalId)) bancosPorJournal.set(r.journalId, nuevoAcum());
+        acumular(bancosPorJournal.get(r.journalId)!, r.monto, r.partnerId, r.partnerName);
       }
 
       const ptName = ptMap[r.paymentTermId ?? -1] || "Contado";
@@ -272,6 +288,18 @@ export async function GET(request: NextRequest) {
         clientesDetalle: clientesDe(acum),
       }));
 
+    const bancos = [...bancosPorJournal.entries()]
+      .sort((a, b) => b[1].monto - a[1].monto)
+      .map(([journalId, acum]) => ({
+        journalId,
+        journalName: bancoNombres.get(journalId) || "Sin diario",
+        monto: round2(acum.monto),
+        pct: pct(acum.monto, totalFacturado),
+        facturas: acum.facturas,
+        clientes: acum.clientesMap.size,
+        clientesDetalle: clientesDe(acum),
+      }));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -301,6 +329,7 @@ export async function GET(request: NextRequest) {
           facturas: anterioresFacturas,
         },
         buckets,
+        bancos,
         filters: {
           empresa,
           month: currentMonth + 1,
