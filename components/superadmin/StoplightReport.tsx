@@ -116,6 +116,10 @@ interface KpiData {
   totalCuotaMensual: number;
   totalFacturadoMensual: number;
   porcentajeCumplimiento: number;
+  // Avance del mes de la cuota: facturado ÷ cuota prorrateada a hoy (100% = al día).
+  avanceMesCuota?: number | null;
+  diasUtilesTranscurridos?: number;
+  totalDiasUtilesMes?: number;
   numSemanas: number;
   weekHeaders: string[];
   sellers: SellerData[];
@@ -845,7 +849,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const cxc = h.cxc;
     const cpp = h.cpp;
     switch (kpiId) {
-      case "cumplimiento_cuota_ventas": return d ? `${d.avgCumplimiento ?? 0}%` : "-";
+      case "cumplimiento_cuota_ventas": return d ? `${d.avanceMesCuota ?? d.porcentajeCumplimiento ?? d.avgCumplimiento ?? 0}%` : "-";
       case "margen_bruto": return d ? `${d.avgMargen ?? 0}%` : "-";
       case "visitas_semanales": return d ? String(d.avgVisitas ?? 0) : "-";
       case "efectividad_cierre": return d ? `${d.avgEfectividad ?? 0}%` : "-";
@@ -911,19 +915,30 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       id: "cumplimiento_cuota_ventas",
       trend: (() => {
         if (!kpiData) return "help";
-        // El endpoint de vendedor no traía `porcentajeCumplimiento`; se cae a
-        // `avgCumplimiento` para no pintar siempre el triángulo rojo.
-        const pct = kpiData.porcentajeCumplimiento ?? kpiData.avgCumplimiento ?? 0;
+        // Avance del mes (facturado vs. cuota prorrateada a hoy); cae a los
+        // valores viejos si la API todavía no lo trae.
+        const pct = kpiData.avanceMesCuota ?? kpiData.porcentajeCumplimiento ?? kpiData.avgCumplimiento ?? 0;
         return pct >= 100 ? "help" : pct >= 70 ? "warning" : "alert";
       })(),
       title: t("kpi_cuota_ventas"),
       peso: "30%",
-      average: kpiData ? `${kpiData.avgCumplimiento}%` : "0%",
+      // "Avance del mes": facturado ÷ cuota prorrateada a los días hábiles
+      // transcurridos. 100% = al día para llegar a la cuota.
+      average: kpiData
+        ? `${kpiData.avanceMesCuota ?? kpiData.avgCumplimiento}%`
+        : "0%",
+      hint:
+        kpiData?.diasUtilesTranscurridos && kpiData?.totalDiasUtilesMes
+          ? t("avance_al_dia", {
+              d: kpiData.diasUtilesTranscurridos,
+              total: kpiData.totalDiasUtilesMes,
+            })
+          : undefined,
       weeks: kpiData?.semanaGlobal || defaultWeeks,
       isClickable: true,
       goalDefault: kpiData ? String(Math.round(kpiData.metaMensual)) : "0",
       goalSuffix: "",
-      cumple: kpiData ? kpiData.avgCumplimiento >= 100 : false,
+      cumple: kpiData ? (kpiData.avanceMesCuota ?? kpiData.avgCumplimiento) >= 100 : false,
     },
     {
       id: "margen_bruto",
@@ -1817,6 +1832,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
                               {t("click_detail")}
                             </span>
+                          )}
+                          {kpi.hint && (
+                            <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint}</div>
                           )}
                         </td>
                         <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
@@ -4445,9 +4463,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               )}
               {kpiInfoModal.kpiId === "cumplimiento_cuota_ventas" && (
                 <>
-                  <p><strong>{t("info_que_mide")}</strong> Porcentaje de facturado contra la cuota mensual asignada a cada vendedor.</p>
-                  <p><strong>{t("info_formula")}</strong> Facturado del vendedor ÷ Cuota asignada × 100</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≥100% | Amarillo 70%–99.99% | Rojo &lt;70%</p>
+                  <p><strong>{t("info_que_mide")}</strong> Avance del mes: cuánto se ha facturado frente a lo que se debería llevar a esta altura del mes. <strong>100% = al día</strong> para llegar a la cuota.</p>
+                  <p><strong>{t("info_formula")}</strong> Facturado del mes ÷ (Cuota mensual × días hábiles transcurridos ÷ días hábiles del mes) × 100</p>
+                  <p><strong>{t("info_semaforo")}</strong> Verde ≥100% (al día o adelantado) | Amarillo 70%–99.99% | Rojo &lt;70%</p>
                 </>
               )}
               {kpiInfoModal.kpiId === "clientes_nuevos" && (
