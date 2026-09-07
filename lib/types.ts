@@ -138,6 +138,9 @@ export const rolePermissions: RolePermissions = {
       "top_clientes",
       "spiff",
       "banco_imagenes_seller",
+      // Stoplight Report, pero solo el KPI de ventas y con SUS propias
+      // cifras (la API /api/vendedores/stoplight ya filtra por s.user_id).
+      "stoplight_reports",
     ], // IDs que deben coincidir con menuItems
   },
   [UserRole.ADMIN_LEADS]: {
