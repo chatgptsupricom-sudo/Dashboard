@@ -1400,7 +1400,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Resumen del semáforo — cuántos KPIs en meta / cerca / lejos */}
       {resumenGlobal.total > 0 && (
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 animate-in fade-in duration-300">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1660,7 +1660,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           const r = contarNiveles(group.kpis || []);
           const peor: Nivel = r.rojo > 0 ? "rojo" : r.amarillo > 0 ? "amarillo" : r.verde > 0 ? "verde" : "sin";
           return (
-          <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-in fade-in-0 duration-300">
             {/* Group Header */}
             <button
               type="button"
@@ -1696,7 +1696,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
             {expandedGroups[group.id] && group.kpis.length === 0 && (
-              <div className="p-8 text-center text-sm">
+              <div className="p-8 text-center text-sm border-t border-slate-100 animate-in fade-in duration-200">
                 {(group as any).estado?.cargando ? (
                   <span className="inline-flex items-center gap-2 text-slate-500">
                     <RefreshCw size={14} className="animate-spin" />
@@ -1721,7 +1721,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Table / View */}
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
-              <div className="divide-y divide-slate-100 border-t border-slate-100">
+              <div className="divide-y divide-slate-100 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                 {group.kpis.map((kpi: any) => {
                   const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
                   return (
@@ -1743,7 +1743,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             )}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
-              <div className="overflow-x-auto border-t border-slate-100">
+              <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                 <table className="w-full text-sm text-left border-collapse min-w-[880px]">
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
@@ -1838,7 +1838,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               ) : monthlyHistory.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">{t("no_available_data")}</div>
               ) : (
-                <div className="overflow-x-auto border-t border-slate-100">
+                <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
@@ -1885,10 +1885,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CUMPLIMIENTO DE CUOTA */}
       {modalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
                 {selectedSeller && (
                   <button
@@ -1899,7 +1899,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("modal_cuota_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("modal_cuota_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {t("modal_cuota_subtitle", { mes: modalData?.mes || modalMes, dias: modalData?.totalDiasUtiles || 0 })}
                   </p>
@@ -1923,7 +1923,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   key={tab}
                   onClick={() => setModalTab(tab)}
                   className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    modalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                    modalTab === tab ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   {tab === "resumen" ? t("tab_resumen_vendedores") : tab === "diario" ? t("tab_detalle_diario") : t("tab_detalle_semanal")}
@@ -1947,9 +1947,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   {modalTab === "resumen" && (
                     <div className="space-y-4">
                       <div className="grid grid-cols-4 gap-4 mb-6">
-                        <div className="bg-blue-50 rounded-xl p-4">
-                          <p className="text-xs text-blue-600 font-medium">{t("total_vendedores")}</p>
-                          <p className="text-2xl font-bold text-blue-700">{modalData.sellers.length}</p>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">{t("total_vendedores")}</p>
+                          <p className="text-2xl font-bold text-slate-900">{modalData.sellers.length}</p>
                         </div>
                         <div className="bg-green-50 rounded-xl p-4">
                           <p className="text-xs text-green-600 font-medium">{t("cumplieron")}</p>
@@ -2210,10 +2210,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CLIENTES NUEVOS */}
       {clientesModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-emerald-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
                 {(selectedInvoice || selectedClientesClient || selectedClientesSeller) && (
                   <button
@@ -2234,7 +2234,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
                     {selectedInvoice
                       ? `${selectedInvoice.type === "Nota de credito" ? t("nota_credito_label") : t("factura")} ${selectedInvoice.reference}`
                       : selectedClientesSeller
@@ -2283,7 +2283,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     key={tab}
                     onClick={() => setClientesModalTab(tab)}
                     className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                      clientesModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                      clientesModalTab === tab ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
                     {tab === "resumen" ? t("tab_resumen_vendedores") : t("tab_detalle_semanal_vendedor")}
@@ -2295,17 +2295,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             {/* Breadcrumb when drill-down */}
             {selectedClientesSeller && (
               <div className="flex gap-2 px-5 pt-3 text-xs text-slate-500">
-                <button onClick={() => { setSelectedClientesSeller(null); setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); setClientesSellerDetail(null); }} className="hover:text-amber-600 transition-colors">
+                <button onClick={() => { setSelectedClientesSeller(null); setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); setClientesSellerDetail(null); }} className="hover:text-indigo-600 transition-colors">
                   {t("resumen")}
                 </button>
                 <span>/</span>
-                <button onClick={() => { setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-amber-600 transition-colors">
+                <button onClick={() => { setSelectedClientesClient(null); setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-indigo-600 transition-colors">
                   {selectedClientesSeller.nombre}
                 </button>
                 {selectedClientesClient && (
                   <>
                     <span>/</span>
-                    <button onClick={() => { setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-amber-600 transition-colors">
+                    <button onClick={() => { setSelectedInvoice(null); setInvoiceDetail(null); }} className="hover:text-indigo-600 transition-colors">
                       {selectedClientesClient.partnerName}
                     </button>
                   </>
@@ -2336,13 +2336,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           <p className="text-xs text-emerald-600 font-medium">{t("total_clientes_nuevos")}</p>
                           <p className="text-2xl font-bold text-emerald-700">{clientesModalData.totalNuevos}</p>
                         </div>
-                        <div className="bg-blue-50 rounded-xl p-4">
-                          <p className="text-xs text-blue-600 font-medium">{t("vendedores")}</p>
-                          <p className="text-2xl font-bold text-blue-700">{clientesModalData.numSellers}</p>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">{t("vendedores")}</p>
+                          <p className="text-2xl font-bold text-slate-900">{clientesModalData.numSellers}</p>
                         </div>
-                        <div className="bg-amber-50 rounded-xl p-4">
-                          <p className="text-xs text-amber-600 font-medium">{t("meta_por_vendedor")}</p>
-                          <p className="text-2xl font-bold text-amber-700">{clientesModalData.metaPerSeller}</p>
+                        <div className="bg-indigo-50 rounded-xl p-4">
+                          <p className="text-xs text-indigo-600 font-medium">{t("meta_por_vendedor")}</p>
+                          <p className="text-2xl font-bold text-indigo-700">{clientesModalData.metaPerSeller}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4">
                           <p className="text-xs text-slate-600 font-medium">{t("promedio_por_vendedor")}</p>
@@ -2493,7 +2493,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-sm font-medium text-slate-600">{t("facturas_de", { cliente: selectedClientesClient.partnerName })}:</span>
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
                           Total: ${selectedClientesClient.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                         </span>
                       </div>
@@ -2624,10 +2624,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE MARGEN BRUTO */}
       {margenModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-purple-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
                 {selectedMargenSeller && (
                   <button
@@ -2638,7 +2638,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("margen_bruto_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("margen_bruto_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {t("margen_bruto_subtitle", { mes: margenModalData?.mes || modalMes })}
                   </p>
@@ -2662,7 +2662,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   key={tab}
                   onClick={() => { setMargenModalTab(tab as any); setSelectedMargenSeller(null); }}
                   className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    margenModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                    margenModalTab === tab ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   {tab === "vendedor" ? t("tab_por_vendedor") : tab === "producto" ? t("tab_por_producto") : t("tab_detalle_semanal")}
@@ -2713,9 +2713,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 ${totalGanancia.toLocaleString(locale, { minimumFractionDigits: 2 })}
                               </p>
                             </div>
-                            <div className="bg-amber-50 rounded-xl p-4">
-                              <p className="text-xs text-amber-600 font-medium">{t("margen_promedio")}</p>
-                              <p className="text-2xl font-bold text-amber-700">{margenPromedio}%</p>
+                            <div className="bg-indigo-50 rounded-xl p-4">
+                              <p className="text-xs text-indigo-600 font-medium">{t("margen_promedio")}</p>
+                              <p className="text-2xl font-bold text-indigo-700">{margenPromedio}%</p>
                             </div>
                           </div>
                         );
@@ -2948,10 +2948,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE EFECTIVIDAD DE CIERRE */}
       {efectividadModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-blue-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
                 {selectedEfectividadSeller && (
                   <button
@@ -2962,7 +2962,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("efectividad_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("efectividad_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {efectividadModalData?.periodoLabel || t("efectividad_subtitle")}
                   </p>
@@ -2977,7 +2977,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     onClick={() => openEfectividadModalWithMes(modalMes, p)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       efectividadPeriodo === p
-                        ? "bg-amber-500 text-white"
+                        ? "bg-slate-900 text-white"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
@@ -3000,7 +3000,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   key={tab}
                   onClick={() => { setEfectividadModalTab(tab); setSelectedEfectividadSeller(null); }}
                   className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    efectividadModalTab === tab ? "text-amber-500 border-b-2 border-amber-500" : "text-slate-500 hover:text-slate-800"
+                    efectividadModalTab === tab ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   {tab === "vendedor" ? t("tab_por_vendedor") : t("tab_detalle_semanal")}
@@ -3025,15 +3025,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="space-y-6">
                        {/* Global Funnel */}
                       {efectividadModalData.global && (
-                        <div className="bg-gradient-to-r from-slate-50 to-white rounded-xl p-6 border">
+                        <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("embudo_global", { periodo: efectividadModalData?.periodoLabel || t("periodo_mes") })}</h3>
                           <div className="flex items-center justify-between gap-4">
                             {/* Ordenes */}
                             <div className="flex-1 text-center">
-                              <div className="bg-amber-100 rounded-xl p-4 mb-2">
-                                <p className="text-3xl font-bold text-amber-700">{efectividadModalData.global.ordenes}</p>
+                              <div className="bg-indigo-50 rounded-xl p-4 mb-2">
+                                <p className="text-3xl font-bold text-indigo-700">{efectividadModalData.global.ordenes}</p>
                               </div>
-                              <p className="text-xs font-medium text-amber-600">{t("ordenes")}</p>
+                              <p className="text-xs font-medium text-indigo-600">{t("ordenes")}</p>
                               <p className="text-[10px] text-slate-400">{t("ordenenes_confirmadas")}</p>
                             </div>
                             {/* Arrow */}
@@ -3066,7 +3066,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           <thead>
                             <tr className="bg-slate-50 border-b">
                               <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                              <th className="p-3 text-center font-medium text-amber-600">{t("ordenes")}</th>
+                              <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
                               <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
                               <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
@@ -3081,7 +3081,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   className="border-b hover:bg-blue-50/40 transition-colors"
                                 >
                                   <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                                  <td className="p-3 text-center text-amber-600 font-bold">{seller.ordenes}</td>
+                                  <td className="p-3 text-center text-indigo-600 font-bold">{seller.ordenes}</td>
                                   <td className="p-3 text-center text-green-600 font-bold">{seller.facturadas}</td>
                                   <td className="p-3 text-center">
                                     <span className={`font-bold ${seller.efectividad >= 60 ? "text-green-600" : seller.efectividad >= 40 ? "text-yellow-600" : "text-red-600"}`}>
@@ -3145,7 +3145,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <thead>
                                 <tr className="bg-slate-50 border-b">
                                   <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                                  <th className="p-3 text-center font-medium text-amber-600">{t("ordenes")}</th>
+                                  <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
                                   <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
                                   <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                                   <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
@@ -3155,7 +3155,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 {selectedEfectividadSeller.semanas.map((sem: any) => (
                                   <tr key={sem.numero} className={`border-b ${sem.efectividad != null && sem.efectividad >= 60 ? "bg-green-50/30" : ""}`}>
                                     <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                    <td className="p-3 text-center text-amber-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
+                                    <td className="p-3 text-center text-indigo-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
                                     <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.facturadas : "-"}</td>
                                     <td className="p-3 text-center">
                                       {sem.efectividad != null ? (
@@ -3199,7 +3199,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Cobertura Marcas Modal */}
       {coberturaModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3208,7 +3208,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <Package size={20} className="text-cyan-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("cobertura_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("cobertura_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {coberturaModalData?.periodoLabel || t("cobertura_subtitle")}
                   </p>
@@ -3271,7 +3271,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="space-y-6">
                       {/* Global Summary */}
                       {coberturaModalData.global && (
-                        <div className="bg-gradient-to-r from-cyan-50 to-white rounded-xl p-6 border">
+                        <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: coberturaModalData.periodoLabel })}</h3>
                           <div className="grid grid-cols-5 gap-4">
                             <div className="text-center">
@@ -3299,10 +3299,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <p className="text-xs font-medium text-purple-600">{t("margen_promedio")}</p>
                             </div>
                             <div className="text-center">
-                              <div className="bg-amber-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-amber-700">{coberturaModalData.global.totalVendedores}</p>
+                              <div className="bg-indigo-50 rounded-xl p-3 mb-2">
+                                <p className="text-2xl font-bold text-indigo-700">{coberturaModalData.global.totalVendedores}</p>
                               </div>
-                              <p className="text-xs font-medium text-amber-600">{t("vendedores")}</p>
+                              <p className="text-xs font-medium text-indigo-600">{t("vendedores")}</p>
                             </div>
                           </div>
                         </div>
@@ -3317,7 +3317,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
                               <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
                               <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
-                              <th className="p-3 text-right font-medium text-amber-600">{t("cantidad")}</th>
+                              <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
                               <th className="p-3 text-right font-medium text-cyan-600">{t("p_vendidos")}</th>
                               <th className="p-3 text-right font-medium text-slate-600">{t("vendedores")}</th>
                             </tr>
@@ -3335,7 +3335,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 <td className={`p-3 text-right font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                                   ${marca.ganancia?.toLocaleString()}
                                 </td>
-                                <td className="p-3 text-right text-amber-600">{marca.cantidad}</td>
+                                <td className="p-3 text-right text-indigo-600">{marca.cantidad}</td>
                                 <td className="p-3 text-right text-cyan-600">{marca.productosVendidos}</td>
                                 <td className="p-3 text-right text-slate-600">{marca.vendedores}</td>
                               </tr>
@@ -3402,7 +3402,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
                                   <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
                                   <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
-                                  <th className="p-3 text-right font-medium text-amber-600">{t("cantidad")}</th>
+                                  <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -3414,7 +3414,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                                       ${sem.ganancia?.toLocaleString()}
                                     </td>
-                                    <td className="p-3 text-right text-amber-600 font-bold">{sem.cantidad}</td>
+                                    <td className="p-3 text-right text-indigo-600 font-bold">{sem.cantidad}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -3433,7 +3433,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Activacion Cartera Modal */}
       {activacionModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3442,7 +3442,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <UserCheck size={20} className="text-orange-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("activacion_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("activacion_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {activacionModalData?.periodoLabel || t("activacion_subtitle")}
                   </p>
@@ -3505,7 +3505,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <div className="space-y-6">
                       {/* Global Summary */}
                       {activacionModalData.global && (
-                        <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl p-6 border">
+                        <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: activacionModalData.periodoLabel })}</h3>
                           <div className="grid grid-cols-3 gap-4">
                             <div className="text-center">
@@ -3672,7 +3672,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Visitas Semanales Modal */}
       {visitasModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setVisitasModalOpen(false)}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setVisitasModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3681,7 +3681,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <Calendar size={20} className="text-indigo-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{t("visitas_title")}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("visitas_title")}</h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {t("visitas_subtitle", { count: kpiData?.sellers?.length || 0, mes: modalMes })}
                   </p>
@@ -3708,7 +3708,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                 <div className="space-y-6">
                   {/* Formulario Nueva Visita */}
                   {!gerenteOpsMode && (
-                  <div className="bg-gradient-to-r from-indigo-50 to-white rounded-xl p-6 border">
+                  <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("registrar_visita")}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Selector de Vendedor */}
@@ -3892,7 +3892,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 <td className="p-3 text-slate-800">{visita.client_name}</td>
                                 <td className="p-3 text-center">
                                   {visita.is_prospect ? (
-                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                                    <span className="px-2 py-0.5 bg-amber-100 text-indigo-700 rounded text-xs font-medium">
                                       {t("prospecto_label")}
                                     </span>
                                   ) : (
@@ -3944,9 +3944,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         onMesChange={onModalMesChange}
       />
       {cxcModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
                 {cxcSelectedInvoice && (
                   <button
@@ -3957,7 +3957,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </button>
                 )}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
                     {cxcSelectedInvoice
                       ? `${cxcSelectedInvoice.name} — ${cxcSelectedInvoice.partnerName}`
                       : cxcModalKpi === "efectividad_cobranza" ? t("cxc_efectividad_title")
@@ -4037,7 +4037,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <td className="p-3 font-medium text-slate-800">
                                     {line.productName}
                                     {isSaldoInicial && (
-                                      <span className="ml-2 inline-block px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">
+                                      <span className="ml-2 inline-block px-1.5 py-0.5 bg-amber-100 text-indigo-700 rounded text-[10px] font-medium">
                                          {t("saldo_migracion")}
                                       </span>
                                     )}
@@ -4113,7 +4113,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                 inv.paymentState === "paid" || inv.paymentState === "reconciled" || inv.paymentState === "in_payment" ? "bg-emerald-100 text-emerald-700" :
-                                inv.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
+                                inv.paymentState === "partial" ? "bg-amber-100 text-indigo-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
                                 {inv.paymentState === "paid" || inv.paymentState === "reconciled" ? t("pagada") :
@@ -4123,7 +4123,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </td>
                             <td className="p-3 text-center">
                               <span className={`font-medium ${
-                                inv.agingDays > 60 ? "text-red-600" : inv.agingDays > 30 ? "text-amber-600" : inv.agingDays > 0 ? "text-orange-500" : "text-emerald-600"
+                                inv.agingDays > 60 ? "text-red-600" : inv.agingDays > 30 ? "text-indigo-600" : inv.agingDays > 0 ? "text-orange-500" : "text-emerald-600"
                               }`}>
                                 {inv.agingDays > 0 ? inv.agingDays : "—"}
                               </span>
@@ -4147,11 +4147,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       )}
 
       {cppModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">
+                <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
                   {cppModalKpi === "pagos_a_tiempo" ? t("cpp_pagos_title")
                     : cppModalKpi === "cuentas_pagar_vencidas" ? t("cpp_cxpagar_title")
                     : cppModalKpi === "procesamiento_oportuno" ? t("cpp_procesamiento_title")
@@ -4296,7 +4296,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                 bill.paymentState === "paid" || bill.paymentState === "reconciled" || bill.paymentState === "in_payment" ? "bg-emerald-100 text-emerald-700" :
-                                bill.paymentState === "partial" ? "bg-amber-100 text-amber-700" :
+                                bill.paymentState === "partial" ? "bg-amber-100 text-indigo-700" :
                                 bill.paymentState === "nota_credito" || bill.isRefund ? "bg-purple-100 text-purple-700" :
                                 "bg-red-100 text-red-700"
                               }`}>
@@ -4321,7 +4321,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <>
                                 <td className="p-3 text-center">
                                   <span className={`font-medium ${
-                                    bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-amber-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
+                                    bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-indigo-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
                                   }`}>
                                     {bill.daysOverdue > 0 ? bill.daysOverdue : "—"}
                                   </span>
@@ -4330,7 +4330,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                     bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
                                     bill.agingBand === "91+" ? "bg-red-100 text-red-700" :
-                                    "bg-amber-100 text-amber-700"
+                                    "bg-amber-100 text-indigo-700"
                                   }`}>
                                     {bill.agingBand === "corriente" ? t("corriente") : bill.agingBand}
                                   </span>
@@ -4356,7 +4356,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       )}
 
       {kpiInfoModal.open && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">{kpiInfoModal.title}</h2>
