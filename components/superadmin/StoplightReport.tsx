@@ -61,12 +61,18 @@ const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
     return "bg-red-100 text-red-800 font-medium";
   }
 
-  // Sin meta configurada (0 o vacía) no hay objetivo que incumplir: el KPI se
-  // da por cumplido. El endpoint del vendedor ya devuelve "100%" en ese caso;
-  // acá se fuerza el verde para que no dependa del valor mostrado.
-  if (!Number.isFinite(numGoal) || numGoal <= 0) return "bg-green-100 text-green-800 font-medium";
+  // Sin meta configurada no hay contra qué medir: el KPI queda NEUTRO (ni
+  // verde ni rojo) y no cuenta en el resumen del semáforo. `nivelSemaforo` lo
+  // traduce a "sin" al no encontrar color.
+  if (!Number.isFinite(numGoal) || numGoal <= 0) return "";
 
   return getCellColor(value);
+};
+
+/** true cuando el KPI no tiene meta configurada (>0). */
+const sinMeta = (goal: string | number | null | undefined): boolean => {
+  const n = parseFloat(String(goal ?? ""));
+  return !Number.isFinite(n) || n <= 0;
 };
 
 type Nivel = "verde" | "amarillo" | "rojo" | "sin";
@@ -864,7 +870,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const SparklineBar = ({ values }: { values: (string | null)[] }) => {
+  const SparklineBar = ({ values, kpiId, goal }: { values: (string | null)[]; kpiId?: string; goal?: string }) => {
     const nums = values.map(v => {
       if (!v) return 0;
       return parseFloat(v.replace("%", "").replace(" días", "").trim()) || 0;
@@ -873,13 +879,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const w = 16;
     const gap = 4;
     const h = 32;
+    // El color de cada barra sale del MISMO semáforo que la celda (contra la
+    // meta), no de un umbral relativo al máximo de la serie.
+    const colorDe = (raw: string | null): string => {
+      if (!raw) return "#e2e8f0";
+      const c = kpiId ? getKpiCellColor(kpiId, raw, goal ?? "0") : "";
+      if (/green|emerald/.test(c)) return "#34d399";
+      if (/yellow|amber/.test(c)) return "#fbbf24";
+      if (/red/.test(c)) return "#f87171";
+      return "#cbd5e1"; // sin meta / sin dato
+    };
     return (
       <svg width={nums.length * (w + gap)} height={h} style={{ display: "block" }}>
         {nums.map((val, i) => {
           const barH = Math.max(2, Math.round((val / max) * (h - 2)));
-          const color = val === 0 ? "#e2e8f0" : val >= max * 0.85 ? "#34d399" : val >= max * 0.6 ? "#fbbf24" : "#f87171";
           return (
-            <rect key={i} x={i * (w + gap)} y={h - barH} width={w} height={barH} rx={2} fill={color} />
+            <rect key={i} x={i * (w + gap)} y={h - barH} width={w} height={barH} rx={2} fill={colorDe(values[i])} />
           );
         })}
       </svg>
@@ -1291,10 +1306,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return [
       {
         id: "pagos_a_tiempo",
-        trend: cppData.pagosATiempoPct >= 95 ? "success" : cppData.pagosATiempoPct >= 85 ? "warning" : "alert",
+        trend: cppData.pagosATiempoPct == null ? "help" : cppData.pagosATiempoPct >= 95 ? "success" : cppData.pagosATiempoPct >= 85 ? "warning" : "alert",
         title: t("kpi_pagos_tiempo"),
         peso: "35%",
-        average: `${cppData.pagosATiempoPct}%`,
+        average: cppData.pagosATiempoPct == null ? "N/A" : `${cppData.pagosATiempoPct}%`,
         weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
         goalDefault: String(metas["pagos_a_tiempo"] ?? 95),
         goalSuffix: "%",
@@ -1304,10 +1319,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "cuentas_pagar_vencidas",
-        trend: cppData.cuentasVencidasPct <= 5 ? "success" : cppData.cuentasVencidasPct <= 10 ? "warning" : "alert",
+        trend: cppData.cuentasVencidasPct == null ? "help" : cppData.cuentasVencidasPct <= 5 ? "success" : cppData.cuentasVencidasPct <= 10 ? "warning" : "alert",
         title: t("kpi_cxpagar_vencidas"),
         peso: "30%",
-        average: `${cppData.cuentasVencidasPct}%`,
+        average: cppData.cuentasVencidasPct == null ? "N/A" : `${cppData.cuentasVencidasPct}%`,
         weeks: cppData.semanaVencidas || Array(5).fill(null),
         goalDefault: String(metas["cuentas_pagar_vencidas"] ?? 5),
         goalSuffix: "%",
@@ -1317,10 +1332,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "procesamiento_oportuno",
-        trend: cppData.procesamientoOportunoPct >= 95 ? "success" : cppData.procesamientoOportunoPct >= 85 ? "warning" : "alert",
+        trend: cppData.procesamientoOportunoPct == null ? "help" : cppData.procesamientoOportunoPct >= 95 ? "success" : cppData.procesamientoOportunoPct >= 85 ? "warning" : "alert",
         title: t("kpi_procesamiento"),
         peso: "20%",
-        average: `${cppData.procesamientoOportunoPct}%`,
+        average: cppData.procesamientoOportunoPct == null ? "N/A" : `${cppData.procesamientoOportunoPct}%`,
         weeks: cppData.semanaProcesamiento || Array(5).fill(null),
         goalDefault: String(metas["procesamiento_oportuno"] ?? 95),
         goalSuffix: "%",
@@ -1330,10 +1345,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "dpo",
-        trend: cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
+        trend: cppData.dpo == null ? "help" : cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
         title: t("kpi_dpo"),
         peso: "15%",
-        average: `${cppData.dpo}${t("suffix_dias")}`,
+        average: cppData.dpo == null ? "N/A" : `${cppData.dpo}${t("suffix_dias")}`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
         goalDefault: String(metas["dpo"] ?? 30),
         goalSuffix: " días",
@@ -1728,12 +1743,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50/70 transition-colors">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-800 truncate">{kpi.title}</div>
+                      <div className="text-sm font-medium text-slate-800 truncate">
+                        {kpi.title}
+                        {sinMeta(kpi.goalDefault) && (
+                          <span className="ml-2 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px align-middle">
+                            {t("sin_meta")}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
-                    <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{kpi.average}</span>
+                    <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${sinMeta(kpi.goalDefault) ? "text-slate-300" : getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{sinMeta(kpi.goalDefault) ? "–" : kpi.average}</span>
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
-                      <SparklineBar values={kpi.weeks} />
+                      <SparklineBar values={kpi.weeks} kpiId={kpi.id} goal={kpi.goalDefault} />
                     </div>
                     <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
                   </div>
@@ -1762,6 +1784,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <tbody>
                     {group.kpis.map((kpi: any) => {
                       const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
+                      const kpiSinMeta = sinMeta(kpi.goalDefault);
                       return (
                       <tr
                         key={kpi.id}
@@ -1784,6 +1807,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             >
                               {kpi.trend === "alert" ? <AlertTriangle size={13} /> : <HelpCircle size={13} />}
                             </button>
+                            {kpiSinMeta && (
+                              <span className="shrink-0 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px">
+                                {t("sin_meta")}
+                              </span>
+                            )}
                           </span>
                           {kpi.isClickable && (
                             <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1805,16 +1833,20 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           )}
                         </td>
                         <td className="py-3 px-2 text-right align-top">
-                          <span className={`inline-block px-1.5 py-0.5 rounded-md text-xs tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>
-                            {kpi.average}
-                          </span>
+                          {kpiSinMeta ? (
+                            <span className="text-slate-300">–</span>
+                          ) : (
+                            <span className={`inline-block px-1.5 py-0.5 rounded-md text-xs tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>
+                              {kpi.average}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
                         {kpi.weeks.map((val: string | null, idx: number) => {
                           const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                           return (
                             <td key={idx} className="py-3 px-2 text-center align-top">
-                              {val ? (
+                              {val && !kpiSinMeta ? (
                                 <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
                                   {val}
                                 </span>
@@ -1854,14 +1886,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <tbody>
                       {group.kpis.map((kpi: any) => (
                         <tr key={kpi.id} className="border-t border-slate-100 hover:bg-slate-50/70">
-                          <td className="py-3 px-4 text-slate-800 font-medium">{kpi.title}</td>
+                          <td className="py-3 px-4 text-slate-800 font-medium">
+                            {kpi.title}
+                            {sinMeta(kpi.goalDefault) && (
+                              <span className="ml-2 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px align-middle">
+                                {t("sin_meta")}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-2 text-right text-slate-400 tabular-nums">{kpi.peso}</td>
                           {monthlyHistory.map(h => {
                             const val = getMonthlyValue(kpi.id, h);
                             const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                             return (
                               <td key={h.mes} className="py-3 px-2 text-center align-top">
-                                {val && val !== "-" ? (
+                                {val && val !== "-" && !sinMeta(kpi.goalDefault) ? (
                                   <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
                                     {val}
                                   </span>
