@@ -58,7 +58,7 @@ const esVendedorExcluido = (inv: any): boolean => {
 // pidio cobranza para no confundir "cuanto entro" con "de que factura".
 type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined; esDelMes: boolean; journalId: number | undefined; journalName: string };
 
-async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
+async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
   const invoicesRaw = await fetchPaginated(
     "account.move",
     [
@@ -73,7 +73,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 
   return invoicesRaw
     .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
-    .filter((inv) => !esVendedorExcluido(inv))
+    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv))
     .map((inv) => ({
       // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
       // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
@@ -101,10 +101,12 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // banco) no cuentan como "cobrado" para la sede, ni siquiera en el total.
 // A diferencia de "Facturado" (que si excluye partner supricom y
 // vendedores internos/de prueba para coincidir con "Ventas del Mes"),
-// "Cobrado" NO aplica esas exclusiones -- confirmado que el numero real de
-// cobranza incluye esas facturas, porque mide plata real que entro a un
-// banco sin importar el vendedor o partner de la factura que salda.
-async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
+// "Cobrado" NO aplica esas exclusiones por defecto -- confirmado que el
+// numero real de cobranza incluye esas facturas, porque mide plata real
+// que entro a un banco sin importar el vendedor o partner de la factura
+// que salda. El parametro excluirAsistente es el toggle opcional que pide
+// el usuario para poder ver, si quiere, el total sin Asistente de Ventas.
+async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
   // No filtramos account.partial.reconcile por fecha en el dominio: el
   // campo que representa la "fecha de abono" (paymentMove.date) vive en
   // account.move, dos saltos mas alla del reconcile. Se filtra abajo, ya
@@ -183,12 +185,14 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
 
     // A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
-    // vendedores internos/de prueba (esVendedorExcluido) -- confirmado fila
-    // por fila contra el export real de cobranza: esas exclusiones son
-    // propias de "Ventas del Mes" (ingresos), pero "Cobrado" mide plata
-    // real que entro a un banco, sin importar a que vendedor o partner se
-    // le atribuye la factura que salda.
+    // vendedores internos/de prueba por defecto -- confirmado fila por fila
+    // contra el export real de cobranza: esas exclusiones son propias de
+    // "Ventas del Mes" (ingresos), pero "Cobrado" mide plata real que entro
+    // a un banco, sin importar a que vendedor o partner se le atribuye la
+    // factura que salda. excluirAsistente es el toggle opcional del
+    // usuario para verlo filtrado si quiere.
     if (!invoiceMove.partner_id) return;
+    if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
 
     const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
@@ -230,6 +234,13 @@ export async function GET(request: NextRequest) {
     const endDateParam = searchParams.get("endDate");
     const modoParam = searchParams.get("modo");
     const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
+    // Toggle del usuario para incluir/excluir "Asistente de Ventas" (y
+    // demas vendedores internos/de prueba). Si no viene explicito, se
+    // usa el default historico de cada modo: Facturado siempre lo excluia
+    // (para coincidir con "Ventas del Mes"), Cobrado nunca lo excluia
+    // (coincide con el export real de cobranza).
+    const excluirAsistenteParam = searchParams.get("excluirAsistente");
+    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
 
     const now = new Date();
     let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
@@ -253,8 +264,8 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     const renglones = modo === "cobrado"
-      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd)
-      : await renglonesFacturado(companyIds, monthStart, monthEnd);
+      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente)
+      : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
 
     // ── Nombres de los plazos de pago vistos ──
     const ptIds = [...new Set(renglones.map((r) => r.paymentTermId).filter((id): id is number => Boolean(id)))];
@@ -402,6 +413,7 @@ export async function GET(request: NextRequest) {
           year: currentYear,
           companyIds,
           modo,
+          excluirAsistente,
         },
         updatedAt: new Date().toISOString(),
       },

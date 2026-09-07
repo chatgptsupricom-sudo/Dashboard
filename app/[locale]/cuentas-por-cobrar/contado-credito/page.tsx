@@ -117,6 +117,14 @@ export default function ContadoCreditoPage() {
   const [modo, setModo] = useState<Modo>("facturado");
   const esCobrado = modo === "cobrado";
 
+  // Toggle para incluir/excluir "Asistente de Ventas" (y demas vendedores
+  // internos/de prueba). Cada modo recuerda su propio estado por separado
+  // porque tienen defaults distintos: Facturado lo excluye por default
+  // (para coincidir con "Ventas del Mes"), Cobrado no (coincide con el
+  // numero real que usa cobranza).
+  const [excluirAsistente, setExcluirAsistente] = useState<{ facturado: boolean; cobrado: boolean }>({ facturado: true, cobrado: false });
+  const excluirAsistenteActual = excluirAsistente[modo];
+
   const userCids = (user as any)?.cids;
 
   // Modal 1: clientes de un grupo (contado / credito / bucket / banco).
@@ -154,6 +162,7 @@ export default function ContadoCreditoPage() {
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
       params.set("modo", modo);
+      params.set("excluirAsistente", String(excluirAsistenteActual));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito?${params}`);
       const json = await res.json();
       if (fetchId !== fetchIdRef.current) return;
@@ -162,7 +171,7 @@ export default function ContadoCreditoPage() {
       console.error("Error:", e);
     }
     if (fetchId === fetchIdRef.current) setLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -185,6 +194,7 @@ export default function ContadoCreditoPage() {
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
       params.set("modo", modo);
+      params.set("excluirAsistente", String(excluirAsistenteActual));
       if (filtro.journalId !== undefined) params.set("journalId", String(filtro.journalId));
       else if (filtro.dias !== undefined) params.set("dias", String(filtro.dias));
       else if (filtro.tipo) params.set("tipo", filtro.tipo);
@@ -196,7 +206,7 @@ export default function ContadoCreditoPage() {
       console.error(e);
     }
     if (fetchId === facturasFetchIdRef.current) setFacturasLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual]);
 
   // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
   // (mismos datos ya cargados, sin volver a pedirlos).
@@ -313,6 +323,15 @@ export default function ContadoCreditoPage() {
             Cobrado
           </button>
         </div>
+        <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={excluirAsistenteActual}
+            onChange={(e) => setExcluirAsistente((prev) => ({ ...prev, [modo]: e.target.checked }))}
+            className="accent-blue-600"
+          />
+          Excluir Asistente de Ventas
+        </label>
       </div>
 
       {loading && data && (

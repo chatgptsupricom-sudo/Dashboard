@@ -54,7 +54,7 @@ const esVendedorExcluido = (inv: any): boolean => {
   return reglas.some((regla) => sellerName.includes(regla));
 };
 
-async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date): Promise<Factura[]> {
+async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Factura[]> {
   const invoicesRaw = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
@@ -69,7 +69,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
     { fields: ["id", "name", "invoice_date", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"], order: "invoice_date desc" },
   );
 
-  const invoices = (invoicesRaw || []).filter((inv) => !esVendedorExcluido(inv));
+  const invoices = (invoicesRaw || []).filter((inv) => !excluirAsistente || !esVendedorExcluido(inv));
   const ptIds = [...new Set(invoices.map((f) => f.invoice_payment_term_id?.[0]).filter(Boolean))];
   let ptMap: Record<number, string> = {};
   if (ptIds.length > 0) {
@@ -94,7 +94,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 // Abonos del cliente ese mes (fecha de conciliacion, no fecha de factura) --
 // mismo mecanismo que contado-credito/route.ts::renglonesCobradoDinero,
 // filtrado ademas por partner.
-async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date): Promise<Factura[]> {
+async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Factura[]> {
   const reconciles = await fetchPaginated(
     "account.partial.reconcile",
     [],
@@ -164,9 +164,11 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
 
     if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
-    // A diferencia de facturasDelMes (Facturado), aca NO se excluye por
-    // vendedor -- "Cobrado" no aplica esa exclusion (ver comentario en
+    // A diferencia de facturasDelMes (Facturado), aca la exclusion por
+    // vendedor es opcional (toggle del usuario) -- "Cobrado" no la aplica
+    // por defecto (ver comentario en
     // contado-credito/route.ts::renglonesCobradoDinero).
+    if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
 
     const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
@@ -220,6 +222,10 @@ export async function GET(request: NextRequest) {
     const yearParam = searchParams.get("year");
     const modoParam = searchParams.get("modo");
     const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
+    // Mismo toggle que contado-credito/route.ts: si no viene explicito, el
+    // default historico de cada modo (Facturado si excluia, Cobrado no).
+    const excluirAsistenteParam = searchParams.get("excluirAsistente");
+    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
     // Filtro opcional: acota a la misma card de la que salio el drill-down
     // (Contado/Credito, un plazo puntual, o un banco), para no mostrar en
     // "Cobros -- Cliente X" abonos de otros plazos o bancos mezclados con
@@ -241,8 +247,8 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     let facturas = modo === "cobrado"
-      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd)
-      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd);
+      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente)
+      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente);
 
     if (journalIdParam) {
       const journalId = parseInt(journalIdParam, 10);
