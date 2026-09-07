@@ -39,6 +39,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
 
 const statusColors: Record<string, string> = {
   recibido: "bg-blue-100 text-blue-700 border-blue-200",
@@ -443,22 +444,7 @@ export default function RmaCasoDetailPage() {
               <span className="text-xs text-slate-400">{t("adjuntos_count", { count: caseData.adjuntos?.length || 0 })}</span>
             </CardHeader>
             <CardContent>
-              {caseData.adjuntos && caseData.adjuntos.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {caseData.adjuntos.map((adj: any, idx: number) => (
-                    <div key={idx} className="space-y-1">
-                      {adj.mime?.startsWith("video/") ? (
-                        <video src={adj.url} controls className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
-                      ) : (
-                        <img src={adj.url} alt={adj.filename} className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
-                      )}
-                      <p className="text-xs text-slate-500 truncate">{adj.filename}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400 text-center py-4">{t("sin_adjuntos")}</p>
-              )}
+              <AdjuntosGaleria adjuntos={caseData.adjuntos || []} />
             </CardContent>
           </Card>
         </div>
