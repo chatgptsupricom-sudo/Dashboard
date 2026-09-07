@@ -170,6 +170,12 @@ export async function GET(request: NextRequest) {
 
     // 6. Calculate weekly quota by business days
     const totalDiasUtilesMes = contarDiasUtiles(new Date(anio, mesNum - 1, 1), new Date(anio, mesNum, 0));
+    // Días hábiles transcurridos del mes hasta hoy — para el "avance del mes":
+    // facturado vs. la cuota prorrateada a esta altura (100% = al día).
+    const finMes = new Date(anio, mesNum, 0);
+    const hoyOFin = now < finMes ? now : finMes;
+    const diasUtilesTranscurridos = contarDiasUtiles(new Date(anio, mesNum - 1, 1), hoyOFin);
+    const factorTranscurrido = totalDiasUtilesMes > 0 ? diasUtilesTranscurridos / totalDiasUtilesMes : 1;
     Object.values(sellerMap).forEach((seller) => {
       semanas.forEach((semana, i) => {
         seller.semanas[i].cuotaSemanal = totalDiasUtilesMes > 0
@@ -321,6 +327,12 @@ export async function GET(request: NextRequest) {
     const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
     const effectiveCuotaMensual = metaCuota > 0 ? metaCuota : totalCuotaMensual;
     const porcentajeCumplimiento = effectiveCuotaMensual > 0 ? Math.round((totalFacturadoMensual / effectiveCuotaMensual) * 100) : 0;
+    // Avance del mes (opción B): facturado ÷ cuota prorrateada a los días
+    // hábiles transcurridos. 100% = vas al día para llegar a la cuota.
+    const cuotaProrrateada = effectiveCuotaMensual * factorTranscurrido;
+    const avanceMesCuota = cuotaProrrateada > 0
+      ? Math.round((totalFacturadoMensual / cuotaProrrateada) * 100)
+      : null;
 
     const semanaCuota = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
@@ -896,7 +908,7 @@ export async function GET(request: NextRequest) {
 
     let latestPct = 0;
     for (let i = semanaCuota.length - 1; i >= 0; i--) {
-      const val = parseInt(semanaCuota[i]);
+      const val = parseInt(semanaCuota[i] || "");
       if (!isNaN(val) && val > 0) { latestPct = val; break; }
     }
 
@@ -907,6 +919,9 @@ export async function GET(request: NextRequest) {
         totalCuotaMensual,
         totalFacturadoMensual,
         porcentajeCumplimiento,
+        avanceMesCuota,
+        diasUtilesTranscurridos,
+        totalDiasUtilesMes,
         totalVisitasMes,
         totalClientesNuevos,
         numSemanas,

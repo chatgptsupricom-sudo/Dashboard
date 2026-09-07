@@ -397,6 +397,7 @@
     "error_loading": "Could not load detail",
     "no_available_data": "No data available",
     "sin_meta": "no target",
+    "avance_al_dia": "pace at working day {d} of {total}",
     "weeks": "weeks",
     "peso": "Weight",
     "meta": "Goal",
