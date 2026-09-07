@@ -905,7 +905,10 @@ export default function ActivityView() {
 
   // Lógica de Socket.io para actualizaciones en tiempo real globales
   useEffect(() => {
-    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL);
+    // El socket vive en el mismo servidor que sirve la app (server.js), asi
+    // que siempre es este mismo origen. Antes salia de NEXT_PUBLIC_SOCKET_URL,
+    // que se hornea en build y en produccion apuntaba al dominio de test.
+    const socket = io(window.location.origin);
 
     socket.on("activity-updated", (data) => {
       console.log(

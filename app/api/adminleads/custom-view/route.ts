@@ -5,13 +5,19 @@ import { addHistory, ensureTables, getState, getView, resolveView } from "@/lib/
 import { buildInjection } from "@/lib/customView/runtime";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 import { buildReactInjection, detectReactPlan } from "@/lib/customView/reactInjection";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 declare global { var io: any; }
 
 export const dynamic = "force-dynamic";
 
 const API_BASE = "/api/adminleads/custom-view";
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "";
+
+// El socket se monta sobre el mismo servidor HTTP que sirve Next (server.js),
+// asi que SIEMPRE vive en el origen de esta misma app. Antes esto salia de
+// NEXT_PUBLIC_SOCKET_URL, que ademas de ser innecesaria se hornea en tiempo de
+// build: en produccion quedo apuntando al dominio de test y la replicacion en
+// vivo del plan se conectaba al servidor equivocado.
 
 const PLACEHOLDER_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
 <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#64748b;}
@@ -96,7 +102,7 @@ export async function GET(request: NextRequest) {
       const planState = await getPlanState(viewName);
       const injection = buildReactInjection({
         api: API_BASE,
-        socketUrl: SOCKET_URL,
+        socketUrl: getPublicOrigin(request),
         view: viewName,
         revision: planState.revision,
         variant: reactPlan,
@@ -109,7 +115,7 @@ export async function GET(request: NextRequest) {
     const state = await getState(viewName);
     const injection = buildInjection({
       api: API_BASE,
-      socketUrl: SOCKET_URL,
+      socketUrl: getPublicOrigin(request),
       baseRevision: Number(view.base_revision) || 1,
       revision: Number(state?.revision) || 0,
       canEdit: true,
