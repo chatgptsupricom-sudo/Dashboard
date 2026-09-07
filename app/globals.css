@@ -1014,3 +1014,16 @@
   margin: 0 0.45rem;
   color: color-mix(in srgb, var(--portal-muted) 45%, #ffffff);
 }
+
+/* Respeta la preferencia del sistema de reducir animaciones. Cubre las
+   utilidades animate-in de tw-animate-css y cualquier transición. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
