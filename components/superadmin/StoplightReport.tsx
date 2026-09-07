@@ -40,24 +40,30 @@ const getCellColor = (value: string) => {
 const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
   const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
+  if (isNaN(numVal)) return "";
   const numGoal = parseFloat(goal);
-  if (isNaN(numVal) || isNaN(numGoal)) return getCellColor(value);
 
   const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
     "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
   const lowerBetter = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
 
-  if (higherBetter.includes(kpiId)) {
+  if (higherBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
     if (numVal >= numGoal * 0.85) return "bg-amber-100 text-amber-800 font-medium";
     return "bg-red-100 text-red-800 font-medium";
   }
 
-  if (lowerBetter.includes(kpiId)) {
+  if (lowerBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal <= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
     if (numVal <= numGoal * 1.2) return "bg-amber-100 text-amber-800 font-medium";
     return "bg-red-100 text-red-800 font-medium";
   }
+
+  // Sin meta configurada (0 o vacía) el valor semanal es la métrica cruda
+  // —margen real, tasa de cierre, conteos—, no un "% de meta cumplida":
+  // pintarlo contra la escala 60/100 marcaría en rojo cosas que están bien.
+  // Se deja neutro hasta que se le ponga una meta.
+  if (!Number.isFinite(numGoal) || numGoal <= 0) return "text-slate-500";
 
   return getCellColor(value);
 };
@@ -92,6 +98,22 @@ interface KpiData {
   avgInv90: number;
   avgForecast: number;
   avgPropuestas: number;
+  // Promedios y series de la sección Ventas (los trae /api/vendedores/stoplight
+  // y /api/superadmin/stoplight, siempre; el default es 0 / []). Estaban en uso
+  // sin declarar.
+  avgCumplimiento: number;
+  avgMargen: number;
+  avgVisitas: number;
+  avgEfectividad: number;
+  avgActivacion: number;
+  avgClientes: number;
+  avgCobertura: number;
+  semanaMargen: (string | null)[];
+  semanaVisitas: (string | null)[];
+  semanaEfectividad: (string | null)[];
+  semanaActivacion: (string | null)[];
+  semanaClientes: (string | null)[];
+  semanaCobertura: (string | null)[];
 }
 
 interface SellerDetail {
@@ -830,7 +852,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const ventasKpis = [
     {
       id: "cumplimiento_cuota_ventas",
-      trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "warning" : "alert") : "help",
+      trend: (() => {
+        if (!kpiData) return "help";
+        // El endpoint de vendedor no traía `porcentajeCumplimiento`; se cae a
+        // `avgCumplimiento` para no pintar siempre el triángulo rojo.
+        const pct = kpiData.porcentajeCumplimiento ?? kpiData.avgCumplimiento ?? 0;
+        return pct >= 100 ? "help" : pct >= 75 ? "warning" : "alert";
+      })(),
       title: t("kpi_cuota_ventas"),
       peso: "30%",
       average: kpiData ? `${kpiData.avgCumplimiento}%` : "0%",
@@ -1566,7 +1594,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <div className="text-sm font-medium text-slate-700 truncate">{kpi.title}</div>
                       <div className="text-xs text-slate-400 mt-0.5">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
-                    <div className={`text-sm font-bold w-20 text-right px-2 py-1 rounded ${getCellColor(kpi.average)}`}>{kpi.average}</div>
+                    <div className={`text-sm font-bold w-20 text-right px-2 py-1 rounded ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault)}`}>{kpi.average}</div>
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
                       <SparklineBar values={kpi.weeks} />
                     </div>
@@ -1660,12 +1688,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         {kpi.weeks.map((val: string | null, idx: number) => (
                           <td
                             key={idx}
-                            className={`border-r text-center p-3 transition-colors ${
-                              ["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "pagos_a_tiempo", "cuentas_pagar_vencidas", "procesamiento_oportuno", "dpo",
-                                "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate", "tasa_rebote", "posicion_sc"].includes(kpi.id)
-                                ? getKpiCellColor(kpi.id, val, kpi.goalDefault)
-                                : getCellColor(val || "")
-                            }`}
+                            className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
                           >
                             {val || "-"}
                           </td>
@@ -1706,11 +1729,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             return (
                               <td
                                 key={h.mes}
-                                className={`border-r text-center p-3 transition-colors ${
-                                  ["efectividad_cobranza","cartera_vencida","recuperacion_vencidos","dso","pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id)
-                                    ? getKpiCellColor(kpi.id, val, kpi.goalDefault)
-                                    : getCellColor(val)
-                                }`}
+                                className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
                               >
                                 {val}
                               </td>

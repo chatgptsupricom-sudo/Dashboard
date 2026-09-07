@@ -510,6 +510,13 @@ export async function GET(request: NextRequest) {
         sellerName,
         metaMensual: effectiveCuota,
         cuotaMensual: cuotaNum,
+        // Cumplimiento del mes hasta la fecha (facturado / cuota). El
+        // componente lo usa para el icono de tendencia del KPI de cuota; sin
+        // esto quedaba undefined y siempre pintaba el triangulo de alerta.
+        porcentajeCumplimiento:
+          effectiveCuota > 0
+            ? Math.round((totalFacturado / effectiveCuota) * 100)
+            : 0,
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
         totalCostoMes: Math.round(totalCostoMes * 100) / 100,
