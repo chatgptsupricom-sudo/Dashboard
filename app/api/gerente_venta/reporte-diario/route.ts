@@ -144,8 +144,6 @@ export async function GET(req: NextRequest) {
       .split("T")[0];
 
     const odooUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
-    console.log("🔍 PEDIDOS DEBUG - sellers:", sellers.map((s: any) => ({ name: s.name, user_id: s.user_id, cids: s.cids })));
-    console.log("🔍 PEDIDOS DEBUG - odooUserIds:", odooUserIds);
 
     // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
     const allInvoices =
@@ -183,33 +181,25 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // ── PEDIDOS: cotizaciones (draft/sent) + órdenes no facturadas al 100% ──
-    const pedidoFilters = [
-      ["user_id", "in", odooUserIds],
-      ["company_id", "in", companyIds],
-      ["partner_id.name", "not ilike", "office solution"],
-      ["partner_id.name", "not ilike", "supricom"],
-    ];
-    const [quotations, confirmedOrders] = await Promise.all([
-      callOdooRPC<any[]>(
+    // ── PEDIDOS: mismo criterio que el filtro "Pedidos Activos" de Odoo ──
+    // Pedidos confirmados (no cotización, no cancelado) que todavía no están
+    // facturados por completo, excluyendo clientes internos.
+    const allOrders =
+      (await callOdooRPC<any[]>(
         "sale.order",
         "search_read",
-        [[["state", "in", ["draft", "sent"]], ...pedidoFilters]],
+        [
+          [
+            ["state", "in", ["sale", "done"]],
+            ["invoice_status", "!=", "invoiced"],
+            ["user_id", "in", odooUserIds],
+            ["company_id", "in", companyIds],
+            ["partner_id.name", "not ilike", "office solution"],
+            ["partner_id.name", "not ilike", "supricom"],
+          ],
+        ],
         { fields: ["amount_untaxed", "user_id"] },
-      ),
-      callOdooRPC<any[]>(
-        "sale.order",
-        "search_read",
-        [[["state", "in", ["sale", "done"]], ["invoice_status", "=", "no"], ...pedidoFilters]],
-        { fields: ["amount_untaxed", "user_id"] },
-      ),
-    ]);
-    const allOrders = [...(quotations || []), ...(confirmedOrders || [])];
-    console.log("🔍 PEDIDOS DEBUG - quotations:", quotations?.length, "confirmed:", confirmedOrders?.length, "total:", allOrders.length);
-    console.log("🔍 PEDIDOS DEBUG - total amount:", allOrders.reduce((sum: number, o: any) => sum + (o.amount_untaxed || 0), 0));
-    if (allOrders.length > 0) {
-      console.log("🔍 PEDIDOS DEBUG - sample order:", { user_id: allOrders[0].user_id, amount: allOrders[0].amount_untaxed });
-    }
+      )) || [];
 
     const orderNameMap: Record<string, number> = {};
     const orderUserIdMap: Record<number, number> = {};
