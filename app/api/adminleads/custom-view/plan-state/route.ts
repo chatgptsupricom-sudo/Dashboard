@@ -34,36 +34,56 @@ function pareceEntradaDePieza(val: unknown): boolean {
   return "checked" in v || "moved" in v || "colId" in v;
 }
 
+function normalizarPieza(val: any) {
+  return {
+    checked: !!val.checked,
+    moved: !!val.moved,
+    colId: typeof val.colId === "string" ? val.colId.slice(0, 120) : null,
+  };
+}
+
+/**
+ * Aplana cualquier cantidad de envolturas `pieces` y devuelve un unico mapa
+ * `{ [pieceId]: {checked, moved, colId} }`.
+ *
+ * La app trata el campo `pieces` de la respuesta como SU estado y al guardar lo
+ * vuelve a envolver en `{ pieces: ... }`. Como el GET devolvia el objeto
+ * envuelto en vez del mapa, cada guardado sumaba un nivel:
+ *
+ *   { pieces: { pieces: { pieces: { SEP3, SEP6 }, SEP1 } } }
+ *
+ * y la version vieja de esta funcion solo miraba dos niveles: aplastaba el
+ * resto en una entrada basura llamada "pieces" y perdia las piezas de mas
+ * abajo. De ahi que los marcados desaparecieran al recargar.
+ *
+ * Se recorren todos los niveles para rescatar tambien lo ya guardado asi. Ante
+ * la misma pieza en dos niveles gana la mas superficial, que es la mas
+ * reciente.
+ */
+function aplanarPiezas(src: any, out: PlanContentState["pieces"] = {}, nivel = 0) {
+  if (!src || typeof src !== "object" || nivel > 20) return out;
+  // 1) piezas de este nivel primero, para que ganen sobre las de mas abajo
+  for (const [k, v] of Object.entries(src)) {
+    if (k === "pieces") continue;
+    if (pareceEntradaDePieza(v) && !(k in out)) {
+      out[String(k).slice(0, 200)] = normalizarPieza(v);
+    }
+  }
+  // 2) bajar por la envoltura
+  if (src.pieces && typeof src.pieces === "object") {
+    aplanarPiezas(src.pieces, out, nivel + 1);
+  }
+  return out;
+}
+
 function sanitizePieces(input: unknown): PlanContentState | null {
   if (!input || typeof input !== "object") return null;
   const src: any = input;
 
-  // Se aceptan las dos formas del payload:
-  //   anidada -> { pieces: { [id]: {...} } }   (la que devuelve el GET)
-  //   plana   -> { [id]: {...} }               (el estado tal cual lo tiene la app)
-  //
-  // Antes solo se leia `src.pieces`: si la app mandaba la forma plana, esto
-  // guardaba un estado VACIO y respondia success:true, asi que los marcados
-  // desaparecian al recargar sin ningun error a la vista.
-  let rawPieces: any = {};
-  if (src.pieces && typeof src.pieces === "object") {
-    rawPieces = src.pieces;
-  } else if (Object.values(src).some(pareceEntradaDePieza)) {
-    rawPieces = src;
-  }
-  const pieces: PlanContentState["pieces"] = {};
-  for (const [id, val] of Object.entries(rawPieces)) {
-    if (!val || typeof val !== "object") continue;
-    const v: any = val;
-    pieces[String(id).slice(0, 200)] = {
-      checked: !!v.checked,
-      moved: !!v.moved,
-      colId: typeof v.colId === "string" ? v.colId.slice(0, 120) : null,
-    };
-  }
-  // Se conserva cualquier otra clave de primer nivel que la app quiera guardar,
-  // pero acotada para que el blob no crezca sin control.
-  const out: PlanContentState = { pieces };
+  const out: PlanContentState = { pieces: aplanarPiezas(src) };
+
+  // Se conserva cualquier otra clave escalar de primer nivel que la app quiera
+  // guardar, acotada para que el blob no crezca sin control.
   for (const [k, val] of Object.entries(src)) {
     if (k === "pieces") continue;
     if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
@@ -89,15 +109,20 @@ export async function GET(request: NextRequest) {
     }
 
     const state = await getPlanState(view);
+    // `pieces` va como MAPA PLANO ({ [id]: {...} }), que es lo que la app usa
+    // como su estado. Antes iba el objeto envuelto ({ pieces: { ... } }) y la
+    // app lo volvia a envolver al guardar, anidando un nivel por guardado
+    // hasta perder los marcados. aplanarPiezas() ademas rescata lo que quedo
+    // guardado con la envoltura vieja.
     return NextResponse.json({
-      pieces: state.pieces,
+      pieces: aplanarPiezas(state.pieces),
       revision: state.revision,
       updatedBy: state.updatedBy,
       updatedAt: state.updatedAt,
     });
   } catch (error: any) {
     console.error("plan-state GET error:", error?.message);
-    return NextResponse.json({ pieces: { pieces: {} }, revision: 0 });
+    return NextResponse.json({ pieces: {}, revision: 0 });
   }
 }
 
@@ -143,11 +168,13 @@ export async function PUT(request: NextRequest) {
     });
 
     if (!result.ok) {
+      // Mapa plano, igual que el GET: es lo que la app fusiona al resolver el
+      // conflicto. Devolver el objeto envuelto reiniciaba el anidamiento.
       return NextResponse.json({
         success: false,
         conflict: true,
         revision: result.revision,
-        pieces: result.pieces,
+        pieces: aplanarPiezas(result.pieces),
       });
     }
 
@@ -155,7 +182,7 @@ export async function PUT(request: NextRequest) {
       global.io.emit("plan-state-updated", {
         view,
         clientId: body?.clientId || null,
-        pieces,
+        pieces: pieces.pieces,
         revision: result.revision,
         by: user?.role || null,
       });
@@ -224,13 +251,13 @@ export async function POST(request: NextRequest) {
       global.io.emit("plan-state-updated", {
         view,
         clientId: body?.clientId || null,
-        pieces: snapshot,
+        pieces: aplanarPiezas(snapshot),
         revision: result.revision,
         by: user?.role || null,
       });
     }
 
-    return NextResponse.json({ success: true, revision: result.revision, pieces: snapshot });
+    return NextResponse.json({ success: true, revision: result.revision, pieces: aplanarPiezas(snapshot) });
   } catch (error: any) {
     console.error("plan-state POST error:", error?.message);
     return NextResponse.json({ success: false, error: error?.message }, { status: 500 });
