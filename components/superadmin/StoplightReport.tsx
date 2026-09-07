@@ -106,7 +106,7 @@ interface SellerDetail {
   semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
 }
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, soloVentasKpi = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; soloVentasKpi?: boolean; companyId?: number } = {}) {
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
   const [activeTab, setActiveTab] = useState("Weekly");
@@ -827,7 +827,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const getGoal = (id: string, defaultVal: string) => goalValues[id] ?? defaultVal;
 
-  const ventasKpisTodos = [
+  const ventasKpis = [
     {
       id: "cumplimiento_cuota_ventas",
       trend: kpiData ? (kpiData.porcentajeCumplimiento >= 100 ? "help" : kpiData.porcentajeCumplimiento >= 75 ? "warning" : "alert") : "help",
@@ -913,13 +913,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
     },
   ];
-
-  // El rol de vendedor solo ve el KPI de cumplimiento de cuota de ventas
-  // (#stoplight-seller): los demas (margen, visitas, efectividad, activacion,
-  // clientes nuevos, cobertura) son de gestion y no le corresponden.
-  const ventasKpis = soloVentasKpi
-    ? ventasKpisTodos.filter((k) => k.id === "cumplimiento_cuota_ventas")
-    : ventasKpisTodos;
 
   const logisticaKpis = [
     {
