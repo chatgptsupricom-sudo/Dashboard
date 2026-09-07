@@ -32,6 +32,24 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 
 const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
 
+// Mismo criterio que la tarjeta "Ventas del Mes" (app/api/superadmin/stats/
+// route.ts): cuentas de vendedor internas/de prueba, distintas por sede, que
+// no cuentan como venta real. Se aplica por factura (segun su propio
+// company_id), no agrupado por vendedor como alla -- evita el caso borde de
+// esa version original donde un vendedor con facturas en mas de una sede solo
+// tomaba en cuenta la primera sede que aparecia.
+const SELLER_EXCLUSIONS: Record<number, string[]> = {
+  9: ["asistente", "yusne"],
+  10: ["asistente", "adriana"],
+  7: ["hercilio"],
+};
+const esVendedorExcluido = (inv: any): boolean => {
+  const sellerName = (inv.invoice_user_id?.[1] || "").toLowerCase();
+  const cid = inv.company_id?.[0];
+  const reglas = SELLER_EXCLUSIONS[cid] || [];
+  return reglas.some((regla) => sellerName.includes(regla));
+};
+
 // Forma comun que alimenta la clasificacion contado/credito, sin importar
 // si el monto viene de una factura entera o de un abono conciliado
 // puntual. esDelMes distingue, para el modo "cobrado", si lo cobrado
@@ -50,13 +68,17 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ],
-    ["id", "partner_id", "move_type", "amount_total", "invoice_payment_term_id"],
+    ["id", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"],
   );
 
   return invoicesRaw
     .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
+    .filter((inv) => !esVendedorExcluido(inv))
     .map((inv) => ({
-      monto: inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0),
+      // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
+      // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
+      // con esa tarjeta.
+      monto: inv.move_type === "out_refund" ? -(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0),
       partnerId: inv.partner_id[0],
       partnerName: inv.partner_id[1] || "Sin cliente",
       paymentTermId: inv.invoice_payment_term_id?.[0],
