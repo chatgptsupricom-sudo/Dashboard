@@ -93,8 +93,10 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
 // emparejado con el lado factura y el lado pago), reutilizado tal cual.
 // Es la unica fuente para "Cobrado": coincide con el reporte "Integracion
-// de Pagos" que ya usa cobranza para verificar (confirmado con un cliente
-// real, mismo monto centavo a centavo).
+// de Pagos" (confirmado con un cliente real, mismo monto centavo a
+// centavo) salvo por las mismas exclusiones de "Ventas del Mes" -- partner
+// supricom y vendedores internos/de prueba (esVendedorExcluido) -- que esa
+// pantalla cruda no aplica.
 async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   // No filtramos account.partial.reconcile por fecha en el dominio: el
   // campo que representa la "fecha de abono" (paymentMove.date) vive en
@@ -124,7 +126,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id"],
+    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -169,6 +171,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
 
     if (CUSTOMER_INVOICE_TYPES.has(paymentMove.move_type)) return;
     if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
+    if (esVendedorExcluido(invoiceMove)) return;
 
     const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;

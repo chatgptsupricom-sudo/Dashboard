@@ -119,7 +119,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id", "journal_id"],
+    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -143,6 +143,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     const paymentMove = dIsCustomerInvoice ? cMove : dMove;
     if (CUSTOMER_INVOICE_TYPES.has(paymentMove.move_type)) return;
     if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
+    if (esVendedorExcluido(invoiceMove)) return;
 
     const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
