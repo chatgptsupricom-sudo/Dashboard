@@ -59,11 +59,10 @@ const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
     return "bg-red-100 text-red-800 font-medium";
   }
 
-  // Sin meta configurada (0 o vacía) el valor semanal es la métrica cruda
-  // —margen real, tasa de cierre, conteos—, no un "% de meta cumplida":
-  // pintarlo contra la escala 60/100 marcaría en rojo cosas que están bien.
-  // Se deja neutro hasta que se le ponga una meta.
-  if (!Number.isFinite(numGoal) || numGoal <= 0) return "text-slate-500";
+  // Sin meta configurada (0 o vacía) no hay objetivo que incumplir: el KPI se
+  // da por cumplido. El endpoint del vendedor ya devuelve "100%" en ese caso;
+  // acá se fuerza el verde para que no dependa del valor mostrado.
+  if (!Number.isFinite(numGoal) || numGoal <= 0) return "bg-green-100 text-green-800 font-medium";
 
   return getCellColor(value);
 };
