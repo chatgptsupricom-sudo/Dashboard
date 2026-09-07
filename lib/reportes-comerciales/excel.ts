@@ -16,6 +16,7 @@ import type {
   FilaDetalle,
   ReporteTrimestral,
 } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { slugSede } from "@/lib/reportes-comerciales/sedes";
 
 const AZUL = "FF1E40AF";
 const VERDE = "FFC6EFCE";
@@ -30,7 +31,8 @@ export interface EntradaExcel {
 
 export function nombreArchivoTrimestral(reporte: ReporteTrimestral): string {
   const hoy = new Date().toISOString().slice(0, 10);
-  return `reporte_ventas_panama_${reporte.periodo.marca}_${reporte.periodo.trimestre}_${hoy}.xlsx`;
+  const sede = slugSede(reporte.periodo.companyId) || "sede";
+  return `reporte_ventas_${sede}_${reporte.periodo.marca}_${reporte.periodo.trimestre}_${hoy}.xlsx`;
 }
 
 export async function generarExcelTrimestral({

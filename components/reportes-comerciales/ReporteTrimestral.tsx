@@ -59,6 +59,8 @@ interface Reporte {
     hasta: string;
     marca: string;
     marcasDisponibles: string[];
+    companyId: number;
+    sede: string;
   };
   totales: { venta: number; unidades: number; facturas: number; clientes: number };
   comparativo: {
@@ -172,11 +174,18 @@ function ClienteCombo({
   );
 }
 
+interface Sede {
+  companyId: number;
+  nombre: string;
+}
+
 export function ReporteTrimestral() {
   const opcionesTrimestre = useMemo(() => trimestresDisponibles(), []);
   const [trimestre, setTrimestre] = useState(() => formatTrimestre(trimestreActual()));
   const [marca, setMarca] = useState("EZVIZ");
   const [tab, setTab] = useState<Tab>("resumen");
+  const [sedes, setSedes] = useState<Sede[]>([]);
+  const [sede, setSede] = useState<number | null>(null);
 
   const [data, setData] = useState<Reporte | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,12 +193,24 @@ export function ReporteTrimestral() {
   const [exportando, setExportando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  useEffect(() => {
+    fetch("/api/reportes-comerciales/acceso")
+      .then((r) => r.json())
+      .then((j) => {
+        const list: Sede[] = j?.sedes || [];
+        setSedes(list);
+        setSede((prev) => prev ?? list[0]?.companyId ?? null);
+      })
+      .catch(() => {});
+  }, []);
+
   const cargar = useCallback(() => {
+    if (sede == null) return;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 110_000);
     setLoading(true);
     setError(null);
-    fetch(`${API}?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}`, {
+    fetch(`${API}?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}&sede=${sede}`, {
       signal: ctrl.signal,
     })
       .then(async (r) => {
@@ -209,7 +230,7 @@ export function ReporteTrimestral() {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [trimestre, marca]);
+  }, [trimestre, marca, sede]);
 
   useEffect(() => cargar(), [cargar]);
 
@@ -217,7 +238,7 @@ export function ReporteTrimestral() {
     setExportando(true);
     try {
       const r = await fetch(
-        `${API}/export?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}`,
+        `${API}/export?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}&sede=${sede}`,
       );
       if (!r.ok) throw new Error((await r.json()).error || "Error al exportar");
       const blob = await r.blob();
@@ -249,12 +270,26 @@ export function ReporteTrimestral() {
               Reporte de Ventas Trimestral
             </h1>
             <p className="text-sm text-slate-500">
-              Panamá · marca {data?.periodo.marca || marca} ·{" "}
+              {data?.periodo.sede || sedes.find((s) => s.companyId === sede)?.nombre || "…"} · marca{" "}
+              {data?.periodo.marca || marca} ·{" "}
               {data ? `${data.periodo.desde} a ${data.periodo.hasta}` : trimestre}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {sedes.length > 1 && (
+            <select
+              value={sede ?? ""}
+              onChange={(e) => setSede(Number(e.target.value))}
+              className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
+            >
+              {sedes.map((s) => (
+                <option key={s.companyId} value={s.companyId}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={marca}
             onChange={(e) => setMarca(e.target.value)}
@@ -350,7 +385,9 @@ export function ReporteTrimestral() {
       {!loading && !error && data && (
         <>
           {tab === "resumen" && <TabResumen data={data} />}
-          {tab === "epp" && <TabEpp data={data} marca={marca} onCambio={cargar} />}
+          {tab === "epp" && sede != null && (
+            <TabEpp data={data} marca={marca} sede={sede} onCambio={cargar} />
+          )}
         </>
       )}
     </div>
@@ -655,10 +692,12 @@ function BarEpp({
 function TabEpp({
   data,
   marca,
+  sede,
   onCambio,
 }: {
   data: Reporte;
   marca: string;
+  sede: number;
   onCambio: () => void;
 }) {
   const puedeEditar = true;
@@ -670,19 +709,19 @@ function TabEpp({
   const [clientes, setClientes] = useState<{ id: number; nombre: string }[]>([]);
 
   useEffect(() => {
-    fetch(`${API}/clientes`)
+    fetch(`${API}/clientes?sede=${sede}`)
       .then((r) => r.json())
       .then((j) => setClientes(j.clientes || []))
       .catch(() => {});
-  }, []);
+  }, [sede]);
 
   const cargarEpp = useCallback(() => {
     setCargando(true);
-    fetch(`${API}/epp?anio=${anio}&marca=${encodeURIComponent(marca)}`)
+    fetch(`${API}/epp?anio=${anio}&marca=${encodeURIComponent(marca)}&sede=${sede}`)
       .then((r) => r.json())
       .then((j) => setRows(j.cuentas || []))
       .finally(() => setCargando(false));
-  }, [anio, marca]);
+  }, [anio, marca, sede]);
 
   useEffect(() => cargarEpp(), [cargarEpp]);
 
@@ -698,7 +737,7 @@ function TabEpp({
     const r = await fetch(`${API}/epp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, marca, anio }),
+      body: JSON.stringify({ ...body, marca, anio, sede }),
     });
     if (!r.ok) {
       setMsg((await r.json()).error || "Error");

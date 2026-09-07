@@ -5,7 +5,7 @@
 -- La crea `lib/reportes-comerciales/tablas.ts` en la primera peticion.
 CREATE TABLE IF NOT EXISTS epp_clientes (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  company_id INT NOT NULL,               -- 7 = Panama
+  company_id INT NOT NULL,               -- 7 Panamá · 9 Valencia · 10 Caracas
   anio INT NOT NULL,                     -- las cuentas se revisan cada anio
   marca VARCHAR(60) NOT NULL DEFAULT 'EZVIZ',
   cliente_nombre VARCHAR(255) NOT NULL,  -- etiqueta de la cuenta (nombre "principal" o uno propio)

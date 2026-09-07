@@ -1,7 +1,8 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
+import { puedeVerReportesComerciales, resolverSede } from "@/lib/reportes-comerciales/acceso";
+import { COMPANY_ID_PANAMA } from "@/lib/reportes-comerciales/reporteTrimestral";
 import {
   generarYGuardarTrimestre,
   leerArchivoTrimestre,
@@ -28,7 +29,14 @@ export async function GET(request: NextRequest) {
       Boolean(process.env.CRON_SECRET) &&
       authHeader === `Bearer ${process.env.CRON_SECRET}`;
 
-    if (!esCron) {
+    const { searchParams } = new URL(request.url);
+    const sedeParam = searchParams.get("sede");
+    let companyId: number | null;
+
+    if (esCron) {
+      // n8n / cron: la sede que pida (por defecto Panamá).
+      companyId = sedeParam ? Number(sedeParam) : COMPANY_ID_PANAMA;
+    } else {
       const token = request.cookies.get("token")?.value;
       if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
       try {
@@ -36,19 +44,23 @@ export async function GET(request: NextRequest) {
         if (!puedeVerReportesComerciales({ role: payload.role as string, email: payload.email as string })) {
           return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
         }
+        companyId = resolverSede(
+          { role: payload.role as string, email: payload.email as string, cids: payload.cids as number },
+          sedeParam,
+        );
       } catch {
         return NextResponse.json({ error: "Token invalido" }, { status: 401 });
       }
     }
+    if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
 
-    const { searchParams } = new URL(request.url);
     const trimestre = searchParams.get("trimestre") || "";
     const marca = (searchParams.get("marca") || "EZVIZ").trim().toUpperCase();
     if (!trimestre) return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
 
-    let archivo = await leerArchivoTrimestre(trimestre, marca);
+    let archivo = await leerArchivoTrimestre(trimestre, marca, companyId);
     if (!archivo) {
-      const r = await generarYGuardarTrimestre({ trimestre, marca, generadoPor: "descarga" });
+      const r = await generarYGuardarTrimestre({ trimestre, marca, companyId, generadoPor: "descarga" });
       archivo = { nombre: r.archivoNombre, buffer: r.buffer };
     }
 
