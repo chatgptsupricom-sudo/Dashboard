@@ -128,8 +128,9 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const endStr = monthEnd.toISOString().split("T")[0];
 
   // Mismo criterio que contado-credito/route.ts::esBancoReal -- solo
-  // diarios bank/cash reales cuentan como "cobrado" (salvo notas de
-  // credito aplicadas directo, que siempre cuentan).
+  // diarios bank/cash reales cuentan como "cobrado" (las notas de credito
+  // aplicadas directo tampoco cuentan, confirmado fila por fila contra el
+  // export real de "cobranza").
   const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
   let journalTypeMap: Record<number, string> = {};
   if (journalIds.length > 0) {
@@ -156,24 +157,11 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
 
     const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
     const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
+    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
 
-    let invoiceMove: any;
-    let settleMove: any;
-    let esNotaCredito: boolean;
-
-    if (dIsCustomerInvoice && cIsCustomerInvoice) {
-      if (dMove.move_type === cMove.move_type) return;
-      invoiceMove = dMove.move_type === "out_invoice" ? dMove : cMove;
-      settleMove = dMove.move_type === "out_invoice" ? cMove : dMove;
-      esNotaCredito = true;
-    } else if (dIsCustomerInvoice !== cIsCustomerInvoice) {
-      invoiceMove = dIsCustomerInvoice ? dMove : cMove;
-      settleMove = dIsCustomerInvoice ? cMove : dMove;
-      if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
-      esNotaCredito = false;
-    } else {
-      return;
-    }
+    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
+    const settleMove = dIsCustomerInvoice ? cMove : dMove;
+    if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
 
     if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
     if (esVendedorExcluido(invoiceMove)) return;
@@ -183,7 +171,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
 
     const journalIdRaw = settleMove.journal_id?.[0];
     const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
-    if (!esNotaCredito && !esBancoReal(journalIdRaw, journalNameRaw)) return;
+    if (!esBancoReal(journalIdRaw, journalNameRaw)) return;
 
     if (invoiceMove.invoice_payment_term_id?.[0]) ptIdsVistos.add(invoiceMove.invoice_payment_term_id[0]);
     crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0 });
