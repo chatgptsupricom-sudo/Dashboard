@@ -164,7 +164,9 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
 
     if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
-    if (esVendedorExcluido(invoiceMove)) return;
+    // A diferencia de facturasDelMes (Facturado), aca NO se excluye por
+    // vendedor -- "Cobrado" no aplica esa exclusion (ver comentario en
+    // contado-credito/route.ts::renglonesCobradoDinero).
 
     const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;

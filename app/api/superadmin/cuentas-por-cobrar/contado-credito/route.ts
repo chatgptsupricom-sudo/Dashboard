@@ -91,17 +91,19 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // Dinero que efectivamente entro el mes, sin importar cuando se emitio la
 // factura que salda -- mismo mecanismo de conciliacion que ya usa
 // app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
-// emparejado con el lado factura y el lado pago), pero con dos diferencias
-// deliberadas frente a esa pantalla cruda, confirmadas fila por fila contra
-// el export real de "cobranza" (coincide centavo a centavo):
-//   1. Se excluyen partner supricom y vendedores internos/de prueba
-//      (esVendedorExcluido), igual que "Ventas del Mes".
-//   2. Del total (no solo del desglose "por banco") se excluyen las
-//      conciliaciones contra diarios que no son banco/caja real (ver
-//      esBancoReal) -- retencion de IVA, descuentos, ajustes varios, Y
-//      notas de credito aplicadas directo contra la factura (diario
-//      "Facturas de cliente", sin que medie ningun banco) no cuentan como
-//      "cobrado" para la sede, ni siquiera en el total.
+// emparejado con el lado factura y el lado pago), con una sola diferencia
+// deliberada frente a esa pantalla cruda, confirmada fila por fila contra
+// el export real de "cobranza" (coincide centavo a centavo): del total (no
+// solo del desglose "por banco") se excluyen las conciliaciones contra
+// diarios que no son banco/caja real (ver esBancoReal) -- retencion de
+// IVA, descuentos, ajustes varios, Y notas de credito aplicadas directo
+// contra la factura (diario "Facturas de cliente", sin que medie ningun
+// banco) no cuentan como "cobrado" para la sede, ni siquiera en el total.
+// A diferencia de "Facturado" (que si excluye partner supricom y
+// vendedores internos/de prueba para coincidir con "Ventas del Mes"),
+// "Cobrado" NO aplica esas exclusiones -- confirmado que el numero real de
+// cobranza incluye esas facturas, porque mide plata real que entro a un
+// banco sin importar el vendedor o partner de la factura que salda.
 async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   // No filtramos account.partial.reconcile por fecha en el dominio: el
   // campo que representa la "fecha de abono" (paymentMove.date) vive en
@@ -180,8 +182,13 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     const settleMove = dIsCustomerInvoice ? cMove : dMove;
     if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
 
-    if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
-    if (esVendedorExcluido(invoiceMove)) return;
+    // A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
+    // vendedores internos/de prueba (esVendedorExcluido) -- confirmado fila
+    // por fila contra el export real de cobranza: esas exclusiones son
+    // propias de "Ventas del Mes" (ingresos), pero "Cobrado" mide plata
+    // real que entro a un banco, sin importar a que vendedor o partner se
+    // le atribuye la factura que salda.
+    if (!invoiceMove.partner_id) return;
 
     const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
