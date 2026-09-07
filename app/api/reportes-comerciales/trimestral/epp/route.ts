@@ -2,8 +2,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
-import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
-import { COMPANY_ID_PANAMA } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { puedeVerReportesComerciales, resolverSede } from "@/lib/reportes-comerciales/acceso";
 import { ensureTablasReportesComerciales } from "@/lib/reportes-comerciales/tablas";
 
 export const runtime = "nodejs";
@@ -22,6 +21,13 @@ async function sesion(request: NextRequest) {
   } catch {
     return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };
   }
+}
+
+function sedeDe(payload: any, sedeParam: string | null): number | null {
+  return resolverSede(
+    { role: payload.role, email: payload.email, cids: payload.cids },
+    sedeParam,
+  );
 }
 
 /** Normaliza las razones sociales que llegan del cliente a [{id, nombre}]. */
@@ -47,6 +53,8 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTablasReportesComerciales();
     const { searchParams } = new URL(request.url);
+    const companyId = sedeDe(s.payload, searchParams.get("sede"));
+    if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
     const anio = parseInt(searchParams.get("anio") || `${new Date().getFullYear()}`, 10);
     const marca = (searchParams.get("marca") || "EZVIZ").toUpperCase();
 
@@ -55,7 +63,7 @@ export async function GET(request: NextRequest) {
          FROM epp_clientes
         WHERE company_id = ? AND anio = ? AND marca = ?
         ORDER BY meta_anual DESC, cliente_nombre ASC`,
-      [COMPANY_ID_PANAMA, anio, marca],
+      [companyId, anio, marca],
     );
     const cuentas = (rows as any[]).map((r) => ({
       ...r,
@@ -88,6 +96,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const accion: string = body.accion;
     const marca: string = (body.marca || "EZVIZ").toUpperCase();
+    const companyId = sedeDe(s.payload, body.sede != null ? String(body.sede) : null);
+    if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
 
     if (accion === "crear" || accion === "editar") {
       const razones = normalizarRazones(body.razones_sociales);
@@ -115,7 +125,7 @@ export async function POST(request: NextRequest) {
              odoo_partner_id = VALUES(odoo_partner_id),
              razones_sociales = VALUES(razones_sociales),
              activo = 1`,
-          [COMPANY_ID_PANAMA, body.anio, marca, label, principal, razonesJson, meta],
+          [companyId, body.anio, marca, label, principal, razonesJson, meta],
         );
         return NextResponse.json({ success: true });
       }
@@ -133,7 +143,7 @@ export async function POST(request: NextRequest) {
           meta,
           body.activo === 0 || body.activo === false ? 0 : 1,
           body.id,
-          COMPANY_ID_PANAMA,
+          companyId,
         ],
       );
       return NextResponse.json({ success: true });
@@ -143,7 +153,7 @@ export async function POST(request: NextRequest) {
       if (!body.id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
       await query(`DELETE FROM epp_clientes WHERE id = ? AND company_id = ?`, [
         body.id,
-        COMPANY_ID_PANAMA,
+        companyId,
       ]);
       return NextResponse.json({ success: true });
     }
@@ -165,7 +175,7 @@ export async function POST(request: NextRequest) {
            odoo_partner_id = VALUES(odoo_partner_id),
            razones_sociales = VALUES(razones_sociales),
            activo = 1`,
-        [hacia, COMPANY_ID_PANAMA, desde, marca],
+        [hacia, companyId, desde, marca],
       );
       return NextResponse.json({ success: true });
     }

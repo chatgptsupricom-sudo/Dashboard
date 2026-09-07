@@ -222,7 +222,8 @@ app.prepare().then(() => {
   );
 
   // ==========================================
-  // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL (Panama)
+  // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL
+  // (sedes/marcas segun REPORTES_COMERCIALES_CRON, default 7:EZVIZ = Panama)
   // ==========================================
 
   // Dia 5 de enero/abril/julio/octubre a las 06:00: genera el reporte del

@@ -4,7 +4,7 @@
 -- La crea `lib/reportes-comerciales/tablas.ts` en la primera peticion.
 CREATE TABLE IF NOT EXISTS reporte_trimestral_snapshots (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  company_id INT NOT NULL,               -- 7 = Panama
+  company_id INT NOT NULL,               -- 7 Panamá · 9 Valencia · 10 Caracas
   marca VARCHAR(60) NOT NULL DEFAULT 'EZVIZ',
   trimestre VARCHAR(7) NOT NULL,         -- '2026-Q3'
   total_venta DECIMAL(15,2) NOT NULL DEFAULT 0,
