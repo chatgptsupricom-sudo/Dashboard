@@ -2,7 +2,11 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
-import { puedeVerReportesComerciales, resolverSede } from "@/lib/reportes-comerciales/acceso";
+import {
+  marcaFijaDe,
+  puedeVerReportesComerciales,
+  resolverSede,
+} from "@/lib/reportes-comerciales/acceso";
 import { ensureTablasReportesComerciales } from "@/lib/reportes-comerciales/tablas";
 
 export const runtime = "nodejs";
@@ -28,6 +32,12 @@ function sedeDe(payload: any, sedeParam: string | null): number | null {
     { role: payload.role, email: payload.email, cids: payload.cids },
     sedeParam,
   );
+}
+
+/** La marca a usar: EZVIZ fija para usuarios de la lista, o la pedida. */
+function marcaDe(payload: any, marcaPedida: string | null | undefined): string {
+  const fija = marcaFijaDe({ role: payload.role, email: payload.email });
+  return (fija || marcaPedida || "EZVIZ").toUpperCase();
 }
 
 /** Normaliza las razones sociales que llegan del cliente a [{id, nombre}]. */
@@ -56,7 +66,7 @@ export async function GET(request: NextRequest) {
     const companyId = sedeDe(s.payload, searchParams.get("sede"));
     if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
     const anio = parseInt(searchParams.get("anio") || `${new Date().getFullYear()}`, 10);
-    const marca = (searchParams.get("marca") || "EZVIZ").toUpperCase();
+    const marca = marcaDe(s.payload, searchParams.get("marca"));
 
     const { rows } = await query(
       `SELECT id, anio, marca, cliente_nombre, odoo_partner_id, razones_sociales, meta_anual, activo
@@ -95,7 +105,7 @@ export async function POST(request: NextRequest) {
     await ensureTablasReportesComerciales();
     const body = await request.json();
     const accion: string = body.accion;
-    const marca: string = (body.marca || "EZVIZ").toUpperCase();
+    const marca: string = marcaDe(s.payload, body.marca);
     const companyId = sedeDe(s.payload, body.sede != null ? String(body.sede) : null);
     if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
 

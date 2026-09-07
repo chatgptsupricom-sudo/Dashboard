@@ -2,7 +2,11 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
-import { puedeVerReportesComerciales, resolverSede } from "@/lib/reportes-comerciales/acceso";
+import {
+  marcaFijaDe,
+  puedeVerReportesComerciales,
+  resolverSede,
+} from "@/lib/reportes-comerciales/acceso";
 import {
   calcularEpp,
   construirReporte,
@@ -48,8 +52,10 @@ export async function GET(request: NextRequest) {
     if (companyId == null) {
       return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
     }
+    // Los usuarios de la lista de correos quedan fijados a EZVIZ; el resto elige.
+    const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre = searchParams.get("trimestre") || "";
-    const marca = searchParams.get("marca") || "EZVIZ";
+    const marca = marcaFija || searchParams.get("marca") || "EZVIZ";
 
     // Tab Historico: lista de cierres guardados (no toca Odoo).
     if (searchParams.get("historico") === "1") {
@@ -68,7 +74,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Falta el parametro 'trimestre'" }, { status: 400 });
     }
 
-    const reporte = await construirReporte({ trimestre, marca, companyId });
+    const reporte = await construirReporte({
+      trimestre,
+      marca,
+      companyId,
+      marcasDisponibles: marcaFija ? [marcaFija] : undefined,
+    });
 
     const anio = anioDeTrimestre(reporte.periodo.trimestre);
     const { rows: filasEpp } = await query(
@@ -101,8 +112,9 @@ export async function POST(request: NextRequest) {
     if (companyId == null) {
       return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
     }
+    const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre: string = body.trimestre;
-    const marca: string = (body.marca || "EZVIZ").toUpperCase();
+    const marca: string = (marcaFija || body.marca || "EZVIZ").toUpperCase();
     if (!trimestre) {
       return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
     }
