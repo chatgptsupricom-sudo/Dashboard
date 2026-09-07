@@ -132,6 +132,28 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
 
+  // Para el desglose "por banco" solo cuentan diarios que son plata real
+  // entrando (bank/cash en Odoo) -- si no, aparecian como "banco" diarios
+  // de ajuste como "Descuento (Local)" u "Operaciones varias". "IVA
+  // RETENIDO POR CLIENTE" ademas se excluye por nombre aunque Odoo lo
+  // tenga mal configurado como type=bank: es una retencion, no una cuenta
+  // bancaria donde entro dinero.
+  const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
+  let journalTypeMap: Record<number, string> = {};
+  if (journalIds.length > 0) {
+    try {
+      const journals = await callOdooRPC<any[]>("account.journal", "read", [journalIds], { fields: ["id", "type"] });
+      (journals || []).forEach((j) => { journalTypeMap[j.id] = j.type; });
+    } catch (_) {}
+  }
+  const esBancoReal = (journalId: number | undefined, journalName: string): boolean => {
+    if (journalId === undefined) return false;
+    const tipo = journalTypeMap[journalId];
+    if (tipo !== "bank" && tipo !== "cash") return false;
+    if (journalName.toLowerCase().includes("retenido")) return false;
+    return true;
+  };
+
   const renglones: Renglon[] = [];
   reconciles.forEach((r) => {
     const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
@@ -157,16 +179,21 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     // mes previo que se termino de cobrar ahora.
     const esDelMes = !fechaFactura || fechaFactura >= startStr;
 
+    // El "banco" es el diario del lado PAGO de la conciliacion (donde
+    // realmente entro el dinero), no el diario de la factura -- pero solo
+    // si ese diario es un banco/caja real (ver esBancoReal arriba).
+    const journalIdRaw = paymentMove.journal_id?.[0];
+    const journalNameRaw = paymentMove.journal_id?.[1] || "Sin diario";
+    const esBanco = esBancoReal(journalIdRaw, journalNameRaw);
+
     renglones.push({
       monto: r.amount || 0,
       partnerId: invoiceMove.partner_id[0],
       partnerName: invoiceMove.partner_id[1] || "Sin cliente",
       paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
       esDelMes,
-      // El "banco" es el diario del lado PAGO de la conciliacion (donde
-      // realmente entro el dinero), no el diario de la factura.
-      journalId: paymentMove.journal_id?.[0],
-      journalName: paymentMove.journal_id?.[1] || "Sin diario",
+      journalId: esBanco ? journalIdRaw : undefined,
+      journalName: esBanco ? journalNameRaw : "",
     });
   });
   return renglones;
