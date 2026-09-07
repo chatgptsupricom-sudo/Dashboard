@@ -82,6 +82,9 @@ export interface OpcionesReporte {
   trimestre: string; // "2026-Q3"
   marca: string; // "EZVIZ" | "TODAS" | ...
   companyId?: number; // sede; por defecto COMPANY_ID_PANAMA
+  /** Si viene, se usa tal cual para `periodo.marcasDisponibles`; si no, se
+   *  calcula con las marcas que vende la sede. */
+  marcasDisponibles?: string[];
 }
 
 export interface FilaRanking {
@@ -350,6 +353,60 @@ async function marcasDeProductos(
   return map;
 }
 
+/* ─────────────────── Marcas que vende cada sede ─────────────────── */
+
+const cacheMarcasSede = new Map<number, { data: string[]; ts: number }>();
+const TTL_MARCAS_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Marcas (`x_studio_marca`) de los productos que se han facturado en la sede
+ * en los últimos ~24 meses. Alimenta el selector de marca para que cada
+ * gerente solo vea las marcas de su sede. Cacheado por sede.
+ * Si Odoo falla, devuelve `MARCAS_CONOCIDAS` como respaldo.
+ */
+export async function marcasDeSede(companyId: number): Promise<string[]> {
+  const hit = cacheMarcasSede.get(companyId);
+  if (hit && Date.now() - hit.ts < TTL_MARCAS_MS) return hit.data;
+
+  try {
+    const desde = new Date();
+    desde.setMonth(desde.getMonth() - 24);
+    const grupos =
+      (await callOdooRPC<any[]>("account.move.line", "read_group", [
+        [
+          ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
+          ["move_id.state", "=", "posted"],
+          ["move_id.company_id", "=", companyId],
+          ["move_id.invoice_date", ">=", desde.toISOString().slice(0, 10)],
+          ["display_type", "=", "product"],
+          ["product_id", "!=", false],
+        ],
+        ["product_id"],
+        ["product_id"],
+      ])) || [];
+    const ids = [
+      ...new Set(grupos.map((g: any) => g.product_id?.[0]).filter(Boolean)),
+    ] as number[];
+    if (ids.length === 0) return [...MARCAS_CONOCIDAS];
+
+    const prods = await readEnLotes("product.product", ids, ["x_studio_marca"]);
+    const marcas = new Set<string>();
+    for (const [, p] of prods) {
+      const m = Array.isArray(p.x_studio_marca)
+        ? p.x_studio_marca[1]
+        : p.x_studio_marca;
+      if (m) marcas.add(String(m).toUpperCase().trim());
+    }
+    const data = [...marcas].filter(Boolean).sort((a, b) => a.localeCompare(b, "es"));
+    const res = data.length > 0 ? data : [...MARCAS_CONOCIDAS];
+    cacheMarcasSede.set(companyId, { data: res, ts: Date.now() });
+    return res;
+  } catch (e) {
+    console.error("[reportes-comerciales] marcasDeSede:", (e as any)?.message || e);
+    return [...MARCAS_CONOCIDAS];
+  }
+}
+
 function totalesDe(lineas: LineaEnriquecida[]): Totales {
   return {
     venta: redondear(lineas.reduce((s, l) => s + l.venta, 0)),
@@ -386,6 +443,7 @@ async function armarReporte(
   t: Trimestre,
   marca: string,
   companyId: number,
+  marcasDisponibles: string[],
   lineas: LineaEnriquecida[],
   lineasPrev: LineaEnriquecida[],
 ): Promise<ReporteTrimestral> {
@@ -412,7 +470,7 @@ async function armarReporte(
       desde,
       hasta,
       marca: esTodas ? MARCA_TODAS : marca.toUpperCase(),
-      marcasDisponibles: [MARCA_TODAS, ...MARCAS_CONOCIDAS],
+      marcasDisponibles,
       companyId,
       sede: nombreSede(companyId),
     },
@@ -440,12 +498,18 @@ async function armarReporte(
   };
 }
 
+async function marcasDisp(opts: OpcionesReporte, companyId: number): Promise<string[]> {
+  if (opts.marcasDisponibles) return opts.marcasDisponibles;
+  return [MARCA_TODAS, ...(await marcasDeSede(companyId))];
+}
+
 /** Reporte completo para la vista (agregados + comparativo con el trimestre anterior). */
 export async function construirReporte(
   opts: OpcionesReporte,
 ): Promise<ReporteTrimestral> {
   const { t, marca, companyId, lineas, lineasPrev } = await cargarActualYPrev(opts);
-  return armarReporte(t, marca, companyId, lineas, lineasPrev);
+  const marcas = await marcasDisp(opts, companyId);
+  return armarReporte(t, marca, companyId, marcas, lineas, lineasPrev);
 }
 
 /** Como construirReporte pero incluye el detalle linea a linea (para el Excel). */
@@ -453,7 +517,8 @@ export async function construirReporteCompleto(
   opts: OpcionesReporte,
 ): Promise<{ reporte: ReporteTrimestral; detalle: FilaDetalle[] }> {
   const { t, marca, companyId, lineas, lineasPrev } = await cargarActualYPrev(opts);
-  const reporte = await armarReporte(t, marca, companyId, lineas, lineasPrev);
+  const marcas = await marcasDisp(opts, companyId);
+  const reporte = await armarReporte(t, marca, companyId, marcas, lineas, lineasPrev);
 
   // Columna "Linea" = marca. Si el reporte es de una sola marca, es esa; si es
   // "TODAS", se resuelve por producto.

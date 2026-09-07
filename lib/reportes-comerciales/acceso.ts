@@ -46,6 +46,21 @@ export function puedeVerReportesComerciales(usuario: {
 }
 
 /**
+ * Marca a la que queda fijado el usuario:
+ *   - superadmin / gerencia de ventas: `null` (elige libremente entre las
+ *     marcas que vende su sede, más "TODAS").
+ *   - usuario de la lista de correos: siempre "EZVIZ" (no ve el selector).
+ */
+export function marcaFijaDe(usuario: {
+  role?: string | null;
+  email?: string | null;
+}): string | null {
+  const rol = (usuario.role || "").toLowerCase().trim();
+  if (ROLES_CON_ACCESO.includes(rol)) return null;
+  return "EZVIZ";
+}
+
+/**
  * Sedes (company_id) que el usuario puede consultar en el reporte:
  *   - superadmin: todas
  *   - gerencia de ventas / correo en la lista: solo su propia sede (`cids`)

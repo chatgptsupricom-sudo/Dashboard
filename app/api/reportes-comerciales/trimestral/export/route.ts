@@ -2,7 +2,11 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
-import { puedeVerReportesComerciales, resolverSede } from "@/lib/reportes-comerciales/acceso";
+import {
+  marcaFijaDe,
+  puedeVerReportesComerciales,
+  resolverSede,
+} from "@/lib/reportes-comerciales/acceso";
 import {
   calcularEpp,
   construirReporteCompleto,
@@ -31,11 +35,17 @@ export async function GET(request: NextRequest) {
       searchParams.get("sede"),
     );
     if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
+    const marcaFija = marcaFijaDe({ role: payload.role as string, email: payload.email as string });
     const trimestre = searchParams.get("trimestre") || "";
-    const marca = (searchParams.get("marca") || "EZVIZ").trim();
+    const marca = (marcaFija || searchParams.get("marca") || "EZVIZ").trim();
     if (!trimestre) return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
 
-    const { reporte, detalle } = await construirReporteCompleto({ trimestre, marca, companyId });
+    const { reporte, detalle } = await construirReporteCompleto({
+      trimestre,
+      marca,
+      companyId,
+      marcasDisponibles: marcaFija ? [marcaFija] : undefined,
+    });
     const anio = parseInt(reporte.periodo.trimestre.slice(0, 4), 10);
     const { rows: filasEpp } = await query(
       `SELECT id, cliente_nombre, odoo_partner_id, razones_sociales, meta_anual

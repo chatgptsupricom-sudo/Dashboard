@@ -186,6 +186,7 @@ export function ReporteTrimestral() {
   const [tab, setTab] = useState<Tab>("resumen");
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sede, setSede] = useState<number | null>(null);
+  const [marcaFija, setMarcaFija] = useState<string | null>(null);
 
   const [data, setData] = useState<Reporte | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,6 +201,10 @@ export function ReporteTrimestral() {
         const list: Sede[] = j?.sedes || [];
         setSedes(list);
         setSede((prev) => prev ?? list[0]?.companyId ?? null);
+        if (j?.marcaFija) {
+          setMarcaFija(j.marcaFija);
+          setMarca(j.marcaFija);
+        }
       })
       .catch(() => {});
   }, []);
@@ -280,7 +285,10 @@ export function ReporteTrimestral() {
           {sedes.length > 1 && (
             <select
               value={sede ?? ""}
-              onChange={(e) => setSede(Number(e.target.value))}
+              onChange={(e) => {
+                setSede(Number(e.target.value));
+                setMarca("EZVIZ"); // la lista de marcas cambia con la sede
+              }}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >
               {sedes.map((s) => (
@@ -290,17 +298,23 @@ export function ReporteTrimestral() {
               ))}
             </select>
           )}
-          <select
-            value={marca}
-            onChange={(e) => setMarca(e.target.value)}
-            className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
-          >
-            {(data?.periodo.marcasDisponibles || ["TODAS", "EZVIZ"]).map((m) => (
-              <option key={m} value={m}>
-                {m === "TODAS" ? "Todas las marcas" : m}
-              </option>
-            ))}
-          </select>
+          {marcaFija ? (
+            <span className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-500 shadow-sm">
+              {marcaFija}
+            </span>
+          ) : (
+            <select
+              value={marca}
+              onChange={(e) => setMarca(e.target.value)}
+              className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
+            >
+              {(data?.periodo.marcasDisponibles || ["TODAS", "EZVIZ"]).map((m) => (
+                <option key={m} value={m}>
+                  {m === "TODAS" ? "Todas las marcas" : m}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={trimestre}
             onChange={(e) => setTrimestre(e.target.value)}

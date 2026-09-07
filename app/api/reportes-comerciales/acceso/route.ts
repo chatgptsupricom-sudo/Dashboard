@@ -2,6 +2,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import {
+  marcaFijaDe,
   puedeVerReportesComerciales,
   sedesPermitidas,
 } from "@/lib/reportes-comerciales/acceso";
@@ -18,7 +19,7 @@ const JWT_SECRET = jwtSecretBytes();
  */
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("token")?.value;
-  if (!token) return NextResponse.json({ puede: false, sedes: [] });
+  if (!token) return NextResponse.json({ puede: false, sedes: [], marcaFija: null });
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const usuario = {
@@ -33,8 +34,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       puede: puedeVerReportesComerciales(usuario) && sedes.length > 0,
       sedes,
+      marcaFija: marcaFijaDe(usuario),
     });
   } catch {
-    return NextResponse.json({ puede: false, sedes: [] });
+    return NextResponse.json({ puede: false, sedes: [], marcaFija: null });
   }
 }
