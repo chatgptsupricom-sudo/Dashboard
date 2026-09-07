@@ -27,13 +27,16 @@ export interface ResultadoCierre {
 export async function generarYGuardarTrimestre(opts: {
   trimestre: string;
   marca: string;
+  companyId?: number;
   generadoPor?: string;
 }): Promise<ResultadoCierre> {
   await ensureTablasReportesComerciales();
+  const companyId = opts.companyId || COMPANY_ID_PANAMA;
 
   const { reporte, detalle } = await construirReporteCompleto({
     trimestre: opts.trimestre,
     marca: opts.marca,
+    companyId,
   });
   const anio = parseInt(reporte.periodo.trimestre.slice(0, 4), 10);
 
@@ -42,7 +45,7 @@ export async function generarYGuardarTrimestre(opts: {
        FROM epp_clientes
       WHERE company_id = ? AND anio = ? AND marca = ? AND activo = 1
       ORDER BY meta_anual DESC`,
-    [COMPANY_ID_PANAMA, anio, reporte.periodo.marca],
+    [companyId, anio, reporte.periodo.marca],
   );
   const epp = calcularEpp(reporte.rankingClientes, filasEpp as any);
 
@@ -64,7 +67,7 @@ export async function generarYGuardarTrimestre(opts: {
        archivo_b64 = VALUES(archivo_b64),
        generado_por = VALUES(generado_por)`,
     [
-      COMPANY_ID_PANAMA,
+      companyId,
       reporte.periodo.marca,
       reporte.periodo.trimestre,
       reporte.totales.venta,
@@ -85,6 +88,7 @@ export async function generarYGuardarTrimestre(opts: {
 export async function leerArchivoTrimestre(
   trimestre: string,
   marca: string,
+  companyId: number = COMPANY_ID_PANAMA,
 ): Promise<{ nombre: string; buffer: Buffer } | null> {
   await ensureTablasReportesComerciales();
   const { rows } = await query(
@@ -92,7 +96,7 @@ export async function leerArchivoTrimestre(
        FROM reporte_trimestral_snapshots
       WHERE company_id = ? AND marca = ? AND trimestre = ?
       LIMIT 1`,
-    [COMPANY_ID_PANAMA, marca.toUpperCase(), trimestre],
+    [companyId, marca.toUpperCase(), trimestre],
   );
   const row = (rows as any[])[0];
   if (!row?.archivo_b64) return null;

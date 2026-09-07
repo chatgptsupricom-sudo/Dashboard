@@ -3,6 +3,12 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
+// La lectura de `digiflex.cxc.report` es paginada y puede traer miles de
+// renglones: sin esto el request se cortaba a los ~15s y el grupo de CxC del
+// Stoplight quedaba vacío.
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
   caracas: 10,

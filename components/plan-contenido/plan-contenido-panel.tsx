@@ -114,7 +114,10 @@ export default function PlanContenidoPanel({
   }, []);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
+    // El socket vive en el mismo servidor que sirve la app (server.js), asi
+    // que siempre es este mismo origen. Antes salia de NEXT_PUBLIC_SOCKET_URL,
+    // que se hornea en build y en produccion apuntaba al dominio de test.
+    const url = window.location.origin;
     const socket = io(url, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 

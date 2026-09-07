@@ -151,7 +151,10 @@ export async function GET(request: NextRequest) {
         const dateStr = d.toISOString().split("T")[0];
         facturadoSemana += dailyMap[dateStr] || 0;
       }
-      const cuotaSemanal = effectiveCuota > 0 ? (effectiveCuota * sem.diasUtiles / totalDiasUtilesMes) : 0;
+      // Sin cuota asignada no hay meta que incumplir: la semana se da por
+      // cumplida (100%). Mismo criterio para el resto de KPIs de abajo.
+      if (effectiveCuota <= 0) return "100%";
+      const cuotaSemanal = (effectiveCuota * sem.diasUtiles) / totalDiasUtilesMes;
       const pct = cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0;
       return `${pct}%`;
     });
@@ -237,8 +240,9 @@ export async function GET(request: NextRequest) {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
       if (sem.revenue <= 0) return null;
+      if (metaMargen <= 0) return "100%";
       const margenActual = ((sem.revenue - sem.costo) / sem.revenue) * 100;
-      const pct = metaMargen > 0 ? Math.round((margenActual / metaMargen) * 100) : Math.round(margenActual);
+      const pct = Math.round((margenActual / metaMargen) * 100);
       return `${pct}%`;
     });
 
@@ -264,12 +268,10 @@ export async function GET(request: NextRequest) {
     const semanaVisitas = semanas.map((sem, i) => {
       const esFuturo = sem.inicio > now;
       if (esFuturo) return null;
+      if (metaVisitasSemanal <= 0) return "100%";
       const total = visitasPorSemana[i];
-      if (metaVisitasSemanal > 0) {
-        const pct = Math.round((total / metaVisitasSemanal) * 100);
-        return `${pct}%`;
-      }
-      return total > 0 ? String(total) : null;
+      const pct = Math.round((total / metaVisitasSemanal) * 100);
+      return `${pct}%`;
     });
 
     // === EFECTIVIDAD ===
@@ -311,8 +313,9 @@ export async function GET(request: NextRequest) {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
       if (sem.total <= 0) return null;
+      if (metaEfectividad <= 0) return "100%";
       const efectividadActual = (sem.facturacion / sem.total) * 100;
-      const pct = metaEfectividad > 0 ? Math.round((efectividadActual / metaEfectividad) * 100) : Math.round(efectividadActual);
+      const pct = Math.round((efectividadActual / metaEfectividad) * 100);
       return `${pct}%`;
     });
 
@@ -372,11 +375,8 @@ export async function GET(request: NextRequest) {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
       if (sem.total <= 0) return null;
-      if (metaActivacion > 0) {
-        const pct = Math.round((sem.activos / metaActivacion) * 100);
-        return `${pct}%`;
-      }
-      const pct = Math.round((sem.activos / sem.total) * 100);
+      if (metaActivacion <= 0) return "100%";
+      const pct = Math.round((sem.activos / metaActivacion) * 100);
       return `${pct}%`;
     });
 
@@ -435,7 +435,7 @@ export async function GET(request: NextRequest) {
     const semanaClientes = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;
-      if (metaClientesNuevos <= 0) return null;
+      if (metaClientesNuevos <= 0) return "100%";
       const newClientsThisWeek = clientesNuevosPorSemana[i];
       const goalThisWeek = metaClientesNuevos * (semana.diasUtiles / totalDiasUtilesMes);
       if (goalThisWeek <= 0) return null;
@@ -491,11 +491,9 @@ export async function GET(request: NextRequest) {
     const semanaCobertura = semanaCoberturaData.map((sem, i) => {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
-      if (metaCantidad > 0) {
-        const pct = Math.round((sem.cantidad / metaCantidad) * 100);
-        return `${pct}%`;
-      }
-      return sem.cantidad > 0 ? String(sem.cantidad) : null;
+      if (metaCantidad <= 0) return "100%";
+      const pct = Math.round((sem.cantidad / metaCantidad) * 100);
+      return `${pct}%`;
     });
 
     // === AVERAGES ===
@@ -510,6 +508,13 @@ export async function GET(request: NextRequest) {
         sellerName,
         metaMensual: effectiveCuota,
         cuotaMensual: cuotaNum,
+        // Cumplimiento del mes hasta la fecha (facturado / cuota). El
+        // componente lo usa para el icono de tendencia del KPI de cuota; sin
+        // esto quedaba undefined y siempre pintaba el triangulo de alerta.
+        porcentajeCumplimiento:
+          effectiveCuota > 0
+            ? Math.round((totalFacturado / effectiveCuota) * 100)
+            : 100,
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
         totalCostoMes: Math.round(totalCostoMes * 100) / 100,

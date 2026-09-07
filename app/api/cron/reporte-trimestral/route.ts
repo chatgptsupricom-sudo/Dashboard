@@ -5,12 +5,14 @@ import {
   trimestreAnterior,
 } from "@/lib/reportes-comerciales/trimestres";
 import { generarYGuardarTrimestre } from "@/lib/reportes-comerciales/snapshot";
+import { COMPANY_ID_PANAMA } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { nombreSede } from "@/lib/reportes-comerciales/sedes";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Cierre automático del Reporte de Ventas Trimestral (Panamá).
+ * Cierre automático del Reporte de Ventas Trimestral.
  *
  * Lo dispara `server.js` el día 5 del trimestre siguiente a las 06:00
  * (America/Caracas), o sea que genera el trimestre que acaba de cerrar.
@@ -18,11 +20,40 @@ export const maxDuration = 300;
  * `N8N_REPORTE_TRIMESTRAL_WEBHOOK_URL`, hace POST a n8n con el archivo en
  * base64 + un link de descarga, para el envío automático.
  *
+ * Qué sedes/marcas genera: env `REPORTES_COMERCIALES_CRON` = pares
+ * `sede:marca` separados por coma, ej. `7:EZVIZ,9:EZVIZ,10:EZVIZ`.
+ * Por defecto `7:EZVIZ` (Panamá). Se puede pisar con `?sede=` y `?marca=`.
+ *
  * Params:
  *   ?trimestre=2026-Q3   (opcional; por defecto, el trimestre anterior al actual)
- *   ?marca=EZVIZ         (opcional; por defecto REPORTES_COMERCIALES_MARCAS_CRON o "EZVIZ")
+ *   ?sede=9&marca=EZVIZ  (opcional; pisa la config de env)
  *   ?dry=1               calcula y guarda pero NO llama a n8n
  */
+function paresSedeMarca(searchParams: URLSearchParams): { companyId: number; marca: string }[] {
+  const sedeParam = searchParams.get("sede");
+  const marcaParam = searchParams.get("marca");
+  if (sedeParam || marcaParam) {
+    return [{ companyId: Number(sedeParam) || COMPANY_ID_PANAMA, marca: (marcaParam || "EZVIZ").toUpperCase() }];
+  }
+  const cfg = (process.env.REPORTES_COMERCIALES_CRON || "").trim();
+  if (cfg) {
+    return cfg
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => {
+        const [s, m] = p.split(":");
+        return { companyId: Number(s) || COMPANY_ID_PANAMA, marca: (m || "EZVIZ").trim().toUpperCase() };
+      });
+  }
+  // compatibilidad: lista de marcas para Panamá
+  const marcas = (process.env.REPORTES_COMERCIALES_MARCAS_CRON || "EZVIZ")
+    .split(",")
+    .map((m) => m.trim().toUpperCase())
+    .filter(Boolean);
+  return marcas.map((marca) => ({ companyId: COMPANY_ID_PANAMA, marca }));
+}
+
 export async function GET(request: Request) {
   if (!process.env.CRON_SECRET) {
     console.error("[cron-reporte-trimestral] CRON_SECRET no está configurado");
@@ -37,15 +68,7 @@ export async function GET(request: Request) {
   const dry = searchParams.get("dry") === "1";
   const trimestre =
     searchParams.get("trimestre") || formatTrimestre(trimestreAnterior(trimestreActual()));
-  const marcasParam = searchParams.get("marca");
-  const marcas = (
-    marcasParam ||
-    process.env.REPORTES_COMERCIALES_MARCAS_CRON ||
-    "EZVIZ"
-  )
-    .split(",")
-    .map((m) => m.trim().toUpperCase())
-    .filter(Boolean);
+  const pares = paresSedeMarca(searchParams);
 
   // Para el link de descarga: la URL pública del panel si está configurada,
   // si no el origin de la petición (localhost cuando lo llama server.js).
@@ -56,15 +79,16 @@ export async function GET(request: Request) {
   ).replace(/\/$/, "");
   const resultados: any[] = [];
 
-  for (const marca of marcas) {
+  for (const { companyId, marca } of pares) {
     try {
       const { reporte, epp, archivoNombre, buffer } = await generarYGuardarTrimestre({
         trimestre,
         marca,
+        companyId,
         generadoPor: "cron",
       });
 
-      const descargaUrl = `${base}/api/reportes-comerciales/trimestral/archivo?trimestre=${encodeURIComponent(trimestre)}&marca=${encodeURIComponent(marca)}`;
+      const descargaUrl = `${base}/api/reportes-comerciales/trimestral/archivo?trimestre=${encodeURIComponent(trimestre)}&marca=${encodeURIComponent(marca)}&sede=${companyId}`;
 
       const totMetaTrim = epp.reduce((s, c) => s + c.metaTrimestre, 0);
       const totReal = epp.reduce((s, c) => s + c.realTrimestre, 0);
@@ -73,6 +97,8 @@ export async function GET(request: Request) {
         evento: "reporte_trimestral_generado",
         origen: "reportes-comerciales",
         trimestre,
+        sede: nombreSede(companyId),
+        companyId,
         marca,
         generado_en: new Date().toISOString(),
         archivo_nombre: archivoNombre,
@@ -107,6 +133,7 @@ export async function GET(request: Request) {
       }
 
       resultados.push({
+        sede: nombreSede(companyId),
         marca,
         trimestre,
         archivo: archivoNombre,
@@ -115,11 +142,11 @@ export async function GET(request: Request) {
         webhook,
       });
       console.log(
-        `[cron-reporte-trimestral] ${marca} ${trimestre}: ${archivoNombre} (${buffer.byteLength} bytes) — ${webhook}`,
+        `[cron-reporte-trimestral] ${nombreSede(companyId)} ${marca} ${trimestre}: ${archivoNombre} (${buffer.byteLength} bytes) — ${webhook}`,
       );
     } catch (e: any) {
-      console.error(`[cron-reporte-trimestral] ${marca} ${trimestre}:`, e);
-      resultados.push({ marca, trimestre, error: e?.message || String(e) });
+      console.error(`[cron-reporte-trimestral] sede ${companyId} ${marca} ${trimestre}:`, e);
+      resultados.push({ sede: nombreSede(companyId), marca, trimestre, error: e?.message || String(e) });
     }
   }
 

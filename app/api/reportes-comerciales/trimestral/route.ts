@@ -2,10 +2,13 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
-import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
+import {
+  marcaFijaDe,
+  puedeVerReportesComerciales,
+  resolverSede,
+} from "@/lib/reportes-comerciales/acceso";
 import {
   calcularEpp,
-  COMPANY_ID_PANAMA,
   construirReporte,
 } from "@/lib/reportes-comerciales/reporteTrimestral";
 import { generarYGuardarTrimestre } from "@/lib/reportes-comerciales/snapshot";
@@ -41,8 +44,18 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTablasReportesComerciales();
     const { searchParams } = new URL(request.url);
+    const p = s.payload!;
+    const companyId = resolverSede(
+      { role: p.role as string, email: p.email as string, cids: p.cids as number },
+      searchParams.get("sede"),
+    );
+    if (companyId == null) {
+      return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
+    }
+    // Los usuarios de la lista de correos quedan fijados a EZVIZ; el resto elige.
+    const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre = searchParams.get("trimestre") || "";
-    const marca = searchParams.get("marca") || "EZVIZ";
+    const marca = marcaFija || searchParams.get("marca") || "EZVIZ";
 
     // Tab Historico: lista de cierres guardados (no toca Odoo).
     if (searchParams.get("historico") === "1") {
@@ -52,7 +65,7 @@ export async function GET(request: NextRequest) {
            FROM reporte_trimestral_snapshots
           WHERE company_id = ? AND marca = ?
           ORDER BY trimestre ASC`,
-        [COMPANY_ID_PANAMA, marca.toUpperCase()],
+        [companyId, marca.toUpperCase()],
       );
       return NextResponse.json({ historico: rows });
     }
@@ -61,7 +74,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Falta el parametro 'trimestre'" }, { status: 400 });
     }
 
-    const reporte = await construirReporte({ trimestre, marca });
+    const reporte = await construirReporte({
+      trimestre,
+      marca,
+      companyId,
+      marcasDisponibles: marcaFija ? [marcaFija] : undefined,
+    });
 
     const anio = anioDeTrimestre(reporte.periodo.trimestre);
     const { rows: filasEpp } = await query(
@@ -69,7 +87,7 @@ export async function GET(request: NextRequest) {
          FROM epp_clientes
         WHERE company_id = ? AND anio = ? AND marca = ? AND activo = 1
         ORDER BY meta_anual DESC`,
-      [COMPANY_ID_PANAMA, anio, reporte.periodo.marca],
+      [companyId, anio, reporte.periodo.marca],
     );
     const epp = calcularEpp(reporte.rankingClientes, filasEpp as any);
 
@@ -86,13 +104,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const p = s.payload!;
+    const companyId = resolverSede(
+      { role: p.role as string, email: p.email as string, cids: p.cids as number },
+      body.sede != null ? String(body.sede) : null,
+    );
+    if (companyId == null) {
+      return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
+    }
+    const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre: string = body.trimestre;
-    const marca: string = (body.marca || "EZVIZ").toUpperCase();
+    const marca: string = (marcaFija || body.marca || "EZVIZ").toUpperCase();
     if (!trimestre) {
       return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
     }
-    const generadoPor = (s.payload!.email as string) || (s.payload!.name as string) || "";
-    await generarYGuardarTrimestre({ trimestre, marca, generadoPor });
+    const generadoPor = (p.email as string) || (p.name as string) || "";
+    await generarYGuardarTrimestre({ trimestre, marca, companyId, generadoPor });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Error guardando cierre trimestral:", error);

@@ -19,6 +19,8 @@
  * importar.
  */
 
+import { COMPANY_IDS_REPORTE } from "@/lib/reportes-comerciales/sedes";
+
 const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas"];
 
 export function correosAutorizados(): string[] {
@@ -41,4 +43,53 @@ export function puedeVerReportesComerciales(usuario: {
 
   const correo = (usuario.email || "").toLowerCase().trim();
   return Boolean(correo) && correosAutorizados().includes(correo);
+}
+
+/**
+ * Marca a la que queda fijado el usuario:
+ *   - superadmin / gerencia de ventas: `null` (elige libremente entre las
+ *     marcas que vende su sede, más "TODAS").
+ *   - usuario de la lista de correos: siempre "EZVIZ" (no ve el selector).
+ */
+export function marcaFijaDe(usuario: {
+  role?: string | null;
+  email?: string | null;
+}): string | null {
+  const rol = (usuario.role || "").toLowerCase().trim();
+  if (ROLES_CON_ACCESO.includes(rol)) return null;
+  return "EZVIZ";
+}
+
+/**
+ * Sedes (company_id) que el usuario puede consultar en el reporte:
+ *   - superadmin: todas
+ *   - gerencia de ventas / correo en la lista: solo su propia sede (`cids`)
+ *   - cualquier otro: ninguna
+ */
+export function sedesPermitidas(usuario: {
+  role?: string | null;
+  email?: string | null;
+  cids?: number | string | null;
+}): number[] {
+  const rol = (usuario.role || "").toLowerCase().trim();
+  if (rol === "superadmin") return [...COMPANY_IDS_REPORTE];
+
+  if (!puedeVerReportesComerciales(usuario)) return [];
+
+  const cid = Number(usuario.cids);
+  return COMPANY_IDS_REPORTE.includes(cid) ? [cid] : [];
+}
+
+/**
+ * Resuelve la sede que atiende una petición: la de `?sede=` si el usuario tiene
+ * acceso a ella, si no la primera permitida. `null` si no tiene ninguna.
+ */
+export function resolverSede(
+  usuario: { role?: string | null; email?: string | null; cids?: number | string | null },
+  sedeParam: string | null,
+): number | null {
+  const permitidas = sedesPermitidas(usuario);
+  if (permitidas.length === 0) return null;
+  const pedida = sedeParam ? Number(sedeParam) : NaN;
+  return permitidas.includes(pedida) ? pedida : permitidas[0];
 }

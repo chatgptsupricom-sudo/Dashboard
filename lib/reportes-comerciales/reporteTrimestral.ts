@@ -1,12 +1,13 @@
 /**
- * Logica de datos del Reporte de Ventas Trimestral (Panama, por marca).
+ * Logica de datos del Reporte de Ventas Trimestral (por sede y por marca).
  *
  * Reemplaza el armado manual del Excel: en vez de exportar lineas de factura de
  * Odoo y refrescar tablas dinamicas, se consulta Odoo en vivo y se agregan aca.
  *
  * Fuente: `account.move.line` de facturas de cliente (`out_invoice`) menos notas
- * de credito (`out_refund`), estado `posted`, compania Panama (`company_id = 7`),
- * `invoice_date` dentro del trimestre calendario. La marca sale de
+ * de credito (`out_refund`), estado `posted`, `company_id` de la sede pedida
+ * (7=Panamá, 9=Valencia, 10=Caracas), `invoice_date` dentro del trimestre
+ * calendario. La marca sale de
  * `product.(product|template).x_studio_marca` (patron de
  * app/api/adminleads/product-stats/route.ts).
  *
@@ -25,8 +26,12 @@ import {
   trimestreAnterior,
   type Trimestre,
 } from "@/lib/reportes-comerciales/trimestres";
+import { nombreSede } from "@/lib/reportes-comerciales/sedes";
 
-/** Panama. Ver CLAUDE.md: 9=Valencia, 10=Caracas, 7=Panama. */
+/**
+ * Sede por defecto cuando una llamada no especifica `companyId`.
+ * Ver CLAUDE.md: 9=Valencia, 10=Caracas, 7=Panamá.
+ */
 export const COMPANY_ID_PANAMA = 7;
 
 /**
@@ -76,6 +81,10 @@ export const MARCAS_CONOCIDAS = [
 export interface OpcionesReporte {
   trimestre: string; // "2026-Q3"
   marca: string; // "EZVIZ" | "TODAS" | ...
+  companyId?: number; // sede; por defecto COMPANY_ID_PANAMA
+  /** Si viene, se usa tal cual para `periodo.marcasDisponibles`; si no, se
+   *  calcula con las marcas que vende la sede. */
+  marcasDisponibles?: string[];
 }
 
 export interface FilaRanking {
@@ -99,6 +108,8 @@ export interface ReporteTrimestral {
     hasta: string;
     marca: string;
     marcasDisponibles: string[];
+    companyId: number;
+    sede: string;
   };
   totales: Totales;
   comparativo: {
@@ -225,11 +236,12 @@ function dominioLineas(
   desde: string,
   hasta: string,
   idsProducto: number[] | null,
+  companyId: number,
 ): any[] {
   const dom: any[] = [
     ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
     ["move_id.state", "=", "posted"],
-    ["move_id.company_id", "=", COMPANY_ID_PANAMA],
+    ["move_id.company_id", "=", companyId],
     ["move_id.invoice_date", ">=", desde],
     ["move_id.invoice_date", "<=", hasta],
     ["display_type", "=", "product"],
@@ -243,6 +255,7 @@ async function cargarLineas(
   desde: string,
   hasta: string,
   marca: string,
+  companyId: number,
 ): Promise<{ lineas: LineaEnriquecida[]; sinProductosDeMarca: boolean }> {
   const idsProducto = await idsProductoDeMarca(marca);
   if (idsProducto && idsProducto.length === 0) {
@@ -251,7 +264,7 @@ async function cargarLineas(
 
   const crudas = await searchReadPaginado(
     "account.move.line",
-    dominioLineas(desde, hasta, idsProducto),
+    dominioLineas(desde, hasta, idsProducto, companyId),
     ["move_id", "partner_id", "product_id", "quantity", "price_subtotal"],
   );
   if (crudas.length === 0) return { lineas: [], sinProductosDeMarca: false };
@@ -340,6 +353,60 @@ async function marcasDeProductos(
   return map;
 }
 
+/* ─────────────────── Marcas que vende cada sede ─────────────────── */
+
+const cacheMarcasSede = new Map<number, { data: string[]; ts: number }>();
+const TTL_MARCAS_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Marcas (`x_studio_marca`) de los productos que se han facturado en la sede
+ * en los últimos ~24 meses. Alimenta el selector de marca para que cada
+ * gerente solo vea las marcas de su sede. Cacheado por sede.
+ * Si Odoo falla, devuelve `MARCAS_CONOCIDAS` como respaldo.
+ */
+export async function marcasDeSede(companyId: number): Promise<string[]> {
+  const hit = cacheMarcasSede.get(companyId);
+  if (hit && Date.now() - hit.ts < TTL_MARCAS_MS) return hit.data;
+
+  try {
+    const desde = new Date();
+    desde.setMonth(desde.getMonth() - 24);
+    const grupos =
+      (await callOdooRPC<any[]>("account.move.line", "read_group", [
+        [
+          ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
+          ["move_id.state", "=", "posted"],
+          ["move_id.company_id", "=", companyId],
+          ["move_id.invoice_date", ">=", desde.toISOString().slice(0, 10)],
+          ["display_type", "=", "product"],
+          ["product_id", "!=", false],
+        ],
+        ["product_id"],
+        ["product_id"],
+      ])) || [];
+    const ids = [
+      ...new Set(grupos.map((g: any) => g.product_id?.[0]).filter(Boolean)),
+    ] as number[];
+    if (ids.length === 0) return [...MARCAS_CONOCIDAS];
+
+    const prods = await readEnLotes("product.product", ids, ["x_studio_marca"]);
+    const marcas = new Set<string>();
+    for (const [, p] of prods) {
+      const m = Array.isArray(p.x_studio_marca)
+        ? p.x_studio_marca[1]
+        : p.x_studio_marca;
+      if (m) marcas.add(String(m).toUpperCase().trim());
+    }
+    const data = [...marcas].filter(Boolean).sort((a, b) => a.localeCompare(b, "es"));
+    const res = data.length > 0 ? data : [...MARCAS_CONOCIDAS];
+    cacheMarcasSede.set(companyId, { data: res, ts: Date.now() });
+    return res;
+  } catch (e) {
+    console.error("[reportes-comerciales] marcasDeSede:", (e as any)?.message || e);
+    return [...MARCAS_CONOCIDAS];
+  }
+}
+
 function totalesDe(lineas: LineaEnriquecida[]): Totales {
   return {
     venta: redondear(lineas.reduce((s, l) => s + l.venta, 0)),
@@ -355,24 +422,28 @@ async function cargarActualYPrev(
 ): Promise<{
   t: Trimestre;
   marca: string;
+  companyId: number;
   lineas: LineaEnriquecida[];
   lineasPrev: LineaEnriquecida[];
 }> {
   const t = parseTrimestre(opts.trimestre);
   const marca = (opts.marca || "EZVIZ").trim();
+  const companyId = opts.companyId || COMPANY_ID_PANAMA;
   const { desde, hasta } = limitesTrimestre(t);
   const rangoPrev = limitesTrimestre(trimestreAnterior(t));
 
   const [act, prev] = await Promise.all([
-    cargarLineas(desde, hasta, marca),
-    cargarLineas(rangoPrev.desde, rangoPrev.hasta, marca),
+    cargarLineas(desde, hasta, marca, companyId),
+    cargarLineas(rangoPrev.desde, rangoPrev.hasta, marca, companyId),
   ]);
-  return { t, marca, lineas: act.lineas, lineasPrev: prev.lineas };
+  return { t, marca, companyId, lineas: act.lineas, lineasPrev: prev.lineas };
 }
 
 async function armarReporte(
   t: Trimestre,
   marca: string,
+  companyId: number,
+  marcasDisponibles: string[],
   lineas: LineaEnriquecida[],
   lineasPrev: LineaEnriquecida[],
 ): Promise<ReporteTrimestral> {
@@ -399,7 +470,9 @@ async function armarReporte(
       desde,
       hasta,
       marca: esTodas ? MARCA_TODAS : marca.toUpperCase(),
-      marcasDisponibles: [MARCA_TODAS, ...MARCAS_CONOCIDAS],
+      marcasDisponibles,
+      companyId,
+      sede: nombreSede(companyId),
     },
     totales,
     comparativo: {
@@ -425,20 +498,27 @@ async function armarReporte(
   };
 }
 
+async function marcasDisp(opts: OpcionesReporte, companyId: number): Promise<string[]> {
+  if (opts.marcasDisponibles) return opts.marcasDisponibles;
+  return [MARCA_TODAS, ...(await marcasDeSede(companyId))];
+}
+
 /** Reporte completo para la vista (agregados + comparativo con el trimestre anterior). */
 export async function construirReporte(
   opts: OpcionesReporte,
 ): Promise<ReporteTrimestral> {
-  const { t, marca, lineas, lineasPrev } = await cargarActualYPrev(opts);
-  return armarReporte(t, marca, lineas, lineasPrev);
+  const { t, marca, companyId, lineas, lineasPrev } = await cargarActualYPrev(opts);
+  const marcas = await marcasDisp(opts, companyId);
+  return armarReporte(t, marca, companyId, marcas, lineas, lineasPrev);
 }
 
 /** Como construirReporte pero incluye el detalle linea a linea (para el Excel). */
 export async function construirReporteCompleto(
   opts: OpcionesReporte,
 ): Promise<{ reporte: ReporteTrimestral; detalle: FilaDetalle[] }> {
-  const { t, marca, lineas, lineasPrev } = await cargarActualYPrev(opts);
-  const reporte = await armarReporte(t, marca, lineas, lineasPrev);
+  const { t, marca, companyId, lineas, lineasPrev } = await cargarActualYPrev(opts);
+  const marcas = await marcasDisp(opts, companyId);
+  const reporte = await armarReporte(t, marca, companyId, marcas, lineas, lineasPrev);
 
   // Columna "Linea" = marca. Si el reporte es de una sola marca, es esa; si es
   // "TODAS", se resuelve por producto.
@@ -466,33 +546,34 @@ export async function construirReporteCompleto(
   return { reporte, detalle };
 }
 
-/* ─────────────────── Lista de clientes de Panamá ─────────────────── */
+/* ─────────────────── Lista de clientes por sede ─────────────────── */
 
 export interface ClientePanama {
   id: number;
   nombre: string;
 }
 
-let cacheClientes: { data: ClientePanama[]; ts: number } | null = null;
+const cacheClientes = new Map<number, { data: ClientePanama[]; ts: number }>();
 const TTL_CLIENTES_MS = 30 * 60 * 1000;
 
 /**
- * Todos los partners que alguna vez tuvieron factura de cliente en Panamá
- * (`company_id = 7`). Alimenta el desplegable de "Cuentas EPP" para que la
- * selección sea por `partner_id` exacto y no dependa de escribir bien el nombre.
- * Cacheado en memoria (el server es un proceso largo).
+ * Todos los partners que alguna vez tuvieron factura de cliente en la sede dada.
+ * Alimenta el desplegable de "Cuentas EPP" para que la selección sea por
+ * `partner_id` exacto y no dependa de escribir bien el nombre.
+ * Cacheado en memoria por sede (el server es un proceso largo).
  */
-export async function listarClientesPanama(): Promise<ClientePanama[]> {
-  if (cacheClientes && Date.now() - cacheClientes.ts < TTL_CLIENTES_MS) {
-    return cacheClientes.data;
-  }
+export async function listarClientesPanama(
+  companyId: number = COMPANY_ID_PANAMA,
+): Promise<ClientePanama[]> {
+  const hit = cacheClientes.get(companyId);
+  if (hit && Date.now() - hit.ts < TTL_CLIENTES_MS) return hit.data;
 
   const [grupos, nombresVendedores] = await Promise.all([
     callOdooRPC<any[]>("account.move", "read_group", [
       [
         ["move_type", "in", ["out_invoice", "out_refund"]],
         ["state", "=", "posted"],
-        ["company_id", "=", COMPANY_ID_PANAMA],
+        ["company_id", "=", companyId],
         ["partner_id", "!=", false],
       ],
       ["partner_id"],
@@ -515,7 +596,7 @@ export async function listarClientesPanama(): Promise<ClientePanama[]> {
     )
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
-  cacheClientes = { data, ts: Date.now() };
+  cacheClientes.set(companyId, { data, ts: Date.now() });
   return data;
 }
 
