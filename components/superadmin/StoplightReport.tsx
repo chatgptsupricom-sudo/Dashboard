@@ -28,13 +28,15 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import ComprasDetailModal from "./ComprasDetailModal";
 
+// Semáforo sobre el % de meta cumplida: verde al llegar (>=100), amarillo
+// cuando ya está cerca (70–99), rojo cuando falta bastante (<70).
 const getCellColor = (value: string) => {
   if (!value) return "";
   const numValue = parseInt(value);
   if (isNaN(numValue)) return "";
-  if (numValue < 60) return "bg-red-100 text-red-800 font-medium";
   if (numValue >= 100) return "bg-green-100 text-green-800 font-medium";
-  return "bg-yellow-100 text-yellow-800 font-medium";
+  if (numValue >= 70) return "bg-yellow-100 text-yellow-800 font-medium";
+  return "bg-red-100 text-red-800 font-medium";
 };
 
 const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
@@ -49,13 +51,13 @@ const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
 
   if (higherBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
-    if (numVal >= numGoal * 0.85) return "bg-amber-100 text-amber-800 font-medium";
+    if (numVal >= numGoal * 0.7) return "bg-amber-100 text-amber-800 font-medium";
     return "bg-red-100 text-red-800 font-medium";
   }
 
   if (lowerBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal <= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
-    if (numVal <= numGoal * 1.2) return "bg-amber-100 text-amber-800 font-medium";
+    if (numVal <= numGoal * 1.3) return "bg-amber-100 text-amber-800 font-medium";
     return "bg-red-100 text-red-800 font-medium";
   }
 
@@ -856,7 +858,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         // El endpoint de vendedor no traía `porcentajeCumplimiento`; se cae a
         // `avgCumplimiento` para no pintar siempre el triángulo rojo.
         const pct = kpiData.porcentajeCumplimiento ?? kpiData.avgCumplimiento ?? 0;
-        return pct >= 100 ? "help" : pct >= 75 ? "warning" : "alert";
+        return pct >= 100 ? "help" : pct >= 70 ? "warning" : "alert";
       })(),
       title: t("kpi_cuota_ventas"),
       peso: "30%",
