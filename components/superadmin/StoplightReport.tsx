@@ -1721,114 +1721,112 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Table / View */}
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
-              <div className="divide-y">
-                {group.kpis.map((kpi: any) => (
-                  <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors">
+              <div className="divide-y divide-slate-100 border-t border-slate-100">
+                {group.kpis.map((kpi: any) => {
+                  const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
+                  return (
+                  <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50/70 transition-colors">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-700 truncate">{kpi.title}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
+                      <div className="text-sm font-medium text-slate-800 truncate">{kpi.title}</div>
+                      <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
-                    <div className={`text-sm font-bold w-20 text-right px-2 py-1 rounded ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault)}`}>{kpi.average}</div>
+                    <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{kpi.average}</span>
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
                       <SparklineBar values={kpi.weeks} />
                     </div>
-                    <div className="text-xs text-slate-400 w-20 text-right">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
+                    <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+              <div className="overflow-x-auto border-t border-slate-100">
+                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
                   <thead>
-                    <tr className="bg-white border-b text-slate-500">
-                      <th className="p-3 w-10 text-center border-r">
-                        <input type="checkbox" className="rounded border-slate-300" />
-                      </th>
-                      <th className="p-3 w-16 text-center border-r text-xs font-normal">{t("column_trend")}</th>
-                      <th className="p-3 border-r font-medium min-w-[300px]">{t("column_title")}</th>
-                      <th className="p-3 w-16 text-center border-r font-medium">{t("column_owner")}</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_goal")}</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_average")}</th>
-                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
+                    <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
+                      <th className="py-2.5 pl-4 pr-2 w-8"></th>
+                      <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
+                      <th className="py-2.5 px-2 w-24 text-right font-semibold">{t("column_goal")}</th>
+                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
+                      <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
-                        <th key={idx} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-400">
-                          <div className="flex flex-col">
-                            <span>{week.split(" - ")[0]} -</span>
-                            <span>{week.split(" - ")[1]}</span>
-                          </div>
+                        <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
+                          {week}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {group.kpis.map((kpi: any) => (
+                    {group.kpis.map((kpi: any) => {
+                      const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
+                      return (
                       <tr
                         key={kpi.id}
-                        className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
+                        className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
                         onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
-                        <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
-                          {kpi.cumple ? (
-                            <div className="w-5 h-5 bg-blue-600 rounded flex items-center justify-center mx-auto">
-                              <Check size={14} className="text-white" />
-                            </div>
-                          ) : (
-                            <div className="w-5 h-5 border-2 border-slate-300 rounded mx-auto" />
-                          )}
+                        <td className="py-3 pl-4 pr-2 align-top">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full mt-1.5 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`}
+                          />
                         </td>
-                        <td className="p-3 text-center border-r bg-white">
-                          {kpi.trend === "alert" ? (
-                            <AlertTriangle
-                              size={16}
-                              className="text-red-500 mx-auto cursor-pointer hover:text-red-600"
+                        <td className="py-3 px-2 text-slate-800 font-medium align-top">
+                          <span className="inline-flex items-center gap-1.5">
+                            {kpi.title}
+                            <button
+                              type="button"
+                              aria-label="Info"
                               onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
-                            />
-                          ) : (
-                            <HelpCircle
-                              size={16}
-                              className="text-slate-400 mx-auto cursor-pointer hover:text-slate-600"
-                              onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
-                            />
-                          )}
-                        </td>
-                        <td className="p-3 border-r text-slate-700 bg-white font-medium">
-                          {kpi.title}
+                              className={`shrink-0 ${kpi.trend === "alert" ? "text-rose-500 hover:text-rose-600" : "text-slate-300 hover:text-slate-500"}`}
+                            >
+                              {kpi.trend === "alert" ? <AlertTriangle size={13} /> : <HelpCircle size={13} />}
+                            </button>
+                          </span>
                           {kpi.isClickable && (
-                            <span className="ml-2 text-[10px] text-blue-500 font-normal">{t("click_detail")}</span>
+                            <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
+                              {t("click_detail")}
+                            </span>
                           )}
                         </td>
-                        <td className="p-3 border-r text-center bg-white">
-                          <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center mx-auto text-slate-500 cursor-pointer hover:bg-slate-300 transition-colors">
-                            <User size={14} />
-                          </div>
-                        </td>
-                        <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
                           {!isSuperAdmin ? (
-                            <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
+                            <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <input
                               type="number"
                               value={getGoal(kpi.id, kpi.goalDefault)}
                               onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
                               onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                              className="w-28 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                              className="w-20 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
                             />
                           )}
                         </td>
-                        <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
-                        <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50 font-bold">{kpi.peso}</td>
-                        {kpi.weeks.map((val: string | null, idx: number) => (
-                          <td
-                            key={idx}
-                            className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
-                          >
-                            {val || "-"}
-                          </td>
-                        ))}
+                        <td className="py-3 px-2 text-right align-top">
+                          <span className={`inline-block px-1.5 py-0.5 rounded-md text-xs tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>
+                            {kpi.average}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
+                        {kpi.weeks.map((val: string | null, idx: number) => {
+                          const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
+                          return (
+                            <td key={idx} className="py-3 px-2 text-center align-top">
+                              {val ? (
+                                <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">–</span>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1840,14 +1838,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               ) : monthlyHistory.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">{t("no_available_data")}</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto border-t border-slate-100">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
-                      <tr className="bg-white border-b text-slate-500">
-                        <th className="p-3 border-r font-medium min-w-[260px]">KPI</th>
-                        <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
+                      <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
+                        <th className="py-2.5 px-4 font-semibold min-w-[260px]">KPI</th>
+                        <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
                         {monthlyHistory.map(h => (
-                          <th key={h.mes} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-500 capitalize">
+                          <th key={h.mes} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 capitalize normal-case">
                             {mesLabel(h.mes)}
                           </th>
                         ))}
@@ -1855,17 +1853,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     </thead>
                     <tbody>
                       {group.kpis.map((kpi: any) => (
-                        <tr key={kpi.id} className="border-b hover:bg-slate-50">
-                          <td className="p-3 border-r text-slate-700 font-medium">{kpi.title}</td>
-                          <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 font-bold">{kpi.peso}</td>
+                        <tr key={kpi.id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                          <td className="py-3 px-4 text-slate-800 font-medium">{kpi.title}</td>
+                          <td className="py-3 px-2 text-right text-slate-400 tabular-nums">{kpi.peso}</td>
                           {monthlyHistory.map(h => {
                             const val = getMonthlyValue(kpi.id, h);
+                            const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                             return (
-                              <td
-                                key={h.mes}
-                                className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
-                              >
-                                {val}
+                              <td key={h.mes} className="py-3 px-2 text-center align-top">
+                                {val && val !== "-" ? (
+                                  <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
+                                    {val}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">–</span>
+                                )}
                               </td>
                             );
                           })}
