@@ -34,6 +34,7 @@ const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const PIE_COLORS = ["#10b981", "#3b82f6"];
 const BAR_COLOR = "#3b82f6";
+const BANCO_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -85,15 +86,21 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number };
+type Banco = Acumulado & { journalId: number; journalName: string };
+type Parcial = { monto: number; pct: number; facturas: number };
 type ContadoCreditoData = {
   totalFacturado: number;
   contado: Acumulado;
   credito: Acumulado;
+  delMes: Parcial;
+  mesesAnteriores: Parcial;
   buckets: Bucket[];
+  bancos: Banco[];
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
-type Modo = "facturado" | "cobrado_facturas" | "cobrado_dinero";
+type Modo = "facturado" | "cobrado";
+type Filtro = { tipo?: "contado" | "credito"; dias?: number; journalId?: number };
 
 export default function ContadoCreditoPage() {
   const { user } = useAuthStore();
@@ -103,17 +110,21 @@ export default function ContadoCreditoPage() {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  // Facturado: lo emitido ese mes. Cobrado: lo que ya se pago, en 2
-  // variantes -- "de esas facturas" reusa el mismo conjunto de facturas del
-  // mes pero pesado por lo pagado, "dinero que entro el mes" es base caja
-  // real (fecha de abono, sin importar cuando se emitio la factura).
+  // Facturado: lo emitido ese mes. Cobrado: dinero que efectivamente entro
+  // el mes (fecha de conciliacion del pago, no fecha de la factura) --
+  // mismo criterio que el reporte "Integracion de Pagos" de Odoo que ya
+  // usa cobranza para verificar.
   const [modo, setModo] = useState<Modo>("facturado");
-  const esCobrado = modo !== "facturado";
+  const esCobrado = modo === "cobrado";
 
   const userCids = (user as any)?.cids;
 
-  // Modal 1: clientes de un grupo (contado / credito / bucket)
-  const [clientesModal, setClientesModal] = useState<{ open: boolean; titulo: string; clientes: ClienteDetalle[] }>({ open: false, titulo: "", clientes: [] });
+  // Modal 1: clientes de un grupo (contado / credito / bucket / banco).
+  // filtro viaja hasta el modal de cobros para que "Cobros -- Cliente X" solo
+  // muestre los abonos de ESA card, no todo el mes del cliente mezclado
+  // (antes: entrar desde la card de "21 dias" mostraba tambien sus abonos
+  // a 30 dias, porque el modal de cobros no sabia de que card venia).
+  const [clientesModal, setClientesModal] = useState<{ open: boolean; titulo: string; clientes: ClienteDetalle[]; filtro: Filtro }>({ open: false, titulo: "", clientes: [], filtro: {} });
 
   // Modal 2: facturas del mes de un cliente
   const [facturasModal, setFacturasModal] = useState<{ open: boolean; partnerId: number; partnerName: string }>({ open: false, partnerId: 0, partnerName: "" });
@@ -155,13 +166,13 @@ export default function ContadoCreditoPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const openClientes = (titulo: string, clientes: ClienteDetalle[]) => {
-    setClientesModal({ open: true, titulo, clientes });
+  const openClientes = (titulo: string, clientes: ClienteDetalle[], filtro: Filtro = {}) => {
+    setClientesModal({ open: true, titulo, clientes, filtro });
   };
 
   const facturasFetchIdRef = useRef(0);
 
-  const openFacturasCliente = useCallback(async (partnerId: number, partnerName: string) => {
+  const openFacturasCliente = useCallback(async (partnerId: number, partnerName: string, filtro: Filtro) => {
     const fetchId = ++facturasFetchIdRef.current;
     setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: true, partnerId, partnerName });
@@ -174,6 +185,9 @@ export default function ContadoCreditoPage() {
       params.set("month", String(selectedMonth));
       params.set("year", String(selectedYear));
       params.set("modo", modo);
+      if (filtro.journalId !== undefined) params.set("journalId", String(filtro.journalId));
+      else if (filtro.dias !== undefined) params.set("dias", String(filtro.dias));
+      else if (filtro.tipo) params.set("tipo", filtro.tipo);
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito/facturas-cliente?${params}`);
       const json = await res.json();
       if (fetchId !== facturasFetchIdRef.current) return;
@@ -219,9 +233,9 @@ export default function ContadoCreditoPage() {
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
-  const tituloTotal = modo === "facturado" ? "Total Facturado del Mes" : "Total Cobrado del Mes";
-  const tituloFacturasModal = modo === "cobrado_dinero" ? "Cobros" : "Facturas";
-  const etiquetaColFecha = modo === "cobrado_dinero" ? "Fecha de abono" : "Fecha";
+  const tituloTotal = esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
+  const tituloFacturasModal = esCobrado ? "Cobros" : "Facturas";
+  const etiquetaColFecha = esCobrado ? "Fecha de abono" : "Fecha";
 
   const pieData = data ? [
     { name: "Contado", value: data.contado.monto },
@@ -233,6 +247,8 @@ export default function ContadoCreditoPage() {
     fullLabel: bucketLabel(b),
     monto: b.monto,
   })) : [];
+
+  const bancoPieData = data ? data.bancos.map((b) => ({ name: b.journalName, value: b.monto })) : [];
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto tabular-nums">
@@ -291,36 +307,18 @@ export default function ContadoCreditoPage() {
             Facturado
           </button>
           <button
-            onClick={() => { if (!esCobrado) setModo("cobrado_facturas"); }}
+            onClick={() => setModo("cobrado")}
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Cobrado
           </button>
         </div>
-        {esCobrado && (
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
-            {([
-              { value: "cobrado_facturas", label: "De esas facturas" },
-              { value: "cobrado_dinero", label: "Dinero que entró el mes" },
-            ] as { value: Modo; label: string }[]).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setModo(opt.value)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                  modo === opt.value ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {loading && data && (
         <div className="flex items-center gap-2 mb-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
           <RefreshCw size={14} className="animate-spin" />
-          {modo === "cobrado_dinero"
+          {esCobrado
             ? "Recalculando con los pagos del mes... esta vista puede tardar 15-20 segundos."
             : "Actualizando..."}
         </div>
@@ -332,20 +330,39 @@ export default function ContadoCreditoPage() {
         <div className="flex items-center justify-center h-64 text-slate-400">Sin datos para este período</div>
       ) : (
         <div className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
-          {/* Total facturado */}
+          {/* Total facturado / cobrado */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
-            <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
-              <div className="h-full bg-emerald-500" style={{ width: `${data.contado.pct}%` }} title={`Contado: ${data.contado.pct}%`} />
-              <div className="h-full bg-blue-500" style={{ width: `${data.credito.pct}%` }} title={`Crédito: ${data.credito.pct}%`} />
-            </div>
+            {esCobrado ? (
+              <>
+                <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
+                  <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`Facturas del mes: ${data.delMes.pct}%`} />
+                  <div className="h-full bg-amber-500" style={{ width: `${data.mesesAnteriores.pct}%` }} title={`Meses anteriores: ${data.mesesAnteriores.pct}%`} />
+                </div>
+                <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                    Facturas del mes: <span className="font-semibold text-slate-700">{formatCurrency(data.delMes.monto)}</span> ({data.delMes.pct}%)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                    Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
+                <div className="h-full bg-emerald-500" style={{ width: `${data.contado.pct}%` }} title={`Contado: ${data.contado.pct}%`} />
+                <div className="h-full bg-blue-500" style={{ width: `${data.credito.pct}%` }} title={`Crédito: ${data.credito.pct}%`} />
+              </div>
+            )}
           </div>
 
           {/* Contado vs Credito + grafica de torta */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <button
-              onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle)}
+              onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle, { tipo: "contado" })}
               className="text-left bg-white border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
             >
               <div className="flex items-center gap-2 text-emerald-700">
@@ -357,7 +374,7 @@ export default function ContadoCreditoPage() {
               <p className="text-xs text-slate-500 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
             </button>
             <button
-              onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle)}
+              onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle, { tipo: "credito" })}
               className="text-left bg-white border border-blue-200 bg-blue-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
             >
               <div className="flex items-center gap-2 text-blue-700">
@@ -389,7 +406,7 @@ export default function ContadoCreditoPage() {
                   {data.buckets.map((b) => (
                     <button
                       key={String(b.dias)}
-                      onClick={() => openClientes(`Clientes — ${bucketLabel(b)}`, b.clientesDetalle)}
+                      onClick={() => openClientes(`Clientes — ${bucketLabel(b)}`, b.clientesDetalle, { dias: b.dias })}
                       className="text-left bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition cursor-pointer"
                     >
                       <p className="text-xs text-slate-500 uppercase tracking-wide">{bucketLabel(b)}</p>
@@ -417,6 +434,46 @@ export default function ContadoCreditoPage() {
               </div>
             </div>
           )}
+
+          {/* Cobrado por banco -- solo tiene sentido en modo Cobrado, el
+              "banco" es el diario del pago, y facturado no tiene pago. */}
+          {esCobrado && data.bancos.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <p className="text-sm font-semibold text-slate-700 mb-3">Cobrado por banco</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {data.bancos.map((b, i) => (
+                    <button
+                      key={b.journalId}
+                      onClick={() => openClientes(`Clientes — ${b.journalName}`, b.clientesDetalle, { journalId: b.journalId })}
+                      className="text-left bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: BANCO_COLORS[i % BANCO_COLORS.length] }} />
+                        <p className="text-xs text-slate-500 uppercase tracking-wide truncate">{b.journalName}</p>
+                      </div>
+                      <p className="text-xl font-bold text-slate-800 mt-1">{b.pct}%</p>
+                      <p className="text-xs text-slate-600 mt-1">{formatCurrency(b.monto)}</p>
+                      <div className="flex items-center gap-1 mt-2 text-xs text-slate-400">
+                        <Users size={12} />
+                        {b.clientes} cliente{b.clientes !== 1 ? "s" : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={bancoPieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                      {bancoPieData.map((_, i) => <Cell key={i} fill={BANCO_COLORS[i % BANCO_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -438,7 +495,7 @@ export default function ContadoCreditoPage() {
                 {clientesModal.clientes.map((c) => (
                   <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4">
-                      <button onClick={() => openFacturasCliente(c.partnerId, c.partnerName)} className="font-semibold text-blue-600 hover:underline text-left">
+                      <button onClick={() => openFacturasCliente(c.partnerId, c.partnerName, clientesModal.filtro)} className="font-semibold text-blue-600 hover:underline text-left">
                         {c.partnerName}
                       </button>
                     </td>
@@ -472,8 +529,11 @@ export default function ContadoCreditoPage() {
                 </tr>
               </thead>
               <tbody>
-                {facturasData.map((f) => (
-                  <tr key={f.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                {facturasData.map((f, idx) => (
+                  // key con indice, no solo f.id: en modo "cobrado" el id es
+                  // el de la factura, y una misma factura puede tener mas de
+                  // un abono (fila) el mismo mes -- el id solo no es unico ahi.
+                  <tr key={`${f.id}-${idx}`} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4">
                       <button onClick={() => openInvoiceDetail(f.id)} className="font-semibold text-blue-600 hover:underline">
                         {f.name || `#${f.id}`}

@@ -30,9 +30,31 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   return result;
 }
 
-type Factura = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
+type Factura = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string; journalId?: number };
 
-async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, cobrado: boolean): Promise<Factura[]> {
+// Mismo criterio de contado/credito/dias que contado-credito/route.ts: un
+// termino de pago sin numero es contado, con numero es credito a esos dias.
+function diasDeTermino(ptName: string): number | null {
+  const m = ptName.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Mismo criterio que "Ventas del Mes" (app/api/superadmin/stats/route.ts) y
+// que contado-credito/route.ts::esVendedorExcluido -- se repite aca en vez de
+// importar porque cada route.ts de este modulo es autocontenido.
+const SELLER_EXCLUSIONS: Record<number, string[]> = {
+  9: ["asistente", "yusne"],
+  10: ["asistente", "adriana"],
+  7: ["hercilio"],
+};
+const esVendedorExcluido = (inv: any): boolean => {
+  const sellerName = (inv.invoice_user_id?.[1] || "").toLowerCase();
+  const cid = inv.company_id?.[0];
+  const reglas = SELLER_EXCLUSIONS[cid] || [];
+  return reglas.some((regla) => sellerName.includes(regla));
+};
+
+async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date): Promise<Factura[]> {
   const invoicesRaw = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
@@ -44,10 +66,10 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ]],
-    { fields: ["id", "name", "invoice_date", "move_type", "amount_total", "amount_residual", "invoice_payment_term_id"], order: "invoice_date desc" },
+    { fields: ["id", "name", "invoice_date", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"], order: "invoice_date desc" },
   );
 
-  const invoices = invoicesRaw || [];
+  const invoices = (invoicesRaw || []).filter((inv) => !esVendedorExcluido(inv));
   const ptIds = [...new Set(invoices.map((f) => f.invoice_payment_term_id?.[0]).filter(Boolean))];
   let ptMap: Record<number, string> = {};
   if (ptIds.length > 0) {
@@ -59,22 +81,14 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
-  return invoices.map((inv) => {
-    const amountTotal = inv.move_type === "out_refund" ? -(inv.amount_total || 0) : (inv.amount_total || 0);
-    let monto = amountTotal;
-    if (cobrado) {
-      const residual = inv.move_type === "out_refund" ? -(inv.amount_residual || 0) : (inv.amount_residual || 0);
-      monto = amountTotal - residual;
-    }
-    return {
-      id: inv.id,
-      name: inv.name || "",
-      invoiceDate: inv.invoice_date || null,
-      moveType: inv.move_type,
-      amountTotal: round2(monto),
-      paymentTermName: ptMap[inv.invoice_payment_term_id?.[0]] || "Contado",
-    };
-  });
+  return invoices.map((inv) => ({
+    id: inv.id,
+    name: inv.name || "",
+    invoiceDate: inv.invoice_date || null,
+    moveType: inv.move_type,
+    amountTotal: round2(inv.move_type === "out_refund" ? -(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0)),
+    paymentTermName: ptMap[inv.invoice_payment_term_id?.[0]] || "Contado",
+  }));
 }
 
 // Abonos del cliente ese mes (fecha de conciliacion, no fecha de factura) --
@@ -105,7 +119,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id"],
+    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id", "journal_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -155,6 +169,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
       moveType: move.move_type,
       amountTotal: round2(monto),
       paymentTermName: ptMap[move.invoice_payment_term_id?.[0]] || "Contado",
+      journalId: paymentMove.journal_id?.[0],
     }))
     .sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || ""));
 }
@@ -176,7 +191,14 @@ export async function GET(request: NextRequest) {
     const monthParam = searchParams.get("month");
     const yearParam = searchParams.get("year");
     const modoParam = searchParams.get("modo");
-    const modo = (modoParam === "cobrado_facturas" || modoParam === "cobrado_dinero") ? modoParam : "facturado";
+    const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
+    // Filtro opcional: acota a la misma card de la que salio el drill-down
+    // (Contado/Credito, un plazo puntual, o un banco), para no mostrar en
+    // "Cobros -- Cliente X" abonos de otros plazos o bancos mezclados con
+    // el que el usuario clickeo.
+    const tipoParam = searchParams.get("tipo");
+    const diasParam = searchParams.get("dias");
+    const journalIdParam = searchParams.get("journalId");
 
     const now = new Date();
     const currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
@@ -190,9 +212,21 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    const facturas = modo === "cobrado_dinero"
+    let facturas = modo === "cobrado"
       ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd)
-      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, modo === "cobrado_facturas");
+      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd);
+
+    if (journalIdParam) {
+      const journalId = parseInt(journalIdParam, 10);
+      facturas = facturas.filter((f) => f.journalId === journalId);
+    } else if (diasParam) {
+      const dias = parseInt(diasParam, 10);
+      facturas = facturas.filter((f) => diasDeTermino(f.paymentTermName) === dias);
+    } else if (tipoParam === "contado") {
+      facturas = facturas.filter((f) => diasDeTermino(f.paymentTermName) === null);
+    } else if (tipoParam === "credito") {
+      facturas = facturas.filter((f) => diasDeTermino(f.paymentTermName) !== null);
+    }
 
     const round2 = (n: number) => Math.round(n * 100) / 100;
 
