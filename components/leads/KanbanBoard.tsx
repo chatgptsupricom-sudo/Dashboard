@@ -214,7 +214,10 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
   }, []);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL as string;
+    // El socket vive en el mismo servidor que sirve la app (server.js), asi
+    // que siempre es este mismo origen. Antes salia de NEXT_PUBLIC_SOCKET_URL,
+    // que se hornea en build y en produccion apuntaba al dominio de test.
+    const socketUrl = window.location.origin;
     console.log("[Leads Socket] Conectando a:", socketUrl);
     const socket: Socket = io(socketUrl);
 
