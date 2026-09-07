@@ -189,6 +189,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [marketingLoading, setMarketingLoading] = useState(false);
   const [cxcData, setCxcData] = useState<any>(null);
   const [cxcLoading, setCxcLoading] = useState(false);
+  const [cxcError, setCxcError] = useState<string | null>(null);
   const [cppData, setCppData] = useState<any>(null);
   const [cppLoading, setCppLoading] = useState(false);
   const [cxcModalOpen, setCxcModalOpen] = useState(false);
@@ -308,16 +309,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const fetchCxCData = useCallback(async () => {
     setCxcLoading(true);
+    setCxcError(null);
     try {
       const [mesY, mesM] = selectedMes.split("-").map(Number);
       const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
       const empresa = empresaMap[selectedCompanyId] || "valencia";
       const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}${dateExtra}`);
-      const json = await res.json();
-      if (json.success) setCxcData(json.data);
-    } catch (e) {
+      const json = await res.json().catch(() => ({}));
+      if (json.success) {
+        setCxcData(json.data);
+      } else {
+        // Antes el grupo de CxC desaparecía sin más si esto fallaba: el
+        // superadmin no tenía forma de saber por qué. Ahora se guarda el
+        // error y el grupo se muestra con un aviso y un botón de reintento.
+        setCxcData(null);
+        setCxcError(json.error || `Error ${res.status}: no se pudo cargar Cuentas por Cobrar`);
+      }
+    } catch (e: any) {
       console.error("Error fetching CxC data:", e);
+      setCxcData(null);
+      setCxcError(e?.message || "No se pudo conectar con Cuentas por Cobrar");
     }
     setCxcLoading(false);
   }, [selectedCompanyId, selectedMes, customDateRange]);
@@ -1307,7 +1319,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     { id: "group-ventas", title: t("group_ventas"), count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
     { id: "group-compras", title: t("group_compras"), count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
     //{ id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
-    ...(cxcKpis.length > 0 ? [{ id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders }] : []),
+    // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
+    // la carga falla, se muestra con el aviso de error en vez de esconderse.
+    // El filtro `groups` de abajo ya lo excluye de las otras vistas.
+    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, estado: { cargando: cxcLoading, error: cxcError } },
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
@@ -1584,8 +1599,33 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             </div>
 
+            {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
+            {expandedGroups[group.id] && group.kpis.length === 0 && (
+              <div className="p-8 text-center text-sm">
+                {(group as any).estado?.cargando ? (
+                  <span className="inline-flex items-center gap-2 text-slate-500">
+                    <RefreshCw size={14} className="animate-spin" />
+                    {t("loading")}
+                  </span>
+                ) : (group as any).estado?.error ? (
+                  <div className="space-y-3">
+                    <p className="text-slate-500">{(group as any).estado.error}</p>
+                    <button
+                      onClick={() => fetchCxCData()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <RefreshCw size={14} />
+                      Reintentar
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-slate-400">{t("no_available_data")}</span>
+                )}
+              </div>
+            )}
+
             {/* Table / View */}
-            {expandedGroups[group.id] && activeTab === "Trends" && (
+            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
               <div className="divide-y">
                 {group.kpis.map((kpi: any) => (
                   <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors">
@@ -1603,7 +1643,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             )}
 
-            {expandedGroups[group.id] && activeTab === "Weekly" && (
+            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
                   <thead>
@@ -1699,7 +1739,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             )}
 
-            {expandedGroups[group.id] && (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") && (
+            {expandedGroups[group.id] && group.kpis.length > 0 && (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") && (
               monthlyHistLoading ? (
                 <div className="p-8 text-center text-slate-500 text-sm">{t("loading_historical")}</div>
               ) : monthlyHistory.length === 0 ? (
