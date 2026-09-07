@@ -91,12 +91,18 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // Dinero que efectivamente entro el mes, sin importar cuando se emitio la
 // factura que salda -- mismo mecanismo de conciliacion que ya usa
 // app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
-// emparejado con el lado factura y el lado pago), reutilizado tal cual.
-// Es la unica fuente para "Cobrado": coincide con el reporte "Integracion
-// de Pagos" (confirmado con un cliente real, mismo monto centavo a
-// centavo) salvo por las mismas exclusiones de "Ventas del Mes" -- partner
-// supricom y vendedores internos/de prueba (esVendedorExcluido) -- que esa
-// pantalla cruda no aplica.
+// emparejado con el lado factura y el lado pago), pero con dos diferencias
+// deliberadas frente a esa pantalla cruda, confirmadas contra el pivote de
+// "cobranza" que usa la sede (coincide centavo a centavo):
+//   1. Se excluyen partner supricom y vendedores internos/de prueba
+//      (esVendedorExcluido), igual que "Ventas del Mes".
+//   2. Del total (no solo del desglose "por banco") se excluyen las
+//      conciliaciones contra diarios que no son banco/caja real (ver
+//      esBancoReal) -- retencion de IVA, descuentos, ajustes varios no
+//      cuentan como "cobrado" para la sede. La UNICA excepcion es una nota
+//      de credito aplicada directo contra la factura (sin banco de por
+//      medio): esa SI cuenta, bajo el diario de la propia nota
+//      (tipicamente "Facturas de cliente").
 async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date): Promise<Renglon[]> {
   // No filtramos account.partial.reconcile por fecha en el dominio: el
   // campo que representa la "fecha de abono" (paymentMove.date) vive en
@@ -164,16 +170,33 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
 
     const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
     const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
-    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
 
-    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
-    const paymentMove = dIsCustomerInvoice ? cMove : dMove;
+    let invoiceMove: any;
+    let settleMove: any; // el lado que salda la factura: pago real o nota de credito
+    let esNotaCredito: boolean;
 
-    if (CUSTOMER_INVOICE_TYPES.has(paymentMove.move_type)) return;
+    if (dIsCustomerInvoice && cIsCustomerInvoice) {
+      // Una nota de credito (out_refund) aplicada directo contra una
+      // factura (out_invoice), sin que medie ningun banco -- la cobranza
+      // de la sede SI la cuenta como "cobrado", bajo el diario de la
+      // propia nota (normalmente "Facturas de cliente").
+      if (dMove.move_type === cMove.move_type) return;
+      invoiceMove = dMove.move_type === "out_invoice" ? dMove : cMove;
+      settleMove = dMove.move_type === "out_invoice" ? cMove : dMove;
+      esNotaCredito = true;
+    } else if (dIsCustomerInvoice !== cIsCustomerInvoice) {
+      invoiceMove = dIsCustomerInvoice ? dMove : cMove;
+      settleMove = dIsCustomerInvoice ? cMove : dMove;
+      if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
+      esNotaCredito = false;
+    } else {
+      return;
+    }
+
     if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
     if (esVendedorExcluido(invoiceMove)) return;
 
-    const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
+    const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
 
     const fechaFactura = (invoiceMove.invoice_date || "").split(" ")[0].split("T")[0];
@@ -182,12 +205,14 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     // mes previo que se termino de cobrar ahora.
     const esDelMes = !fechaFactura || fechaFactura >= startStr;
 
-    // El "banco" es el diario del lado PAGO de la conciliacion (donde
-    // realmente entro el dinero), no el diario de la factura -- pero solo
-    // si ese diario es un banco/caja real (ver esBancoReal arriba).
-    const journalIdRaw = paymentMove.journal_id?.[0];
-    const journalNameRaw = paymentMove.journal_id?.[1] || "Sin diario";
-    const esBanco = esBancoReal(journalIdRaw, journalNameRaw);
+    const journalIdRaw = settleMove.journal_id?.[0];
+    const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
+    // Una nota de credito siempre cuenta (es plata real que salda la
+    // deuda, aunque no pase por un banco); un asiento normal solo cuenta
+    // si es un banco/caja real -- si no, es un ajuste (retencion,
+    // descuento) que la cobranza de la sede no considera "cobrado", ni
+    // siquiera en el total (no solo en el desglose por banco).
+    if (!esNotaCredito && !esBancoReal(journalIdRaw, journalNameRaw)) return;
 
     renglones.push({
       monto: r.amount || 0,
@@ -195,8 +220,8 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
       partnerName: invoiceMove.partner_id[1] || "Sin cliente",
       paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
       esDelMes,
-      journalId: esBanco ? journalIdRaw : undefined,
-      journalName: esBanco ? journalNameRaw : "",
+      journalId: journalIdRaw,
+      journalName: journalNameRaw,
     });
   });
   return renglones;

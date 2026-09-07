@@ -127,6 +127,25 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
 
+  // Mismo criterio que contado-credito/route.ts::esBancoReal -- solo
+  // diarios bank/cash reales cuentan como "cobrado" (salvo notas de
+  // credito aplicadas directo, que siempre cuentan).
+  const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
+  let journalTypeMap: Record<number, string> = {};
+  if (journalIds.length > 0) {
+    try {
+      const journals = await callOdooRPC<any[]>("account.journal", "read", [journalIds], { fields: ["id", "type"] });
+      (journals || []).forEach((j) => { journalTypeMap[j.id] = j.type; });
+    } catch (_) {}
+  }
+  const esBancoReal = (journalId: number | undefined, journalName: string): boolean => {
+    if (journalId === undefined) return false;
+    const tipo = journalTypeMap[journalId];
+    if (tipo !== "bank" && tipo !== "cash") return false;
+    if (journalName.toLowerCase().includes("retenido")) return false;
+    return true;
+  };
+
   const ptIdsVistos = new Set<number>();
   const crudos: { move: any; paymentMove: any; monto: number }[] = [];
 
@@ -137,19 +156,37 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
 
     const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
     const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
-    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
 
-    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
-    const paymentMove = dIsCustomerInvoice ? cMove : dMove;
-    if (CUSTOMER_INVOICE_TYPES.has(paymentMove.move_type)) return;
+    let invoiceMove: any;
+    let settleMove: any;
+    let esNotaCredito: boolean;
+
+    if (dIsCustomerInvoice && cIsCustomerInvoice) {
+      if (dMove.move_type === cMove.move_type) return;
+      invoiceMove = dMove.move_type === "out_invoice" ? dMove : cMove;
+      settleMove = dMove.move_type === "out_invoice" ? cMove : dMove;
+      esNotaCredito = true;
+    } else if (dIsCustomerInvoice !== cIsCustomerInvoice) {
+      invoiceMove = dIsCustomerInvoice ? dMove : cMove;
+      settleMove = dIsCustomerInvoice ? cMove : dMove;
+      if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
+      esNotaCredito = false;
+    } else {
+      return;
+    }
+
     if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
     if (esVendedorExcluido(invoiceMove)) return;
 
-    const fechaAbono = (paymentMove.date || "").split(" ")[0].split("T")[0];
+    const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
 
+    const journalIdRaw = settleMove.journal_id?.[0];
+    const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
+    if (!esNotaCredito && !esBancoReal(journalIdRaw, journalNameRaw)) return;
+
     if (invoiceMove.invoice_payment_term_id?.[0]) ptIdsVistos.add(invoiceMove.invoice_payment_term_id[0]);
-    crudos.push({ move: invoiceMove, paymentMove, monto: r.amount || 0 });
+    crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0 });
   });
 
   let ptMap: Record<number, string> = {};
