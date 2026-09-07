@@ -30,6 +30,7 @@ import {
   Clock,
   Copy,
   Loader2,
+  MapPin,
   Printer,
   Save,
   Trash2,
@@ -40,6 +41,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
+import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 
 const statusColors: Record<string, string> = {
   recibido: "bg-blue-100 text-blue-700 border-blue-200",
@@ -241,6 +243,12 @@ export default function RmaCasoDetailPage() {
                 {caseData.origen === "portal" && (
                   <Badge className="bg-violet-100 text-violet-700 border-violet-200 text-[11px]">
                     {t("badge_portal")}
+                  </Badge>
+                )}
+                {NOMBRES_SUCURSAL[caseData.company_id] && (
+                  <Badge className="bg-slate-100 text-slate-700 border-slate-200 text-[11px] inline-flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {NOMBRES_SUCURSAL[caseData.company_id]}
                   </Badge>
                 )}
               </div>
