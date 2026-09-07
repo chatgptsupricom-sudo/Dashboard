@@ -69,6 +69,35 @@ const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   return getCellColor(value);
 };
 
+type Nivel = "verde" | "amarillo" | "rojo" | "sin";
+
+// Traduce el color de celda de un KPI a un nivel de semáforo, para los
+// resúmenes del encabezado y de cada grupo.
+const nivelSemaforo = (kpiId: string, average: string | null, goal: string): Nivel => {
+  const c = getKpiCellColor(kpiId, average, goal);
+  if (/green|emerald/.test(c)) return "verde";
+  if (/yellow|amber/.test(c)) return "amarillo";
+  if (/red/.test(c)) return "rojo";
+  return "sin";
+};
+
+const NIVEL_UI: Record<Exclude<Nivel, "sin">, { punto: string; barra: string; texto: string }> = {
+  verde: { punto: "bg-emerald-500", barra: "bg-emerald-500", texto: "text-emerald-600" },
+  amarillo: { punto: "bg-amber-500", barra: "bg-amber-500", texto: "text-amber-600" },
+  rojo: { punto: "bg-rose-500", barra: "bg-rose-500", texto: "text-rose-600" },
+};
+
+function contarNiveles(kpis: any[]): { verde: number; amarillo: number; rojo: number; total: number } {
+  const acc = { verde: 0, amarillo: 0, rojo: 0, total: 0 };
+  for (const k of kpis) {
+    const n = nivelSemaforo(k.id, k.average, k.goalDefault);
+    if (n === "sin") continue;
+    acc[n]++;
+    acc.total++;
+  }
+  return acc;
+}
+
 interface SellerData {
   nombre: string;
   cuotaMensual: number;
@@ -1330,45 +1359,100 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   ];
   const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
 
+  const resumenGlobal = contarNiveles(groups.flatMap((g: any) => g.kpis || []));
+  const mesTitulo = mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1);
+
   return (
-    <div className="p-6 bg-white min-h-screen font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header & Title */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">{t("page_title")}</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {t("page_subtitle")}
+      <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            {customDateRange ? t("date_range") : mesTitulo}
           </p>
+          <h1 className="text-[26px] leading-tight font-semibold text-slate-900 tracking-tight mt-1">
+            {t("page_title")}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">{t("page_subtitle")}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           {marketingData && !marketingData.connected && (
             <a
               href="/api/auth/google"
-              className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors shadow-sm"
+              className="inline-flex items-center gap-2 px-3 h-9 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
               {t("google_connect")}
             </a>
           )}
           {marketingData?.connected && (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium rounded-md border border-green-200">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 h-9 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-lg border border-emerald-200">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
               {t("google_connected")}
             </span>
           )}
-          <button className="p-2 border rounded-md hover:bg-slate-50 transition-colors">
+          <button className="inline-flex items-center justify-center w-9 h-9 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
             <Settings size={16} />
           </button>
         </div>
       </div>
 
+      {/* Resumen del semáforo — cuántos KPIs en meta / cerca / lejos */}
+      {resumenGlobal.total > 0 && (
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Estado del mes
+              </p>
+              <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">
+                {resumenGlobal.verde}
+                <span className="text-slate-400 font-normal"> / {resumenGlobal.total} </span>
+                <span className="text-sm font-medium text-slate-500">en meta</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              {([
+                ["verde", resumenGlobal.verde, "En meta"],
+                ["amarillo", resumenGlobal.amarillo, "Cerca"],
+                ["rojo", resumenGlobal.rojo, "Lejos"],
+              ] as const).map(([nivel, n, lbl]) => (
+                <span key={nivel} className="inline-flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${NIVEL_UI[nivel].punto}`} />
+                  <span className="tabular-nums font-semibold text-slate-800">{n}</span>
+                  <span className="text-slate-400">{lbl}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 flex">
+            {(["verde", "amarillo", "rojo"] as const).map((nivel) => {
+              const n = resumenGlobal[nivel];
+              if (!n) return null;
+              return (
+                <div
+                  key={nivel}
+                  className={`${NIVEL_UI[nivel].barra} transition-[width] duration-500`}
+                  style={{ width: `${(n / resumenGlobal.total) * 100}%` }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-6 border-b mb-6 text-sm font-medium text-slate-500">
+      <div className="mb-6 inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
         {([["Trends", t("tab_trends")], ["Weekly", t("tab_weekly")], ["Monthly", t("tab_monthly")], ["Quarterly", t("tab_quarterly")], ["Annual", t("tab_annual")]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className={`pb-3 transition-colors ${activeTab === key ? "text-amber-500 border-b-2 border-amber-500" : "hover:text-slate-800"}`}
+            className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === key
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
           >
             {label}
           </button>
@@ -1377,12 +1461,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Toolbar */}
       {!vendorMode && !cxCMode && !gerenteOpsMode && (
-      <div className="flex justify-between items-center mb-6">
+      <div className="mb-6 flex flex-wrap justify-between items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3">
         <div className="flex gap-3">
           {isSuperAdmin ? (
           <div
             onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
+            className="flex items-center gap-2 h-9 px-3 border border-slate-200 bg-white rounded-lg text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
           >
             {t("team_label")} {empresaLabel} <ChevronDown size={14} />
             {teamDropdownOpen && (
@@ -1395,7 +1479,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       setSelectedCompanyId(emp.id);
                       setTeamDropdownOpen(false);
                     }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${selectedCompanyId === emp.id ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${selectedCompanyId === emp.id ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-700"}`}
                   >
                     {emp.label}
                   </button>
@@ -1404,7 +1488,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             )}
           </div>
           ) : (
-          <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm bg-slate-50 text-slate-600">
+          <div className="flex items-center gap-2 h-9 px-3 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600">
             {t("team_label")} {empresaLabel}
           </div>
           )}
@@ -1412,7 +1496,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           <div className="relative">
             <button
               onClick={() => setViewByOpen(o => !o)}
-              className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-2 h-9 px-3 border border-slate-200 bg-white rounded-lg text-sm hover:bg-slate-50 transition-colors"
             >
               View by: {activeTab === "Monthly" ? t("view_month") : activeTab === "Quarterly" ? t("view_quarter") : activeTab === "Annual" ? t("view_year") : t("view_week")}
               <ChevronDown size={14} />
@@ -1428,7 +1512,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <button
                     key={opt.tab}
                     onClick={() => { setActiveTab(opt.tab); setViewByOpen(false); }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${activeTab === opt.tab ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${activeTab === opt.tab ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-700"}`}
                   >
                     {opt.label}
                   </button>
@@ -1441,7 +1525,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           <div className="relative">
             <button
               onClick={() => { setDateRangeOpen(o => !o); setViewByOpen(false); }}
-              className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm hover:bg-slate-50 transition-colors ${customDateRange ? "border-amber-400 bg-amber-50 text-amber-700" : ""}`}
+              className={`flex items-center gap-2 h-9 px-3 border border-slate-200 bg-white rounded-lg text-sm hover:bg-slate-50 transition-colors ${customDateRange ? "border-indigo-300 bg-indigo-50 text-indigo-700" : ""}`}
             >
               <Calendar size={14} />
               {customDateRange
@@ -1460,7 +1544,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       type="date"
                       value={dateInputStart}
                       onChange={e => setDateInputStart(e.target.value)}
-                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                     />
                   </div>
                   <div>
@@ -1469,7 +1553,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       type="date"
                       value={dateInputEnd}
                       onChange={e => setDateInputEnd(e.target.value)}
-                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                     />
                   </div>
                 </div>
@@ -1484,7 +1568,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       }
                     }}
                     disabled={!dateInputStart || !dateInputEnd || dateInputStart > dateInputEnd}
-                    className="flex-1 bg-amber-500 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="flex-1 bg-slate-900 text-white text-sm py-1.5 rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {t("apply")}
                   </button>
@@ -1515,7 +1599,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           setDateInputEnd("");
                           setDateRangeOpen(false);
                         }}
-                        className={`px-2 py-1 rounded-md text-xs transition-colors capitalize ${selectedMes === opt.value && !customDateRange ? "bg-amber-100 text-amber-700 font-medium" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                        className={`px-2 py-1 rounded-md text-xs transition-colors capitalize ${selectedMes === opt.value && !customDateRange ? "bg-slate-900 text-white font-medium" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                       >
                         {opt.label}
                       </button>
@@ -1529,12 +1613,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         <div className="flex gap-3 items-center">
           <button
             onClick={() => { fetchData(false); fetchMarketingData(); fetchCxCData(); fetchCppData(); }}
-            className="p-1.5 border rounded-md hover:bg-slate-50 transition-colors"
+            className="inline-flex items-center justify-center w-9 h-9 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
             title={t("refresh")}
           >
             <RotateCcw size={16} />
           </button>
-          <button className="p-1.5 border rounded-md hover:bg-slate-50 transition-colors">
+          <button className="inline-flex items-center justify-center w-9 h-9 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
             <MoreHorizontal size={16} />
           </button>
           <div className="relative">
@@ -1542,7 +1626,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             <input
               type="text"
               placeholder={t("search_placeholder")}
-              className="pl-8 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 w-64 transition-shadow"
+              className="pl-8 pr-3 h-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 w-64 transition-shadow"
             />
           </div>
         </div>
@@ -1551,19 +1635,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Marketing Not Connected Banner */}
       {marketingData && !marketingData.connected && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+        <div className="mb-4 p-4 bg-white border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-blue-900">{t("google_banner_title")}</p>
-              <p className="text-xs text-blue-600">{t("google_banner_desc")}</p>
+              <p className="text-sm font-medium text-slate-900">{t("google_banner_title")}</p>
+              <p className="text-xs text-slate-500">{t("google_banner_desc")}</p>
             </div>
           </div>
           <a
             href="/api/auth/google"
-            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+            className="px-4 h-9 inline-flex items-center bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors"
           >
             {t("google_connect")}
           </a>
@@ -1571,35 +1655,44 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       )}
 
       {/* KPI Groups */}
-      <div className="space-y-6">
-        {groups.map((group) => (
-          <div key={group.id} className="border rounded-lg overflow-hidden bg-white shadow-sm transition-all">
+      <div className="space-y-4">
+        {groups.map((group) => {
+          const r = contarNiveles(group.kpis || []);
+          const peor: Nivel = r.rojo > 0 ? "rojo" : r.amarillo > 0 ? "amarillo" : r.verde > 0 ? "verde" : "sin";
+          return (
+          <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
             {/* Group Header */}
-            <div className="flex items-center justify-between p-4 bg-slate-50 border-b">
-              <div
-                className="flex items-center gap-3 cursor-pointer select-none"
-                onClick={() => toggleGroup(group.id)}
-              >
-                <span className="font-semibold text-lg text-slate-800">{group.title}</span>
-                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-xs rounded-full font-medium">
-                  {group.count}
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.id)}
+              className="w-full flex items-center gap-3 p-4 text-left hover:bg-slate-50/60 transition-colors"
+            >
+              <span
+                className={`h-6 w-1 rounded-full shrink-0 ${peor === "sin" ? "bg-slate-200" : NIVEL_UI[peor].barra}`}
+              />
+              <span className="font-semibold text-[15px] text-slate-900 tracking-tight">
+                {group.title}
+              </span>
+              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-xs rounded-md font-medium tabular-nums">
+                {group.count}
+              </span>
+              {r.total > 0 && (
+                <span className="hidden sm:flex items-center gap-3 ml-2 text-xs text-slate-400">
+                  {(["verde", "amarillo", "rojo"] as const).map((n) =>
+                    r[n] > 0 ? (
+                      <span key={n} className="inline-flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${NIVEL_UI[n].punto}`} />
+                        <span className="tabular-nums font-medium text-slate-500">{r[n]}</span>
+                      </span>
+                    ) : null,
+                  )}
                 </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
-                  <MoreHorizontal size={16} />
-                </button>
-                <button className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
-                  <Maximize2 size={14} />
-                </button>
-                <button
-                  className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                  onClick={() => toggleGroup(group.id)}
-                >
-                  {expandedGroups[group.id] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
-              </div>
-            </div>
+              )}
+              <ChevronDown
+                size={16}
+                className={`ml-auto shrink-0 text-slate-400 transition-transform ${expandedGroups[group.id] ? "rotate-180" : ""}`}
+              />
+            </button>
 
             {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
             {expandedGroups[group.id] && group.kpis.length === 0 && (
@@ -1628,114 +1721,112 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Table / View */}
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
-              <div className="divide-y">
-                {group.kpis.map((kpi: any) => (
-                  <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors">
+              <div className="divide-y divide-slate-100 border-t border-slate-100">
+                {group.kpis.map((kpi: any) => {
+                  const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
+                  return (
+                  <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50/70 transition-colors">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-700 truncate">{kpi.title}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
+                      <div className="text-sm font-medium text-slate-800 truncate">{kpi.title}</div>
+                      <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
-                    <div className={`text-sm font-bold w-20 text-right px-2 py-1 rounded ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault)}`}>{kpi.average}</div>
+                    <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{kpi.average}</span>
                     <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
                       <SparklineBar values={kpi.weeks} />
                     </div>
-                    <div className="text-xs text-slate-400 w-20 text-right">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
+                    <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+              <div className="overflow-x-auto border-t border-slate-100">
+                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
                   <thead>
-                    <tr className="bg-white border-b text-slate-500">
-                      <th className="p-3 w-10 text-center border-r">
-                        <input type="checkbox" className="rounded border-slate-300" />
-                      </th>
-                      <th className="p-3 w-16 text-center border-r text-xs font-normal">{t("column_trend")}</th>
-                      <th className="p-3 border-r font-medium min-w-[300px]">{t("column_title")}</th>
-                      <th className="p-3 w-16 text-center border-r font-medium">{t("column_owner")}</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_goal")}</th>
-                      <th className="p-3 w-24 text-center border-r font-medium">{t("column_average")}</th>
-                      <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
+                    <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
+                      <th className="py-2.5 pl-4 pr-2 w-8"></th>
+                      <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
+                      <th className="py-2.5 px-2 w-24 text-right font-semibold">{t("column_goal")}</th>
+                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
+                      <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
-                        <th key={idx} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-400">
-                          <div className="flex flex-col">
-                            <span>{week.split(" - ")[0]} -</span>
-                            <span>{week.split(" - ")[1]}</span>
-                          </div>
+                        <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
+                          {week}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {group.kpis.map((kpi: any) => (
+                    {group.kpis.map((kpi: any) => {
+                      const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
+                      return (
                       <tr
                         key={kpi.id}
-                        className={`border-b group ${kpi.isClickable ? "cursor-pointer hover:bg-blue-50/40" : ""}`}
+                        className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
                         onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
-                        <td className="p-3 text-center border-r bg-white" onClick={(e) => e.stopPropagation()}>
-                          {kpi.cumple ? (
-                            <div className="w-5 h-5 bg-blue-600 rounded flex items-center justify-center mx-auto">
-                              <Check size={14} className="text-white" />
-                            </div>
-                          ) : (
-                            <div className="w-5 h-5 border-2 border-slate-300 rounded mx-auto" />
-                          )}
+                        <td className="py-3 pl-4 pr-2 align-top">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full mt-1.5 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`}
+                          />
                         </td>
-                        <td className="p-3 text-center border-r bg-white">
-                          {kpi.trend === "alert" ? (
-                            <AlertTriangle
-                              size={16}
-                              className="text-red-500 mx-auto cursor-pointer hover:text-red-600"
+                        <td className="py-3 px-2 text-slate-800 font-medium align-top">
+                          <span className="inline-flex items-center gap-1.5">
+                            {kpi.title}
+                            <button
+                              type="button"
+                              aria-label="Info"
                               onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
-                            />
-                          ) : (
-                            <HelpCircle
-                              size={16}
-                              className="text-slate-400 mx-auto cursor-pointer hover:text-slate-600"
-                              onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
-                            />
-                          )}
-                        </td>
-                        <td className="p-3 border-r text-slate-700 bg-white font-medium">
-                          {kpi.title}
+                              className={`shrink-0 ${kpi.trend === "alert" ? "text-rose-500 hover:text-rose-600" : "text-slate-300 hover:text-slate-500"}`}
+                            >
+                              {kpi.trend === "alert" ? <AlertTriangle size={13} /> : <HelpCircle size={13} />}
+                            </button>
+                          </span>
                           {kpi.isClickable && (
-                            <span className="ml-2 text-[10px] text-blue-500 font-normal">{t("click_detail")}</span>
+                            <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
+                              {t("click_detail")}
+                            </span>
                           )}
                         </td>
-                        <td className="p-3 border-r text-center bg-white">
-                          <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center mx-auto text-slate-500 cursor-pointer hover:bg-slate-300 transition-colors">
-                            <User size={14} />
-                          </div>
-                        </td>
-                        <td className="p-3 border-r text-center bg-white" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
                           {!isSuperAdmin ? (
-                            <span className="text-sm font-semibold text-slate-700">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
+                            <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <input
                               type="number"
                               value={getGoal(kpi.id, kpi.goalDefault)}
                               onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
                               onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                              className="w-28 text-center text-sm font-semibold text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                              className="w-20 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
                             />
                           )}
                         </td>
-                        <td className="p-3 border-r text-center text-slate-600 bg-white font-bold">{kpi.average}</td>
-                        <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 bg-slate-50/50 font-bold">{kpi.peso}</td>
-                        {kpi.weeks.map((val: string | null, idx: number) => (
-                          <td
-                            key={idx}
-                            className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
-                          >
-                            {val || "-"}
-                          </td>
-                        ))}
+                        <td className="py-3 px-2 text-right align-top">
+                          <span className={`inline-block px-1.5 py-0.5 rounded-md text-xs tabular-nums ${getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>
+                            {kpi.average}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
+                        {kpi.weeks.map((val: string | null, idx: number) => {
+                          const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
+                          return (
+                            <td key={idx} className="py-3 px-2 text-center align-top">
+                              {val ? (
+                                <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">–</span>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1747,14 +1838,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               ) : monthlyHistory.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">{t("no_available_data")}</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto border-t border-slate-100">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
-                      <tr className="bg-white border-b text-slate-500">
-                        <th className="p-3 border-r font-medium min-w-[260px]">KPI</th>
-                        <th className="p-3 w-20 text-center border-r font-medium border-r-blue-400 border-r-2">{t("peso")}</th>
+                      <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
+                        <th className="py-2.5 px-4 font-semibold min-w-[260px]">KPI</th>
+                        <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
                         {monthlyHistory.map(h => (
-                          <th key={h.mes} className="p-3 w-28 text-center border-r font-normal text-xs text-slate-500 capitalize">
+                          <th key={h.mes} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 capitalize normal-case">
                             {mesLabel(h.mes)}
                           </th>
                         ))}
@@ -1762,17 +1853,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     </thead>
                     <tbody>
                       {group.kpis.map((kpi: any) => (
-                        <tr key={kpi.id} className="border-b hover:bg-slate-50">
-                          <td className="p-3 border-r text-slate-700 font-medium">{kpi.title}</td>
-                          <td className="p-3 border-r text-center text-slate-600 border-r-blue-400 border-r-2 font-bold">{kpi.peso}</td>
+                        <tr key={kpi.id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                          <td className="py-3 px-4 text-slate-800 font-medium">{kpi.title}</td>
+                          <td className="py-3 px-2 text-right text-slate-400 tabular-nums">{kpi.peso}</td>
                           {monthlyHistory.map(h => {
                             const val = getMonthlyValue(kpi.id, h);
+                            const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                             return (
-                              <td
-                                key={h.mes}
-                                className={`border-r text-center p-3 transition-colors ${getKpiCellColor(kpi.id, val, kpi.goalDefault)}`}
-                              >
-                                {val}
+                              <td key={h.mes} className="py-3 px-2 text-center align-top">
+                                {val && val !== "-" ? (
+                                  <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
+                                    {val}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">–</span>
+                                )}
                               </td>
                             );
                           })}
@@ -1784,7 +1879,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               )
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* MODAL DE CUMPLIMIENTO DE CUOTA */}
@@ -4329,6 +4425,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
