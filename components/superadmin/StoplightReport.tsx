@@ -1400,7 +1400,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Resumen del semáforo — cuántos KPIs en meta / cerca / lejos */}
       {resumenGlobal.total > 0 && (
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 animate-in fade-in duration-300">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1660,7 +1660,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           const r = contarNiveles(group.kpis || []);
           const peor: Nivel = r.rojo > 0 ? "rojo" : r.amarillo > 0 ? "amarillo" : r.verde > 0 ? "verde" : "sin";
           return (
-          <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-in fade-in-0 duration-300">
             {/* Group Header */}
             <button
               type="button"
@@ -1696,7 +1696,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
             {expandedGroups[group.id] && group.kpis.length === 0 && (
-              <div className="p-8 text-center text-sm">
+              <div className="p-8 text-center text-sm border-t border-slate-100 animate-in fade-in duration-200">
                 {(group as any).estado?.cargando ? (
                   <span className="inline-flex items-center gap-2 text-slate-500">
                     <RefreshCw size={14} className="animate-spin" />
@@ -1721,7 +1721,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {/* Table / View */}
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
-              <div className="divide-y divide-slate-100 border-t border-slate-100">
+              <div className="divide-y divide-slate-100 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                 {group.kpis.map((kpi: any) => {
                   const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
                   return (
@@ -1743,7 +1743,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             )}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
-              <div className="overflow-x-auto border-t border-slate-100">
+              <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                 <table className="w-full text-sm text-left border-collapse min-w-[880px]">
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
@@ -1838,7 +1838,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               ) : monthlyHistory.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">{t("no_available_data")}</div>
               ) : (
-                <div className="overflow-x-auto border-t border-slate-100">
+                <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
@@ -1885,7 +1885,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CUMPLIMIENTO DE CUOTA */}
       {modalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
@@ -2210,7 +2210,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CLIENTES NUEVOS */}
       {clientesModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
@@ -2624,7 +2624,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE MARGEN BRUTO */}
       {margenModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
@@ -2948,7 +2948,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE EFECTIVIDAD DE CIERRE */}
       {efectividadModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
@@ -3199,7 +3199,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Cobertura Marcas Modal */}
       {coberturaModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3433,7 +3433,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Activacion Cartera Modal */}
       {activacionModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3672,7 +3672,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Visitas Semanales Modal */}
       {visitasModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setVisitasModalOpen(false)}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setVisitasModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b">
@@ -3944,7 +3944,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         onMesChange={onModalMesChange}
       />
       {cxcModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
@@ -4147,7 +4147,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       )}
 
       {cppModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
               <div>
@@ -4356,7 +4356,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       )}
 
       {kpiInfoModal.open && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">{kpiInfoModal.title}</h2>
