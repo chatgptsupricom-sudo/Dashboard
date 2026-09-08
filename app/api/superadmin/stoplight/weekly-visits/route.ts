@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Create a new visit with optional photo upload
+// POST: Create a new visit
 export async function POST(request: NextRequest) {
   try {
     const token = request.cookies.get("token")?.value;
@@ -141,40 +141,20 @@ export async function POST(request: NextRequest) {
     const is_prospect = formData.get("is_prospect") === "true";
     const visit_date = formData.get("visit_date") as string;
     const company_id = parseInt(formData.get("company_id") as string, 10);
-    const photo = formData.get("photo") as File | null;
 
     if (!seller_name || !client_name || !visit_date || !company_id) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
     await ensureTable();
-    await ensureUploadDir();
-
-    let photoUrl: string | null = null;
-
-    if (photo && photo.size > 0) {
-      const buffer = Buffer.from(await photo.arrayBuffer());
-      const mime = detectImageMime(buffer);
-      if (!mime) {
-        return NextResponse.json({ error: "La foto debe ser una imagen JPEG, PNG, WebP o GIF válida" }, { status: 400 });
-      }
-      const ext = EXT_POR_MIME[mime];
-      const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const filePath = path.join(UPLOAD_DIR, filename);
-      if (!rutaDentroDe(UPLOAD_DIR, filePath)) {
-        return NextResponse.json({ error: "Nombre de archivo inválido" }, { status: 400 });
-      }
-      await writeFile(filePath, buffer);
-      photoUrl = `/uploads/visitas/${filename}`;
-    }
 
     await query(
-      `INSERT INTO weekly_visits (seller_name, client_name, is_prospect, visit_date, photo_url, company_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [seller_name, client_name, is_prospect ? 1 : 0, visit_date, photoUrl, company_id, payload.uid]
+      `INSERT INTO weekly_visits (seller_name, client_name, is_prospect, visit_date, company_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [seller_name, client_name, is_prospect ? 1 : 0, visit_date, company_id, payload.uid]
     );
 
-    return NextResponse.json({ success: true, photo_url: photoUrl });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Error en API weekly_visits POST:", error.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });

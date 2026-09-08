@@ -287,8 +287,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     is_prospect: false,
     visit_date: new Date().toISOString().split("T")[0],
   });
-  const [visitaFormPhoto, setVisitaFormPhoto] = useState<File | null>(null);
-  const [visitaFormPhotoPreview, setVisitaFormPhotoPreview] = useState<string>("");
   const [visitaFormLoading, setVisitaFormLoading] = useState(false);
 
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
@@ -702,6 +700,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setVisitasModalLoading(true);
     setVisitaForm({
       seller_name: "",
+      seller_user_id: "",
       client_name: "",
       is_prospect: false,
       visit_date: new Date().toISOString().split("T")[0],
@@ -753,7 +752,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       fd.append("is_prospect", String(visitaForm.is_prospect));
       fd.append("visit_date", visitaForm.visit_date);
       if (!vendorMode) fd.append("company_id", String(selectedCompanyId));
-      if (visitaFormPhoto) fd.append("photo", visitaFormPhoto);
 
       const res = await fetch(`${apiPrefix}/weekly-visits`, {
         method: "POST",
@@ -771,8 +769,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           is_prospect: false,
           visit_date: new Date().toISOString().split("T")[0],
         });
-        setVisitaFormPhoto(null);
-        setVisitaFormPhotoPreview("");
       }
     } catch (e) {
       console.error("Error saving visit:", e);
@@ -3859,35 +3855,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         />
                       </div>
 
-                      {/* Foto (opcional) */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("foto_opcional")}</label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            setVisitaFormPhoto(file);
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = (ev) => setVisitaFormPhotoPreview(ev.target?.result as string);
-                              reader.readAsDataURL(file);
-                            } else {
-                              setVisitaFormPhotoPreview("");
-                            }
-                          }}
-                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                        />
-                        {visitaFormPhotoPreview && (
-                          <div className="mt-2 relative inline-block">
-                            <img src={visitaFormPhotoPreview} alt="Preview" className="h-20 rounded-lg border object-cover" />
-                            <button
-                              onClick={() => { setVisitaFormPhoto(null); setVisitaFormPhotoPreview(""); }}
-                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
-                            >├ù</button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                     <div className="mt-4 flex justify-end">
                       <button
@@ -3917,7 +3884,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
                               <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("tipo")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("foto")}</th>
                               {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">{t("acciones")}</th>}
                             </tr>
                           </thead>
@@ -3938,15 +3904,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                     <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
                                       {t("cliente")}
                                     </span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  {visita.photo_url ? (
-                                    <a href={visita.photo_url} target="_blank" rel="noopener noreferrer">
-                                      <img src={visita.photo_url} alt="Foto" className="h-10 w-10 rounded-lg border object-cover mx-auto hover:scale-150 transition-transform" />
-                                    </a>
-                                  ) : (
-                                    <span className="text-slate-400 text-xs">-</span>
                                   )}
                                 </td>
                                 <td className="p-3 text-center">
