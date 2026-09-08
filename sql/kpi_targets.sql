@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS kpi_targets (
   kpi_key VARCHAR(100) NOT NULL,
   company_id INT NOT NULL,
   meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
+  -- Peso del KPI para el puntaje ponderado del grupo (issue #131).
+  -- 0 = usar el fallback hardcodeado en el componente.
+  peso DECIMAL(5,2) NOT NULL DEFAULT 0,
   mes VARCHAR(7) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

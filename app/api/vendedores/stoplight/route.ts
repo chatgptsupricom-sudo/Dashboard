@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -66,14 +67,24 @@ export async function GET(request: NextRequest) {
       return result;
     })();
 
-    const totalDiasUtilesMes = (() => {
+    const contarDiasLaborales = (desde: Date, hasta: Date) => {
       const DIAS_LABORALES = [1, 2, 3, 4, 5];
       let count = 0;
-      for (let d = new Date(anio, mesNum - 1, 1); d <= new Date(anio, mesNum, 0); d.setDate(d.getDate() + 1)) {
+      for (let d = new Date(desde); d <= hasta; d.setDate(d.getDate() + 1)) {
         if (DIAS_LABORALES.includes(d.getDay())) count++;
       }
       return count;
-    })();
+    };
+    const totalDiasUtilesMes = contarDiasLaborales(
+      new Date(anio, mesNum - 1, 1),
+      new Date(anio, mesNum, 0),
+    );
+    // Días hábiles transcurridos hasta hoy — para el "avance del mes" (facturado
+    // vs. cuota prorrateada a esta altura; 100% = al día).
+    const finDelMes = new Date(anio, mesNum, 0);
+    const hoyOFin = now < finDelMes ? now : finDelMes;
+    const diasUtilesTranscurridos = contarDiasLaborales(new Date(anio, mesNum - 1, 1), hoyOFin);
+    const factorTranscurrido = totalDiasUtilesMes > 0 ? diasUtilesTranscurridos / totalDiasUtilesMes : 1;
 
     const numSemanas = semanas.length;
     const weekHeaders = semanas.map((s) => {
@@ -132,13 +143,19 @@ export async function GET(request: NextRequest) {
       totalFacturado += amount;
     });
 
-    // Load metas
+    // Load metas + pesos
+    await ensureKpiTargetsPeso();
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
-    (metasResult.rows as any[]).forEach((r) => { metasMap[r.kpi_key] = Number(r.meta_mensual); });
+    const pesosMap: Record<string, number> = {};
+    (metasResult.rows as any[]).forEach((r) => {
+      metasMap[r.kpi_key] = Number(r.meta_mensual);
+      const p = Number(r.peso);
+      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+    });
 
     // === CUMPLIMIENTO CUOTA ===
     const metaCuotaVenta = metasMap["cumplimiento_cuota_ventas"] || 0;
@@ -515,6 +532,14 @@ export async function GET(request: NextRequest) {
           effectiveCuota > 0
             ? Math.round((totalFacturado / effectiveCuota) * 100)
             : 100,
+        // Avance del mes (opción B): facturado ÷ cuota prorrateada a los días
+        // hábiles transcurridos. 100% = vas al día.
+        avanceMesCuota:
+          effectiveCuota > 0 && factorTranscurrido > 0
+            ? Math.round((totalFacturado / (effectiveCuota * factorTranscurrido)) * 100)
+            : null,
+        diasUtilesTranscurridos,
+        totalDiasUtilesMes,
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
         totalCostoMes: Math.round(totalCostoMes * 100) / 100,
@@ -540,6 +565,7 @@ export async function GET(request: NextRequest) {
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
         metas: metasMap,
+        pesos: pesosMap,
       },
     });
   } catch (error: any) {

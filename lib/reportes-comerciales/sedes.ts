@@ -31,6 +31,17 @@ export function nombreSede(companyId: number): string {
   return sedeReporte(companyId)?.nombre || `Sede ${companyId}`;
 }
 
+/**
+ * Marca con la que arranca el reporte cuando el usuario no eligió una:
+ *   - Panamá: "EZVIZ" (el reporte histórico de esa sede es de esa marca).
+ *   - Valencia / Caracas: "TODAS" (venden un catálogo amplio y muchas veces
+ *     no facturan EZVIZ, así que arrancar en EZVIZ dejaba la vista en cero).
+ * `marcaFijaDe` sigue mandando por encima de esto para la lista de correos.
+ */
+export function marcaPorDefectoSede(companyId: number): string {
+  return sedeReporte(companyId)?.pais === "PA" ? "EZVIZ" : "TODAS";
+}
+
 /** Slug para nombres de archivo: "Panamá" -> "panama". */
 export function slugSede(companyId: number): string {
   return nombreSede(companyId)

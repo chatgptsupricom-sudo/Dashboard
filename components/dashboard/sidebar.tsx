@@ -238,12 +238,14 @@ export function Sidebar({
     { id: "top_clientes", label: t("top_clientes"), icon: Trophy, slug: "/top-clientes" },
     { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
     { id: "cxc_contado_credito", label: t("cxc_contado_credito"), icon: PieChart, slug: "/cuentas-por-cobrar/contado-credito", absoluteHref: true },
+    { id: "cxc_pago_clientes", label: "Pago de Clientes", icon: Wallet, slug: "/pago-clientes" },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
     { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
     { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
@@ -354,10 +356,10 @@ export function Sidebar({
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
@@ -1046,6 +1048,11 @@ export function Sidebar({
                           permission: "reporte_diario",
                         },
                         {
+                          label: t("reporte_ventas"),
+                          href: `${basePath}/reporte-ventas`,
+                          permission: "reporte_ventas",
+                        },
+                        {
                           label: t("cuota"),
                           href: `${basePath}/cuota`,
                           permission: "cuota",
@@ -1128,6 +1135,11 @@ export function Sidebar({
                           label: "Contado/Crédito",
                           href: `/${locale}/cuentas-por-cobrar/contado-credito`,
                           permission: "cxc_contado_credito",
+                        },
+                        {
+                          label: "Pago de Clientes",
+                          href: `/${locale}/cuentas-por-cobrar/pago-clientes`,
+                          permission: "cxc_pago_clientes",
                         },
                         {
                           label: "Stoplight Report",
