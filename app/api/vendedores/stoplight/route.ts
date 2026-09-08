@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -142,13 +143,19 @@ export async function GET(request: NextRequest) {
       totalFacturado += amount;
     });
 
-    // Load metas
+    // Load metas + pesos
+    await ensureKpiTargetsPeso();
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
-    (metasResult.rows as any[]).forEach((r) => { metasMap[r.kpi_key] = Number(r.meta_mensual); });
+    const pesosMap: Record<string, number> = {};
+    (metasResult.rows as any[]).forEach((r) => {
+      metasMap[r.kpi_key] = Number(r.meta_mensual);
+      const p = Number(r.peso);
+      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+    });
 
     // === CUMPLIMIENTO CUOTA ===
     const metaCuotaVenta = metasMap["cumplimiento_cuota_ventas"] || 0;
@@ -558,6 +565,7 @@ export async function GET(request: NextRequest) {
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
         metas: metasMap,
+        pesos: pesosMap,
       },
     });
   } catch (error: any) {

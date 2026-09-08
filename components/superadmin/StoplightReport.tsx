@@ -52,6 +52,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const [modalOpen, setModalOpen] = useState(false);
   const [goalValues, setGoalValues] = useState<Record<string, string>>({});
+  const [pesoValues, setPesoValues] = useState<Record<string, string>>({});
   const [selectedCompanyId, setSelectedCompanyId] = useState(companyId ?? 9);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [selectedMes, setSelectedMes] = useState(() => {
@@ -298,6 +299,43 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
+  const savePeso = async (kpiKey: string, value: number) => {
+    try {
+      // Los KPIs de marketing no tienen compañía propia: su route los lee bajo
+      // company_id 9 (ver #110). El resto van por la sucursal seleccionada.
+      const KPIS_MARKETING = ["usuarios_totales", "sesiones", "paginas_vistas", "tasa_rebote", "clicks_sc", "impresiones_sc", "ctr_sc", "posicion_sc", "email_open_rate"];
+      const cid = KPIS_MARKETING.includes(kpiKey) ? 9 : selectedCompanyId;
+      await fetch(`${apiPrefix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "save_peso",
+          kpi_key: kpiKey,
+          company_id: cid,
+          peso: value,
+          mes: selectedMes,
+        }),
+      });
+      fetchData(true);
+      fetchMarketingData();
+      fetchCxCData();
+      fetchCppData();
+    } catch (e) {
+      console.error("Error saving peso:", e);
+    }
+  };
+
+  const handlePesoChange = (kpiId: string, value: string) => {
+    setPesoValues((prev) => ({ ...prev, [kpiId]: value }));
+  };
+
+  const handlePesoBlur = (kpiId: string, fallback: number, value: string) => {
+    const numVal = Math.max(0, parseFloat(value) || 0);
+    if (numVal !== getPesoNum(kpiId, fallback)) {
+      savePeso(kpiId, numVal);
+    }
+  };
+
   const openCxcModal = (kpiId: string) => {
     setCxcModalKpi(kpiId);
     setCxcModalOpen(true);
@@ -403,11 +441,28 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const getGoal = (id: string, defaultVal: string) => goalValues[id] ?? defaultVal;
 
+  // Pesos de los KPIs para el puntaje ponderado del grupo (issue #131). Salen
+  // de kpi_targets (por company_id + mes), unificados de las 4 fuentes; el
+  // fallback es el valor que estaba hardcodeado. `pesoDe` devuelve el string
+  // "NN%" que espera `puntajeGrupo`.
+  const pesosMerged: Record<string, number> = {
+    ...(kpiData?.pesos || {}),
+    ...((marketingData?.data?.pesos as Record<string, number>) || {}),
+    ...((cxcData?.pesos as Record<string, number>) || {}),
+    ...((cppData?.pesos as Record<string, number>) || {}),
+  };
+  const getPesoNum = (id: string, fallback: number) => {
+    const override = pesoValues[id];
+    const n = override !== undefined ? parseFloat(override) : Number(pesosMerged[id]);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  const pesoDe = (id: string, fallback: number) => `${getPesoNum(id, fallback)}%`;
+
   const ventasKpis = [
     {
       id: "cumplimiento_cuota_ventas",
       title: t("kpi_cuota_ventas"),
-      peso: "30%",
+      peso: pesoDe("cumplimiento_cuota_ventas", 30),
       // "Avance del mes": facturado ÷ cuota prorrateada a los días hábiles
       // transcurridos. 100% = al día para llegar a la cuota.
       average: kpiData
@@ -429,7 +484,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "margen_bruto",
       title: t("kpi_margen_bruto"),
-      peso: "15%",
+      peso: pesoDe("margen_bruto", 15),
       average: kpiData ? `${kpiData.avgMargen}%` : "0%",
       weeks: kpiData?.semanaMargen || defaultWeeks,
       isClickable: true,
@@ -440,7 +495,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "visitas_semanales",
       title: t("kpi_visitas"),
-      peso: "10%",
+      peso: pesoDe("visitas_semanales", 10),
       average: kpiData ? String(kpiData.avgVisitas) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
@@ -451,7 +506,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "efectividad_cierre",
       title: t("kpi_efectividad"),
-      peso: "15%",
+      peso: pesoDe("efectividad_cierre", 15),
       average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
       weeks: kpiData?.semanaEfectividad || defaultWeeks,
       isClickable: true,
@@ -462,7 +517,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "activacion_cartera",
       title: t("kpi_activacion"),
-      peso: "15%",
+      peso: pesoDe("activacion_cartera", 15),
       average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
       weeks: kpiData?.semanaActivacion || defaultWeeks,
       isClickable: true,
@@ -473,7 +528,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "clientes_nuevos",
       title: t("kpi_clientes_nuevos"),
-      peso: "5%",
+      peso: pesoDe("clientes_nuevos", 5),
       average: kpiData ? `${kpiData.avgClientes}%` : "0%",
       weeks: kpiData?.semanaClientes || defaultWeeks,
       isClickable: true,
@@ -484,7 +539,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "cobertura_marcas",
       title: t("kpi_cobertura"),
-      peso: "10%",
+      peso: pesoDe("cobertura_marcas", 10),
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
       isClickable: true,
@@ -498,7 +553,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "variacion_costo_compra",
       title: t("kpi_variacion_costo"),
-      peso: "15%",
+      peso: pesoDe("variacion_costo_compra", 15),
       average: kpiData ? `${kpiData.avgVarCosto}%` : "0%",
       weeks: kpiData?.semanaVarCosto || defaultWeeks,
       goalDefault: kpiData?.metas?.["variacion_costo_compra"] ? String(kpiData.metas["variacion_costo_compra"]) : "0",
@@ -509,7 +564,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "rotacion_saludable",
       title: t("kpi_rotacion"),
-      peso: "17%",
+      peso: pesoDe("rotacion_saludable", 17),
       average: kpiData ? `${kpiData.avgRotacion}%` : "0%",
       weeks: kpiData?.semanaRotacion || defaultWeeks,
       goalDefault: kpiData?.metas?.["rotacion_saludable"] ? String(kpiData.metas["rotacion_saludable"]) : "0",
@@ -520,7 +575,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "quiebre_inventario",
       title: t("kpi_quiebre"),
-      peso: "25%",
+      peso: pesoDe("quiebre_inventario", 25),
       average: kpiData ? `${kpiData.avgQuiebre}%` : "0%",
       weeks: kpiData?.semanaQuiebre || defaultWeeks,
       goalDefault: kpiData?.metas?.["quiebre_inventario"] ? String(kpiData.metas["quiebre_inventario"]) : "0",
@@ -531,7 +586,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "inventario_90_dias",
       title: t("kpi_inventario_90"),
-      peso: "20%",
+      peso: pesoDe("inventario_90_dias", 20),
       average: kpiData ? `${kpiData.avgInv90}%` : "0%",
       weeks: kpiData?.semanaInv90 || defaultWeeks,
       goalDefault: kpiData?.metas?.["inventario_90_dias"] ? String(kpiData.metas["inventario_90_dias"]) : "0",
@@ -542,7 +597,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "forecast_semanal",
       title: t("kpi_forecast"),
-      peso: "11%",
+      peso: pesoDe("forecast_semanal", 11),
       average: kpiData ? `${kpiData.avgForecast}%` : "0%",
       weeks: kpiData?.semanaForecast || defaultWeeks,
       goalDefault: kpiData?.metas?.["forecast_semanal"] ? String(kpiData.metas["forecast_semanal"]) : "75",
@@ -553,7 +608,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "propuestas_calificadas",
       title: t("kpi_propuestas"),
-      peso: "12%",
+      peso: pesoDe("propuestas_calificadas", 12),
       average: kpiData ? String(kpiData.avgPropuestas) : "0",
       weeks: kpiData?.semanaPropuestas || defaultWeeks,
       goalDefault: kpiData?.metas?.["propuestas_calificadas"] ? String(kpiData.metas["propuestas_calificadas"]) : "3",
@@ -593,7 +648,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "usuarios_totales",
         title: t("kpi_usuarios_ga4"),
-        peso: "13%",
+        peso: pesoDe("usuarios_totales", 13),
         average: String(md?.ga4?.totalUsers || 0),
         weeks: toWeekly(ga4W?.totalUsers),
         goalDefault: String(metaDe("usuarios_totales", 500)),
@@ -603,7 +658,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "sesiones",
         title: t("kpi_sesiones_ga4"),
-        peso: "13%",
+        peso: pesoDe("sesiones", 13),
         average: String(md?.ga4?.sessions || 0),
         weeks: toWeekly(ga4W?.sessions),
         goalDefault: String(metaDe("sesiones", 1000)),
@@ -613,7 +668,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "paginas_vistas",
         title: t("kpi_paginas_ga4"),
-        peso: "9%",
+        peso: pesoDe("paginas_vistas", 9),
         average: String(md?.ga4?.pageviews || 0),
         weeks: toWeekly(ga4W?.pageviews),
         goalDefault: String(metaDe("paginas_vistas", 5000)),
@@ -623,7 +678,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "tasa_rebote",
         title: t("kpi_rebote_ga4"),
-        peso: "9%",
+        peso: pesoDe("tasa_rebote", 9),
         average: `${md?.ga4?.bounceRate || 0}%`,
         weeks: toWeeklyPct(ga4W?.bounceRate),
         goalDefault: String(metaDe("tasa_rebote", 40)),
@@ -633,7 +688,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "clicks_sc",
         title: t("kpi_clicks_sc"),
-        peso: "13%",
+        peso: pesoDe("clicks_sc", 13),
         average: String(md?.totals?.totalClicks || 0),
         weeks: toWeekly(weekClicks),
         goalDefault: String(metaDe("clicks_sc", 500)),
@@ -643,7 +698,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "impresiones_sc",
         title: t("kpi_impresiones_sc"),
-        peso: "9%",
+        peso: pesoDe("impresiones_sc", 9),
         average: String(md?.totals?.totalImpressions || 0),
         weeks: toWeekly(weekImpressions),
         goalDefault: String(metaDe("impresiones_sc", 10000)),
@@ -653,7 +708,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "ctr_sc",
         title: t("kpi_ctr_sc"),
-        peso: "9%",
+        peso: pesoDe("ctr_sc", 9),
         average: `${md?.totals?.overallCtr || 0}%`,
         weeks: scWeeksPct(weekClicks, weekImpressions),
         goalDefault: String(metaDe("ctr_sc", 3)),
@@ -663,7 +718,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "posicion_sc",
         title: t("kpi_posicion_sc"),
-        peso: "13%",
+        peso: pesoDe("posicion_sc", 13),
         average: String(md?.totals?.avgPosition || 0),
         weeks: toWeekly(md?.weekly?.position),
         goalDefault: String(metaDe("posicion_sc", 5)),
@@ -673,7 +728,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "email_open_rate",
         title: t("kpi_email"),
-        peso: "12%",
+        peso: pesoDe("email_open_rate", 12),
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
         weeks: (md?.emailMarketing?.weeklyOpenRate || defWeeks).map((v: number | null) => v != null ? `${v}%` : null),
         goalDefault: String(metaDe("email_open_rate", 20)),
@@ -690,7 +745,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "efectividad_cobranza",
         title: t("kpi_efectividad_cobranza"),
-        peso: "35%",
+        peso: pesoDe("efectividad_cobranza", 35),
         average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
         weeks: cxcData.semanaEfectividad || Array(5).fill(null),
         goalDefault: String(k.efectividad.meta),
@@ -701,7 +756,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "cartera_vencida",
         title: t("kpi_cartera_vencida"),
-        peso: "30%",
+        peso: pesoDe("cartera_vencida", 30),
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
         weeks: [k.carteraVencida.value !== null ? String(k.carteraVencida.value) + "%" : null, null, null, null, null],
         // Foto puntual del % de cartera vencida; no tiene lectura por semana.
@@ -714,7 +769,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "recuperacion_vencidos",
         title: t("kpi_recuperacion"),
-        peso: "25%",
+        peso: pesoDe("recuperacion_vencidos", 25),
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
         weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
         // Acumulado del mes contra la cohorte de vencidos al inicio; el desglose
@@ -728,7 +783,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "dso",
         title: t("kpi_dso"),
-        peso: "10%",
+        peso: pesoDe("dso", 10),
         average: k.dso.value !== null ? `${k.dso.value}${t("suffix_dias")}` : "N/A",
         weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
         // Ventana móvil de 90 días: no es una métrica semanal.
@@ -747,7 +802,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "pagos_a_tiempo",
         title: t("kpi_pagos_tiempo"),
-        peso: "35%",
+        peso: pesoDe("pagos_a_tiempo", 35),
         average: cppData.pagosATiempoPct == null ? "N/A" : `${cppData.pagosATiempoPct}%`,
         weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
         goalDefault: String(metas["pagos_a_tiempo"] ?? 95),
@@ -759,7 +814,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "cuentas_pagar_vencidas",
         title: t("kpi_cxpagar_vencidas"),
-        peso: "30%",
+        peso: pesoDe("cuentas_pagar_vencidas", 30),
         average: cppData.cuentasVencidasPct == null ? "N/A" : `${cppData.cuentasVencidasPct}%`,
         weeks: cppData.semanaVencidas || Array(5).fill(null),
         goalDefault: String(metas["cuentas_pagar_vencidas"] ?? 5),
@@ -771,7 +826,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "procesamiento_oportuno",
         title: t("kpi_procesamiento"),
-        peso: "20%",
+        peso: pesoDe("procesamiento_oportuno", 20),
         average: cppData.procesamientoOportunoPct == null ? "N/A" : `${cppData.procesamientoOportunoPct}%`,
         weeks: cppData.semanaProcesamiento || Array(5).fill(null),
         goalDefault: String(metas["procesamiento_oportuno"] ?? 95),
@@ -783,7 +838,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "dpo",
         title: t("kpi_dpo"),
-        peso: "15%",
+        peso: pesoDe("dpo", 15),
         average: cppData.dpo == null ? "N/A" : `${cppData.dpo}${t("suffix_dias")}`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
         // El DPO es una ventana móvil de 90 días: no tiene lectura por semana.
@@ -1342,7 +1397,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
+                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top" onClick={(e) => e.stopPropagation()}>
+                          {!isSuperAdmin ? (
+                            kpi.peso
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5">
+                              <input
+                                type="number"
+                                value={pesoValues[kpi.id] ?? String(parseFloat(kpi.peso) || 0)}
+                                onChange={(e) => handlePesoChange(kpi.id, e.target.value)}
+                                onBlur={(e) => handlePesoBlur(kpi.id, parseFloat(kpi.peso) || 0, e.target.value)}
+                                className="w-12 text-right text-xs font-medium text-slate-500 tabular-nums bg-slate-50 border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
+                              />
+                              <span className="text-slate-400">%</span>
+                            </span>
+                          )}
+                        </td>
                         {kpi.sinSemana ? (
                           <td colSpan={(group as any).weekHeaders.length || 1} className="py-3 px-2 text-center align-top text-[11px] text-slate-400">
                             {t("metrica_mensual")}
