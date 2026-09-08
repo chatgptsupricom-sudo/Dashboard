@@ -124,9 +124,11 @@ export async function PUT(
 
     // Correccion manual: deshace una eleccion de entrega y/o una entrega
     // marcada por error (ej. un caso de prueba real que se toco sin
-    // querer). No hay botón para esto en la UI a proposito -- es un
-    // escape hatch para casos excepcionales, no un flujo normal. Requiere
-    // el mismo rol "rma" que el resto de este endpoint.
+    // querer). Tambien limpia client_email -- se popula solo al enviar el
+    // correo de "reparado" (issue #119), asi que si se llego hasta aca fue
+    // por el mismo error. No hay botón para esto en la UI a proposito --
+    // es un escape hatch para casos excepcionales, no un flujo normal.
+    // Requiere el mismo rol "rma" que el resto de este endpoint.
     if (body.reset_entrega === true) {
       await query(
         `UPDATE rma_cases SET
@@ -136,7 +138,8 @@ export async function PUT(
            entrega_ruta_id = NULL,
            entrega_agencia = NULL,
            entrega_datos = NULL,
-           entrega_elegida_at = NULL
+           entrega_elegida_at = NULL,
+           client_email = NULL
          WHERE id = ?`,
         [id],
       );
