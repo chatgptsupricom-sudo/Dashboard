@@ -13,6 +13,7 @@ import {
   trimestresDisponibles,
   trimestreActual,
 } from "@/lib/reportes-comerciales/trimestres";
+import { marcaPorDefectoSede } from "@/lib/reportes-comerciales/sedes";
 import {
   BarChart3,
   Download,
@@ -187,6 +188,9 @@ export function ReporteTrimestral() {
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sede, setSede] = useState<number | null>(null);
   const [marcaFija, setMarcaFija] = useState<string | null>(null);
+  // Marcas que vende la sede elegida (+ "TODAS"), para el selector. Se pide a
+  // un endpoint propio (cacheado) para no depender de la consulta del reporte.
+  const [marcasSede, setMarcasSede] = useState<string[]>([]);
 
   const [data, setData] = useState<Reporte | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +212,29 @@ export function ReporteTrimestral() {
       })
       .catch(() => {});
   }, []);
+
+  // Al elegir sede: cargar sus marcas y ajustar el filtro si la marca actual no
+  // pertenece a esa sede (Panamá arranca en EZVIZ; Valencia / Caracas en TODAS).
+  useEffect(() => {
+    if (sede == null) return;
+    let vivo = true;
+    fetch(`${API}/marcas?sede=${sede}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!vivo || !Array.isArray(j?.marcas)) return;
+        setMarcasSede(j.marcas);
+        setMarca((actual) => {
+          if (j.marcaFija) return j.marcaFija;
+          return j.marcas.includes(actual)
+            ? actual
+            : j.marcaPorDefecto || marcaPorDefectoSede(sede);
+        });
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [sede]);
 
   const cargar = useCallback(() => {
     if (sede == null) return;
@@ -276,7 +303,10 @@ export function ReporteTrimestral() {
             </h1>
             <p className="text-sm text-slate-500">
               {data?.periodo.sede || sedes.find((s) => s.companyId === sede)?.nombre || "…"} · marca{" "}
-              {data?.periodo.marca || marca} ·{" "}
+              {(() => {
+                const m = data?.periodo.marca || marca;
+                return m === "TODAS" ? "Todas las marcas" : m;
+              })()} ·{" "}
               {data ? `${data.periodo.desde} a ${data.periodo.hasta}` : trimestre}
             </p>
           </div>
@@ -285,10 +315,7 @@ export function ReporteTrimestral() {
           {sedes.length > 1 && (
             <select
               value={sede ?? ""}
-              onChange={(e) => {
-                setSede(Number(e.target.value));
-                setMarca("EZVIZ"); // la lista de marcas cambia con la sede
-              }}
+              onChange={(e) => setSede(Number(e.target.value))}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >
               {sedes.map((s) => (
@@ -308,7 +335,10 @@ export function ReporteTrimestral() {
               onChange={(e) => setMarca(e.target.value)}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >
-              {(data?.periodo.marcasDisponibles || ["TODAS", "EZVIZ"]).map((m) => (
+              {(marcasSede.length
+                ? marcasSede
+                : data?.periodo.marcasDisponibles || ["TODAS"]
+              ).map((m) => (
                 <option key={m} value={m}>
                   {m === "TODAS" ? "Todas las marcas" : m}
                 </option>

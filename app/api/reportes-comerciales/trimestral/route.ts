@@ -7,6 +7,7 @@ import {
   puedeVerReportesComerciales,
   resolverSede,
 } from "@/lib/reportes-comerciales/acceso";
+import { marcaPorDefectoSede } from "@/lib/reportes-comerciales/sedes";
 import {
   calcularEpp,
   construirReporte,
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
     // Los usuarios de la lista de correos quedan fijados a EZVIZ; el resto elige.
     const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre = searchParams.get("trimestre") || "";
-    const marca = marcaFija || searchParams.get("marca") || "EZVIZ";
+    const marca =
+      marcaFija || searchParams.get("marca") || marcaPorDefectoSede(companyId);
 
     // Tab Historico: lista de cierres guardados (no toca Odoo).
     if (searchParams.get("historico") === "1") {
@@ -114,7 +116,11 @@ export async function POST(request: NextRequest) {
     }
     const marcaFija = marcaFijaDe({ role: p.role as string, email: p.email as string });
     const trimestre: string = body.trimestre;
-    const marca: string = (marcaFija || body.marca || "EZVIZ").toUpperCase();
+    const marca: string = (
+      marcaFija ||
+      body.marca ||
+      marcaPorDefectoSede(companyId)
+    ).toUpperCase();
     if (!trimestre) {
       return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
     }
