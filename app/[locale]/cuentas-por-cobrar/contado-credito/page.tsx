@@ -15,6 +15,9 @@ import {
   Package,
   Clock,
   DollarSign,
+  Search,
+  UserRound,
+  Landmark,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -88,6 +91,7 @@ type Acumulado = { monto: number; pct: number; facturas: number; clientes: numbe
 type Bucket = Acumulado & { dias: number };
 type Banco = Acumulado & { journalId: number; journalName: string };
 type Parcial = { monto: number; pct: number; facturas: number };
+type Vendedor = { id: number; name: string };
 type ContadoCreditoData = {
   totalFacturado: number;
   contado: Acumulado;
@@ -96,6 +100,8 @@ type ContadoCreditoData = {
   mesesAnteriores: Parcial;
   buckets: Bucket[];
   bancos: Banco[];
+  vendedores: Vendedor[];
+  bancosDisponibles: Vendedor[];
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
@@ -124,6 +130,24 @@ export default function ContadoCreditoPage() {
   // numero real que usa cobranza).
   const [excluirAsistente, setExcluirAsistente] = useState<{ facturado: boolean; cobrado: boolean }>({ facturado: true, cobrado: false });
   const excluirAsistenteActual = excluirAsistente[modo];
+
+  // Filtros adicionales, iguales a los que ya tiene "Integracion de Pagos"
+  // en Odoo -- todos opcionales, sin tocar el default de lo que ya habia
+  // (vacios = sin filtrar, mismo comportamiento de siempre).
+  const [vendedorId, setVendedorId] = useState("");
+  const [search, setSearch] = useState("");
+  // La busqueda se debounce antes de disparar el fetch -- modo "cobrado"
+  // es una consulta pesada (15-20s), no se puede relanzar por cada tecla.
+  const [searchDebounced, setSearchDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 500);
+    return () => clearTimeout(t);
+  }, [search]);
+  const [bancoId, setBancoId] = useState("");
+  // Rango de fechas personalizado, alternativa a Mes/Ano.
+  const [usarRangoFechas, setUsarRangoFechas] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   const userCids = (user as any)?.cids;
 
@@ -159,10 +183,18 @@ export default function ContadoCreditoPage() {
       const params = new URLSearchParams();
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
-      params.set("month", String(selectedMonth));
-      params.set("year", String(selectedYear));
+      if (usarRangoFechas && startDate && endDate) {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      } else {
+        params.set("month", String(selectedMonth));
+        params.set("year", String(selectedYear));
+      }
       params.set("modo", modo);
       params.set("excluirAsistente", String(excluirAsistenteActual));
+      if (vendedorId) params.set("vendedorId", vendedorId);
+      if (searchDebounced) params.set("search", searchDebounced);
+      if (esCobrado && bancoId) params.set("bancoId", bancoId);
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito?${params}`);
       const json = await res.json();
       if (fetchId !== fetchIdRef.current) return;
@@ -171,7 +203,7 @@ export default function ContadoCreditoPage() {
       console.error("Error:", e);
     }
     if (fetchId === fetchIdRef.current) setLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, vendedorId, searchDebounced, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -191,10 +223,17 @@ export default function ContadoCreditoPage() {
       const params = new URLSearchParams({ partnerId: String(partnerId) });
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
-      params.set("month", String(selectedMonth));
-      params.set("year", String(selectedYear));
+      if (usarRangoFechas && startDate && endDate) {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      } else {
+        params.set("month", String(selectedMonth));
+        params.set("year", String(selectedYear));
+      }
       params.set("modo", modo);
       params.set("excluirAsistente", String(excluirAsistenteActual));
+      if (vendedorId) params.set("vendedorId", vendedorId);
+      if (esCobrado && bancoId) params.set("bancoId", bancoId);
       if (filtro.journalId !== undefined) params.set("journalId", String(filtro.journalId));
       else if (filtro.dias !== undefined) params.set("dias", String(filtro.dias));
       else if (filtro.tipo) params.set("tipo", filtro.tipo);
@@ -206,7 +245,7 @@ export default function ContadoCreditoPage() {
       console.error(e);
     }
     if (fetchId === facturasFetchIdRef.current) setFacturasLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, vendedorId, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
 
   // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
   // (mismos datos ya cargados, sin volver a pedirlos).
@@ -266,7 +305,7 @@ export default function ContadoCreditoPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Contado / Crédito</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Supricom — {MONTHS[selectedMonth - 1]} {selectedYear}
+            Supricom — {usarRangoFechas && startDate && endDate ? `${startDate} a ${endDate}` : `${MONTHS[selectedMonth - 1]} ${selectedYear}`}
             {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
@@ -288,18 +327,63 @@ export default function ContadoCreditoPage() {
               <span className="text-sm text-slate-700">{COMPANY_MAP[userCids] || `Sede ${userCids}`}</span>
             </div>
           )}
+          {!usarRangoFechas ? (
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+              <Calendar size={14} className="text-slate-400" />
+              <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
+                {MONTHS.map((m, i) => {
+                  const isFuture = selectedYear === now.getFullYear() && i > now.getMonth();
+                  return <option key={i} value={i + 1} disabled={isFuture}>{m}</option>;
+                })}
+              </select>
+              <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700 ml-1">
+                <option value={2025}>2025</option>
+                <option value={2026}>2026</option>
+              </select>
+              <button onClick={() => setUsarRangoFechas(true)} className="text-xs text-blue-600 hover:underline ml-1" title="Usar un rango de fechas especifico en vez de mes/año">
+                Rango
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+              <Calendar size={14} className="text-slate-400" />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm bg-transparent border-none outline-none text-slate-700" />
+              <span className="text-slate-300">–</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm bg-transparent border-none outline-none text-slate-700" />
+              <button onClick={() => setUsarRangoFechas(false)} className="text-xs text-blue-600 hover:underline ml-1" title="Volver a filtrar por mes/año">
+                Mes/Año
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
-            <Calendar size={14} className="text-slate-400" />
-            <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
-              {MONTHS.map((m, i) => {
-                const isFuture = selectedYear === now.getFullYear() && i > now.getMonth();
-                return <option key={i} value={i + 1} disabled={isFuture}>{m}</option>;
-              })}
+            <UserRound size={14} className="text-slate-400" />
+            <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)} className="text-sm bg-transparent border-none outline-none text-slate-700 max-w-[160px]">
+              <option value="">Todos los vendedores</option>
+              {(data?.vendedores || []).map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
             </select>
-            <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700 ml-1">
-              <option value={2025}>2025</option>
-              <option value={2026}>2026</option>
-            </select>
+          </div>
+          {esCobrado && (
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+              <Landmark size={14} className="text-slate-400" />
+              <select value={bancoId} onChange={(e) => setBancoId(e.target.value)} className="text-sm bg-transparent border-none outline-none text-slate-700 max-w-[160px]">
+                <option value="">Todos los bancos</option>
+                {(data?.bancosDisponibles || []).map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+            <Search size={14} className="text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cliente o factura..."
+              className="text-sm bg-transparent border-none outline-none text-slate-700 w-32"
+            />
           </div>
           <button onClick={fetchData} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
