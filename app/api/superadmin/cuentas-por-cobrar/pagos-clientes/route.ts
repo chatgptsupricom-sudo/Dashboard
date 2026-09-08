@@ -14,7 +14,7 @@ const COMPANY_MAP: Record<string, number> = {
 };
 const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
-async function fetchPaginated(model: string, domain: any[], fields: string[], order = "id desc"): Promise<any[]> {
+async function fetchPaginated(model: string, domain: any[], fields: string[], order = "date desc, id desc"): Promise<any[]> {
   let result: any[] = [];
   let offset = 0;
   while (true) {
@@ -125,14 +125,15 @@ export async function GET(request: NextRequest) {
 
       const montoBs = esUsd ? null : amount;
       // Tasa efectiva = Bs ÷ USD (implícita de las dos cifras que guardó Odoo).
-      const tasa = esUsd ? 1 : (montoUsd > 0 ? r2(amount / montoUsd) : null);
+      // Para un pago en USD no hay conversión, la tasa no aplica.
+      const tasa = esUsd ? null : (montoUsd > 0 ? r2(amount / montoUsd) : null);
 
       // Fila a revisar: la tasa efectiva y la registrada difieren > 5%, o el
       // equivalente en USD quedó inválido, o (en USD) monto y cifra de compañía
-      // no coinciden.
+      // no coinciden. Un pago genuinamente en 0 no es un error de datos.
       let revisar = false;
-      if (montoUsd <= 0) revisar = true;
-      else if (esUsd && Math.abs(amount - odooUsd) > 1) revisar = true;
+      if (montoUsd <= 0 && amount !== 0) revisar = true;
+      else if (esUsd && amount !== 0 && Math.abs(amount - odooUsd) > 1) revisar = true;
       else if (!esUsd && tasa != null && taxToday > 0 && Math.abs(tasa - taxToday) / Math.max(taxToday, 1) > 0.05) revisar = true;
 
       const igtf = Number(p.mount_igtf) || 0;

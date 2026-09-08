@@ -110,16 +110,15 @@ export default function PagoClientesPage() {
   }, [rows, soloRevisar, search]);
 
   // Resumen recalculado sobre lo que se está viendo (respeta búsqueda / filtro).
+  // "A revisar" siempre muestra el total del período — es el botón de ese filtro.
   const resumenView = useMemo(() => {
     if (!resumen) return null;
-    // Sin filtros activos: usar el resumen del servidor tal cual.
     if (!search.trim() && !soloRevisar) return resumen;
-    const base = search.trim() ? visibles : rows;
     return {
       ...resumen,
-      pagos: base.length,
-      totalUsd: Math.round(base.reduce((s, r) => s + r.montoUsd, 0) * 100) / 100,
-      totalBs: Math.round(base.reduce((s, r) => s + (r.montoBs || 0), 0) * 100) / 100,
+      pagos: visibles.length,
+      totalUsd: Math.round(visibles.reduce((s, r) => s + r.montoUsd, 0) * 100) / 100,
+      totalBs: Math.round(visibles.reduce((s, r) => s + (r.montoBs || 0), 0) * 100) / 100,
       porRevisar: rows.filter((r) => r.revisar).length,
     };
   }, [resumen, rows, visibles, search, soloRevisar]);
