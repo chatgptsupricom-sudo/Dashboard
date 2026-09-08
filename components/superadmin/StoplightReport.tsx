@@ -173,7 +173,6 @@ interface KpiData {
   weekHeaders: string[];
   sellers: SellerData[];
   semanaGlobal: string[];
-  trend: string;
   metas: Record<string, number>;
   semanaVarCosto: (string | null)[];
   semanaRotacion: (string | null)[];
@@ -970,13 +969,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const ventasKpis = [
     {
       id: "cumplimiento_cuota_ventas",
-      trend: (() => {
-        if (!kpiData) return "help";
-        // Avance del mes (facturado vs. cuota prorrateada a hoy); cae a los
-        // valores viejos si la API todavía no lo trae.
-        const pct = kpiData.avanceMesCuota ?? kpiData.porcentajeCumplimiento ?? kpiData.avgCumplimiento ?? 0;
-        return pct >= 100 ? "help" : pct >= 70 ? "warning" : "alert";
-      })(),
       title: t("kpi_cuota_ventas"),
       peso: "30%",
       // "Avance del mes": facturado ÷ cuota prorrateada a los días hábiles
@@ -999,7 +991,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "margen_bruto",
-      trend: "help",
       title: t("kpi_margen_bruto"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgMargen}%` : "0%",
@@ -1011,7 +1002,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "visitas_semanales",
-      trend: "help",
       title: t("kpi_visitas"),
       peso: "10%",
       average: kpiData ? String(kpiData.avgVisitas) : "0",
@@ -1023,7 +1013,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "efectividad_cierre",
-      trend: "help",
       title: t("kpi_efectividad"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
@@ -1035,7 +1024,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "activacion_cartera",
-      trend: "help",
       title: t("kpi_activacion"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
@@ -1047,7 +1035,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "clientes_nuevos",
-      trend: "help",
       title: t("kpi_clientes_nuevos"),
       peso: "5%",
       average: kpiData ? `${kpiData.avgClientes}%` : "0%",
@@ -1059,7 +1046,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "cobertura_marcas",
-      trend: "help",
       title: t("kpi_cobertura"),
       peso: "10%",
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
@@ -1074,7 +1060,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const comprasKpis = [
     {
       id: "variacion_costo_compra",
-      trend: "help",
       title: t("kpi_variacion_costo"),
       peso: "15%",
       average: kpiData ? `${kpiData.avgVarCosto}%` : "0%",
@@ -1086,7 +1071,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "rotacion_saludable",
-      trend: "help",
       title: t("kpi_rotacion"),
       peso: "17%",
       average: kpiData ? `${kpiData.avgRotacion}%` : "0%",
@@ -1098,7 +1082,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "quiebre_inventario",
-      trend: "help",
       title: t("kpi_quiebre"),
       peso: "25%",
       average: kpiData ? `${kpiData.avgQuiebre}%` : "0%",
@@ -1110,7 +1093,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "inventario_90_dias",
-      trend: "help",
       title: t("kpi_inventario_90"),
       peso: "20%",
       average: kpiData ? `${kpiData.avgInv90}%` : "0%",
@@ -1122,7 +1104,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "forecast_semanal",
-      trend: "help",
       title: t("kpi_forecast"),
       peso: "11%",
       average: kpiData ? `${kpiData.avgForecast}%` : "0%",
@@ -1134,7 +1115,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "propuestas_calificadas",
-      trend: "help",
       title: t("kpi_propuestas"),
       peso: "12%",
       average: kpiData ? String(kpiData.avgPropuestas) : "0",
@@ -1175,7 +1155,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return [
       {
         id: "usuarios_totales",
-        trend: "help",
         title: t("kpi_usuarios_ga4"),
         peso: "13%",
         average: String(md?.ga4?.totalUsers || 0),
@@ -1186,7 +1165,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "sesiones",
-        trend: "help",
         title: t("kpi_sesiones_ga4"),
         peso: "13%",
         average: String(md?.ga4?.sessions || 0),
@@ -1197,7 +1175,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "paginas_vistas",
-        trend: "help",
         title: t("kpi_paginas_ga4"),
         peso: "9%",
         average: String(md?.ga4?.pageviews || 0),
@@ -1208,7 +1185,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "tasa_rebote",
-        trend: (md?.ga4?.bounceRate || 0) > 50 ? "alert" : "help",
         title: t("kpi_rebote_ga4"),
         peso: "9%",
         average: `${md?.ga4?.bounceRate || 0}%`,
@@ -1219,7 +1195,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "clicks_sc",
-        trend: "help",
         title: t("kpi_clicks_sc"),
         peso: "13%",
         average: String(md?.totals?.totalClicks || 0),
@@ -1230,7 +1205,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "impresiones_sc",
-        trend: "help",
         title: t("kpi_impresiones_sc"),
         peso: "9%",
         average: String(md?.totals?.totalImpressions || 0),
@@ -1241,7 +1215,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "ctr_sc",
-        trend: "help",
         title: t("kpi_ctr_sc"),
         peso: "9%",
         average: `${md?.totals?.overallCtr || 0}%`,
@@ -1252,7 +1225,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "posicion_sc",
-        trend: (md?.totals?.avgPosition || 0) > 10 ? "alert" : "help",
         title: t("kpi_posicion_sc"),
         peso: "13%",
         average: String(md?.totals?.avgPosition || 0),
@@ -1263,7 +1235,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "email_open_rate",
-        trend: (md?.emailMarketing?.openRate || 0) >= metaDe("email_open_rate", 20) ? "help" : (md?.emailMarketing?.openRate || 0) >= metaDe("email_open_rate", 20) / 2 ? "warning" : "alert",
         title: t("kpi_email"),
         peso: "12%",
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
@@ -1281,7 +1252,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return [
       {
         id: "efectividad_cobranza",
-        trend: k.efectividad.value === null ? "help" : k.efectividad.value >= 95 ? "success" : k.efectividad.value >= 85 ? "warning" : "alert",
         title: t("kpi_efectividad_cobranza"),
         peso: "35%",
         average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
@@ -1293,7 +1263,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "cartera_vencida",
-        trend: k.carteraVencida.value === null ? "help" : k.carteraVencida.value <= 10 ? "success" : k.carteraVencida.value <= 20 ? "warning" : "alert",
         title: t("kpi_cartera_vencida"),
         peso: "30%",
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
@@ -1305,7 +1274,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "recuperacion_vencidos",
-        trend: k.recuperacion.value === null ? "help" : k.recuperacion.value >= 60 ? "success" : k.recuperacion.value >= 30 ? "warning" : "alert",
         title: t("kpi_recuperacion"),
         peso: "25%",
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
@@ -1317,7 +1285,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "dso",
-        trend: k.dso.value === null ? "help" : k.dso.value <= 45 ? "success" : k.dso.value <= 60 ? "warning" : "alert",
         title: t("kpi_dso"),
         peso: "10%",
         average: k.dso.value !== null ? `${k.dso.value}${t("suffix_dias")}` : "N/A",
@@ -1335,7 +1302,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return [
       {
         id: "pagos_a_tiempo",
-        trend: cppData.pagosATiempoPct == null ? "help" : cppData.pagosATiempoPct >= 95 ? "success" : cppData.pagosATiempoPct >= 85 ? "warning" : "alert",
         title: t("kpi_pagos_tiempo"),
         peso: "35%",
         average: cppData.pagosATiempoPct == null ? "N/A" : `${cppData.pagosATiempoPct}%`,
@@ -1348,7 +1314,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "cuentas_pagar_vencidas",
-        trend: cppData.cuentasVencidasPct == null ? "help" : cppData.cuentasVencidasPct <= 5 ? "success" : cppData.cuentasVencidasPct <= 10 ? "warning" : "alert",
         title: t("kpi_cxpagar_vencidas"),
         peso: "30%",
         average: cppData.cuentasVencidasPct == null ? "N/A" : `${cppData.cuentasVencidasPct}%`,
@@ -1361,7 +1326,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "procesamiento_oportuno",
-        trend: cppData.procesamientoOportunoPct == null ? "help" : cppData.procesamientoOportunoPct >= 95 ? "success" : cppData.procesamientoOportunoPct >= 85 ? "warning" : "alert",
         title: t("kpi_procesamiento"),
         peso: "20%",
         average: cppData.procesamientoOportunoPct == null ? "N/A" : `${cppData.procesamientoOportunoPct}%`,
@@ -1374,7 +1338,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       },
       {
         id: "dpo",
-        trend: cppData.dpo == null ? "help" : cppData.dpo <= 30 ? "success" : cppData.dpo <= 45 ? "warning" : "alert",
         title: t("kpi_dpo"),
         peso: "15%",
         average: cppData.dpo == null ? "N/A" : `${cppData.dpo}${t("suffix_dias")}`,
