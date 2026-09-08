@@ -36,15 +36,20 @@ const getCellColor = (value: string) => {
   return "bg-red-100 text-red-800 font-medium";
 };
 
+// KPIs cuyo valor mostrado es la métrica cruda (no un "% de meta"): más alto
+// mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
+const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
+  "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
+const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+
 const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
   const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
   if (isNaN(numVal)) return "";
   const numGoal = parseFloat(goal);
 
-  const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
-    "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-  const lowerBetter = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+  const higherBetter = KPI_MAS_ES_MEJOR;
+  const lowerBetter = KPI_MENOS_ES_MEJOR;
 
   if (higherBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
@@ -82,6 +87,54 @@ const nivelSemaforo = (kpiId: string, average: string | null, goal: string): Niv
   if (/yellow|amber/.test(c)) return "amarillo";
   if (/red/.test(c)) return "rojo";
   return "sin";
+};
+
+/**
+ * Cumplimiento de un KPI en 0–100 (para el puntaje ponderado del grupo).
+ * `null` = sin meta configurada ⇒ no entra en el puntaje.
+ */
+const cumplimientoKpi = (
+  kpiId: string,
+  average: string | null,
+  goal: string | number | null | undefined,
+): number | null => {
+  if (!average) return null;
+  const numVal = parseFloat(String(average).replace("%", "").replace(" días", "").replace(/N\/?A/i, "").trim());
+  if (isNaN(numVal)) return null;
+  const numGoal = parseFloat(String(goal ?? ""));
+  if (!Number.isFinite(numGoal) || numGoal <= 0) return null;
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  if (KPI_MENOS_ES_MEJOR.includes(kpiId)) {
+    return numVal <= 0 ? 100 : clamp((numGoal / numVal) * 100);
+  }
+  if (KPI_MAS_ES_MEJOR.includes(kpiId)) {
+    return clamp((numVal / numGoal) * 100);
+  }
+  // El resto: `average` ya es "% de meta cumplida".
+  return clamp(numVal);
+};
+
+/**
+ * Puntaje ponderado de un grupo: Σ(peso × cumplimiento) ÷ Σ(peso), tomando
+ * solo los KPIs con meta. `null` si ninguno tiene meta.
+ */
+const puntajeGrupo = (
+  kpis: any[],
+): { valor: number; pesoConMeta: number; kpisConMeta: number } | null => {
+  let ponderado = 0;
+  let peso = 0;
+  let n = 0;
+  for (const k of kpis || []) {
+    const c = cumplimientoKpi(k.id, k.average, k.goalDefault);
+    if (c === null) continue;
+    const p = parseFloat(String(k.peso).replace("%", "")) || 0;
+    if (p <= 0) continue;
+    ponderado += p * c;
+    peso += p;
+    n++;
+  }
+  if (peso <= 0) return null;
+  return { valor: Math.round(ponderado / peso), pesoConMeta: Math.round(peso), kpisConMeta: n };
 };
 
 const NIVEL_UI: Record<Exclude<Nivel, "sin">, { punto: string; barra: string; texto: string }> = {
@@ -1346,6 +1399,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   // filtro de búsqueda.
   const resumenGlobal = contarNiveles(gruposBase.flatMap((g: any) => g.kpis || []));
 
+  // Puntaje ponderado del mes: promedio de los puntajes de cada grupo visible
+  // (cada grupo pondera sus KPIs por su "peso"; entre grupos se promedia).
+  const puntajesPorGrupo = gruposBase
+    .map((g: any) => puntajeGrupo(g.kpis || []))
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+  const puntajeMes = puntajesPorGrupo.length
+    ? Math.round(puntajesPorGrupo.reduce((s, p) => s + p.valor, 0) / puntajesPorGrupo.length)
+    : null;
+
   // El buscador filtra solo las filas de las tablas (no los conteos ni el
   // resumen).
   const filtroNorm = kpiFiltro.trim().toLowerCase();
@@ -1396,15 +1458,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {resumenGlobal.total > 0 && (
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 animate-in fade-in duration-300">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Estado del mes
-              </p>
-              <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">
-                {resumenGlobal.verde}
-                <span className="text-slate-400 font-normal"> / {resumenGlobal.total} </span>
-                <span className="text-sm font-medium text-slate-500">en meta</span>
-              </p>
+            <div className="flex items-center gap-6">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Estado del mes
+                </p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">
+                  {resumenGlobal.verde}
+                  <span className="text-slate-400 font-normal"> / {resumenGlobal.total} </span>
+                  <span className="text-sm font-medium text-slate-500">en meta</span>
+                </p>
+              </div>
+              {puntajeMes !== null && (
+                <div className="border-l border-slate-200 pl-6">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    {t("cumplimiento_ponderado")}
+                  </p>
+                  <p className={`mt-0.5 text-lg font-semibold tabular-nums ${getCellColor(String(puntajeMes)).split(" ")[1] || "text-slate-900"}`}>
+                    {puntajeMes}%
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-4 text-sm">
               {([
@@ -1662,6 +1736,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         {groups.map((group) => {
           const r = contarNiveles(group.kpis || []);
           const peor: Nivel = r.rojo > 0 ? "rojo" : r.amarillo > 0 ? "amarillo" : r.verde > 0 ? "verde" : "sin";
+          const pg = puntajeGrupo((gruposBase.find((gb: any) => gb.id === group.id) || group).kpis || []);
           return (
           <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-in fade-in-0 duration-300">
             {/* Group Header */}
@@ -1691,9 +1766,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   )}
                 </span>
               )}
+              {pg && (
+                <span
+                  className={`ml-auto shrink-0 text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded-md ${getCellColor(String(pg.valor)) || "text-slate-600"}`}
+                  title={t("cumplimiento_ponderado")}
+                >
+                  {pg.valor}%
+                </span>
+              )}
               <ChevronDown
                 size={16}
-                className={`ml-auto shrink-0 text-slate-400 transition-transform ${expandedGroups[group.id] ? "rotate-180" : ""}`}
+                className={`${pg ? "ml-1.5" : "ml-auto"} shrink-0 text-slate-400 transition-transform ${expandedGroups[group.id] ? "rotate-180" : ""}`}
               />
             </button>
 
