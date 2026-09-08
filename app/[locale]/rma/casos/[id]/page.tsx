@@ -95,6 +95,14 @@ export default function RmaCasoDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [marcandoEntregado, setMarcandoEntregado] = useState(false);
+  // Si el metodo de entrega es "agencia", marcar como entregado requiere
+  // adjuntar antes la foto de la guia (comprobante de envio) -- se pide
+  // en este dialogo en vez de mandarla directo, para no dejar subir un
+  // archivo equivocado sin verlo antes.
+  const [guiaDialogOpen, setGuiaDialogOpen] = useState(false);
+  const [guiaFile, setGuiaFile] = useState<File | null>(null);
+  const [subiendoGuia, setSubiendoGuia] = useState(false);
+  const [errorGuia, setErrorGuia] = useState<string | null>(null);
 
   useEffect(() => {
     if (caseId) fetchCase();
@@ -178,6 +186,12 @@ export default function RmaCasoDetailPage() {
   };
 
   const handleMarcarEntregado = async () => {
+    // Agencia necesita la guia primero -- este botón se usa para los
+    // otros dos metodos (sucursal, ruta), que no la requieren.
+    if (caseData?.entrega_metodo === "agencia") {
+      setGuiaDialogOpen(true);
+      return;
+    }
     try {
       setMarcandoEntregado(true);
       const res = await fetch(`/api/rma/${caseId}`, {
@@ -191,6 +205,30 @@ export default function RmaCasoDetailPage() {
       console.error("Error:", error);
     } finally {
       setMarcandoEntregado(false);
+    }
+  };
+
+  const handleSubirGuia = async () => {
+    if (!guiaFile) return;
+    try {
+      setSubiendoGuia(true);
+      setErrorGuia(null);
+      const formData = new FormData();
+      formData.append("file", guiaFile);
+      const res = await fetch(`/api/rma/${caseId}/guia`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setErrorGuia(data.error || "No se pudo subir la guia.");
+        return;
+      }
+      setGuiaDialogOpen(false);
+      setGuiaFile(null);
+      fetchCase();
+    } catch (error) {
+      console.error("Error:", error);
+      setErrorGuia("No se pudo subir la guia.");
+    } finally {
+      setSubiendoGuia(false);
     }
   };
 
@@ -473,6 +511,32 @@ export default function RmaCasoDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <Dialog open={guiaDialogOpen} onOpenChange={(open) => { setGuiaDialogOpen(open); if (!open) { setGuiaFile(null); setErrorGuia(null); } }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Adjuntar guía de la agencia</DialogTitle>
+                <DialogDescription>
+                  Antes de marcar como entregado, sube una foto o captura de la guía/comprobante de envío de {caseData.entrega_agencia || "la agencia"}. Se le enviará por correo al cliente junto con los datos del producto.
+                </DialogDescription>
+              </DialogHeader>
+              <div>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setGuiaFile(e.target.files?.[0] || null)}
+                />
+                {errorGuia && <p className="text-sm text-red-600 mt-2">{errorGuia}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setGuiaDialogOpen(false)}>{t("cancel")}</Button>
+                <Button onClick={handleSubirGuia} disabled={!guiaFile || subiendoGuia}>
+                  {subiendoGuia && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Subir y marcar como entregado
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Cliente */}
           <Card className="rounded-3xl border-none shadow-sm">

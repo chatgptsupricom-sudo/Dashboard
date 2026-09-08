@@ -32,8 +32,18 @@ export async function GET(
 
     let adjuntos: any[] = [];
     try {
+      // Idempotente -- si ya existe, el error se traga (mismo patron que
+      // el resto del modulo). Sin esto, un `SELECT ... tipo` contra una
+      // base que todavia no tiene la columna (nadie subio una guia
+      // todavia) tira TODOS los adjuntos del caso al catch de abajo, no
+      // solo los de tipo guia -- se perderian tambien las fotos del
+      // reporte original.
+      await query(`ALTER TABLE rma_ticket_adjuntos ADD COLUMN tipo VARCHAR(30) DEFAULT 'reporte'`).catch((e: any) => {
+        if (!e.message?.includes("Duplicate") && !e.message?.includes("exists")) throw e;
+      });
+
       const adjuntosResult = await query(
-        `SELECT id, filename, mime, size, created_at, tracking_token
+        `SELECT id, filename, mime, size, created_at, tracking_token, tipo
          FROM rma_ticket_adjuntos
          WHERE ticket_id = ?
          ORDER BY created_at ASC`,
@@ -45,6 +55,10 @@ export async function GET(
         mime: row.mime,
         size: row.size,
         created_at: row.created_at,
+        // Casos viejos no tienen la columna `tipo` poblada -- se asume
+        // "reporte" (foto que el cliente subio al reportar la falla), que
+        // es lo unico que existia antes de que hubiera guias de agencia.
+        tipo: row.tipo || "reporte",
         url: row.tracking_token
           ? `/api/servicio-tecnico/ticket/adjuntos/${row.tracking_token}/${row.id}`
           : null,
