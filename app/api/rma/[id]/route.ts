@@ -122,6 +122,27 @@ export async function PUT(
       return NextResponse.json({ success: true });
     }
 
+    // Correccion manual: deshace una eleccion de entrega y/o una entrega
+    // marcada por error (ej. un caso de prueba real que se toco sin
+    // querer). No hay botón para esto en la UI a proposito -- es un
+    // escape hatch para casos excepcionales, no un flujo normal. Requiere
+    // el mismo rol "rma" que el resto de este endpoint.
+    if (body.reset_entrega === true) {
+      await query(
+        `UPDATE rma_cases SET
+           despachado_at = NULL,
+           entrega_metodo = NULL,
+           entrega_ciudad = NULL,
+           entrega_ruta_id = NULL,
+           entrega_agencia = NULL,
+           entrega_datos = NULL,
+           entrega_elegida_at = NULL
+         WHERE id = ?`,
+        [id],
+      );
+      return NextResponse.json({ success: true });
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
 
