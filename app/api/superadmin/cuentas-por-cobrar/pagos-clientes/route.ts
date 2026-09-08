@@ -14,6 +14,18 @@ const COMPANY_MAP: Record<string, number> = {
 };
 const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
+// Diarios que NO son un cobro real de dinero: retenciones que hace el cliente
+// (IVA / ISLR / ITBMS / IGTF), descuentos y devoluciones locales, operaciones
+// varias y facturas de cliente. Van en la pestaña "Retenciones y ajustes", no
+// en "Cobros". En la práctica sólo aparecen RIVAC, DCTO, ITBRC y RIGTF sobre
+// pagos de clientes; el resto se deja por si se usan a futuro.
+const CODIGOS_AJUSTE = new Set([
+  "RIVAC", "ISLRC", "ITBRC", "RIGTF",  // retenciones del cliente
+  "DCTO", "DCTOL", "DSCTO", "DEVLO",   // descuento / devolución (local)
+  "MISC", "MISCE",                      // operaciones varias
+  "FCLIE", "INV",                       // facturas de cliente
+]);
+
 async function fetchPaginated(model: string, domain: any[], fields: string[], order = "date desc, id desc"): Promise<any[]> {
   let result: any[] = [];
   let offset = 0;
@@ -108,6 +120,14 @@ export async function GET(request: NextRequest) {
       (partners || []).forEach((p: any) => { partnerVat[p.id] = p.vat || ""; });
     }
 
+    // Código de cada diario (para clasificar cobro vs ajuste; el nombre del
+    // diario varía según el idioma, el código no).
+    const journalCode: Record<number, string> = {};
+    const journals = await callOdooRPC<any[]>(
+      "account.journal", "search_read", [[["company_id", "in", companyIds]]], { fields: ["id", "code"], limit: 0 },
+    );
+    (journals || []).forEach((j: any) => { journalCode[j.id] = j.code || ""; });
+
     const rows = pagos.map((p) => {
       const monedaId = p.currency_id?.[0] || null;
       const esUsd = monedaId === 1;
@@ -137,6 +157,9 @@ export async function GET(request: NextRequest) {
       else if (!esUsd && tasa != null && taxToday > 0 && Math.abs(tasa - taxToday) / Math.max(taxToday, 1) > 0.05) revisar = true;
 
       const igtf = Number(p.mount_igtf) || 0;
+      const codigo = journalCode[p.journal_id?.[0]] || "";
+      const tipo: "cobro" | "ajuste" = CODIGOS_AJUSTE.has(codigo) ? "ajuste" : "cobro";
+      const vendedor = p.salesperson_id?.[1] || "";
 
       return {
         id: p.id,
@@ -148,7 +171,9 @@ export async function GET(request: NextRequest) {
         rif: partnerVat[p.partner_id?.[0]] || "",
         sede: COMPANY_NAMES[p.company_id?.[0]] || "",
         banco: p.journal_id?.[1] || "",
-        vendedor: p.salesperson_id?.[1] || "",
+        vendedor,
+        tipo,
+        esAsistente: /asistente/i.test(vendedor),
         moneda,
         montoOriginal: r2(amount),
         montoBs: montoBs == null ? null : r2(montoBs),
@@ -173,28 +198,10 @@ export async function GET(request: NextRequest) {
             .some((c) => (c || "").toLowerCase().includes(search)))
       : rows;
 
-    const resumen = {
-      pagos: filtradas.length,
-      totalUsd: r2(filtradas.reduce((s, r) => s + r.montoUsd, 0)),
-      totalBs: r2(filtradas.reduce((s, r) => s + (r.montoBs || 0), 0)),
-      totalIgtf: r2(filtradas.reduce((s, r) => s + r.igtf, 0)),
-      porRevisar: filtradas.filter((r) => r.revisar).length,
-      porMoneda: {
-        USD: filtradas.filter((r) => r.moneda === "USD").length,
-        Bs: filtradas.filter((r) => r.moneda === "Bs").length,
-      },
-      porSede: [7, 9, 10].map((cid) => ({
-        sede: COMPANY_NAMES[cid],
-        pagos: filtradas.filter((r) => r.sede === COMPANY_NAMES[cid]).length,
-        totalUsd: r2(filtradas.filter((r) => r.sede === COMPANY_NAMES[cid]).reduce((s, r) => s + r.montoUsd, 0)),
-      })).filter((x) => x.pagos > 0),
-    };
-
     return NextResponse.json({
       success: true,
       data: {
         rows: filtradas,
-        resumen,
         filtros: { empresa, desde: fDesde, hasta: fHasta, estado, search },
       },
     });
