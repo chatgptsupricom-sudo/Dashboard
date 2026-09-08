@@ -69,6 +69,7 @@ export const rolePermissions: RolePermissions = {
       "reportes_comerciales", // Sección Reportes Comerciales (trimestral Panamá por marca)
       "reporte_diario", // Reporte Diario de Ventas
       "cuentas_por_cobrar", // Cuentas por Cobrar
+      "cxc_pago_clientes", // Pago de Clientes
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
@@ -222,6 +223,7 @@ export const rolePermissions: RolePermissions = {
       "referencia_comercial", // Referencia Comercial
       "cxc_search", // Buscar Facturas
       "cxc_top_clients", // Top Clientes / Vendedor
+      "cxc_pago_clientes", // Pago de Clientes
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {
@@ -288,6 +290,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_search",
       "cxc_top_clients",
       "cxc_contado_credito",
+      "cxc_pago_clientes",
     ],
   },
   [UserRole.DISENADOR]: {
