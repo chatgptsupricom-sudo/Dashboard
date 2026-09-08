@@ -906,12 +906,6 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
-    let latestPct = 0;
-    for (let i = semanaCuota.length - 1; i >= 0; i--) {
-      const val = parseInt(semanaCuota[i] || "");
-      if (!isNaN(val) && val > 0) { latestPct = val; break; }
-    }
-
     return NextResponse.json({
       success: true,
       data: {
@@ -928,7 +922,6 @@ export async function GET(request: NextRequest) {
         weekHeaders,
         sellers: Object.values(sellerMap),
         semanaGlobal: semanaCuota,
-        trend: latestPct >= 100 ? "green" : latestPct >= 75 ? "yellow" : "red",
         semanaVisitas,
         semanaClientes,
         semanaMargen,

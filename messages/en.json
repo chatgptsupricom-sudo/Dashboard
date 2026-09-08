@@ -409,6 +409,7 @@
     "column_owner": "Owner",
     "column_goal": "Goal",
     "column_average": "Average",
+    "column_valor": "Value",
     "column_kpi": "KPI",
     "back": "Back",
     "google_connect": "Connect Google",
