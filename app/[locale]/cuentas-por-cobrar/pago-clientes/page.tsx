@@ -10,8 +10,8 @@ type Tipo = "cobro" | "ajuste";
 
 type Row = {
   id: number;
-  fecha: string | null;
-  fechaRegistro: string | null;
+  fechaPago: string | null;
+  fechaConfirmacion: string | null;
   numeroPago: string;
   referencia: string;
   cliente: string;
@@ -56,13 +56,17 @@ const fmtFecha = (s: string | null) => {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export default function PagoClientesPage() {
-  const [desde, setDesde] = useState(primerDiaMes());
-  const [hasta, setHasta] = useState(hoy());
+  // Rango por fecha de confirmación (registro en Odoo) — el principal.
+  const [desdeConf, setDesdeConf] = useState(primerDiaMes());
+  const [hastaConf, setHastaConf] = useState(hoy());
+  // Rango por fecha de pago (fecha valor) — opcional, vacío por defecto.
+  const [desdePago, setDesdePago] = useState("");
+  const [hastaPago, setHastaPago] = useState("");
   const [empresa, setEmpresa] = useState("todas");
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
-  const [excluirAsistentes, setExcluirAsistentes] = useState(false);
+  const [excluirAsistentes, setExcluirAsistentes] = useState(true);
   const [tab, setTab] = useState<Tipo>("cobro");
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -71,12 +75,14 @@ export default function PagoClientesPage() {
   const [page, setPage] = useState(1);
 
   // La búsqueda y los filtros de tipo/asistente son locales: el fetch (pesado,
-  // va a Odoo) solo se rehace al cambiar rango / sede / estado.
+  // va a Odoo) solo se rehace al cambiar los rangos / sede / estado.
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ desde, hasta, empresa, estado });
+      const params = new URLSearchParams({ empresa, estado });
+      if (desdeConf && hastaConf) { params.set("desdeConf", desdeConf); params.set("hastaConf", hastaConf); }
+      if (desdePago && hastaPago) { params.set("desdePago", desdePago); params.set("hastaPago", hastaPago); }
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/pagos-clientes?${params}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "No se pudo cargar");
@@ -88,7 +94,7 @@ export default function PagoClientesPage() {
     } finally {
       setLoading(false);
     }
-  }, [desde, hasta, empresa, estado]);
+  }, [desdeConf, hastaConf, desdePago, hastaPago, empresa, estado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, tab]);
@@ -133,7 +139,8 @@ export default function PagoClientesPage() {
 
   const exportarExcel = () => {
     const data = visibles.map((r) => ({
-      "Fecha": fmtFecha(r.fecha),
+      "Fecha de confirmación": fmtFecha(r.fechaConfirmacion),
+      "Fecha de pago": fmtFecha(r.fechaPago),
       "N° Pago": r.numeroPago,
       "N° Operación / Ref.": r.referencia,
       "Cliente": r.cliente,
@@ -155,18 +162,18 @@ export default function PagoClientesPage() {
       "Estado": r.estado,
       "Conciliado": r.conciliado ? "Sí" : "No",
       "Revisar": r.revisar ? "Sí" : "",
-      "Fecha registro": fmtFecha(r.fechaRegistro),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [
-      { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
+      { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
       { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
-      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 9 }, { wch: 14 },
+      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 9 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, tab === "cobro" ? "Cobros" : "Retenciones y ajustes");
-    XLSX.writeFile(wb, `Pagos_Clientes_${tab}_${desde}_a_${hasta}.xlsx`);
+    const rango = (desdePago && hastaPago) ? `pago_${desdePago}_${hastaPago}` : `conf_${desdeConf}_${hastaConf}`;
+    XLSX.writeFile(wb, `Pagos_Clientes_${tab}_${rango}.xlsx`);
   };
 
   return (
@@ -206,15 +213,35 @@ export default function PagoClientesPage() {
 
       {/* Filtros */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Desde</label>
-          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm" />
+        <div className="rounded-lg border border-slate-300 bg-slate-50/60 p-2">
+          <div className="text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-2">
+            Fecha de confirmación <span className="font-normal text-slate-400">(principal)</span>
+            {(desdeConf || hastaConf) && (
+              <button onClick={() => { setDesdeConf(""); setHastaConf(""); }} className="text-[10px] text-slate-400 hover:text-slate-600 underline">limpiar</button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={desdeConf} onChange={(e) => setDesdeConf(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+            <span className="text-slate-400 text-xs">a</span>
+            <input type="date" value={hastaConf} onChange={(e) => setHastaConf(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Hasta</label>
-          <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm" />
+        <div className="rounded-lg border border-slate-200 p-2">
+          <div className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-2">
+            Fecha de pago
+            {(desdePago || hastaPago) && (
+              <button onClick={() => { setDesdePago(""); setHastaPago(""); }} className="text-[10px] text-slate-400 hover:text-slate-600 underline">limpiar</button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={desdePago} onChange={(e) => setDesdePago(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+            <span className="text-slate-400 text-xs">a</span>
+            <input type="date" value={hastaPago} onChange={(e) => setHastaPago(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Sede</label>
@@ -291,7 +318,7 @@ export default function PagoClientesPage() {
           <table className="w-full text-sm min-w-[1400px]">
             <thead>
               <tr className="bg-slate-50 border-b text-[11px] uppercase tracking-wide text-slate-500 text-left">
-                <th className="p-3">Fecha</th>
+                <th className="p-3">Fecha<span className="normal-case font-normal text-slate-400"> (confirm. / pago)</span></th>
                 <th className="p-3">N° Pago</th>
                 <th className="p-3">N° Operación</th>
                 <th className="p-3">Cliente</th>
@@ -318,7 +345,12 @@ export default function PagoClientesPage() {
               ) : (
                 pageRows.map((r) => (
                   <tr key={r.id} className={`border-b hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
-                    <td className="p-3 whitespace-nowrap text-slate-700">{fmtFecha(r.fecha)}</td>
+                    <td className="p-3 whitespace-nowrap">
+                      <div className="text-slate-800">{fmtFecha(r.fechaConfirmacion)}</div>
+                      {r.fechaPago && r.fechaPago !== r.fechaConfirmacion && (
+                        <div className="text-[10px] text-slate-400">pago: {fmtFecha(r.fechaPago)}</div>
+                      )}
+                    </td>
                     <td className="p-3 whitespace-nowrap font-medium text-slate-800">
                       {r.numeroPago}
                       {r.estado !== "posted" && (

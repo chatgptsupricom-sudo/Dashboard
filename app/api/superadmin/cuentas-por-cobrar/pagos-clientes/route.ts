@@ -67,16 +67,28 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const empresa = (searchParams.get("empresa") || "todas").toLowerCase();
-    const desde = searchParams.get("desde"); // YYYY-MM-DD
-    const hasta = searchParams.get("hasta"); // YYYY-MM-DD
     const estado = (searchParams.get("estado") || "posted").toLowerCase(); // posted | todos
     const search = (searchParams.get("search") || "").trim().toLowerCase();
+
+    // Dos rangos de fecha independientes (se aplican en AND si vienen los dos):
+    //  - confirmación: `payment_registration_date` (cuándo se registró el pago
+    //    en Odoo). Es la fecha principal que pidió Administración.
+    //  - pago: `date` del asiento (fecha valor del pago, puede estar retroactiva).
+    const desdeConf = searchParams.get("desdeConf");
+    const hastaConf = searchParams.get("hastaConf");
+    const desdePago = searchParams.get("desdePago");
+    const hastaPago = searchParams.get("hastaPago");
 
     const now = new Date();
     const defDesde = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const defHasta = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
-    const fDesde = desde || defDesde;
-    const fHasta = hasta || defHasta;
+
+    // Si no viene ningún rango, se usa el mes en curso sobre la fecha de
+    // confirmación (evita traer los 13k registros del histórico).
+    const hayPago = !!(desdePago && hastaPago);
+    const hayConf = !!(desdeConf && hastaConf);
+    const cDesde = hayConf ? desdeConf! : (hayPago ? null : defDesde);
+    const cHasta = hayConf ? hastaConf! : (hayPago ? null : defHasta);
 
     const companyIds = COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : [7, 9, 10];
 
@@ -84,13 +96,25 @@ export async function GET(request: NextRequest) {
       ["payment_type", "=", "inbound"],
       ["partner_type", "=", "customer"],
       ["company_id", "in", companyIds],
-      ["date", ">=", fDesde],
-      ["date", "<=", fHasta],
     ];
     if (estado !== "todos") domain.push(["state", "=", "posted"]);
+    if (desdePago && hastaPago) {
+      domain.push(["date", ">=", desdePago], ["date", "<=", hastaPago]);
+    }
+    if (cDesde && cHasta) {
+      // payment_registration_date empezó a poblarse en abr-2026; para los pocos
+      // registros previos con el campo vacío, se cae a create_date (siempre
+      // presente). En notación polaca: (reg en rango) OR (reg vacío AND create en rango).
+      domain.push(
+        "|",
+        "&", ["payment_registration_date", ">=", cDesde], ["payment_registration_date", "<=", cHasta],
+        "&", ["payment_registration_date", "=", false],
+        "&", ["create_date", ">=", `${cDesde} 00:00:00`], ["create_date", "<=", `${cHasta} 23:59:59`],
+      );
+    }
 
     const pagos = await fetchPaginated("account.payment", domain, [
-      "id", "name", "date", "payment_registration_date",
+      "id", "name", "date", "payment_registration_date", "create_date",
       "amount", "currency_id", "amount_company_currency_signed", "tax_today",
       "mount_igtf", "amount_total_pagar", "custom_rate",
       "payment_description", "ref", "partner_id", "journal_id",
@@ -163,8 +187,10 @@ export async function GET(request: NextRequest) {
 
       return {
         id: p.id,
-        fecha: p.date || null,
-        fechaRegistro: p.payment_registration_date || null,
+        // Fecha de pago = fecha valor del asiento (puede estar retroactiva).
+        fechaPago: p.date || null,
+        // Fecha de confirmación = cuándo se registró el pago en Odoo.
+        fechaConfirmacion: p.payment_registration_date || (p.create_date ? String(p.create_date).split(/[ T]/)[0] : null),
         numeroPago: p.name || "",
         referencia: p.ref || "",
         cliente: p.partner_id?.[1] || "",
@@ -202,7 +228,11 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         rows: filtradas,
-        filtros: { empresa, desde: fDesde, hasta: fHasta, estado, search },
+        filtros: {
+          empresa, estado, search,
+          confirmacion: cDesde && cHasta ? { desde: cDesde, hasta: cHasta } : null,
+          pago: desdePago && hastaPago ? { desde: desdePago, hasta: hastaPago } : null,
+        },
       },
     });
   } catch (error: any) {
