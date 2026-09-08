@@ -56,7 +56,18 @@ const esVendedorExcluido = (inv: any): boolean => {
 // corresponde a una factura emitida ese mismo mes o a una de un mes
 // anterior (deuda vieja que se termino de cobrar ahora) -- es lo que
 // pidio cobranza para no confundir "cuanto entro" con "de que factura".
-type Renglon = { monto: number; partnerId: number; partnerName: string; paymentTermId: number | undefined; esDelMes: boolean; journalId: number | undefined; journalName: string };
+type Renglon = {
+  monto: number;
+  partnerId: number;
+  partnerName: string;
+  paymentTermId: number | undefined;
+  esDelMes: boolean;
+  journalId: number | undefined;
+  journalName: string;
+  sellerId: number | undefined;
+  sellerName: string;
+  invoiceName: string;
+};
 
 async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
   const invoicesRaw = await fetchPaginated(
@@ -68,7 +79,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ],
-    ["id", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"],
+    ["id", "name", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"],
   );
 
   return invoicesRaw
@@ -85,6 +96,9 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       esDelMes: true,
       journalId: undefined,
       journalName: "",
+      sellerId: inv.invoice_user_id?.[0],
+      sellerName: inv.invoice_user_id?.[1] || "Sin vendedor",
+      invoiceName: inv.name || "",
     }));
 }
 
@@ -135,7 +149,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
+    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
@@ -215,6 +229,9 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
       esDelMes,
       journalId: journalIdRaw,
       journalName: journalNameRaw,
+      sellerId: invoiceMove.invoice_user_id?.[0],
+      sellerName: invoiceMove.invoice_user_id?.[1] || "Sin vendedor",
+      invoiceName: invoiceMove.name || "",
     });
   });
   return renglones;
@@ -241,6 +258,14 @@ export async function GET(request: NextRequest) {
     // (coincide con el export real de cobranza).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
     const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    // Filtros adicionales, iguales a los que ya tiene "Integracion de
+    // Pagos" en Odoo: vendedor puntual, busqueda libre (cliente o numero
+    // de factura), y banco/diario puntual (solo aplica en Cobrado).
+    const vendedorIdParam = searchParams.get("vendedorId");
+    const vendedorId = vendedorIdParam ? parseInt(vendedorIdParam, 10) : undefined;
+    const search = (searchParams.get("search") || "").trim().toLowerCase();
+    const bancoIdParam = searchParams.get("bancoId");
+    const bancoId = bancoIdParam ? parseInt(bancoIdParam, 10) : undefined;
 
     const now = new Date();
     let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
@@ -263,9 +288,38 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    const renglones = modo === "cobrado"
+    const renglonesSinFiltrar = modo === "cobrado"
       ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente)
       : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
+
+    // Vendedores para el dropdown: todos los que aparecen en el periodo,
+    // sin aplicar todavia el filtro de vendedor/busqueda/banco -- para que
+    // la lista de opciones no se vacie a medida que el usuario filtra.
+    const vendedoresMap = new Map<number, string>();
+    renglonesSinFiltrar.forEach((r) => {
+      if (r.sellerId !== undefined) vendedoresMap.set(r.sellerId, r.sellerName);
+    });
+    const vendedores = [...vendedoresMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Igual que vendedores: bancos para el dropdown, sin aplicar todavia
+    // el filtro de vendedor/busqueda/banco (si no, al elegir un banco el
+    // propio dropdown se reduciria a esa unica opcion).
+    const bancosMap = new Map<number, string>();
+    renglonesSinFiltrar.forEach((r) => {
+      if (r.journalId !== undefined) bancosMap.set(r.journalId, r.journalName);
+    });
+    const bancosDisponibles = [...bancosMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const renglones = renglonesSinFiltrar.filter((r) => {
+      if (vendedorId !== undefined && r.sellerId !== vendedorId) return false;
+      if (bancoId !== undefined && r.journalId !== bancoId) return false;
+      if (search && !r.partnerName.toLowerCase().includes(search) && !r.invoiceName.toLowerCase().includes(search)) return false;
+      return true;
+    });
 
     // ── Nombres de los plazos de pago vistos ──
     const ptIds = [...new Set(renglones.map((r) => r.paymentTermId).filter((id): id is number => Boolean(id)))];
@@ -407,13 +461,20 @@ export async function GET(request: NextRequest) {
         },
         buckets,
         bancos,
+        vendedores,
+        bancosDisponibles,
         filters: {
           empresa,
           month: currentMonth + 1,
           year: currentYear,
+          startDate: startDateParam || undefined,
+          endDate: endDateParam || undefined,
           companyIds,
           modo,
           excluirAsistente,
+          vendedorId,
+          search: search || undefined,
+          bancoId,
         },
         updatedAt: new Date().toISOString(),
       },

@@ -54,7 +54,7 @@ const esVendedorExcluido = (inv: any): boolean => {
   return reglas.some((regla) => sellerName.includes(regla));
 };
 
-async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Factura[]> {
+async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined): Promise<Factura[]> {
   const invoicesRaw = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
@@ -69,7 +69,9 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
     { fields: ["id", "name", "invoice_date", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"], order: "invoice_date desc" },
   );
 
-  const invoices = (invoicesRaw || []).filter((inv) => !excluirAsistente || !esVendedorExcluido(inv));
+  const invoices = (invoicesRaw || [])
+    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv))
+    .filter((inv) => vendedorId === undefined || inv.invoice_user_id?.[0] === vendedorId);
   const ptIds = [...new Set(invoices.map((f) => f.invoice_payment_term_id?.[0]).filter(Boolean))];
   let ptMap: Record<number, string> = {};
   if (ptIds.length > 0) {
@@ -94,7 +96,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 // Abonos del cliente ese mes (fecha de conciliacion, no fecha de factura) --
 // mismo mecanismo que contado-credito/route.ts::renglonesCobradoDinero,
 // filtrado ademas por partner.
-async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Factura[]> {
+async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined, bancoId: number | undefined): Promise<Factura[]> {
   const reconciles = await fetchPaginated(
     "account.partial.reconcile",
     [],
@@ -169,6 +171,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     // por defecto (ver comentario en
     // contado-credito/route.ts::renglonesCobradoDinero).
     if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
+    if (vendedorId !== undefined && invoiceMove.invoice_user_id?.[0] !== vendedorId) return;
 
     const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
     if (fechaAbono < startStr || fechaAbono > endStr) return;
@@ -176,6 +179,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     const journalIdRaw = settleMove.journal_id?.[0];
     const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
     if (!esBancoReal(journalIdRaw, journalNameRaw)) return;
+    if (bancoId !== undefined && journalIdRaw !== bancoId) return;
 
     if (invoiceMove.invoice_payment_term_id?.[0]) ptIdsVistos.add(invoiceMove.invoice_payment_term_id[0]);
     crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0 });
@@ -220,12 +224,21 @@ export async function GET(request: NextRequest) {
     const userCidsParam = searchParams.get("userCids");
     const monthParam = searchParams.get("month");
     const yearParam = searchParams.get("year");
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
     const modoParam = searchParams.get("modo");
     const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
     // Mismo toggle que contado-credito/route.ts: si no viene explicito, el
     // default historico de cada modo (Facturado si excluia, Cobrado no).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
     const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    // Filtros globales de la pantalla (los mismos que contado-credito/
+    // route.ts): vendedor puntual y banco/diario puntual, independientes
+    // de la card de la que salio el drill-down.
+    const vendedorIdParam = searchParams.get("vendedorId");
+    const vendedorId = vendedorIdParam ? parseInt(vendedorIdParam, 10) : undefined;
+    const bancoIdParam = searchParams.get("bancoId");
+    const bancoId = bancoIdParam ? parseInt(bancoIdParam, 10) : undefined;
     // Filtro opcional: acota a la misma card de la que salio el drill-down
     // (Contado/Credito, un plazo puntual, o un banco), para no mostrar en
     // "Cobros -- Cliente X" abonos de otros plazos o bancos mezclados con
@@ -235,10 +248,18 @@ export async function GET(request: NextRequest) {
     const journalIdParam = searchParams.get("journalId");
 
     const now = new Date();
-    const currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
-    const currentMonth = monthParam ? parseInt(monthParam) - 1 : now.getMonth();
-    const monthStart = getMonthStart(currentYear, currentMonth);
-    const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+    let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
+    if (startDateParam && endDateParam) {
+      monthStart = new Date(startDateParam + "T00:00:00");
+      monthEnd = new Date(endDateParam + "T23:59:59");
+      currentYear = monthStart.getFullYear();
+      currentMonth = monthStart.getMonth();
+    } else {
+      currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
+      currentMonth = monthParam ? parseInt(monthParam) - 1 : now.getMonth();
+      monthStart = getMonthStart(currentYear, currentMonth);
+      monthEnd = new Date(currentYear, currentMonth + 1, 0);
+    }
 
     const companyIds = empresa && COMPANY_MAP[empresa]
       ? [COMPANY_MAP[empresa]]
@@ -247,8 +268,8 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     let facturas = modo === "cobrado"
-      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente)
-      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente);
+      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId)
+      : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId);
 
     if (journalIdParam) {
       const journalId = parseInt(journalIdParam, 10);
