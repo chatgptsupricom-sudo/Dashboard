@@ -2,7 +2,6 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -18,6 +17,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
+    const periodoParam = url.searchParams.get("periodo") || "mes";
     const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
     const now = new Date();
@@ -26,19 +26,46 @@ export async function GET(request: NextRequest) {
     const anio = parseInt(anioStr, 10);
     const mesNum = parseInt(mesStr, 10);
 
-    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
-    const ultimoDia = new Date(anio, mesNum, 0).getDate();
-    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
+    let fechaInicio: string;
+    let fechaFin: string;
+    let periodoLabel: string;
+
+    if (periodoParam === "trimestre") {
+      const trimestre = Math.ceil(mesNum / 3);
+      const mesInicioTrimestre = (trimestre - 1) * 3 + 1;
+      fechaInicio = `${anio}-${String(mesInicioTrimestre).padStart(2, "0")}-01`;
+      const ultimoDiaTrimestre = new Date(anio, mesInicioTrimestre + 2, 0).getDate();
+      fechaFin = `${anio}-${String(mesInicioTrimestre + 2).padStart(2, "0")}-${ultimoDiaTrimestre}`;
+      periodoLabel = `Trimestre ${trimestre} ${anio}`;
+    } else if (periodoParam === "anio") {
+      fechaInicio = `${anio}-01-01`;
+      fechaFin = `${anio}-12-31`;
+      periodoLabel = `Año ${anio}`;
+    } else if (periodoParam === "todo") {
+      fechaInicio = "2000-01-01";
+      fechaFin = "2099-12-31";
+      periodoLabel = "Todo el tiempo";
+    } else {
+      fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+      const ultimoDia = new Date(anio, mesNum, 0).getDate();
+      fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
+    }
 
     const semanas = (() => {
-      const result: { inicio: Date; fin: Date }[] = [];
-      let inicio = new Date(anio, mesNum - 1, 1);
-      const ultimoDiaMes = new Date(anio, mesNum, 0);
-      while (inicio <= ultimoDiaMes) {
+      const result: { inicio: Date; fin: Date; label: string }[] = [];
+      const fechaFinDate = new Date(fechaFin);
+      let inicio = new Date(fechaInicio);
+      const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+      while (inicio <= fechaFinDate) {
         let fin = new Date(inicio);
         fin.setDate(fin.getDate() + 6);
-        if (fin > ultimoDiaMes) fin = new Date(ultimoDiaMes);
-        result.push({ inicio: new Date(inicio), fin: new Date(fin) });
+        if (fin > fechaFinDate) fin = new Date(fechaFinDate);
+        result.push({
+          inicio: new Date(inicio),
+          fin: new Date(fin),
+          label: `${inicio.toLocaleDateString("es-VE", opts)} - ${fin.toLocaleDateString("es-VE", opts)}`,
+        });
         inicio = new Date(fin);
         inicio.setDate(inicio.getDate() + 1);
       }
@@ -51,25 +78,26 @@ export async function GET(request: NextRequest) {
     );
     const sellers = sellerResult.rows as any[];
     if (sellers.length === 0) {
-      return NextResponse.json({ success: true, data: { mes, sellers: [], marcas: [] } });
+      return NextResponse.json({ success: true, data: { mes, periodo: periodoParam, periodoLabel, sellers: [], marcas: [] } });
     }
+    const sellerName = sellers[0].name;
 
     const invoices = await callOdooRPC<any[]>(
       "account.move", "search_read",
       [[
-        ["move_type", "=", "out_invoice"],
+        ["move_type", "in", ["out_invoice", "out_refund"]],
         ["state", "=", "posted"],
         ["company_id", "=", companyId],
         ["invoice_date", ">=", fechaInicio],
         ["invoice_date", "<=", fechaFin],
         ["invoice_user_id", "=", uid],
       ]],
-      { fields: ["id", "invoice_date", "move_type"], limit: 10000 }
+      { fields: ["id", "invoice_date", "move_type"], limit: 50000 }
     );
 
     const invoiceIds = (invoices || []).map((inv: any) => inv.id);
-    const invDateMap: Record<number, Date> = {};
-    (invoices || []).forEach((inv: any) => { invDateMap[inv.id] = new Date(inv.invoice_date); });
+    const invMap: Record<number, any> = {};
+    (invoices || []).forEach((inv: any) => { invMap[inv.id] = inv; });
 
     let lines: any[] = [];
     if (invoiceIds.length > 0) {
@@ -80,63 +108,83 @@ export async function GET(request: NextRequest) {
       )) || [];
     }
 
+    // Producto -> marca (spiff_brand_id de product.template) + costo unitario.
+    // Antes esto mapeaba producto -> NOMBRE del producto y lo trataba como
+    // "marca", así que la tabla mostraba productos en vez de marcas.
     const productIds = [...new Set(lines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
+    const productBrandMap: Record<number, string> = {};
     const productCostMap: Record<number, number> = {};
-    const productNameMap: Record<number, string> = {};
 
     if (productIds.length > 0) {
-      const details = (await callOdooRPC<any[]>(
+      const variants = (await callOdooRPC<any[]>(
         "product.product", "search_read",
         [[["id", "in", productIds], ["active", "=", true]]],
-        { fields: ["id", "name", "product_tmpl_id"], limit: 0 }
+        { fields: ["id", "product_tmpl_id"], limit: 0 }
       )) || [];
-      details.forEach((p: any) => { productNameMap[p.id] = p.name || "Sin nombre"; });
       const varToTmpl: Record<number, number> = {};
-      details.forEach((p: any) => { if (p.product_tmpl_id?.[0]) varToTmpl[p.id] = p.product_tmpl_id[0]; });
-      const tmplIds = [...new Set(details.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
+      variants.forEach((v: any) => { if (v.product_tmpl_id?.[0]) varToTmpl[v.id] = v.product_tmpl_id[0]; });
+
+      const tmplIds = [...new Set(variants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
+      const tmplBrand: Record<number, string> = {};
+      const tmplCost: Record<number, number> = {};
       if (tmplIds.length > 0) {
         const templates = (await callOdooRPC<any[]>(
           "product.template", "search_read",
           [[["id", "in", tmplIds]]],
-          { fields: ["id", "standard_price"], limit: 0 }
+          { fields: ["id", "spiff_brand_id", "standard_price"], limit: 0 }
         )) || [];
-        const tmplCost: Record<number, number> = {};
-        templates.forEach((t: any) => { tmplCost[t.id] = Number(t.standard_price) || 0; });
-        productIds.forEach((pid) => { const tid = varToTmpl[pid]; productCostMap[pid] = tid ? (tmplCost[tid] || 0) : 0; });
+        templates.forEach((t: any) => {
+          tmplBrand[t.id] = t.spiff_brand_id?.[1] || "Sin marca";
+          tmplCost[t.id] = Number(t.standard_price) || 0;
+        });
       }
+      productIds.forEach((pid: number) => {
+        const tid = varToTmpl[pid];
+        productBrandMap[pid] = tid ? (tmplBrand[tid] || "Sin marca") : "Sin marca";
+        productCostMap[pid] = tid ? (tmplCost[tid] || 0) : 0;
+      });
     }
 
-    // Brand aggregation
-    const brandMap: Record<string, { revenue: number; costo: number; cantidad: number; semanas: { revenue: number; costo: number; cantidad: number }[] }> = {};
-    const semanasData = semanas.map(() => ({ revenue: 0, costo: 0, cantidad: 0 }));
+    interface BrandData {
+      revenue: number;
+      costo: number;
+      cantidad: number;
+      productos: Set<number>;
+      semanas: { revenue: number; costo: number; cantidad: number }[];
+    }
+    const brandMap: Record<string, BrandData> = {};
 
     lines.forEach((line: any) => {
       const moveId = line.move_id?.[0];
-      const invDate = invDateMap[moveId];
-      if (!invDate) return;
+      const inv = invMap[moveId];
+      if (!inv) return;
       const productId = line.product_id?.[0];
+      if (!productId) return;
+
       const qty = Math.abs(Number(line.quantity) || 0);
       const revenue = Math.abs(Number(line.price_subtotal) || 0);
-      const unitCost = productId ? (productCostMap[productId] || 0) : 0;
+      const unitCost = productCostMap[productId] || 0;
       const costo = qty * unitCost;
 
-      const inv = (invoices || []).find((i: any) => i.id === moveId);
-      const isRefund = inv?.move_type === "out_refund";
+      const isRefund = inv.move_type === "out_refund";
       const rFinal = isRefund ? -revenue : revenue;
       const cFinal = isRefund ? -costo : costo;
-      const qFinal = isRefund ? -qty : qty;
 
-      const brandName = productNameMap[productId] || "Sin marca";
-      if (!brandMap[brandName]) brandMap[brandName] = { revenue: 0, costo: 0, cantidad: 0, semanas: semanas.map(() => ({ revenue: 0, costo: 0, cantidad: 0 })) };
-      brandMap[brandName].revenue += rFinal;
-      brandMap[brandName].costo += cFinal;
-      brandMap[brandName].cantidad += qFinal;
+      const brand = productBrandMap[productId] || "Sin marca";
+      if (!brandMap[brand]) {
+        brandMap[brand] = { revenue: 0, costo: 0, cantidad: 0, productos: new Set(), semanas: semanas.map(() => ({ revenue: 0, costo: 0, cantidad: 0 })) };
+      }
+      brandMap[brand].revenue += rFinal;
+      brandMap[brand].costo += cFinal;
+      brandMap[brand].cantidad += qty;
+      brandMap[brand].productos.add(productId);
 
+      const invDate = new Date(inv.invoice_date);
       for (let i = 0; i < semanas.length; i++) {
         if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-          brandMap[brandName].semanas[i].revenue += rFinal;
-          brandMap[brandName].semanas[i].costo += cFinal;
-          brandMap[brandName].semanas[i].cantidad += qFinal;
+          brandMap[brand].semanas[i].revenue += rFinal;
+          brandMap[brand].semanas[i].costo += cFinal;
+          brandMap[brand].semanas[i].cantidad += qty;
           break;
         }
       }
@@ -148,30 +196,65 @@ export async function GET(request: NextRequest) {
     );
     const metaCantidad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
-    const marcasResult = Object.entries(brandMap).map(([marca, data]) => {
+    const marcas = Object.entries(brandMap).map(([marca, data]) => {
+      const ganancia = Math.round((data.revenue - data.costo) * 100) / 100;
       const margen = data.revenue > 0 ? Math.round(((data.revenue - data.costo) / data.revenue) * 100) : 0;
-      return { marca, revenue: Math.round(data.revenue * 100) / 100, costo: Math.round(data.costo * 100) / 100, ganancia: Math.round((data.revenue - data.costo) * 100) / 100, cantidad: Math.round(data.cantidad * 100) / 100, margen };
+      const semanasCalc = data.semanas.map((sem, i) => {
+        const esFuturo = semanas[i].inicio > now;
+        const cantidadPct = metaCantidad > 0 ? Math.round((sem.cantidad / metaCantidad) * 100) : null;
+        return {
+          numero: i + 1,
+          label: semanas[i].label,
+          revenue: Math.round(sem.revenue * 100) / 100,
+          costo: Math.round(sem.costo * 100) / 100,
+          ganancia: Math.round((sem.revenue - sem.costo) * 100) / 100,
+          cantidad: Math.round(sem.cantidad * 100) / 100,
+          cantidadPct: esFuturo ? null : cantidadPct,
+        };
+      });
+      return {
+        marca,
+        revenue: Math.round(data.revenue * 100) / 100,
+        costo: Math.round(data.costo * 100) / 100,
+        ganancia,
+        cantidad: Math.round(data.cantidad * 100) / 100,
+        margen,
+        productosVendidos: data.productos.size,
+        vendedores: 1,
+        vendedoresLista: [sellerName],
+        semanas: semanasCalc,
+      };
     }).sort((a, b) => b.revenue - a.revenue);
 
-    const sellerSemanas = semanas.map((sem, i) => {
-      const esFuturo = sem.inicio > now;
-      const cantidad = Object.values(brandMap).reduce((sum, b) => sum + b.semanas[i].cantidad, 0);
-      const pct = metaCantidad > 0 ? Math.round((cantidad / metaCantidad) * 100) : (cantidad > 0 ? Math.round(cantidad) : null);
-      return { numero: i + 1, cantidad: Math.round(cantidad * 100) / 100, pctMeta: esFuturo ? null : pct };
-    });
+    const globalRevenue = marcas.reduce((s, b) => s + b.revenue, 0);
+    const globalCosto = marcas.reduce((s, b) => s + b.costo, 0);
+    const globalCantidad = marcas.reduce((s, b) => s + b.cantidad, 0);
 
     return NextResponse.json({
       success: true,
       data: {
         mes,
+        periodo: periodoParam,
+        periodoLabel,
+        fechaInicio,
+        fechaFin,
+        global: {
+          totalMarcas: marcas.length,
+          revenue: Math.round(globalRevenue * 100) / 100,
+          costo: Math.round(globalCosto * 100) / 100,
+          margen: globalRevenue > 0 ? Math.round(((globalRevenue - globalCosto) / globalRevenue) * 100) : 0,
+          cantidad: Math.round(globalCantidad * 100) / 100,
+          cantidadPct: metaCantidad > 0 ? Math.round((globalCantidad / metaCantidad) * 100) : 0,
+          totalProductos: marcas.reduce((s, b) => s + b.productosVendidos, 0),
+          totalVendedores: 1,
+        },
         sellers: [{
-          nombre: sellers[0].name,
+          nombre: sellerName,
           sellerId: sellers[0].seller_id,
-          cantidadVendida: marcasResult.reduce((sum, b) => sum + b.cantidad, 0),
+          cantidadVendida: Math.round(globalCantidad * 100) / 100,
           metaCantidad,
-          semanas: sellerSemanas,
         }],
-        marcas: marcasResult,
+        marcas,
       },
     });
   } catch (error: any) {
