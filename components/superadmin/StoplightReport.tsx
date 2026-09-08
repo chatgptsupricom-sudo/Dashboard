@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronUp,
   HelpCircle,
-  Package,
   Plus,
   RotateCcw,
   Search,
@@ -28,6 +27,7 @@ import CuotaDetailModal from "./stoplight/CuotaDetailModal";
 import ClientesNuevosModal from "./stoplight/ClientesNuevosModal";
 import MargenBrutoModal from "./stoplight/MargenBrutoModal";
 import EfectividadCierreModal from "./stoplight/EfectividadCierreModal";
+import CoberturaMarcasModal from "./stoplight/CoberturaMarcasModal";
 import ModalMonthPicker from "./stoplight/ModalMonthPicker";
 import {
   getCellColor,
@@ -98,11 +98,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [efectividadModalOpen, setEfectividadModalOpen] = useState(false);
 
   const [coberturaModalOpen, setCoberturaModalOpen] = useState(false);
-  const [coberturaModalLoading, setCoberturaModalLoading] = useState(false);
-  const [coberturaModalData, setCoberturaModalData] = useState<any>(null);
-  const [selectedCoberturaSeller, setSelectedCoberturaSeller] = useState<any>(null);
-  const [coberturaModalTab, setCoberturaModalTab] = useState<"vendedor" | "semanal">("vendedor");
-  const [coberturaPeriodo, setCoberturaPeriodo] = useState<"mes" | "trimestre" | "anio" | "todo">("mes");
 
   const [activacionModalOpen, setActivacionModalOpen] = useState(false);
   const [activacionModalLoading, setActivacionModalLoading] = useState(false);
@@ -347,26 +342,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
 
 
-  const openCoberturaModalWithMes = async (mes: string, periodo: string = "mes") => {
-    modalFetchRef.current = (m: string) => openCoberturaModalWithMes(m, coberturaPeriodo);
-    setCoberturaModalOpen(true);
-    setCoberturaModalLoading(true);
-    setSelectedCoberturaSeller(null);
-    setCoberturaModalTab("vendedor");
-    setCoberturaPeriodo(periodo as any);
-    try {
-      const res = await fetch(`${apiPrefix}/cobertura-detail?${q({ periodo }, mes)}`);
-      const json = await res.json();
-      if (json.success) setCoberturaModalData(json.data);
-    } catch (e) {
-      console.error("Error fetching cobertura detail:", e);
-    }
-    setCoberturaModalLoading(false);
-  };
-
-  const openCoberturaModal = async (periodo: string = "mes") => {
-    await openCoberturaModalWithMes(selectedMes, periodo);
-  };
 
   const openActivacionModalWithMes = async (mes: string, periodo: string = "mes") => {
     modalFetchRef.current = (m: string) => openActivacionModalWithMes(m, activacionPeriodo);
@@ -1451,7 +1426,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
                           <span
@@ -1625,238 +1600,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       />
 
       {/* Cobertura Marcas Modal */}
-      {coberturaModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-cyan-100 rounded-lg">
-                  <Package size={20} className="text-cyan-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("cobertura_title")}</h2>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {coberturaModalData?.periodoLabel || t("cobertura_subtitle")}
-                  </p>
-                </div>
-              </div>
-              {/* Period Selector */}
-              <div className="flex items-center gap-2">
-                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
-                {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => openCoberturaModalWithMes(modalMes, p)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                      coberturaPeriodo === p
-                        ? "bg-cyan-500 text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {p === "mes" ? t("periodo_mes") : p === "trimestre" ? t("periodo_trimestre") : p === "anio" ? t("periodo_anio") : t("periodo_todo")}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => { setCoberturaModalOpen(false); setSelectedCoberturaSeller(null); setCoberturaModalData(null); }}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
-            </div>
-
-            {/* Modal Tabs */}
-            <div className="flex gap-4 px-5 pt-4 border-b">
-              {(["vendedor", "semanal"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setCoberturaModalTab(tab); setSelectedCoberturaSeller(null); }}
-                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    coberturaModalTab === tab ? "text-cyan-500 border-b-2 border-cyan-500" : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {tab === "vendedor" ? t("tab_por_marca") : t("tab_detalle_semanal")}
-                </button>
-              ))}
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-5">
-              {coberturaModalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("loading")}
-                </div>
-              ) : !coberturaModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("no_available_data")}
-                </div>
-              ) : (
-                <>
-                  {/* POR MARCA Tab */}
-                  {coberturaModalTab === "vendedor" && (
-                    <div className="space-y-6">
-                      {/* Global Summary */}
-                      {coberturaModalData.global && (
-                        <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                          <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: coberturaModalData.periodoLabel })}</h3>
-                          <div className="grid grid-cols-5 gap-4">
-                            <div className="text-center">
-                              <div className="bg-cyan-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-cyan-700">{coberturaModalData.global.totalMarcas}</p>
-                              </div>
-                              <p className="text-xs font-medium text-cyan-600">{t("marcas")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-green-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-green-700">${coberturaModalData.global.revenue?.toLocaleString()}</p>
-                              </div>
-                              <p className="text-xs font-medium text-green-600">{t("revenue_total")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-red-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-red-700">${coberturaModalData.global.costo?.toLocaleString()}</p>
-                              </div>
-                              <p className="text-xs font-medium text-red-600">{t("costo_total")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-purple-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-purple-700">{coberturaModalData.global.margen}%</p>
-                              </div>
-                              <p className="text-xs font-medium text-purple-600">{t("margen_promedio")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-indigo-50 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-indigo-700">{coberturaModalData.global.totalVendedores}</p>
-                              </div>
-                              <p className="text-xs font-medium text-indigo-600">{t("vendedores")}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Brands table */}
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">{t("marca")}</th>
-                              <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
-                              <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
-                              <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
-                              <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
-                              <th className="p-3 text-right font-medium text-cyan-600">{t("p_vendidos")}</th>
-                              <th className="p-3 text-right font-medium text-slate-600">{t("vendedores")}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {coberturaModalData.marcas.map((marca: any) => (
-                              <tr
-                                key={marca.marca}
-                                className="border-b hover:bg-cyan-50/40 transition-colors cursor-pointer"
-                                onClick={() => setSelectedCoberturaSeller(marca)}
-                              >
-                                <td className="p-3 font-medium text-slate-800">{marca.marca}</td>
-                                <td className="p-3 text-right text-green-600 font-bold">${marca.revenue?.toLocaleString()}</td>
-                                <td className="p-3 text-right text-red-600">${marca.costo?.toLocaleString()}</td>
-                                <td className={`p-3 text-right font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                  ${marca.ganancia?.toLocaleString()}
-                                </td>
-                                <td className="p-3 text-right text-indigo-600">{marca.cantidad}</td>
-                                <td className="p-3 text-right text-cyan-600">{marca.productosVendidos}</td>
-                                <td className="p-3 text-right text-slate-600">{marca.vendedores}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* DETALLE SEMANAL Tab */}
-                  {coberturaModalTab === "semanal" && (
-                    <div>
-                      {!selectedCoberturaSeller ? (
-                        <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_marca")}</p>
-                          <div className="grid grid-cols-3 gap-3">
-                            {coberturaModalData.marcas.map((marca: any) => (
-                              <button
-                                key={marca.marca}
-                                onClick={() => setSelectedCoberturaSeller(marca)}
-                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <div>
-                                  <span className="font-medium text-slate-800">{marca.marca}</span>
-                                  <p className="text-xs text-slate-500">${marca.revenue?.toLocaleString()} revenue</p>
-                                </div>
-                                <span className={`text-sm font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                  ${marca.ganancia?.toLocaleString()}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex items-center gap-3 mb-4">
-                            <button onClick={() => setSelectedCoberturaSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              {t("back")}
-                            </button>
-                            <h3 className="font-bold text-slate-800">{selectedCoberturaSeller.marca}</h3>
-                            <span className={`text-sm font-bold ${selectedCoberturaSeller.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              ${selectedCoberturaSeller.ganancia?.toLocaleString()} ganancia
-                            </span>
-                          </div>
-                          {/* Vendedores que venden esta marca */}
-                          {selectedCoberturaSeller.vendedoresLista && selectedCoberturaSeller.vendedoresLista.length > 0 && (
-                            <div className="mb-4 p-4 bg-cyan-50 rounded-xl border">
-                              <p className="text-xs font-medium text-cyan-700 mb-2">Vendedores ({selectedCoberturaSeller.vendedores}):</p>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedCoberturaSeller.vendedoresLista.map((v: string) => (
-                                  <span key={v} className="px-2 py-1 bg-white text-cyan-700 rounded text-xs font-medium border border-cyan-200">
-                                    {v}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                                  <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
-                                  <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
-                                  <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
-                                  <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {selectedCoberturaSeller.semanas.map((sem: any) => (
-                                  <tr key={sem.numero} className={`border-b ${sem.cantidadPct != null && sem.cantidadPct >= 100 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                    <td className="p-3 text-right text-green-600 font-bold">${sem.revenue?.toLocaleString()}</td>
-                                    <td className="p-3 text-right text-red-600">${sem.costo?.toLocaleString()}</td>
-                                    <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                      ${sem.ganancia?.toLocaleString()}
-                                    </td>
-                                    <td className="p-3 text-right text-indigo-600 font-bold">{sem.cantidad}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <CoberturaMarcasModal
+        isOpen={coberturaModalOpen}
+        onClose={() => setCoberturaModalOpen(false)}
+        apiPrefix={apiPrefix}
+        companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
+        defaultMes={selectedMes}
+      />
 
       {/* Activacion Cartera Modal */}
       {activacionModalOpen && (
