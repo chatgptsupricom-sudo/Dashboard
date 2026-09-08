@@ -16,12 +16,8 @@ interface ClientesNuevosModalProps {
 
 // Modal "Clientes nuevos": resumen y semanal por vendedor, con drill-down
 // vendedor → cliente → factura → líneas. Autocontenido. Extraído de
-// StoplightReport.tsx (audit #23).
-//
-// Nota: igual que antes de la extracción, el listado principal respeta el
-// selector de mes del modal, pero las consultas de drill-down (detalle de
-// vendedor y de factura) usan el mes de la página (`defaultMes`). Se preserva
-// tal cual; unificarlo es un cambio aparte.
+// StoplightReport.tsx (audit #23). Todo — listado y drill-down — respeta el
+// selector de mes del modal (issue #132).
 export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: ClientesNuevosModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
@@ -40,8 +36,8 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
   const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
 
-  const buildQuery = (extras: Record<string, string>, mesForQuery: string) => {
-    const params = new URLSearchParams({ mes: mesForQuery, ...extras });
+  const buildQuery = (extras: Record<string, string> = {}) => {
+    const params = new URLSearchParams({ mes, ...extras });
     if (companyId != null) params.set("company_id", String(companyId));
     return params.toString();
   };
@@ -67,7 +63,7 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
     setSellerDetail(null);
     (async () => {
       try {
-        const res = await fetch(`${apiPrefix}/clientes-nuevos-detail?${buildQuery({}, mes)}`);
+        const res = await fetch(`${apiPrefix}/clientes-nuevos-detail?${buildQuery()}`);
         const json = await res.json();
         if (!cancelled && json.success) setData(json.data);
       } catch (e) {
@@ -85,7 +81,7 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
     setSellerLoading(true);
     setSellerDetail(null);
     try {
-      const res = await fetch(`${apiPrefix}/clientes-nuevos-seller-detail?${buildQuery({ seller_name: encodeURIComponent(seller.nombre) }, defaultMes)}`);
+      const res = await fetch(`${apiPrefix}/clientes-nuevos-seller-detail?${buildQuery({ seller_name: encodeURIComponent(seller.nombre) })}`);
       const json = await res.json();
       if (json.success) setSellerDetail(json.data);
     } catch (e) {
@@ -99,7 +95,7 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
     setInvoiceLoading(true);
     setInvoiceDetail(null);
     try {
-      const res = await fetch(`${apiPrefix}/invoice-detail?${buildQuery({ invoice_id: String(invoice.id) }, defaultMes)}`);
+      const res = await fetch(`${apiPrefix}/invoice-detail?${buildQuery({ invoice_id: String(invoice.id) })}`);
       const json = await res.json();
       if (json.success) setInvoiceDetail(json.data);
     } catch (e) {
@@ -149,8 +145,8 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
                   ? `${selectedInvoice.date} | ${t("total")}: $${Math.abs(selectedInvoice.amount || 0).toLocaleString(locale, { minimumFractionDigits: 2 })}`
                   : selectedSeller
                     ? selectedClient
-                      ? `${defaultMes} | ${t("total")}: $${(selectedClient.totalFacturado || 0).toLocaleString(locale, { minimumFractionDigits: 2 })}`
-                      : `${defaultMes} | ${t("clientes_nuevos_col")}: ${sellerDetail?.totalNuevos || 0}`
+                      ? `${mes} | ${t("total")}: $${(selectedClient.totalFacturado || 0).toLocaleString(locale, { minimumFractionDigits: 2 })}`
+                      : `${mes} | ${t("clientes_nuevos_col")}: ${sellerDetail?.totalNuevos || 0}`
                     : t("clientes_nuevos_subtitle", { mes: data?.mes || mes, meta: data?.metaPerSeller || 0 })}
               </p>
             </div>
