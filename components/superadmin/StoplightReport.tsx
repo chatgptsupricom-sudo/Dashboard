@@ -1277,14 +1277,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const cxcKpis = cxcData ? (() => {
     const k = cxcData.kpis;
-    const aging = cxcData.agingDistribution || {};
-    const agingTotal = Object.values(aging).reduce((a: number, b: any) => a + (b as number), 0) as number;
-    const agingPcts = Object.entries(aging).map(([band, val]) => {
-      const v = val as number;
-      return agingTotal > 0 ? Math.round((v / agingTotal) * 100) : 0;
-    });
-    const agingLabels = ["corriente", "1-30", "31-60", "61-90", "91+"];
-    const semana1 = k.carteraVencida.carteraTotal > 0 ? Math.round(k.carteraVencida.saldoVencido / k.carteraVencida.carteraTotal * 100) : 0;
 
     return [
       {
