@@ -25,6 +25,7 @@ import { useTranslations, useLocale } from "next-intl";
 import ComprasDetailModal from "./ComprasDetailModal";
 import KpiInfoModal from "./stoplight/KpiInfoModal";
 import CxCDetailModal from "./stoplight/CxCDetailModal";
+import CxPDetailModal from "./stoplight/CxPDetailModal";
 import {
   getCellColor,
   getKpiCellColor,
@@ -105,10 +106,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [cxcModalKpi, setCxcModalKpi] = useState<string>("");
 
   const [cppModalOpen, setCppModalOpen] = useState(false);
-  const [cppModalLoading, setCppModalLoading] = useState(false);
-  const [cppModalData, setCppModalData] = useState<any>(null);
   const [cppModalKpi, setCppModalKpi] = useState<string>("");
-  const [cppPagosFilter, setCppPagosFilter] = useState<"all" | "pagado" | "no_pagado">("all");
   const [cppSelectedBill, setCppSelectedBill] = useState<any>(null);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
@@ -439,21 +437,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setCxcModalOpen(true);
   };
 
-  const openCppModal = async (kpiId: string) => {
+  const openCppModal = (kpiId: string) => {
     setCppModalKpi(kpiId);
     setCppModalOpen(true);
-    setCppModalLoading(true);
-    try {
-      const empresaMap: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
-      const empresa = empresaMap[selectedCompanyId] || "valencia";
-      let url = `${apiPrefix}/cuentas-pagar/detail?empresa=${empresa}&kpi_id=${kpiId}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) setCppModalData(json.data);
-    } catch (e) {
-      console.error("Error fetching CPP detail:", e);
-    }
-    setCppModalLoading(false);
   };
 
   const openMargenModalWithMes = async (mes: string) => {
@@ -3792,214 +3778,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         mes={selectedMes}
       />
 
-      {cppModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
-                  {cppModalKpi === "pagos_a_tiempo" ? t("cpp_pagos_title")
-                    : cppModalKpi === "cuentas_pagar_vencidas" ? t("cpp_cxpagar_title")
-                    : cppModalKpi === "procesamiento_oportuno" ? t("cpp_procesamiento_title")
-                    : t("cpp_dpo_title")}
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  {empresaLabel} | {selectedMes}
-                </p>
-              </div>
-              <button
-                onClick={() => { setCppModalOpen(false); setCppModalData(null); setCppModalKpi(""); setCppPagosFilter("all"); }}
-                className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
-              >
-                <X size={20} className="text-slate-700" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-5">
-              {cppModalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  <RefreshCw size={24} className="animate-spin mr-2" /> {t("loading_detail")}
-                </div>
-              ) : !cppModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">{t("no_available_data")}</div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    {cppModalKpi === "pagos_a_tiempo" && (
-                      <>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("total_facturas")}</p>
-                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("monto_residual")}</p>
-                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="col-span-2 flex gap-2">
-                          {(["all", "pagado", "no_pagado"] as const).map((f) => (
-                            <button
-                              key={f}
-                              onClick={() => setCppPagosFilter(f)}
-                              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                                cppPagosFilter === f
-                                  ? f === "pagado" ? "bg-emerald-500 text-white" : f === "no_pagado" ? "bg-red-500 text-white" : "bg-slate-700 text-white"
-                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                              }`}
-                            >
-                              {f === "all" ? t("todos") : f === "pagado" ? t("pagado") : t("no_pagado")}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {cppModalKpi === "cuentas_pagar_vencidas" && (
-                      <>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 font-medium">{t("facturas_con_saldo")}</p>
-                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("monto_vencido")}</p>
-                          <p className="text-lg font-bold text-red-600">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        {cppModalData.agingBuckets && (
-                          <div className="col-span-2 grid grid-cols-6 gap-2">
-                            {Object.entries(cppModalData.agingBuckets).map(([band, info]: [string, any]) => (
-                              <div key={band} className={`rounded-lg p-2 text-center ${band === "corriente" ? "bg-emerald-50" : band === "91+" ? "bg-red-50" : "bg-amber-50"}`}>
-                                <p className="text-[10px] font-medium text-slate-500">{band === "corriente" ? t("corriente") : band}</p>
-                                <p className="text-sm font-bold text-slate-800">${info.amount?.toLocaleString("es-VE", { maximumFractionDigits: 0 })}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {cppModalKpi === "procesamiento_oportuno" && (
-                      <>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("facturas_recibidas")}</p>
-                          <p className="text-lg font-bold text-slate-800">{cppModalData.count}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("monto_total")}</p>
-                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </>
-                    )}
-                    {cppModalKpi === "dpo" && (
-                      <>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("cxp_abierta")}</p>
-                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalResidual?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("compras_credito")}</p>
-                          <p className="text-lg font-bold text-slate-800">${cppModalData.totalAmount?.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">{t("factura")}</th>
-                          <th className="p-3 text-left font-medium text-slate-600">{t("proveedor")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("fecha_factura")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("vencimiento")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                          {cppModalKpi === "procesamiento_oportuno" ? (
-                            <>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("dias_proc")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("sla")}</th>
-                            </>
-                          ) : (
-                            <>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("dias_vencido")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("banda_aging")}</th>
-                            </>
-                          )}
-                          <th className="p-3 text-right font-medium text-slate-600">{t("monto")}</th>
-                          <th className="p-3 text-right font-medium text-slate-600">{t("saldo")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(cppModalKpi === "pagos_a_tiempo"
-                          ? cppModalData.bills.filter((b: any) => {
-                              const isPaid = b.paymentState === "paid" || b.paymentState === "reconciled" || b.paymentState === "in_payment";
-                              if (cppPagosFilter === "pagado") return isPaid;
-                              if (cppPagosFilter === "no_pagado") return !isPaid;
-                              return true;
-                            })
-                          : cppModalData.bills
-                        ).map((bill: any) => (
-                          <tr key={bill.id} className="border-b hover:bg-blue-50/40 transition-colors">
-                            <td className="p-3 font-medium text-slate-800">{bill.name}</td>
-                            <td className="p-3 text-slate-700 max-w-[200px] truncate">{bill.partnerName}</td>
-                            <td className="p-3 text-center text-slate-600">{bill.invoiceDate || "—"}</td>
-                            <td className="p-3 text-center text-slate-600">{bill.invoiceDateDue || "—"}</td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                bill.paymentState === "paid" || bill.paymentState === "reconciled" || bill.paymentState === "in_payment" ? "bg-emerald-100 text-emerald-700" :
-                                bill.paymentState === "partial" ? "bg-amber-100 text-indigo-700" :
-                                bill.paymentState === "nota_credito" || bill.isRefund ? "bg-purple-100 text-purple-700" :
-                                "bg-red-100 text-red-700"
-                              }`}>
-                                {bill.paymentState === "paid" || bill.paymentState === "reconciled" ? t("pagada") :
-                                 bill.paymentState === "in_payment" ? t("en_pago") :
-                                 bill.paymentState === "partial" ? t("parcial") :
-                                 bill.paymentState === "nota_credito" || bill.isRefund ? t("nc_redito") : t("pendiente")}
-                              </span>
-                            </td>
-                            {cppModalKpi === "procesamiento_oportuno" ? (
-                              <>
-                                <td className="p-3 text-center font-medium text-slate-700">{bill.processingDays ?? "—"}</td>
-                                <td className="p-3 text-center">
-                                  {bill.slaOk === null ? <span className="text-slate-400">—</span> : (
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bill.slaOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                                      {bill.slaOk ? `≤${bill.sla}d ✓` : `>${bill.sla}d ✗`}
-                                    </span>
-                                  )}
-                                </td>
-                              </>
-                            ) : (
-                              <>
-                                <td className="p-3 text-center">
-                                  <span className={`font-medium ${
-                                    bill.daysOverdue > 60 ? "text-red-600" : bill.daysOverdue > 30 ? "text-indigo-600" : bill.daysOverdue > 0 ? "text-orange-500" : "text-emerald-600"
-                                  }`}>
-                                    {bill.daysOverdue > 0 ? bill.daysOverdue : "—"}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    bill.agingBand === "corriente" ? "bg-emerald-100 text-emerald-700" :
-                                    bill.agingBand === "91+" ? "bg-red-100 text-red-700" :
-                                    "bg-amber-100 text-indigo-700"
-                                  }`}>
-                                    {bill.agingBand === "corriente" ? t("corriente") : bill.agingBand}
-                                  </span>
-                                </td>
-                              </>
-                            )}
-                            <td className="p-3 text-right text-slate-600">${bill.amountUntaxed.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                            <td className="p-3 text-right font-bold">
-                              <span className={bill.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
-                                ${bill.amountResidual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <CxPDetailModal
+        isOpen={cppModalOpen}
+        onClose={() => { setCppModalOpen(false); setCppModalKpi(""); }}
+        kpiId={cppModalKpi}
+        companyId={selectedCompanyId}
+        apiPrefix={apiPrefix}
+        empresaLabel={empresaLabel}
+        mes={selectedMes}
+      />
 
       <KpiInfoModal
         open={kpiInfoModal.open}
