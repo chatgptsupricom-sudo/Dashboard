@@ -391,6 +391,7 @@
     "column_owner": "Responsable",
     "column_goal": "Meta",
     "column_average": "Promedio",
+    "column_valor": "Valor",
     "column_kpi": "KPI",
     "back": "Volver",
     "google_connect": "Conectar Google",

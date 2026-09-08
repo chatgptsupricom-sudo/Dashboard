@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -360,7 +359,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     { id: 10, label: "Caracas" },
     { id: 7, label: "Panama" },
   ];
-  const empresaLabel = empresas.find((e) => e.id === selectedCompanyId)?.label || "Caracas";
+  const empresaLabel = empresas.find((e) => e.id === selectedCompanyId)?.label || empresas[0].label;
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1389,8 +1388,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
     // la carga falla, se muestra con el aviso de error en vez de esconderse.
     // El filtro `groups` de abajo ya lo excluye de las otras vistas.
-    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, estado: { cargando: cxcLoading, error: cxcError } },
-    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
+    // `mensual`: CxC y CxP son métricas de cierre mensual, no semanales. En la
+    // vista Semanal se muestran como "valor vs meta", sin la grilla de semanas
+    // (que salía con 3–4 columnas vacías y se desalineaba en meses de 4 semanas).
+    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, mensual: true, estado: { cargando: cxcLoading, error: cxcError } },
+    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders, mensual: true }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
   const gruposBase = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
@@ -1837,17 +1839,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             )}
 
-            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
+            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (() => {
+              const esMensual = !!(group as any).mensual;
+              return (
               <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
+                <table className={`w-full text-sm text-left border-collapse ${esMensual ? "" : "min-w-[880px]"}`}>
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                       <th className="py-2.5 pl-4 pr-2 w-8"></th>
                       <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
                       <th className="py-2.5 px-2 w-24 text-right font-semibold">{t("column_goal")}</th>
-                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
+                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{esMensual ? t("column_valor") : t("column_average")}</th>
                       <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
-                      {(group as any).weekHeaders.map((week: string, idx: number) => (
+                      {!esMensual && (group as any).weekHeaders.map((week: string, idx: number) => (
                         <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
                           {week}
                         </th>
@@ -1876,9 +1880,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               type="button"
                               aria-label="Info"
                               onClick={(e) => { e.stopPropagation(); setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title }); }}
-                              className={`shrink-0 ${kpi.trend === "alert" ? "text-rose-500 hover:text-rose-600" : "text-slate-300 hover:text-slate-500"}`}
+                              className="shrink-0 text-slate-300 hover:text-slate-500"
                             >
-                              {kpi.trend === "alert" ? <AlertTriangle size={13} /> : <HelpCircle size={13} />}
+                              <HelpCircle size={13} />
                             </button>
                             {kpiSinMeta && (
                               <span className="shrink-0 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px">
@@ -1891,8 +1895,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               {t("click_detail")}
                             </span>
                           )}
-                          {kpi.hint && (
-                            <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint}</div>
+                          {(kpi.hint || kpi.subtitle) && (
+                            <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint || kpi.subtitle}</div>
                           )}
                         </td>
                         <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
@@ -1918,7 +1922,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           )}
                         </td>
                         <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
-                        {kpi.weeks.map((val: string | null, idx: number) => {
+                        {!esMensual && kpi.weeks.map((val: string | null, idx: number) => {
                           const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                           return (
                             <td key={idx} className="py-3 px-2 text-center align-top">
@@ -1938,7 +1942,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   </tbody>
                 </table>
               </div>
-            )}
+              );
+            })()}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") && (
               monthlyHistLoading ? (
