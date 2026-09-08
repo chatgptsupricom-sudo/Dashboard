@@ -389,6 +389,8 @@
     "view_by": "View by",
     "refresh": "Refresh data",
     "search_placeholder": "Search KPIs...",
+    "sin_coincidencias": "No KPI matches the search.",
+    "error_guardar_visita": "Could not save the visit. Try again.",
     "click_detail": "(Click for detail)",
     "no_data": "No data",
     "loading": "Loading data...",
