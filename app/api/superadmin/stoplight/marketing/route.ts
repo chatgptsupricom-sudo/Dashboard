@@ -196,6 +196,28 @@ export async function GET(request: NextRequest) {
     const mesNum = parseInt(mesStr, 10);
     const startDate = startDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-01`;
     const endDate = endDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+
+    // Metas de los KPIs de marketing. Antes estaban escritas a mano en el
+    // componente (Stoplight audit #14). Marketing no tiene compañía propia
+    // (agrega los 3 sitios), así que se guardan bajo company_id 9 (Valencia,
+    // el default del panel). Si no hay fila, se cae al valor por defecto.
+    const MARKETING_META_KEYS = [
+      "usuarios_totales", "sesiones", "paginas_vistas", "tasa_rebote",
+      "clicks_sc", "impresiones_sc", "ctr_sc", "posicion_sc", "email_open_rate",
+    ];
+    const MARKETING_META_DEFAULT: Record<string, number> = {
+      usuarios_totales: 500, sesiones: 1000, paginas_vistas: 5000, tasa_rebote: 40,
+      clicks_sc: 500, impresiones_sc: 10000, ctr_sc: 3, posicion_sc: 5, email_open_rate: 20,
+    };
+    const metasRows = await query(
+      `SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = 9 AND mes = ? AND kpi_key IN (${MARKETING_META_KEYS.map(() => "?").join(",")})`,
+      [mes, ...MARKETING_META_KEYS],
+    );
+    const marketingMetas: Record<string, number> = { ...MARKETING_META_DEFAULT };
+    (metasRows.rows as any[]).forEach((r: any) => {
+      const n = Number(r.meta_mensual);
+      if (Number.isFinite(n) && n > 0) marketingMetas[r.kpi_key] = n;
+    });
     const rangeEnd = new Date(endDate);
 
     const semanas: { inicio: string; fin: string }[] = [];
@@ -454,6 +476,7 @@ export async function GET(request: NextRequest) {
         mes,
         weekHeaders,
         numSemanas,
+        metas: marketingMetas,
         totalSites: SITES.length,
         ga4Properties: ga4Properties.map(p => ({ id: p.propertyId, name: p.displayName })),
         ga4: ga4Totals,

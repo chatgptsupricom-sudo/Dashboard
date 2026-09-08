@@ -1153,6 +1153,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const weekImpressions = md?.weekly?.impressions || [];
     const ga4W = md?.ga4Weekly;
 
+    // Metas configurables desde kpi_targets (company_id 9). El route ya aplica
+    // el fallback hardcodeado, esto es solo por si la respuesta viniera vieja.
+    const metasMkt: Record<string, number> = md?.metas || {};
+    const metaDe = (id: string, fallback: number) => {
+      const n = Number(metasMkt[id]);
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+
     const toWeekly = (arr: (number | null)[] | undefined) => arr && arr.length > 0 ? arr.map(v => v === null ? null : String(v)) : defWeeks;
     const toWeeklyPct = (arr: (number | null)[] | undefined) => arr && arr.length > 0 ? arr.map(v => v === null ? null : `${Math.round(v)}%`) : defWeeks;
     const scWeeksPct = (clicks: (number | null)[], impressions: (number | null)[]) => {
@@ -1172,9 +1180,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "13%",
         average: String(md?.ga4?.totalUsers || 0),
         weeks: toWeekly(ga4W?.totalUsers),
-        goalDefault: "500",
+        goalDefault: String(metaDe("usuarios_totales", 500)),
         goalSuffix: "",
-        cumple: (md?.ga4?.totalUsers || 0) >= 500,
+        cumple: (md?.ga4?.totalUsers || 0) >= metaDe("usuarios_totales", 500),
       },
       {
         id: "sesiones",
@@ -1183,9 +1191,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "13%",
         average: String(md?.ga4?.sessions || 0),
         weeks: toWeekly(ga4W?.sessions),
-        goalDefault: "1000",
+        goalDefault: String(metaDe("sesiones", 1000)),
         goalSuffix: "",
-        cumple: (md?.ga4?.sessions || 0) >= 1000,
+        cumple: (md?.ga4?.sessions || 0) >= metaDe("sesiones", 1000),
       },
       {
         id: "paginas_vistas",
@@ -1194,9 +1202,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "9%",
         average: String(md?.ga4?.pageviews || 0),
         weeks: toWeekly(ga4W?.pageviews),
-        goalDefault: "5000",
+        goalDefault: String(metaDe("paginas_vistas", 5000)),
         goalSuffix: "",
-        cumple: (md?.ga4?.pageviews || 0) >= 5000,
+        cumple: (md?.ga4?.pageviews || 0) >= metaDe("paginas_vistas", 5000),
       },
       {
         id: "tasa_rebote",
@@ -1205,9 +1213,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "9%",
         average: `${md?.ga4?.bounceRate || 0}%`,
         weeks: toWeeklyPct(ga4W?.bounceRate),
-        goalDefault: "40",
+        goalDefault: String(metaDe("tasa_rebote", 40)),
         goalSuffix: "%",
-        cumple: (md?.ga4?.bounceRate || 0) <= 40,
+        cumple: (md?.ga4?.bounceRate || 0) <= metaDe("tasa_rebote", 40),
       },
       {
         id: "clicks_sc",
@@ -1216,9 +1224,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "13%",
         average: String(md?.totals?.totalClicks || 0),
         weeks: toWeekly(weekClicks),
-        goalDefault: "500",
+        goalDefault: String(metaDe("clicks_sc", 500)),
         goalSuffix: "",
-        cumple: (md?.totals?.totalClicks || 0) >= 500,
+        cumple: (md?.totals?.totalClicks || 0) >= metaDe("clicks_sc", 500),
       },
       {
         id: "impresiones_sc",
@@ -1227,9 +1235,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "9%",
         average: String(md?.totals?.totalImpressions || 0),
         weeks: toWeekly(weekImpressions),
-        goalDefault: "10000",
+        goalDefault: String(metaDe("impresiones_sc", 10000)),
         goalSuffix: "",
-        cumple: (md?.totals?.totalImpressions || 0) >= 10000,
+        cumple: (md?.totals?.totalImpressions || 0) >= metaDe("impresiones_sc", 10000),
       },
       {
         id: "ctr_sc",
@@ -1238,9 +1246,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "9%",
         average: `${md?.totals?.overallCtr || 0}%`,
         weeks: scWeeksPct(weekClicks, weekImpressions),
-        goalDefault: "3",
+        goalDefault: String(metaDe("ctr_sc", 3)),
         goalSuffix: "%",
-        cumple: (md?.totals?.overallCtr || 0) >= 3,
+        cumple: (md?.totals?.overallCtr || 0) >= metaDe("ctr_sc", 3),
       },
       {
         id: "posicion_sc",
@@ -1249,20 +1257,20 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "13%",
         average: String(md?.totals?.avgPosition || 0),
         weeks: toWeekly(md?.weekly?.position),
-        goalDefault: "5",
+        goalDefault: String(metaDe("posicion_sc", 5)),
         goalSuffix: "",
-        cumple: (md?.totals?.avgPosition || 0) <= 5 && (md?.totals?.avgPosition || 0) > 0,
+        cumple: (md?.totals?.avgPosition || 0) <= metaDe("posicion_sc", 5) && (md?.totals?.avgPosition || 0) > 0,
       },
       {
         id: "email_open_rate",
-        trend: (md?.emailMarketing?.openRate || 0) >= 20 ? "help" : (md?.emailMarketing?.openRate || 0) >= 10 ? "warning" : "alert",
+        trend: (md?.emailMarketing?.openRate || 0) >= metaDe("email_open_rate", 20) ? "help" : (md?.emailMarketing?.openRate || 0) >= metaDe("email_open_rate", 20) / 2 ? "warning" : "alert",
         title: t("kpi_email"),
         peso: "12%",
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
         weeks: (md?.emailMarketing?.weeklyOpenRate || defWeeks).map((v: number | null) => v != null ? `${v}%` : null),
-        goalDefault: "20",
+        goalDefault: String(metaDe("email_open_rate", 20)),
         goalSuffix: "%",
-        cumple: (md?.emailMarketing?.openRate || 0) >= 20,
+        cumple: (md?.emailMarketing?.openRate || 0) >= metaDe("email_open_rate", 20),
       },
     ];
   })() : [];
