@@ -155,9 +155,15 @@ export default function EntregaPage() {
               <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
                 <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" aria-hidden />
                 <p className="text-sm font-semibold text-emerald-800">
+                  {/* caso.entrega_ciudad/entrega_agencia vienen del GET
+                      inicial (antes de elegir) -- en la confirmacion
+                      inmediata (recien elegido, sin recargar) todavia
+                      estan vacios, asi que se cae al valor que el cliente
+                      acaba de escribir en el formulario. Tras un reload,
+                      caso.* ya trae lo persistido y gana primero. */}
                   {yaElegido === "sucursal" && t("entrega_confirmado_sucursal")}
-                  {yaElegido === "ruta" && t("entrega_confirmado_ruta", { ciudad: caso.entrega_ciudad || "" })}
-                  {yaElegido === "agencia" && t("entrega_confirmado_agencia", { agencia: caso.entrega_agencia || "" })}
+                  {yaElegido === "ruta" && t("entrega_confirmado_ruta", { ciudad: caso.entrega_ciudad || ciudad || "" })}
+                  {yaElegido === "agencia" && t("entrega_confirmado_agencia", { agencia: caso.entrega_agencia || agenciaFinal || "" })}
                 </p>
               </div>
               <p className="mt-4 text-sm text-[color:var(--portal-muted)]">{t("entrega_confirmado_nota")}</p>
