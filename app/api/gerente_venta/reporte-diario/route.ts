@@ -183,22 +183,33 @@ export async function GET(req: NextRequest) {
 
     // ── PEDIDOS: mismo criterio que el filtro "Pedidos Activos" de Odoo ──
     // Pedidos confirmados (no cotización, no cancelado) que todavía no están
-    // facturados por completo, excluyendo clientes internos.
+    // facturados por completo, de los vendedores del equipo, excluyendo
+    // clientes internos. Acotado por `date_order` al mes en curso hasta la
+    // fecha (Venezuela = UTC-4: la medianoche local del día 1 es 04:00 UTC y
+    // el fin del día seleccionado es el día siguiente 03:59:59 UTC). El monto
+    // es `amount_total` (con IVA), para que cuadre con la medida "Total" del
+    // pivot de Odoo agrupado por "Fecha de la orden".
+    const finDiaUtc = new Date(`${dateStr}T23:59:59-04:00`)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
     const allOrders =
       (await callOdooRPC<any[]>(
         "sale.order",
         "search_read",
         [
           [
-            ["state", "in", ["sale", "done"]],
+            ["state", "not in", ["draft", "cancel"]],
             ["invoice_status", "!=", "invoiced"],
+            ["date_order", ">=", `${firstDayOfMonth} 04:00:00`],
+            ["date_order", "<=", finDiaUtc],
             ["user_id", "in", odooUserIds],
             ["company_id", "in", companyIds],
             ["partner_id.name", "not ilike", "office solution"],
             ["partner_id.name", "not ilike", "supricom"],
           ],
         ],
-        { fields: ["amount_untaxed", "user_id"] },
+        { fields: ["amount_total", "user_id"] },
       )) || [];
 
     const orderNameMap: Record<string, number> = {};
@@ -206,7 +217,7 @@ export async function GET(req: NextRequest) {
     allOrders.forEach((order: any) => {
       const userId = order.user_id?.[0] || 0;
       const odooName = order.user_id?.[1] || "";
-      const amount = order.amount_untaxed || 0;
+      const amount = order.amount_total || 0;
       if (userId)
         orderUserIdMap[userId] = (orderUserIdMap[userId] || 0) + amount;
       if (odooName) {
