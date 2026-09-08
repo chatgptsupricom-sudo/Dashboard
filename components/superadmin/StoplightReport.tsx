@@ -23,198 +23,18 @@ import { BarChart, Bar, ResponsiveContainer, Tooltip } from "recharts";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import ComprasDetailModal from "./ComprasDetailModal";
-
-// Semáforo sobre el % de meta cumplida: verde al llegar (>=100), amarillo
-// cuando ya está cerca (70–99), rojo cuando falta bastante (<70).
-const getCellColor = (value: string) => {
-  if (!value) return "";
-  const numValue = parseInt(value);
-  if (isNaN(numValue)) return "";
-  if (numValue >= 100) return "bg-green-100 text-green-800 font-medium";
-  if (numValue >= 70) return "bg-yellow-100 text-yellow-800 font-medium";
-  return "bg-red-100 text-red-800 font-medium";
-};
-
-// KPIs cuyo valor mostrado es la métrica cruda (no un "% de meta"): más alto
-// mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
-const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
-  "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
-
-const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
-  if (!value) return "";
-  const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
-  if (isNaN(numVal)) return "";
-  const numGoal = parseFloat(goal);
-
-  const higherBetter = KPI_MAS_ES_MEJOR;
-  const lowerBetter = KPI_MENOS_ES_MEJOR;
-
-  if (higherBetter.includes(kpiId) && !isNaN(numGoal)) {
-    if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
-    if (numVal >= numGoal * 0.7) return "bg-amber-100 text-amber-800 font-medium";
-    return "bg-red-100 text-red-800 font-medium";
-  }
-
-  if (lowerBetter.includes(kpiId) && !isNaN(numGoal)) {
-    if (numVal <= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
-    if (numVal <= numGoal * 1.3) return "bg-amber-100 text-amber-800 font-medium";
-    return "bg-red-100 text-red-800 font-medium";
-  }
-
-  // Sin meta configurada no hay contra qué medir: el KPI queda NEUTRO (ni
-  // verde ni rojo) y no cuenta en el resumen del semáforo. `nivelSemaforo` lo
-  // traduce a "sin" al no encontrar color.
-  if (!Number.isFinite(numGoal) || numGoal <= 0) return "";
-
-  return getCellColor(value);
-};
-
-/** true cuando el KPI no tiene meta configurada (>0). */
-const sinMeta = (goal: string | number | null | undefined): boolean => {
-  const n = parseFloat(String(goal ?? ""));
-  return !Number.isFinite(n) || n <= 0;
-};
-
-type Nivel = "verde" | "amarillo" | "rojo" | "sin";
-
-// Traduce el color de celda de un KPI a un nivel de semáforo, para los
-// resúmenes del encabezado y de cada grupo.
-const nivelSemaforo = (kpiId: string, average: string | null, goal: string): Nivel => {
-  const c = getKpiCellColor(kpiId, average, goal);
-  if (/green|emerald/.test(c)) return "verde";
-  if (/yellow|amber/.test(c)) return "amarillo";
-  if (/red/.test(c)) return "rojo";
-  return "sin";
-};
-
-/**
- * Cumplimiento de un KPI en 0–100 (para el puntaje ponderado del grupo).
- * `null` = sin meta configurada ⇒ no entra en el puntaje.
- */
-const cumplimientoKpi = (
-  kpiId: string,
-  average: string | null,
-  goal: string | number | null | undefined,
-): number | null => {
-  if (!average) return null;
-  const numVal = parseFloat(String(average).replace("%", "").replace(" días", "").replace(/N\/?A/i, "").trim());
-  if (isNaN(numVal)) return null;
-  const numGoal = parseFloat(String(goal ?? ""));
-  if (!Number.isFinite(numGoal) || numGoal <= 0) return null;
-  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
-  if (KPI_MENOS_ES_MEJOR.includes(kpiId)) {
-    return numVal <= 0 ? 100 : clamp((numGoal / numVal) * 100);
-  }
-  if (KPI_MAS_ES_MEJOR.includes(kpiId)) {
-    return clamp((numVal / numGoal) * 100);
-  }
-  // El resto: `average` ya es "% de meta cumplida".
-  return clamp(numVal);
-};
-
-/**
- * Puntaje ponderado de un grupo: Σ(peso × cumplimiento) ÷ Σ(peso), tomando
- * solo los KPIs con meta. `null` si ninguno tiene meta.
- */
-const puntajeGrupo = (
-  kpis: any[],
-): { valor: number; pesoConMeta: number; kpisConMeta: number } | null => {
-  let ponderado = 0;
-  let peso = 0;
-  let n = 0;
-  for (const k of kpis || []) {
-    const c = cumplimientoKpi(k.id, k.average, k.goalDefault);
-    if (c === null) continue;
-    const p = parseFloat(String(k.peso).replace("%", "")) || 0;
-    if (p <= 0) continue;
-    ponderado += p * c;
-    peso += p;
-    n++;
-  }
-  if (peso <= 0) return null;
-  return { valor: Math.round(ponderado / peso), pesoConMeta: Math.round(peso), kpisConMeta: n };
-};
-
-const NIVEL_UI: Record<Exclude<Nivel, "sin">, { punto: string; barra: string; texto: string }> = {
-  verde: { punto: "bg-emerald-500", barra: "bg-emerald-500", texto: "text-emerald-600" },
-  amarillo: { punto: "bg-amber-500", barra: "bg-amber-500", texto: "text-amber-600" },
-  rojo: { punto: "bg-rose-500", barra: "bg-rose-500", texto: "text-rose-600" },
-};
-
-function contarNiveles(kpis: any[]): { verde: number; amarillo: number; rojo: number; total: number } {
-  const acc = { verde: 0, amarillo: 0, rojo: 0, total: 0 };
-  for (const k of kpis) {
-    const n = nivelSemaforo(k.id, k.average, k.goalDefault);
-    if (n === "sin") continue;
-    acc[n]++;
-    acc.total++;
-  }
-  return acc;
-}
-
-interface SellerData {
-  nombre: string;
-  cuotaMensual: number;
-  facturadoMensual: number;
-  semanas: { facturado: number; cuotaSemanal: number }[];
-}
-
-interface KpiData {
-  metaMensual: number;
-  totalCuotaMensual: number;
-  totalFacturadoMensual: number;
-  porcentajeCumplimiento: number;
-  // Avance del mes de la cuota: facturado ÷ cuota prorrateada a hoy (100% = al día).
-  avanceMesCuota?: number | null;
-  diasUtilesTranscurridos?: number;
-  totalDiasUtilesMes?: number;
-  numSemanas: number;
-  weekHeaders: string[];
-  sellers: SellerData[];
-  semanaGlobal: string[];
-  metas: Record<string, number>;
-  semanaVarCosto: (string | null)[];
-  semanaRotacion: (string | null)[];
-  semanaQuiebre: (string | null)[];
-  semanaInv90: (string | null)[];
-  semanaForecast: (string | null)[];
-  semanaPropuestas: (string | null)[];
-  avgVarCosto: number;
-  avgRotacion: number;
-  avgQuiebre: number;
-  avgInv90: number;
-  avgForecast: number;
-  avgPropuestas: number;
-  // Promedios y series de la sección Ventas (los trae /api/vendedores/stoplight
-  // y /api/superadmin/stoplight, siempre; el default es 0 / []). Estaban en uso
-  // sin declarar.
-  avgCumplimiento: number;
-  avgMargen: number;
-  avgVisitas: number;
-  avgEfectividad: number;
-  avgActivacion: number;
-  avgClientes: number;
-  avgCobertura: number;
-  semanaMargen: (string | null)[];
-  semanaVisitas: (string | null)[];
-  semanaEfectividad: (string | null)[];
-  semanaActivacion: (string | null)[];
-  semanaClientes: (string | null)[];
-  semanaCobertura: (string | null)[];
-}
-
-interface SellerDetail {
-  sellerId: number;
-  nombre: string;
-  cuotaMensual: number;
-  cuotaDiaria: number;
-  totalFacturado: number;
-  porcentajeMensual: number;
-  cumple: boolean;
-  dias: { fecha: string; diaSemana: string; esFeriado: boolean; esDiaUtil: boolean; facturado: number; cuotaDiaria: number; cumple: boolean }[];
-  semanas: { numero: number; inicio: string; fin: string; facturado: number; cuotaSemanal: number; diasUtiles: number; porcentaje: number }[];
-}
+import KpiInfoModal from "./stoplight/KpiInfoModal";
+import {
+  getCellColor,
+  getKpiCellColor,
+  sinMeta,
+  nivelSemaforo,
+  puntajeGrupo,
+  NIVEL_UI,
+  contarNiveles,
+} from "@/lib/stoplight/scoring";
+import type { Nivel } from "@/lib/stoplight/scoring";
+import type { SellerData, KpiData, SellerDetail } from "@/lib/stoplight/types";
 
 export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
@@ -4410,76 +4230,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         </div>
       )}
 
-      {kpiInfoModal.open && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">{kpiInfoModal.title}</h2>
-              <button
-                onClick={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}
-                className="p-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 transition-colors"
-              >
-                <X size={18} className="text-slate-700" />
-              </button>
-            </div>
-            <div className="text-sm text-slate-600 leading-relaxed space-y-3">
-              {kpiInfoModal.kpiId === "efectividad_cobranza" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> Cuánto se cobró de todo lo que era exigible durante el período.</p>
-                  <p><strong>{t("info_formula")}</strong> Monto cobrado ÷ Monto exigible × 100</p>
-                  <p><strong>{t("info_monto_exigible")}</strong> Saldo total de facturas cuya fecha de vencimiento es anterior o igual al final del período, incluyendo saldos vencidos anteriores que permanecían abiertos.</p>
-                  <p><strong>{t("info_monto_cobrado")}</strong> Pagos efectivamente conciliados contra facturas incluidas en el monto exigible.</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
-                </>
-              )}
-              {kpiInfoModal.kpiId === "cartera_vencida" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> La proporción de cuentas por cobrar que ya superaron su fecha de vencimiento.</p>
-                  <p><strong>{t("info_formula")}</strong> Saldo vencido a la fecha de corte ÷ Cartera total abierta × 100</p>
-                  <p><strong>Saldo vencido:</strong> Suma de saldos residuales de facturas con fecha de vencimiento anterior a hoy.</p>
-                  <p><strong>Cartera total:</strong> Suma de todos los saldos residuales de facturas abiertas (con y sin vencer).</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≤10% | Amarillo 10.01%–20% | Rojo &gt;20%</p>
-                </>
-              )}
-              {kpiInfoModal.kpiId === "recuperacion_vencidos" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> Cuánto de la deuda vencida que existía al inicio del mes se logró recuperar.</p>
-                  <p><strong>{t("info_formula")}</strong> Vencido recuperado ÷ Vencido inicial del mes × 100</p>
-                  <p><strong>Cohorte (vencido inicial):</strong> Fotografía de las facturas vencidas y sus saldos al inicio del mes. Las facturas que se vencen durante el mes no se incluyen en el denominador.</p>
-                  <p><strong>Vencido recuperado:</strong> Diferencia entre el saldo inicial de la cohorte y el saldo restante actual (pagos conciliados + notas de crédito).</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≥60% | Amarillo 30%–59.99% | Rojo &lt;30%</p>
-                </>
-              )}
-              {kpiInfoModal.kpiId === "dso" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
-                  <p><strong>{t("info_formula")}</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
-                  <p><strong>Ventas netas a crédito:</strong> Total de facturas tipo "out_invoice" (excluyendo notas de crédito) de los últimos 90 días.</p>
-                  <p><strong>Período:</strong> Se usa ventana móvil de 90 días para reducir volatilidad.</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
-                </>
-              )}
-              {kpiInfoModal.kpiId === "cumplimiento_cuota_ventas" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> Avance del mes: cuánto se ha facturado frente a lo que se debería llevar a esta altura del mes. <strong>100% = al día</strong> para llegar a la cuota.</p>
-                  <p><strong>{t("info_formula")}</strong> Facturado del mes ÷ (Cuota mensual × días hábiles transcurridos ÷ días hábiles del mes) × 100</p>
-                  <p><strong>{t("info_semaforo")}</strong> Verde ≥100% (al día o adelantado) | Amarillo 70%–99.99% | Rojo &lt;70%</p>
-                </>
-              )}
-              {kpiInfoModal.kpiId === "clientes_nuevos" && (
-                <>
-                  <p><strong>{t("info_que_mide")}</strong> Cantidad de clientes nuevos captados por los vendedores en el mes.</p>
-                  <p><strong>Definición:</strong> Cliente nuevo = partner cuya primera factura en Odoo es del mes actual.</p>
-                  <p><strong>Meta:</strong> Cada vendedor debe captar la cantidad asignada de clientes nuevos al mes.</p>
-                </>
-              )}
-              {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos"].includes(kpiInfoModal.kpiId) && (
-                <p>{t("info_default")}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <KpiInfoModal
+        open={kpiInfoModal.open}
+        kpiId={kpiInfoModal.kpiId}
+        title={kpiInfoModal.title}
+        onClose={() => setKpiInfoModal({ open: false, kpiId: "", title: "" })}
+      />
       </div>
     </div>
   );
