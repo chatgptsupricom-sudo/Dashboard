@@ -22,6 +22,7 @@ export interface KpiData {
   sellers: SellerData[];
   semanaGlobal: string[];
   metas: Record<string, number>;
+  pesos: Record<string, number>;
   semanaVarCosto: (string | null)[];
   semanaRotacion: (string | null)[];
   semanaQuiebre: (string | null)[];

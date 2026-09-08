@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
+import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
 
 // La lectura de `digiflex.cxc.report` es paginada y puede traer miles de
@@ -91,12 +92,18 @@ export async function GET(request: NextRequest) {
     const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
     const companyId = companyIds[0] || 9;
 
+    await ensureKpiTargetsPeso();
     const cxcMetasResult = await query(
-      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso')",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso')",
       [companyId, mes]
     );
     const cxcMetas: Record<string, number> = {};
-    (cxcMetasResult.rows as any[]).forEach((r: any) => { cxcMetas[r.kpi_key] = Number(r.meta_mensual); });
+    const cxcPesos: Record<string, number> = {};
+    (cxcMetasResult.rows as any[]).forEach((r: any) => {
+      cxcMetas[r.kpi_key] = Number(r.meta_mensual);
+      const p = Number(r.peso);
+      if (Number.isFinite(p) && p > 0) cxcPesos[r.kpi_key] = p;
+    });
 
     // ═══════════════════════════════════════════════════════════════════
     // FUENTE 1: digiflex.cxc.report — Aging, balances, top deudores
@@ -375,6 +382,7 @@ export async function GET(request: NextRequest) {
           },
         },
         semanaEfectividad,
+        pesos: cxcPesos,
         agingDistribution,
         byCompany,
         topDebtors,
