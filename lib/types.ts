@@ -68,6 +68,7 @@ export const rolePermissions: RolePermissions = {
       "spiff", // Gestión de spiffs por marca
       "reportes_comerciales", // Sección Reportes Comerciales (trimestral Panamá por marca)
       "reporte_diario", // Reporte Diario de Ventas
+      "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
@@ -168,7 +169,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reportes_comerciales", "reporte_diario", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
