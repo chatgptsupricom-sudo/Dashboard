@@ -31,9 +31,12 @@ import {
   Copy,
   Loader2,
   MapPin,
+  PackageCheck,
   Printer,
   Save,
+  Store,
   Trash2,
+  Truck,
   User,
   Wrench,
 } from "lucide-react";
@@ -59,6 +62,20 @@ const statusLabels: Record<string, string> = {
   reingresado: "Reingresado",
 };
 
+// Metodo de entrega que el cliente eligio en el portal publico (issue
+// #121/#122/#123/#124) -- solo aplica a casos reparados via el portal, no
+// es un estado del caso en si.
+const entregaLabels: Record<string, string> = {
+  sucursal: "Retira en sucursal",
+  ruta: "Envío por ruta",
+  agencia: "Envío por agencia",
+};
+const entregaIcons: Record<string, typeof Store> = {
+  sucursal: Store,
+  ruta: Truck,
+  agencia: PackageCheck,
+};
+
 export default function RmaCasoDetailPage() {
   const t = useTranslations("rma");
   const params = useParams();
@@ -77,6 +94,7 @@ export default function RmaCasoDetailPage() {
   const [changeNotes, setChangeNotes] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [marcandoEntregado, setMarcandoEntregado] = useState(false);
 
   useEffect(() => {
     if (caseId) fetchCase();
@@ -156,6 +174,23 @@ export default function RmaCasoDetailPage() {
       console.error("Error:", error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMarcarEntregado = async () => {
+    try {
+      setMarcandoEntregado(true);
+      const res = await fetch(`/api/rma/${caseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marcar_entregado: true }),
+      });
+      const data = await res.json();
+      if (data.success) fetchCase();
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setMarcandoEntregado(false);
     }
   };
 
@@ -370,6 +405,47 @@ export default function RmaCasoDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Entrega -- metodo que el cliente eligio en el portal (issue #121)
+              y confirmacion de que ya se llevo el equipo (issue #122). Solo
+              se muestra si hay algo que mostrar: ni todos los casos pasan
+              por el portal, ni todos ya eligieron. */}
+          {(caseData.entrega_metodo || caseData.despachado_at) && (
+            <Card className="rounded-3xl border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-slate-900">Entrega</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {caseData.entrega_metodo && (
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const Icon = entregaIcons[caseData.entrega_metodo] || Store;
+                      return <Icon className="w-4 h-4 text-slate-400" />;
+                    })()}
+                    <span className="text-sm font-medium text-slate-700">
+                      {entregaLabels[caseData.entrega_metodo] || caseData.entrega_metodo}
+                      {caseData.entrega_metodo === "ruta" && caseData.entrega_ciudad && ` — ${caseData.entrega_ciudad}`}
+                      {caseData.entrega_metodo === "agencia" && caseData.entrega_agencia && ` — ${caseData.entrega_agencia}`}
+                    </span>
+                  </div>
+                )}
+
+                {caseData.despachado_at ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-sm font-semibold text-emerald-800">
+                      Entregado el {fechaCorta(caseData.despachado_at)}
+                    </span>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={handleMarcarEntregado} disabled={marcandoEntregado}>
+                    {marcandoEntregado && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Marcar como entregado
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Cliente */}
           <Card className="rounded-3xl border-none shadow-sm">

@@ -815,6 +815,8 @@
     "entrega_opcion_sucursal": "Pick up at branch",
     "entrega_opcion_sucursal_desc": "Pick it up at {sucursal}",
     "entrega_opcion_sucursal_desc_generico": "Pick it up at the branch where you reported the device",
+    "entrega_sucursal_direccion": "Address",
+    "entrega_sucursal_horario": "Business hours",
     "entrega_opcion_ruta": "Send by delivery route",
     "entrega_opcion_ruta_desc": "Our delivery route brings it to your city, if it's in the coverage area",
     "entrega_opcion_agencia": "Send by courier",

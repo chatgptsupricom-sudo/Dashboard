@@ -13,6 +13,8 @@ type Caso = {
   product_name: string;
   status: string;
   sucursal_nombre: string | null;
+  sucursal_direccion: string | null;
+  sucursal_horario: string | null;
   entrega_metodo: "sucursal" | "ruta" | "agencia" | null;
   entrega_ciudad: string | null;
   entrega_agencia: string | null;
@@ -240,6 +242,16 @@ export default function EntregaPage() {
 
                 {metodo === "sucursal" && (
                   <div className="mt-5">
+                    {(caso.sucursal_direccion || caso.sucursal_horario) && (
+                      <div className="mb-4 rounded-xl border border-[color:var(--portal-line)] bg-[color:var(--portal-primary-soft)] px-4 py-3 text-sm text-[color:var(--portal-ink)]">
+                        {caso.sucursal_direccion && (
+                          <p><span className="font-semibold">{t("entrega_sucursal_direccion")}:</span> {caso.sucursal_direccion}</p>
+                        )}
+                        {caso.sucursal_horario && (
+                          <p className="mt-1"><span className="font-semibold">{t("entrega_sucursal_horario")}:</span> {caso.sucursal_horario}</p>
+                        )}
+                      </div>
+                    )}
                     <button onClick={handleSucursal} disabled={enviando} className="pt-cta">
                       {enviando ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : t("entrega_confirmar")}
                     </button>

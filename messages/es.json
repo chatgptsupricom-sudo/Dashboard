@@ -797,6 +797,8 @@
     "entrega_opcion_sucursal": "Retirar en sucursal",
     "entrega_opcion_sucursal_desc": "Pasa a retirarlo en {sucursal}",
     "entrega_opcion_sucursal_desc_generico": "Pasa a retirarlo en la sucursal donde reportaste el equipo",
+    "entrega_sucursal_direccion": "Dirección",
+    "entrega_sucursal_horario": "Horario de atención",
     "entrega_opcion_ruta": "Enviar por ruta",
     "entrega_opcion_ruta_desc": "Nuestra ruta de despacho lo lleva hasta tu ciudad, si está en zona de cobertura",
     "entrega_opcion_agencia": "Enviar por agencia",

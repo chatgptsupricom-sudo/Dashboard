@@ -107,6 +107,21 @@ export async function PUT(
     const casoActual = existing.rows[0];
     const oldStatus = casoActual.status;
 
+    // Marcar que el cliente ya se llevo el equipo (issue #122). Mismo campo
+    // que ya usa app/api/seguridad/despacho/route.ts para los despachos
+    // formales de Seguridad -- `despachado_at` es independiente de `status`
+    // (un caso reparado, con nota de credito, o no procesado igual se
+    // "entrega"), asi que esto NO toca status. `IS NULL` evita que un
+    // segundo click mueva la fecha de la primera entrega. Peticion
+    // aparte de la edicion general de campos: no se mezcla con `updates`.
+    if (body.marcar_entregado === true) {
+      await query(
+        `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
+        [id],
+      );
+      return NextResponse.json({ success: true });
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
 

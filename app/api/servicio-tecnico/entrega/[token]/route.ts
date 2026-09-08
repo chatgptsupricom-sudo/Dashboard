@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
-import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
+import { NOMBRES_SUCURSAL, DIRECCIONES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { ensureEntregaSchema, obtenerCasoPorToken, guardarEleccionEntrega } from "@/lib/rma/entrega";
 import { listarAgenciasActivas } from "@/lib/rma/rutasEnvio";
 
@@ -48,6 +48,8 @@ export async function GET(
         product_name: caso.product_name,
         status: caso.status,
         sucursal_nombre: caso.company_id ? NOMBRES_SUCURSAL[caso.company_id] || null : null,
+        sucursal_direccion: caso.company_id ? DIRECCIONES_SUCURSAL[caso.company_id]?.direccion || null : null,
+        sucursal_horario: caso.company_id ? DIRECCIONES_SUCURSAL[caso.company_id]?.horario || null : null,
         entrega_metodo: caso.entrega_metodo,
         entrega_ciudad: caso.entrega_ciudad,
         entrega_agencia: caso.entrega_agencia,
