@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
+type Tipo = "cobro" | "ajuste";
+
 type Row = {
   id: number;
   fecha: string | null;
@@ -17,6 +19,8 @@ type Row = {
   sede: string;
   banco: string;
   vendedor: string;
+  tipo: Tipo;
+  esAsistente: boolean;
   moneda: "USD" | "Bs";
   montoOriginal: number;
   montoBs: number | null;
@@ -34,16 +38,6 @@ type Row = {
   revisar: boolean;
 };
 
-type Resumen = {
-  pagos: number;
-  totalUsd: number;
-  totalBs: number;
-  totalIgtf: number;
-  porRevisar: number;
-  porMoneda: { USD: number; Bs: number };
-  porSede: { sede: string; pagos: number; totalUsd: number }[];
-};
-
 const PAGE_SIZE = 25;
 
 const primerDiaMes = () => {
@@ -59,6 +53,7 @@ const fmtFecha = (s: string | null) => {
   const [y, m, d] = s.split("-");
   return `${d}-${m}-${y}`;
 };
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export default function PagoClientesPage() {
   const [desde, setDesde] = useState(primerDiaMes());
@@ -67,15 +62,16 @@ export default function PagoClientesPage() {
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
+  const [excluirAsistentes, setExcluirAsistentes] = useState(false);
+  const [tab, setTab] = useState<Tipo>("cobro");
 
   const [rows, setRows] = useState<Row[]>([]);
-  const [resumen, setResumen] = useState<Resumen | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  // La búsqueda es local: el fetch (pesado, va a Odoo) solo se rehace al
-  // cambiar rango / sede / estado.
+  // La búsqueda y los filtros de tipo/asistente son locales: el fetch (pesado,
+  // va a Odoo) solo se rehace al cambiar rango / sede / estado.
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -85,43 +81,53 @@ export default function PagoClientesPage() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "No se pudo cargar");
       setRows(json.data.rows);
-      setResumen(json.data.resumen);
       setPage(1);
     } catch (e: any) {
       setError(e?.message || "Error");
       setRows([]);
-      setResumen(null);
     } finally {
       setLoading(false);
     }
   }, [desde, hasta, empresa, estado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [search, soloRevisar]);
+  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, tab]);
+
+  const countCobros = useMemo(
+    () => rows.filter((r) => r.tipo === "cobro" && (!excluirAsistentes || !r.esAsistente)).length,
+    [rows, excluirAsistentes],
+  );
+  const countAjustes = useMemo(
+    () => rows.filter((r) => r.tipo === "ajuste" && (!excluirAsistentes || !r.esAsistente)).length,
+    [rows, excluirAsistentes],
+  );
+
+  // Rows del tab actual (sin búsqueda) — base del resumen.
+  const enTab = useMemo(
+    () => rows.filter((r) => r.tipo === tab && (!excluirAsistentes || !r.esAsistente)),
+    [rows, tab, excluirAsistentes],
+  );
 
   const visibles = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    return enTab.filter((r) => {
       if (soloRevisar && !r.revisar) return false;
       if (!q) return true;
       return [r.cliente, r.rif, r.numeroPago, r.referencia, r.vendedor, r.banco, r.descripcion, r.facturasAplicadas]
         .some((c) => (c || "").toLowerCase().includes(q));
     });
-  }, [rows, soloRevisar, search]);
+  }, [enTab, soloRevisar, search]);
 
-  // Resumen recalculado sobre lo que se está viendo (respeta búsqueda / filtro).
-  // "A revisar" siempre muestra el total del período — es el botón de ese filtro.
-  const resumenView = useMemo(() => {
-    if (!resumen) return null;
-    if (!search.trim() && !soloRevisar) return resumen;
+  const resumen = useMemo(() => {
+    const base = search.trim() ? visibles : enTab;
     return {
-      ...resumen,
-      pagos: visibles.length,
-      totalUsd: Math.round(visibles.reduce((s, r) => s + r.montoUsd, 0) * 100) / 100,
-      totalBs: Math.round(visibles.reduce((s, r) => s + (r.montoBs || 0), 0) * 100) / 100,
-      porRevisar: rows.filter((r) => r.revisar).length,
+      pagos: base.length,
+      totalUsd: r2(base.reduce((s, r) => s + r.montoUsd, 0)),
+      totalBs: r2(base.reduce((s, r) => s + (r.montoBs || 0), 0)),
+      porRevisar: enTab.filter((r) => r.revisar).length,
     };
-  }, [resumen, rows, visibles, search, soloRevisar]);
+  }, [enTab, visibles, search]);
+
   const totalPages = Math.max(1, Math.ceil(visibles.length / PAGE_SIZE));
   const pageRows = visibles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -159,8 +165,8 @@ export default function PagoClientesPage() {
       { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 9 }, { wch: 14 },
     ];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Pagos de Clientes");
-    XLSX.writeFile(wb, `Pagos_Clientes_${desde}_a_${hasta}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, tab === "cobro" ? "Cobros" : "Retenciones y ajustes");
+    XLSX.writeFile(wb, `Pagos_Clientes_${tab}_${desde}_a_${hasta}.xlsx`);
   };
 
   return (
@@ -168,10 +174,35 @@ export default function PagoClientesPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Pago de Clientes</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Todos los pagos recibidos de clientes desde Odoo: monto en bolívares y en dólares, tasa aplicada,
-          banco, vendedor y descripción. Filtrable por fecha y exportable a Excel.
+          Pagos recibidos de clientes desde Odoo: monto en bolívares y en dólares, tasa aplicada, banco,
+          vendedor y descripción. Filtrable por fecha y exportable a Excel.
         </p>
       </div>
+
+      {/* Tabs cobro / ajuste */}
+      <div className="flex gap-2">
+        {([
+          ["cobro", "Cobros", countCobros],
+          ["ajuste", "Retenciones y ajustes", countAjustes],
+        ] as const).map(([key, label, n]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+              tab === key ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {label} <span className={tab === key ? "text-slate-300" : "text-slate-400"}>({n.toLocaleString("es-VE")})</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "ajuste" && (
+        <p className="text-xs text-slate-500 -mt-2">
+          Diarios que no son un cobro de dinero: IVA / ISLR / ITBMS / IGTF retenido por el cliente, descuentos y
+          devoluciones locales, operaciones varias y facturas de cliente.
+        </p>
+      )}
 
       {/* Filtros */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
@@ -215,6 +246,11 @@ export default function PagoClientesPage() {
             />
           </div>
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600 pb-1.5 cursor-pointer select-none">
+          <input type="checkbox" checked={excluirAsistentes}
+            onChange={(e) => setExcluirAsistentes(e.target.checked)} className="rounded border-slate-300" />
+          Excluir asistentes de ventas
+        </label>
         <button onClick={fetchData} disabled={loading}
           className="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Actualizar
@@ -226,26 +262,24 @@ export default function PagoClientesPage() {
       </div>
 
       {/* Resumen */}
-      {resumenView && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card icon={<Receipt size={16} className="text-slate-500" />} label="Pagos" value={resumenView.pagos.toLocaleString("es-VE")} />
-          <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumenView.totalUsd)}`} />
-          <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumenView.totalBs)}`} />
-          <button
-            type="button"
-            onClick={() => { setSoloRevisar((v) => !v); setPage(1); }}
-            className={`text-left rounded-xl border p-3 transition-colors ${
-              soloRevisar ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:bg-slate-50"
-            }`}
-          >
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <AlertTriangle size={16} className="text-amber-500" /> A revisar
-            </div>
-            <div className="text-lg font-bold text-slate-900 mt-0.5">{resumenView.porRevisar.toLocaleString("es-VE")}</div>
-            <div className="text-[10px] text-slate-400">{soloRevisar ? "mostrando solo estas — clic para ver todas" : "clic para filtrar"}</div>
-          </button>
-        </div>
-      )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
+        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} />
+        <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} />
+        <button
+          type="button"
+          onClick={() => setSoloRevisar((v) => !v)}
+          className={`text-left rounded-xl border p-3 transition-colors ${
+            soloRevisar ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:bg-slate-50"
+          }`}
+        >
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <AlertTriangle size={16} className="text-amber-500" /> A revisar
+          </div>
+          <div className="text-lg font-bold text-slate-900 mt-0.5">{resumen.porRevisar.toLocaleString("es-VE")}</div>
+          <div className="text-[10px] text-slate-400">{soloRevisar ? "mostrando solo estas — clic para ver todas" : "clic para filtrar"}</div>
+        </button>
+      </div>
 
       {error && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 text-sm">{error}</div>
@@ -280,7 +314,7 @@ export default function PagoClientesPage() {
               {loading ? (
                 <tr><td colSpan={17} className="p-10 text-center text-slate-400">Cargando…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Sin pagos en el rango seleccionado.</td></tr>
+                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
               ) : (
                 pageRows.map((r) => (
                   <tr key={r.id} className={`border-b hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
@@ -296,7 +330,10 @@ export default function PagoClientesPage() {
                     <td className="p-3 whitespace-nowrap text-slate-600">{r.rif || "—"}</td>
                     <td className="p-3 whitespace-nowrap text-slate-600">{r.sede}</td>
                     <td className="p-3 max-w-[180px] truncate text-slate-600" title={r.banco}>{r.banco}</td>
-                    <td className="p-3 max-w-[160px] truncate text-slate-600" title={r.vendedor}>{r.vendedor}</td>
+                    <td className="p-3 max-w-[160px] truncate text-slate-600" title={r.vendedor}>
+                      {r.vendedor}
+                      {r.esAsistente && <span className="ml-1 text-[9px] text-slate-400" title="Asistente de ventas">·asist</span>}
+                    </td>
                     <td className="p-3 text-center">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.moneda === "USD" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"}`}>
                         {r.moneda}
