@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Search,
   User,
-  UserCheck,
   X,
   Check,
   Calendar,
@@ -28,6 +27,7 @@ import ClientesNuevosModal from "./stoplight/ClientesNuevosModal";
 import MargenBrutoModal from "./stoplight/MargenBrutoModal";
 import EfectividadCierreModal from "./stoplight/EfectividadCierreModal";
 import CoberturaMarcasModal from "./stoplight/CoberturaMarcasModal";
+import ActivacionCarteraModal from "./stoplight/ActivacionCarteraModal";
 import ModalMonthPicker from "./stoplight/ModalMonthPicker";
 import {
   getCellColor,
@@ -100,11 +100,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [coberturaModalOpen, setCoberturaModalOpen] = useState(false);
 
   const [activacionModalOpen, setActivacionModalOpen] = useState(false);
-  const [activacionModalLoading, setActivacionModalLoading] = useState(false);
-  const [activacionModalData, setActivacionModalData] = useState<any>(null);
-  const [selectedActivacionSeller, setSelectedActivacionSeller] = useState<any>(null);
-  const [activacionModalTab, setActivacionModalTab] = useState<"vendedor" | "semanal">("vendedor");
-  const [activacionPeriodo, setActivacionPeriodo] = useState<"mes" | "trimestre" | "anio" | "todo">("mes");
 
   const [visitasModalOpen, setVisitasModalOpen] = useState(false);
   const [visitasModalLoading, setVisitasModalLoading] = useState(false);
@@ -343,26 +338,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
 
 
-  const openActivacionModalWithMes = async (mes: string, periodo: string = "mes") => {
-    modalFetchRef.current = (m: string) => openActivacionModalWithMes(m, activacionPeriodo);
-    setActivacionModalOpen(true);
-    setActivacionModalLoading(true);
-    setSelectedActivacionSeller(null);
-    setActivacionModalTab("vendedor");
-    setActivacionPeriodo(periodo as any);
-    try {
-      const res = await fetch(`${apiPrefix}/activacion-detail?${q({ periodo }, mes)}`);
-      const json = await res.json();
-      if (json.success) setActivacionModalData(json.data);
-    } catch (e) {
-      console.error("Error fetching activacion detail:", e);
-    }
-    setActivacionModalLoading(false);
-  };
-
-  const openActivacionModal = async (periodo: string = "mes") => {
-    await openActivacionModalWithMes(selectedMes, periodo);
-  };
 
   const openVisitasModalWithMes = async (mes: string) => {
     modalFetchRef.current = openVisitasModalWithMes;
@@ -1426,7 +1401,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
                           <span
@@ -1609,243 +1584,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       />
 
       {/* Activacion Cartera Modal */}
-      {activacionModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <UserCheck size={20} className="text-orange-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("activacion_title")}</h2>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {activacionModalData?.periodoLabel || t("activacion_subtitle")}
-                  </p>
-                </div>
-              </div>
-              {/* Period Selector */}
-              <div className="flex items-center gap-2">
-                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
-                {(["mes", "trimestre", "anio", "todo"] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => openActivacionModalWithMes(modalMes, p)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                      activacionPeriodo === p
-                        ? "bg-orange-500 text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {p === "mes" ? t("periodo_mes") : p === "trimestre" ? t("periodo_trimestre") : p === "anio" ? t("periodo_anio") : t("periodo_todo")}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => { setActivacionModalOpen(false); setSelectedActivacionSeller(null); setActivacionModalData(null); }}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} className="text-slate-500" />
-              </button>
-            </div>
-
-            {/* Modal Tabs */}
-            <div className="flex gap-4 px-5 pt-4 border-b">
-              {(["vendedor", "semanal"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setActivacionModalTab(tab); setSelectedActivacionSeller(null); }}
-                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    activacionModalTab === tab ? "text-orange-500 border-b-2 border-orange-500" : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {tab === "vendedor" ? t("tab_por_vendedor") : t("tab_detalle_semanal")}
-                </button>
-              ))}
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-5">
-              {activacionModalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("loading")}
-                </div>
-              ) : !activacionModalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("no_available_data")}
-                </div>
-              ) : (
-                <>
-                  {/* POR VENDEDOR Tab */}
-                  {activacionModalTab === "vendedor" && (
-                    <div className="space-y-6">
-                      {/* Global Summary */}
-                      {activacionModalData.global && (
-                        <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                          <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: activacionModalData.periodoLabel })}</h3>
-                          <div className="grid grid-cols-3 gap-4">
-                            <div className="text-center">
-                              <div className="bg-orange-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-orange-700">{activacionModalData.global.totalClientes}</p>
-                              </div>
-                              <p className="text-xs font-medium text-orange-600">{t("total_clientes")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-green-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-green-700">{activacionModalData.global.clientesActivos}</p>
-                              </div>
-                              <p className="text-xs font-medium text-green-600">{t("clientes_activos")}</p>
-                            </div>
-                            <div className="text-center">
-                              <div className="bg-purple-100 rounded-xl p-3 mb-2">
-                                <p className="text-2xl font-bold text-purple-700">{activacionModalData.global.activacion}%</p>
-                              </div>
-                              <p className="text-xs font-medium text-purple-600">{t("activacion_global")}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Seller table */}
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                              <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
-                              <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
-                              <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {activacionModalData.sellers.map((seller: any) => {
-                              const cumple = seller.activacion >= 60;
-                              return (
-                                <tr
-                                  key={seller.nombre}
-                                  className="border-b hover:bg-orange-50/40 transition-colors"
-                                >
-                                  <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                                  <td className="p-3 text-center text-orange-600 font-bold">{seller.totalClientes}</td>
-                                  <td className="p-3 text-center text-green-600 font-bold">{seller.clientesActivos}</td>
-                                  <td className="p-3 text-center">
-                                    <span className={`font-bold ${seller.activacion >= 60 ? "text-green-600" : seller.activacion >= 40 ? "text-yellow-600" : "text-red-600"}`}>
-                                      {seller.activacion}%
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {cumple ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                        <Check size={12} /> {t("cumple")}
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                        <X size={12} /> {t("no_cumple")}
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* DETALLE SEMANAL Tab */}
-                  {activacionModalTab === "semanal" && (
-                    <div>
-                      {!selectedActivacionSeller ? (
-                        <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_activacion")}</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {activacionModalData.sellers.map((seller: any) => (
-                              <button
-                                key={seller.nombre}
-                                onClick={() => setSelectedActivacionSeller(seller)}
-                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <div>
-                                  <span className="font-medium text-slate-800">{seller.nombre}</span>
-                                  <p className="text-xs text-slate-500">{seller.clientesActivos}/{seller.totalClientes}{t("clientes_activos_suffix")}</p>
-                                </div>
-                                <span className={`text-sm font-bold ${seller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
-                                  {seller.activacion}%
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex items-center gap-3 mb-4">
-                            <button onClick={() => setSelectedActivacionSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              {t("back")}
-                            </button>
-                            <h3 className="font-bold text-slate-800">{selectedActivacionSeller.nombre}</h3>
-                            <span className={`text-sm font-bold ${selectedActivacionSeller.activacion >= 60 ? "text-green-600" : "text-red-600"}`}>
-                              {selectedActivacionSeller.activacion}%{t("activacion_suffix")}
-                            </span>
-                          </div>
-                          <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                                  <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
-                                  <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
-                                  <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {selectedActivacionSeller.semanas.map((sem: any) => (
-                                  <tr key={sem.numero} className={`border-b ${sem.activacion != null && sem.activacion >= 60 ? "bg-green-50/30" : ""}`}>
-                                    <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                    <td className="p-3 text-center text-green-600 font-bold">{sem.activos}</td>
-                                    <td className="p-3 text-center text-orange-600 font-bold">{sem.total}</td>
-                                    <td className="p-3 text-center">
-                                      {sem.activacion != null ? (
-                                        <span className={`font-bold ${sem.activacion >= 60 ? "text-green-600" : sem.activacion >= 40 ? "text-yellow-600" : "text-red-600"}`}>
-                                          {sem.activacion}%
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-400">-</span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {sem.activacion != null ? (
-                                        sem.activacion >= 60 ? (
-                                          <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                            <Check size={12} /> {t("ok")}
-                                          </span>
-                                        ) : (
-                                          <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                            <X size={12} /> Bajo
-                                          </span>
-                                        )
-                                      ) : (
-                                        <span className="text-slate-400">-</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ActivacionCarteraModal
+        isOpen={activacionModalOpen}
+        onClose={() => setActivacionModalOpen(false)}
+        apiPrefix={apiPrefix}
+        companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
+        defaultMes={selectedMes}
+      />
 
       {/* Visitas Semanales Modal */}
       {visitasModalOpen && (
