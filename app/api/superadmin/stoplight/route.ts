@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { computeComprasKpis } from "@/lib/compras/kpis";
+import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -24,11 +25,15 @@ async function ensureTables() {
     kpi_key VARCHAR(100) NOT NULL,
     company_id INT NOT NULL,
     meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
+    peso DECIMAL(5,2) NOT NULL DEFAULT 0,
     mes VARCHAR(7) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_kpi (kpi_key, company_id, mes)
   )`);
+  // `peso` se agregó después (issue #131): en bases que ya tenían la tabla,
+  // el CREATE de arriba no la toca.
+  await ensureKpiTargetsPeso();
   await query(`CREATE TABLE IF NOT EXISTS kpi_weekly_data (
     id INT AUTO_INCREMENT PRIMARY KEY,
     kpi_key VARCHAR(100) NOT NULL,
@@ -170,6 +175,12 @@ export async function GET(request: NextRequest) {
 
     // 6. Calculate weekly quota by business days
     const totalDiasUtilesMes = contarDiasUtiles(new Date(anio, mesNum - 1, 1), new Date(anio, mesNum, 0));
+    // Días hábiles transcurridos del mes hasta hoy — para el "avance del mes":
+    // facturado vs. la cuota prorrateada a esta altura (100% = al día).
+    const finMes = new Date(anio, mesNum, 0);
+    const hoyOFin = now < finMes ? now : finMes;
+    const diasUtilesTranscurridos = contarDiasUtiles(new Date(anio, mesNum - 1, 1), hoyOFin);
+    const factorTranscurrido = totalDiasUtilesMes > 0 ? diasUtilesTranscurridos / totalDiasUtilesMes : 1;
     Object.values(sellerMap).forEach((seller) => {
       semanas.forEach((semana, i) => {
         seller.semanas[i].cuotaSemanal = totalDiasUtilesMes > 0
@@ -312,15 +323,26 @@ export async function GET(request: NextRequest) {
     // Load metas first (needed for weekly calculations)
     const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
-    (metasResult.rows as any[]).forEach((r) => { metasMap[r.kpi_key] = Number(r.meta_mensual); });
+    const pesosMap: Record<string, number> = {};
+    (metasResult.rows as any[]).forEach((r) => {
+      metasMap[r.kpi_key] = Number(r.meta_mensual);
+      const p = Number(r.peso);
+      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+    });
 
     const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
     const effectiveCuotaMensual = metaCuota > 0 ? metaCuota : totalCuotaMensual;
     const porcentajeCumplimiento = effectiveCuotaMensual > 0 ? Math.round((totalFacturadoMensual / effectiveCuotaMensual) * 100) : 0;
+    // Avance del mes (opción B): facturado ÷ cuota prorrateada a los días
+    // hábiles transcurridos. 100% = vas al día para llegar a la cuota.
+    const cuotaProrrateada = effectiveCuotaMensual * factorTranscurrido;
+    const avanceMesCuota = cuotaProrrateada > 0
+      ? Math.round((totalFacturadoMensual / cuotaProrrateada) * 100)
+      : null;
 
     const semanaCuota = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
@@ -894,12 +916,6 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
-    let latestPct = 0;
-    for (let i = semanaCuota.length - 1; i >= 0; i--) {
-      const val = parseInt(semanaCuota[i]);
-      if (!isNaN(val) && val > 0) { latestPct = val; break; }
-    }
-
     return NextResponse.json({
       success: true,
       data: {
@@ -907,13 +923,15 @@ export async function GET(request: NextRequest) {
         totalCuotaMensual,
         totalFacturadoMensual,
         porcentajeCumplimiento,
+        avanceMesCuota,
+        diasUtilesTranscurridos,
+        totalDiasUtilesMes,
         totalVisitasMes,
         totalClientesNuevos,
         numSemanas,
         weekHeaders,
         sellers: Object.values(sellerMap),
         semanaGlobal: semanaCuota,
-        trend: latestPct >= 100 ? "green" : latestPct >= 75 ? "yellow" : "red",
         semanaVisitas,
         semanaClientes,
         semanaMargen,
@@ -940,6 +958,7 @@ export async function GET(request: NextRequest) {
         avgForecast: avgFromWeeks(semanaForecast),
         avgPropuestas: avgFromWeeks(semanaPropuestas),
         metas: metasMap,
+        pesos: pesosMap,
         sellersVisitas: visitasPorSeller,
         sellersClientes: clientesNuevosPorSeller,
         metaClientesNuevos,
@@ -980,10 +999,27 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
       }
       await query(
-        `INSERT INTO kpi_targets (kpi_key, company_id, meta_mensual, mes) 
-         VALUES (?, ?, ?, ?) 
+        `INSERT INTO kpi_targets (kpi_key, company_id, meta_mensual, mes)
+         VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE meta_mensual = VALUES(meta_mensual)`,
         [kpi_key, company_id, meta_mensual || 0, mes]
+      );
+      return NextResponse.json({ success: true });
+    }
+
+    // Peso del KPI para el puntaje ponderado del grupo (issue #131). Antes
+    // estaba hardcodeado en el componente; ahora sale de kpi_targets, por
+    // company_id + mes, con los valores previos como fallback.
+    if (type === "save_peso") {
+      const { kpi_key, company_id, peso, mes } = body;
+      if (!kpi_key || !company_id || !mes) {
+        return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
+      }
+      await query(
+        `INSERT INTO kpi_targets (kpi_key, company_id, peso, mes)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE peso = VALUES(peso)`,
+        [kpi_key, company_id, Math.max(0, Number(peso) || 0), mes]
       );
       return NextResponse.json({ success: true });
     }
