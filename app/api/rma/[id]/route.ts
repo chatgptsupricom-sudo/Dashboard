@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { enviarCorreoReparado } from "@/lib/rma/emailReparado";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 export async function GET(
   request: NextRequest,
@@ -92,12 +94,18 @@ export async function PUT(
       change_notes,
     } = body;
 
-    const existing = await query("SELECT id, status FROM rma_cases WHERE id = ?", [id]);
+    const existing = await query(
+      `SELECT id, status, case_number, origen, company_id, odoo_partner_id,
+              tracking_token, model, hardware, client_name
+       FROM rma_cases WHERE id = ?`,
+      [id],
+    );
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Caso no encontrado" }, { status: 404 });
     }
 
-    const oldStatus = existing.rows[0].status;
+    const casoActual = existing.rows[0];
+    const oldStatus = casoActual.status;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -132,6 +140,28 @@ export async function PUT(
 
     values.push(id);
     await query(`UPDATE rma_cases SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    // Aviso al cliente de "tu equipo esta reparado" (issue #119). Solo en
+    // la TRANSICION hacia reparado -- si el caso ya estaba reparado (ej. se
+    // edito otro campo sin tocar el estado), no se reenvia. Fire-and-forget:
+    // el estado ya quedo guardado arriba, un fallo aca no debe tumbar esta
+    // respuesta.
+    if (status === "reparado" && oldStatus !== "reparado") {
+      enviarCorreoReparado(
+        {
+          id: casoActual.id,
+          case_number: casoActual.case_number,
+          origen: casoActual.origen,
+          company_id: casoActual.company_id,
+          odoo_partner_id: casoActual.odoo_partner_id,
+          tracking_token: casoActual.tracking_token,
+          model: model !== undefined ? model : casoActual.model,
+          hardware: hardware !== undefined ? hardware : casoActual.hardware,
+          client_name: client_name !== undefined ? client_name : casoActual.client_name,
+        },
+        getPublicOrigin(request),
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
