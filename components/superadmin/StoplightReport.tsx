@@ -2,8 +2,6 @@
 
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   HelpCircle,
   Package,
@@ -26,6 +24,8 @@ import ComprasDetailModal from "./ComprasDetailModal";
 import KpiInfoModal from "./stoplight/KpiInfoModal";
 import CxCDetailModal from "./stoplight/CxCDetailModal";
 import CxPDetailModal from "./stoplight/CxPDetailModal";
+import CuotaDetailModal from "./stoplight/CuotaDetailModal";
+import ModalMonthPicker from "./stoplight/ModalMonthPicker";
 import {
   getCellColor,
   getKpiCellColor,
@@ -47,10 +47,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [loading, setLoading] = useState(true);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalData, setModalData] = useState<{ mes: string; totalDiasUtiles: number; sellers: SellerDetail[] } | null>(null);
-  const [selectedSeller, setSelectedSeller] = useState<SellerDetail | null>(null);
-  const [modalTab, setModalTab] = useState<"resumen" | "diario" | "semanal">("resumen");
   const [goalValues, setGoalValues] = useState<Record<string, string>>({});
   const [selectedCompanyId, setSelectedCompanyId] = useState(companyId ?? 9);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
@@ -63,12 +59,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
   });
   const modalFetchRef = useRef<((mes: string) => Promise<void>) | null>(null);
-
-  const openModalWith = async (fetchFn: (mes: string) => Promise<void>, mes: string) => {
-    modalFetchRef.current = fetchFn;
-    setModalMes(mes);
-    await fetchFn(mes);
-  };
 
   const onModalMesChange = async (newMes: string) => {
     setModalMes(newMes);
@@ -361,26 +351,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const openCuotaModalWithMes = async (mes: string) => {
-    modalFetchRef.current = openCuotaModalWithMes;
-    setModalOpen(true);
-    setModalLoading(true);
-    setSelectedSeller(null);
-    setModalTab("resumen");
-    try {
-      const res = await fetch(`${apiPrefix}/cuota-detail?${q({}, mes)}`);
-      const json = await res.json();
-      if (json.success) setModalData(json.data);
-    } catch (e) {
-      console.error("Error fetching cuota detail:", e);
-    }
-    setModalLoading(false);
-  };
-
-  const openCuotaModal = async () => {
-    await openCuotaModalWithMes(selectedMes);
-  };
-
   const openClientesModalWithMes = async (mes: string) => {
     modalFetchRef.current = openClientesModalWithMes;
     setClientesModalOpen(true);
@@ -648,27 +618,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       opts.push({ value: val, label: d.toLocaleDateString(locale, { month: "long", year: "numeric" }) });
     }
     return opts;
-  };
-
-  const ModalMonthPicker = ({ value, onChange }: { value: string; onChange: (mes: string) => void }) => {
-    const goMonth = (delta: number) => {
-      const [y, m] = value.split("-").map(Number);
-      const d = new Date(y, m - 1 + delta, 1);
-      onChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    };
-    return (
-      <div className="flex items-center gap-1 border rounded-lg px-2 py-1">
-        <button onClick={() => goMonth(-1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
-          <ChevronLeft size={14} />
-        </button>
-        <span className="text-xs font-medium min-w-[80px] text-center capitalize">
-          {mesLabel(value)}
-        </span>
-        <button onClick={() => goMonth(1)} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
-          <ChevronRight size={14} />
-        </button>
-      </div>
-    );
   };
 
   const getMonthlyValue = (kpiId: string, h: { ventas: any; cxc: any; cpp: any }): string => {
@@ -1608,7 +1557,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? openCuotaModal : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? openClientesModal : kpi.id === "margen_bruto" ? openMargenModal : kpi.id === "efectividad_cierre" ? openEfectividadModal : kpi.id === "cobertura_marcas" ? openCoberturaModal : kpi.id === "activacion_cartera" ? openActivacionModal : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
                           <span
@@ -1746,329 +1695,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       </div>
 
       {/* MODAL DE CUMPLIMIENTO DE CUOTA */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
-              <div className="flex items-center gap-3">
-                {selectedSeller && (
-                  <button
-                    onClick={() => setSelectedSeller(null)}
-                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-                  >
-                    <ArrowLeft size={16} /> {t("back")}
-                  </button>
-                )}
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("modal_cuota_title")}</h2>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {t("modal_cuota_subtitle", { mes: modalData?.mes || modalMes, dias: modalData?.totalDiasUtiles || 0 })}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
-                <button
-                  onClick={() => { setModalOpen(false); setSelectedSeller(null); }}
-                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  <X size={20} className="text-slate-500" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Tabs */}
-            <div className="flex gap-4 px-5 pt-4 border-b">
-              {(["resumen", "diario", "semanal"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setModalTab(tab)}
-                  className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                    modalTab === tab ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {tab === "resumen" ? t("tab_resumen_vendedores") : tab === "diario" ? t("tab_detalle_diario") : t("tab_detalle_semanal")}
-                </button>
-              ))}
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-5">
-              {modalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("loading")}
-                </div>
-              ) : !modalData ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("no_available_data")}
-                </div>
-              ) : (
-                <>
-                  {/* Resumen Tab */}
-                  {modalTab === "resumen" && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-4 gap-4 mb-6">
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-500 font-medium">{t("total_vendedores")}</p>
-                          <p className="text-2xl font-bold text-slate-900">{modalData.sellers.length}</p>
-                        </div>
-                        <div className="bg-green-50 rounded-xl p-4">
-                          <p className="text-xs text-green-600 font-medium">{t("cumplieron")}</p>
-                          <p className="text-2xl font-bold text-green-700">
-                            {modalData.sellers.filter((s) => s.cumple).length}
-                          </p>
-                        </div>
-                        <div className="bg-red-50 rounded-xl p-4">
-                          <p className="text-xs text-red-600 font-medium">{t("no_cumplieron")}</p>
-                          <p className="text-2xl font-bold text-red-700">
-                            {modalData.sellers.filter((s) => !s.cumple).length}
-                          </p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-600 font-medium">{t("dias_utiles_mes")}</p>
-                          <p className="text-2xl font-bold text-slate-700">{modalData.totalDiasUtiles}</p>
-                        </div>
-                      </div>
-
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("cuota_mensual")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("facturado")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("porcentaje")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("accion")}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {modalData.sellers.map((seller) => (
-                              <tr key={seller.sellerId} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => { setSelectedSeller(seller); setModalTab("diario"); }}>
-                                <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                                <td className="p-3 text-center">${seller.cuotaMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                <td className="p-3 text-center">${seller.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                <td className="p-3 text-center">
-                                  <span className={`font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : seller.porcentajeMensual >= 75 ? "text-yellow-600" : "text-red-600"}`}>
-                                    {seller.porcentajeMensual}%
-                                  </span>
-                                </td>
-                                <td className="p-3 text-center">
-                                  {seller.cumple ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                      <Check size={12} /> {t("cumple")}
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                      <X size={12} /> {t("no_cumple")}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  <span className="text-xs text-blue-600 hover:text-blue-800 underline">
-                                    {t("ver_detalle")}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Detalle Diario Tab */}
-                  {modalTab === "diario" && (
-                    <div>
-                      {!selectedSeller ? (
-                        <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_diario")}</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {modalData.sellers.map((seller) => (
-                              <button
-                                key={seller.sellerId}
-                                onClick={() => setSelectedSeller(seller)}
-                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <span className="font-medium text-slate-800">{seller.nombre}</span>
-                                <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                                  {seller.porcentajeMensual}%
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                              <button onClick={() => setSelectedSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                                {t("back")}
-                              </button>
-                              <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
-                              <span className={`text-sm font-bold ${selectedSeller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                                {selectedSeller.porcentajeMensual}%
-                              </span>
-                            </div>
-                            <span className="text-xs text-slate-400">
-                              {t("cuota_diaria", { value: selectedSeller.cuotaDiaria.toLocaleString(locale, { minimumFractionDigits: 2 }) })}
-                            </span>
-                          </div>
-                          <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 border-b">
-                                  <th className="p-2 text-left font-medium text-slate-600">{t("fecha")}</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">{t("dia")}</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">{t("cuota")}</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">{t("facturado")}</th>
-                                  <th className="p-2 text-center font-medium text-slate-600">{t("estado")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {selectedSeller.dias.map((dia) => (
-                                  <tr
-                                    key={dia.fecha}
-                                    className={`border-b ${
-                                      !dia.esDiaUtil
-                                        ? "bg-slate-50 text-slate-400"
-                                        : dia.cumple
-                                          ? "bg-green-50/30"
-                                          : dia.facturado > 0
-                                            ? "bg-yellow-50/30"
-                                            : ""
-                                    }`}
-                                  >
-                                    <td className="p-2">{dia.fecha}</td>
-                                    <td className="p-2 text-center">{dia.diaSemana}</td>
-                                    <td className="p-2 text-center">
-                                      {dia.esDiaUtil
-                                        ? `$${dia.cuotaDiaria.toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
-                                        : dia.esFeriado
-                                          ? t("feriado")
-                                          : t("descanso")}
-                                    </td>
-                                    <td className="p-2 text-center font-medium">
-                                      {dia.facturado > 0
-                                        ? `$${dia.facturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}`
-                                        : "-"}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                      {!dia.esDiaUtil ? (
-                                        <span className="text-xs text-slate-400">-</span>
-                                      ) : dia.cumple ? (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                          <Check size={12} /> {t("ok")}
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                          <X size={12} /> {t("falta")}
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Detalle Semanal Tab */}
-                  {modalTab === "semanal" && (
-                    <div>
-                      {!selectedSeller ? (
-                        <div className="space-y-3">
-                          <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {modalData.sellers.map((seller) => (
-                              <button
-                                key={seller.sellerId}
-                                onClick={() => setSelectedSeller(seller)}
-                                className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <span className="font-medium text-slate-800">{seller.nombre}</span>
-                                <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                                  {seller.porcentajeMensual}%
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex items-center gap-3 mb-4">
-                            <button onClick={() => setSelectedSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                              {t("back")}
-                            </button>
-                            <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
-                            <span className={`text-sm font-bold ${selectedSeller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                              {selectedSeller.porcentajeMensual}%
-                            </span>
-                          </div>
-                          <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 border-b">
-                                  <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("periodo")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("dias_utiles")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("cuota_semanal")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("facturado")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("porcentaje")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {selectedSeller.semanas.map((sem) => (
-                                  <tr key={sem.numero} className={`border-b ${sem.porcentaje != null && sem.porcentaje >= 100 ? "bg-green-50/30" : ""}`}>
-                                      <td className="p-3 font-medium">{t("semana_numero", { num: sem.numero })}</td>
-                                    <td className="p-3 text-center text-slate-600">{sem.inicio} - {sem.fin}</td>
-                                    <td className="p-3 text-center">{sem.diasUtiles}</td>
-                                    <td className="p-3 text-center">${sem.cuotaSemanal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                    <td className="p-3 text-center font-medium">${sem.facturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                    <td className="p-3 text-center">
-                                      {sem.porcentaje != null ? (
-                                        <span className={`font-bold ${sem.porcentaje >= 100 ? "text-green-600" : sem.porcentaje >= 75 ? "text-yellow-600" : "text-red-600"}`}>
-                                          {sem.porcentaje}%
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-400">-</span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {sem.porcentaje != null ? (
-                                        sem.porcentaje >= 100 ? (
-                                          <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                            <Check size={12} /> {t("cumple")}
-                                          </span>
-                                        ) : (
-                                          <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                            <X size={12} /> {t("no_cumple")}
-                                          </span>
-                                        )
-                                      ) : (
-                                        <span className="text-slate-400">-</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <CuotaDetailModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        apiPrefix={apiPrefix}
+        companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
+        defaultMes={selectedMes}
+      />
 
       {/* MODAL DE CLIENTES NUEVOS */}
       {clientesModalOpen && (
