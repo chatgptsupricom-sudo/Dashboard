@@ -779,6 +779,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "15%",
         average: cppData.dpo == null ? "N/A" : `${cppData.dpo}${t("suffix_dias")}`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
+        // El DPO es una ventana móvil de 90 días: no tiene lectura por semana.
+        sinSemana: true,
         goalDefault: String(metas["dpo"] ?? 30),
         goalSuffix: " días",
         isClickable: true,
@@ -796,11 +798,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
     // la carga falla, se muestra con el aviso de error en vez de esconderse.
     // El filtro `groups` de abajo ya lo excluye de las otras vistas.
-    // `mensual`: CxC y CxP son métricas de cierre mensual, no semanales. En la
-    // vista Semanal se muestran como "valor vs meta", sin la grilla de semanas
-    // (que salía con 3–4 columnas vacías y se desalineaba en meses de 4 semanas).
+    // `mensual`: el grupo entero es de cierre mensual, sin serie semanal. CxC
+    // sigue así (su route no calcula datos por semana — ver issue del calendario
+    // semanal). CxP sí los calcula, así que muestra la grilla; el DPO va marcado
+    // `sinSemana` porque es una ventana móvil de 90 días, no una métrica semanal.
     { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, mensual: true, estado: { cargando: cxcLoading, error: cxcError } },
-    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders, mensual: true }] : []),
+    ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
   const gruposBase = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
@@ -1237,10 +1240,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
                     </div>
                     <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${sinMeta(kpi.goalDefault) ? "text-slate-300" : getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{sinMeta(kpi.goalDefault) ? "–" : kpi.average}</span>
-                    <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
-                      <SparklineBar values={kpi.weeks} kpiId={kpi.id} goal={kpi.goalDefault} />
+                    <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.sinSemana ? t("metrica_mensual") : kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
+                      {kpi.sinSemana ? (
+                        <span className="text-[11px] text-slate-300">{t("metrica_mensual")}</span>
+                      ) : (
+                        <SparklineBar values={kpi.weeks} kpiId={kpi.id} goal={kpi.goalDefault} />
+                      )}
                     </div>
-                    <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{(group as any).weekHeaders.length} {t("semanas_count")}</div>
+                    <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{kpi.sinSemana ? "" : `${(group as any).weekHeaders.length} ${t("semanas_count")}`}</div>
                   </div>
                   );
                 })}
@@ -1330,7 +1337,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           )}
                         </td>
                         <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
-                        {!esMensual && kpi.weeks.map((val: string | null, idx: number) => {
+                        {!esMensual && (kpi.sinSemana ? (
+                          <td colSpan={(group as any).weekHeaders.length || 1} className="py-3 px-2 text-center align-top text-[11px] text-slate-400">
+                            {t("metrica_mensual")}
+                          </td>
+                        ) : kpi.weeks.map((val: string | null, idx: number) => {
                           const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                           return (
                             <td key={idx} className="py-3 px-2 text-center align-top">
@@ -1343,7 +1354,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               )}
                             </td>
                           );
-                        })}
+                        }))}
                       </tr>
                       );
                     })}
