@@ -826,6 +826,8 @@
     "entrega_agencia_label": "Agency",
     "entrega_agencia_placeholder": "Select an agency",
     "entrega_agencia_otra": "Other",
+    "entrega_agencia_otra_label": "Agency name",
+    "entrega_agencia_otra_placeholder": "Type the agency's name",
     "entrega_nombre_label": "Full name of the recipient",
     "entrega_cedula_label": "ID number",
     "entrega_telefono_label": "Phone",

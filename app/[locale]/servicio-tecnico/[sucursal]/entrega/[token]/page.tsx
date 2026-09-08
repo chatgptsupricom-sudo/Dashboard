@@ -37,6 +37,7 @@ export default function EntregaPage() {
   const [metodo, setMetodo] = useState<Metodo | null>(null);
   const [ciudad, setCiudad] = useState("");
   const [agenciaElegida, setAgenciaElegida] = useState("");
+  const [agenciaOtroTexto, setAgenciaOtroTexto] = useState("");
   const [datosAgencia, setDatosAgencia] = useState({ nombre: "", cedula: "", telefono: "", direccion: "" });
 
   const [enviando, setEnviando] = useState(false);
@@ -102,10 +103,15 @@ export default function EntregaPage() {
     elegir({ metodo: "ruta", ciudad: ciudad.trim() });
   }
 
+  // Si eligio "otra", el nombre real de la agencia es el que escribio a
+  // mano, no el literal "otra" del <option> -- si no, el caso quedaba
+  // guardado con una agencia que no existe.
+  const agenciaFinal = agenciaElegida === "otra" ? agenciaOtroTexto.trim() : agenciaElegida;
+
   function handleAgencia(e: React.FormEvent) {
     e.preventDefault();
-    if (!agenciaElegida || !datosAgencia.nombre || !datosAgencia.cedula || !datosAgencia.telefono || !datosAgencia.direccion) return;
-    elegir({ metodo: "agencia", agencia: agenciaElegida, ...datosAgencia });
+    if (!agenciaFinal || !datosAgencia.nombre || !datosAgencia.cedula || !datosAgencia.telefono || !datosAgencia.direccion) return;
+    elegir({ metodo: "agencia", agencia: agenciaFinal, ...datosAgencia });
   }
 
   const yaElegido = resultado?.metodo || caso?.entrega_metodo || null;
@@ -291,6 +297,19 @@ export default function EntregaPage() {
                         <option value="otra">{t("entrega_agencia_otra")}</option>
                       </select>
                     </div>
+                    {agenciaElegida === "otra" && (
+                      <div>
+                        <label className="pt-label">{t("entrega_agencia_otra_label")}</label>
+                        <input
+                          type="text"
+                          value={agenciaOtroTexto}
+                          onChange={(e) => setAgenciaOtroTexto(e.target.value)}
+                          placeholder={t("entrega_agencia_otra_placeholder")}
+                          className="pt-input"
+                          autoComplete="off"
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="pt-label">{t("entrega_nombre_label")}</label>
                       <input
@@ -336,7 +355,7 @@ export default function EntregaPage() {
                     </p>
                     <button
                       type="submit"
-                      disabled={enviando || !agenciaElegida || !datosAgencia.nombre || !datosAgencia.cedula || !datosAgencia.telefono || !datosAgencia.direccion}
+                      disabled={enviando || !agenciaFinal || !datosAgencia.nombre || !datosAgencia.cedula || !datosAgencia.telefono || !datosAgencia.direccion}
                       className="pt-cta"
                     >
                       {enviando ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : t("entrega_confirmar")}

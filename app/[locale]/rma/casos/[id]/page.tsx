@@ -430,6 +430,33 @@ export default function RmaCasoDetailPage() {
                   </div>
                 )}
 
+                {/* Datos de contacto para armar el envio por agencia (issue
+                    #124) -- entrega_datos es JSON (mysql2 ya lo devuelve
+                    parseado para columnas tipo JSON, pero se tolera string
+                    por si el driver cambia). */}
+                {caseData.entrega_metodo === "agencia" && (() => {
+                  let datos: Record<string, string> | null = null;
+                  if (caseData.entrega_datos) {
+                    datos = typeof caseData.entrega_datos === "string"
+                      ? (() => { try { return JSON.parse(caseData.entrega_datos); } catch { return null; } })()
+                      : caseData.entrega_datos;
+                  }
+                  if (!datos) return null;
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <div><span className="text-slate-400">Recibe:</span> <span className="text-slate-700 font-medium">{datos.nombre || "—"}</span></div>
+                        <div><span className="text-slate-400">Cédula:</span> <span className="text-slate-700 font-medium">{datos.cedula || "—"}</span></div>
+                        <div><span className="text-slate-400">Teléfono:</span> <span className="text-slate-700 font-medium">{datos.telefono || "—"}</span></div>
+                        <div className="sm:col-span-2"><span className="text-slate-400">Dirección:</span> <span className="text-slate-700 font-medium">{datos.direccion || "—"}</span></div>
+                      </div>
+                      <p className="text-xs font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5 inline-block">
+                        Pago a destino — no cobrar el envío por adelantado
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {caseData.despachado_at ? (
                   <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />

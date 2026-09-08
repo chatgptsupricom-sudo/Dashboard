@@ -808,6 +808,8 @@
     "entrega_agencia_label": "Agencia",
     "entrega_agencia_placeholder": "Selecciona una agencia",
     "entrega_agencia_otra": "Otra",
+    "entrega_agencia_otra_label": "Nombre de la agencia",
+    "entrega_agencia_otra_placeholder": "Escribe el nombre de la agencia",
     "entrega_nombre_label": "Nombre completo de quien recibe",
     "entrega_cedula_label": "Cédula",
     "entrega_telefono_label": "Teléfono",
