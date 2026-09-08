@@ -344,6 +344,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [visitaFormError, setVisitaFormError] = useState<string | null>(null);
 
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
+  // Solo el superadmin y el gerente de operaciones ven todos los grupos
+  // (marketing, CxC, CxP incluidos). En los demás modos esas llamadas no
+  // aportan nada — se salteaban recién en el render, pero el fetch se disparaba
+  // igual y golpeaba Odoo/MySQL sin necesidad.
+  const muestraTodosLosGrupos = !vendorMode && !comprasMode && !gerenteVentaMode && !cxCMode;
   const q = (extras: Record<string, string> = {}, mesOverride?: string) => {
     const base: Record<string, string> = { mes: mesOverride || selectedMes, ...extras };
     if (!vendorMode && !gerenteOpsMode) base.company_id = String(selectedCompanyId);
@@ -381,6 +386,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fetchMarketingData = useCallback(async () => {
+    if (!muestraTodosLosGrupos) return;
     setMarketingLoading(true);
     try {
       const dateExtra = customDateRange ? `&startDate=${customDateRange.start}&endDate=${customDateRange.end}` : "";
@@ -391,11 +397,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching marketing data:", e);
     }
     setMarketingLoading(false);
-  }, [selectedMes, customDateRange]);
+  }, [selectedMes, customDateRange, muestraTodosLosGrupos]);
 
   useEffect(() => { fetchMarketingData(); }, [fetchMarketingData]);
 
   const fetchCxCData = useCallback(async () => {
+    if (!muestraTodosLosGrupos && !cxCMode) return;
     setCxcLoading(true);
     setCxcError(null);
     try {
@@ -420,11 +427,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       setCxcError(e?.message || "No se pudo conectar con Cuentas por Cobrar");
     }
     setCxcLoading(false);
-  }, [selectedCompanyId, selectedMes, customDateRange]);
+  }, [selectedCompanyId, selectedMes, customDateRange, muestraTodosLosGrupos, cxCMode]);
 
   useEffect(() => { fetchCxCData(); }, [fetchCxCData]);
 
   const fetchCppData = useCallback(async () => {
+    if (!muestraTodosLosGrupos) return;
     setCppLoading(true);
     try {
       const [mesY, mesM] = selectedMes.split("-").map(Number);
@@ -438,7 +446,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       console.error("Error fetching CPP data:", e);
     }
     setCppLoading(false);
-  }, [selectedCompanyId, selectedMes, customDateRange]);
+  }, [selectedCompanyId, selectedMes, customDateRange, muestraTodosLosGrupos]);
 
   useEffect(() => { fetchCppData(); }, [fetchCppData]);
 

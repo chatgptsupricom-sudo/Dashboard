@@ -15,6 +15,13 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
+// La consulta a `digiflex.cxc.report` es cara (paginado de miles de renglones,
+// varios segundos). El Stoplight la pide cada vez que se abre y varios roles la
+// comparten con los mismos parámetros, así que se cachea en memoria por 10 min
+// — mismo patrón que app/api/compras/mayor_rotacion/route.ts.
+const cxcCache = new Map<string, { data: any; ts: number }>();
+const CXC_CACHE_TTL = 10 * 60 * 1000;
+
 const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
 function getMonthStart(year: number, month: number): Date {
@@ -49,6 +56,12 @@ export async function GET(request: NextRequest) {
     const yearParam = searchParams.get("year");
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
+
+    const cacheKey = JSON.stringify([empresa, userCidsParam, monthParam, yearParam, startDateParam, endDateParam]);
+    const cached = cxcCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CXC_CACHE_TTL) {
+      return NextResponse.json(cached.data);
+    }
 
     const now = new Date();
     let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
@@ -297,7 +310,7 @@ export async function GET(request: NextRequest) {
     // ═══════════════════════════════════════════════════════════════════
     // Respuesta
     // ═══════════════════════════════════════════════════════════════════
-    return NextResponse.json({
+    const payload = {
       success: true,
       data: {
         kpis: {
@@ -347,7 +360,10 @@ export async function GET(request: NextRequest) {
         },
         updatedAt: new Date().toISOString(),
       },
-    });
+    };
+
+    cxcCache.set(cacheKey, { data: payload, ts: Date.now() });
+    return NextResponse.json(payload);
   } catch (error: any) {
     console.error("Error CxC API:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
