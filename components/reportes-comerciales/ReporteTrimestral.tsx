@@ -13,6 +13,7 @@ import {
   trimestresDisponibles,
   trimestreActual,
 } from "@/lib/reportes-comerciales/trimestres";
+import { marcaPorDefectoSede } from "@/lib/reportes-comerciales/sedes";
 import {
   BarChart3,
   Download,
@@ -200,10 +201,14 @@ export function ReporteTrimestral() {
       .then((j) => {
         const list: Sede[] = j?.sedes || [];
         setSedes(list);
-        setSede((prev) => prev ?? list[0]?.companyId ?? null);
+        const primera = list[0]?.companyId ?? null;
+        setSede((prev) => prev ?? primera);
         if (j?.marcaFija) {
           setMarcaFija(j.marcaFija);
           setMarca(j.marcaFija);
+        } else if (primera != null) {
+          // Panamá arranca en EZVIZ; Valencia / Caracas en "Todas las marcas".
+          setMarca(marcaPorDefectoSede(primera));
         }
       })
       .catch(() => {});
@@ -276,7 +281,10 @@ export function ReporteTrimestral() {
             </h1>
             <p className="text-sm text-slate-500">
               {data?.periodo.sede || sedes.find((s) => s.companyId === sede)?.nombre || "…"} · marca{" "}
-              {data?.periodo.marca || marca} ·{" "}
+              {(() => {
+                const m = data?.periodo.marca || marca;
+                return m === "TODAS" ? "Todas las marcas" : m;
+              })()} ·{" "}
               {data ? `${data.periodo.desde} a ${data.periodo.hasta}` : trimestre}
             </p>
           </div>
@@ -286,8 +294,11 @@ export function ReporteTrimestral() {
             <select
               value={sede ?? ""}
               onChange={(e) => {
-                setSede(Number(e.target.value));
-                setMarca("EZVIZ"); // la lista de marcas cambia con la sede
+                const nueva = Number(e.target.value);
+                setSede(nueva);
+                // La lista de marcas cambia con la sede: Panamá arranca en
+                // EZVIZ, Valencia / Caracas en "Todas las marcas".
+                setMarca(marcaPorDefectoSede(nueva));
               }}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >

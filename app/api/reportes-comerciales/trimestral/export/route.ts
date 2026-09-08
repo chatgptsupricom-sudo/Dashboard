@@ -11,6 +11,7 @@ import {
   calcularEpp,
   construirReporteCompleto,
 } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { marcaPorDefectoSede } from "@/lib/reportes-comerciales/sedes";
 import { generarExcelTrimestral, nombreArchivoTrimestral } from "@/lib/reportes-comerciales/excel";
 import { ensureTablasReportesComerciales } from "@/lib/reportes-comerciales/tablas";
 
@@ -37,7 +38,11 @@ export async function GET(request: NextRequest) {
     if (companyId == null) return NextResponse.json({ error: "Sin sede asignada" }, { status: 403 });
     const marcaFija = marcaFijaDe({ role: payload.role as string, email: payload.email as string });
     const trimestre = searchParams.get("trimestre") || "";
-    const marca = (marcaFija || searchParams.get("marca") || "EZVIZ").trim();
+    const marca = (
+      marcaFija ||
+      searchParams.get("marca") ||
+      marcaPorDefectoSede(companyId)
+    ).trim();
     if (!trimestre) return NextResponse.json({ error: "Falta 'trimestre'" }, { status: 400 });
 
     const { reporte, detalle } = await construirReporteCompleto({
