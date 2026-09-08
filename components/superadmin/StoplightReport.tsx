@@ -28,6 +28,7 @@ import MargenBrutoModal from "./stoplight/MargenBrutoModal";
 import EfectividadCierreModal from "./stoplight/EfectividadCierreModal";
 import CoberturaMarcasModal from "./stoplight/CoberturaMarcasModal";
 import ActivacionCarteraModal from "./stoplight/ActivacionCarteraModal";
+import VisitasSemanalesModal from "./stoplight/VisitasSemanalesModal";
 import ModalMonthPicker from "./stoplight/ModalMonthPicker";
 import {
   getCellColor,
@@ -102,22 +103,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [activacionModalOpen, setActivacionModalOpen] = useState(false);
 
   const [visitasModalOpen, setVisitasModalOpen] = useState(false);
-  const [visitasModalLoading, setVisitasModalLoading] = useState(false);
-  const [visitasData, setVisitasData] = useState<any[]>([]);
-  const [visitasVendedores, setVisitasVendedores] = useState<any[]>([]);
-  const [visitasClientes, setVisitasClientes] = useState<any[]>([]);
-  const [visitasClientesLoading, setVisitasClientesLoading] = useState(false);
-  const [visitaClientSearch, setVisitaClientSearch] = useState("");
-  const [visitaClientDropdownOpen, setVisitaClientDropdownOpen] = useState(false);
-  const [visitaForm, setVisitaForm] = useState({
-    seller_name: "",
-    seller_user_id: "",
-    client_name: "",
-    is_prospect: false,
-    visit_date: new Date().toISOString().split("T")[0],
-  });
-  const [visitaFormLoading, setVisitaFormLoading] = useState(false);
-  const [visitaFormError, setVisitaFormError] = useState<string | null>(null);
 
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
   // Solo el superadmin y el gerente de operaciones ven todos los grupos
@@ -282,18 +267,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return () => { document.body.style.overflow = ""; };
   }, [algunModalAbierto]);
 
-  useEffect(() => {
-    if (!visitaClientDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest("[data-client-dropdown]")) {
-        setVisitaClientDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [visitaClientDropdownOpen]);
-
   const saveMeta = async (kpiKey: string, value: number) => {
     try {
       await fetch(`${apiPrefix}`, {
@@ -336,106 +309,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
 
 
-
-
-
-  const openVisitasModalWithMes = async (mes: string) => {
-    modalFetchRef.current = openVisitasModalWithMes;
-    setVisitasModalOpen(true);
-    setVisitasModalLoading(true);
-    setVisitaForm({
-      seller_name: "",
-      seller_user_id: "",
-      client_name: "",
-      is_prospect: false,
-      visit_date: new Date().toISOString().split("T")[0],
-    });
-    try {
-      const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q({}, mes)}`);
-      const jsonVisits = await resVisits.json();
-      if (jsonVisits.success) setVisitasData(jsonVisits.data);
-      if (kpiData?.sellers) {
-        setVisitasVendedores(kpiData.sellers);
-      }
-    } catch (e) {
-      console.error("Error fetching visitas:", e);
-    }
-    setVisitasModalLoading(false);
-  };
-
-  const openVisitasModal = async () => {
-    await openVisitasModalWithMes(selectedMes);
-  };
-
-  const fetchVisitasClientes = async (sellerName: string) => {
-    try {
-      setVisitasClientesLoading(true);
-      const seller = visitasVendedores.find((s: any) => s.nombre === sellerName);
-      if (!seller) { setVisitasClientes([]); return; }
-      const res = await fetch(
-        `${apiPrefix}/seller-clients?${q({ seller_user_id: String(seller.user_id) })}`
-      );
-      const data = await res.json();
-      if (data.success) setVisitasClientes(data.data);
-    } catch (e) {
-      console.error("Error fetching clients:", e);
-    } finally {
-      setVisitasClientesLoading(false);
-    }
-  };
-
-  const submitVisita = async () => {
-    setVisitaFormError(null);
-    if (!visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date) {
-      setVisitaFormError(t("completa_campos"));
-      return;
-    }
-    setVisitaFormLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append("seller_name", visitaForm.seller_name);
-      fd.append("client_name", visitaForm.client_name);
-      fd.append("is_prospect", String(visitaForm.is_prospect));
-      fd.append("visit_date", visitaForm.visit_date);
-      if (!vendorMode) fd.append("company_id", String(selectedCompanyId));
-
-      const res = await fetch(`${apiPrefix}/weekly-visits`, {
-        method: "POST",
-        body: fd,
-      });
-      const json = await res.json().catch(() => ({}));
-      if (json.success) {
-        const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q()}`);
-        const jsonVisits = await resVisits.json();
-        if (jsonVisits.success) setVisitasData(jsonVisits.data);
-        setVisitaForm({
-          seller_name: "",
-          seller_user_id: "",
-          client_name: "",
-          is_prospect: false,
-          visit_date: new Date().toISOString().split("T")[0],
-        });
-      } else {
-        setVisitaFormError(json.error || t("error_guardar_visita"));
-      }
-    } catch (e) {
-      console.error("Error saving visit:", e);
-      setVisitaFormError(t("error_guardar_visita"));
-    }
-    setVisitaFormLoading(false);
-  };
-
-  const deleteVisita = async (id: number) => {
-    try {
-      const res = await fetch(`${apiPrefix}/weekly-visits?id=${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (json.success) {
-        setVisitasData((prev) => prev.filter((v) => v.id !== id));
-      }
-    } catch (e) {
-      console.error("Error deleting visit:", e);
-    }
-  };
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
@@ -1401,7 +1274,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? openVisitasModal : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? () => setVisitasModalOpen(true) : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
                           <span
@@ -1593,232 +1466,16 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       />
 
       {/* Visitas Semanales Modal */}
-      {visitasModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setVisitasModalOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 rounded-lg">
-                  <Calendar size={20} className="text-indigo-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("visitas_title")}</h2>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {t("visitas_subtitle", { count: kpiData?.sellers?.length || 0, mes: modalMes })}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <ModalMonthPicker value={modalMes} onChange={onModalMesChange} />
-                <button
-                  onClick={() => setVisitasModalOpen(false)}
-                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  <X size={20} className="text-slate-500" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-5">
-              {visitasModalLoading ? (
-                <div className="flex items-center justify-center py-20 text-slate-400">
-                  {t("loading")}
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Formulario Nueva Visita */}
-                  {!gerenteOpsMode && (
-                  <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                    <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("registrar_visita")}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Selector de Vendedor */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("vendedor_label")}</label>
-                        <select
-                          value={visitaForm.seller_name}
-                          onChange={(e) => {
-                            const name = e.target.value;
-                            const seller = visitasVendedores.find((s: any) => s.nombre === name);
-                            setVisitaForm({ ...visitaForm, seller_name: name, seller_user_id: seller?.user_id || "", client_name: "" });
-                            setVisitaClientSearch("");
-                            setVisitaClientDropdownOpen(false);
-                            if (name) fetchVisitasClientes(name);
-                            else setVisitasClientes([]);
-                          }}
-                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                          <option value="">{t("seleccionar_vendedor")}</option>
-                          {visitasVendedores.map((s: any, i: number) => (
-                            <option key={`${s.id}-${i}`} value={s.nombre}>{s.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Selector de Cliente / Prospecto */}
-                      <div className="relative" data-client-dropdown>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("cliente_label")}</label>
-                        {visitaForm.is_prospect ? (
-                          <input
-                            type="text"
-                            value={visitaForm.client_name}
-                            onChange={(e) => setVisitaForm({ ...visitaForm, client_name: e.target.value })}
-                            placeholder={t("nombre_prospecto")}
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                        ) : (
-                          <>
-                            <input
-                              type="text"
-                              value={visitaClientSearch || visitaForm.client_name}
-                              onChange={(e) => {
-                                setVisitaClientSearch(e.target.value);
-                                setVisitaForm({ ...visitaForm, client_name: "" });
-                                setVisitaClientDropdownOpen(true);
-                              }}
-                              onFocus={() => { if (visitaForm.seller_name) setVisitaClientDropdownOpen(true); }}
-                              placeholder={
-                                !visitaForm.seller_name
-                                  ? t("selecciona_primero")
-                                  : visitasClientesLoading
-                                    ? t("cargando_clientes")
-                                    : t("buscar_cliente")
-                              }
-                              disabled={!visitaForm.seller_name || visitasClientesLoading}
-                              className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
-                            />
-                            {visitaClientDropdownOpen && visitaForm.seller_name && !visitasClientesLoading && (
-                              <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                {visitasClientes.filter((c: any) =>
-                                  c.name.toLowerCase().includes(visitaClientSearch.toLowerCase())
-                                ).length === 0 ? (
-                                  <div className="px-3 py-2 text-xs text-slate-400">{t("no_clientes")}</div>
-                                ) : (
-                                  visitasClientes
-                                    .filter((c: any) => c.name.toLowerCase().includes(visitaClientSearch.toLowerCase()))
-                                    .map((c: any, i: number) => (
-                                      <button
-                                        key={`${c.id}-${i}`}
-                                        type="button"
-                                        onClick={() => {
-                                          setVisitaForm({ ...visitaForm, client_name: c.name });
-                                          setVisitaClientSearch("");
-                                          setVisitaClientDropdownOpen(false);
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors truncate"
-                                      >
-                                        {c.name}
-                                      </button>
-                                    ))
-                                )}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        <label className="flex items-center gap-2 mt-2 text-xs text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={visitaForm.is_prospect}
-                            onChange={(e) => {
-                              setVisitaForm({ ...visitaForm, is_prospect: e.target.checked, client_name: "" });
-                              setVisitaClientSearch("");
-                              setVisitaClientDropdownOpen(false);
-                            }}
-                            className="rounded border-slate-300"
-                          />
-                          {t("prospecto")}
-                        </label>
-                      </div>
-
-                      {/* Fecha de Visita */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">{t("fecha_visita")}</label>
-                        <input
-                          type="date"
-                          value={visitaForm.visit_date}
-                          onChange={(e) => setVisitaForm({ ...visitaForm, visit_date: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-
-                    </div>
-                    <div className="mt-4 flex items-center justify-end gap-3">
-                      {visitaFormError && (
-                        <span className="text-xs text-rose-600">{visitaFormError}</span>
-                      )}
-                      <button
-                        onClick={submitVisita}
-                        disabled={visitaFormLoading || !visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {visitaFormLoading ? t("guardando") : t("guardar_visita")}
-                      </button>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Lista de Visitas */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("visitas_registradas", { count: visitasData.length })}</h3>
-                    {visitasData.length === 0 ? (
-                      <div className="text-center py-10 text-slate-400 text-sm">
-                        {t("no_visitas")}
-                      </div>
-                    ) : (
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">{t("fecha")}</th>
-                              <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                              <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("tipo")}</th>
-                              {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">{t("acciones")}</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {visitasData.map((visita: any) => (
-                              <tr key={visita.id} className="border-b hover:bg-indigo-50/40 transition-colors">
-                                <td className="p-3 text-slate-800">
-                                  {new Date(visita.visit_date).toLocaleDateString(locale)}
-                                </td>
-                                <td className="p-3 font-medium text-slate-800">{visita.seller_name}</td>
-                                <td className="p-3 text-slate-800">{visita.client_name}</td>
-                                <td className="p-3 text-center">
-                                  {visita.is_prospect ? (
-                                    <span className="px-2 py-0.5 bg-amber-100 text-indigo-700 rounded text-xs font-medium">
-                                      {t("prospecto_label")}
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                      {t("cliente")}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  {!gerenteOpsMode && (
-                                  <button
-                                    onClick={() => deleteVisita(visita.id)}
-                                    className="text-red-500 hover:text-red-700 text-xs"
-                                  >
-                                    {t("eliminar")}
-                                  </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <VisitasSemanalesModal
+        isOpen={visitasModalOpen}
+        onClose={() => setVisitasModalOpen(false)}
+        apiPrefix={apiPrefix}
+        queryCompanyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
+        postCompanyId={vendorMode ? null : selectedCompanyId}
+        gerenteOpsMode={gerenteOpsMode}
+        sellers={kpiData?.sellers || []}
+        defaultMes={selectedMes}
+      />
       {/* MODAL DE COMPRAS KPIs */}
       <ComprasDetailModal
         isOpen={comprasModalOpen}
