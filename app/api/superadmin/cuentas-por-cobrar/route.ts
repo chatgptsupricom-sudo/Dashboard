@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { NextRequest, NextResponse } from "next/server";
 
 // La lectura de `digiflex.cxc.report` es paginada y puede traer miles de
@@ -251,7 +252,7 @@ export async function GET(request: NextRequest) {
           ["invoice_date_due", ">=", monthStart.toISOString().split("T")[0]],
           ["invoice_date_due", "<=", monthEnd.toISOString().split("T")[0]],
         ],
-        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
+        ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"],
       ),
       fetchPaginated(
         "account.move",
@@ -279,7 +280,12 @@ export async function GET(request: NextRequest) {
     const efectividadInvoices = efectividadInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
       const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
       const residual = Math.abs(inv.amount_residual || 0);
-      return { amountTotal, amountPaid: Math.max(amountTotal - residual, 0), amountResidual: residual };
+      return {
+        amountTotal,
+        amountPaid: Math.max(amountTotal - residual, 0),
+        amountResidual: residual,
+        dueDate: inv.invoice_date_due ? new Date(inv.invoice_date_due + "T00:00:00") : null,
+      };
     });
     const totalExigibleMes = efectividadInvoices.reduce((s, i) => s + i.amountTotal, 0);
     const totalCobradoMes = efectividadInvoices.reduce((s, i) => s + i.amountPaid, 0);
@@ -287,6 +293,32 @@ export async function GET(request: NextRequest) {
     const efectividad = totalExigibleMes > 0
       ? Math.round((totalCobradoMes / totalExigibleMes) * 10000) / 100
       : null;
+
+    // ── Efectividad de cobranza por semana del mes ──
+    // Se bucketea cada factura por la semana en que vence (`invoice_date_due`).
+    // Sólo esta métrica tiene lectura semanal real: cartera vencida y DSO son
+    // fotos puntuales, y recuperación necesita fechas de conciliación de pagos
+    // (ver issue #130). El `amountPaid` es el cobro acumulado a hoy — para
+    // semanas ya cerradas es una aproximación razonable de "qué se cobró de lo
+    // que vencía esa semana".
+    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo helper),
+    // para que la fila quede alineada con los encabezados `weekHeaders`.
+    const semanasCxc = (startDateParam && endDateParam)
+      ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
+      : obtenerSemanasDelMes(currentYear, currentMonth + 1);
+    const semEfect = semanasCxc.map(() => ({ exigible: 0, cobrado: 0 }));
+    for (const inv of efectividadInvoices) {
+      if (!inv.dueDate) continue;
+      const w = semanasCxc.findIndex((s) => inv.dueDate! >= s.inicio && inv.dueDate! <= s.fin);
+      if (w < 0) continue;
+      semEfect[w].exigible += inv.amountTotal;
+      semEfect[w].cobrado += inv.amountPaid;
+    }
+    const semanaEfectividad = semEfect.map((s, i) => {
+      if (semanasCxc[i].inicio > today) return null; // semana futura: nada que medir aún
+      if (s.exigible <= 0) return null;
+      return `${Math.round((s.cobrado / s.exigible) * 100)}%`;
+    });
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
@@ -342,6 +374,7 @@ export async function GET(request: NextRequest) {
             ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
           },
         },
+        semanaEfectividad,
         agingDistribution,
         byCompany,
         topDebtors,

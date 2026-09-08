@@ -692,7 +692,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         title: t("kpi_efectividad_cobranza"),
         peso: "35%",
         average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
-        weeks: [k.efectividad.value !== null ? String(k.efectividad.value) + "%" : null, null, null, null, null],
+        weeks: cxcData.semanaEfectividad || Array(5).fill(null),
         goalDefault: String(k.efectividad.meta),
         goalSuffix: "%",
         isClickable: true,
@@ -704,6 +704,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "30%",
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
         weeks: [k.carteraVencida.value !== null ? String(k.carteraVencida.value) + "%" : null, null, null, null, null],
+        // Foto puntual del % de cartera vencida; no tiene lectura por semana.
+        sinSemana: true,
         goalDefault: String(k.carteraVencida.meta),
         goalSuffix: "%",
         isClickable: true,
@@ -715,6 +717,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "25%",
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
         weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
+        // Acumulado del mes contra la cohorte de vencidos al inicio; el desglose
+        // semanal necesita fechas de conciliación de pagos (issue #130).
+        sinSemana: true,
         goalDefault: String(k.recuperacion.meta),
         goalSuffix: "%",
         isClickable: true,
@@ -726,6 +731,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         peso: "10%",
         average: k.dso.value !== null ? `${k.dso.value}${t("suffix_dias")}` : "N/A",
         weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
+        // Ventana móvil de 90 días: no es una métrica semanal.
+        sinSemana: true,
         goalDefault: String(k.dso.meta),
         goalSuffix: " días",
         isClickable: true,
@@ -798,11 +805,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
     // la carga falla, se muestra con el aviso de error en vez de esconderse.
     // El filtro `groups` de abajo ya lo excluye de las otras vistas.
-    // `mensual`: el grupo entero es de cierre mensual, sin serie semanal. CxC
-    // sigue así (su route no calcula datos por semana — ver issue del calendario
-    // semanal). CxP sí los calcula, así que muestra la grilla; el DPO va marcado
-    // `sinSemana` porque es una ventana móvil de 90 días, no una métrica semanal.
-    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, mensual: true, estado: { cargando: cxcLoading, error: cxcError } },
+    // CxC y CxP muestran la grilla semanal en la pestaña Semanal. Los KPIs que
+    // no tienen lectura por semana (DSO, cartera vencida, recuperación en CxC;
+    // DPO en CxP) van marcados `sinSemana` a nivel KPI y salen como "métrica
+    // mensual". Sólo la efectividad de cobranza de CxC tiene serie semanal real
+    // (`semanaEfectividad`, bucketeada por fecha de vencimiento).
+    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, estado: { cargando: cxcLoading, error: cxcError } },
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
@@ -1254,19 +1262,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               </div>
             )}
 
-            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (() => {
-              const esMensual = !!(group as any).mensual;
-              return (
+            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
               <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                <table className={`w-full text-sm text-left border-collapse ${esMensual ? "" : "min-w-[880px]"}`}>
+                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                       <th className="py-2.5 pl-4 pr-2 w-8"></th>
                       <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
                       <th className="py-2.5 px-2 w-24 text-right font-semibold">{t("column_goal")}</th>
-                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{esMensual ? t("column_valor") : t("column_average")}</th>
+                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
                       <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
-                      {!esMensual && (group as any).weekHeaders.map((week: string, idx: number) => (
+                      {(group as any).weekHeaders.map((week: string, idx: number) => (
                         <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
                           {week}
                         </th>
@@ -1337,7 +1343,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           )}
                         </td>
                         <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top">{kpi.peso}</td>
-                        {!esMensual && (kpi.sinSemana ? (
+                        {kpi.sinSemana ? (
                           <td colSpan={(group as any).weekHeaders.length || 1} className="py-3 px-2 text-center align-top text-[11px] text-slate-400">
                             {t("metrica_mensual")}
                           </td>
@@ -1354,15 +1360,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               )}
                             </td>
                           );
-                        }))}
+                        })}
                       </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-              );
-            })()}
+            )}
 
             {expandedGroups[group.id] && group.kpis.length > 0 && (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") && (
               monthlyHistLoading ? (
