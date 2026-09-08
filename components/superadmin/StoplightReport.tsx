@@ -7,13 +7,10 @@ import {
   ChevronRight,
   ChevronUp,
   HelpCircle,
-  Maximize2,
-  MoreHorizontal,
   Package,
   Plus,
   RotateCcw,
   Search,
-  Settings,
   User,
   UserCheck,
   X,
@@ -39,15 +36,20 @@ const getCellColor = (value: string) => {
   return "bg-red-100 text-red-800 font-medium";
 };
 
+// KPIs cuyo valor mostrado es la métrica cruda (no un "% de meta"): más alto
+// mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
+const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
+  "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
+const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+
 const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
   const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
   if (isNaN(numVal)) return "";
   const numGoal = parseFloat(goal);
 
-  const higherBetter = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
-    "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-  const lowerBetter = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+  const higherBetter = KPI_MAS_ES_MEJOR;
+  const lowerBetter = KPI_MENOS_ES_MEJOR;
 
   if (higherBetter.includes(kpiId) && !isNaN(numGoal)) {
     if (numVal >= numGoal) return "bg-emerald-100 text-emerald-800 font-medium";
@@ -85,6 +87,54 @@ const nivelSemaforo = (kpiId: string, average: string | null, goal: string): Niv
   if (/yellow|amber/.test(c)) return "amarillo";
   if (/red/.test(c)) return "rojo";
   return "sin";
+};
+
+/**
+ * Cumplimiento de un KPI en 0–100 (para el puntaje ponderado del grupo).
+ * `null` = sin meta configurada ⇒ no entra en el puntaje.
+ */
+const cumplimientoKpi = (
+  kpiId: string,
+  average: string | null,
+  goal: string | number | null | undefined,
+): number | null => {
+  if (!average) return null;
+  const numVal = parseFloat(String(average).replace("%", "").replace(" días", "").replace(/N\/?A/i, "").trim());
+  if (isNaN(numVal)) return null;
+  const numGoal = parseFloat(String(goal ?? ""));
+  if (!Number.isFinite(numGoal) || numGoal <= 0) return null;
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  if (KPI_MENOS_ES_MEJOR.includes(kpiId)) {
+    return numVal <= 0 ? 100 : clamp((numGoal / numVal) * 100);
+  }
+  if (KPI_MAS_ES_MEJOR.includes(kpiId)) {
+    return clamp((numVal / numGoal) * 100);
+  }
+  // El resto: `average` ya es "% de meta cumplida".
+  return clamp(numVal);
+};
+
+/**
+ * Puntaje ponderado de un grupo: Σ(peso × cumplimiento) ÷ Σ(peso), tomando
+ * solo los KPIs con meta. `null` si ninguno tiene meta.
+ */
+const puntajeGrupo = (
+  kpis: any[],
+): { valor: number; pesoConMeta: number; kpisConMeta: number } | null => {
+  let ponderado = 0;
+  let peso = 0;
+  let n = 0;
+  for (const k of kpis || []) {
+    const c = cumplimientoKpi(k.id, k.average, k.goalDefault);
+    if (c === null) continue;
+    const p = parseFloat(String(k.peso).replace("%", "")) || 0;
+    if (p <= 0) continue;
+    ponderado += p * c;
+    peso += p;
+    n++;
+  }
+  if (peso <= 0) return null;
+  return { valor: Math.round(ponderado / peso), pesoConMeta: Math.round(peso), kpisConMeta: n };
 };
 
 const NIVEL_UI: Record<Exclude<Nivel, "sin">, { punto: string; barra: string; texto: string }> = {
@@ -175,8 +225,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editingMeta, setEditingMeta] = useState(false);
-  const [metaInput, setMetaInput] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
@@ -212,6 +260,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [dateInputEnd, setDateInputEnd] = useState("");
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const [viewByOpen, setViewByOpen] = useState(false);
+  const [kpiFiltro, setKpiFiltro] = useState("");
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
   const [monthlyHistLoading, setMonthlyHistLoading] = useState(false);
 
@@ -292,6 +341,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     visit_date: new Date().toISOString().split("T")[0],
   });
   const [visitaFormLoading, setVisitaFormLoading] = useState(false);
+  const [visitaFormError, setVisitaFormError] = useState<string | null>(null);
 
   const apiPrefix = vendorMode ? "/api/vendedores/stoplight" : "/api/superadmin/stoplight";
   const q = (extras: Record<string, string> = {}, mesOverride?: string) => {
@@ -321,7 +371,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       const json = await res.json();
       if (json.success) {
         setKpiData(json.data);
-        setMetaInput(json.data.metaMensual > 0 ? String(json.data.metaMensual) : "");
       }
     } catch (e) {
       console.error("Error fetching stoplight data:", e);
@@ -439,14 +488,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return () => document.removeEventListener("mousedown", close);
   }, [viewByOpen, teamDropdownOpen]);
 
+  const algunModalAbierto =
+    clientesModalOpen || modalOpen || cxcModalOpen || cppModalOpen ||
+    margenModalOpen || efectividadModalOpen || coberturaModalOpen ||
+    activacionModalOpen || visitasModalOpen || comprasModalOpen ||
+    kpiInfoModal.open;
   useEffect(() => {
-    if (clientesModalOpen || modalOpen || cxcModalOpen || cppModalOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    document.body.style.overflow = algunModalAbierto ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [clientesModalOpen, modalOpen, cxcModalOpen]);
+  }, [algunModalAbierto]);
 
   useEffect(() => {
     if (!visitaClientDropdownOpen) return;
@@ -744,8 +794,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
 
   const submitVisita = async () => {
+    setVisitaFormError(null);
     if (!visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date) {
-      alert(t("completa_campos"));
+      setVisitaFormError(t("completa_campos"));
       return;
     }
     setVisitaFormLoading(true);
@@ -761,7 +812,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         method: "POST",
         body: fd,
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (json.success) {
         const resVisits = await fetch(`${apiPrefix}/weekly-visits?${q()}`);
         const jsonVisits = await resVisits.json();
@@ -773,9 +824,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           is_prospect: false,
           visit_date: new Date().toISOString().split("T")[0],
         });
+      } else {
+        setVisitaFormError(json.error || t("error_guardar_visita"));
       }
     } catch (e) {
       console.error("Error saving visit:", e);
+      setVisitaFormError(t("error_guardar_visita"));
     }
     setVisitaFormLoading(false);
   };
@@ -1007,49 +1061,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       goalDefault: kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "0",
       goalSuffix: "%",
       cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
-    },
-  ];
-
-  const logisticaKpis = [
-    {
-      id: "envio_reporte_inv",
-      trend: "help",
-      title: t("logistica_kpi_envio"),
-      peso: "25%",
-      average: "0%",
-      weeks: [null, null, null, null, null],
-      goalDefault: "75",
-      goalSuffix: "%",
-    },
-    {
-      id: "nuevos_productos",
-      trend: "help",
-      title: t("logistica_kpi_nuevos"),
-      peso: "25%",
-      average: "0%",
-      weeks: [null, null, null, null, null],
-      goalDefault: "75",
-      goalSuffix: "%",
-    },
-    {
-      id: "antiguedad_inv",
-      trend: "help",
-      title: t("logistica_kpi_antiguedad"),
-      peso: "25%",
-      average: "0%",
-      weeks: [null, null, null, null, null],
-      goalDefault: "25",
-      goalSuffix: "%",
-    },
-    {
-      id: "activacion_sku",
-      trend: "alert",
-      title: t("logistica_kpi_activacion_sku"),
-      peso: "25%",
-      average: "60%",
-      weeks: ["50%", "70%", null, null, null],
-      goalDefault: "61",
-      goalSuffix: "%",
     },
   ];
 
@@ -1370,12 +1381,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ];
   })() : [];
 
-  const weekHeaders = kpiData?.weekHeaders || ["Jul 13 - Jul 19", "Jul 6 - Jul 12", "Jun 29 - Jul 5", "Jun 22 - Jun 28", "Jun 15 - Jun 21"];
+  const weekHeaders = kpiData?.weekHeaders || [];
 
   const allGroups = [
     { id: "group-ventas", title: t("group_ventas"), count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
     { id: "group-compras", title: t("group_compras"), count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
-    //{ id: "group-logistica", title: "Logística e Inventario", count: logisticaKpis.length, kpis: logisticaKpis, weekHeaders },
     // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
     // la carga falla, se muestra con el aviso de error en vez de esconderse.
     // El filtro `groups` de abajo ya lo excluye de las otras vistas.
@@ -1383,9 +1393,32 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const groups = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
+  const gruposBase = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
 
-  const resumenGlobal = contarNiveles(groups.flatMap((g: any) => g.kpis || []));
+  // El resumen del semáforo se calcula sobre TODOS los KPIs, no sobre el
+  // filtro de búsqueda.
+  const resumenGlobal = contarNiveles(gruposBase.flatMap((g: any) => g.kpis || []));
+
+  // Puntaje ponderado del mes: promedio de los puntajes de cada grupo visible
+  // (cada grupo pondera sus KPIs por su "peso"; entre grupos se promedia).
+  const puntajesPorGrupo = gruposBase
+    .map((g: any) => puntajeGrupo(g.kpis || []))
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+  const puntajeMes = puntajesPorGrupo.length
+    ? Math.round(puntajesPorGrupo.reduce((s, p) => s + p.valor, 0) / puntajesPorGrupo.length)
+    : null;
+
+  // El buscador filtra solo las filas de las tablas (no los conteos ni el
+  // resumen).
+  const filtroNorm = kpiFiltro.trim().toLowerCase();
+  const groups = filtroNorm
+    ? gruposBase.map((g: any) => ({
+        ...g,
+        kpis: (g.kpis || []).filter((k: any) =>
+          String(k.title || "").toLowerCase().includes(filtroNorm),
+        ),
+      }))
+    : gruposBase;
   const mesTitulo = mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1);
 
   return (
@@ -1418,9 +1451,6 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               {t("google_connected")}
             </span>
           )}
-          <button className="inline-flex items-center justify-center w-9 h-9 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
-            <Settings size={16} />
-          </button>
         </div>
       </div>
 
@@ -1428,15 +1458,27 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {resumenGlobal.total > 0 && (
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 animate-in fade-in duration-300">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Estado del mes
-              </p>
-              <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">
-                {resumenGlobal.verde}
-                <span className="text-slate-400 font-normal"> / {resumenGlobal.total} </span>
-                <span className="text-sm font-medium text-slate-500">en meta</span>
-              </p>
+            <div className="flex items-center gap-6">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Estado del mes
+                </p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">
+                  {resumenGlobal.verde}
+                  <span className="text-slate-400 font-normal"> / {resumenGlobal.total} </span>
+                  <span className="text-sm font-medium text-slate-500">en meta</span>
+                </p>
+              </div>
+              {puntajeMes !== null && (
+                <div className="border-l border-slate-200 pl-6">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    {t("cumplimiento_ponderado")}
+                  </p>
+                  <p className={`mt-0.5 text-lg font-semibold tabular-nums ${getCellColor(String(puntajeMes)).split(" ")[1] || "text-slate-900"}`}>
+                    {puntajeMes}%
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-4 text-sm">
               {([
@@ -1644,16 +1686,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           >
             <RotateCcw size={16} />
           </button>
-          <button className="inline-flex items-center justify-center w-9 h-9 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
-            <MoreHorizontal size={16} />
-          </button>
           <div className="relative">
-            <Search className="absolute left-2.5 top-2 text-slate-400" size={14} />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
               type="text"
+              value={kpiFiltro}
+              onChange={(e) => setKpiFiltro(e.target.value)}
               placeholder={t("search_placeholder")}
-              className="pl-8 pr-3 h-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 w-64 transition-shadow"
+              className="pl-8 pr-8 h-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 w-64 transition-shadow"
             />
+            {kpiFiltro && (
+              <button
+                type="button"
+                onClick={() => setKpiFiltro("")}
+                aria-label={t("clear")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1685,6 +1736,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         {groups.map((group) => {
           const r = contarNiveles(group.kpis || []);
           const peor: Nivel = r.rojo > 0 ? "rojo" : r.amarillo > 0 ? "amarillo" : r.verde > 0 ? "verde" : "sin";
+          const pg = puntajeGrupo((gruposBase.find((gb: any) => gb.id === group.id) || group).kpis || []);
           return (
           <div key={group.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-in fade-in-0 duration-300">
             {/* Group Header */}
@@ -1714,16 +1766,26 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   )}
                 </span>
               )}
+              {pg && (
+                <span
+                  className={`ml-auto shrink-0 text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded-md ${getCellColor(String(pg.valor)) || "text-slate-600"}`}
+                  title={t("cumplimiento_ponderado")}
+                >
+                  {pg.valor}%
+                </span>
+              )}
               <ChevronDown
                 size={16}
-                className={`ml-auto shrink-0 text-slate-400 transition-transform ${expandedGroups[group.id] ? "rotate-180" : ""}`}
+                className={`${pg ? "ml-1.5" : "ml-auto"} shrink-0 text-slate-400 transition-transform ${expandedGroups[group.id] ? "rotate-180" : ""}`}
               />
             </button>
 
             {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
             {expandedGroups[group.id] && group.kpis.length === 0 && (
               <div className="p-8 text-center text-sm border-t border-slate-100 animate-in fade-in duration-200">
-                {(group as any).estado?.cargando ? (
+                {filtroNorm ? (
+                  <span className="text-slate-400">{t("sin_coincidencias")}</span>
+                ) : (group as any).estado?.cargando ? (
                   <span className="inline-flex items-center gap-2 text-slate-500">
                     <RefreshCw size={14} className="animate-spin" />
                     {t("loading")}
@@ -3874,7 +3936,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       </div>
 
                     </div>
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex items-center justify-end gap-3">
+                      {visitaFormError && (
+                        <span className="text-xs text-rose-600">{visitaFormError}</span>
+                      )}
                       <button
                         onClick={submitVisita}
                         disabled={visitaFormLoading || !visitaForm.seller_name || !visitaForm.client_name || !visitaForm.visit_date}
