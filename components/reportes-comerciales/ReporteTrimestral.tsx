@@ -13,7 +13,6 @@ import {
   trimestresDisponibles,
   trimestreActual,
 } from "@/lib/reportes-comerciales/trimestres";
-import { marcaPorDefectoSede } from "@/lib/reportes-comerciales/sedes";
 import {
   BarChart3,
   Download,
@@ -183,7 +182,10 @@ interface Sede {
 export function ReporteTrimestral() {
   const opcionesTrimestre = useMemo(() => trimestresDisponibles(), []);
   const [trimestre, setTrimestre] = useState(() => formatTrimestre(trimestreActual()));
-  const [marca, setMarca] = useState("EZVIZ");
+  // "" = todavía no se eligió marca: el servidor usa la que corresponde a la
+  // sede (EZVIZ en Panamá, TODAS en Valencia / Caracas). El selector se
+  // sincroniza con `data.periodo.marca` cuando el reporte responde.
+  const [marca, setMarca] = useState("");
   const [tab, setTab] = useState<Tab>("resumen");
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sede, setSede] = useState<number | null>(null);
@@ -213,22 +215,16 @@ export function ReporteTrimestral() {
       .catch(() => {});
   }, []);
 
-  // Al elegir sede: cargar sus marcas y ajustar el filtro si la marca actual no
-  // pertenece a esa sede (Panamá arranca en EZVIZ; Valencia / Caracas en TODAS).
+  // Marcas de la sede para poblar el selector (endpoint propio y cacheado, no
+  // bloquea la consulta del reporte). No toca `marca`: el default lo decide el
+  // servidor y el selector se sincroniza con la respuesta del reporte.
   useEffect(() => {
     if (sede == null) return;
     let vivo = true;
     fetch(`${API}/marcas?sede=${sede}`)
       .then((r) => r.json())
       .then((j) => {
-        if (!vivo || !Array.isArray(j?.marcas)) return;
-        setMarcasSede(j.marcas);
-        setMarca((actual) => {
-          if (j.marcaFija) return j.marcaFija;
-          return j.marcas.includes(actual)
-            ? actual
-            : j.marcaPorDefecto || marcaPorDefectoSede(sede);
-        });
+        if (vivo && Array.isArray(j?.marcas)) setMarcasSede(j.marcas);
       })
       .catch(() => {});
     return () => {
@@ -242,7 +238,9 @@ export function ReporteTrimestral() {
     const t = setTimeout(() => ctrl.abort(), 110_000);
     setLoading(true);
     setError(null);
-    fetch(`${API}?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}&sede=${sede}`, {
+    // Sin `marca` en la URL el servidor usa el default de la sede.
+    const qsMarca = marca ? `&marca=${encodeURIComponent(marca)}` : "";
+    fetch(`${API}?trimestre=${trimestre}${qsMarca}&sede=${sede}`, {
       signal: ctrl.signal,
     })
       .then(async (r) => {
@@ -269,8 +267,9 @@ export function ReporteTrimestral() {
   const exportar = async () => {
     setExportando(true);
     try {
+      const marcaExport = marca || data?.periodo.marca || "";
       const r = await fetch(
-        `${API}/export?trimestre=${trimestre}&marca=${encodeURIComponent(marca)}&sede=${sede}`,
+        `${API}/export?trimestre=${trimestre}&marca=${encodeURIComponent(marcaExport)}&sede=${sede}`,
       );
       if (!r.ok) throw new Error((await r.json()).error || "Error al exportar");
       const blob = await r.blob();
@@ -304,7 +303,8 @@ export function ReporteTrimestral() {
             <p className="text-sm text-slate-500">
               {data?.periodo.sede || sedes.find((s) => s.companyId === sede)?.nombre || "…"} · marca{" "}
               {(() => {
-                const m = data?.periodo.marca || marca;
+                const m = marca || data?.periodo.marca;
+                if (!m) return "…";
                 return m === "TODAS" ? "Todas las marcas" : m;
               })()} ·{" "}
               {data ? `${data.periodo.desde} a ${data.periodo.hasta}` : trimestre}
@@ -315,7 +315,11 @@ export function ReporteTrimestral() {
           {sedes.length > 1 && (
             <select
               value={sede ?? ""}
-              onChange={(e) => setSede(Number(e.target.value))}
+              onChange={(e) => {
+                setSede(Number(e.target.value));
+                // Volver al default de la sede nueva (lo decide el servidor).
+                setMarca(marcaFija ?? "");
+              }}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >
               {sedes.map((s) => (
@@ -331,7 +335,7 @@ export function ReporteTrimestral() {
             </span>
           ) : (
             <select
-              value={marca}
+              value={marca || data?.periodo.marca || "TODAS"}
               onChange={(e) => setMarca(e.target.value)}
               className="bg-white border rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 shadow-sm cursor-pointer"
             >
@@ -430,7 +434,12 @@ export function ReporteTrimestral() {
         <>
           {tab === "resumen" && <TabResumen data={data} />}
           {tab === "epp" && sede != null && (
-            <TabEpp data={data} marca={marca} sede={sede} onCambio={cargar} />
+            <TabEpp
+              data={data}
+              marca={marca || data?.periodo.marca || "TODAS"}
+              sede={sede}
+              onCambio={cargar}
+            />
           )}
         </>
       )}

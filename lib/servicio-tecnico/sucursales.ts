@@ -30,6 +30,18 @@ export const SLUGS_SUCURSAL: Record<number, string> = {
   10: "caracas",
 };
 
+/**
+ * Direccion y horario de atencion de cada sucursal, para mostrarle al
+ * cliente cuando elige "Retirar en sucursal" (issue #122). Placeholder
+ * hasta que operaciones confirme los datos reales -- reemplazar aca
+ * cuando los den, no hace falta tocar nada mas.
+ */
+export const DIRECCIONES_SUCURSAL: Record<number, { direccion: string; horario: string }> = {
+  7: { direccion: "Pendiente de confirmar", horario: "Pendiente de confirmar" },
+  9: { direccion: "Pendiente de confirmar", horario: "Pendiente de confirmar" },
+  10: { direccion: "Pendiente de confirmar", horario: "Pendiente de confirmar" },
+};
+
 export type Sucursal = { cid: number; nombre: string; slug: string };
 
 export function sucursalesPermitidas(): Sucursal[] {
