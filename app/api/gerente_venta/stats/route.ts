@@ -5,7 +5,10 @@ import { requireRoles } from "@/lib/auth/roles";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["gerencia de ventas"]);
+  const auth = await requireRoles(request, [
+    "gerencia de ventas",
+    "asistente de ventas",
+  ]);
   if (auth.error) return auth.error;
 
   try {
