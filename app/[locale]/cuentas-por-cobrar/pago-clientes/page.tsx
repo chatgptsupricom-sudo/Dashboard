@@ -177,9 +177,9 @@ export default function PagoClientesPage() {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-5">
+    <div className="max-w-[1600px] mx-auto space-y-4 sm:space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Pago de Clientes</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Pago de Clientes</h1>
         <p className="text-sm text-slate-500 mt-1">
           Pagos recibidos de clientes desde Odoo: monto en bolívares y en dólares, tasa aplicada, banco,
           vendedor y descripción. Filtrable por fecha y exportable a Excel.
@@ -187,7 +187,7 @@ export default function PagoClientesPage() {
       </div>
 
       {/* Tabs cobro / ajuste */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {([
           ["cobro", "Cobros", countCobros],
           ["ajuste", "Retenciones y ajustes", countAjustes],
@@ -195,7 +195,7 @@ export default function PagoClientesPage() {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
               tab === key ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
             }`}
           >
@@ -205,63 +205,63 @@ export default function PagoClientesPage() {
       </div>
 
       {tab === "ajuste" && (
-        <p className="text-xs text-slate-500 -mt-2">
+        <p className="text-xs text-slate-500 -mt-1 sm:-mt-2">
           Diarios que no son un cobro de dinero: IVA / ISLR / ITBMS / IGTF retenido por el cliente, descuentos y
           devoluciones locales, operaciones varias y facturas de cliente.
         </p>
       )}
 
       {/* Filtros */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
-        <div className="rounded-lg border border-slate-300 bg-slate-50/60 p-2">
+      <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 flex flex-wrap items-end gap-3">
+        <div className="w-full sm:w-auto rounded-lg border border-slate-300 bg-slate-50/60 p-2">
           <div className="text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-2">
             Fecha de confirmación <span className="font-normal text-slate-400">(principal)</span>
             {(desdeConf || hastaConf) && (
               <button onClick={() => { setDesdeConf(""); setHastaConf(""); }} className="text-[10px] text-slate-400 hover:text-slate-600 underline">limpiar</button>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2">
             <input type="date" value={desdeConf} onChange={(e) => setDesdeConf(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
-            <span className="text-slate-400 text-xs">a</span>
+              className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+            <span className="hidden sm:inline text-slate-400 text-xs">a</span>
             <input type="date" value={hastaConf} onChange={(e) => setHastaConf(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
+              className="w-full border rounded-lg px-2 py-1.5 text-sm" />
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 p-2">
+        <div className="w-full sm:w-auto rounded-lg border border-slate-200 p-2">
           <div className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-2">
             Fecha de pago
             {(desdePago || hastaPago) && (
               <button onClick={() => { setDesdePago(""); setHastaPago(""); }} className="text-[10px] text-slate-400 hover:text-slate-600 underline">limpiar</button>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2">
             <input type="date" value={desdePago} onChange={(e) => setDesdePago(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
-            <span className="text-slate-400 text-xs">a</span>
+              className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+            <span className="hidden sm:inline text-slate-400 text-xs">a</span>
             <input type="date" value={hastaPago} onChange={(e) => setHastaPago(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
+              className="w-full border rounded-lg px-2 py-1.5 text-sm" />
           </div>
         </div>
-        <div>
+        <div className="flex-1 sm:flex-none min-w-[120px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Sede</label>
           <select value={empresa} onChange={(e) => setEmpresa(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm bg-white">
+            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white">
             <option value="todas">Todas</option>
             <option value="valencia">Valencia</option>
             <option value="caracas">Caracas</option>
             <option value="panama">Panamá</option>
           </select>
         </div>
-        <div>
+        <div className="flex-1 sm:flex-none min-w-[140px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Estado</label>
           <select value={estado} onChange={(e) => setEstado(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm bg-white">
+            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white">
             <option value="posted">Confirmados</option>
             <option value="todos">Todos (incl. borrador / anulados)</option>
           </select>
         </div>
-        <div className="flex-1 min-w-[200px]">
+        <div className="w-full lg:flex-1 lg:min-w-[200px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Buscar</label>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -278,18 +278,20 @@ export default function PagoClientesPage() {
             onChange={(e) => setExcluirAsistentes(e.target.checked)} className="rounded border-slate-300" />
           Excluir asistentes de ventas
         </label>
-        <button onClick={fetchData} disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Actualizar
-        </button>
-        <button onClick={exportarExcel} disabled={loading || visibles.length === 0}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
-          <Download size={14} /> Exportar a Excel
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={fetchData} disabled={loading}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Actualizar
+          </button>
+          <button onClick={exportarExcel} disabled={loading || visibles.length === 0}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
+            <Download size={14} /> <span className="whitespace-nowrap">Exportar a Excel</span>
+          </button>
+        </div>
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
         <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} />
         <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} />
@@ -304,7 +306,7 @@ export default function PagoClientesPage() {
             <AlertTriangle size={16} className="text-amber-500" /> A revisar
           </div>
           <div className="text-lg font-bold text-slate-900 mt-0.5">{resumen.porRevisar.toLocaleString("es-VE")}</div>
-          <div className="text-[10px] text-slate-400">{soloRevisar ? "mostrando solo estas — clic para ver todas" : "clic para filtrar"}</div>
+          <div className="text-[10px] text-slate-400">{soloRevisar ? "mostrando solo estas — tocá para ver todas" : "tocá para filtrar"}</div>
         </button>
       </div>
 
@@ -312,8 +314,8 @@ export default function PagoClientesPage() {
         <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 text-sm">{error}</div>
       )}
 
-      {/* Tabla */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* Tabla (lg+) */}
+      <div className="hidden lg:block bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[1400px]">
             <thead>
@@ -389,21 +391,26 @@ export default function PagoClientesPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Paginación */}
         {visibles.length > PAGE_SIZE && (
-          <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-slate-500">
-            <span>
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, visibles.length)} de {visibles.length.toLocaleString("es-VE")}
-            </span>
-            <div className="flex items-center gap-1">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
-                className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40"><ChevronLeft size={16} /></button>
-              <span className="px-2">{page} / {totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
-                className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40"><ChevronRight size={16} /></button>
-            </div>
-          </div>
+          <Paginacion page={page} totalPages={totalPages} total={visibles.length} setPage={setPage} />
+        )}
+      </div>
+
+      {/* Tarjetas (< lg) */}
+      <div className="lg:hidden space-y-2.5">
+        {loading ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400 text-sm">Cargando…</div>
+        ) : pageRows.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400 text-sm">Sin registros en el rango seleccionado.</div>
+        ) : (
+          <>
+            {pageRows.map((r) => <PagoCard key={r.id} r={r} />)}
+            {visibles.length > PAGE_SIZE && (
+              <div className="bg-white rounded-xl border border-slate-200">
+                <Paginacion page={page} totalPages={totalPages} total={visibles.length} setPage={setPage} />
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -421,7 +428,88 @@ function Card({ icon, label, value }: { icon: ReactNode; label: string; value: s
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
       <div className="flex items-center gap-1.5 text-xs text-slate-500">{icon} {label}</div>
-      <div className="text-lg font-bold text-slate-900 mt-0.5 tabular-nums">{value}</div>
+      <div className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums break-words">{value}</div>
+    </div>
+  );
+}
+
+function Paginacion({ page, totalPages, total, setPage }: {
+  page: number; totalPages: number; total: number; setPage: (fn: (p: number) => number) => void;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-3 border-t text-sm text-slate-500">
+      <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} de {total.toLocaleString("es-VE")}</span>
+      <div className="flex items-center gap-1">
+        <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+          className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40"><ChevronLeft size={16} /></button>
+        <span className="px-2">{page} / {totalPages}</span>
+        <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+          className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40"><ChevronRight size={16} /></button>
+      </div>
+    </div>
+  );
+}
+
+function PagoCard({ r }: { r: Row }) {
+  return (
+    <div className={`bg-white rounded-xl border p-3 ${r.revisar ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 flex-wrap">
+            {r.numeroPago}
+            {r.estado !== "posted" && (
+              <span className="text-[10px] px-1 py-px rounded bg-slate-200 text-slate-600">{r.estado}</span>
+            )}
+            {r.revisar && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded bg-amber-100 text-amber-700">
+                <AlertTriangle size={10} /> revisar
+              </span>
+            )}
+          </div>
+          <div className="text-sm text-slate-700 truncate mt-0.5" title={r.cliente}>{r.cliente}</div>
+        </div>
+        <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.moneda === "USD" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"}`}>
+          {r.moneda}
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 gap-2 text-right">
+        <div>
+          <div className="text-[10px] text-slate-400 text-left">Bs</div>
+          <div className="tabular-nums text-slate-700 text-sm">{fmtNum(r.montoBs)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-400 text-left">USD</div>
+          <div className="tabular-nums font-semibold text-slate-900 text-sm">{fmtNum(r.montoUsd)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-400 text-left">Tasa</div>
+          <div className="tabular-nums text-slate-600 text-sm">
+            {r.tasa == null ? "—" : fmtNum(r.tasa)}
+            {r.tasaCustom && <span className="ml-0.5 text-[9px] text-amber-600">✎</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
+        <div><span className="text-slate-400">Confirm.:</span> {fmtFecha(r.fechaConfirmacion)}</div>
+        <div><span className="text-slate-400">Pago:</span> {fmtFecha(r.fechaPago)}</div>
+        <div className="truncate"><span className="text-slate-400">Sede:</span> {r.sede}</div>
+        <div className="truncate" title={r.banco}><span className="text-slate-400">Banco:</span> {r.banco}</div>
+        <div className="truncate col-span-2" title={r.vendedor}>
+          <span className="text-slate-400">Vendedor:</span> {r.vendedor || "—"}
+          {r.esAsistente && <span className="ml-1 text-[9px] text-slate-400">·asist</span>}
+        </div>
+        {r.rif && <div className="truncate"><span className="text-slate-400">RIF:</span> {r.rif}</div>}
+        {r.referencia && <div className="truncate"><span className="text-slate-400">Oper.:</span> {r.referencia}</div>}
+        {r.igtf > 0 && <div><span className="text-slate-400">IGTF:</span> {fmtNum(r.igtf)}</div>}
+        {r.facturasAplicadas && (
+          <div className="truncate col-span-2" title={r.facturasAplicadas}><span className="text-slate-400">Facturas:</span> {r.facturasAplicadas}</div>
+        )}
+        {r.descripcion && (
+          <div className="col-span-2 text-slate-500"><span className="text-slate-400">Desc.:</span> {r.descripcion}</div>
+        )}
+      </div>
     </div>
   );
 }
