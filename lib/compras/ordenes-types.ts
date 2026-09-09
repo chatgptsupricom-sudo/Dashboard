@@ -113,3 +113,16 @@ export function fmtMoneda(n: number, currency = "USD"): string {
     minimumFractionDigits: 2,
   }).format(Number(n || 0));
 }
+
+/** "hace 2 días" / "hace 3 h" -- antigüedad de envío en la cola de aprobación (issue #156). */
+export function tiempoDesde(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "—";
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `hace ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return `hace ${dias} d`;
+}
