@@ -46,7 +46,10 @@ const normalize = (s: string) =>
     .replace(/\s+/g, " ");
 
 export async function GET(req: NextRequest) {
-  const auth = await requireRoles(req, ["gerencia de ventas"]);
+  const auth = await requireRoles(req, [
+    "gerencia de ventas",
+    "asistente de ventas",
+  ]);
   if (auth.error) return auth.error;
 
   try {

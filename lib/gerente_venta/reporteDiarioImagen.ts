@@ -41,8 +41,9 @@ const VERDE = "#2e9e5b";
 const AMBAR = "#e0a800";
 const ROJO = "#d64545";
 
-const FUENTE =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+// La gerencia arma el reporte en Excel con Calibri; se respeta esa tipografía.
+// Carlito es la alternativa con métricas idénticas para equipos sin Calibri.
+const FUENTE = 'Calibri, Carlito, "Segoe UI", system-ui, sans-serif';
 
 function money(n: number): string {
   return (n || 0).toLocaleString("es-VE", {
@@ -64,7 +65,8 @@ function cargarLogo(): Promise<HTMLImageElement | null> {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
-    img.src = "/Supricom-logo.png";
+    // Asset local (mismo origen) para que `canvas.toBlob` no falle por CORS.
+    img.src = "/supricom-reporte-logo.png";
   });
 }
 
@@ -78,7 +80,7 @@ function medidor(
 ) {
   const f = Math.max(0, Math.min(1, fraccion));
   ctx.lineCap = "butt";
-  ctx.lineWidth = 24;
+  ctx.lineWidth = 20;
 
   ctx.strokeStyle = AZUL_CLARO;
   ctx.beginPath();
@@ -92,18 +94,19 @@ function medidor(
     ctx.stroke();
   }
 
-  ctx.fillStyle = "#8a97a8";
-  ctx.font = `600 11px ${FUENTE}`;
+  ctx.textBaseline = "top";
   ctx.textAlign = "center";
-  ctx.fillText("0%", cx - radio, cy + 16);
-  ctx.fillText("100%", cx + radio, cy + 16);
+  ctx.fillStyle = "#9aa5b1";
+  ctx.font = `600 10px ${FUENTE}`;
+  ctx.fillText("0%", cx - radio, cy + 6);
+  ctx.fillText("100%", cx + radio, cy + 6);
 
   ctx.fillStyle = "#5b6b7d";
   ctx.font = `700 12px ${FUENTE}`;
-  ctx.fillText("Cumplimiento Global", cx, cy + 18);
+  ctx.fillText("Cumplimiento Global", cx, cy + 22);
   ctx.fillStyle = AZUL_OSCURO;
-  ctx.font = `800 26px ${FUENTE}`;
-  ctx.fillText(`${Math.round(f * 100)}%`, cx, cy + 44);
+  ctx.font = `800 24px ${FUENTE}`;
+  ctx.fillText(`${Math.round(f * 100)}%`, cx, cy + 38);
 }
 
 interface Celda {
@@ -163,13 +166,16 @@ export async function generarImagenReporteDiario(
   d: DatosReporteImagen,
 ): Promise<Blob> {
   const escala = 2;
-  const W = 900;
-  const margenX = 45;
-  const anchoTabla = W - margenX * 2;
-  const altoFila = 30;
-  const yRanking = 300;
-  const H =
-    yRanking + altoFila * (d.vendedores.length + 1) + 45;
+  const W = 980;
+  const margenX = 48;
+  const altoFila = 34;
+
+  // Alto total: cabecera (150) + tabla días (3·34) + hueco (26) + tabla metas
+  // (5·34) + hueco (30) + ranking (cabecera + N filas) + pie (48).
+  const yDias = 150;
+  const yMetas = yDias + altoFila * 3 + 26;
+  const yRanking = yMetas + altoFila * 5 + 34;
+  const H = yRanking + altoFila * (d.vendedores.length + 1) + 48;
 
   const canvas = document.createElement("canvas");
   canvas.width = W * escala;
@@ -183,40 +189,42 @@ export async function generarImagenReporteDiario(
   /* ── Cabecera ── */
   const logo = await cargarLogo();
   if (logo) {
-    const h = 54;
+    const h = 52;
     const w = (logo.width / logo.height) * h;
-    ctx.drawImage(logo, margenX, 24, w, h);
+    ctx.drawImage(logo, margenX, 26, w, h);
   } else {
     ctx.fillStyle = AZUL_OSCURO;
-    ctx.font = `800 30px ${FUENTE}`;
+    ctx.font = `800 26px ${FUENTE}`;
     ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText("SUPRICOM", margenX, 55);
+    ctx.textBaseline = "middle";
+    ctx.fillText("SUPRICOM", margenX, 52);
   }
 
+  // Título centrado en el tercio central (deja la derecha para el medidor).
   ctx.fillStyle = "#1f3864";
-  ctx.font = `800 26px ${FUENTE}`;
+  ctx.font = `800 27px ${FUENTE}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("REPORTE DIARIO DE VENTAS", W / 2 + 20, 42);
+  ctx.fillText("REPORTE DIARIO DE VENTAS", (margenX + (W - 230)) / 2, 52);
 
   ctx.fillStyle = "#5b6b7d";
-  ctx.font = `700 13px ${FUENTE}`;
+  ctx.font = `700 14px ${FUENTE}`;
   ctx.textAlign = "left";
   ctx.fillText(
     `FECHA ${d.fechaDisplay.replace(/\//g, "-")}${
       d.sedeNombre ? `   ·   ${d.sedeNombre}` : ""
     }`,
     margenX,
-    92,
+    110,
   );
 
-  medidor(ctx, W - 150, 70, 62, pct(d.ventas, d.meta) / 100);
+  // Medidor de cumplimiento, arriba a la derecha, en su propio espacio.
+  medidor(ctx, W - 120, 96, 50, pct(d.ventas, d.meta) / 100);
 
   /* ── Tabla 1: días ── */
-  const anchoEtq = 210;
+  const anchoEtq = 230;
   const anchoVal = 150;
-  let y = 120;
+  let y = yDias;
   const dias: [string, string][] = [
     ["DÍAS HÁBILES", String(d.diasHabiles)],
     ["DÍAS TRANSCURRIDOS", String(d.diasTranscurridos)],
@@ -231,34 +239,47 @@ export async function generarImagenReporteDiario(
   }
 
   /* ── Tabla 2: metas ── */
-  y += 22;
-  const anchoPct = 90;
+  y = yMetas;
+  const anchoPct = 95;
   // "08/09/2026" -> "08/09/26"
   const fechaCorta = d.fechaDisplay.replace(/^(\d{2}\/\d{2}\/)\d{2}(\d{2})$/, "$1$2");
-  const metas: [string, string, string, string?][] = [
-    ["META", entero(d.meta), ""],
-    [`CUOTA AL ${fechaCorta}`, entero(d.cuotaAlDia), ""],
-    ["VENTA", money(d.ventas), `${pct(d.ventas, d.cuotaAlDia)}%`],
-    ["PEDIDOS", money(d.pedidos), `${pct(d.pedidos, d.cuotaAlDia)}%`],
-    ["VENTA + PEDIDOS", money(d.ventaMasPedidos), `${pct(d.ventaMasPedidos, d.cuotaAlDia)}%`],
+  const metas: {
+    etq: string;
+    val: string;
+    pct?: string;
+    resaltar?: boolean;
+  }[] = [
+    { etq: "META", val: entero(d.meta) },
+    { etq: `CUOTA AL ${fechaCorta}`, val: entero(d.cuotaAlDia) },
+    { etq: "VENTA", val: money(d.ventas), pct: `${pct(d.ventas, d.cuotaAlDia)}%`, resaltar: true },
+    { etq: "PEDIDOS", val: money(d.pedidos), pct: `${pct(d.pedidos, d.cuotaAlDia)}%`, resaltar: true },
+    {
+      etq: "VENTA + PEDIDOS",
+      val: money(d.ventaMasPedidos),
+      pct: `${pct(d.ventaMasPedidos, d.cuotaAlDia)}%`,
+      resaltar: true,
+    },
   ];
-  metas.forEach(([etq, val, p], i) => {
+  metas.forEach((m, i) => {
     fila(ctx, margenX, y, altoFila, [
-      { ancho: anchoEtq, celda: { texto: etq, encabezado: true } },
+      { ancho: anchoEtq, celda: { texto: m.etq, encabezado: true } },
       {
         ancho: anchoVal,
         celda: {
-          texto: val,
+          texto: m.val,
           alinear: "right",
           negrita: true,
-          color: i >= 2 ? AZUL_OSCURO : TEXTO,
+          color: m.resaltar ? AZUL_OSCURO : TEXTO,
         },
       },
       {
         ancho: anchoPct,
-        celda: p
-          ? { texto: p, alinear: "center", negrita: true, color: "#ffffff", encabezado: true }
-          : { texto: "", alinear: "center" },
+        celda:
+          i === 0
+            ? { texto: "%", encabezado: true }
+            : m.pct
+              ? { texto: m.pct, alinear: "center", negrita: true, color: AZUL_MEDIO }
+              : { texto: "" },
       },
     ]);
     y += altoFila;
@@ -266,13 +287,18 @@ export async function generarImagenReporteDiario(
 
   /* ── Tabla 3: ranking de vendedores ── */
   y = yRanking;
+  const anchoTabla = W - margenX * 2;
+  const wPos = 52;
+  const wNum = 150;
+  const wPct = 96;
+  const wName = anchoTabla - wPos - wNum * 3 - wPct;
   const cols = [
-    { k: "pos", w: 55, etq: "#" },
-    { k: "name", w: anchoTabla - 55 - 150 - 150 - 150 - 80, etq: "VENDEDOR" },
-    { k: "cuota", w: 150, etq: "CUOTA" },
-    { k: "cuotaDia", w: 150, etq: "CUOTA AL DÍA" },
-    { k: "venta", w: 150, etq: "VENTA" },
-    { k: "pct", w: 80, etq: "%" },
+    { w: wPos, etq: "#" },
+    { w: wName, etq: "VENDEDOR" },
+    { w: wNum, etq: "CUOTA" },
+    { w: wNum, etq: "CUOTA AL DÍA" },
+    { w: wNum, etq: "VENTA" },
+    { w: wPct, etq: "%" },
   ];
   fila(
     ctx,
@@ -284,7 +310,6 @@ export async function generarImagenReporteDiario(
   y += altoFila;
 
   d.vendedores.forEach((v, i) => {
-    // fondo alterno
     ctx.fillStyle = i % 2 === 0 ? "#ffffff" : GRIS_FILA;
     ctx.fillRect(margenX, y, anchoTabla, altoFila);
 
@@ -309,13 +334,13 @@ export async function generarImagenReporteDiario(
   });
 
   ctx.fillStyle = "#9aa5b1";
-  ctx.font = `500 10px ${FUENTE}`;
+  ctx.font = `500 11px ${FUENTE}`;
   ctx.textAlign = "right";
   ctx.textBaseline = "alphabetic";
   ctx.fillText(
     `Generado ${new Date().toLocaleString("es-VE")}`,
     W - margenX,
-    H - 16,
+    H - 18,
   );
 
   return new Promise<Blob>((resolve, reject) => {
