@@ -2,6 +2,7 @@ import { getConnection, query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { leerEstadoOdoo, sincronizarOrdenConOdoo } from "@/lib/compras/odooSync";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -70,9 +71,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       query(`SELECT * FROM purchase_order_history WHERE order_id = ? ORDER BY created_at ASC`, [id]),
     ]);
 
+    // Estado real en Odoo, leido en vivo (issue #166) -- no se guarda en
+    // MySQL, es solo para mostrar en el detalle. Si Odoo esta caido o la
+    // orden nunca se sincronizo, se omite sin romper el resto de la
+    // respuesta.
+    let odoo_live: { state: string; name: string; amount_total: number } | null = null;
+    if (orden.odoo_purchase_order_id) {
+      odoo_live = await leerEstadoOdoo(orden.odoo_purchase_order_id);
+    }
+
     return NextResponse.json({
       success: true,
-      order: orden,
+      order: { ...orden, odoo_live },
       lines: lineasResult.rows,
       history: historialResult.rows,
     });
@@ -153,6 +163,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
        WHERE id = ?`,
       [companyId, supplierOdooId, supplierName, currency, expectedDate, notes, subtotal, total, id],
     );
+
+    // Sync a Odoo (issue #166) -- best-effort, ver lib/compras/odooSync.ts.
+    await sincronizarOrdenConOdoo(Number(id));
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

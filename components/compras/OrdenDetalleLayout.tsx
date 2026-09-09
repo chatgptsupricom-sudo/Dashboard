@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { OrdenEstadoBadge } from "@/components/compras/OrdenEstadoBadge";
+import { OrdenOdooBadge } from "@/components/compras/OrdenOdooBadge";
 import { OrdenForm, type OrdenFormValue } from "@/components/compras/OrdenForm";
 import { SEDES } from "@/lib/compras/constants";
 import {
@@ -100,6 +101,11 @@ export function OrdenDetalleLayout({
               {orden.order_number}
             </h1>
             <OrdenEstadoBadge estado={orden.status} />
+            <OrdenOdooBadge
+              status={orden.odoo_sync_status}
+              error={orden.odoo_sync_error}
+              odooLive={orden.odoo_live}
+            />
             <span className="w-full text-xs text-slate-400 sm:w-auto">
               Creada por {orden.created_by}
             </span>

@@ -5,6 +5,7 @@ import {
   getOrden,
   reabrirOrden,
 } from "@/lib/compras/ordenesEstado";
+import { sincronizarOrdenConOdoo } from "@/lib/compras/odooSync";
 
 // POST /api/compras/ordenes/[id]/reabrir
 // Solo superadmin: deshace una aprobación (aprobada -> borrador).
@@ -30,6 +31,10 @@ export async function POST(
     if (!res.ok) {
       return NextResponse.json({ error: res.error }, { status: res.status });
     }
+
+    // Revierte la PO en Odoo si ya estaba confirmada (issue #166).
+    await sincronizarOrdenConOdoo(order.id);
+
     return NextResponse.json({ success: true, order: res.order });
   } catch (error: any) {
     console.error("Error reabriendo orden de compra:", error);

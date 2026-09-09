@@ -13,6 +13,10 @@ export interface OrdenLinea {
   line_total?: number;
 }
 
+// Ver lib/compras/odooSync.ts -- "no_aplica" es proveedor/lineas sin match
+// real en Odoo (nunca se intenta escribir), no un estado transitorio.
+export type OdooSyncStatus = "sincronizado" | "pendiente" | "error" | "no_aplica";
+
 export interface OrdenResumen {
   id: number;
   order_number: string;
@@ -30,6 +34,9 @@ export interface OrdenResumen {
   approved_by: string | null;
   approved_at: string | null;
   rejection_reason: string | null;
+  odoo_purchase_order_id: number | null;
+  odoo_sync_status: OdooSyncStatus;
+  odoo_sync_error: string | null;
 }
 
 export interface OrdenDetalle extends OrdenResumen {
@@ -38,6 +45,9 @@ export interface OrdenDetalle extends OrdenResumen {
   subtotal: number;
   lines: OrdenLinea[];
   history: OrdenHistorial[];
+  // Leido en vivo de Odoo en el GET de detalle -- null si no esta
+  // sincronizada o si Odoo no respondio.
+  odoo_live: { state: string; name: string; amount_total: number } | null;
 }
 
 export interface OrdenHistorial {

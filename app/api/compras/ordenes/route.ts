@@ -2,6 +2,7 @@ import { getConnection, query } from "@/lib/db";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { sincronizarOrdenConOdoo } from "@/lib/compras/odooSync";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -210,6 +211,12 @@ export async function POST(request: NextRequest) {
        VALUES (?, NULL, 'borrador', ?, ?, 'Orden creada')`,
       [orderId, createdBy, userRole],
     );
+
+    // Sync a Odoo (issue #166) -- best-effort, nunca tumba la creacion que ya
+    // quedo guardada en MySQL arriba. Se espera el resultado (no
+    // fire-and-forget) para que el detalle, apenas se redirige ahi, ya
+    // muestre el estado real de sincronizacion.
+    await sincronizarOrdenConOdoo(orderId);
 
     // La UI (#155) espera la orden envuelta en `order` -- mismo contrato
     // que el GET de detalle, para poder redirigir con json.order.id sin una
