@@ -31,9 +31,12 @@ import {
   Copy,
   Loader2,
   MapPin,
+  PackageCheck,
   Printer,
   Save,
+  Store,
   Trash2,
+  Truck,
   User,
   Wrench,
 } from "lucide-react";
@@ -59,6 +62,20 @@ const statusLabels: Record<string, string> = {
   reingresado: "Reingresado",
 };
 
+// Metodo de entrega que el cliente eligio en el portal publico (issue
+// #121/#122/#123/#124) -- solo aplica a casos reparados via el portal, no
+// es un estado del caso en si.
+const entregaLabels: Record<string, string> = {
+  sucursal: "Retira en sucursal",
+  ruta: "Envío por ruta",
+  agencia: "Envío por agencia",
+};
+const entregaIcons: Record<string, typeof Store> = {
+  sucursal: Store,
+  ruta: Truck,
+  agencia: PackageCheck,
+};
+
 export default function RmaCasoDetailPage() {
   const t = useTranslations("rma");
   const params = useParams();
@@ -77,6 +94,15 @@ export default function RmaCasoDetailPage() {
   const [changeNotes, setChangeNotes] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [marcandoEntregado, setMarcandoEntregado] = useState(false);
+  // Si el metodo de entrega es "agencia", marcar como entregado requiere
+  // adjuntar antes la foto de la guia (comprobante de envio) -- se pide
+  // en este dialogo en vez de mandarla directo, para no dejar subir un
+  // archivo equivocado sin verlo antes.
+  const [guiaDialogOpen, setGuiaDialogOpen] = useState(false);
+  const [guiaFile, setGuiaFile] = useState<File | null>(null);
+  const [subiendoGuia, setSubiendoGuia] = useState(false);
+  const [errorGuia, setErrorGuia] = useState<string | null>(null);
 
   useEffect(() => {
     if (caseId) fetchCase();
@@ -156,6 +182,53 @@ export default function RmaCasoDetailPage() {
       console.error("Error:", error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMarcarEntregado = async () => {
+    // Agencia necesita la guia primero -- este botón se usa para los
+    // otros dos metodos (sucursal, ruta), que no la requieren.
+    if (caseData?.entrega_metodo === "agencia") {
+      setGuiaDialogOpen(true);
+      return;
+    }
+    try {
+      setMarcandoEntregado(true);
+      const res = await fetch(`/api/rma/${caseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marcar_entregado: true }),
+      });
+      const data = await res.json();
+      if (data.success) fetchCase();
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setMarcandoEntregado(false);
+    }
+  };
+
+  const handleSubirGuia = async () => {
+    if (!guiaFile) return;
+    try {
+      setSubiendoGuia(true);
+      setErrorGuia(null);
+      const formData = new FormData();
+      formData.append("file", guiaFile);
+      const res = await fetch(`/api/rma/${caseId}/guia`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setErrorGuia(data.error || "No se pudo subir la guia.");
+        return;
+      }
+      setGuiaDialogOpen(false);
+      setGuiaFile(null);
+      fetchCase();
+    } catch (error) {
+      console.error("Error:", error);
+      setErrorGuia("No se pudo subir la guia.");
+    } finally {
+      setSubiendoGuia(false);
     }
   };
 
@@ -370,6 +443,100 @@ export default function RmaCasoDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Entrega -- metodo que el cliente eligio en el portal (issue #121)
+              y confirmacion de que ya se llevo el equipo (issue #122). Solo
+              se muestra si hay algo que mostrar: ni todos los casos pasan
+              por el portal, ni todos ya eligieron. */}
+          {(caseData.entrega_metodo || caseData.despachado_at) && (
+            <Card className="rounded-3xl border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-slate-900">Entrega</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {caseData.entrega_metodo && (
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const Icon = entregaIcons[caseData.entrega_metodo] || Store;
+                      return <Icon className="w-4 h-4 text-slate-400" />;
+                    })()}
+                    <span className="text-sm font-medium text-slate-700">
+                      {entregaLabels[caseData.entrega_metodo] || caseData.entrega_metodo}
+                      {caseData.entrega_metodo === "ruta" && caseData.entrega_ciudad && ` — ${caseData.entrega_ciudad}`}
+                      {caseData.entrega_metodo === "agencia" && caseData.entrega_agencia && ` — ${caseData.entrega_agencia}`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Datos de contacto para armar el envio por agencia (issue
+                    #124) -- entrega_datos es JSON (mysql2 ya lo devuelve
+                    parseado para columnas tipo JSON, pero se tolera string
+                    por si el driver cambia). */}
+                {caseData.entrega_metodo === "agencia" && (() => {
+                  let datos: Record<string, string> | null = null;
+                  if (caseData.entrega_datos) {
+                    datos = typeof caseData.entrega_datos === "string"
+                      ? (() => { try { return JSON.parse(caseData.entrega_datos); } catch { return null; } })()
+                      : caseData.entrega_datos;
+                  }
+                  if (!datos) return null;
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <div><span className="text-slate-400">Recibe:</span> <span className="text-slate-700 font-medium">{datos.nombre || "—"}</span></div>
+                        <div><span className="text-slate-400">Cédula:</span> <span className="text-slate-700 font-medium">{datos.cedula || "—"}</span></div>
+                        <div><span className="text-slate-400">Teléfono:</span> <span className="text-slate-700 font-medium">{datos.telefono || "—"}</span></div>
+                        <div className="sm:col-span-2"><span className="text-slate-400">Dirección:</span> <span className="text-slate-700 font-medium">{datos.direccion || "—"}</span></div>
+                      </div>
+                      <p className="text-xs font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5 inline-block">
+                        Pago a destino — no cobrar el envío por adelantado
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {caseData.despachado_at ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-sm font-semibold text-emerald-800">
+                      Entregado el {fechaCorta(caseData.despachado_at)}
+                    </span>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={handleMarcarEntregado} disabled={marcandoEntregado}>
+                    {marcandoEntregado && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Marcar como entregado
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Dialog open={guiaDialogOpen} onOpenChange={(open) => { setGuiaDialogOpen(open); if (!open) { setGuiaFile(null); setErrorGuia(null); } }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Adjuntar guía de la agencia</DialogTitle>
+                <DialogDescription>
+                  Antes de marcar como entregado, sube una foto o captura de la guía/comprobante de envío de {caseData.entrega_agencia || "la agencia"}. Se le enviará por correo al cliente junto con los datos del producto.
+                </DialogDescription>
+              </DialogHeader>
+              <div>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setGuiaFile(e.target.files?.[0] || null)}
+                />
+                {errorGuia && <p className="text-sm text-red-600 mt-2">{errorGuia}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setGuiaDialogOpen(false)}>{t("cancel")}</Button>
+                <Button onClick={handleSubirGuia} disabled={!guiaFile || subiendoGuia}>
+                  {subiendoGuia && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Subir y marcar como entregado
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Cliente */}
           <Card className="rounded-3xl border-none shadow-sm">
