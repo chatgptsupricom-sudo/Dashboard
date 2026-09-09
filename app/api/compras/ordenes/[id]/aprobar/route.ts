@@ -5,6 +5,7 @@ import {
   aprobarOrden,
   getOrden,
 } from "@/lib/compras/ordenesEstado";
+import { sincronizarOrdenConOdoo } from "@/lib/compras/odooSync";
 
 // POST /api/compras/ordenes/[id]/aprobar
 // Solo superadmin: `requireRoles(request, [])` deja pasar únicamente a superadmin.
@@ -26,6 +27,10 @@ export async function POST(
     if (!res.ok) {
       return NextResponse.json({ error: res.error }, { status: res.status });
     }
+
+    // Confirma la PO en Odoo (issue #166) -- best-effort, ver odooSync.ts.
+    await sincronizarOrdenConOdoo(order.id);
+
     return NextResponse.json({ success: true, order: res.order });
   } catch (error: any) {
     console.error("Error aprobando orden de compra:", error);
