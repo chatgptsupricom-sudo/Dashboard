@@ -247,6 +247,7 @@ export function Sidebar({
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
+    { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
@@ -352,7 +353,7 @@ export function Sidebar({
     allowedSections.includes("tendencia") ||
     allowedSections.includes("pareto_80_20");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
+  const comprasDropdownIds = ["ordenes_compra", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
@@ -947,6 +948,13 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
+                        {
+                          label: "Órdenes de compra",
+                          href: isSuperAdminRole
+                            ? `/${locale}/superadmin/ordenes-compra`
+                            : `/${locale}/compras/ordenes`,
+                          permission: "ordenes_compra",
+                        },
                         {
                           label: t("sugerencia_compras"),
                           href: `/${locale}/compras/sugeridos`,

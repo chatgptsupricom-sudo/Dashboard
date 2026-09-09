@@ -6,13 +6,17 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   OrdenForm,
   formToPayload,
   ordenFormVacia,
   type OrdenFormValue,
 } from "@/components/compras/OrdenForm";
+import type { OrdenLinea } from "@/lib/compras/ordenes-types";
+
+// Clave que usa /compras/sugeridos para prellenar líneas al crear una orden.
+const OC_PREFILL_KEY = "oc_prefill_lines";
 
 export default function NuevaOrdenPage() {
   const params = useParams();
@@ -23,6 +27,24 @@ export default function NuevaOrdenPage() {
 
   const [value, setValue] = useState<OrdenFormValue>(ordenFormVacia());
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(OC_PREFILL_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(OC_PREFILL_KEY);
+      const lines = JSON.parse(raw) as OrdenLinea[];
+      if (Array.isArray(lines) && lines.length > 0) {
+        setValue((v) => ({ ...v, lines }));
+        toast({
+          title: "Líneas prellenadas",
+          description: `${lines.length} producto(s) desde Sugeridos`,
+        });
+      }
+    } catch {
+      /* prefill inválido: se ignora */
+    }
+  }, [toast]);
 
   const guardar = async () => {
     setSaving(true);

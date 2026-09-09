@@ -19,7 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, Download, Loader2, Package, Search } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Package, Search, ShoppingCart } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
@@ -61,7 +62,13 @@ function fmt(n: number) {
   });
 }
 
+// Clave temporal para pasar líneas prellenadas a /compras/ordenes/nueva.
+export const OC_PREFILL_KEY = "oc_prefill_lines";
+
 export default function SugeridosPage() {
+  const router = useRouter();
+  const params = useParams();
+  const locale = (params?.locale as string) || "es";
   const [todos, setTodos] = useState<ProductoSugerido[]>([]);
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
@@ -190,6 +197,26 @@ export default function SugeridosPage() {
     (currentPageRiesgo - 1) * itemsPerPage,
     currentPageRiesgo * itemsPerPage,
   );
+
+  const crearOrdenDesdeSugeridos = () => {
+    const lineas = productosFiltrados
+      .filter((p) => p.cantidadAComprar > 0)
+      .slice(0, 100)
+      .map((p) => ({
+        product_odoo_id: p.id ?? null,
+        product_code: p.codigo ?? "",
+        description: p.name ?? p.codigo ?? "",
+        quantity: p.cantidadAComprar,
+        unit_price: Number(p.costo || 0),
+      }));
+    if (lineas.length === 0) return;
+    try {
+      sessionStorage.setItem(OC_PREFILL_KEY, JSON.stringify(lineas));
+    } catch {
+      /* sessionStorage no disponible: la orden se abre vacía */
+    }
+    router.push(`/${locale}/compras/ordenes/nueva`);
+  };
 
   const exportarExcel = () => {
     const mapItem = (item: ProductoSugerido, i: number) => ({
@@ -327,6 +354,13 @@ export default function SugeridosPage() {
             className="border-blue-600 text-blue-700 hover:bg-blue-50 w-full"
           >
             <Download className="h-4 w-4 mr-2" /> Exportar
+          </Button>
+          <Button
+            onClick={crearOrdenDesdeSugeridos}
+            disabled={productosFiltrados.filter((p) => p.cantidadAComprar > 0).length === 0}
+            className="w-full"
+          >
+            <ShoppingCart className="h-4 w-4 mr-2" /> Crear orden de compra
           </Button>
         </CardContent>
       </Card>
