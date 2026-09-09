@@ -63,6 +63,7 @@ export const rolePermissions: RolePermissions = {
       "agenteia", // Agente IA para pruebas internas
       "integraciondepago", // Integración De Pago
       "compras", // Agregado para que el SuperAdmin también vea compras
+      "ordenes_compra", // Órdenes de compra: cola de aprobación del SuperAdmin
       "cuota", // Gestión de cuotas de vendedores
       "MapaClientes", // Mapa de Clientes
       "spiff", // Gestión de spiffs por marca
@@ -262,6 +263,7 @@ export const rolePermissions: RolePermissions = {
       "tendencia",
       "stoplight_reports",
       "pareto_80_20",
+      "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
     ],
   },
   [UserRole.RMA]: {
