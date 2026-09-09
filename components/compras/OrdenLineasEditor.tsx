@@ -26,6 +26,7 @@ interface Props {
   lines: OrdenLinea[];
   onChange: (lines: OrdenLinea[]) => void;
   currency?: string;
+  sede?: string;
   disabled?: boolean;
 }
 
@@ -42,7 +43,7 @@ function nuevaLinea(): OrdenLinea {
 const microLabel =
   "text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500";
 
-export function OrdenLineasEditor({ lines, onChange, currency = "USD", disabled }: Props) {
+export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, disabled }: Props) {
   const update = (i: number, patch: Partial<OrdenLinea>) => {
     onChange(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
@@ -69,7 +70,7 @@ export function OrdenLineasEditor({ lines, onChange, currency = "USD", disabled 
     <div className="space-y-3">
       {!disabled && (
         <div className="flex flex-wrap items-center gap-2">
-          <BuscadorProducto onSelect={addProducto} />
+          <BuscadorProducto onSelect={addProducto} sede={sede} />
           <Button type="button" variant="outline" size="sm" onClick={addManual}>
             <Plus className="h-4 w-4 mr-1" /> Línea manual
           </Button>
@@ -215,7 +216,13 @@ export function OrdenLineasEditor({ lines, onChange, currency = "USD", disabled 
   );
 }
 
-function BuscadorProducto({ onSelect }: { onSelect: (p: ProductoOdoo) => void }) {
+function BuscadorProducto({
+  onSelect,
+  sede,
+}: {
+  onSelect: (p: ProductoOdoo) => void;
+  sede?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [items, setItems] = useState<ProductoOdoo[]>([]);
@@ -232,7 +239,8 @@ function BuscadorProducto({ onSelect }: { onSelect: (p: ProductoOdoo) => void })
     debounce.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(`/api/compras/ordenes/productos?q=${encodeURIComponent(q)}`);
+        const sedeParam = sede ? `&sede=${encodeURIComponent(sede)}` : "";
+        const r = await fetch(`/api/compras/ordenes/productos?q=${encodeURIComponent(q)}${sedeParam}`);
         const json = await r.json();
         setItems(json.success ? json.data : []);
       } catch {
@@ -244,7 +252,7 @@ function BuscadorProducto({ onSelect }: { onSelect: (p: ProductoOdoo) => void })
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [q, open]);
+  }, [q, open, sede]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

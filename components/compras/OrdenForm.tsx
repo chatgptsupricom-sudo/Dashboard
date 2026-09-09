@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, ChevronsUpDown, Loader2, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SEDES } from "@/lib/compras/constants";
 import { OrdenLineasEditor } from "@/components/compras/OrdenLineasEditor";
@@ -80,15 +80,34 @@ export function OrdenForm({
   const [loadingProv, setLoadingProv] = useState(false);
   const set = (patch: Partial<OrdenFormValue>) => onChange({ ...value, ...patch });
 
+  // Proveedores de la sede elegida -- sin esto el select mezclaba
+  // proveedores de las 3 sedes (Valencia/Caracas/Panama) sin importar cual
+  // orden se estuviera armando, y era facil elegir uno de otra compania de
+  // Odoo. Confirmar esa orden en Odoo fallaba recien al aprobarla
+  // ("Incompatible companies"), lejos de donde se eligio el proveedor.
   useEffect(() => {
     if (disabled) return; // en modo lectura no se elige proveedor
     setLoadingProv(true);
-    fetch("/api/compras/ordenes/proveedores")
+    fetch(`/api/compras/ordenes/proveedores?sede=${value.company_id}`)
       .then((r) => r.json())
       .then((j) => setProveedores(j.success ? j.data : []))
       .catch(() => setProveedores([]))
       .finally(() => setLoadingProv(false));
-  }, [disabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, value.company_id]);
+
+  // Si se cambia de sede con un proveedor de Odoo ya elegido, ese proveedor
+  // puede no pertenecer a la sede nueva -- se limpia para forzar a elegir
+  // uno valido en vez de dejar una combinacion que va a fallar recien al
+  // aprobar. No aplica a "escribir manualmente" (sin supplier_odoo_id).
+  const sedeAnterior = useRef(value.company_id);
+  useEffect(() => {
+    if (sedeAnterior.current !== value.company_id && value.supplier_odoo_id) {
+      set({ supplier_odoo_id: "", supplier_name: "" });
+    }
+    sedeAnterior.current = value.company_id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.company_id]);
 
   const puedeGuardar =
     !disabled &&
@@ -117,6 +136,7 @@ export function OrdenForm({
             lines={value.lines}
             onChange={(lines) => set({ lines })}
             currency={value.currency}
+            sede={value.company_id}
             disabled
           />
         </section>
@@ -222,6 +242,7 @@ export function OrdenForm({
           lines={value.lines}
           onChange={(lines) => set({ lines })}
           currency={value.currency}
+          sede={value.company_id}
           disabled={disabled}
         />
       </section>
