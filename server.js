@@ -260,6 +260,43 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // AUTO-REFRESH DE VENTAS: detección de cambios en Odoo
+  // ==========================================
+
+  // Cada minuto: consulta a Odoo si hubo altas/ediciones recientes de facturas
+  // de cliente u órdenes de venta en las sedes. La ruta emite por Socket.io el
+  // evento `ventas_actualizado` cuando los hay, y las vistas abiertas
+  // (Reporte Diario, Dashboard, Reporte Trimestral, Reporte de Ventas) se
+  // refrescan solas. Es UNA consulta liviana por minuto, no una por pestaña.
+  cron.schedule(
+    "* * * * *",
+    async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:${PORT}/api/ventas/detectar-cambios`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+          },
+        );
+        if (!response.ok) {
+          console.error(
+            "detectar-cambios respondió",
+            response.status,
+            await response.text().catch(() => ""),
+          );
+        }
+      } catch (error) {
+        console.error("Error en detectar-cambios:", error.message);
+      }
+    },
+    {
+      scheduled: true,
+      timezone: "America/Caracas",
+    },
+  );
+
+  // ==========================================
   // INICIO DEL SERVIDOR
   // ==========================================
   httpServer.listen(PORT, (err) => {

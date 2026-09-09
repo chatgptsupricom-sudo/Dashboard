@@ -14,8 +14,9 @@ import {
   MapPin,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { descargarImagenReporteDiario } from "@/lib/gerente_venta/reporteDiarioImagen";
+import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 import {
   Bar,
   BarChart,
@@ -94,23 +95,35 @@ export function ReporteDiarioVentas() {
     user?.role?.toLowerCase().trim() === "superadmin" ||
     user?.role?.toLowerCase().trim() === "super admin";
 
+  const cargar = useCallback(
+    (silent = false) => {
+      if (!silent) setLoading(true);
+      let url = `/api/gerente_venta/reporte-diario?date=${fecha}`;
+      if (isSuperAdmin && sede !== "all") {
+        url += `&sede=${sede}`;
+      }
+      fetch(url)
+        .then((res) => res.json())
+        .then((json) => {
+          setData(json);
+          if (!silent) setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error:", err);
+          if (!silent) setLoading(false);
+        });
+    },
+    [fecha, sede, isSuperAdmin],
+  );
+
   useEffect(() => {
-    setLoading(true);
-    let url = `/api/gerente_venta/reporte-diario?date=${fecha}`;
-    if (isSuperAdmin && sede !== "all") {
-      url += `&sede=${sede}`;
-    }
-    fetch(url)
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error:", err);
-        setLoading(false);
-      });
-  }, [fecha, sede, isSuperAdmin]);
+    cargar();
+  }, [cargar]);
+
+  // Refresco automático cuando cambian datos de ventas en Odoo.
+  useAutoRefreshVentas(() => cargar(true), {
+    userId: user?.uid ?? user?.id ?? null,
+  });
 
   const fechaDisplay = data?.fecha
     ? format(new Date(data.fecha + "T12:00:00"), "dd/MM/yyyy", { locale: es })
