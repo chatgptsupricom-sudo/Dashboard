@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -11,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, MapPin, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -44,18 +51,20 @@ export default function OrdenesCompraPage() {
   const [ordenes, setOrdenes] = useState<OrdenResumen[]>([]);
   const [loading, setLoading] = useState(true);
   const [estado, setEstado] = useState<(typeof FILTROS)[number]>("todas");
+  const [sede, setSede] = useState<string>("todas");
   const [q, setQ] = useState("");
 
   useEffect(() => {
     setLoading(true);
     const sp = new URLSearchParams();
     if (estado !== "todas") sp.set("status", estado);
+    if (sede !== "todas") sp.set("sede", sede);
     fetch(`/api/compras/ordenes?${sp.toString()}`)
       .then((r) => r.json())
       .then((j) => setOrdenes(j.success ? j.data : []))
       .catch(() => setOrdenes([]))
       .finally(() => setLoading(false));
-  }, [estado]);
+  }, [estado, sede]);
 
   const filtradas = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -99,14 +108,30 @@ export default function OrdenesCompraPage() {
             {f === "todas" ? "Todas" : ESTADO_LABEL[f]}
           </button>
         ))}
-        <div className="relative ml-auto">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nº o proveedor"
-            className="pl-8 w-64"
-          />
+        <div className="flex items-center gap-2 ml-auto">
+          <Select value={sede} onValueChange={setSede}>
+            <SelectTrigger className="w-44 h-9 text-sm">
+              <MapPin className="h-3.5 w-3.5 text-slate-400 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las sedes</SelectItem>
+              {SEDES.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar por nº o proveedor"
+              className="pl-8 w-64"
+            />
+          </div>
         </div>
       </div>
 
