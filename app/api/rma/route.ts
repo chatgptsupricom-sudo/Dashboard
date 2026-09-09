@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -80,7 +81,16 @@ export async function POST(request: NextRequest) {
       company_id,
       created_by,
       notes,
+      // Opcional: crear el caso con origen='portal' (con su propio
+      // tracking_token) en vez del default interno. Sirve para armar
+      // casos sinteticos de prueba del flujo publico de entrega
+      // (issue #121) sin depender de un ticket real creado por un
+      // cliente real -- nunca se toca account.move ni res.partner de
+      // Odoo con esto, todo el caso es freeform.
+      origen,
     } = body;
+    const origenFinal = origen === "portal" ? "portal" : undefined;
+    const trackingToken = origenFinal === "portal" ? randomBytes(32).toString("hex") : null;
 
     if (!client_name || !reported_fault || !created_by) {
       return NextResponse.json(
@@ -103,9 +113,13 @@ export async function POST(request: NextRequest) {
     }
     const case_number = String(nextNum).padStart(4, "0");
 
+    const columnasOrigen = origenFinal ? ", origen, tracking_token" : "";
+    const placeholdersOrigen = origenFinal ? ", ?, ?" : "";
+    const valoresOrigen = origenFinal ? [origenFinal, trackingToken] : [];
+
     const result = await query(
-      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, client_phone, serial_quantity, reported_fault, status, notes, company_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?)`,
+      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, client_phone, serial_quantity, reported_fault, status, notes, company_id, created_by${columnasOrigen})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?${placeholdersOrigen})`,
       [
         case_number,
         product_code || null,
@@ -120,6 +134,7 @@ export async function POST(request: NextRequest) {
         notes || null,
         company_id || null,
         created_by,
+        ...valoresOrigen,
       ]
     );
 
@@ -131,7 +146,7 @@ export async function POST(request: NextRequest) {
       [caseId, created_by]
     );
 
-    return NextResponse.json({ success: true, id: caseId, case_number }, { status: 201 });
+    return NextResponse.json({ success: true, id: caseId, case_number, tracking_token: trackingToken }, { status: 201 });
   } catch (error: any) {
     console.error("Error creating RMA case:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
