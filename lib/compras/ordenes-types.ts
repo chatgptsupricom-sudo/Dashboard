@@ -89,6 +89,22 @@ export const ESTADO_BADGE: Record<OrdenEstado, string> = {
   rechazada: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
 };
 
+// Color del punto que precede al texto del badge y del riel de estado en el detalle.
+export const ESTADO_DOT: Record<OrdenEstado, string> = {
+  borrador: "bg-slate-400",
+  enviada: "bg-blue-500",
+  aprobada: "bg-emerald-500",
+  rechazada: "bg-red-500",
+};
+
+// Color de acento (barra lateral) para la cabecera del detalle.
+export const ESTADO_ACCENT: Record<OrdenEstado, string> = {
+  borrador: "bg-slate-300 dark:bg-slate-700",
+  enviada: "bg-blue-500",
+  aprobada: "bg-emerald-500",
+  rechazada: "bg-red-500",
+};
+
 // La orden solo se puede editar / borrar en estos estados.
 export const ESTADOS_EDITABLES: OrdenEstado[] = ["borrador", "rechazada"];
 
@@ -104,6 +120,11 @@ export function calcularLineaTotal(l: Pick<OrdenLinea, "quantity" | "unit_price"
 export function calcularTotal(lines: OrdenLinea[]): number {
   const n = lines.reduce((s, l) => s + calcularLineaTotal(l), 0);
   return Math.round(n * 100) / 100;
+}
+
+/** Nº de unidades sumadas de todas las líneas. */
+export function contarUnidades(lines: OrdenLinea[]): number {
+  return lines.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
 }
 
 export function fmtMoneda(n: number, currency = "USD"): string {

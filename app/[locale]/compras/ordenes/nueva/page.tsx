@@ -68,20 +68,20 @@ export default function NuevaOrdenPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center gap-3">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex items-center gap-2">
         <Link href={base}>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" className="-ml-2 h-8 w-8">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100">
+        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 sm:text-3xl">
           Nueva orden de compra
         </h1>
       </div>
 
-      <Card className="rounded-2xl border-slate-200 dark:border-slate-800">
-        <CardContent className="p-6">
+      <Card className="rounded-3xl border-slate-200 shadow-sm dark:border-slate-800">
+        <CardContent className="p-5 sm:p-6">
           <OrdenForm
             value={value}
             onChange={setValue}

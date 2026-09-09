@@ -1,8 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -10,23 +8,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Loader2, MapPin, Plus, Search } from "lucide-react";
+import { MapPin, Plus, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { SEDES } from "@/lib/compras/constants";
-import { OrdenEstadoBadge } from "@/components/compras/OrdenEstadoBadge";
+import { OrdenesLista } from "@/components/compras/OrdenesLista";
+import { OrdenesToolbar, type ChipOption } from "@/components/compras/OrdenesToolbar";
 import {
   ESTADO_LABEL,
-  fmtMoneda,
   type OrdenEstado,
   type OrdenResumen,
 } from "@/lib/compras/ordenes-types";
@@ -38,10 +28,6 @@ const FILTROS: (OrdenEstado | "todas")[] = [
   "aprobada",
   "rechazada",
 ];
-
-function sedeLabel(id: number) {
-  return SEDES.find((s) => s.id === String(id))?.label ?? `Sede ${id}`;
-}
 
 export default function OrdenesCompraPage() {
   const params = useParams();
@@ -55,63 +41,76 @@ export default function OrdenesCompraPage() {
   const [q, setQ] = useState("");
 
   useEffect(() => {
+    let vivo = true;
     setLoading(true);
-    const sp = new URLSearchParams();
-    if (estado !== "todas") sp.set("status", estado);
-    if (sede !== "todas") sp.set("sede", sede);
-    fetch(`/api/compras/ordenes?${sp.toString()}`)
+    fetch(`/api/compras/ordenes`)
       .then((r) => r.json())
-      .then((j) => setOrdenes(j.success ? j.data : []))
-      .catch(() => setOrdenes([]))
-      .finally(() => setLoading(false));
-  }, [estado, sede]);
+      .then((j) => vivo && setOrdenes(j.success ? j.data : []))
+      .catch(() => vivo && setOrdenes([]))
+      .finally(() => vivo && setLoading(false));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const conteos = useMemo(() => {
+    const c: Record<string, number> = { todas: ordenes.length };
+    for (const o of ordenes) c[o.status] = (c[o.status] ?? 0) + 1;
+    return c;
+  }, [ordenes]);
+
+  const chips: ChipOption[] = FILTROS.map((f) => ({
+    value: f,
+    label: f === "todas" ? "Todas" : ESTADO_LABEL[f],
+    count: conteos[f] ?? 0,
+  }));
 
   const filtradas = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return ordenes;
-    return ordenes.filter(
-      (o) =>
+    return ordenes.filter((o) => {
+      if (estado !== "todas" && o.status !== estado) return false;
+      if (sede !== "todas" && String(o.company_id) !== sede) return false;
+      if (!t) return true;
+      return (
         o.order_number.toLowerCase().includes(t) ||
-        o.supplier_name.toLowerCase().includes(t),
-    );
-  }, [ordenes, q]);
+        o.supplier_name.toLowerCase().includes(t)
+      );
+    });
+  }, [ordenes, estado, sede, q]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100">
-            Órdenes de compra
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Crea, edita y envía órdenes a aprobación.
-          </p>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="hidden rounded-2xl bg-blue-50 p-3 text-blue-600 dark:bg-blue-950/50 sm:block">
+            <ShoppingCart className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 sm:text-3xl">
+              Órdenes de compra
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Crea, edita y envía órdenes a aprobación.
+            </p>
+          </div>
         </div>
-        <Link href={`${base}/nueva`}>
-          <Button>
-            <Plus className="h-4 w-4 mr-1" /> Nueva orden
+        <Link href={`${base}/nueva`} className="shrink-0">
+          <Button className="w-full sm:w-auto">
+            <Plus className="mr-1 h-4 w-4" /> Nueva orden
           </Button>
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTROS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setEstado(f)}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              estado === f
-                ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-            }`}
-          >
-            {f === "todas" ? "Todas" : ESTADO_LABEL[f]}
-          </button>
-        ))}
-        <div className="flex items-center gap-2 ml-auto">
+      <OrdenesToolbar
+        options={chips}
+        value={estado}
+        onValue={(v) => setEstado(v as typeof estado)}
+        q={q}
+        onQ={setQ}
+        extra={
           <Select value={sede} onValueChange={setSede}>
-            <SelectTrigger className="w-44 h-9 text-sm">
-              <MapPin className="h-3.5 w-3.5 text-slate-400 mr-1" />
+            <SelectTrigger className="h-9 w-full text-sm sm:w-44">
+              <MapPin className="mr-1 h-3.5 w-3.5 shrink-0 text-slate-400" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -123,75 +122,19 @@ export default function OrdenesCompraPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por nº o proveedor"
-              className="pl-8 w-64"
-            />
-          </div>
-        </div>
-      </div>
+        }
+      />
 
-      <Card className="rounded-2xl border-slate-200 dark:border-slate-800 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nº</TableHead>
-              <TableHead>Proveedor</TableHead>
-              <TableHead>Sede</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-center">Líneas</TableHead>
-              <TableHead>Fecha esperada</TableHead>
-              <TableHead>Creada por</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-slate-400">
-                  <Loader2 className="h-5 w-5 animate-spin inline mr-2" /> Cargando…
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && filtradas.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-slate-400">
-                  No hay órdenes.
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading &&
-              filtradas.map((o) => (
-                <TableRow key={o.id} className="cursor-pointer">
-                  <TableCell className="font-mono text-xs">
-                    <Link href={`${base}/${o.id}`} className="hover:underline">
-                      {o.order_number}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`${base}/${o.id}`} className="block">
-                      {o.supplier_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{sedeLabel(o.company_id)}</TableCell>
-                  <TableCell>
-                    <OrdenEstadoBadge estado={o.status} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmtMoneda(o.total, o.currency)}
-                  </TableCell>
-                  <TableCell className="text-center">{o.lines_count}</TableCell>
-                  <TableCell>{o.expected_date ?? "—"}</TableCell>
-                  <TableCell className="text-slate-500 text-sm">{o.created_by}</TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <OrdenesLista
+        ordenes={filtradas}
+        loading={loading}
+        hrefBase={base}
+        emptyText={
+          q || estado !== "todas" || sede !== "todas"
+            ? "Ninguna orden coincide con el filtro."
+            : "Todavía no hay órdenes. Crea la primera."
+        }
+      />
     </div>
   );
 }
