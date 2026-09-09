@@ -192,16 +192,50 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
     }
     if (!odooId) throw new Error("Odoo no devolvio un id de purchase.order");
 
+    // callOdooRPC no distingue "Odoo ejecuto el metodo" de "Odoo devolvio un
+    // error de negocio" (ej. una validacion que bloquea button_confirm): un
+    // error de aplicacion en Odoo llega como HTTP 200 con `error` en el
+    // body, axios no lo trata como falla y result queda undefined -- sin
+    // esto, una confirmacion que Odoo rechazo se hubiera marcado igual como
+    // "sincronizado" (encontrado probando esto en vivo). Por eso se
+    // reconsulta el estado real despues de cada transicion en vez de
+    // confiar en que la llamada "no lanzo".
     if (orden.status === "aprobada" && odooState !== "purchase" && odooState !== "done") {
       await callOdooRPC("purchase.order", "button_confirm", [[odooId]]);
+      const nuevoEstado = await estadoOdoo(odooId);
+      if (nuevoEstado !== "purchase" && nuevoEstado !== "done") {
+        await marcarEstado(
+          orderId,
+          "error",
+          odooId,
+          `Odoo no confirmo la orden de compra (quedo en estado "${nuevoEstado}") -- revisar validaciones en Odoo (ej. terminos de pago, presupuesto)`,
+        );
+        return;
+      }
     } else if (orden.status !== "aprobada" && (odooState === "purchase" || odooState === "done")) {
       // El panel dejo de tener la orden aprobada (reabrir) despues de que
       // Odoo ya la habia confirmado -- deshacer para no quedar inconsistentes.
+      // Best-effort real: si Odoo no deja revertir (ej. ya factura o
+      // recibida), se registra el error pero no se bloquea el resto del
+      // sync -- el panel y Odoo quedan desincronizados en ese caso puntual,
+      // visible en el badge.
       try {
         await callOdooRPC("purchase.order", "button_cancel", [[odooId]]);
         await callOdooRPC("purchase.order", "button_draft", [[odooId]]);
+        const nuevoEstado = await estadoOdoo(odooId);
+        if (nuevoEstado === "purchase" || nuevoEstado === "done") {
+          await marcarEstado(
+            orderId,
+            "error",
+            odooId,
+            `No se pudo revertir la PO en Odoo a borrador (sigue en "${nuevoEstado}") -- probablemente ya tiene recepcion o factura asociada`,
+          );
+          return;
+        }
       } catch (e: any) {
         console.error(`[odooSync] no se pudo revertir PO ${odooId} a borrador:`, e?.message);
+        await marcarEstado(orderId, "error", odooId, `No se pudo revertir en Odoo: ${e?.message}`);
+        return;
       }
     }
 
