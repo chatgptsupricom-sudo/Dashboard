@@ -1,32 +1,13 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Loader2, Search } from "lucide-react";
-import Link from "next/link";
+import { ClipboardCheck } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { SEDES } from "@/lib/compras/constants";
-import { OrdenEstadoBadge } from "@/components/compras/OrdenEstadoBadge";
-import {
-  ESTADO_LABEL,
-  fmtMoneda,
-  tiempoDesde,
-  type OrdenEstado,
-  type OrdenResumen,
-} from "@/lib/compras/ordenes-types";
+import { OrdenesLista } from "@/components/compras/OrdenesLista";
+import { OrdenesToolbar, type ChipOption } from "@/components/compras/OrdenesToolbar";
+import { type OrdenEstado, type OrdenResumen } from "@/lib/compras/ordenes-types";
 
-// Pestañas de la cola de aprobación (issue #156). "pendientes" no es un
-// OrdenEstado real -- es el alias de status=enviada que ve el superadmin
-// por defecto al entrar.
+// "pendientes" es el alias de status=enviada que el superadmin ve al entrar.
 const PESTANAS = ["pendientes", "aprobada", "rechazada", "todas"] as const;
 type Pestana = (typeof PESTANAS)[number];
 
@@ -37,14 +18,10 @@ const PESTANA_LABEL: Record<Pestana, string> = {
   todas: "Todas",
 };
 
-function pestanaAStatus(p: Pestana): OrdenEstado | null {
-  if (p === "pendientes") return "enviada";
-  if (p === "todas") return null;
-  return p;
-}
-
-function sedeLabel(id: number) {
-  return SEDES.find((s) => s.id === String(id))?.label ?? `Sede ${id}`;
+function coincide(o: OrdenResumen, p: Pestana): boolean {
+  if (p === "todas") return true;
+  if (p === "pendientes") return o.status === "enviada";
+  return o.status === (p as OrdenEstado);
 }
 
 export default function OrdenesCompraSuperadminPage() {
@@ -58,122 +35,71 @@ export default function OrdenesCompraSuperadminPage() {
   const [q, setQ] = useState("");
 
   useEffect(() => {
+    let vivo = true;
     setLoading(true);
-    const sp = new URLSearchParams();
-    const status = pestanaAStatus(pestana);
-    if (status) sp.set("status", status);
-    fetch(`/api/compras/ordenes?${sp.toString()}`)
+    fetch(`/api/compras/ordenes`)
       .then((r) => r.json())
-      .then((j) => setOrdenes(j.success ? j.data : []))
-      .catch(() => setOrdenes([]))
-      .finally(() => setLoading(false));
-  }, [pestana]);
+      .then((j) => vivo && setOrdenes(j.success ? j.data : []))
+      .catch(() => vivo && setOrdenes([]))
+      .finally(() => vivo && setLoading(false));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const chips: ChipOption[] = PESTANAS.map((p) => ({
+    value: p,
+    label: PESTANA_LABEL[p],
+    count: ordenes.filter((o) => coincide(o, p)).length,
+  }));
 
   const filtradas = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return ordenes;
-    return ordenes.filter(
-      (o) =>
+    return ordenes.filter((o) => {
+      if (!coincide(o, pestana)) return false;
+      if (!t) return true;
+      return (
         o.order_number.toLowerCase().includes(t) ||
-        o.supplier_name.toLowerCase().includes(t),
-    );
-  }, [ordenes, q]);
+        o.supplier_name.toLowerCase().includes(t)
+      );
+    });
+  }, [ordenes, pestana, q]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100">
-          Órdenes de compra
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Aprueba o rechaza las órdenes que compras envió.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {PESTANAS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPestana(p)}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              pestana === p
-                ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-            }`}
-          >
-            {PESTANA_LABEL[p]}
-          </button>
-        ))}
-        <div className="relative ml-auto">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nº o proveedor"
-            className="pl-8 w-64"
-          />
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="hidden rounded-2xl bg-blue-50 p-3 text-blue-600 dark:bg-blue-950/50 sm:block">
+          <ClipboardCheck className="h-6 w-6" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 sm:text-3xl">
+            Órdenes de compra
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Aprueba o rechaza las órdenes que compras envió.
+          </p>
         </div>
       </div>
 
-      <Card className="rounded-2xl border-slate-200 dark:border-slate-800 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nº</TableHead>
-              <TableHead>Proveedor</TableHead>
-              <TableHead>Sede</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-center">Líneas</TableHead>
-              <TableHead>Creada por</TableHead>
-              <TableHead>Enviada</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-slate-400">
-                  <Loader2 className="h-5 w-5 animate-spin inline mr-2" /> Cargando…
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && filtradas.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-slate-400">
-                  {pestana === "pendientes" ? "No hay órdenes pendientes de aprobación." : "No hay órdenes."}
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading &&
-              filtradas.map((o) => (
-                <TableRow key={o.id} className="cursor-pointer">
-                  <TableCell className="font-mono text-xs">
-                    <Link href={`${base}/${o.id}`} className="hover:underline">
-                      {o.order_number}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`${base}/${o.id}`} className="block">
-                      {o.supplier_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{sedeLabel(o.company_id)}</TableCell>
-                  <TableCell>
-                    <OrdenEstadoBadge estado={o.status} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmtMoneda(o.total, o.currency)}
-                  </TableCell>
-                  <TableCell className="text-center">{o.lines_count}</TableCell>
-                  <TableCell className="text-slate-500 text-sm">{o.created_by}</TableCell>
-                  <TableCell className="text-slate-500 text-sm">
-                    {tiempoDesde(o.submitted_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <OrdenesToolbar
+        options={chips}
+        value={pestana}
+        onValue={(v) => setPestana(v as Pestana)}
+        q={q}
+        onQ={setQ}
+      />
+
+      <OrdenesLista
+        ordenes={filtradas}
+        loading={loading}
+        hrefBase={base}
+        variant="aprobacion"
+        emptyText={
+          pestana === "pendientes"
+            ? "No hay órdenes pendientes de aprobación."
+            : "Ninguna orden coincide con el filtro."
+        }
+      />
     </div>
   );
 }
