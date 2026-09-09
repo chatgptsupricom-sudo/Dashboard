@@ -41,8 +41,9 @@ const VERDE = "#2e9e5b";
 const AMBAR = "#e0a800";
 const ROJO = "#d64545";
 
-const FUENTE =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+// La gerencia arma el reporte en Excel con Calibri; se respeta esa tipografía.
+// Carlito es la alternativa con métricas idénticas para equipos sin Calibri.
+const FUENTE = 'Calibri, Carlito, "Segoe UI", system-ui, sans-serif';
 
 function money(n: number): string {
   return (n || 0).toLocaleString("es-VE", {
@@ -65,7 +66,7 @@ function cargarLogo(): Promise<HTMLImageElement | null> {
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     // Asset local (mismo origen) para que `canvas.toBlob` no falle por CORS.
-    img.src = "/supricom.png";
+    img.src = "/supricom-reporte-logo.png";
   });
 }
 
