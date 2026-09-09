@@ -8,14 +8,39 @@ export type Supplier = {
   currency: { id: number; name: string } | null;
 };
 
+// Id de la etiqueta (res.partner.category) "Proveedor" en Odoo -- se
+// resuelve por nombre en vez de hardcodear el id, que puede variar entre
+// bases de Odoo. Cache simple en memoria: la etiqueta no cambia de id en
+// caliente, no vale la pena resolverla en cada carga del formulario.
+let proveedorTagId: number | null | undefined;
+
+async function resolverEtiquetaProveedor(): Promise<number | null> {
+  if (proveedorTagId !== undefined) return proveedorTagId;
+  const categorias = await callOdooRPC<any[]>(
+    "res.partner.category",
+    "search_read",
+    [[["name", "=", "Proveedor"]]],
+    { fields: ["id"], limit: 1 },
+  );
+  const resuelto: number | null = categorias?.[0]?.id ?? null;
+  proveedorTagId = resuelto;
+  return resuelto;
+}
+
 /**
- * Proveedores (res.partner con supplier_rank > 0) para el select del
- * formulario de orden de compra. `company_id = false` en Odoo significa
- * "visible para todas las compañías" -- se incluyen esos ademas de los que
- * pertenecen puntualmente a alguna de `companies`, si se paso alguna.
+ * Proveedores para el select del formulario de orden de compra --
+ * contactos de Odoo con la etiqueta "Proveedor" (campo `category_id`,
+ * "Etiquetas" en la UI de Odoo). Antes se usaba `supplier_rank > 0`, que
+ * traia cualquier contacto con al menos una factura de compra registrada
+ * (295 contactos) en vez de solo los marcados como proveedores de verdad
+ * (33 con la etiqueta) -- pedido explicito para acotar la lista.
+ * `company_id = false` en Odoo significa "visible para todas las
+ * compañías" -- se incluyen esos ademas de los que pertenecen puntualmente
+ * a alguna de `companies`, si se paso alguna.
  */
 export async function getSuppliers(companies: number[]): Promise<Supplier[]> {
-  const domain: any[] = [["supplier_rank", ">", 0]];
+  const tagId = await resolverEtiquetaProveedor();
+  const domain: any[] = tagId ? [["category_id", "in", [tagId]]] : [["supplier_rank", ">", 0]];
   if (companies.length > 0) {
     domain.push("|", ["company_id", "=", false], ["company_id", "in", companies]);
   }
