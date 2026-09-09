@@ -77,6 +77,17 @@ function puedeSincronizar(orden: OrdenParaSync, lineas: LineaParaSync[]): boolea
   return lineas.every((l) => l.product_odoo_id != null);
 }
 
+// Odoo espera "YYYY-MM-DD HH:MM:SS" en sus campos Datetime -- un
+// ValueError de Python si se le manda ISO 8601 ("...T00:00:00.000Z"),
+// que es lo que sale de mysql2 al pasar por JSON.stringify (encontrado
+// probando en vivo: expected_date rompia el create entero de la orden,
+// no solo ese campo).
+function formatearFechaOdoo(fecha: string | Date): string {
+  const d = fecha instanceof Date ? fecha : new Date(fecha);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} 00:00:00`;
+}
+
 async function resolverMonedaOdoo(code: string): Promise<number | null> {
   const monedas = await callOdooRPC<any[]>(
     "res.currency",
@@ -172,7 +183,7 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
       notes: orden.notes || undefined,
       order_line: orderLineCommands,
     };
-    if (orden.expected_date) vals.date_planned = orden.expected_date;
+    if (orden.expected_date) vals.date_planned = formatearFechaOdoo(orden.expected_date);
 
     let odooId = orden.odoo_purchase_order_id;
     let odooState: string | null = null;
