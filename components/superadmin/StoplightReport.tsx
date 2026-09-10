@@ -1411,7 +1411,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                       <th className="py-2.5 pl-4 pr-2 w-8"></th>
                       <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
-                      <th className="py-2.5 px-2 w-24 text-right font-semibold">{t("column_goal")}</th>
+                      <th className="py-2.5 px-2 w-36 text-right font-semibold">{t("column_goal")}</th>
                       <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
                       <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
@@ -1466,13 +1466,18 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           {!isSuperAdmin ? (
                             <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
-                            <input
-                              type="number"
-                              value={getGoal(kpi.id, kpi.goalDefault)}
-                              onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
-                              onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                              className="w-20 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
-                            />
+                            <span className="inline-flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={getGoal(kpi.id, kpi.goalDefault)}
+                                onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
+                                onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
+                                className="w-28 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
+                              />
+                              {kpi.goalSuffix && (
+                                <span className="text-slate-400 text-xs whitespace-nowrap">{kpi.goalSuffix.trim()}</span>
+                              )}
+                            </span>
                           )}
                         </td>
                         <td className="py-3 px-2 text-right align-top">
