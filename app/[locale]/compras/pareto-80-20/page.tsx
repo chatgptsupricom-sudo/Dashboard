@@ -41,7 +41,7 @@ interface ProductoPareto {
   name: string;
   marca: string;
   categoria: string;
-  ingresos: number;
+  monto: number;
   unidades: number;
   pctIndividual: number;
   pctAcumulado: number;
@@ -52,7 +52,7 @@ interface Resumen {
   totalProductos: number;
   productosClaseA: number;
   pctProductosClaseA: number;
-  pctIngresosClaseA: number;
+  pctMontoClaseA: number;
 }
 
 const CLASE_BADGE: Record<string, string> = {
@@ -61,17 +61,26 @@ const CLASE_BADGE: Record<string, string> = {
   C: "bg-gray-400 text-white",
 };
 
+// Las compras son menos frecuentes que las ventas: 90 dias puede dejar fuera
+// productos de temporada, asi que la ventana se puede ampliar (issue #176).
+const VENTANAS = [
+  { value: "90", label: "Últimos 90 días" },
+  { value: "180", label: "Últimos 180 días" },
+  { value: "365", label: "Último año" },
+];
+
 export default function Pareto8020Page() {
   const [productos, setProductos] = useState<ProductoPareto[]>([]);
   const [resumen, setResumen] = useState<Resumen>({
     totalProductos: 0,
     productosClaseA: 0,
     pctProductosClaseA: 0,
-    pctIngresosClaseA: 0,
+    pctMontoClaseA: 0,
   });
   const [loading, setLoading] = useState(true);
 
   const [sede, setSede] = useState<string>("9");
+  const [dias, setDias] = useState<string>("90");
   const [busqueda, setBusqueda] = useState<string>("");
   const [filtroMarca, setFiltroMarca] = useState<string>("TODAS");
   const [filtroClase, setFiltroClase] = useState<string>("TODAS");
@@ -83,7 +92,9 @@ export default function Pareto8020Page() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/compras/pareto-80-20?sede=${sede}`);
+        const response = await fetch(
+          `/api/compras/pareto-80-20?sede=${sede}&dias=${dias}`,
+        );
         const result = await response.json();
         if (result.success) {
           setProductos(result.data);
@@ -96,7 +107,7 @@ export default function Pareto8020Page() {
       }
     };
     fetchData();
-  }, [sede]);
+  }, [sede, dias]);
 
   const marcasUnicas = useMemo(
     () => Array.from(new Set(productos.map((p) => p.marca))).sort(),
@@ -118,7 +129,7 @@ export default function Pareto8020Page() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [busqueda, filtroMarca, filtroClase]);
+  }, [busqueda, filtroMarca, filtroClase, dias]);
 
   const totalPages = Math.ceil(productosFiltrados.length / itemsPerPage);
   const currentItems = productosFiltrados.slice(
@@ -131,7 +142,7 @@ export default function Pareto8020Page() {
     () =>
       productos.slice(0, 30).map((p) => ({
         nombre: p.codigo,
-        ingresos: p.ingresos,
+        monto: p.monto,
         pctAcumulado: p.pctAcumulado,
       })),
     [productos],
@@ -143,8 +154,8 @@ export default function Pareto8020Page() {
       Descripción: item.name,
       Marca: item.marca,
       Categoría: item.categoria,
-      "Ingresos (90d)": item.ingresos,
-      "Unidades (90d)": item.unidades,
+      [`Monto comprado (${dias}d)`]: item.monto,
+      [`Unidades compradas (${dias}d)`]: item.unidades,
       "% Individual": item.pctIndividual,
       "% Acumulado": item.pctAcumulado,
       Clase: item.clase,
@@ -154,7 +165,7 @@ export default function Pareto8020Page() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Pareto_80_20");
     XLSX.writeFile(
       workbook,
-      `Pareto_80_20_${new Date().toISOString().split("T")[0]}.xlsx`,
+      `Pareto_Compras_80_20_${new Date().toISOString().split("T")[0]}.xlsx`,
     );
   };
 
@@ -174,7 +185,8 @@ export default function Pareto8020Page() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Curva 80/20 (Pareto)</h1>
         <p className="text-gray-500">
-          Productos que concentran la mayor parte de la facturación en los últimos 90 días.
+          Productos que concentran la mayor parte del gasto de compra en los
+          últimos {dias} días, según órdenes de compra confirmadas.
         </p>
       </div>
 
@@ -196,16 +208,16 @@ export default function Pareto8020Page() {
         </Card>
         <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">% de Ingresos</p>
-            <p className="text-3xl font-bold text-blue-700 mt-1">{resumen.pctIngresosClaseA}%</p>
-            <p className="text-xs text-gray-400 mt-1">los genera la Clase A</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">% del Gasto</p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">{resumen.pctMontoClaseA}%</p>
+            <p className="text-xs text-gray-400 mt-1">lo concentra la Clase A</p>
           </CardContent>
         </Card>
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Total Analizado</p>
             <p className="text-3xl font-bold text-gray-700 mt-1">{resumen.totalProductos}</p>
-            <p className="text-xs text-gray-400 mt-1">SKUs con ventas (90d)</p>
+            <p className="text-xs text-gray-400 mt-1">SKUs comprados ({dias}d)</p>
           </CardContent>
         </Card>
       </div>
@@ -230,7 +242,7 @@ export default function Pareto8020Page() {
                 }
               />
               <Legend />
-              <Bar yAxisId="left" dataKey="ingresos" name="Ingresos" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar yAxisId="left" dataKey="monto" name="Monto comprado" fill="#10b981" radius={[3, 3, 0, 0]} />
               <Line yAxisId="right" type="monotone" dataKey="pctAcumulado" name="% Acumulado" stroke="#2563eb" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
@@ -238,7 +250,7 @@ export default function Pareto8020Page() {
       </Card>
 
       <Card className="bg-white shadow-sm border-gray-200">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
           <Select
             value={sede}
             onValueChange={(v) => {
@@ -253,6 +265,18 @@ export default function Pareto8020Page() {
               {SEDES.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={dias} onValueChange={setDias}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              {VENTANAS.map((v) => (
+                <SelectItem key={v.value} value={v.value}>
+                  {v.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -312,8 +336,8 @@ export default function Pareto8020Page() {
                 <TableRow>
                   <TableHead className="w-[300px] px-6">Producto</TableHead>
                   <TableHead className="text-center">Marca/Cat</TableHead>
-                  <TableHead className="text-center">Ingresos (90d)</TableHead>
-                  <TableHead className="text-center">Unidades (90d)</TableHead>
+                  <TableHead className="text-center">Monto comprado ({dias}d)</TableHead>
+                  <TableHead className="text-center">Unidades compradas ({dias}d)</TableHead>
                   <TableHead className="text-center">% Individual</TableHead>
                   <TableHead className="text-center">% Acumulado</TableHead>
                   <TableHead className="text-right pr-6">Clase</TableHead>
@@ -323,7 +347,7 @@ export default function Pareto8020Page() {
                 {currentItems.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8">
-                      Sin datos de ventas para el período seleccionado.
+                      Sin órdenes de compra confirmadas en el período seleccionado.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -347,7 +371,7 @@ export default function Pareto8020Page() {
                         <div className="text-[10px] text-gray-500">{item.categoria}</div>
                       </TableCell>
                       <TableCell className="text-center font-bold text-gray-800">
-                        ${item.ingresos.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                        ${item.monto.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-center text-gray-600">{item.unidades}</TableCell>
                       <TableCell className="text-center text-gray-600">{item.pctIndividual}%</TableCell>
