@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularEfectividad } from "@/lib/cxc/efectividad";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -104,19 +105,38 @@ export async function GET(request: NextRequest) {
       // calculo se le habia quedado afuera ese filtro, asi que sus propias
       // facturas inflaban/desinflaban el detalle de Efectividad Cobranza.
 
-      const totalExigible = invoices.reduce((s, i) => s + i.amountTotal, 0);
-      const totalCobrado = invoices.reduce((s, i) => s + i.amountPaid, 0);
-      const totalPendiente = invoices.reduce((s, i) => s + i.amountResidual, 0);
+      // El resumen sale del mismo helper que la tarjeta (lib/cxc/efectividad.ts)
+      // para que el modal y el KPI no vuelvan a discrepar: `efectividad` es la
+      // ESTRICTA (cobrado hasta el cierre del mes) y `efectividadAcumulada` el
+      // criterio viejo, "cobrado a hoy" (issue #188). La columna por factura
+      // sigue mostrando lo cobrado a hoy, que es lo accionable al mirar una
+      // factura concreta.
+      const calc = await calcularEfectividad(
+        companyIds,
+        monthStart,
+        monthEnd,
+        invoices.map((i) => ({
+          id: i.id,
+          amountTotal: i.amountTotal,
+          amountResidual: i.amountResidual,
+          dueDate: i.invoiceDateDue ? new Date(i.invoiceDateDue + "T00:00:00") : null,
+        })),
+        [],
+        today,
+      );
 
       return NextResponse.json({
         success: true,
         data: {
           type: "efectividad",
           summary: {
-            totalExigible: Math.round(totalExigible * 100) / 100,
-            totalCobrado: Math.round(totalCobrado * 100) / 100,
-            totalPendiente: Math.round(totalPendiente * 100) / 100,
-            efectividad: totalExigible > 0 ? Math.round((totalCobrado / totalExigible) * 10000) / 100 : 0,
+            totalExigible: calc.exigibleMes,
+            totalCobrado: calc.cobradoAlCierre,
+            totalCobradoAHoy: calc.cobradoAHoy,
+            totalPendiente: calc.pendiente,
+            efectividad: calc.value ?? 0,
+            efectividadAcumulada: calc.valueAcumulado ?? 0,
+            mesCerrado: calc.mesCerrado,
             count: invoices.length,
             paidCount: invoices.filter(i => i.paymentState === "paid" || i.amountResidual <= 0).length,
             pendingCount: invoices.filter(i => i.paymentState !== "paid" && i.amountResidual > 0).length,

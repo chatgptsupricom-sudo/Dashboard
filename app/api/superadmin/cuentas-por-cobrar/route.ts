@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularEfectividad } from "@/lib/cxc/efectividad";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
@@ -302,44 +303,27 @@ export async function GET(request: NextRequest) {
       const amountTotal = signo * Math.abs(inv.amount_total || 0);
       const amountResidual = signo * Math.abs(inv.amount_residual || 0);
       return {
+        id: inv.id,
         amountTotal,
-        amountPaid: amountTotal - amountResidual,
         amountResidual,
         dueDate: inv.invoice_date_due ? new Date(inv.invoice_date_due + "T00:00:00") : null,
       };
     });
-    const totalExigibleMes = efectividadInvoices.reduce((s, i) => s + i.amountTotal, 0);
-    const totalCobradoMes = efectividadInvoices.reduce((s, i) => s + i.amountPaid, 0);
-    const totalPendienteMes = efectividadInvoices.reduce((s, i) => s + i.amountResidual, 0);
-    const efectividad = totalExigibleMes > 0
-      ? Math.round((totalCobradoMes / totalExigibleMes) * 10000) / 100
-      : null;
 
-    // ── Efectividad de cobranza por semana del mes ──
-    // Se bucketea cada factura por la semana en que vence (`invoice_date_due`).
-    // Sólo esta métrica tiene lectura semanal real: cartera vencida y DSO son
-    // fotos puntuales, y recuperación necesita fechas de conciliación de pagos
-    // (ver issue #130). El `amountPaid` es el cobro acumulado a hoy — para
-    // semanas ya cerradas es una aproximación razonable de "qué se cobró de lo
-    // que vencía esa semana".
-    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo helper),
-    // para que la fila quede alineada con los encabezados `weekHeaders`.
+    // ── Efectividad y su fila semanal: criterio estricto (issue #188) ──
+    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo
+    // helper) para que la fila quede alineada con los encabezados
+    // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
+    // el modal de detalle para que nunca discrepen.
     const semanasCxc = (startDateParam && endDateParam)
       ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
       : obtenerSemanasDelMes(currentYear, currentMonth + 1);
-    const semEfect = semanasCxc.map(() => ({ exigible: 0, cobrado: 0 }));
-    for (const inv of efectividadInvoices) {
-      if (!inv.dueDate) continue;
-      const w = semanasCxc.findIndex((s) => inv.dueDate! >= s.inicio && inv.dueDate! <= s.fin);
-      if (w < 0) continue;
-      semEfect[w].exigible += inv.amountTotal;
-      semEfect[w].cobrado += inv.amountPaid;
-    }
-    const semanaEfectividad = semEfect.map((s, i) => {
-      if (semanasCxc[i].inicio > today) return null; // semana futura: nada que medir aún
-      if (s.exigible <= 0) return null;
-      return `${Math.round((s.cobrado / s.exigible) * 100)}%`;
-    });
+
+    const efectividadCalc = await calcularEfectividad(
+      companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today,
+    );
+    const efectividad = efectividadCalc.value;
+    const semanaEfectividad = efectividadCalc.semana;
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
@@ -391,13 +375,19 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
+            // `value` es la ESTRICTA (cobrado hasta el cierre del mes): es la
+            // que va al semáforo porque es comparable entre meses y un mes
+            // cerrado ya no cambia. `valueAcumulado` es el criterio viejo
+            // ("cobrado a hoy"), que se conserva como dato secundario porque
+            // sigue diciendo cuánto de lo que venció ya entró (issue #188).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            // Dinero realmente cobrado de las facturas que vencen este mes
-            // (mismo cálculo que /kpi-detail?type=efectividad).
-            cobradoMes: Math.round(totalCobradoMes * 100) / 100,
-            exigibleMes: Math.round(totalExigibleMes * 100) / 100,
-            pendiente: Math.round(totalPendienteMes * 100) / 100,
+            cobradoMes: efectividadCalc.cobradoAlCierre,
+            exigibleMes: efectividadCalc.exigibleMes,
+            pendiente: efectividadCalc.pendiente,
+            valueAcumulado: efectividadCalc.valueAcumulado,
+            cobradoAHoy: efectividadCalc.cobradoAHoy,
+            mesCerrado: efectividadCalc.mesCerrado,
           },
           carteraVencida: {
             value: carteraVencidaPct,
@@ -406,7 +396,7 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: recuperacion, // null a propósito — ver issue #189
+            value: recuperacion,
             meta: cxcMetas["recuperacion_vencidos"] || 60,
             // Nombres nuevos y explícitos: `vencidoInicial`/`vencidoRestante`
             // se retiran a propósito porque significaban otra cosa (todo lo

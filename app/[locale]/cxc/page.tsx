@@ -185,6 +185,11 @@ export default function CxcDashboardPage() {
                 <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
+              {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
+                <div className="text-xs text-slate-400 mt-1">
+                  Cobrado a hoy (incl. pagos posteriores al cierre): {data.kpis.efectividad.valueAcumulado}%
+                </div>
+              )}
             </div>
 
             {/* Cartera Vencida */}

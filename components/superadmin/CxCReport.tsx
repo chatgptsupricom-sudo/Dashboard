@@ -30,7 +30,12 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  efectividad: { value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number };
+  // `value` = estricta (cobrado hasta el cierre del mes, la del semáforo);
+  // `valueAcumulado` = "cobrado a hoy", dato secundario (issue #188).
+  efectividad: {
+    value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number;
+    valueAcumulado: number | null; cobradoAHoy: number; mesCerrado: boolean;
+  };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
   dso: { value: number; meta: number; carteraAbierta: number; ventasCredito90d: number };
@@ -247,7 +252,12 @@ export default function CxCReport() {
               title={t("efectividad_cobranza")}
               value={`${data.kpis.efectividad.value}%`}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
-              subtitle={`${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}`}
+              subtitle={
+                `${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
+                (data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null
+                  ? ` · ${t("cobrado_a_hoy")}: ${data.kpis.efectividad.valueAcumulado}%`
+                  : "")
+              }
               color={getTrafficLight(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               dot={getTrafficDot(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
               icon={<TrendingUp size={20} />}
