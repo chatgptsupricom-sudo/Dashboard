@@ -869,7 +869,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
-  const gruposBase = comprasMode ? allGroups.filter((g) => g.id === "group-compras") : cxCMode ? allGroups.filter((g) => g.id === "group-cxc") : vendorMode || gerenteVentaMode ? allGroups.filter((g) => g.id === "group-ventas") : gerenteOpsMode ? allGroups : allGroups;
+  const gruposBase = comprasMode
+    ? allGroups.filter((g) => g.id === "group-compras")
+    : cxCMode
+    ? allGroups.filter((g) => g.id === "group-cxc")
+    : vendorMode || gerenteVentaMode
+    ? allGroups
+        .filter((g) => g.id === "group-ventas")
+        // "Margen Bruto" es visible para Gerencia de Ventas y superadmin,
+        // pero no para el rol Vendedor (issue #177) -- se filtra solo acá,
+        // sin tocar `ventasKpis` para no afectar a gerenteVentaMode, que
+        // comparte el mismo array.
+        .map((g) => {
+          if (!vendorMode) return g;
+          const kpis = g.kpis.filter((k: any) => k.id !== "margen_bruto");
+          return { ...g, kpis, count: kpis.length };
+        })
+    : gerenteOpsMode
+    ? allGroups
+    : allGroups;
 
   // El resumen del semáforo se calcula sobre TODOS los KPIs, no sobre el
   // filtro de búsqueda.
@@ -1522,6 +1540,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         apiPrefix={apiPrefix}
         companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
         defaultMes={selectedMes}
+        // Gerencia de Ventas ve margen % pero no costo/ganancia (issue #178).
+        ocultarCostoGanancia={gerenteVentaMode}
       />
 
       {/* MODAL DE EFECTIVIDAD DE CIERRE */}
