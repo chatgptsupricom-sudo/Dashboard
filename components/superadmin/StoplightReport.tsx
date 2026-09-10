@@ -458,11 +458,60 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
   const pesoDe = (id: string, fallback: number) => `${getPesoNum(id, fallback)}%`;
 
+  // Nueva ponderacion de comisiones de Ventas, vigente desde el 01/10/2026
+  // (tabla real que dio el usuario). Antes de esa fecha se mantienen los
+  // pesos historicos, para no alterar retroactivamente el puntaje de meses
+  // ya cerrados -- `selectedMes` es "YYYY-MM", comparable como string.
+  const FECHA_CORTE_PESOS_VENTAS = "2026-10";
+  const PESOS_VENTAS_ANTERIOR: Record<string, number> = {
+    cumplimiento_cuota_ventas: 30,
+    margen_bruto: 15,
+    visitas_semanales: 10,
+    efectividad_cierre: 15,
+    activacion_cartera: 15,
+    clientes_nuevos: 5,
+    cobertura_marcas: 10,
+  };
+  // Solo "Cumplimiento de cuota" tiene ya todo lo necesario para su peso real
+  // (90%, con piso de pago del 80% -- ver pisoMinimoVentas). "Cobertura
+  // territorial" (ex "visitas_semanales", pasaria a 8%) y "Cobertura de
+  // marcas" (pasaria a 2%) quedan en 0% hasta que exista la planeacion de
+  // visitas por asesor y la meta de venta esperada por marca -- sin esa data
+  // la formula nueva no se puede calcular, y ponerles el peso nuevo con la
+  // formula vieja mezclaria dos cosas distintas (decision del usuario). Los
+  // demas KPIs pasan a ser solo informativos (no afectan el pago comisional,
+  // "Otros indicadores" de la tabla) -- siguen visibles, solo dejan de
+  // contar para el puntaje ponderado del grupo.
+  const PESOS_VENTAS_NUEVO: Record<string, number> = {
+    cumplimiento_cuota_ventas: 90,
+    margen_bruto: 0,
+    visitas_semanales: 0,
+    efectividad_cierre: 0,
+    activacion_cartera: 0,
+    clientes_nuevos: 0,
+    cobertura_marcas: 0,
+  };
+  const pesoDefaultVentas = (id: string): number => {
+    const tabla = selectedMes >= FECHA_CORTE_PESOS_VENTAS ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
+    return tabla[id] ?? 0;
+  };
+  // "Valor minimo para el pago a partir de": por debajo de este %, el KPI
+  // aporta 0 al puntaje ponderado -- no es proporcional, es todo o nada
+  // (decision del usuario). Solo aplica desde la misma fecha de corte de
+  // arriba. Cobertura territorial/marcas quedan reservados aca (70% cada
+  // uno) para cuando tengan su formula y peso nuevos.
+  const pisoMinimoVentas = (id: string): number | undefined => {
+    if (selectedMes < FECHA_CORTE_PESOS_VENTAS) return undefined;
+    const tabla: Record<string, number> = { cumplimiento_cuota_ventas: 80 };
+    return tabla[id];
+  };
+
   const ventasKpis = [
     {
       id: "cumplimiento_cuota_ventas",
       title: t("kpi_cuota_ventas"),
-      peso: pesoDe("cumplimiento_cuota_ventas", 30),
+      peso: pesoDe("cumplimiento_cuota_ventas", pesoDefaultVentas("cumplimiento_cuota_ventas")),
+      pisoMinimo: pisoMinimoVentas("cumplimiento_cuota_ventas"),
       // "Avance del mes": facturado ÷ cuota prorrateada a los días hábiles
       // transcurridos. 100% = al día para llegar a la cuota.
       average: kpiData
@@ -484,7 +533,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "margen_bruto",
       title: t("kpi_margen_bruto"),
-      peso: pesoDe("margen_bruto", 15),
+      peso: pesoDe("margen_bruto", pesoDefaultVentas("margen_bruto")),
       average: kpiData ? `${kpiData.avgMargen}%` : "0%",
       weeks: kpiData?.semanaMargen || defaultWeeks,
       isClickable: true,
@@ -495,7 +544,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "visitas_semanales",
       title: t("kpi_visitas"),
-      peso: pesoDe("visitas_semanales", 10),
+      peso: pesoDe("visitas_semanales", pesoDefaultVentas("visitas_semanales")),
       average: kpiData ? String(kpiData.avgVisitas) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
@@ -506,7 +555,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "efectividad_cierre",
       title: t("kpi_efectividad"),
-      peso: pesoDe("efectividad_cierre", 15),
+      peso: pesoDe("efectividad_cierre", pesoDefaultVentas("efectividad_cierre")),
       average: kpiData ? `${kpiData.avgEfectividad}%` : "0%",
       weeks: kpiData?.semanaEfectividad || defaultWeeks,
       isClickable: true,
@@ -517,7 +566,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "activacion_cartera",
       title: t("kpi_activacion"),
-      peso: pesoDe("activacion_cartera", 15),
+      peso: pesoDe("activacion_cartera", pesoDefaultVentas("activacion_cartera")),
       average: kpiData ? `${kpiData.avgActivacion}%` : "0%",
       weeks: kpiData?.semanaActivacion || defaultWeeks,
       isClickable: true,
@@ -528,7 +577,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "clientes_nuevos",
       title: t("kpi_clientes_nuevos"),
-      peso: pesoDe("clientes_nuevos", 5),
+      peso: pesoDe("clientes_nuevos", pesoDefaultVentas("clientes_nuevos")),
       average: kpiData ? `${kpiData.avgClientes}%` : "0%",
       weeks: kpiData?.semanaClientes || defaultWeeks,
       isClickable: true,
@@ -539,7 +588,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     {
       id: "cobertura_marcas",
       title: t("kpi_cobertura"),
-      peso: pesoDe("cobertura_marcas", 10),
+      peso: pesoDe("cobertura_marcas", pesoDefaultVentas("cobertura_marcas")),
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
       isClickable: true,
