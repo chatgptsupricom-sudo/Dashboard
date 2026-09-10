@@ -1789,6 +1789,7 @@
     "efectividad_cobranza": "Collection Effectiveness",
     "meta": "Goal",
     "cobrado": "Collected",
+    "cobrado_a_hoy": "Collected to date",
     "corriente": "Current",
     "exigible": "Due",
     "cartera_vencida": "Overdue Portfolio",
