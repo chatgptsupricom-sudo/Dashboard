@@ -74,10 +74,15 @@ export async function GET(request: NextRequest) {
          "amount_untaxed", "amount_total", "amount_residual"],
       );
 
+      // Mismo signo coherente que route.ts (issue #187): una nota de credito
+      // resta tanto del exigible como del cobrado, en vez de forzar el saldo
+      // a valor absoluto y recortar el pago a 0 -- si no, este modal deja de
+      // coincidir con la tarjeta apenas hay notas de credito en el mes.
       const invoices = allInvoices.map((inv: any) => {
-        const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-        const residual = inv.amount_residual || 0;
-        const pagado = amountTotal - Math.abs(residual);
+        const signo = inv.move_type === "out_refund" ? -1 : 1;
+        const amountTotal = signo * Math.abs(inv.amount_total || 0);
+        const amountResidual = signo * Math.abs(inv.amount_residual || 0);
+        const pagado = amountTotal - amountResidual;
         return {
           id: inv.id,
           name: inv.name || "",
@@ -89,8 +94,8 @@ export async function GET(request: NextRequest) {
           invoiceDateDue: inv.invoice_date_due || null,
           paymentState: inv.payment_state || "not_paid",
           amountTotal,
-          amountPaid: Math.round(Math.max(pagado, 0) * 100) / 100,
-          amountResidual: Math.round(Math.abs(residual) * 100) / 100,
+          amountPaid: Math.round(pagado * 100) / 100,
+          amountResidual: Math.round(amountResidual * 100) / 100,
         };
       }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
       // El resto de los endpoints de CxC excluyen al partner interno
@@ -264,7 +269,7 @@ export async function GET(request: NextRequest) {
           ],
           ["id", "name", "partner_id", "company_id",
            "invoice_date", "invoice_date_due", "payment_state",
-           "amount_untaxed", "amount_total", "amount_residual"],
+           "amount_total", "amount_residual", "invoice_payment_term_id"],
         ),
         fetchPaginated(
           "digiflex.cxc.report",
@@ -279,7 +284,26 @@ export async function GET(request: NextRequest) {
         .filter((r: any) => !["supricom"].some(s => (r.partner_name || "").toLowerCase().includes(s)))
         .reduce((s, r) => s + (r.amount_residual || 0), 0);
 
-      const sales = creditSales.map((inv: any) => ({
+      // Solo ventas a crédito cuentan para el DSO -- mismo criterio que
+      // contado-credito/route.ts: sin plazo de pago, o un plazo cuyo nombre
+      // no tiene ningún número de días (ej. "Contado"), es venta de contado
+      // (issue #190). Antes el denominador traía también las de contado.
+      const creditTermIds = [...new Set(
+        creditSales.map((inv: any) => inv.invoice_payment_term_id?.[0]).filter((id: any): id is number => Boolean(id))
+      )];
+      let creditTermNames: Record<number, string> = {};
+      if (creditTermIds.length > 0) {
+        try {
+          const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
+          (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
+        } catch (_) {}
+      }
+      const esVentaACredito = (inv: any) => {
+        const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
+        return /\d/.test(termName);
+      };
+
+      const sales = creditSales.filter(esVentaACredito).map((inv: any) => ({
         id: inv.id,
         name: inv.name || "",
         partnerName: inv.partner_id?.[1] || "Sin cliente",
@@ -288,12 +312,14 @@ export async function GET(request: NextRequest) {
         invoiceDate: inv.invoice_date || null,
         invoiceDateDue: inv.invoice_date_due || null,
         paymentState: inv.payment_state || "not_paid",
-        amountUntaxed: Math.round(Math.abs(inv.amount_untaxed || 0) * 100) / 100,
         amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
         amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
       }));
 
-      const totalCreditSales = sales.reduce((s, i) => s + i.amountUntaxed, 0);
+      // Misma base fiscal que `totalReceivable` (digiflex.cxc.report, con
+      // impuestos): antes se sumaba `amount_untaxed` (sin impuestos) contra
+      // un numerador con impuestos (issue #190).
+      const totalCreditSales = sales.reduce((s, i) => s + i.amountTotal, 0);
       const dso = totalCreditSales > 0 ? Math.round((totalReceivable / totalCreditSales) * 90) : 0;
 
       return NextResponse.json({

@@ -90,7 +90,17 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-    const companyId = companyIds[0] || 9;
+    // company_id para leer metas/pesos de `kpi_targets` (tabla por sede). Con
+    // filtro de empresa o de usuario coincide con `companyIds[0]`; en la
+    // vista consolidada (sin filtro, `companyIds = [7,9,10]`) se usa Valencia
+    // (9) como sede de referencia explícita -- antes se tomaba
+    // `companyIds[0] || 9`, que por el orden del array quedaba en Panamá (7)
+    // sin que nadie lo hubiera decidido así (issue #190).
+    const companyId = empresa && COMPANY_MAP[empresa]
+      ? COMPANY_MAP[empresa]
+      : userCidsParam
+        ? parseInt(userCidsParam, 10)
+        : 9;
 
     await ensureKpiTargetsPeso();
     const cxcMetasResult = await query(
@@ -279,18 +289,26 @@ export async function GET(request: NextRequest) {
           ["company_id", "in", companyIds],
           ["invoice_date", ">=", d90.toISOString().split("T")[0]],
         ],
-        ["id", "amount_untaxed"],
+        ["id", "amount_total", "invoice_payment_term_id"],
       ),
     ]);
 
     // ── Efectividad Cobranza: cobrado ÷ exigible de facturas que vencen este mes ──
+    // Una nota de credito (`out_refund`) debe restar tanto del exigible como
+    // del cobrado -- antes `amount_residual` se tomaba siempre en valor
+    // absoluto y el pago se recortaba a 0 con `Math.max(...,0)`, asi que cada
+    // nota de credito bajaba el denominador sin bajar el numerador e inflaba
+    // el cociente por encima de 100% (issue #187). Aplicando el mismo signo a
+    // `amount_total` y `amount_residual` una nota de credito resta lo mismo
+    // de los dos lados, que es lo coherente.
     const efectividadInvoices = efectividadInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-      const residual = Math.abs(inv.amount_residual || 0);
+      const signo = inv.move_type === "out_refund" ? -1 : 1;
+      const amountTotal = signo * Math.abs(inv.amount_total || 0);
+      const amountResidual = signo * Math.abs(inv.amount_residual || 0);
       return {
         amountTotal,
-        amountPaid: Math.max(amountTotal - residual, 0),
-        amountResidual: residual,
+        amountPaid: amountTotal - amountResidual,
+        amountResidual,
         dueDate: inv.invoice_date_due ? new Date(inv.invoice_date_due + "T00:00:00") : null,
       };
     });
@@ -341,7 +359,38 @@ export async function GET(request: NextRequest) {
       : null;
 
     // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
-    const totalCreditSales90d = creditSalesRaw.reduce((s, inv: any) => s + Math.abs(inv.amount_untaxed || 0), 0);
+    // `totalReceivable` (numerador) sale de digiflex.cxc.report y viene con
+    // impuestos; antes el denominador usaba `amount_untaxed` (sin impuestos),
+    // una base fiscal distinta a cada lado (issue #190). Se unifica a
+    // `amount_total` en los dos lados.
+    // Además, el denominador traía TODAS las ventas de 90 días, contado
+    // incluido, y el comentario decía "a crédito" -- se filtran las de
+    // contado con el mismo criterio que ya usa contado-credito/route.ts: sin
+    // plazo de pago, o un plazo cuyo nombre no tiene ningún número de días
+    // (ej. "Contado"), es venta de contado.
+    const creditTermIds = [...new Set(
+      creditSalesRaw
+        .map((inv: any) => inv.invoice_payment_term_id?.[0])
+        .filter((id: any): id is number => Boolean(id))
+    )];
+    let creditTermNames: Record<number, string> = {};
+    if (creditTermIds.length > 0) {
+      try {
+        const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
+        (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
+      } catch (_) {}
+    }
+    const esVentaACredito = (inv: any) => {
+      const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
+      return /\d/.test(termName);
+    };
+    // Nota: `totalReceivable` (digiflex.cxc.report) y estas ventas de 90 días
+    // (account.move) son fuentes distintas que en la práctica difieren en
+    // torno a un 3% (granularidad y alcance distintos, ver issue #190) -- el
+    // DSO las combina asumiendo que esa diferencia es aceptable.
+    const totalCreditSales90d = creditSalesRaw
+      .filter(esVentaACredito)
+      .reduce((s, inv: any) => s + Math.abs(inv.amount_total || 0), 0);
     const dso = totalCreditSales90d > 0
       ? Math.round((totalReceivable / totalCreditSales90d) * 90)
       : null;
