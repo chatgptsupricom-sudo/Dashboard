@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 
 const MARCA_TODAS = "TODAS";
 
@@ -162,9 +163,11 @@ export function ReporteVentas() {
   }, [vendedor, cliente, clientes]);
 
   // ── Consulta principal ──
-  const consultar = useCallback(() => {
-    setCargando(true);
-    setError(null);
+  const consultar = useCallback((silent = false) => {
+    if (!silent) {
+      setCargando(true);
+      setError(null);
+    }
     if (tab === "desglose") {
       const qs = new URLSearchParams({ tipo: "desglose", desde, hasta });
       if (vendedor) qs.set("vendedor", vendedor);
@@ -209,6 +212,12 @@ export function ReporteVentas() {
     if (!cargandoFiltros) consultar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sedeQS, cargandoFiltros]);
+
+  // Refresco automático cuando cambian datos de ventas en Odoo.
+  useAutoRefreshVentas(() => consultar(true), {
+    enabled: !cargandoFiltros,
+    debounceMs: 8000,
+  });
 
   // ── Export ──
   const exportar = () => {
@@ -452,7 +461,7 @@ export function ReporteVentas() {
 
         <div className="mt-4 flex justify-end">
           <button
-            onClick={consultar}
+            onClick={() => consultar()}
             disabled={cargando || cargandoFiltros}
             className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700 transition-all font-bold text-xs uppercase tracking-widest active:scale-95 disabled:opacity-50"
           >

@@ -386,8 +386,9 @@ import {
   Users,
 } from "lucide-react";
 import { useTranslations } from "next-intl"; // Importamos el hook
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DateRange } from "react-day-picker";
+import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 import {
   Bar,
   BarChart,
@@ -446,24 +447,33 @@ export function GerenteVentasView() {
     setDate({ from, to });
   }, [selectedMonth]);
 
+  const cargar = useCallback(
+    (silent = false) => {
+      if (!date?.from) return;
+      if (!silent) setLoading(true);
+      const start = format(date.from, "yyyy-MM-dd");
+      const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
+
+      fetch(`/api/gerente_venta/stats?startDate=${start}&endDate=${end}`)
+        .then((res) => res.json())
+        .then((json) => {
+          setData(json);
+          if (!silent) setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error:", err);
+          if (!silent) setLoading(false);
+        });
+    },
+    [date],
+  );
+
   useEffect(() => {
-    if (!date?.from) return;
+    cargar();
+  }, [cargar]); // Se ejecuta cada vez que cambia la fecha
 
-    setLoading(true);
-    const start = format(date.from, "yyyy-MM-dd");
-    const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
-
-    fetch(`/api/gerente_venta/stats?startDate=${start}&endDate=${end}`)
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error:", err);
-        setLoading(false);
-      });
-  }, [date]); // Se ejecuta cada vez que cambia la fecha
+  // Refresco automático cuando cambian datos de ventas en Odoo.
+  useAutoRefreshVentas(() => cargar(true));
 
   if (loading)
     return (

@@ -13,6 +13,7 @@ import {
   trimestresDisponibles,
   trimestreActual,
 } from "@/lib/reportes-comerciales/trimestres";
+import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 import {
   BarChart3,
   Download,
@@ -232,12 +233,14 @@ export function ReporteTrimestral() {
     };
   }, [sede]);
 
-  const cargar = useCallback(() => {
+  const cargar = useCallback((silent = false) => {
     if (sede == null) return;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 110_000);
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     // Sin `marca` en la URL el servidor usa el default de la sede.
     const qsMarca = marca ? `&marca=${encodeURIComponent(marca)}` : "";
     fetch(`${API}?trimestre=${trimestre}${qsMarca}&sede=${sede}`, {
@@ -254,7 +257,7 @@ export function ReporteTrimestral() {
       })
       .finally(() => {
         clearTimeout(t);
-        setLoading(false);
+        if (!silent) setLoading(false);
       });
     return () => {
       clearTimeout(t);
@@ -263,6 +266,10 @@ export function ReporteTrimestral() {
   }, [trimestre, marca, sede]);
 
   useEffect(() => cargar(), [cargar]);
+
+  // Refresco automático cuando cambian datos de ventas en Odoo. Debounce largo:
+  // la consulta del trimestral es pesada.
+  useAutoRefreshVentas(() => cargar(true), { debounceMs: 15000 });
 
   const exportar = async () => {
     setExportando(true);
@@ -364,7 +371,7 @@ export function ReporteTrimestral() {
             })}
           </select>
           <button
-            onClick={cargar}
+            onClick={() => cargar()}
             className="flex items-center gap-2 px-3 py-2.5 bg-white border rounded-xl shadow-sm hover:bg-slate-50 font-bold text-xs uppercase tracking-widest"
           >
             <RefreshCw size={16} />
@@ -422,7 +429,7 @@ export function ReporteTrimestral() {
         <div className="rounded-2xl bg-red-50 border border-red-100 p-6 text-center">
           <p className="text-sm font-bold text-red-700 mb-3">{error}</p>
           <button
-            onClick={cargar}
+            onClick={() => cargar()}
             className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold uppercase tracking-widest"
           >
             Reintentar
