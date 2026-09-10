@@ -395,7 +395,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       case "propuestas_calificadas": return d ? String(d.avgPropuestas ?? 0) : "-";
       case "efectividad_cobranza": return cxc?.kpis?.efectividad?.value != null ? `${cxc.kpis.efectividad.value}%` : "-";
       case "cartera_vencida": return cxc?.kpis?.carteraVencida?.value != null ? `${cxc.kpis.carteraVencida.value}%` : "-";
-      case "recuperacion_vencidos": return cxc?.kpis?.recuperacion?.value != null ? `${cxc.kpis.recuperacion.value}%` : "En revisión";
+      case "recuperacion_vencidos": return cxc?.kpis?.recuperacion?.value != null ? `${cxc.kpis.recuperacion.value}%` : "-";
       case "dso": return cxc?.kpis?.dso?.value != null ? `${cxc.kpis.dso.value}` : "-";
       case "pagos_a_tiempo": return cpp ? `${cpp.pagosATiempoPct ?? 0}%` : "-";
       case "cuentas_pagar_vencidas": return cpp ? `${cpp.cuentasVencidasPct ?? 0}%` : "-";
@@ -770,12 +770,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         id: "recuperacion_vencidos",
         title: t("kpi_recuperacion"),
         peso: pesoDe("recuperacion_vencidos", 25),
-        // En revisión (issue #189): la API devuelve `value: null` a propósito.
-        // "En revisión" no parsea como número, así que cumplimientoKpi() lo
-        // excluye del puntaje ponderado y nivelSemaforo() lo deja en "sin" —
-        // el KPI queda neutro y no arrastra el puntaje del grupo ni cuenta
-        // como rojo. Ver lib/stoplight/scoring.ts.
-        average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "En revisión",
+        // Recuperación del mes contra el saldo vencido al iniciarlo
+        // (lib/cxc/recuperacion.ts, issue #189). Sin desglose semanal: el
+        // denominador es una foto al inicio del mes, no una serie.
+        average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
         weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
         sinSemana: true,
         goalDefault: String(k.recuperacion.meta),

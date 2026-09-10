@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -188,22 +189,61 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "recuperacion") {
-      // KPI en revisión (issue #189): el dominio de abajo NO define una
-      // "cohorte de vencidos al inicio del mes" — al no filtrar por saldo
-      // abierto arrastra ~14.700 facturas con vencimientos desde 2018, la gran
-      // mayoría pagadas hace años, y el % resultante sube todos los meses por
-      // construcción. Se devuelve el aviso en vez del número para que el modal
-      // no muestre un dato que no significa nada; las facturas con saldo real
-      // siguen consultables desde el endpoint /detail.
+      // Mismo cálculo que la tarjeta (lib/cxc/recuperacion.ts, issue #189)
+      // para que el modal y el KPI nunca discrepen: antes cada uno tenía su
+      // propia versión de la fórmula.
+      const monthStart = getMonthStart(currentYear, currentMonth);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+      const calc = await calcularRecuperacion(companyIds, monthStart, monthEnd);
+
+      // Facturas que ya estaban vencidas al iniciar el mes y siguen con saldo:
+      // es la lista accionable, "lo que queda por recuperar". El desglose de
+      // qué se cobró factura por factura necesita cruzar cada conciliación con
+      // su factura y queda para una segunda vuelta.
+      const pendientes = await fetchPaginated(
+        "account.move",
+        [
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
+        ],
+        ["id", "name", "partner_id", "company_id", "invoice_date",
+         "invoice_date_due", "payment_state", "amount_total", "amount_residual"],
+      );
+
+      const invoices = pendientes.map((inv: any) => ({
+        id: inv.id,
+        name: inv.name || "",
+        partnerName: inv.partner_id?.[1] || "Sin cliente",
+        partnerId: inv.partner_id?.[0] || 0,
+        companyName: inv.company_id?.[1] || "",
+        invoiceDate: inv.invoice_date || null,
+        invoiceDateDue: inv.invoice_date_due || null,
+        paymentState: inv.payment_state || "not_paid",
+        amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
+        amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
+        status: "Pendiente",
+      }));
+
       return NextResponse.json({
         success: true,
         data: {
           type: "recuperacion",
-          enRevision: true,
-          motivo:
-            "El cálculo anterior no medía recuperación: subía todos los meses por construcción. Se está rehaciendo (issue #189).",
-          summary: null,
-          invoices: [],
+          summary: {
+            recuperacion: calc.value,
+            saldoVencidoInicial: calc.saldoVencidoInicial,
+            recuperadoEnElMes: calc.recuperadoEnElMes,
+            saldoVencidoHoy: calc.saldoVencidoHoy,
+            conciliadoDesdeElCorte: calc.conciliadoDesdeElCorte,
+            count: calc.facturasConSaldo,
+            pendingCount: invoices.length,
+          },
+          invoices: invoices.sort(
+            (a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0,
+          ),
         },
       });
     }

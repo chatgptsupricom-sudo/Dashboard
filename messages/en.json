@@ -1796,6 +1796,8 @@
     "recuperacion_vencidos": "Overdue Recovery",
     "inicial": "Initial",
     "restante": "Remaining",
+    "recuperado": "Recovered",
+    "vencido_al_inicio": "Overdue at start",
     "dso": "DSO (Days Sales Outstanding)",
     "dias": "days",
     "cartera": "Portfolio",
