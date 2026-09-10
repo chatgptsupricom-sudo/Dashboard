@@ -79,7 +79,15 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
               <p><strong>Meta:</strong> Cada vendedor debe captar la cantidad asignada de clientes nuevos al mes.</p>
             </>
           )}
-          {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos"].includes(kpiId) && (
+          {kpiId === "ciclo_reposicion" && (
+            <>
+              <p><strong>{t("info_que_mide")}</strong> Cada cuánto vuelve a comprar, en promedio, un cliente. Un ciclo que se alarga es una señal temprana de que un cliente se está yendo, antes de que deje de comprar del todo.</p>
+              <p><strong>{t("info_formula")}</strong> Para cada cliente con 2 o más compras en los últimos 12 meses: promedio de días entre una factura y la siguiente. El KPI es el promedio de esos promedios entre todos los clientes.</p>
+              <p><strong>Ventana:</strong> 12 meses hacia atrás, no el mes en curso — la mayoría de los clientes no compra todos los meses, así que un solo mes no alcanza para medir un ciclo.</p>
+              <p>KPI informativo por ahora (sin peso ni meta por defecto): sirve para ver la tendencia antes de fijarle un objetivo.</p>
+            </>
+          )}
+          {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos", "ciclo_reposicion"].includes(kpiId) && (
             <p>{t("info_default")}</p>
           )}
         </div>

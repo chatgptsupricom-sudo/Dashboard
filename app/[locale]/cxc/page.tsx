@@ -185,6 +185,11 @@ export default function CxcDashboardPage() {
                 <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
+              {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
+                <div className="text-xs text-slate-400 mt-1">
+                  Cobrado a hoy (incl. pagos posteriores al cierre): {data.kpis.efectividad.valueAcumulado}%
+                </div>
+              )}
             </div>
 
             {/* Cartera Vencida */}
@@ -220,9 +225,9 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.recuperacion.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Inicial: {formatCurrency(data.kpis.recuperacion.vencidoInicial)}</span>
+                <span>Recuperado en el mes: {formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Restante: {formatCurrency(data.kpis.recuperacion.vencidoRestante)}</div>
+              <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
             </div>
 
             {/* DSO */}

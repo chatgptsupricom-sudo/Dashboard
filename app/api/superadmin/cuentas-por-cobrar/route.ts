@@ -1,6 +1,8 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -90,7 +92,17 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-    const companyId = companyIds[0] || 9;
+    // company_id para leer metas/pesos de `kpi_targets` (tabla por sede). Con
+    // filtro de empresa o de usuario coincide con `companyIds[0]`; en la
+    // vista consolidada (sin filtro, `companyIds = [7,9,10]`) se usa Valencia
+    // (9) como sede de referencia explícita -- antes se tomaba
+    // `companyIds[0] || 9`, que por el orden del array quedaba en Panamá (7)
+    // sin que nadie lo hubiera decidido así (issue #190).
+    const companyId = empresa && COMPANY_MAP[empresa]
+      ? COMPANY_MAP[empresa]
+      : userCidsParam
+        ? parseInt(userCidsParam, 10)
+        : 9;
 
     await ensureKpiTargetsPeso();
     const cxcMetasResult = await query(
@@ -249,7 +261,7 @@ export async function GET(request: NextRequest) {
     const d90 = new Date(today);
     d90.setDate(d90.getDate() - 90);
 
-    const [efectividadInvoicesRaw, recuperacionInvoicesRaw, creditSalesRaw] = await Promise.all([
+    const [efectividadInvoicesRaw, recuperacionCalc, creditSalesRaw] = await Promise.all([
       fetchPaginated(
         "account.move",
         [
@@ -261,16 +273,11 @@ export async function GET(request: NextRequest) {
         ],
         ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"],
       ),
-      fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
-        ],
-        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
-      ),
+      // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
+      // y lo compara con los pagos conciliados durante el mes. Ver
+      // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
+      // puede leer directo de `amount_residual` (issue #189).
+      calcularRecuperacion(companyIds, monthStart, monthEnd),
       fetchPaginated(
         "account.move",
         [
@@ -279,69 +286,83 @@ export async function GET(request: NextRequest) {
           ["company_id", "in", companyIds],
           ["invoice_date", ">=", d90.toISOString().split("T")[0]],
         ],
-        ["id", "amount_untaxed"],
+        ["id", "amount_total", "invoice_payment_term_id"],
       ),
     ]);
 
     // ── Efectividad Cobranza: cobrado ÷ exigible de facturas que vencen este mes ──
+    // Una nota de credito (`out_refund`) debe restar tanto del exigible como
+    // del cobrado -- antes `amount_residual` se tomaba siempre en valor
+    // absoluto y el pago se recortaba a 0 con `Math.max(...,0)`, asi que cada
+    // nota de credito bajaba el denominador sin bajar el numerador e inflaba
+    // el cociente por encima de 100% (issue #187). Aplicando el mismo signo a
+    // `amount_total` y `amount_residual` una nota de credito resta lo mismo
+    // de los dos lados, que es lo coherente.
     const efectividadInvoices = efectividadInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-      const residual = Math.abs(inv.amount_residual || 0);
+      const signo = inv.move_type === "out_refund" ? -1 : 1;
+      const amountTotal = signo * Math.abs(inv.amount_total || 0);
+      const amountResidual = signo * Math.abs(inv.amount_residual || 0);
       return {
+        id: inv.id,
         amountTotal,
-        amountPaid: Math.max(amountTotal - residual, 0),
-        amountResidual: residual,
+        amountResidual,
         dueDate: inv.invoice_date_due ? new Date(inv.invoice_date_due + "T00:00:00") : null,
       };
     });
-    const totalExigibleMes = efectividadInvoices.reduce((s, i) => s + i.amountTotal, 0);
-    const totalCobradoMes = efectividadInvoices.reduce((s, i) => s + i.amountPaid, 0);
-    const totalPendienteMes = efectividadInvoices.reduce((s, i) => s + i.amountResidual, 0);
-    const efectividad = totalExigibleMes > 0
-      ? Math.round((totalCobradoMes / totalExigibleMes) * 10000) / 100
-      : null;
 
-    // ── Efectividad de cobranza por semana del mes ──
-    // Se bucketea cada factura por la semana en que vence (`invoice_date_due`).
-    // Sólo esta métrica tiene lectura semanal real: cartera vencida y DSO son
-    // fotos puntuales, y recuperación necesita fechas de conciliación de pagos
-    // (ver issue #130). El `amountPaid` es el cobro acumulado a hoy — para
-    // semanas ya cerradas es una aproximación razonable de "qué se cobró de lo
-    // que vencía esa semana".
-    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo helper),
-    // para que la fila quede alineada con los encabezados `weekHeaders`.
+    // ── Efectividad y su fila semanal: criterio estricto (issue #188) ──
+    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo
+    // helper) para que la fila quede alineada con los encabezados
+    // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
+    // el modal de detalle para que nunca discrepen.
     const semanasCxc = (startDateParam && endDateParam)
       ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
       : obtenerSemanasDelMes(currentYear, currentMonth + 1);
-    const semEfect = semanasCxc.map(() => ({ exigible: 0, cobrado: 0 }));
-    for (const inv of efectividadInvoices) {
-      if (!inv.dueDate) continue;
-      const w = semanasCxc.findIndex((s) => inv.dueDate! >= s.inicio && inv.dueDate! <= s.fin);
-      if (w < 0) continue;
-      semEfect[w].exigible += inv.amountTotal;
-      semEfect[w].cobrado += inv.amountPaid;
-    }
-    const semanaEfectividad = semEfect.map((s, i) => {
-      if (semanasCxc[i].inicio > today) return null; // semana futura: nada que medir aún
-      if (s.exigible <= 0) return null;
-      return `${Math.round((s.cobrado / s.exigible) * 100)}%`;
-    });
+
+    const efectividadCalc = await calcularEfectividad(
+      companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today,
+    );
+    const efectividad = efectividadCalc.value;
+    const semanaEfectividad = efectividadCalc.semana;
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
-    // ── Recuperación Vencidos: cuánto de lo vencido al inicio del mes ya se cobró ──
-    const recuperacionInvoices = recuperacionInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-      return { amountTotal, amountResidual: Math.abs(inv.amount_residual || 0) };
-    });
-    const vencidoInicial = recuperacionInvoices.reduce((s, i) => s + i.amountTotal, 0);
-    const vencidoRestante = recuperacionInvoices.reduce((s, i) => s + i.amountResidual, 0);
-    const recuperacion = vencidoInicial > 0
-      ? Math.round(((vencidoInicial - vencidoRestante) / vencidoInicial) * 10000) / 100
-      : null;
+    // ── Recuperación Vencidos: ya calculado arriba por calcularRecuperacion() ──
+    const recuperacion = recuperacionCalc.value;
 
     // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
-    const totalCreditSales90d = creditSalesRaw.reduce((s, inv: any) => s + Math.abs(inv.amount_untaxed || 0), 0);
+    // `totalReceivable` (numerador) sale de digiflex.cxc.report y viene con
+    // impuestos; antes el denominador usaba `amount_untaxed` (sin impuestos),
+    // una base fiscal distinta a cada lado (issue #190). Se unifica a
+    // `amount_total` en los dos lados.
+    // Además, el denominador traía TODAS las ventas de 90 días, contado
+    // incluido, y el comentario decía "a crédito" -- se filtran las de
+    // contado con el mismo criterio que ya usa contado-credito/route.ts: sin
+    // plazo de pago, o un plazo cuyo nombre no tiene ningún número de días
+    // (ej. "Contado"), es venta de contado.
+    const creditTermIds = [...new Set(
+      creditSalesRaw
+        .map((inv: any) => inv.invoice_payment_term_id?.[0])
+        .filter((id: any): id is number => Boolean(id))
+    )];
+    let creditTermNames: Record<number, string> = {};
+    if (creditTermIds.length > 0) {
+      try {
+        const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
+        (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
+      } catch (_) {}
+    }
+    const esVentaACredito = (inv: any) => {
+      const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
+      return /\d/.test(termName);
+    };
+    // Nota: `totalReceivable` (digiflex.cxc.report) y estas ventas de 90 días
+    // (account.move) son fuentes distintas que en la práctica difieren en
+    // torno a un 3% (granularidad y alcance distintos, ver issue #190) -- el
+    // DSO las combina asumiendo que esa diferencia es aceptable.
+    const totalCreditSales90d = creditSalesRaw
+      .filter(esVentaACredito)
+      .reduce((s, inv: any) => s + Math.abs(inv.amount_total || 0), 0);
     const dso = totalCreditSales90d > 0
       ? Math.round((totalReceivable / totalCreditSales90d) * 90)
       : null;
@@ -354,13 +375,19 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
+            // `value` es la ESTRICTA (cobrado hasta el cierre del mes): es la
+            // que va al semáforo porque es comparable entre meses y un mes
+            // cerrado ya no cambia. `valueAcumulado` es el criterio viejo
+            // ("cobrado a hoy"), que se conserva como dato secundario porque
+            // sigue diciendo cuánto de lo que venció ya entró (issue #188).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            // Dinero realmente cobrado de las facturas que vencen este mes
-            // (mismo cálculo que /kpi-detail?type=efectividad).
-            cobradoMes: Math.round(totalCobradoMes * 100) / 100,
-            exigibleMes: Math.round(totalExigibleMes * 100) / 100,
-            pendiente: Math.round(totalPendienteMes * 100) / 100,
+            cobradoMes: efectividadCalc.cobradoAlCierre,
+            exigibleMes: efectividadCalc.exigibleMes,
+            pendiente: efectividadCalc.pendiente,
+            valueAcumulado: efectividadCalc.valueAcumulado,
+            cobradoAHoy: efectividadCalc.cobradoAHoy,
+            mesCerrado: efectividadCalc.mesCerrado,
           },
           carteraVencida: {
             value: carteraVencidaPct,
@@ -371,8 +398,15 @@ export async function GET(request: NextRequest) {
           recuperacion: {
             value: recuperacion,
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(vencidoInicial * 100) / 100,
-            vencidoRestante: Math.round(vencidoRestante * 100) / 100,
+            // Nombres nuevos y explícitos: `vencidoInicial`/`vencidoRestante`
+            // se retiran a propósito porque significaban otra cosa (todo lo
+            // facturado en la historia y su saldo) y arrastrarlos invitaba a
+            // leerlos mal. Ver lib/cxc/recuperacion.ts.
+            saldoVencidoInicial: recuperacionCalc.saldoVencidoInicial,
+            recuperadoEnElMes: recuperacionCalc.recuperadoEnElMes,
+            saldoVencidoHoy: recuperacionCalc.saldoVencidoHoy,
+            conciliadoDesdeElCorte: recuperacionCalc.conciliadoDesdeElCorte,
+            facturasConSaldo: recuperacionCalc.facturasConSaldo,
           },
           dso: {
             value: dso,

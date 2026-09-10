@@ -45,6 +45,7 @@ export interface KpiData {
   avgActivacion: number;
   avgClientes: number;
   avgCobertura: number;
+  avgCicloReposicion: number | null;
   semanaMargen: (string | null)[];
   semanaVisitas: (string | null)[];
   semanaEfectividad: (string | null)[];

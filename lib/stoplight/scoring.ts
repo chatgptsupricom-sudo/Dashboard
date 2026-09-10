@@ -17,7 +17,7 @@ export const getCellColor = (value: string) => {
 // mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
 export const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
   "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc", "ciclo_reposicion"];
 
 export const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
@@ -69,17 +69,25 @@ export const nivelSemaforo = (kpiId: string, average: string | null, goal: strin
 /**
  * Cumplimiento de un KPI en 0–100 (para el puntaje ponderado del grupo).
  * `null` = sin meta configurada ⇒ no entra en el puntaje.
+ *
+ * `pisoMinimo` ("valor minimo para el pago a partir de", tabla de comisiones
+ * de Ventas vigente desde 01/10/2026): por debajo de ese %, el KPI aporta 0
+ * al puntaje -- no es proporcional, es todo o nada. Por encima del piso se
+ * calcula igual que siempre. Opcional: los KPIs sin piso configurado siguen
+ * con el comportamiento de siempre.
  */
 export const cumplimientoKpi = (
   kpiId: string,
   average: string | null,
   goal: string | number | null | undefined,
+  pisoMinimo?: number,
 ): number | null => {
   if (!average) return null;
   const numVal = parseFloat(String(average).replace("%", "").replace(" días", "").replace(/N\/?A/i, "").trim());
   if (isNaN(numVal)) return null;
   const numGoal = parseFloat(String(goal ?? ""));
   if (!Number.isFinite(numGoal) || numGoal <= 0) return null;
+  if (pisoMinimo !== undefined && numVal < pisoMinimo) return 0;
   const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
   if (KPI_MENOS_ES_MEJOR.includes(kpiId)) {
     return numVal <= 0 ? 100 : clamp((numGoal / numVal) * 100);
@@ -102,7 +110,7 @@ export const puntajeGrupo = (
   let peso = 0;
   let n = 0;
   for (const k of kpis || []) {
-    const c = cumplimientoKpi(k.id, k.average, k.goalDefault);
+    const c = cumplimientoKpi(k.id, k.average, k.goalDefault, k.pisoMinimo);
     if (c === null) continue;
     const p = parseFloat(String(k.peso).replace("%", "")) || 0;
     if (p <= 0) continue;

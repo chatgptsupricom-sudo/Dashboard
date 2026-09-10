@@ -1,5 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -74,10 +76,15 @@ export async function GET(request: NextRequest) {
          "amount_untaxed", "amount_total", "amount_residual"],
       );
 
+      // Mismo signo coherente que route.ts (issue #187): una nota de credito
+      // resta tanto del exigible como del cobrado, en vez de forzar el saldo
+      // a valor absoluto y recortar el pago a 0 -- si no, este modal deja de
+      // coincidir con la tarjeta apenas hay notas de credito en el mes.
       const invoices = allInvoices.map((inv: any) => {
-        const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-        const residual = inv.amount_residual || 0;
-        const pagado = amountTotal - Math.abs(residual);
+        const signo = inv.move_type === "out_refund" ? -1 : 1;
+        const amountTotal = signo * Math.abs(inv.amount_total || 0);
+        const amountResidual = signo * Math.abs(inv.amount_residual || 0);
+        const pagado = amountTotal - amountResidual;
         return {
           id: inv.id,
           name: inv.name || "",
@@ -89,8 +96,8 @@ export async function GET(request: NextRequest) {
           invoiceDateDue: inv.invoice_date_due || null,
           paymentState: inv.payment_state || "not_paid",
           amountTotal,
-          amountPaid: Math.round(Math.max(pagado, 0) * 100) / 100,
-          amountResidual: Math.round(Math.abs(residual) * 100) / 100,
+          amountPaid: Math.round(pagado * 100) / 100,
+          amountResidual: Math.round(amountResidual * 100) / 100,
         };
       }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
       // El resto de los endpoints de CxC excluyen al partner interno
@@ -98,19 +105,38 @@ export async function GET(request: NextRequest) {
       // calculo se le habia quedado afuera ese filtro, asi que sus propias
       // facturas inflaban/desinflaban el detalle de Efectividad Cobranza.
 
-      const totalExigible = invoices.reduce((s, i) => s + i.amountTotal, 0);
-      const totalCobrado = invoices.reduce((s, i) => s + i.amountPaid, 0);
-      const totalPendiente = invoices.reduce((s, i) => s + i.amountResidual, 0);
+      // El resumen sale del mismo helper que la tarjeta (lib/cxc/efectividad.ts)
+      // para que el modal y el KPI no vuelvan a discrepar: `efectividad` es la
+      // ESTRICTA (cobrado hasta el cierre del mes) y `efectividadAcumulada` el
+      // criterio viejo, "cobrado a hoy" (issue #188). La columna por factura
+      // sigue mostrando lo cobrado a hoy, que es lo accionable al mirar una
+      // factura concreta.
+      const calc = await calcularEfectividad(
+        companyIds,
+        monthStart,
+        monthEnd,
+        invoices.map((i) => ({
+          id: i.id,
+          amountTotal: i.amountTotal,
+          amountResidual: i.amountResidual,
+          dueDate: i.invoiceDateDue ? new Date(i.invoiceDateDue + "T00:00:00") : null,
+        })),
+        [],
+        today,
+      );
 
       return NextResponse.json({
         success: true,
         data: {
           type: "efectividad",
           summary: {
-            totalExigible: Math.round(totalExigible * 100) / 100,
-            totalCobrado: Math.round(totalCobrado * 100) / 100,
-            totalPendiente: Math.round(totalPendiente * 100) / 100,
-            efectividad: totalExigible > 0 ? Math.round((totalCobrado / totalExigible) * 10000) / 100 : 0,
+            totalExigible: calc.exigibleMes,
+            totalCobrado: calc.cobradoAlCierre,
+            totalCobradoAHoy: calc.cobradoAHoy,
+            totalPendiente: calc.pendiente,
+            efectividad: calc.value ?? 0,
+            efectividadAcumulada: calc.valueAcumulado ?? 0,
+            mesCerrado: calc.mesCerrado,
             count: invoices.length,
             paidCount: invoices.filter(i => i.paymentState === "paid" || i.amountResidual <= 0).length,
             pendingCount: invoices.filter(i => i.paymentState !== "paid" && i.amountResidual > 0).length,
@@ -188,62 +214,61 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "recuperacion") {
-      // Cohorte: facturas vencidas al inicio del mes
-      const cohortStart = getMonthStart(currentYear, currentMonth);
-      const allInvoices = await fetchPaginated(
+      // Mismo cálculo que la tarjeta (lib/cxc/recuperacion.ts, issue #189)
+      // para que el modal y el KPI nunca discrepen: antes cada uno tenía su
+      // propia versión de la fórmula.
+      const monthStart = getMonthStart(currentYear, currentMonth);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+      const calc = await calcularRecuperacion(companyIds, monthStart, monthEnd);
+
+      // Facturas que ya estaban vencidas al iniciar el mes y siguen con saldo:
+      // es la lista accionable, "lo que queda por recuperar". El desglose de
+      // qué se cobró factura por factura necesita cruzar cada conciliación con
+      // su factura y queda para una segunda vuelta.
+      const pendientes = await fetchPaginated(
         "account.move",
         [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["move_type", "=", "out_invoice"],
           ["state", "=", "posted"],
           ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", cohortStart.toISOString().split("T")[0]],
+          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
         ],
-        ["id", "name", "partner_id", "company_id", "move_type",
-         "invoice_date", "invoice_date_due", "payment_state",
-         "amount_total", "amount_residual"],
+        ["id", "name", "partner_id", "company_id", "invoice_date",
+         "invoice_date_due", "payment_state", "amount_total", "amount_residual"],
       );
 
-      const invoices = allInvoices.map((inv: any) => {
-        const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-        const residual = inv.amount_residual || 0;
-        const pagado = amountTotal - Math.abs(residual);
-        return {
-          id: inv.id,
-          name: inv.name || "",
-          partnerName: inv.partner_id?.[1] || "Sin cliente",
-          partnerId: inv.partner_id?.[0] || 0,
-          companyName: inv.company_id?.[1] || "",
-          moveType: inv.move_type,
-          invoiceDate: inv.invoice_date || null,
-          invoiceDateDue: inv.invoice_date_due || null,
-          paymentState: inv.payment_state || "not_paid",
-          amountTotal,
-          amountPaid: Math.round(Math.max(pagado, 0) * 100) / 100,
-          amountResidual: Math.round(Math.abs(residual) * 100) / 100,
-          status: residual <= 0 ? "Recuperado" : "Pendiente",
-        };
-      }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
-      // Mismo motivo que en "efectividad" arriba: sin este filtro, las
-      // facturas internas de Supricom se cuentan en la cohorte de vencidas.
-
-      const totalInicial = invoices.reduce((s, i) => s + i.amountTotal, 0);
-      const totalRestante = invoices.reduce((s, i) => s + i.amountResidual, 0);
-      const totalRecuperado = totalInicial - totalRestante;
+      const invoices = pendientes.map((inv: any) => ({
+        id: inv.id,
+        name: inv.name || "",
+        partnerName: inv.partner_id?.[1] || "Sin cliente",
+        partnerId: inv.partner_id?.[0] || 0,
+        companyName: inv.company_id?.[1] || "",
+        invoiceDate: inv.invoice_date || null,
+        invoiceDateDue: inv.invoice_date_due || null,
+        paymentState: inv.payment_state || "not_paid",
+        amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
+        amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
+        status: "Pendiente",
+      }));
 
       return NextResponse.json({
         success: true,
         data: {
           type: "recuperacion",
           summary: {
-            vencidoInicial: Math.round(totalInicial * 100) / 100,
-            vencidoRestante: Math.round(totalRestante * 100) / 100,
-            recuperado: Math.round(totalRecuperado * 100) / 100,
-            recuperacion: totalInicial > 0 ? Math.round((totalRecuperado / totalInicial) * 10000) / 100 : 0,
-            count: invoices.length,
-            recoveredCount: invoices.filter(i => i.status === "Recuperado").length,
-            pendingCount: invoices.filter(i => i.status === "Pendiente").length,
+            recuperacion: calc.value,
+            saldoVencidoInicial: calc.saldoVencidoInicial,
+            recuperadoEnElMes: calc.recuperadoEnElMes,
+            saldoVencidoHoy: calc.saldoVencidoHoy,
+            conciliadoDesdeElCorte: calc.conciliadoDesdeElCorte,
+            count: calc.facturasConSaldo,
+            pendingCount: invoices.length,
           },
-          invoices: invoices.sort((a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0),
+          invoices: invoices.sort(
+            (a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0,
+          ),
         },
       });
     }
@@ -264,7 +289,7 @@ export async function GET(request: NextRequest) {
           ],
           ["id", "name", "partner_id", "company_id",
            "invoice_date", "invoice_date_due", "payment_state",
-           "amount_untaxed", "amount_total", "amount_residual"],
+           "amount_total", "amount_residual", "invoice_payment_term_id"],
         ),
         fetchPaginated(
           "digiflex.cxc.report",
@@ -279,7 +304,26 @@ export async function GET(request: NextRequest) {
         .filter((r: any) => !["supricom"].some(s => (r.partner_name || "").toLowerCase().includes(s)))
         .reduce((s, r) => s + (r.amount_residual || 0), 0);
 
-      const sales = creditSales.map((inv: any) => ({
+      // Solo ventas a crédito cuentan para el DSO -- mismo criterio que
+      // contado-credito/route.ts: sin plazo de pago, o un plazo cuyo nombre
+      // no tiene ningún número de días (ej. "Contado"), es venta de contado
+      // (issue #190). Antes el denominador traía también las de contado.
+      const creditTermIds = [...new Set(
+        creditSales.map((inv: any) => inv.invoice_payment_term_id?.[0]).filter((id: any): id is number => Boolean(id))
+      )];
+      let creditTermNames: Record<number, string> = {};
+      if (creditTermIds.length > 0) {
+        try {
+          const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
+          (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
+        } catch (_) {}
+      }
+      const esVentaACredito = (inv: any) => {
+        const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
+        return /\d/.test(termName);
+      };
+
+      const sales = creditSales.filter(esVentaACredito).map((inv: any) => ({
         id: inv.id,
         name: inv.name || "",
         partnerName: inv.partner_id?.[1] || "Sin cliente",
@@ -288,12 +332,14 @@ export async function GET(request: NextRequest) {
         invoiceDate: inv.invoice_date || null,
         invoiceDateDue: inv.invoice_date_due || null,
         paymentState: inv.payment_state || "not_paid",
-        amountUntaxed: Math.round(Math.abs(inv.amount_untaxed || 0) * 100) / 100,
         amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
         amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
       }));
 
-      const totalCreditSales = sales.reduce((s, i) => s + i.amountUntaxed, 0);
+      // Misma base fiscal que `totalReceivable` (digiflex.cxc.report, con
+      // impuestos): antes se sumaba `amount_untaxed` (sin impuestos) contra
+      // un numerador con impuestos (issue #190).
+      const totalCreditSales = sales.reduce((s, i) => s + i.amountTotal, 0);
       const dso = totalCreditSales > 0 ? Math.round((totalReceivable / totalCreditSales) * 90) : 0;
 
       return NextResponse.json({
