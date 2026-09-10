@@ -49,6 +49,8 @@ interface SpiffManagerProps {
   showCompanyFilter?: boolean;
   title?: string;
   subtitle?: string;
+  /** Solo lectura: oculta crear / editar / eliminar / activar (Asistente de Ventas). */
+  readonly?: boolean;
 }
 
 const emptyForm = {
@@ -69,6 +71,7 @@ export default function SpiffManager({
   showCompanyFilter = false,
   title = "",
   subtitle = "",
+  readonly = false,
 }: SpiffManagerProps) {
   const t = useTranslations("spiff");
   const locale = useLocale();
@@ -301,12 +304,14 @@ export default function SpiffManager({
               ))}
             </select>
           )}
-          <button
-            onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
-          >
-            <Plus size={16} /> {t("new_rule")}
-          </button>
+          {!readonly && (
+            <button
+              onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
+            >
+              <Plus size={16} /> {t("new_rule")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -513,6 +518,7 @@ export default function SpiffManager({
                         onToggle={handleToggle}
                         onViewRanking={handleViewRanking}
                         formatDate={formatDate}
+                        readonly={readonly}
                       />
                     ))}
                   </div>
@@ -527,7 +533,9 @@ export default function SpiffManager({
                 <span className="w-20 text-center">{t("col_spiff")}</span>
                 <span className="w-24 text-center">{t("col_validity")}</span>
                 <span className="w-16 text-center">{t("col_status")}</span>
-                <span className="w-20 text-center">{t("col_actions")}</span>
+                {!readonly && (
+                  <span className="w-20 text-center">{t("col_actions")}</span>
+                )}
               </div>
               {rules.map((rule) => (
                 <RuleRow
@@ -538,6 +546,7 @@ export default function SpiffManager({
                   onToggle={handleToggle}
                   onViewRanking={handleViewRanking}
                   formatDate={formatDate}
+                  readonly={readonly}
                 />
               ))}
             </div>
@@ -645,6 +654,7 @@ function RuleRow({
   onToggle,
   onViewRanking,
   formatDate,
+  readonly = false,
 }: {
   rule: SpiffRule;
   onEdit: (rule: SpiffRule) => void;
@@ -652,6 +662,7 @@ function RuleRow({
   onToggle: (rule: SpiffRule) => void;
   onViewRanking: (rule: SpiffRule) => void;
   formatDate: (d: string | null) => string;
+  readonly?: boolean;
 }) {
   const t = useTranslations("spiff");
   return (
@@ -691,18 +702,26 @@ function RuleRow({
         </span>
       </div>
       <div className="w-16 text-center">
-        <button onClick={(e) => { e.stopPropagation(); onToggle(rule); }} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
-          {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-        </button>
+        {readonly ? (
+          <span className={rule.active ? "text-emerald-500" : "text-slate-300"}>
+            {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+          </span>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); onToggle(rule); }} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
+            {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+          </button>
+        )}
       </div>
-      <div className="w-20 flex gap-1 justify-center">
-        <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
-          <Pencil size={14} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
-          <Trash2 size={14} />
-        </button>
-      </div>
+      {!readonly && (
+        <div className="w-20 flex gap-1 justify-center">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
+            <Pencil size={14} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

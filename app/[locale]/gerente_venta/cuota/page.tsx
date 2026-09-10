@@ -55,6 +55,10 @@ export default function CuotasPage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSeller, setEditingSeller] = useState<any>(null);
+  const { user } = useAuthStore();
+  // El Asistente de Ventas ve las cuotas pero no las edita.
+  const puedeEditar =
+    (user?.role || "").toLowerCase().trim() !== "asistente de ventas";
 
   const fetchData = () => {
     setLoading(true);
@@ -122,7 +126,9 @@ export default function CuotasPage() {
               <SellerQuotaCard
                 key={seller.id}
                 seller={seller}
-                onEdit={() => setEditingSeller(seller)}
+                onEdit={
+                  puedeEditar ? () => setEditingSeller(seller) : undefined
+                }
               />
             ))}
         </div>
@@ -148,7 +154,7 @@ function SellerQuotaCard({
   onEdit,
 }: {
   seller: any;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   const isTargetMet = seller.porcentaje >= 100;
   const metricas = calcularMetricas(seller.meta, seller.facturado);
@@ -157,12 +163,14 @@ function SellerQuotaCard({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <h3 className="font-black text-zinc-900 text-lg">{seller.name}</h3>
-          <button
-            onClick={onEdit}
-            className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
-          >
-            <Edit3 size={16} className="text-zinc-400" />
-          </button>
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
+            >
+              <Edit3 size={16} className="text-zinc-400" />
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

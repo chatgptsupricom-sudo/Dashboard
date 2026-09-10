@@ -9,11 +9,14 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
+  Image as ImageIcon,
   Loader2,
   MapPin,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { descargarImagenReporteDiario } from "@/lib/gerente_venta/reporteDiarioImagen";
+import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 import {
   Bar,
   BarChart,
@@ -92,23 +95,35 @@ export function ReporteDiarioVentas() {
     user?.role?.toLowerCase().trim() === "superadmin" ||
     user?.role?.toLowerCase().trim() === "super admin";
 
+  const cargar = useCallback(
+    (silent = false) => {
+      if (!silent) setLoading(true);
+      let url = `/api/gerente_venta/reporte-diario?date=${fecha}`;
+      if (isSuperAdmin && sede !== "all") {
+        url += `&sede=${sede}`;
+      }
+      fetch(url)
+        .then((res) => res.json())
+        .then((json) => {
+          setData(json);
+          if (!silent) setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error:", err);
+          if (!silent) setLoading(false);
+        });
+    },
+    [fecha, sede, isSuperAdmin],
+  );
+
   useEffect(() => {
-    setLoading(true);
-    let url = `/api/gerente_venta/reporte-diario?date=${fecha}`;
-    if (isSuperAdmin && sede !== "all") {
-      url += `&sede=${sede}`;
-    }
-    fetch(url)
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error:", err);
-        setLoading(false);
-      });
-  }, [fecha, sede, isSuperAdmin]);
+    cargar();
+  }, [cargar]);
+
+  // Refresco automático cuando cambian datos de ventas en Odoo.
+  useAutoRefreshVentas(() => cargar(true), {
+    userId: user?.uid ?? user?.id ?? null,
+  });
 
   const fechaDisplay = data?.fecha
     ? format(new Date(data.fecha + "T12:00:00"), "dd/MM/yyyy", { locale: es })
@@ -147,6 +162,42 @@ export function ReporteDiarioVentas() {
       wb,
       `Reporte_Diario_Ventas_${fechaDisplay.replace(/\//g, "-")}.xlsx`,
     );
+  };
+
+  const [generandoImagen, setGenerandoImagen] = useState(false);
+  const exportarImagen = async () => {
+    if (!data || generandoImagen) return;
+    setGenerandoImagen(true);
+    try {
+      const sedeNombre =
+        isSuperAdmin && sede !== "all"
+          ? data.sedes.find((s) => String(s.id) === sede)?.name || null
+          : null;
+      await descargarImagenReporteDiario({
+        fechaDisplay,
+        sedeNombre,
+        diasHabiles: data.diasHabiles,
+        diasTranscurridos: data.diasTranscurridos,
+        porcentajeDias: data.porcentajeDias,
+        meta: data.meta,
+        cuotaAlDia: data.cuotaAlDia,
+        ventas: data.ventas,
+        pedidos: data.pedidos,
+        ventaMasPedidos: data.ventaMasPedidos,
+        vendedores: data.vendedores.map((v) => ({
+          name: v.name,
+          cuota: v.cuota,
+          cuotaAlDia: v.cuotaAlDia,
+          venta: v.venta,
+          porcentaje: v.porcentaje,
+          posicion: v.posicion,
+        })),
+      });
+    } catch (e) {
+      console.error("Error generando la imagen del reporte:", e);
+    } finally {
+      setGenerandoImagen(false);
+    }
   };
 
   if (loading) {
@@ -225,11 +276,23 @@ export function ReporteDiarioVentas() {
             />
           </div>
           <button
+            onClick={exportarImagen}
+            disabled={generandoImagen}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-sm hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-300 font-bold text-xs uppercase tracking-widest active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {generandoImagen ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <ImageIcon size={16} />
+            )}
+            <span>Imagen</span>
+          </button>
+          <button
             onClick={exportarExcel}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-sm hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all duration-300 font-bold text-xs uppercase tracking-widest active:scale-95"
           >
             <Download size={16} />
-            <span>Exportar</span>
+            <span>Excel</span>
           </button>
         </div>
       </div>
