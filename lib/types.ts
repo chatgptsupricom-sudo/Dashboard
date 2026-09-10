@@ -72,6 +72,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "cxc_pago_clientes", // Pago de Clientes
+      "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
@@ -226,6 +227,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_search", // Buscar Facturas
       "cxc_top_clients", // Top Clientes / Vendedor
       "cxc_pago_clientes", // Pago de Clientes
+      "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {
@@ -294,6 +296,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_top_clients",
       "cxc_contado_credito",
       "cxc_pago_clientes",
+      "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
     ],
   },
   [UserRole.DISENADOR]: {
