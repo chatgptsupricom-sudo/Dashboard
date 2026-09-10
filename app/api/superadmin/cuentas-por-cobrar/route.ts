@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
@@ -319,6 +320,12 @@ export async function GET(request: NextRequest) {
       ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
       : obtenerSemanasDelMes(currentYear, currentMonth + 1);
 
+    // Series semanales de Cartera Vencida y Recuperación: las dos reconstruyen
+    // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
+    // `carteraHoy` sale del mismo método que las celdas semanales, para que el
+    // promedio del KPI y su fila aten entre sí.
+    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+
     const efectividadCalc = await calcularEfectividad(
       companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today,
     );
@@ -390,10 +397,17 @@ export async function GET(request: NextRequest) {
             mesCerrado: efectividadCalc.mesCerrado,
           },
           carteraVencida: {
-            value: carteraVencidaPct,
+            // Se calcula con el mismo método que la fila semanal (reconstruyendo
+            // el saldo en el corte) y no con `days_overdue` del reporte de Odoo,
+            // para que el promedio y las celdas de la semana aten. Mueve el
+            // valor ~1,7 pts respecto a la fuente anterior y de paso unifica el
+            // desvío entre fuentes del issue #190. El aging, los top deudores y
+            // el corte por sede siguen leyendo el reporte, que es donde está el
+            // detalle por renglón.
+            value: seriesCxc.carteraHoy.pct,
             meta: cxcMetas["cartera_vencida"] || 10,
-            saldoVencido: Math.round(totalOverdue * 100) / 100,
-            carteraTotal: Math.round(totalReceivable * 100) / 100,
+            saldoVencido: seriesCxc.carteraHoy.vencido,
+            carteraTotal: seriesCxc.carteraHoy.total,
           },
           recuperacion: {
             value: recuperacion,
@@ -416,6 +430,8 @@ export async function GET(request: NextRequest) {
           },
         },
         semanaEfectividad,
+        semanaCarteraVencida: seriesCxc.carteraVencidaSemana,
+        semanaRecuperacion: seriesCxc.recuperacionSemana,
         pesos: cxcPesos,
         agingDistribution,
         byCompany,

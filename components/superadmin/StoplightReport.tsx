@@ -826,9 +826,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         title: t("kpi_cartera_vencida"),
         peso: pesoDe("cartera_vencida", 30),
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
-        weeks: [k.carteraVencida.value !== null ? String(k.carteraVencida.value) + "%" : null, null, null, null, null],
-        // Foto puntual del % de cartera vencida; no tiene lectura por semana.
-        sinSemana: true,
+        // Serie semanal reconstruyendo el saldo de cada factura al cierre de
+        // cada semana (lib/cxc/seriesSemanales.ts). Se lee como "cómo estaba la
+        // cartera al cerrar la semana", no como "qué pasó durante la semana".
+        weeks: cxcData.semanaCarteraVencida || Array(5).fill(null),
         goalDefault: String(k.carteraVencida.meta),
         goalSuffix: "%",
         isClickable: true,
@@ -842,8 +843,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         // (lib/cxc/recuperacion.ts, issue #189). Sin desglose semanal: el
         // denominador es una foto al inicio del mes, no una serie.
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
-        weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
-        sinSemana: true,
+        // Semanal: pagos conciliados dentro de la semana sobre el saldo que
+        // estaba vencido al iniciarla. Cada semana tiene su propio denominador,
+        // así que las celdas NO suman el valor mensual (lib/cxc/seriesSemanales.ts).
+        weeks: cxcData.semanaRecuperacion || Array(5).fill(null),
         goalDefault: String(k.recuperacion.meta),
         goalSuffix: "%",
         isClickable: true,
