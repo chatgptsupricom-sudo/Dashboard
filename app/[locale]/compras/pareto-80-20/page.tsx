@@ -19,10 +19,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Loader2, PieChart as PieChartIcon, Search } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Download,
+  HelpCircle,
+  Loader2,
+  PieChart as PieChartIcon,
+  Search,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { ColumnHeader } from "@/components/compras/column-header";
+import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 import {
   Bar,
   CartesianGrid,
@@ -353,10 +366,15 @@ export default function Pareto8020Page() {
 
       {/* Resultados */}
       <div className="space-y-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Detalle por producto
-          </h2>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Detalle por producto
+            </h2>
+            {/* Los tooltips de los encabezados solo existen en la tabla de
+                escritorio; esto deja la misma explicación al alcance en móvil. */}
+            <LeyendaColumnas dias={dias} />
+          </div>
           <span className="text-xs text-slate-400">
             {productosFiltrados.length}{" "}
             {productosFiltrados.length === 1 ? "producto" : "productos"}
@@ -437,17 +455,51 @@ export default function Pareto8020Page() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="px-6">Producto</TableHead>
-                      <TableHead className="whitespace-nowrap text-center">Marca/Cat</TableHead>
-                      <TableHead className="whitespace-nowrap text-center">
-                        Monto comprado ({dias}d)
+                      <TableHead className="px-6">
+                        <ColumnHeader label="Producto" tooltip={COLUMN_TOOLTIPS.Producto} />
                       </TableHead>
-                      <TableHead className="whitespace-nowrap text-center">
-                        Unidades ({dias}d)
+                      <TableHead className="whitespace-nowrap">
+                        <ColumnHeader
+                          label="Marca/Cat"
+                          tooltip={COLUMN_TOOLTIPS["Marca/Cat"]}
+                          className="justify-center"
+                        />
                       </TableHead>
-                      <TableHead className="whitespace-nowrap text-center">% Individual</TableHead>
-                      <TableHead className="whitespace-nowrap text-center">% Acumulado</TableHead>
-                      <TableHead className="pr-6 text-right">Clase</TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <ColumnHeader
+                          label={`Monto comprado (${dias}d)`}
+                          tooltip={COLUMN_TOOLTIPS["Monto comprado"]}
+                          className="justify-center"
+                        />
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <ColumnHeader
+                          label={`Unidades (${dias}d)`}
+                          tooltip={COLUMN_TOOLTIPS["Unidades compradas"]}
+                          className="justify-center"
+                        />
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <ColumnHeader
+                          label="% Individual"
+                          tooltip={COLUMN_TOOLTIPS["% Individual"]}
+                          className="justify-center"
+                        />
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <ColumnHeader
+                          label="% Acumulado"
+                          tooltip={COLUMN_TOOLTIPS["% Acumulado"]}
+                          className="justify-center"
+                        />
+                      </TableHead>
+                      <TableHead className="pr-6">
+                        <ColumnHeader
+                          label="Clase"
+                          tooltip={COLUMN_TOOLTIPS.Clase}
+                          className="justify-end"
+                        />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -578,5 +630,52 @@ function KpiCard({
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Leyenda de columnas accesible tambien en movil, donde la tabla (y con ella
+ * los tooltips de los encabezados) no se muestra.
+ */
+function LeyendaColumnas({ dias }: { dias: string }) {
+  const filas: { k: string; v: string }[] = [
+    { k: `Monto comprado (${dias}d)`, v: COLUMN_TOOLTIPS["Monto comprado"] },
+    { k: `Unidades (${dias}d)`, v: COLUMN_TOOLTIPS["Unidades compradas"] },
+    { k: "% Individual", v: COLUMN_TOOLTIPS["% Individual"] },
+    { k: "% Acumulado", v: COLUMN_TOOLTIPS["% Acumulado"] },
+    { k: "Clase", v: COLUMN_TOOLTIPS.Clase },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Qué significa cada columna"
+          className="text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-300"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto"
+      >
+        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          Qué significa cada columna
+        </p>
+        <dl className="mt-3 space-y-3">
+          {filas.map((f) => (
+            <div key={f.k}>
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {f.k}
+              </dt>
+              <dd className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {f.v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   );
 }
