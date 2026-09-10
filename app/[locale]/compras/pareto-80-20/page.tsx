@@ -185,78 +185,93 @@ export default function Pareto8020Page() {
     );
   }
 
+
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Curva 80/20 (Pareto)</h1>
-        <p className="text-gray-500">
-          Productos que concentran la mayor parte del gasto de compra en los
-          últimos {dias} días, según órdenes de compra confirmadas. Excluye
-          servicios y gastos (fletes, acarreos).
-        </p>
+    <div className="mx-auto max-w-6xl min-w-0 space-y-6">
+      {/* Cabecera */}
+      <div className="flex items-start gap-3">
+        <div className="hidden shrink-0 rounded-2xl bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-950/50 sm:block">
+          <PieChartIcon className="h-6 w-6" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+            Curva 80/20 (Pareto)
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Productos que concentran la mayor parte del gasto de compra en los
+            últimos {dias} días, según órdenes de compra confirmadas. Excluye
+            servicios y gastos (fletes, acarreos).
+          </p>
+        </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-emerald-200 bg-emerald-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Productos Clase A</p>
-            <p className="text-3xl font-bold text-emerald-700 mt-1">{resumen.productosClaseA}</p>
-            <p className="text-xs text-gray-400 mt-1">de {resumen.totalProductos} analizados</p>
-          </CardContent>
-        </Card>
-        <Card className="border-emerald-200 bg-emerald-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">% de Productos</p>
-            <p className="text-3xl font-bold text-emerald-700 mt-1">{resumen.pctProductosClaseA}%</p>
-            <p className="text-xs text-gray-400 mt-1">son Clase A</p>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">% del Gasto</p>
-            <p className="text-3xl font-bold text-blue-700 mt-1">{resumen.pctMontoClaseA}%</p>
-            <p className="text-xs text-gray-400 mt-1">lo concentra la Clase A</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Analizado</p>
-            <p className="text-3xl font-bold text-gray-700 mt-1">{resumen.totalProductos}</p>
-            <p className="text-xs text-gray-400 mt-1">SKUs comprados ({dias}d)</p>
-          </CardContent>
-        </Card>
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard
+          label="Productos Clase A"
+          value={String(resumen.productosClaseA)}
+          hint={`de ${resumen.totalProductos} analizados`}
+          tone="emerald"
+        />
+        <KpiCard
+          label="% de Productos"
+          value={`${resumen.pctProductosClaseA}%`}
+          hint="son Clase A"
+          tone="emerald"
+        />
+        <KpiCard
+          label="% del Gasto"
+          value={`${resumen.pctMontoClaseA}%`}
+          hint="lo concentra la Clase A"
+          tone="blue"
+        />
+        <KpiCard
+          label="Total Analizado"
+          value={String(resumen.totalProductos)}
+          hint={`SKUs comprados (${dias}d)`}
+          tone="slate"
+        />
       </div>
 
-      {/* Grafico de Pareto */}
-      <Card className="shadow-sm border-gray-200">
+      {/* Grafico */}
+      <Card className="min-w-0 rounded-3xl border-slate-200 shadow-sm dark:border-slate-800">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
             <PieChartIcon className="h-4 w-4 text-emerald-600" /> Curva de Pareto (Top 30)
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={datosGrafico} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="nombre" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={70} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
-              <Tooltip
-                formatter={(value: number, name: string) =>
-                  name === "% Acumulado" ? `${value}%` : `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-                }
-              />
-              <Legend />
-              <Bar yAxisId="left" dataKey="monto" name="Monto comprado" fill="#10b981" radius={[3, 3, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="pctAcumulado" name="% Acumulado" stroke="#2563eb" strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <CardContent className="min-w-0 px-2 sm:px-6">
+          {/* El grafico necesita ancho para que quepan 30 etiquetas rotadas:
+              scrollea DENTRO de su tarjeta en vez de estirar la pagina. El
+              min-w-0 es imprescindible: Card es flex column y sin el, el hijo
+              de min-w-[680px] estira la tarjeta (y con ella la pagina) en vez
+              de scrollear. */}
+          <div className="-mx-2 min-w-0 overflow-x-auto px-2 sm:mx-0 sm:px-0">
+            <div className="min-w-[680px]">
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart data={datosGrafico} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="nombre" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={70} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                  <Tooltip
+                    formatter={(value: number, name: string) =>
+                      name === "% Acumulado" ? `${value}%` : `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                    }
+                  />
+                  <Legend />
+                  <Bar yAxisId="left" dataKey="monto" name="Monto comprado" fill="#10b981" radius={[3, 3, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="pctAcumulado" name="% Acumulado" stroke="#2563eb" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-white shadow-sm border-gray-200">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
+      {/* Filtros */}
+      <Card className="rounded-3xl border-slate-200 shadow-sm dark:border-slate-800">
+        <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
           <Select
             value={sede}
             onValueChange={(v) => {
@@ -275,6 +290,7 @@ export default function Pareto8020Page() {
               ))}
             </SelectContent>
           </Select>
+
           <Select value={dias} onValueChange={setDias}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Período" />
@@ -287,18 +303,20 @@ export default function Pareto8020Page() {
               ))}
             </SelectContent>
           </Select>
-          <div className="relative lg:col-span-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               type="text"
-              placeholder="Buscar SKU o nombre..."
-              className="pl-9 w-full"
+              placeholder="Buscar SKU o nombre…"
+              className="w-full pl-9"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
+
           <Select value={filtroMarca} onValueChange={setFiltroMarca}>
-            <SelectTrigger className="w-full lg:col-span-1">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Marca" />
             </SelectTrigger>
             <SelectContent>
@@ -310,8 +328,9 @@ export default function Pareto8020Page() {
               ))}
             </SelectContent>
           </Select>
+
           <Select value={filtroClase} onValueChange={setFiltroClase}>
-            <SelectTrigger className="w-full lg:col-span-1">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Clase" />
             </SelectTrigger>
             <SelectContent>
@@ -321,107 +340,243 @@ export default function Pareto8020Page() {
               <SelectItem value="C">Clase C</SelectItem>
             </SelectContent>
           </Select>
+
           <Button
             onClick={exportarExcel}
             variant="outline"
-            className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 w-full lg:col-span-1"
+            className="w-full border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
           >
-            <Download className="h-4 w-4 mr-2" /> Exportar
+            <Download className="mr-2 h-4 w-4" /> Exportar
           </Button>
         </CardContent>
       </Card>
 
-      <Card className="shadow-md border-gray-200">
-        <CardHeader className="bg-gray-50/50 pb-4">
-          <CardTitle className="text-lg">Detalle por Producto</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-gray-50/30">
-                <TableRow>
-                  <TableHead className="w-[300px] px-6">Producto</TableHead>
-                  <TableHead className="text-center">Marca/Cat</TableHead>
-                  <TableHead className="text-center">Monto comprado ({dias}d)</TableHead>
-                  <TableHead className="text-center">Unidades compradas ({dias}d)</TableHead>
-                  <TableHead className="text-center">% Individual</TableHead>
-                  <TableHead className="text-center">% Acumulado</TableHead>
-                  <TableHead className="text-right pr-6">Clase</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {currentItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
-                      Sin órdenes de compra confirmadas en el período seleccionado.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  currentItems.map((item, index) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="px-6">
-                        <div className="font-semibold text-sm flex items-center gap-2">
-                          <span className="text-gray-400">
-                            #{(currentPage - 1) * itemsPerPage + index + 1}
-                          </span>
-                          {item.codigo}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate w-[250px]" title={item.name}>
-                          {item.name}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className="mb-1 bg-white">
-                          {item.marca}
-                        </Badge>
-                        <div className="text-[10px] text-gray-500">{item.categoria}</div>
-                      </TableCell>
-                      <TableCell className="text-center font-bold text-gray-800">
+      {/* Resultados */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Detalle por producto
+          </h2>
+          <span className="text-xs text-slate-400">
+            {productosFiltrados.length}{" "}
+            {productosFiltrados.length === 1 ? "producto" : "productos"}
+          </span>
+        </div>
+
+        {currentItems.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-16 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900">
+            Sin órdenes de compra confirmadas en el período seleccionado.
+          </div>
+        ) : (
+          <>
+            {/* Movil: tarjetas */}
+            <div className="space-y-2.5 md:hidden">
+              {currentItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-slate-100">
+                        <span className="text-slate-400">
+                          #{(currentPage - 1) * itemsPerPage + index + 1}
+                        </span>
+                        <span className="truncate font-mono">{item.codigo}</span>
+                      </p>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-slate-500" title={item.name}>
+                        {item.name}
+                      </p>
+                    </div>
+                    <Badge className={`${CLASE_BADGE[item.clase]} shrink-0`}>
+                      {item.clase}
+                    </Badge>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Monto ({dias}d)
+                      </dt>
+                      <dd className="text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100">
                         ${item.monto.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                      </TableCell>
-                      <TableCell className="text-center text-gray-600">{item.unidades}</TableCell>
-                      <TableCell className="text-center text-gray-600">{item.pctIndividual}%</TableCell>
-                      <TableCell className="text-center text-gray-600">{item.pctAcumulado}%</TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Badge className={CLASE_BADGE[item.clase]}>{item.clase}</Badge>
-                      </TableCell>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Unidades ({dias}d)
+                      </dt>
+                      <dd className="text-sm tabular-nums text-slate-700 dark:text-slate-200">
+                        {item.unidades.toLocaleString("es")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Marca / Categoría
+                      </dt>
+                      <dd className="truncate text-xs text-slate-700 dark:text-slate-200" title={item.categoria}>
+                        {item.marca} · {item.categoria}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        % Indiv. / Acum.
+                      </dt>
+                      <dd className="text-xs tabular-nums text-slate-700 dark:text-slate-200">
+                        {item.pctIndividual}% · {item.pctAcumulado}%
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ))}
+            </div>
+
+            {/* Escritorio: tabla */}
+            <Card className="hidden overflow-hidden rounded-3xl border-slate-200 shadow-sm dark:border-slate-800 md:block">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="px-6">Producto</TableHead>
+                      <TableHead className="whitespace-nowrap text-center">Marca/Cat</TableHead>
+                      <TableHead className="whitespace-nowrap text-center">
+                        Monto comprado ({dias}d)
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-center">
+                        Unidades ({dias}d)
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-center">% Individual</TableHead>
+                      <TableHead className="whitespace-nowrap text-center">% Acumulado</TableHead>
+                      <TableHead className="pr-6 text-right">Clase</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between p-4 border-t">
-            <p className="text-sm text-gray-500">
-              {productosFiltrados.length === 0
-                ? "0 productos"
-                : totalPages > 1
-                  ? `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, productosFiltrados.length)} de ${productosFiltrados.length} productos`
-                  : `${productosFiltrados.length} producto${productosFiltrados.length !== 1 ? "s" : ""}`}
-            </p>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                >
-                  Siguiente
-                </Button>
+                  </TableHeader>
+                  <TableBody>
+                    {currentItems.map((item, index) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="max-w-[22rem] px-6">
+                          <div className="flex items-center gap-2 text-sm font-semibold">
+                            <span className="text-slate-400">
+                              #{(currentPage - 1) * itemsPerPage + index + 1}
+                            </span>
+                            <span className="font-mono">{item.codigo}</span>
+                          </div>
+                          <div className="truncate text-xs text-slate-500" title={item.name}>
+                            {item.name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="mb-1 bg-white dark:bg-transparent">
+                            {item.marca}
+                          </Badge>
+                          <div
+                            className="mx-auto max-w-[10rem] truncate text-[10px] text-slate-500"
+                            title={item.categoria}
+                          >
+                            {item.categoria}
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-center font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                          ${item.monto.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums text-slate-600 dark:text-slate-300">
+                          {item.unidades.toLocaleString("es")}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums text-slate-600 dark:text-slate-300">
+                          {item.pctIndividual}%
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums text-slate-600 dark:text-slate-300">
+                          {item.pctAcumulado}%
+                        </TableCell>
+                        <TableCell className="pr-6 text-right">
+                          <Badge className={CLASE_BADGE[item.clase]}>{item.clase}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            )}
+            </Card>
+          </>
+        )}
+
+        {/* Paginacion */}
+        {totalPages > 1 && (
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+            <p className="text-sm text-slate-500">
+              {(currentPage - 1) * itemsPerPage + 1}–
+              {Math.min(currentPage * itemsPerPage, productosFiltrados.length)} de{" "}
+              {productosFiltrados.length}
+            </p>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Anterior
+              </Button>
+              <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
+  );
+}
+
+const KPI_TONE: Record<string, { card: string; value: string }> = {
+  emerald: {
+    card: "border-emerald-200 bg-emerald-50/40 dark:border-emerald-900 dark:bg-emerald-950/20",
+    value: "text-emerald-700 dark:text-emerald-400",
+  },
+  blue: {
+    card: "border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/20",
+    value: "text-blue-700 dark:text-blue-400",
+  },
+  slate: {
+    card: "border-slate-200 dark:border-slate-800",
+    value: "text-slate-700 dark:text-slate-200",
+  },
+};
+
+function KpiCard({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone: "emerald" | "blue" | "slate";
+}) {
+  const t = KPI_TONE[tone];
+  return (
+    <Card className={`min-w-0 rounded-3xl shadow-sm ${t.card}`}>
+      <CardContent className="p-4">
+        <p className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">
+          {label}
+        </p>
+        <p className={`mt-1 text-2xl font-black tabular-nums sm:text-3xl ${t.value}`}>
+          {value}
+        </p>
+        <p className="mt-1 truncate text-[10px] text-slate-400 sm:text-xs" title={hint}>
+          {hint}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
