@@ -149,11 +149,18 @@ export async function GET(request: NextRequest) {
       .map((prod: any) => {
         const pId = prod.id;
         const clase = clasificacion.get(pId);
+        const nombre = String(prod.name ?? "").trim();
         return {
           id: pId,
           codigo: prod.default_code ? String(prod.default_code).trim() : `PROD-${pId}`,
-          name: prod.name,
-          marca: prod.name ? prod.name.split(" ")[0].toUpperCase() : "SIN MARCA",
+          name: nombre,
+          // Se hace .trim() ANTES de partir por espacios: hay productos en
+          // Odoo cuyo `name` empieza con un espacio (ej. " HAVIT AIR
+          // CONDUCTION HEADPHONES..."), y con el split crudo la marca salia
+          // "" -> la pagina renderiza <SelectItem value=""> en el filtro de
+          // marca -> Radix lanza "A <Select.Item /> must have a value prop
+          // that is not an empty string" y se cae toda la pantalla.
+          marca: nombre.split(/\s+/)[0]?.toUpperCase() || "SIN MARCA",
           categoria: prod.categ_id ? prod.categ_id[1] : "Sin Categoría",
           monto: Number(stats[pId].monto.toFixed(2)),
           unidades: Math.round(stats[pId].unidades),
