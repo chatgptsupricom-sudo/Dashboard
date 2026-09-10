@@ -75,9 +75,19 @@ export async function GET(request: NextRequest) {
     // Tampoco hay que restar devoluciones: al sumar `product_qty` de ordenes
     // confirmadas no entran notas de credito, que era la causa secundaria del
     // numero inflado.
+    //
+    // Se excluyen los productos de tipo servicio: en las ordenes de compra
+    // viajan gastos modelados como producto (el caso gordo es `FLE_ACA_V`
+    // "GASTO FLETES Y ACARREOS VALENCIA", ~$349.000 en 90 dias repartidos en
+    // 34 lineas de `product_qty = 1`). Agregados como un SKU mas se metian en
+    // Clase A y desplazaban productos reales de una curva cuyo objetivo es
+    // priorizar QUE COMPRAR. Se filtra por `!= "service"` y no por
+    // `in ["product","consu"]` a proposito: los consumibles (toners, tintas,
+    // cartuchos) SI son mercancia real y tienen que contar.
     const domain: any[] = [
       ["state", "=", "purchase"],
       ["product_id", "!=", false],
+      ["product_id.type", "!=", "service"],
       ["date_order", ">=", desdeStr],
       ["company_id", "in", companies],
     ];

@@ -186,7 +186,8 @@ export default function Pareto8020Page() {
         <h1 className="text-3xl font-bold tracking-tight">Curva 80/20 (Pareto)</h1>
         <p className="text-gray-500">
           Productos que concentran la mayor parte del gasto de compra en los
-          últimos {dias} días, según órdenes de compra confirmadas.
+          últimos {dias} días, según órdenes de compra confirmadas. Excluye
+          servicios y gastos (fletes, acarreos).
         </p>
       </div>
 
