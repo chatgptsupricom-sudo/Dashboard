@@ -109,8 +109,13 @@ export default function Pareto8020Page() {
     fetchData();
   }, [sede, dias]);
 
+  // El .filter(Boolean) no es decorativo: un solo valor vacio hace que Radix
+  // lance desde <SelectItem value=""> y se caiga TODA la pantalla (pantalla en
+  // negro, sin mensaje). El origen se arregla en la API, esto es el cinturon
+  // por si vuelve a colarse un nombre raro desde Odoo.
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(productos.map((p) => p.marca))).sort(),
+    () =>
+      Array.from(new Set(productos.map((p) => p.marca).filter(Boolean))).sort(),
     [productos],
   );
 
