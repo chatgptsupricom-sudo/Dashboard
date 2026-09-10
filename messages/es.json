@@ -1275,6 +1275,8 @@
     "recuperacion_vencidos": "Recuperación de Vencidos",
     "inicial": "Inicial",
     "restante": "Restante",
+    "recuperado": "Recuperado",
+    "vencido_al_inicio": "Vencido al inicio",
     "dso": "DSO (Días de Cobro)",
     "dias": "días",
     "cartera": "Cartera",

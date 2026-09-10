@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -259,7 +260,7 @@ export async function GET(request: NextRequest) {
     const d90 = new Date(today);
     d90.setDate(d90.getDate() - 90);
 
-    const [efectividadInvoicesRaw, recuperacionInvoicesRaw, creditSalesRaw] = await Promise.all([
+    const [efectividadInvoicesRaw, recuperacionCalc, creditSalesRaw] = await Promise.all([
       fetchPaginated(
         "account.move",
         [
@@ -271,16 +272,11 @@ export async function GET(request: NextRequest) {
         ],
         ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"],
       ),
-      fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
-        ],
-        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
-      ),
+      // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
+      // y lo compara con los pagos conciliados durante el mes. Ver
+      // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
+      // puede leer directo de `amount_residual` (issue #189).
+      calcularRecuperacion(companyIds, monthStart, monthEnd),
       fetchPaginated(
         "account.move",
         [
@@ -347,16 +343,8 @@ export async function GET(request: NextRequest) {
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
-    // ── Recuperación Vencidos: cuánto de lo vencido al inicio del mes ya se cobró ──
-    const recuperacionInvoices = recuperacionInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-      return { amountTotal, amountResidual: Math.abs(inv.amount_residual || 0) };
-    });
-    const vencidoInicial = recuperacionInvoices.reduce((s, i) => s + i.amountTotal, 0);
-    const vencidoRestante = recuperacionInvoices.reduce((s, i) => s + i.amountResidual, 0);
-    const recuperacion = vencidoInicial > 0
-      ? Math.round(((vencidoInicial - vencidoRestante) / vencidoInicial) * 10000) / 100
-      : null;
+    // ── Recuperación Vencidos: ya calculado arriba por calcularRecuperacion() ──
+    const recuperacion = recuperacionCalc.value;
 
     // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
     // `totalReceivable` (numerador) sale de digiflex.cxc.report y viene con
@@ -418,10 +406,17 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: recuperacion,
+            value: recuperacion, // null a propósito — ver issue #189
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(vencidoInicial * 100) / 100,
-            vencidoRestante: Math.round(vencidoRestante * 100) / 100,
+            // Nombres nuevos y explícitos: `vencidoInicial`/`vencidoRestante`
+            // se retiran a propósito porque significaban otra cosa (todo lo
+            // facturado en la historia y su saldo) y arrastrarlos invitaba a
+            // leerlos mal. Ver lib/cxc/recuperacion.ts.
+            saldoVencidoInicial: recuperacionCalc.saldoVencidoInicial,
+            recuperadoEnElMes: recuperacionCalc.recuperadoEnElMes,
+            saldoVencidoHoy: recuperacionCalc.saldoVencidoHoy,
+            conciliadoDesdeElCorte: recuperacionCalc.conciliadoDesdeElCorte,
+            facturasConSaldo: recuperacionCalc.facturasConSaldo,
           },
           dso: {
             value: dso,

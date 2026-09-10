@@ -838,10 +838,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         id: "recuperacion_vencidos",
         title: t("kpi_recuperacion"),
         peso: pesoDe("recuperacion_vencidos", 25),
+        // Recuperación del mes contra el saldo vencido al iniciarlo
+        // (lib/cxc/recuperacion.ts, issue #189). Sin desglose semanal: el
+        // denominador es una foto al inicio del mes, no una serie.
         average: k.recuperacion.value !== null ? `${k.recuperacion.value}%` : "N/A",
         weeks: [k.recuperacion.value !== null ? String(k.recuperacion.value) + "%" : null, null, null, null, null],
-        // Acumulado del mes contra la cohorte de vencidos al inicio; el desglose
-        // semanal necesita fechas de conciliación de pagos (issue #130).
         sinSemana: true,
         goalDefault: String(k.recuperacion.meta),
         goalSuffix: "%",

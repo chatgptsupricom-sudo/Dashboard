@@ -32,7 +32,7 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 interface KPIs {
   efectividad: { value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
-  recuperacion: { value: number; meta: number; vencidoInicial: number; vencidoRestante: number };
+  recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
   dso: { value: number; meta: number; carteraAbierta: number; ventasCredito90d: number };
 }
 
@@ -265,11 +265,11 @@ export default function CxCReport() {
             />
             <KPICard
               title={t("recuperacion_vencidos")}
-              value={`${data.kpis.recuperacion.value}%`}
+              value={data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.recuperacion.meta}%`}
-              subtitle={`${t("inicial")}: ${formatCurrency(data.kpis.recuperacion.vencidoInicial)} / ${t("restante")}: ${formatCurrency(data.kpis.recuperacion.vencidoRestante)}`}
-              color={getTrafficLight(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
-              dot={getTrafficDot(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
+              subtitle={`${t("recuperado")}: ${formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)} / ${t("vencido_al_inicio")}: ${formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}`}
+              color={getTrafficLight(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
+              dot={getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
               icon={<RefreshCw size={20} />}
               weight="25%"
             />

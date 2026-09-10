@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -193,62 +194,61 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "recuperacion") {
-      // Cohorte: facturas vencidas al inicio del mes
-      const cohortStart = getMonthStart(currentYear, currentMonth);
-      const allInvoices = await fetchPaginated(
+      // Mismo cálculo que la tarjeta (lib/cxc/recuperacion.ts, issue #189)
+      // para que el modal y el KPI nunca discrepen: antes cada uno tenía su
+      // propia versión de la fórmula.
+      const monthStart = getMonthStart(currentYear, currentMonth);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+      const calc = await calcularRecuperacion(companyIds, monthStart, monthEnd);
+
+      // Facturas que ya estaban vencidas al iniciar el mes y siguen con saldo:
+      // es la lista accionable, "lo que queda por recuperar". El desglose de
+      // qué se cobró factura por factura necesita cruzar cada conciliación con
+      // su factura y queda para una segunda vuelta.
+      const pendientes = await fetchPaginated(
         "account.move",
         [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
+          ["move_type", "=", "out_invoice"],
           ["state", "=", "posted"],
           ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", cohortStart.toISOString().split("T")[0]],
+          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
         ],
-        ["id", "name", "partner_id", "company_id", "move_type",
-         "invoice_date", "invoice_date_due", "payment_state",
-         "amount_total", "amount_residual"],
+        ["id", "name", "partner_id", "company_id", "invoice_date",
+         "invoice_date_due", "payment_state", "amount_total", "amount_residual"],
       );
 
-      const invoices = allInvoices.map((inv: any) => {
-        const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-        const residual = inv.amount_residual || 0;
-        const pagado = amountTotal - Math.abs(residual);
-        return {
-          id: inv.id,
-          name: inv.name || "",
-          partnerName: inv.partner_id?.[1] || "Sin cliente",
-          partnerId: inv.partner_id?.[0] || 0,
-          companyName: inv.company_id?.[1] || "",
-          moveType: inv.move_type,
-          invoiceDate: inv.invoice_date || null,
-          invoiceDateDue: inv.invoice_date_due || null,
-          paymentState: inv.payment_state || "not_paid",
-          amountTotal,
-          amountPaid: Math.round(Math.max(pagado, 0) * 100) / 100,
-          amountResidual: Math.round(Math.abs(residual) * 100) / 100,
-          status: residual <= 0 ? "Recuperado" : "Pendiente",
-        };
-      }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
-      // Mismo motivo que en "efectividad" arriba: sin este filtro, las
-      // facturas internas de Supricom se cuentan en la cohorte de vencidas.
-
-      const totalInicial = invoices.reduce((s, i) => s + i.amountTotal, 0);
-      const totalRestante = invoices.reduce((s, i) => s + i.amountResidual, 0);
-      const totalRecuperado = totalInicial - totalRestante;
+      const invoices = pendientes.map((inv: any) => ({
+        id: inv.id,
+        name: inv.name || "",
+        partnerName: inv.partner_id?.[1] || "Sin cliente",
+        partnerId: inv.partner_id?.[0] || 0,
+        companyName: inv.company_id?.[1] || "",
+        invoiceDate: inv.invoice_date || null,
+        invoiceDateDue: inv.invoice_date_due || null,
+        paymentState: inv.payment_state || "not_paid",
+        amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
+        amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
+        status: "Pendiente",
+      }));
 
       return NextResponse.json({
         success: true,
         data: {
           type: "recuperacion",
           summary: {
-            vencidoInicial: Math.round(totalInicial * 100) / 100,
-            vencidoRestante: Math.round(totalRestante * 100) / 100,
-            recuperado: Math.round(totalRecuperado * 100) / 100,
-            recuperacion: totalInicial > 0 ? Math.round((totalRecuperado / totalInicial) * 10000) / 100 : 0,
-            count: invoices.length,
-            recoveredCount: invoices.filter(i => i.status === "Recuperado").length,
-            pendingCount: invoices.filter(i => i.status === "Pendiente").length,
+            recuperacion: calc.value,
+            saldoVencidoInicial: calc.saldoVencidoInicial,
+            recuperadoEnElMes: calc.recuperadoEnElMes,
+            saldoVencidoHoy: calc.saldoVencidoHoy,
+            conciliadoDesdeElCorte: calc.conciliadoDesdeElCorte,
+            count: calc.facturasConSaldo,
+            pendingCount: invoices.length,
           },
-          invoices: invoices.sort((a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0),
+          invoices: invoices.sort(
+            (a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0,
+          ),
         },
       });
     }
