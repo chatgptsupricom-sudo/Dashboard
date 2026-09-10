@@ -596,6 +596,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       goalSuffix: "%",
       cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
     },
+    {
+      id: "ciclo_reposicion",
+      title: t("kpi_ciclo_reposicion"),
+      // Informativo por ahora (peso 0 por defecto): es un KPI nuevo, sin
+      // historial para fijarle una meta razonable todavia. Configurable
+      // luego desde kpi_targets como cualquier otro KPI si se decide pesarlo.
+      peso: pesoDe("ciclo_reposicion", 0),
+      average: kpiData?.avgCicloReposicion != null ? `${kpiData.avgCicloReposicion}${t("suffix_dias")}` : "N/A",
+      // Promedio de dias entre compras consecutivas de cada cliente (ventana
+      // movil de 12 meses): no tiene una lectura semanal real.
+      sinSemana: true,
+      weeks: [kpiData?.avgCicloReposicion != null ? String(kpiData.avgCicloReposicion) : null, ...Array(numWeeks - 1).fill(null)],
+      isClickable: false,
+      goalDefault: kpiData?.metas?.["ciclo_reposicion"] ? String(kpiData.metas["ciclo_reposicion"]) : "0",
+      goalSuffix: " días",
+      cumple: kpiData?.avgCicloReposicion != null && (kpiData?.metas?.["ciclo_reposicion"] || 0) > 0
+        ? kpiData.avgCicloReposicion <= kpiData.metas["ciclo_reposicion"]
+        : false,
+    },
   ];
 
   const comprasKpis = [

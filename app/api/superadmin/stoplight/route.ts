@@ -694,6 +694,62 @@ export async function GET(request: NextRequest) {
       console.error("Error calculating activacion:", e.message);
     }
 
+    // --- Ciclo de reposicion del cliente (dias promedio entre compras) ---
+    // KPI nuevo, informativo (peso 0 por defecto): promedio de los dias que
+    // transcurren entre compras consecutivas de cada cliente. El mes en curso
+    // no alcanza para medir un ciclo (la mayoria de clientes compra 0 o 1 vez
+    // al mes), asi que usa una ventana propia de 12 meses hacia atras en vez
+    // de `invoices` (que esta acotado a `fechaInicio`/`fechaFin` del mes).
+    let avgCicloReposicion: number | null = null;
+    try {
+      const fechaFinLookback = new Date(fechaFin);
+      const fechaInicioLookback = new Date(fechaFinLookback);
+      fechaInicioLookback.setMonth(fechaInicioLookback.getMonth() - 12);
+      const fechaInicioLookbackStr = fechaInicioLookback.toISOString().slice(0, 10);
+
+      const invoicesLookback = (await callOdooRPC<any[]>(
+        "account.move",
+        "search_read",
+        [
+          [
+            ["move_type", "=", "out_invoice"],
+            ["state", "=", "posted"],
+            ["company_id", "=", companyId],
+            ["invoice_date", ">=", fechaInicioLookbackStr],
+            ["invoice_date", "<=", fechaFin],
+            ["partner_id", "!=", false],
+          ],
+        ],
+        { fields: ["partner_id", "invoice_date"], limit: 50000 }
+      )) || [];
+
+      const fechasPorCliente: Record<number, Date[]> = {};
+      invoicesLookback.forEach((inv: any) => {
+        const partnerId = inv.partner_id?.[0];
+        if (!partnerId || !inv.invoice_date) return;
+        (fechasPorCliente[partnerId] ||= []).push(new Date(inv.invoice_date));
+      });
+
+      const ciclosPorCliente: number[] = [];
+      Object.values(fechasPorCliente).forEach((fechas) => {
+        if (fechas.length < 2) return;
+        fechas.sort((a, b) => a.getTime() - b.getTime());
+        let sumaGaps = 0;
+        for (let i = 1; i < fechas.length; i++) {
+          sumaGaps += (fechas[i].getTime() - fechas[i - 1].getTime()) / (1000 * 60 * 60 * 24);
+        }
+        ciclosPorCliente.push(sumaGaps / (fechas.length - 1));
+      });
+
+      if (ciclosPorCliente.length > 0) {
+        avgCicloReposicion = Math.round(
+          ciclosPorCliente.reduce((a, b) => a + b, 0) / ciclosPorCliente.length
+        );
+      }
+    } catch (e: any) {
+      console.error("Error calculating ciclo de reposicion:", e.message);
+    }
+
     const semanaActivacion = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;
@@ -945,6 +1001,7 @@ export async function GET(request: NextRequest) {
         avgActivacion: avgFromWeeks(semanaActivacion),
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
+        avgCicloReposicion,
         semanaVarCosto,
         semanaRotacion,
         semanaQuiebre,

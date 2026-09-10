@@ -17,7 +17,7 @@ export const getCellColor = (value: string) => {
 // mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
 export const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
   "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc"];
+export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc", "ciclo_reposicion"];
 
 export const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
