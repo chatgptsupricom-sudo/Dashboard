@@ -382,7 +382,6 @@
     "loading_detail": "Cargando detalle...",
     "error_loading": "No se pudo cargar el detalle",
     "no_available_data": "No hay datos disponibles",
-    "sin_meta": "sin meta",
     "avance_al_dia": "avance al día {d} de {total} días hábiles",
     "weeks": "semanas",
     "peso": "Peso",
