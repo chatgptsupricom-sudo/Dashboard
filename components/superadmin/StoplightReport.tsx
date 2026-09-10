@@ -1540,6 +1540,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         apiPrefix={apiPrefix}
         companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
         defaultMes={selectedMes}
+        // Gerencia de Ventas ve margen % pero no costo/ganancia (issue #178).
+        ocultarCostoGanancia={gerenteVentaMode}
       />
 
       {/* MODAL DE EFECTIVIDAD DE CIERRE */}

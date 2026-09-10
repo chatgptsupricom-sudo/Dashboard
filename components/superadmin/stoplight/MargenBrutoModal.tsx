@@ -12,12 +12,14 @@ interface MargenBrutoModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
+  /** Gerencia de Ventas ve el margen % pero no el detalle de costo/ganancia (issue #178). */
+  ocultarCostoGanancia?: boolean;
 }
 
 // Modal "Margen bruto": tabs por vendedor / por producto / detalle semanal,
 // con drill-down a un vendedor en la semanal. Autocontenido. Extraído de
 // StoplightReport.tsx (audit #23).
-export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: MargenBrutoModalProps) {
+export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: MargenBrutoModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
@@ -162,8 +164,12 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                         <tr className="bg-slate-50 border-b">
                           <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                          {!ocultarCostoGanancia && (
+                            <>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                            </>
+                          )}
                           <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                         </tr>
@@ -180,10 +186,14 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                             >
                               <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
                               <td className="p-3 text-center">${seller.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                              <td className="p-3 text-center text-red-600">${seller.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                              <td className={`p-3 text-center font-bold ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                              </td>
+                              {!ocultarCostoGanancia && (
+                                <>
+                                  <td className="p-3 text-center text-red-600">${seller.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                  <td className={`p-3 text-center font-bold ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                    ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                  </td>
+                                </>
+                              )}
                               <td className="p-3 text-center">
                                 <span className={`font-bold ${seller.margenMensual >= 15 ? "text-green-600" : seller.margenMensual >= 0 ? "text-yellow-600" : "text-red-600"}`}>
                                   {seller.margenMensual}%
@@ -254,8 +264,12 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                           <th className="p-3 text-left font-medium text-slate-600">{t("producto")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("cant_vendida")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                          {!ocultarCostoGanancia && (
+                            <>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                            </>
+                          )}
                           <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
                         </tr>
                       </thead>
@@ -267,10 +281,14 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                             </td>
                             <td className="p-3 text-center">{product.cantidadVendida}</td>
                             <td className="p-3 text-center">${product.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                            <td className="p-3 text-center text-red-600">${product.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                            <td className={`p-3 text-center font-bold ${product.ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                              ${product.ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                            </td>
+                            {!ocultarCostoGanancia && (
+                              <>
+                                <td className="p-3 text-center text-red-600">${product.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                <td className={`p-3 text-center font-bold ${product.ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                  ${product.ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                </td>
+                              </>
+                            )}
                             <td className="p-3 text-center">
                               <span className={`font-bold ${product.margen >= 15 ? "text-green-600" : product.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
                                 {product.margen}%
@@ -322,8 +340,12 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                             <tr className="bg-slate-50 border-b">
                               <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                              {!ocultarCostoGanancia && (
+                                <>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
+                                  <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
+                                </>
+                              )}
                               <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
@@ -335,10 +357,14 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                                 <tr key={sem.numero} className={`border-b ${sem.margen != null && sem.margen >= 15 ? "bg-green-50/30" : ""}`}>
                                 <td className="p-3 font-medium">{t("semana_numero", { num: sem.numero })}</td>
                                   <td className="p-3 text-center">${sem.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-3 text-center text-red-600">${sem.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                  <td className={`p-3 text-center font-medium ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                    ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                                  </td>
+                                  {!ocultarCostoGanancia && (
+                                    <>
+                                      <td className="p-3 text-center text-red-600">${sem.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
+                                      <td className={`p-3 text-center font-medium ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                        ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </>
+                                  )}
                                   <td className="p-3 text-center">
                                     {sem.margen != null ? (
                                       <span className={`font-bold ${sem.margen >= 15 ? "text-green-600" : sem.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
