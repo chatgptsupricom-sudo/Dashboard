@@ -52,4 +52,20 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
   "#": "Posición en el ranking por ventas",
   Unidades: "Unidades vendidas en el período seleccionado",
   "% del total": "Porcentaje que representa este producto del total de ventas del período",
+
+  // Curva 80/20 (Pareto) de compras — ojo: aquí todo se mide en DINERO
+  // comprado (price_subtotal de órdenes de compra confirmadas), no en ventas
+  // ni en unidades.
+  "Monto comprado":
+    "Dinero gastado en este producto en el período: suma del subtotal de las líneas de órdenes de compra confirmadas. Es la base con la que se ordena la tabla y se calculan los dos porcentajes",
+  "Unidades compradas":
+    "Unidades pedidas al proveedor en el período (product_qty de las órdenes confirmadas). No es lo recibido ni lo vendido",
+  "% Individual":
+    "Cuánto pesa este producto solo en el gasto total de compra del período: monto del producto ÷ monto total × 100. Ej.: 0,23% = de cada $100 comprados, $0,23 se fueron en este producto",
+  "% Acumulado":
+    "La tabla va del que más gasto concentra al que menos. Este valor suma el % Individual de este producto MÁS el de todos los que están por encima. Responde: 'comprando del #1 hasta aquí, ¿qué parte del gasto llevo cubierta?'. Importante: se calcula sobre el ranking completo, no sobre lo que quede después de filtrar o buscar",
+  Clase:
+    "Se deduce del % Acumulado: A = está dentro del primer 80% del gasto (los pocos productos donde está la plata), B = entre 80% y 95%, C = el resto (cola larga que casi no mueve la aguja)",
+  "Marca/Cat":
+    "Marca = primera palabra del nombre del producto en Odoo. Categoría = categoría del producto en Odoo",
 };
