@@ -249,7 +249,13 @@ export async function GET(request: NextRequest) {
     const d90 = new Date(today);
     d90.setDate(d90.getDate() - 90);
 
-    const [efectividadInvoicesRaw, recuperacionInvoicesRaw, creditSalesRaw] = await Promise.all([
+    // NOTA: aquí había una tercera consulta para "Recuperación Vencidos"
+    // (`invoice_date_due < monthStart`, sin filtro de saldo). Se eliminó junto
+    // con el KPI (issue #189): traía 14.748 facturas con vencimientos desde
+    // 2018 en cada request no cacheado, y el número que producía no medía
+    // recuperación. El cálculo nuevo necesitará conciliaciones
+    // (`account.partial.reconcile`), no este dominio.
+    const [efectividadInvoicesRaw, creditSalesRaw] = await Promise.all([
       fetchPaginated(
         "account.move",
         [
@@ -260,16 +266,6 @@ export async function GET(request: NextRequest) {
           ["invoice_date_due", "<=", monthEnd.toISOString().split("T")[0]],
         ],
         ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"],
-      ),
-      fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
-        ],
-        ["id", "partner_id", "move_type", "amount_total", "amount_residual"],
       ),
       fetchPaginated(
         "account.move",
@@ -329,16 +325,22 @@ export async function GET(request: NextRequest) {
 
     // ── Cartera Vencida: % de cartera que está vencida ── (ya calculado arriba)
 
-    // ── Recuperación Vencidos: cuánto de lo vencido al inicio del mes ya se cobró ──
-    const recuperacionInvoices = recuperacionInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const amountTotal = inv.move_type === "out_refund" ? -Math.abs(inv.amount_total || 0) : Math.abs(inv.amount_total || 0);
-      return { amountTotal, amountResidual: Math.abs(inv.amount_residual || 0) };
-    });
-    const vencidoInicial = recuperacionInvoices.reduce((s, i) => s + i.amountTotal, 0);
-    const vencidoRestante = recuperacionInvoices.reduce((s, i) => s + i.amountResidual, 0);
-    const recuperacion = vencidoInicial > 0
-      ? Math.round(((vencidoInicial - vencidoRestante) / vencidoInicial) * 10000) / 100
-      : null;
+    // ── Recuperación Vencidos: OCULTO mientras se rehace (issue #189) ──
+    //
+    // La fórmula anterior era `(facturado - saldo) / facturado` sobre TODAS
+    // las facturas con `invoice_date_due < inicio de mes`, sin filtrar por
+    // saldo abierto. Eso arrastraba 14.748 facturas desde 2018 (solo 1.578 con
+    // saldo) y el denominador era todo lo facturado en la historia, no lo
+    // vencido al inicio del mes. Consecuencia: el valor subía monótonamente
+    // cada mes por construcción — Abr 21,7% → May 54,5% → Jun 71,0% →
+    // Jul 77,5% → Ago 81,8% → Sep 82,4% — sin importar cómo fuera la cobranza.
+    //
+    // Se prefiere no mostrar nada antes que mostrar un número que nadie puede
+    // interpretar y que sugiere una mejora que no existe. `value: null` deja
+    // el KPI NEUTRO: cumplimientoKpi() lo excluye del puntaje ponderado y
+    // nivelSemaforo() lo manda a "sin", así que tampoco cuenta como rojo ni
+    // arrastra el puntaje del grupo (ver lib/stoplight/scoring.ts).
+    const recuperacion: number | null = null;
 
     // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
     const totalCreditSales90d = creditSalesRaw.reduce((s, inv: any) => s + Math.abs(inv.amount_untaxed || 0), 0);
@@ -369,10 +371,11 @@ export async function GET(request: NextRequest) {
             carteraTotal: Math.round(totalReceivable * 100) / 100,
           },
           recuperacion: {
-            value: recuperacion,
+            value: recuperacion, // null a propósito — ver issue #189
             meta: cxcMetas["recuperacion_vencidos"] || 60,
-            vencidoInicial: Math.round(vencidoInicial * 100) / 100,
-            vencidoRestante: Math.round(vencidoRestante * 100) / 100,
+            enRevision: true,
+            motivo:
+              "El cálculo anterior no medía recuperación: subía todos los meses por construcción. Se está rehaciendo (issue #189).",
           },
           dso: {
             value: dso,

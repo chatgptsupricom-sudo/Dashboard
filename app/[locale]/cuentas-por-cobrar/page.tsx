@@ -356,22 +356,23 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
             </div>
 
-            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
+            {/* Recuperación Vencidos: en revisión (issue #189). Sin semáforo
+                a propósito — un color aquí sugeriría que el número significa
+                algo. */}
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`} />
+                  <div className="w-3 h-3 rounded-full bg-slate-300" />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Recuperación Vencidos</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">25%</span>
               </div>
-              <div className="text-3xl font-bold text-slate-800">
-                {data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
-              </div>
+              <div className="text-2xl font-bold text-slate-400">En revisión</div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.recuperacion.meta}%</div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Inicial: {formatCurrency(data.kpis.recuperacion.vencidoInicial)}</span>
-              </div>
-              <div className="text-xs text-slate-500 mt-1">Restante: {formatCurrency(data.kpis.recuperacion.vencidoRestante)}</div>
+              <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                {data.kpis.recuperacion.motivo ??
+                  "El cálculo se está rehaciendo; no se muestra un valor para no inducir a error."}
+              </p>
             </div>
 
             <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>

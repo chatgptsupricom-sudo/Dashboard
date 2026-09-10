@@ -32,7 +32,8 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 interface KPIs {
   efectividad: { value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
-  recuperacion: { value: number; meta: number; vencidoInicial: number; vencidoRestante: number };
+  // value queda en null mientras el KPI está en revisión (issue #189).
+  recuperacion: { value: number | null; meta: number; enRevision?: boolean; motivo?: string };
   dso: { value: number; meta: number; carteraAbierta: number; ventasCredito90d: number };
 }
 
@@ -263,13 +264,19 @@ export default function CxCReport() {
               icon={<AlertTriangle size={20} />}
               weight="30%"
             />
+            {/* Recuperación Vencidos: en revisión (issue #189). Se pasa un
+                color neutro a propósito: un semáforo daría a entender que el
+                valor mide algo. */}
             <KPICard
               title={t("recuperacion_vencidos")}
-              value={`${data.kpis.recuperacion.value}%`}
+              value="En revisión"
               meta={`${t("meta")}: ${data.kpis.recuperacion.meta}%`}
-              subtitle={`${t("inicial")}: ${formatCurrency(data.kpis.recuperacion.vencidoInicial)} / ${t("restante")}: ${formatCurrency(data.kpis.recuperacion.vencidoRestante)}`}
-              color={getTrafficLight(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
-              dot={getTrafficDot(data.kpis.recuperacion.value, { green: 60, yellow: 30 })}
+              subtitle={
+                data.kpis.recuperacion.motivo ??
+                "El cálculo se está rehaciendo; no se muestra un valor para no inducir a error."
+              }
+              color="bg-slate-50 border-slate-200"
+              dot="bg-slate-300"
               icon={<RefreshCw size={20} />}
               weight="25%"
             />
