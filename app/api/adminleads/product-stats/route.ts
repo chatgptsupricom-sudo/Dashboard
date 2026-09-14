@@ -20,13 +20,28 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const months = parseInt(searchParams.get("months") || "3", 10);
-
+    // `desde`/`hasta` (YYYY-MM-DD) tienen prioridad; si no vienen, se cae al
+    // viejo `months` (rango de los últimos N meses) para no romper llamadas
+    // existentes.
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    const desdeParam = searchParams.get("desde");
+    const hastaParam = searchParams.get("hasta");
     const now = new Date();
-    const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1)
-      .toISOString()
-      .split("T")[0];
-    const endDate = now.toISOString().split("T")[0];
+
+    let startDate: string;
+    let endDate: string;
+    if (desdeParam && dateRegex.test(desdeParam)) {
+      startDate = desdeParam;
+      endDate = hastaParam && dateRegex.test(hastaParam) ? hastaParam : now.toISOString().split("T")[0];
+    } else {
+      const months = parseInt(searchParams.get("months") || "3", 10);
+      startDate = new Date(now.getFullYear(), now.getMonth() - months, 1)
+        .toISOString()
+        .split("T")[0];
+      endDate = now.toISOString().split("T")[0];
+    }
+    // No al revés: evita un rango invertido si cargan mal las fechas.
+    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
 
     // Fetch invoice lines with product details
     const lines = await callOdooRPC<any[]>(
