@@ -40,6 +40,12 @@ export async function GET(request: NextRequest) {
           ["move_id.invoice_date", "<=", endDate],
           ["product_id", "!=", false],
           ["quantity", ">", 0],
+          // Clientes internos / inter-compañía: sin esto, "SUPRICOM CCS 21, C.A."
+          // por sí sola aporta más de $1.6M en 90 días a Valencia y distorsiona
+          // por completo el ranking de marcas más vendidas (mismo criterio que
+          // lib/reportes-comerciales/reporteTrimestral.ts y reporte-diario).
+          ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.name", "not ilike", "office solution"],
           companyFilter,
         ],
       ],
