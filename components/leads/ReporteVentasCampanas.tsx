@@ -18,7 +18,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ReporteVentasCampanas as Datos } from "@/lib/adminleads/ventasCampanas";
+import type {
+  ReporteVentasCampanas as Datos,
+  ResumenCampana,
+} from "@/lib/adminleads/ventasCampanas";
 
 const nf = new Intl.NumberFormat("es-VE");
 const cf = new Intl.NumberFormat("es-VE", {
@@ -60,8 +63,12 @@ const COLORES = [
   "#64748b",
 ];
 
-/** Recorta un nombre de campaña largo para que quepa en el eje. */
-const corto = (s: string, max = 26) =>
+/**
+ * Recorta un nombre de campaña largo para que quepa en el eje. El tope sube a
+ * 34 porque a los nombres repetidos se les pega " · Canal" para desambiguarlos,
+ * y con 26 el canal quedaba siempre cortado — justo la parte que distingue.
+ */
+const corto = (s: string, max = 34) =>
   s.length > max ? `${s.slice(0, max - 1)}…` : s;
 
 function Pagina({
@@ -107,12 +114,24 @@ export default function ReporteVentasCampanas({
 }) {
   const { periodo, resumen, ventas, totales } = data;
 
+  // El resumen agrupa por campaña Y canal, así que un mismo nombre de campaña
+  // puede venir en varias filas — "Sin campaña" aparece una vez por canal. Las
+  // gráficas solo dibujan el nombre, y sin el canal dos barras legítimamente
+  // distintas se leen como una repetida. Se desambigua solo donde hace falta,
+  // para no ensuciar los nombres que ya son únicos.
+  const vecesPorNombre = resumen.reduce<Record<string, number>>((acc, c) => {
+    acc[c.campana] = (acc[c.campana] ?? 0) + 1;
+    return acc;
+  }, {});
+  const etiqueta = (c: ResumenCampana) =>
+    vecesPorNombre[c.campana] > 1 ? `${c.campana} · ${c.canal}` : c.campana;
+
   // Solo campañas que efectivamente cerraron algo: una fila con monto 0 no
   // aporta nada a una gráfica de monto y empuja al resto contra el eje.
   const conVentas = resumen.filter((c) => c.ventasPeriodo > 0);
   const topMonto = conVentas.slice(0, 10).map((c) => ({
-    nombre: corto(c.campana),
-    completo: c.campana,
+    nombre: corto(etiqueta(c)),
+    completo: etiqueta(c),
     monto: c.montoPeriodo,
   }));
 
@@ -123,8 +142,8 @@ export default function ReporteVentasCampanas({
     .sort((a, b) => (b.conversionPct ?? 0) - (a.conversionPct ?? 0))
     .slice(0, 10)
     .map((c) => ({
-      nombre: corto(c.campana),
-      completo: c.campana,
+      nombre: corto(etiqueta(c)),
+      completo: etiqueta(c),
       conversion: c.conversionPct as number,
       leads: c.leadsIngresados,
     }));
@@ -255,7 +274,7 @@ export default function ReporteVentasCampanas({
               <YAxis
                 type="category"
                 dataKey="nombre"
-                width={210}
+                width={250}
                 tick={{ fontSize: 10, fill: "#52525b" }}
                 axisLine={false}
                 tickLine={false}
@@ -325,7 +344,7 @@ export default function ReporteVentasCampanas({
                 <YAxis
                   type="category"
                   dataKey="nombre"
-                  width={210}
+                  width={250}
                   tick={{ fontSize: 10, fill: "#52525b" }}
                   axisLine={false}
                   tickLine={false}
