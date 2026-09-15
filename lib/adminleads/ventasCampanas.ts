@@ -79,6 +79,19 @@ export function resolverRango(params: URLSearchParams) {
   return { desde, hasta };
 }
 
+/**
+ * Pasa a "YYYY-MM-DD" lo que devuelva la base. mysql2 entrega los DATETIME como
+ * Date, y ahi String(valor).slice(0, 10) daria "Mon Sep 15" en vez de la fecha.
+ * Se usan las partes locales, que es como mysql2 arma ese Date: convertir a UTC
+ * correria un dia las ventas cerradas de madrugada.
+ */
+export function fechaISO(valor: unknown): string {
+  if (!valor) return "";
+  if (valor instanceof Date) return Number.isNaN(valor.getTime()) ? "" : iso(valor);
+  const s = String(valor).trim();
+  return DATE_REGEX.test(s.slice(0, 10)) ? s.slice(0, 10) : "";
+}
+
 /** Sede del query (un cids), o null para el alcance propio del usuario. */
 export function resolverSede(params: URLSearchParams): number | null {
   const n = parseInt(params.get("sede") || "", 10);
@@ -151,17 +164,21 @@ export async function calcularVentasCampanas({
   `;
   const resumenParams = [ini, fin, ini, fin, ini, fin, ini, fin, ...scope.params];
 
+  // `l.*` en vez de una lista de columnas: los nombres reales de la tabla no
+  // coinciden con los del tipo Lead de la UI (el contacto es `nombre_contacto`
+  // y la empresa es `name`, no `nombre`/`empresa`), y el interes aparece como
+  // `interes` o `categoria_interes` segun la antiguedad del registro. Pedir
+  // todo y resolver los alias en JS evita seguir adivinando nombres columna por
+  // columna; es el mismo criterio que usa components/leads/KanbanBoard.tsx.
+  //
+  // Los dos campos calculados van con sufijo _norm para no chocar con las
+  // columnas `campana` y `canal_origen` que ya vienen en `l.*`: con nombres
+  // repetidos, mysql2 se queda solo con el ultimo.
   const ventasSql = `
     SELECT
-      l.id,
-      l.nombre,
-      l.empresa,
-      l.categoria_interes,
-      l.num_factura,
-      l.fecha_venta,
-      l.monto_cerrado_usd,
-      ${CAMPANA} AS campana,
-      ${CANAL} AS canal,
+      l.*,
+      ${CAMPANA} AS campana_norm,
+      ${CANAL} AS canal_norm,
       s.name AS vendedor_nombre
     FROM leads l
     LEFT JOIN sellers s ON l.seller_id = s.id
@@ -195,17 +212,25 @@ export async function calcularVentasCampanas({
     };
   });
 
+  const texto = (...candidatos: any[]) => {
+    for (const c of candidatos) {
+      const s = String(c ?? "").trim();
+      if (s && s.toLowerCase() !== "null") return s;
+    }
+    return "";
+  };
+
   const ventas: VentaCerrada[] = filasVentas.map((f) => ({
     id: String(f.id),
-    cliente: f.nombre || "",
-    empresa: f.empresa || "",
-    vendedor: f.vendedor_nombre || "Sin asignar",
-    campana: f.campana,
-    canal: f.canal,
-    categoria: f.categoria_interes || "",
+    cliente: texto(f.nombre_contacto, f.nombre),
+    empresa: texto(f.name, f.empresa),
+    vendedor: texto(f.vendedor_nombre) || "Sin asignar",
+    campana: f.campana_norm,
+    canal: f.canal_norm,
+    categoria: texto(f.interes, f.categoria_interes),
     monto: r2(num(f.monto_cerrado_usd)),
-    factura: f.num_factura || "",
-    fecha: f.fecha_venta ? String(f.fecha_venta).slice(0, 10) : "",
+    factura: texto(f.num_factura),
+    fecha: fechaISO(f.fecha_venta),
   }));
 
   const montoTotal = r2(ventas.reduce((s, v) => s + v.monto, 0));
