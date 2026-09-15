@@ -1,7 +1,7 @@
 "use client";
 
 import { normalizarCanal } from "@/lib/canales";
-import { Archive, Pencil, RotateCcw, Search, X } from "lucide-react";
+import { Archive, FileBarChart, Pencil, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -157,13 +157,38 @@ export default function AdminCierresPage() {
     )
     .reduce((s, l) => s + parseFloat(l.monto_cerrado_usd || 0), 0);
 
+  // Abre el reporte imprimible heredando el rango de fechas de esta pantalla.
+  // Sin rango, el reporte cae por defecto al mes en curso.
+  const abrirReporteVentas = () => {
+    const p = new URLSearchParams();
+    if (fechaInicio) p.set("desde", fechaInicio);
+    if (fechaFin) p.set("hasta", fechaFin);
+    // Se arma desde el pathname actual: una URL relativa reemplazaría el
+    // segmento /cierres en vez de colgarse de /adminleads.
+    const base = window.location.pathname.replace(/\/cierres\/?$/, "");
+    window.open(
+      `${base}/reporte-ventas-campanas?${p.toString()}`,
+      "_blank",
+      "noopener",
+    );
+  };
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-black text-slate-900">Cierre de Leads</h1>
-        <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl">
-          Total facturado: ${totalVentas.toLocaleString()}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={abrirReporteVentas}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
+            title="Reporte imprimible de las ventas cerradas con la campaña de la que vino cada una"
+          >
+            <FileBarChart className="w-3.5 h-3.5" /> Reporte por campaña
+          </button>
+          <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl">
+            Total facturado: ${totalVentas.toLocaleString()}
+          </span>
+        </div>
       </div>
 
       {/* Filtros */}
