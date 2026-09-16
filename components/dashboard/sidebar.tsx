@@ -279,6 +279,9 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
+    // Material POP: inventario de material publicitario. Solo lo ve AdminLeads
+    // de Valencia (cids=9) y superAdmin — el middleware impone el corte.
+    { id: "material_pop", label: t("material_pop"), icon: Package, slug: "/material-pop", adminLeadsOnly: true, cidsOnly: 9 },
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
@@ -380,6 +383,9 @@ export function Sidebar({
       (item) =>
         allowedSections.includes(item.id) &&
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
+        // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
+        // coincide. superAdmin (sin cids) siempre lo ve.
+        ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
         !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
         // "Servicio Tecnico" (id: "rma") pasa a vivir dentro del desplegable

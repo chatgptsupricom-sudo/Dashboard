@@ -248,6 +248,16 @@ export default async function middleware(request: NextRequest) {
         }
       }
 
+      // 5c. Lógica para Material POP (acceso: adminleads de Valencia cids=9, superAdmin)
+      if (pathname.includes("/adminleads/material-pop")) {
+        const userCids = Number(payload.cids);
+        if (!isSuperAdmin && !(isAdminLeads && userCids === 9)) {
+          return NextResponse.redirect(
+            new URL(`/${locale}/dashboard`, request.url),
+          );
+        }
+      }
+
       // 6. Lógica para Recursos Humanos
       if (
         pathname.includes("/recursos_humanos") &&
