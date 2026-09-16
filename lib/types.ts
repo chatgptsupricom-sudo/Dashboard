@@ -77,6 +77,7 @@ export const rolePermissions: RolePermissions = {
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
       "catalogo_disenos", // Catálogo de Diseños del Diseñador
+      "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -164,6 +165,7 @@ export const rolePermissions: RolePermissions = {
       "banco_imagenes",
       "actividad",
       "vista_custom",
+      "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
   },
   [UserRole.GERENTE_VENTA]: {
