@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { cuadrarCobros, obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -31,24 +32,6 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 }
 
 const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
-
-// Mismo criterio que la tarjeta "Ventas del Mes" (app/api/superadmin/stats/
-// route.ts): cuentas de vendedor internas/de prueba, distintas por sede, que
-// no cuentan como venta real. Se aplica por factura (segun su propio
-// company_id), no agrupado por vendedor como alla -- evita el caso borde de
-// esa version original donde un vendedor con facturas en mas de una sede solo
-// tomaba en cuenta la primera sede que aparecia.
-const SELLER_EXCLUSIONS: Record<number, string[]> = {
-  9: ["asistente", "yusne"],
-  10: ["asistente", "adriana"],
-  7: ["hercilio"],
-};
-const esVendedorExcluido = (inv: any): boolean => {
-  const sellerName = (inv.invoice_user_id?.[1] || "").toLowerCase();
-  const cid = inv.company_id?.[0];
-  const reglas = SELLER_EXCLUSIONS[cid] || [];
-  return reglas.some((regla) => sellerName.includes(regla));
-};
 
 // Forma comun que alimenta la clasificacion contado/credito, sin importar
 // si el monto viene de una factura entera o de un abono conciliado
@@ -87,7 +70,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 
   return invoicesRaw
     .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
-    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv))
+    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .map((inv) => ({
       // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
       // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
@@ -120,7 +103,7 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr });
 
   return cobros
-    .filter((c) => !excluirAsistente || !esVendedorExcluido({ invoice_user_id: [c.vendedorId, c.vendedorName], company_id: [c.companyId] }))
+    .filter((c) => !excluirAsistente || !esVendedorExcluido(c.vendedorName, c.companyId))
     .map((c) => ({
       monto: c.monto,
       partnerId: c.partnerId ?? 0,
