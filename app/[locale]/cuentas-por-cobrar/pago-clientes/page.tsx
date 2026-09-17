@@ -130,12 +130,23 @@ export default function PagoClientesPage() {
 
   const resumen = useMemo(() => {
     const base = search.trim() ? visibles : enTab;
+    // Los totales cuentan solo lo CONCILIADO (aplicado a facturas), igual que
+    // "Cobrado" en Contado/Crédito. Lo recibido que todavía no se aplicó va
+    // aparte, en "Sin conciliar", para que las dos pantallas cuadren.
+    const recibidoUsd = base.reduce((s, r) => s + r.montoUsd, 0);
+    const totalUsd = base.reduce((s, r) => s + (r.aplicadoFacturas || 0), 0);
+    // Bs conciliados: la parte del monto en Bs proporcional a lo aplicado
+    // (misma tasa del pago con la que Odoo convirtió lo aplicado a USD).
+    const totalBs = base.reduce((s, r) => {
+      if (!r.montoBs || r.montoUsd <= 0) return s;
+      return s + r.montoBs * Math.min(1, (r.aplicadoFacturas || 0) / r.montoUsd);
+    }, 0);
     return {
       pagos: base.length,
-      totalUsd: r2(base.reduce((s, r) => s + r.montoUsd, 0)),
-      totalBs: r2(base.reduce((s, r) => s + (r.montoBs || 0), 0)),
-      aplicado: r2(base.reduce((s, r) => s + (r.aplicadoFacturas || 0), 0)),
-      sinAplicar: r2(base.reduce((s, r) => s + (r.sinAplicar || 0), 0)),
+      totalUsd: r2(totalUsd),
+      totalBs: r2(totalBs),
+      recibidoUsd: r2(recibidoUsd),
+      sinConciliar: r2(recibidoUsd - totalUsd),
       porRevisar: enTab.filter((r) => r.revisar).length,
     };
   }, [enTab, visibles, search]);
@@ -167,8 +178,8 @@ export default function PagoClientesPage() {
       "Facturas aplicadas": r.facturasAplicadas,
       "Estado": r.estado,
       "Conciliado": r.conciliado ? "Sí" : "No",
-      "Aplicado a facturas USD": r.aplicadoFacturas,
-      "Sin aplicar USD": r.sinAplicar,
+      "Conciliado USD": r.aplicadoFacturas,
+      "Sin conciliar USD": r2(r.montoUsd - (r.aplicadoFacturas || 0)),
       "Revisar": r.revisar ? "Sí" : "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -299,12 +310,16 @@ export default function PagoClientesPage() {
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-2 sm:gap-3">
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
-        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} />
-        <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} />
-        <Card icon={<DollarSign size={16} className="text-blue-600" />} label="Aplicado a facturas" value={`$ ${fmtNum(resumen.aplicado)}`} />
-        <Card icon={<DollarSign size={16} className="text-slate-400" />} label="Sin aplicar (anticipos)" value={`$ ${fmtNum(resumen.sinAplicar)}`} />
+        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} hint="Conciliado con facturas" />
+        <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} hint="Conciliado con facturas" />
+        <Card
+          icon={<DollarSign size={16} className="text-slate-400" />}
+          label="Sin conciliar"
+          value={`$ ${fmtNum(resumen.sinConciliar)}`}
+          hint={`Recibido $ ${fmtNum(resumen.recibidoUsd)}. Pagos aún no aplicados a facturas (anticipos o saldo a favor): no suman al total, igual que en Contado/Crédito.`}
+        />
         <button
           type="button"
           onClick={() => setSoloRevisar((v) => !v)}
@@ -434,11 +449,12 @@ export default function PagoClientesPage() {
   );
 }
 
-function Card({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function Card({ icon, label, value, hint }: { icon: ReactNode; label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="rounded-xl border border-slate-200 bg-white p-3 min-w-0">
       <div className="flex items-center gap-1.5 text-xs text-slate-500">{icon} {label}</div>
       <div className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums break-words">{value}</div>
+      {hint && <div className="text-[10px] leading-snug text-slate-400 mt-0.5">{hint}</div>}
     </div>
   );
 }
