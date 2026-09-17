@@ -164,6 +164,7 @@ export default function DisenosCatalogoPage() {
   const [deleteTarget, setDeleteTarget] = useState<Design | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [errorCatalogo, setErrorCatalogo] = useState("");
 
   // ── Fetch catálogo ────────────────────────────────────────────────────────
   const fetchDesigns = useCallback(async () => {
@@ -181,9 +182,15 @@ export default function DisenosCatalogoPage() {
         setConteoPorCategoria(data.conteoPorCategoria || {});
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
+        setErrorCatalogo("");
+      } else {
+        // Antes un error se tragaba en silencio y la pantalla mostraba "Aún no
+        // hay diseños": parecía que el catálogo se había borrado.
+        setErrorCatalogo(data.error || `HTTP ${res.status}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("fetchDesigns:", e);
+      setErrorCatalogo(e.message || "No se pudo cargar el catálogo");
     } finally {
       setLoading(false);
     }
@@ -695,6 +702,16 @@ export default function DisenosCatalogoPage() {
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
+          ) : errorCatalogo ? (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm p-4 space-y-2">
+              <p>No se pudo cargar el catálogo: {errorCatalogo}</p>
+              <p className="text-rose-600/80 text-xs">
+                Los diseños no se borraron: esto es un error al leerlos. Volvé a intentar.
+              </p>
+              <Button size="sm" variant="outline" onClick={fetchDesigns} className="h-8">
+                Reintentar
+              </Button>
             </div>
           ) : designs.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
