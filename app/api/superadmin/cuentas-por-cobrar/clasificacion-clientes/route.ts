@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -26,24 +26,6 @@ const UTILIZACION_ALTA = 0.8;
 // se deja afuera de ambas listas en vez de clasificarlo con 1 solo dato.
 const MIN_FACTURAS_PARA_CLASIFICAR = 2;
 
-const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
-
-async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
-  let result: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await callOdooRPC<any[]>(
-      model, "search_read", [domain],
-      { fields, order: "id asc", limit: 5000, offset },
-    );
-    if (!page || page.length === 0) break;
-    result = result.concat(page);
-    if (page.length < 5000) break;
-    offset += 5000;
-  }
-  return result;
-}
-
 type PagoCliente = {
   partnerId: number;
   partnerName: string;
@@ -52,105 +34,36 @@ type PagoCliente = {
 };
 
 /**
- * Pagos de clientes conciliados en el periodo, con dias de atraso reales
- * (fecha de CONFIRMACION del pago vs fecha de VENCIMIENTO de la factura, no fecha de
- * emision -- a diferencia de contado-credito/route.ts, que solo distingue
- * "factura de este mes" vs "de un mes anterior" y no calcula atraso real).
- * Mismo mecanismo de account.partial.reconcile que esa pantalla.
+ * Cobros del periodo con dias de atraso reales (fecha de CONFIRMACION del pago
+ * vs fecha de VENCIMIENTO de la factura). Sale de lib/cxc/cobros.ts, la misma
+ * fuente de "Cobrado" que Contado/Credito y los KPIs: solo banco/caja real,
+ * solo facturas (una nota de credito no es "el cliente pago tarde"), sin
+ * partner interno.
  */
 async function pagosConciliadosDelPeriodo(companyIds: number[], desde: Date): Promise<PagoCliente[]> {
-  const reconciles = await fetchPaginated(
-    "account.partial.reconcile",
-    [],
-    ["amount", "debit_move_id", "credit_move_id"],
-  );
-  if (reconciles.length === 0) return [];
-
-  const lineIds = new Set<number>();
-  reconciles.forEach((r) => {
-    if (r.debit_move_id) lineIds.add(r.debit_move_id[0]);
-    if (r.credit_move_id) lineIds.add(r.credit_move_id[0]);
+  const cobros = await obtenerCobros(companyIds, {
+    desde,
+    hasta: new Date(),
+    dominioFactura: [["move_type", "=", "out_invoice"]],
   });
 
-  const lines = await callOdooRPC<any[]>(
-    "account.move.line", "search_read",
-    [[["id", "in", Array.from(lineIds)]]],
-    { fields: ["move_id"] },
-  );
-  const lineToMoveMap: Record<number, number> = {};
-  (lines || []).forEach((l) => { lineToMoveMap[l.id] = l.move_id[0]; });
-
-  const moves = await fetchPaginated(
-    "account.move",
-    [["company_id", "in", companyIds]],
-    ["name", "move_type", "partner_id", "date", "payment_id", "invoice_date_due", "journal_id", "company_id"],
-  );
-  const moveMap: Record<number, any> = {};
-  moves.forEach((m) => { moveMap[m.id] = m; });
-
-  const desdeStr = desde.toISOString().split("T")[0];
-  // El atraso se mide hasta la CONFIRMACIÓN del pago (lib/cxc/fechaConfirmacion.ts).
-  const confirmados = await pagosConfirmadosEntre(companyIds, desdeStr, new Date());
-
-  // Mismo filtro de "banco/caja real" que contado-credito -- retenciones,
-  // notas de credito aplicadas directo y ajustes no son "el cliente pago".
-  const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
-  let journalTypeMap: Record<number, string> = {};
-  if (journalIds.length > 0) {
-    try {
-      const journals = await callOdooRPC<any[]>("account.journal", "read", [journalIds], { fields: ["id", "type"] });
-      (journals || []).forEach((j) => { journalTypeMap[j.id] = j.type; });
-    } catch (_) {}
-  }
-  const esBancoReal = (journalId: number | undefined, journalName: string): boolean => {
-    if (journalId === undefined) return false;
-    const tipo = journalTypeMap[journalId];
-    if (tipo !== "bank" && tipo !== "cash") return false;
-    if (journalName.toLowerCase().includes("retenido")) return false;
-    return true;
-  };
-
-  const CUSTOMER_INVOICE_TYPES = new Set(["out_invoice"]); // sin refunds: una nota de credito no es "el cliente pago tarde".
-
-  const pagos: PagoCliente[] = [];
-  reconciles.forEach((r) => {
-    const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
-    const cMove = moveMap[lineToMoveMap[r.credit_move_id?.[0]]];
-    if (!dMove || !cMove) return;
-
-    const dIsInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
-    const cIsInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
-    if (dIsInvoice === cIsInvoice) return; // ambos o ninguno es factura de cliente -> no es un pago de cliente contra su factura.
-
-    const invoiceMove = dIsInvoice ? dMove : cMove;
-    const settleMove = dIsInvoice ? cMove : dMove;
-    if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
-    if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
-
-    const fechaAbono = fechaDeAbono(settleMove, confirmados);
-    if (!fechaAbono || fechaAbono < desdeStr) return;
-
-    const journalIdRaw = settleMove.journal_id?.[0];
-    const journalNameRaw = settleMove.journal_id?.[1] || "";
-    if (!esBancoReal(journalIdRaw, journalNameRaw)) return;
-
-    const fechaVencimiento = (invoiceMove.invoice_date_due || "").split(" ")[0].split("T")[0];
-    let diasAtraso = 0;
-    if (fechaVencimiento) {
-      const diff = Math.round(
-        (new Date(fechaAbono + "T00:00:00").getTime() - new Date(fechaVencimiento + "T00:00:00").getTime()) / 86400000,
-      );
-      diasAtraso = Math.max(0, diff);
-    }
-
-    pagos.push({
-      partnerId: invoiceMove.partner_id[0],
-      partnerName: invoiceMove.partner_id[1] || "Sin cliente",
-      diasAtraso,
-      monto: r.amount || 0,
+  return cobros
+    .filter((c) => !c.interno && c.partnerId)
+    .map((c) => {
+      let diasAtraso = 0;
+      if (c.vencimiento) {
+        const diff = Math.round(
+          (new Date(c.fecha + "T00:00:00").getTime() - new Date(c.vencimiento + "T00:00:00").getTime()) / 86400000,
+        );
+        diasAtraso = Math.max(0, diff);
+      }
+      return {
+        partnerId: c.partnerId!,
+        partnerName: c.partnerName || "Sin cliente",
+        diasAtraso,
+        monto: c.monto,
+      };
     });
-  });
-  return pagos;
 }
 
 type ClienteClasificado = {

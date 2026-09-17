@@ -92,12 +92,16 @@ type Bucket = Acumulado & { dias: number };
 type Banco = Acumulado & { journalId: number; journalName: string };
 type Parcial = { monto: number; pct: number; facturas: number };
 type Vendedor = { id: number; name: string };
+type TramoCuadre = { monto: number; facturas: number };
+type Cuadre = { vencidasAlInicio: TramoCuadre; vencenEnPeriodo: TramoCuadre; adelantado: TramoCuadre; internos: TramoCuadre };
 type ContadoCreditoData = {
   totalFacturado: number;
   contado: Acumulado;
   credito: Acumulado;
   delMes: Parcial;
   mesesAnteriores: Parcial;
+  /** Solo en "cobrado": el total repartido en los tramos que usan los KPIs. */
+  cuadre: Cuadre | null;
   buckets: Bucket[];
   bancos: Banco[];
   vendedores: Vendedor[];
@@ -117,9 +121,9 @@ export default function ContadoCreditoPage() {
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   // Facturado: lo emitido ese mes. Cobrado: dinero que efectivamente entro
-  // el mes (fecha de conciliacion del pago, no fecha de la factura) --
-  // mismo criterio que el reporte "Integracion de Pagos" de Odoo que ya
-  // usa cobranza para verificar.
+  // el mes (fecha de CONFIRMACION del pago, no fecha de la factura) --
+  // misma fuente que Integracion de Pagos, Efectividad y Recuperacion
+  // (lib/cxc/cobros.ts), asi que los totales cuadran entre pantallas.
   const [modo, setModo] = useState<Modo>("facturado");
   const esCobrado = modo === "cobrado";
 
@@ -453,6 +457,27 @@ export default function ContadoCreditoPage() {
                     Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
                   </span>
                 </div>
+                {data.cuadre && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 mb-2">
+                      Cómo se reparte (por vencimiento de la factura) — cuadra con los KPIs del Dashboard
+                    </p>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                      {[
+                        { label: "Vencidas al inicio", hint: "= Recuperado (Recuperación)", t: data.cuadre.vencidasAlInicio },
+                        { label: "Vencen en el período", hint: "= Cobrado en el mes (Efectividad)", t: data.cuadre.vencenEnPeriodo },
+                        { label: "Adelantado", hint: "Vencen después", t: data.cuadre.adelantado },
+                        { label: "Internos (Supricom)", hint: "Fuera de los KPIs", t: data.cuadre.internos },
+                      ].map((x) => (
+                        <div key={x.label} className="rounded-xl bg-slate-50 p-3 min-w-0">
+                          <p className="text-[11px] text-slate-500">{x.label}</p>
+                          <p className="text-base font-semibold text-slate-800 tabular-nums break-words">{formatCurrency(x.t.monto)}</p>
+                          <p className="text-[10px] text-slate-400">{x.hint} · {x.t.facturas} abonos</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">

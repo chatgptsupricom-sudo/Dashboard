@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -17,7 +18,8 @@ import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmaci
  *     ÷ Σ saldo(f, finW) de toda la cartera
  *
  *   Recuperación de la semana W
- *     = pagos confirmados dentro de W sobre facturas ya vencidas al iniciar W
+ *     = cobrado dentro de W (lib/cxc/cobros.ts, banco/caja, igual que
+ *       Contado/Crédito) sobre facturas ya vencidas al iniciar W
  *     ÷ saldo vencido al iniciar W
  *
  * Cada cobro se fecha por la CONFIRMACIÓN del pago, no por la conciliación
@@ -102,7 +104,8 @@ export async function calcularSeriesCxC(
   const desde = iso(semanas[0].inicio);
   const noInterno: any[] = [["partner_id.name", "not ilike", "supricom"]];
 
-  const [abiertasHoy, conciliaciones] = await Promise.all([
+  const hastaSerie = iso(semanas[semanas.length - 1].fin > hoy ? hoy : semanas[semanas.length - 1].fin);
+  const [abiertasHoy, conciliaciones, cobros] = await Promise.all([
     // Cartera abierta hoy (cualquier vencimiento): la base sobre la que se
     // reconstruye hacia atrás.
     paginar(
@@ -129,6 +132,12 @@ export async function calcularSeriesCxC(
       ],
       ["id", "amount", "max_date", "debit_move_id", "credit_move_id"],
     ),
+    // Numerador de Recuperación: solo dinero real, misma fuente que Contado/Crédito.
+    obtenerCobros(companyIds, {
+      desde,
+      hasta: hastaSerie,
+      dominioFactura: [["move_type", "=", "out_invoice"], ["partner_id.name", "not ilike", "supricom"]],
+    }),
   ]);
 
   const facturas = new Map<number, Factura>();
@@ -230,10 +239,16 @@ export async function calcularSeriesCxC(
       if (f.emision && f.emision >= s.inicio) continue; // aún no existía
       if (!f.due || f.due >= s.inicio) continue; // no estaba vencida al iniciar la semana
       denominador += f.residual + f.pagos.reduce((a, p) => (p.fecha >= s.inicio ? a + p.monto : a), 0);
-      recuperado += f.pagos.reduce(
-        (a, p) => (p.fecha >= s.inicio && p.fecha <= s.fin ? a + p.monto : a),
-        0,
-      );
+    }
+    const ini = iso(s.inicio);
+    const fin = iso(s.fin);
+    for (const c of cobros) {
+      if (c.fecha < ini || c.fecha > fin) continue;
+      const f = facturas.get(c.facturaId);
+      if (!f) continue;
+      if (f.emision && f.emision >= s.inicio) continue;
+      if (!f.due || f.due >= s.inicio) continue;
+      recuperado += c.monto;
     }
     if (denominador <= 0) return null;
     return `${Math.round((recuperado / denominador) * 100)}%`;
