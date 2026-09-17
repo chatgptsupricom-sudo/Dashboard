@@ -11,9 +11,23 @@ export async function ensureDesignerDesignsTable() {
       image_data LONGBLOB NULL,
       image_mime VARCHAR(100) NULL,
       created_by VARCHAR(255) NOT NULL DEFAULT '',
+      category VARCHAR(80) NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_folder (folder),
+      INDEX idx_category (category),
       INDEX idx_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+
+  // La columna `category` se agregó después (categorías fijas de diseño, ver
+  // lib/disenos/categorias.ts). En instalaciones viejas la tabla ya existe, así
+  // que el CREATE de arriba no la crea: se agrega aquí, y solo si falta.
+  const col = await query(
+    `SELECT COUNT(*) AS n FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = 'designer_designs' AND column_name = 'category'`
+  );
+  if (!Number(col.rows?.[0]?.n)) {
+    await query(`ALTER TABLE designer_designs ADD COLUMN category VARCHAR(80) NULL`);
+    await query(`ALTER TABLE designer_designs ADD INDEX idx_category (category)`);
+  }
 }
