@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { esCategoriaValida } from "@/lib/disenos/categorias";
 import { NextRequest, NextResponse } from "next/server";
 
 const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
@@ -20,7 +21,11 @@ export async function POST(request: NextRequest) {
     const title = String(body.title || "Diseño IA").slice(0, 255);
     const folder = (body.folder ? String(body.folder) : "IA").trim().slice(0, 255) || "IA";
     const created_by = String(body.created_by || "");
+    const category = body.category;
 
+    if (!esCategoriaValida(category)) {
+      return NextResponse.json({ error: "Elegí una categoría de diseño" }, { status: 400 });
+    }
     if (!jobId || !resultUrl) {
       return NextResponse.json({ error: "Faltan datos" }, { status: 400 });
     }
@@ -45,15 +50,15 @@ export async function POST(request: NextRequest) {
     await ensureDesignerDesignsTable();
 
     const insertResult = await query(
-      `INSERT INTO designer_designs (title, folder, image_data, image_mime, created_by) VALUES (?, ?, ?, ?, ?)`,
-      [title, folder, buffer, mime, created_by]
+      `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+      [title, folder, category, buffer, mime, created_by]
     );
     const newId = (insertResult.rows as any)?.insertId;
 
     return NextResponse.json(
       {
         success: true,
-        design: { id: newId, title, folder, image_path: `/api/disenador/disenos/image/${newId}` },
+        design: { id: newId, title, folder, category, image_path: `/api/disenador/disenos/image/${newId}` },
       },
       { status: 201 }
     );

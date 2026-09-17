@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { CATEGORIAS_DISENO } from "@/lib/disenos/categorias";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -85,6 +86,7 @@ export default function EditorIaPage() {
   const [saveTarget, setSaveTarget] = useState<{ jobId: number; url: string } | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
   const [saveFolder, setSaveFolder] = useState("IA");
+  const [saveCategory, setSaveCategory] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set());
 
@@ -221,10 +223,15 @@ export default function EditorIaPage() {
     setSaveTarget({ jobId, url });
     setSaveTitle(job?.prompt?.slice(0, 60) || "Diseño IA");
     setSaveFolder("IA");
+    setSaveCategory("");
   };
 
   const confirmSave = async () => {
     if (!saveTarget || !user?.name) return;
+    if (!saveCategory) {
+      alert("Elegí a qué categoría pertenece el diseño.");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/disenador/ia-imagen/guardar", {
@@ -235,6 +242,7 @@ export default function EditorIaPage() {
           resultUrl: saveTarget.url,
           title: saveTitle,
           folder: saveFolder,
+          category: saveCategory,
           created_by: user.name,
         }),
       });
@@ -305,7 +313,7 @@ export default function EditorIaPage() {
                 <div className="flex flex-col gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={openPicker}>
                     <ImagePlus className="w-3.5 h-3.5 mr-1.5" />
-                    Elegir de Mis Diseños
+                    Elegir de KPI de Diseños
                   </Button>
                   {sourcePreview && (
                     <Button type="button" variant="ghost" size="sm" onClick={clearSource} className="text-red-500 hover:text-red-700">
@@ -487,7 +495,7 @@ export default function EditorIaPage() {
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Elegir de Mis Diseños</DialogTitle>
+            <DialogTitle>Elegir de KPI de Diseños</DialogTitle>
           </DialogHeader>
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -528,6 +536,19 @@ export default function EditorIaPage() {
             <div>
               <Label className="text-sm font-medium text-slate-700">Título</Label>
               <Input value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Categoría</Label>
+              <select
+                value={saveCategory}
+                onChange={(e) => setSaveCategory(e.target.value)}
+                className="mt-1 w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+              >
+                <option value="">Elegí una categoría…</option>
+                {CATEGORIAS_DISENO.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
             </div>
             <div>
               <Label className="text-sm font-medium text-slate-700">Colección</Label>

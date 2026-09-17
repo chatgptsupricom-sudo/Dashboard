@@ -289,7 +289,7 @@ export function Sidebar({
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
-    { id: "catalogo_disenos", label: "Mis Diseños", icon: Palette, slug: "/disenos" },
+    { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
     // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
@@ -370,7 +370,7 @@ export function Sidebar({
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
-  // desplegable "Administración", y Mis Diseños dentro del de Marketing, en vez
+  // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
   const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
   const marketingSuperAdminIds = ["catalogo_disenos"];
@@ -1302,7 +1302,7 @@ export function Sidebar({
                       {[
                         { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
                         { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
-                        { label: "Mis Diseños", href: `${basePath}/disenos` },
+                        { label: "KPI de Diseños", href: `${basePath}/disenos` },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (

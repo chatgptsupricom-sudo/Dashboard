@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
+import { CATEGORIAS_DISENO, esCategoriaValida } from "@/lib/disenos/categorias";
 import { NextRequest, NextResponse } from "next/server";
 
 // El matcher del middleware excluye /api, asi que el guard va aqui.
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const search = url.searchParams.get("search") || "";
     const folder = url.searchParams.get("folder") || "";
+    const category = url.searchParams.get("category") || "";
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limit") || "24", 10)));
     const offset = (page - 1) * limit;
@@ -38,6 +40,14 @@ export async function GET(request: NextRequest) {
       where += " AND d.folder = ?";
       params.push(folder);
     }
+    // "sin_categoria" es el filtro para los diseños viejos, cargados antes de
+    // que la categoría fuera obligatoria.
+    if (category === "sin_categoria") {
+      where += " AND (d.category IS NULL OR d.category = '')";
+    } else if (category) {
+      where += " AND d.category = ?";
+      params.push(category);
+    }
 
     const countResult = await query(
       `SELECT COUNT(*) AS total FROM designer_designs d ${where}`,
@@ -46,7 +56,7 @@ export async function GET(request: NextRequest) {
     const total = countResult.rows[0]?.total || 0;
 
     const result = await query(
-      `SELECT d.id, d.title, d.folder, d.created_by, d.created_at,
+      `SELECT d.id, d.title, d.folder, d.category, d.created_by, d.created_at,
               CONCAT('/api/disenador/disenos/image/', d.id) AS image_path
        FROM designer_designs d ${where}
        ORDER BY d.created_at DESC
@@ -60,10 +70,23 @@ export async function GET(request: NextRequest) {
     );
     const folders = (foldersResult.rows || []).map((r: any) => r.folder);
 
+    // Conteo por categoría de TODO el catálogo (sin los filtros de la vista):
+    // alimenta los chips de filtro, que no deben vaciarse al filtrar.
+    const porCategoriaResult = await query(
+      `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
+       FROM designer_designs GROUP BY categoria`
+    );
+    const conteoPorCategoria: Record<string, number> = {};
+    for (const r of porCategoriaResult.rows || []) {
+      conteoPorCategoria[r.categoria] = Number(r.n) || 0;
+    }
+
     return NextResponse.json({
       success: true,
       designs: result.rows,
       folders,
+      categorias: CATEGORIAS_DISENO,
+      conteoPorCategoria,
       total,
       page,
       totalPages: Math.ceil(total / limit),
@@ -78,7 +101,9 @@ export async function GET(request: NextRequest) {
 // FormData:
 //   images    -> uno o más File
 //   titles    -> JSON string[] alineado por índice con images
-//   folders   -> JSON string[] alineado por índice con images
+//   folders    -> JSON string[] alineado por índice con images
+//   categories -> JSON string[] alineado por índice con images (obligatorio,
+//                 ids de lib/disenos/categorias.ts)
 //   created_by
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
@@ -100,12 +125,28 @@ export async function POST(request: NextRequest) {
 
     let titles: string[] = [];
     let folders: string[] = [];
+    let categories: string[] = [];
     try {
       titles = JSON.parse((formData.get("titles") as string) || "[]");
     } catch { titles = []; }
     try {
       folders = JSON.parse((formData.get("folders") as string) || "[]");
     } catch { folders = []; }
+    try {
+      categories = JSON.parse((formData.get("categories") as string) || "[]");
+    } catch { categories = []; }
+
+    // La categoría es obligatoria: se valida ANTES de insertar, para no dejar
+    // media carga guardada y media rechazada.
+    const sinCategoria = files
+      .map((f, i) => (esCategoriaValida(categories[i]) ? null : (titles[i] || f.name)))
+      .filter(Boolean);
+    if (sinCategoria.length > 0) {
+      return NextResponse.json(
+        { error: `Falta la categoría en: ${sinCategoria.slice(0, 5).join(", ")}${sinCategoria.length > 5 ? "…" : ""}` },
+        { status: 400 }
+      );
+    }
 
     let inserted = 0;
     for (let i = 0; i < files.length; i++) {
@@ -116,9 +157,9 @@ export async function POST(request: NextRequest) {
       const folder = (folders[i] || "").slice(0, 255) || null;
 
       await query(
-        `INSERT INTO designer_designs (title, folder, image_data, image_mime, created_by)
-         VALUES (?, ?, ?, ?, ?)`,
-        [title, folder, buffer, mime, created_by]
+        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [title, folder, categories[i], buffer, mime, created_by]
       );
       inserted++;
     }
@@ -130,7 +171,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: renombrar / recategorizar un diseño. JSON { id, title?, folder? }
+// PATCH: renombrar / recategorizar un diseño. JSON { id, title?, folder?, category? }
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
@@ -150,6 +191,13 @@ export async function PATCH(request: NextRequest) {
     if (typeof body.folder === "string") {
       sets.push("folder = ?");
       params.push(body.folder.trim().slice(0, 255) || null);
+    }
+    if (body.category !== undefined) {
+      if (!esCategoriaValida(body.category)) {
+        return NextResponse.json({ error: "Categoría inválida" }, { status: 400 });
+      }
+      sets.push("category = ?");
+      params.push(body.category);
     }
     if (sets.length === 0) {
       return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });

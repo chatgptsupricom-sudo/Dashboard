@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import KpiDisenos from "@/components/disenador/KpiDisenos";
+import { CATEGORIAS_DISENO, etiquetaCategoria } from "@/lib/disenos/categorias";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +35,7 @@ interface Design {
   id: number;
   title: string;
   folder: string | null;
+  category: string | null;
   created_by: string;
   created_at: string;
   image_path: string;
@@ -43,6 +46,8 @@ interface StagedFile {
   preview: string;
   title: string;
   folder: string;
+  /** Categoría de diseño: obligatoria para poder guardar (ver lib/disenos/categorias.ts). */
+  category: string;
 }
 
 const LIMIT = 24;
@@ -124,6 +129,12 @@ export default function DisenosCatalogoPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [folderFilter, setFolderFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [conteoPorCategoria, setConteoPorCategoria] = useState<Record<string, number>>({});
+  // Categoría que se aplica a todo lo que se está subiendo (se puede cambiar
+  // archivo por archivo después).
+  const [categoriaLote, setCategoriaLote] = useState("");
+  const [kpiRefresh, setKpiRefresh] = useState(0);
   const [folders, setFolders] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -148,6 +159,7 @@ export default function DisenosCatalogoPage() {
   const [editing, setEditing] = useState<Design | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editFolder, setEditFolder] = useState("");
+  const [editCategory, setEditCategory] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Design | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -160,11 +172,13 @@ export default function DisenosCatalogoPage() {
       const p = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (search) p.set("search", search);
       if (folderFilter) p.set("folder", folderFilter);
+      if (categoryFilter) p.set("category", categoryFilter);
       const res = await fetch(`/api/disenador/disenos?${p}`);
       const data = await res.json();
       if (data.success) {
         setDesigns(data.designs || []);
         setFolders(data.folders || []);
+        setConteoPorCategoria(data.conteoPorCategoria || {});
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
       }
@@ -173,7 +187,7 @@ export default function DisenosCatalogoPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, folderFilter]);
+  }, [page, search, folderFilter, categoryFilter]);
 
   useEffect(() => { fetchDesigns(); }, [fetchDesigns]);
 
@@ -206,6 +220,7 @@ export default function DisenosCatalogoPage() {
           preview,
           title: f.name.replace(/\.[^.]+$/, ""),
           folder: folderFromPath(rel),
+          category: categoriaLote,
         });
       }
       setStaged((prev) => [...prev, ...prepared]);
@@ -234,6 +249,14 @@ export default function DisenosCatalogoPage() {
   // ── Subir (en lotes) ──────────────────────────────────────────────────────
   const handleUpload = async () => {
     if (staged.length === 0 || !user?.name) return;
+    const sinCategoria = staged.filter((s) => !s.category);
+    if (sinCategoria.length > 0) {
+      alert(
+        `Falta elegir la categoría de ${sinCategoria.length} diseño${sinCategoria.length > 1 ? "s" : ""}. ` +
+        "Podés aplicar una a todo el lote con el selector de arriba."
+      );
+      return;
+    }
     setUploading(true);
     setUploadProgress({ done: 0, total: staged.length });
     try {
@@ -243,6 +266,7 @@ export default function DisenosCatalogoPage() {
         fd.append("created_by", user.name);
         fd.append("titles", JSON.stringify(chunk.map((s) => s.title || s.file.name)));
         fd.append("folders", JSON.stringify(chunk.map((s) => s.folder || "")));
+        fd.append("categories", JSON.stringify(chunk.map((s) => s.category)));
         chunk.forEach((s) => fd.append("images", s.file));
         const res = await fetch("/api/disenador/disenos", { method: "POST", body: fd });
         if (!res.ok) {
@@ -253,6 +277,7 @@ export default function DisenosCatalogoPage() {
       }
       setStaged([]);
       setPage(1);
+      setKpiRefresh((n) => n + 1);
       await fetchDesigns();
     } catch (e: any) {
       alert("Error al subir: " + e.message);
@@ -332,6 +357,7 @@ export default function DisenosCatalogoPage() {
     setEditing(d);
     setEditTitle(d.title);
     setEditFolder(d.folder || "");
+    setEditCategory(d.category || "");
   };
   const saveEdit = async () => {
     if (!editing) return;
@@ -340,10 +366,16 @@ export default function DisenosCatalogoPage() {
       const res = await fetch("/api/disenador/disenos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editing.id, title: editTitle, folder: editFolder }),
+        body: JSON.stringify({
+          id: editing.id,
+          title: editTitle,
+          folder: editFolder,
+          ...(editCategory ? { category: editCategory } : {}),
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setEditing(null);
+      setKpiRefresh((n) => n + 1);
       await fetchDesigns();
     } catch (e: any) {
       alert("No se pudo guardar: " + e.message);
@@ -365,6 +397,7 @@ export default function DisenosCatalogoPage() {
         return next;
       });
       setDeleteTarget(null);
+      setKpiRefresh((n) => n + 1);
       await fetchDesigns();
     } catch (e: any) {
       alert("No se pudo eliminar: " + e.message);
@@ -382,6 +415,7 @@ export default function DisenosCatalogoPage() {
       clearSelection();
       setBulkDeleteOpen(false);
       setPage(1);
+      setKpiRefresh((n) => n + 1);
       await fetchDesigns();
     } catch (e: any) {
       alert("No se pudieron eliminar: " + e.message);
@@ -404,10 +438,14 @@ export default function DisenosCatalogoPage() {
           <Palette className="w-6 h-6 text-fuchsia-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Catálogo de Diseños</h1>
-          <p className="text-sm text-slate-500">Sube tus diseños y consúltalos como catálogo</p>
+          <h1 className="text-2xl font-bold text-slate-900">KPI de Diseños</h1>
+          <p className="text-sm text-slate-500">
+            Sube tus diseños por categoría y mirá cuántos subiste por día, semana y mes
+          </p>
         </div>
       </div>
+
+      <KpiDisenos refreshKey={kpiRefresh} />
 
       {/* Carga */}
       <Card className="rounded-3xl border-none shadow-sm">
@@ -457,6 +495,29 @@ export default function DisenosCatalogoPage() {
               // Atributos no estándar para selección de carpeta
               {...({ webkitdirectory: "", directory: "", mozdirectory: "" } as any)}
             />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-sm font-medium text-slate-700">Categoría</Label>
+            <select
+              value={categoriaLote}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCategoriaLote(v);
+                // Se aplica a lo que ya está en cola: es lo que se espera al
+                // elegir "la categoría de esta carga".
+                if (v) setStaged((prev) => prev.map((s) => ({ ...s, category: v })));
+              }}
+              disabled={uploading}
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+            >
+              <option value="">Elegí una categoría…</option>
+              {CATEGORIAS_DISENO.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-400">
+              Obligatoria. Se aplica a toda la carga y se puede cambiar diseño por diseño.
+            </span>
           </div>
           <p className="text-xs text-slate-400">
             La carga por carpeta toma el nombre de cada subcarpeta como colección. Formatos: PNG, JPG, WEBP, GIF, SVG.
@@ -531,6 +592,19 @@ export default function DisenosCatalogoPage() {
                         className="w-full text-[11px] px-1.5 py-1 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fuchsia-500"
                         placeholder="Colección"
                       />
+                      <select
+                        value={s.category}
+                        onChange={(e) => updateStaged(idx, { category: e.target.value })}
+                        disabled={uploading}
+                        className={`w-full text-[11px] px-1.5 py-1 rounded border bg-white focus:outline-none focus:ring-1 focus:ring-fuchsia-500 ${
+                          s.category ? "border-slate-200 text-slate-700" : "border-red-300 text-red-600"
+                        }`}
+                      >
+                        <option value="">Sin categoría</option>
+                        {CATEGORIAS_DISENO.map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 ))}
@@ -584,6 +658,21 @@ export default function DisenosCatalogoPage() {
                 className="pl-10"
               />
             </div>
+            <select
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500 max-w-[16rem]"
+            >
+              <option value="">Todas las categorías</option>
+              {CATEGORIAS_DISENO.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}{conteoPorCategoria[c.id] ? ` (${conteoPorCategoria[c.id]})` : ""}
+                </option>
+              ))}
+              {conteoPorCategoria.sin_categoria ? (
+                <option value="sin_categoria">Sin categoría ({conteoPorCategoria.sin_categoria})</option>
+              ) : null}
+            </select>
             <select
               value={folderFilter}
               onChange={(e) => { setFolderFilter(e.target.value); setPage(1); }}
@@ -640,7 +729,10 @@ export default function DisenosCatalogoPage() {
                     </div>
                     <div className="p-2">
                       <p className="text-xs font-medium text-slate-900 truncate">{d.title || "—"}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{d.folder || "Sin colección"}</p>
+                      <p className="text-[10px] text-slate-500 truncate" title={etiquetaCategoria(d.category)}>
+                        {etiquetaCategoria(d.category)}
+                      </p>
+                      {d.folder && <p className="text-[10px] text-slate-400 truncate">{d.folder}</p>}
                     </div>
 
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -698,7 +790,8 @@ export default function DisenosCatalogoPage() {
               <div className="min-w-0">
                 <p className="text-sm font-bold text-slate-900 truncate">{preview?.title}</p>
                 <p className="text-xs text-slate-500 truncate">
-                  {preview?.folder || "Sin colección"} · {preview?.created_by}
+                  {etiquetaCategoria(preview?.category)}
+                  {preview?.folder ? ` · ${preview.folder}` : ""} · {preview?.created_by}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -724,6 +817,19 @@ export default function DisenosCatalogoPage() {
             <div>
               <Label className="text-sm font-medium text-slate-700">Título</Label>
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Categoría</Label>
+              <select
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+                className="mt-1 w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+              >
+                <option value="">Sin categoría</option>
+                {CATEGORIAS_DISENO.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
             </div>
             <div>
               <Label className="text-sm font-medium text-slate-700">Colección</Label>
