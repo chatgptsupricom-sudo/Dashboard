@@ -4,6 +4,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -324,10 +325,19 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    const [seriesCxc, efectividadCalc] = await Promise.all([
+    const [seriesCxc, efectividadCalc, cobrosDelMes] = await Promise.all([
       calcularSeriesCxC(companyIds, semanasCxc, today),
       calcularEfectividad(companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today),
+      // Todo el dinero que entró en el mes, sin importar cuándo vencía la
+      // factura: es el "Cobrado" de Contado/Crédito. El numerador de
+      // Efectividad es otra cosa (solo lo exigible del mes), y mostrarlos
+      // juntos evita que se lean como si fueran el mismo número.
+      obtenerCobros(companyIds, {
+        desde: monthStart.toISOString().split("T")[0],
+        hasta: monthEnd.toISOString().split("T")[0],
+      }),
     ]);
+    const cobradoTotalMes = Math.round(cobrosDelMes.reduce((s, c) => s + c.monto, 0) * 100) / 100;
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -393,6 +403,7 @@ export async function GET(request: NextRequest) {
             // cobradoAntes = abonos adelantados de meses previos.
             cobradoEnElMes: efectividadCalc.cobradoEnElMes,
             cobradoAntes: efectividadCalc.cobradoAntes,
+            cobradoTotalMes,
             exigibleMes: efectividadCalc.exigibleMes,
             pendiente: efectividadCalc.pendiente,
             valueAcumulado: efectividadCalc.valueAcumulado,

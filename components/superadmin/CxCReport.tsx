@@ -253,7 +253,7 @@ export default function CxCReport() {
               value={`${data.kpis.efectividad.value}%`}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
+                `${t("cobrado_exigible")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
                 (data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null
                   ? ` · ${t("cobrado_a_hoy")}: ${data.kpis.efectividad.valueAcumulado}%`
                   : "")

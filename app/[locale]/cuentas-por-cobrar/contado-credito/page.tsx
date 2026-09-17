@@ -460,13 +460,13 @@ export default function ContadoCreditoPage() {
                 {data.cuadre && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs text-slate-500 mb-2">
-                      Cómo se reparte (por vencimiento de la factura) — cuadra con los KPIs del Dashboard
+                      Cómo se reparte este total, según cuándo vencía cada factura — cuadra con los KPIs del Dashboard
                     </p>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                       {[
                         { label: "Vencidas al inicio", hint: "= Recuperado (Recuperación)", t: data.cuadre.vencidasAlInicio },
-                        { label: "Vencen en el período", hint: "= Cobrado en el mes (Efectividad)", t: data.cuadre.vencenEnPeriodo },
-                        { label: "Adelantado", hint: "Vencen después", t: data.cuadre.adelantado },
+                        { label: "Vencen en el período", hint: "= \"en el mes\" de Efectividad", t: data.cuadre.vencenEnPeriodo },
+                        { label: "Vencen después", hint: "Cobro adelantado", t: data.cuadre.adelantado },
                         { label: "Internos (Supricom)", hint: "Fuera de los KPIs", t: data.cuadre.internos },
                       ].map((x) => (
                         <div key={x.label} className="rounded-xl bg-slate-50 p-3 min-w-0">
