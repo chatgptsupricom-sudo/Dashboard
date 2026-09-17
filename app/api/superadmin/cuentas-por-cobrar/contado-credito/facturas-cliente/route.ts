@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,26 +9,8 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
-const CUSTOMER_INVOICE_TYPES = new Set(["out_invoice", "out_refund"]);
-
 function getMonthStart(year: number, month: number): Date {
   return new Date(year, month, 1);
-}
-
-async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
-  let result: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await callOdooRPC<any[]>(
-      model, "search_read", [domain],
-      { fields, order: "id asc", limit: 5000, offset },
-    );
-    if (!page || page.length === 0) break;
-    result = result.concat(page);
-    if (page.length < 5000) break;
-    offset += 5000;
-  }
-  return result;
 }
 
 type Factura = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string; journalId?: number };
@@ -94,118 +76,43 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
   }));
 }
 
-// Abonos del cliente ese mes (fecha de confirmacion del pago, no fecha de factura) --
-// mismo mecanismo que contado-credito/route.ts::renglonesCobradoDinero,
-// filtrado ademas por partner.
+// Abonos del cliente en el periodo (fecha de confirmacion del pago, no fecha
+// de factura) -- misma fuente que contado-credito/route.ts (lib/cxc/cobros.ts),
+// acotada al partner en el dominio de Odoo.
 async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined, bancoId: number | undefined): Promise<Factura[]> {
-  const reconciles = await fetchPaginated(
-    "account.partial.reconcile",
-    [],
-    ["amount", "debit_move_id", "credit_move_id"],
-  );
-  if (reconciles.length === 0) return [];
-
-  const lineIds = new Set<number>();
-  reconciles.forEach((r) => {
-    if (r.debit_move_id) lineIds.add(r.debit_move_id[0]);
-    if (r.credit_move_id) lineIds.add(r.credit_move_id[0]);
+  const cobros = await obtenerCobros(companyIds, {
+    desde: monthStart.toISOString().split("T")[0],
+    hasta: monthEnd.toISOString().split("T")[0],
+    dominioFactura: [["partner_id", "=", partnerId]],
   });
 
-  const lines = await callOdooRPC<any[]>(
-    "account.move.line", "search_read",
-    [[["id", "in", Array.from(lineIds)]]],
-    { fields: ["move_id"] },
-  );
-  const lineToMoveMap: Record<number, number> = {};
-  (lines || []).forEach((l) => { lineToMoveMap[l.id] = l.move_id[0]; });
-
-  const moves = await fetchPaginated(
-    "account.move",
-    [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "payment_id", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
-  );
-  const moveMap: Record<number, any> = {};
-  moves.forEach((m) => { moveMap[m.id] = m; });
-
-  const startStr = monthStart.toISOString().split("T")[0];
-  const endStr = monthEnd.toISOString().split("T")[0];
-  const confirmados = await pagosConfirmadosEntre(companyIds, startStr, endStr);
-
-  // Mismo criterio que contado-credito/route.ts::esBancoReal -- solo
-  // diarios bank/cash reales cuentan como "cobrado" (las notas de credito
-  // aplicadas directo tampoco cuentan, confirmado fila por fila contra el
-  // export real de "cobranza").
-  const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
-  let journalTypeMap: Record<number, string> = {};
-  if (journalIds.length > 0) {
-    try {
-      const journals = await callOdooRPC<any[]>("account.journal", "read", [journalIds], { fields: ["id", "type"] });
-      (journals || []).forEach((j) => { journalTypeMap[j.id] = j.type; });
-    } catch (_) {}
-  }
-  const esBancoReal = (journalId: number | undefined, journalName: string): boolean => {
-    if (journalId === undefined) return false;
-    const tipo = journalTypeMap[journalId];
-    if (tipo !== "bank" && tipo !== "cash") return false;
-    if (journalName.toLowerCase().includes("retenido")) return false;
+  const filtrados = cobros.filter((c) => {
+    // "Cobrado" no excluye asistentes por defecto (ver contado-credito/route.ts).
+    if (excluirAsistente && esVendedorExcluido({ invoice_user_id: [c.vendedorId, c.vendedorName], company_id: [c.companyId] })) return false;
+    if (vendedorId !== undefined && c.vendedorId !== vendedorId) return false;
+    if (bancoId !== undefined && c.journalId !== bancoId) return false;
     return true;
-  };
-
-  const ptIdsVistos = new Set<number>();
-  const crudos: { move: any; paymentMove: any; monto: number; fechaAbono: string }[] = [];
-
-  reconciles.forEach((r) => {
-    const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
-    const cMove = moveMap[lineToMoveMap[r.credit_move_id?.[0]]];
-    if (!dMove || !cMove) return;
-
-    const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
-    const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
-    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
-
-    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
-    const settleMove = dIsCustomerInvoice ? cMove : dMove;
-    if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
-
-    if (!invoiceMove.partner_id || invoiceMove.partner_id[0] !== partnerId) return;
-    // A diferencia de facturasDelMes (Facturado), aca la exclusion por
-    // vendedor es opcional (toggle del usuario) -- "Cobrado" no la aplica
-    // por defecto (ver comentario en
-    // contado-credito/route.ts::renglonesCobradoDinero).
-    if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
-    if (vendedorId !== undefined && invoiceMove.invoice_user_id?.[0] !== vendedorId) return;
-
-    const fechaAbono = fechaDeAbono(settleMove, confirmados);
-    if (!fechaAbono || fechaAbono < startStr || fechaAbono > endStr) return;
-
-    const journalIdRaw = settleMove.journal_id?.[0];
-    const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
-    if (!esBancoReal(journalIdRaw, journalNameRaw)) return;
-    if (bancoId !== undefined && journalIdRaw !== bancoId) return;
-
-    if (invoiceMove.invoice_payment_term_id?.[0]) ptIdsVistos.add(invoiceMove.invoice_payment_term_id[0]);
-    crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0, fechaAbono });
   });
 
-  let ptMap: Record<number, string> = {};
-  if (ptIdsVistos.size > 0) {
+  const ptIds = [...new Set(filtrados.map((c) => c.plazoId).filter((id): id is number => Boolean(id)))];
+  const ptMap: Record<number, string> = {};
+  if (ptIds.length > 0) {
     try {
-      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [[...ptIdsVistos]], { fields: ["id", "name"] });
+      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
       (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
     } catch (_) {}
   }
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
-
-  return crudos
-    .map(({ move, paymentMove, monto, fechaAbono }) => ({
-      id: move.id,
-      name: move.name || "",
-      invoiceDate: fechaAbono,
-      moveType: move.move_type,
-      amountTotal: round2(monto),
-      paymentTermName: ptMap[move.invoice_payment_term_id?.[0]] || "Contado",
-      journalId: paymentMove.journal_id?.[0],
+  return filtrados
+    .map((c) => ({
+      id: c.facturaId,
+      name: c.facturaNombre,
+      invoiceDate: c.fecha,
+      moveType: c.facturaTipo,
+      amountTotal: round2(c.monto),
+      paymentTermName: (c.plazoId && ptMap[c.plazoId]) || "Contado",
+      journalId: c.journalId,
     }))
     .sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || ""));
 }

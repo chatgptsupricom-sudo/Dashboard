@@ -33,6 +33,10 @@ type Row = {
   descripcion: string;
   estado: string;
   conciliado: boolean;
+  /** Parte del pago aplicada a facturas (lo que suma "Cobrado" en Contado/Crédito). */
+  aplicadoFacturas: number;
+  /** Parte aún sin aplicar (anticipo / saldo a favor). */
+  sinAplicar: number;
   facturasAplicadas: string;
   facturasCount: number;
   revisar: boolean;
@@ -130,6 +134,8 @@ export default function PagoClientesPage() {
       pagos: base.length,
       totalUsd: r2(base.reduce((s, r) => s + r.montoUsd, 0)),
       totalBs: r2(base.reduce((s, r) => s + (r.montoBs || 0), 0)),
+      aplicado: r2(base.reduce((s, r) => s + (r.aplicadoFacturas || 0), 0)),
+      sinAplicar: r2(base.reduce((s, r) => s + (r.sinAplicar || 0), 0)),
       porRevisar: enTab.filter((r) => r.revisar).length,
     };
   }, [enTab, visibles, search]);
@@ -161,6 +167,8 @@ export default function PagoClientesPage() {
       "Facturas aplicadas": r.facturasAplicadas,
       "Estado": r.estado,
       "Conciliado": r.conciliado ? "Sí" : "No",
+      "Aplicado a facturas USD": r.aplicadoFacturas,
+      "Sin aplicar USD": r.sinAplicar,
       "Revisar": r.revisar ? "Sí" : "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -168,7 +176,7 @@ export default function PagoClientesPage() {
       { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
       { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
-      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 9 },
+      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, tab === "cobro" ? "Cobros" : "Retenciones y ajustes");
@@ -291,10 +299,12 @@ export default function PagoClientesPage() {
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3">
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
         <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} />
         <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} />
+        <Card icon={<DollarSign size={16} className="text-blue-600" />} label="Aplicado a facturas" value={`$ ${fmtNum(resumen.aplicado)}`} />
+        <Card icon={<DollarSign size={16} className="text-slate-400" />} label="Sin aplicar (anticipos)" value={`$ ${fmtNum(resumen.sinAplicar)}`} />
         <button
           type="button"
           onClick={() => setSoloRevisar((v) => !v)}

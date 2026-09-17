@@ -335,6 +335,11 @@ export default function CxcDashboardPage() {
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
                 <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
               </div>
+              {data.kpis.efectividad.cobradoAntes > 0 && (
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  En el mes {formatCurrency(data.kpis.efectividad.cobradoEnElMes)} + adelantado {formatCurrency(data.kpis.efectividad.cobradoAntes)}
+                </div>
+              )}
               <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
               {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
                 <div className="text-xs text-slate-400 mt-1">

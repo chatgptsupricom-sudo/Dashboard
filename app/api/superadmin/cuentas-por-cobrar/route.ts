@@ -324,11 +324,10 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
-
-    const efectividadCalc = await calcularEfectividad(
-      companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today,
-    );
+    const [seriesCxc, efectividadCalc] = await Promise.all([
+      calcularSeriesCxC(companyIds, semanasCxc, today),
+      calcularEfectividad(companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today),
+    ]);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -390,6 +389,10 @@ export async function GET(request: NextRequest) {
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
             cobradoMes: efectividadCalc.cobradoAlCierre,
+            // cobradoEnElMes = tramo "vencen en el período" de Contado/Crédito;
+            // cobradoAntes = abonos adelantados de meses previos.
+            cobradoEnElMes: efectividadCalc.cobradoEnElMes,
+            cobradoAntes: efectividadCalc.cobradoAntes,
             exigibleMes: efectividadCalc.exigibleMes,
             pendiente: efectividadCalc.pendiente,
             valueAcumulado: efectividadCalc.valueAcumulado,

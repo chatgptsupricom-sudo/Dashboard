@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 
 /**
  * KPI "Recuperación Vencidos" (issue #189).
@@ -31,14 +32,14 @@ import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
  * de la conciliación: ver lib/cxc/fechaConfirmacion.ts. La reconstrucción del
  * saldo usa la misma fecha, para que numerador y denominador corten igual.
  *
- * ── Notas de crédito ──
+ * ── Qué cuenta como recuperado ──
  *
  * El denominador se reconstruye con TODAS las conciliaciones, porque el saldo
- * realmente bajó por todas ellas. El numerador cuenta solo PAGOS: una factura
- * que se limpió con una nota de crédito no se recuperó, se dio de baja. Medido
- * sobre agosto 2026, las notas de crédito son el 0,6% de lo conciliado
- * ($17.712 de $2,97M), así que la distinción casi no mueve el número — pero
- * deja el KPI conceptualmente correcto.
+ * realmente bajó por todas ellas. El numerador es "cobrado" de
+ * lib/cxc/cobros.ts, la misma fuente que Contado/Crédito: dinero que entró a
+ * banco/caja. Notas de crédito, retenciones y descuentos bajan el saldo pero
+ * no son recuperación. Así el numerador es exactamente el tramo "vencidas al
+ * inicio" del Cobrado de Contado/Crédito (sin internos).
  *
  * ── Alternativa descartada ──
  *
@@ -54,7 +55,7 @@ export interface RecuperacionResultado {
   value: number | null;
   /** Saldo vencido al iniciar el mes (denominador). */
   saldoVencidoInicial: number;
-  /** Pagos conciliados durante el mes sobre ese saldo (numerador). */
+  /** Cobrado (banco/caja) durante el mes sobre ese saldo (numerador). */
   recuperadoEnElMes: number;
   /** Saldo que esas facturas todavía tienen hoy. */
   saldoVencidoHoy: number;
@@ -126,23 +127,23 @@ export async function calcularRecuperacion(
     ...noInterno("debit_move_id.move_id."),
   ];
 
-  const [saldoHoy, desdeElCorte, enElMes] = await Promise.all([
+  const [saldoHoy, desdeElCorte, cobros] = await Promise.all([
     sumarCampo("account.move", [...baseFacturas, ["amount_residual", "!=", 0]], "amount_residual"),
     // Todo lo conciliado desde el corte: se suma al saldo de hoy para
     // reconstruir cuánto había vencido al iniciar el mes.
     sumarCampo("account.partial.reconcile", [...baseConciliaciones, ...dominioFechaEfectiva(">=", desde)], "amount"),
-    // Solo el mes, y solo pagos: una nota de crédito no es recuperación.
-    sumarCampo(
-      "account.partial.reconcile",
-      [
-        ...baseConciliaciones,
-        ...dominioFechaEfectiva(">=", desde),
-        ...dominioFechaEfectiva("<=", hasta),
-        ["credit_move_id.move_id.move_type", "!=", "out_refund"],
+    // Solo el mes, y solo dinero real (misma fuente que Contado/Crédito).
+    obtenerCobros(companyIds, {
+      desde,
+      hasta,
+      dominioFactura: [
+        ["move_type", "=", "out_invoice"],
+        ["invoice_date_due", "<", desde],
+        ["partner_id.name", "not ilike", "supricom"],
       ],
-      "amount",
-    ),
+    }),
   ]);
+  const enElMes = { total: cobros.reduce((s, c) => s + c.monto, 0) };
 
   const saldoVencidoInicial = saldoHoy.total + desdeElCorte.total;
   const r2 = (n: number) => Math.round(n * 100) / 100;
