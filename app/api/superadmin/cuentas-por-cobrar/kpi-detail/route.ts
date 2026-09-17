@@ -316,9 +316,14 @@ export async function GET(request: NextRequest) {
             count: invoices.length,
             pendingCount: invoices.filter((i) => i.amountResidual > 0).length,
           },
-          invoices: invoices.sort(
-            (a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0,
-          ),
+          // Primero las recuperadas (de mayor cobro a menor): son la respuesta a
+          // "que se recupero este mes". Despues las pendientes, de la mas
+          // vencida a la mas reciente.
+          invoices: invoices.sort((a, b) => {
+            if ((a.amountPaid > 0) !== (b.amountPaid > 0)) return a.amountPaid > 0 ? -1 : 1;
+            if (a.amountPaid > 0) return b.amountPaid - a.amountPaid;
+            return (a.invoiceDateDue || "").localeCompare(b.invoiceDateDue || "");
+          }),
         },
       });
     }
