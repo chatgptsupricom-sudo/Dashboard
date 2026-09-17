@@ -6,6 +6,16 @@ import { obtenerCobros } from "@/lib/cxc/cobros";
  *   Efectividad = cobrado HASTA EL CIERRE del mes
  *               ÷ exigible de las facturas que vencen en el mes
  *
+ * ── Mes en curso: solo lo que ya venció ──
+ *
+ * Durante el mes en curso el denominador se limita a las facturas que YA
+ * vencieron. Si no, el KPI divide entre todo el exigible del mes, incluidas
+ * facturas que todavía no se podían cobrar, y sale siempre bajo: medido en
+ * Valencia al 17-sep, 38,3% contra todo el mes y 64,0% contra lo ya vencido,
+ * mientras las celdas semanales (que solo muestran semanas ya iniciadas) daban
+ * 68/46/24%. Al cerrar el mes el denominador ya es el mes completo, así que los
+ * meses cerrados no cambian y siguen siendo comparables entre sí.
+ *
  * "Cobrado" sale de lib/cxc/cobros.ts, la misma fuente que "Cobrado" de
  * Contado/Crédito: dinero que entró a banco/caja, fechado por la CONFIRMACIÓN
  * del pago. Así cuadra con esa pantalla:
@@ -37,8 +47,12 @@ export interface EfectividadResultado {
   cobradoEnElMes: number;
   /** Cobrado antes de empezar el mes (pagos adelantados). */
   cobradoAntes: number;
-  /** Exigible del mes (con notas de crédito restando). */
+  /** Exigible que ya venció (en el mes en curso) o del mes completo si ya cerró. */
   exigibleMes: number;
+  /** Exigible del mes completo, incluso lo que aún no vence. */
+  exigibleMesCompleto: number;
+  /** true mientras el mes no cierre: `exigibleMes` es solo lo ya vencido. */
+  parcial: boolean;
   /** % "cobrado a hoy". Dato secundario. */
   valueAcumulado: number | null;
   /** Cobrado a hoy, incluidos pagos posteriores al cierre. */
@@ -79,12 +93,17 @@ export async function calcularEfectividad(
   const hasta = iso(monthEnd);
   const hoyStr = iso(hoy);
 
-  const exigibleMes = facturas.reduce((s, f) => s + f.amountTotal, 0);
-  const pendiente = facturas.reduce((s, f) => s + f.amountResidual, 0);
+  const mesCerrado = hoy > monthEnd;
+  // Mes en curso: el denominador solo cuenta lo que ya venció (ver cabecera).
+  const vigentes = mesCerrado ? facturas : facturas.filter((f) => !f.dueDate || f.dueDate <= hoy);
+
+  const exigibleMes = vigentes.reduce((s, f) => s + f.amountTotal, 0);
+  const exigibleMesCompleto = facturas.reduce((s, f) => s + f.amountTotal, 0);
+  const pendiente = vigentes.reduce((s, f) => s + f.amountResidual, 0);
 
   // Cobros de EXACTAMENTE las facturas del exigible (mismo universo que el
   // denominador), hasta hoy o hasta el cierre si el mes aún no terminó.
-  const idsFacturas = facturas.map((f) => f.id);
+  const idsFacturas = vigentes.map((f) => f.id);
   const cobros = idsFacturas.length
     ? await obtenerCobros(companyIds, {
         hasta: hoyStr > hasta ? hoyStr : hasta,
@@ -104,10 +123,10 @@ export async function calcularEfectividad(
 
   // ── Fila semanal, mismo criterio estricto ──
   const semana: (string | null)[] = semanas.map(() => null);
-  if (semanas.length > 0 && facturas.length > 0) {
+  if (semanas.length > 0 && vigentes.length > 0) {
     const semanaDeFactura = new Map<number, number>();
     const acc = semanas.map(() => ({ exigible: 0, cobrado: 0 }));
-    facturas.forEach((f) => {
+    vigentes.forEach((f) => {
       if (!f.dueDate) return;
       const w = semanas.findIndex((s) => f.dueDate! >= s.inicio && f.dueDate! <= s.fin);
       if (w < 0) return;
@@ -139,11 +158,13 @@ export async function calcularEfectividad(
     cobradoEnElMes: r2(cobradoEnElMes),
     cobradoAntes: r2(cobradoAntes),
     exigibleMes: r2(exigibleMes),
+    exigibleMesCompleto: r2(exigibleMesCompleto),
+    parcial: !mesCerrado,
     valueAcumulado: pct(cobradoAHoy),
     cobradoAHoy: r2(cobradoAHoy),
     pendiente: r2(pendiente),
     ajustes: r2(exigibleMes - cobradoAHoy - pendiente),
-    mesCerrado: hoy > monthEnd,
+    mesCerrado,
     semana,
   };
 }

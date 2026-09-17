@@ -189,7 +189,14 @@ export default function CxcDashboardPage() {
                   En el mes {formatCurrency(data.kpis.efectividad.cobradoEnElMes)} + cobrado en meses anteriores {formatCurrency(data.kpis.efectividad.cobradoAntes)}
                 </div>
               )}
-              <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
+              <div className="text-xs text-slate-500 mt-1">
+                {data.kpis.efectividad.parcial ? "Exigible ya vencido" : "Exigible"}: {formatCurrency(data.kpis.efectividad.exigibleMes)}
+              </div>
+              {data.kpis.efectividad.parcial && data.kpis.efectividad.exigibleMesCompleto != null && (
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Del mes completo: {formatCurrency(data.kpis.efectividad.exigibleMesCompleto)} (lo que aún no vence no cuenta todavía)
+                </div>
+              )}
               {data.kpis.efectividad.cobradoTotalMes != null && (
                 <div className="text-[11px] text-slate-400 mt-0.5">
                   Cobrado total del mes: {formatCurrency(data.kpis.efectividad.cobradoTotalMes)} (ver Contado/Crédito)

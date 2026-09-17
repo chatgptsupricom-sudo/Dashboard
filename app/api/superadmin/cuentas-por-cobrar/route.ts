@@ -405,6 +405,8 @@ export async function GET(request: NextRequest) {
             cobradoAntes: efectividadCalc.cobradoAntes,
             cobradoTotalMes,
             exigibleMes: efectividadCalc.exigibleMes,
+            exigibleMesCompleto: efectividadCalc.exigibleMesCompleto,
+            parcial: efectividadCalc.parcial,
             pendiente: efectividadCalc.pendiente,
             valueAcumulado: efectividadCalc.valueAcumulado,
             cobradoAHoy: efectividadCalc.cobradoAHoy,
