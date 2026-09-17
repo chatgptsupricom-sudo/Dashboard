@@ -277,6 +277,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard",
       "rma",
+      "rma_personal", // Personal de RMA: cada rol registra solo a su gente
     ],
   },
   [UserRole.CUENTAS_POR_COBRAR]: {
@@ -362,8 +363,7 @@ export const rolePermissions: RolePermissions = {
       "dashboard",
       "almacen_egresos",
       "almacen_ordenes",
-      "almacen_almacenistas",
-      "almacen_choferes",
+      "almacen_personal", // Almacenistas y choferes: solo Almacen los registra
       "almacen_unidades",
     ],
   },

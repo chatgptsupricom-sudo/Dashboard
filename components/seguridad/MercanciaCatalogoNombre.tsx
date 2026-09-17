@@ -30,6 +30,7 @@ export default function MercanciaCatalogoNombre({
   vacioTexto,
   errorTexto,
   volverA,
+  embebido = false,
 }: {
   endpoint: string;
   listKey: string;
@@ -43,7 +44,13 @@ export default function MercanciaCatalogoNombre({
   campoPlaceholder: string;
   vacioTexto: string;
   errorTexto: string;
-  volverA: string;
+  volverA?: string;
+  /**
+   * Sin pagina propia (cabecera, fondo): solo el bloque con su titulo, para
+   * apilar varios catalogos en una misma pantalla — la de Personal de Almacen
+   * junta almacenistas y choferes.
+   */
+  embebido?: boolean;
 }) {
   const t = useTranslations(namespace);
   const [items, setItems] = useState<Item[]>([]);
@@ -89,11 +96,7 @@ export default function MercanciaCatalogoNombre({
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans">
-      <PageHeader icon={Users} titulo={titulo} subtitulo={subtitulo} volverA={volverA} />
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  const contenido = (
         <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5 items-start">
           <div className="lg:sticky lg:top-24">
             <Card>
@@ -137,7 +140,7 @@ export default function MercanciaCatalogoNombre({
               </p>
             )}
             {cargando ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="h-16 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
                 ))}
@@ -145,7 +148,7 @@ export default function MercanciaCatalogoNombre({
             ) : items.length === 0 ? (
               <EmptyState icon={User} texto={vacioTexto} />
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3">
                 {items.map((it) => (
                   <div
                     key={it.id}
@@ -161,6 +164,24 @@ export default function MercanciaCatalogoNombre({
             )}
           </div>
         </div>
+  );
+
+  if (embebido) {
+    return (
+      <section>
+        <h2 className="text-sm font-semibold text-slate-900 mb-1">{titulo}</h2>
+        <p className="text-xs text-slate-500 mb-4">{subtitulo}</p>
+        {contenido}
+      </section>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <PageHeader icon={Users} titulo={titulo} subtitulo={subtitulo} volverA={volverA} />
+
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {contenido}
       </main>
     </div>
   );

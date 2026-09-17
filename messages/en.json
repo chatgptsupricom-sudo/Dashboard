@@ -221,8 +221,6 @@
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
     "almacen_ordenes": "Pending orders",
-    "almacen_almacenistas": "Manage Warehouse Workers",
-    "almacen_choferes": "Manage Drivers",
     "almacen_unidades": "Manage Vehicles"
   },
   "rma": {
@@ -2080,8 +2078,9 @@
       "rate_for": "Rate {name}"
     },
     "personal": {
-      "titulo": "Security and RMA staff",
-      "subtitulo": "The names shown in the intake dropdowns",
+      "titulo_seguridad": "Security staff",
+      "titulo_rma": "RMA staff",
+      "subtitulo": "The names shown on the intake record. Each role registers only its own staff.",
       "col_seguridad": "Security",
       "col_rma": "RMA",
       "campo": "Full name",
@@ -2123,6 +2122,7 @@
         "recibido_rma": "Received by RMA",
         "recibido_placeholder": "Choose the person…",
         "recibido_sin_catalogo": "No staff on file.",
+        "recibido_sin_catalogo_rma": "RMA has not registered its staff yet.",
         "recibido_gestionar": "Manage staff",
         "submit": "Register intake",
         "submitting": "Registering...",
@@ -2501,6 +2501,10 @@
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this order"
+      },
+      "personal_almacen": {
+        "titulo": "Warehouse staff",
+        "subtitulo": "Warehouse workers and drivers. Only Warehouse registers them; Security picks them in the form."
       },
       "almacenistas_catalogo": {
         "titulo": "Warehouse workers",

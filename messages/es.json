@@ -203,8 +203,6 @@
     "seg_merc_egresos": "Egresos",
     "almacen_egresos": "Egresos de mercancía",
     "almacen_ordenes": "Órdenes pendientes",
-    "almacen_almacenistas": "Gestionar Almacenistas",
-    "almacen_choferes": "Gestionar Choferes",
     "almacen_unidades": "Gestionar Unidades"
   },
   "rma": {
@@ -2069,8 +2067,9 @@
       "rate_for": "Calificar a {name}"
     },
     "personal": {
-      "titulo": "Personal de Seguridad y RMA",
-      "subtitulo": "Los nombres que aparecen en los selects del ingreso",
+      "titulo_seguridad": "Personal de Seguridad",
+      "titulo_rma": "Personal de RMA",
+      "subtitulo": "Los nombres que aparecen en el acta de ingreso. Cada rol registra solo a su propio personal.",
       "col_seguridad": "Seguridad",
       "col_rma": "RMA",
       "campo": "Nombre completo",
@@ -2112,6 +2111,7 @@
         "recibido_rma": "Recibió por RMA",
         "recibido_placeholder": "Elige a la persona…",
         "recibido_sin_catalogo": "No hay personal cargado.",
+        "recibido_sin_catalogo_rma": "RMA todavía no registró a su personal.",
         "recibido_gestionar": "Gestionar personal",
         "submit": "Registrar ingreso",
         "submitting": "Registrando...",
@@ -2490,6 +2490,10 @@
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta orden"
+      },
+      "personal_almacen": {
+        "titulo": "Personal de Almacén",
+        "subtitulo": "Almacenistas y choferes. Solo Almacén los registra; Seguridad los elige en el formulario."
       },
       "almacenistas_catalogo": {
         "titulo": "Almacenistas",

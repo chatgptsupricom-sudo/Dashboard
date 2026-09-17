@@ -14,6 +14,21 @@ export function esRolPersonal(v: unknown): v is RolPersonal {
   return typeof v === "string" && (ROLES_PERSONAL as readonly string[]).includes(v);
 }
 
+/**
+ * Qué lista de personal puede ADMINISTRAR (alta, baja, reactivar) la sesión.
+ *
+ * Cada rol registra solo a su propia gente: Seguridad la de Seguridad, RMA la
+ * de RMA. Antes Seguridad cargaba las dos. `superadmin` puede con ambas
+ * (devuelve null = "cualquiera"); cualquier otro rol no administra ninguna.
+ */
+export function rolPersonalAdministrable(
+  payload: any,
+): RolPersonal | null | false {
+  const rol = String(payload?.role || "").toLowerCase().trim();
+  if (rol === "superadmin") return null;
+  return esRolPersonal(rol) ? rol : false;
+}
+
 // Best-effort e idempotente: crea la tabla y agrega las columnas del ingreso si
 // esta base todavía no las tiene. Se corre una sola vez por proceso. La
 // migración "de verdad" para producción es
