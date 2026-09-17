@@ -346,7 +346,7 @@ export default function MercanciaNueva({
           )}
           <div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <label className={`${labelClases} mb-0`}>{tm("almacenista")} *</label>
+              <label className={`${labelClases} mb-0`}>{tm(tipo === "ingreso" ? "almacenista_ingreso" : "almacenista")} *</label>
               <Link
                 href={`/${locale}/seguridad/mercancia/almacenistas`}
                 className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"

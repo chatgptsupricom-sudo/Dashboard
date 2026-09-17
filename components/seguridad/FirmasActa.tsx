@@ -35,6 +35,7 @@ export default function FirmasActa({
   roles = TODOS_LOS_ROLES as unknown as Rol[],
   readOnly = false,
   permitirRehacer = false,
+  ayudaUna = "ayuda_una",
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -56,6 +57,11 @@ export default function FirmasActa({
    * API de captura (`POST`/`DELETE`) ni siquiera se llama.
    */
   readOnly?: boolean;
+  /**
+   * Texto de ayuda cuando firma uno solo. Por defecto habla de "lo que
+   * salio"; el ingreso de mercancia pasa `ayuda_una_ingreso` ("lo que llego").
+   */
+  ayudaUna?: "ayuda_una" | "ayuda_una_ingreso";
   /**
    * Muestra "Rehacer" / borrar sobre una firma ya guardada. Solo `superadmin`
    * (#49): para el resto una firma guardada es definitiva.
@@ -156,7 +162,7 @@ export default function FirmasActa({
         )}
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        {ROLES.length > 1 ? t("ayuda") : t("ayuda_una")}
+        {ROLES.length > 1 ? t("ayuda") : t(ayudaUna)}
       </p>
 
       <div className={`grid gap-3 ${ROLES.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
