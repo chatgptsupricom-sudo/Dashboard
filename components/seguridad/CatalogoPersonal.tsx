@@ -13,11 +13,12 @@ import {
 } from "./mercancia-ui";
 
 /**
- * Administración del catálogo de personal de Seguridad y RMA (#50).
+ * Administración del catálogo de personal de UN rol (#50).
  *
- * De acá salen los dos selects "Recibió por Seguridad" / "Recibió por RMA" del
- * formulario de ingreso. Dos columnas, una por rol: cada una con su alta y su
- * lista, y un botón para dar de baja / reactivar sin perder el histórico.
+ * De acá salen los selects "Recibió por Seguridad" / "Recibió por RMA" del
+ * formulario de ingreso. Cada rol administra solo a su gente: Seguridad usa
+ * esta pantalla con `rol="seguridad"` y RMA con `rol="rma"` (la API rechaza
+ * con 403 cualquier alta o baja sobre la lista de otro rol).
  */
 
 type Rol = "seguridad" | "rma";
@@ -25,7 +26,13 @@ type Persona = { id: number; nombre: string; rol: Rol; activo: number };
 
 const ENDPOINT = "/api/seguridad/catalogo/personal";
 
-export default function CatalogoPersonal({ volverA }: { volverA: string }) {
+export default function CatalogoPersonal({
+  rol,
+  volverA,
+}: {
+  rol: Rol;
+  volverA: string;
+}) {
   const t = useTranslations("seguridad.personal");
   const [personal, setPersonal] = useState<Persona[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -33,14 +40,14 @@ export default function CatalogoPersonal({ volverA }: { volverA: string }) {
 
   const cargar = useCallback(async () => {
     try {
-      const res = await fetch(`${ENDPOINT}?incluir_inactivos=1`);
+      const res = await fetch(`${ENDPOINT}?rol=${rol}&incluir_inactivos=1`);
       if (!res.ok) return;
       const json = await res.json();
       setPersonal(json.personal || []);
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [rol]);
 
   useEffect(() => {
     void cargar();
@@ -75,41 +82,31 @@ export default function CatalogoPersonal({ volverA }: { volverA: string }) {
     }
   };
 
+  const icon = rol === "rma" ? Wrench : ShieldCheck;
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
       <PageHeader
-        icon={ShieldCheck}
-        titulo={t("titulo")}
+        icon={icon}
+        titulo={t(rol === "rma" ? "titulo_rma" : "titulo_seguridad")}
         subtitulo={t("subtitulo")}
         volverA={volverA}
       />
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
           <p className="mb-4 text-sm text-red-600">{error}</p>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-          <ColumnaRol
-            rol="seguridad"
-            icon={ShieldCheck}
-            titulo={t("col_seguridad")}
-            personas={personal.filter((p) => p.rol === "seguridad")}
-            cargando={cargando}
-            onAgregar={agregar}
-            onCambiarActivo={cambiarActivo}
-            t={t}
-          />
-          <ColumnaRol
-            rol="rma"
-            icon={Wrench}
-            titulo={t("col_rma")}
-            personas={personal.filter((p) => p.rol === "rma")}
-            cargando={cargando}
-            onAgregar={agregar}
-            onCambiarActivo={cambiarActivo}
-            t={t}
-          />
-        </div>
+        <ColumnaRol
+          rol={rol}
+          icon={icon}
+          titulo={t(rol === "rma" ? "col_rma" : "col_seguridad")}
+          personas={personal.filter((p) => p.rol === rol)}
+          cargando={cargando}
+          onAgregar={agregar}
+          onCambiarActivo={cambiarActivo}
+          t={t}
+        />
       </main>
     </div>
   );

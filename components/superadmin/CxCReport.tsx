@@ -34,6 +34,7 @@ interface KPIs {
   // `valueAcumulado` = "cobrado a hoy", dato secundario (issue #188).
   efectividad: {
     value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number;
+    exigibleMesCompleto?: number; parcial?: boolean;
     valueAcumulado: number | null; cobradoAHoy: number; mesCerrado: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
@@ -253,7 +254,7 @@ export default function CxCReport() {
               value={`${data.kpis.efectividad.value}%`}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("cobrado")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
+                `${t("cobrado_exigible")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${data.kpis.efectividad.parcial ? t("exigible_vencido") : t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
                 (data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null
                   ? ` · ${t("cobrado_a_hoy")}: ${data.kpis.efectividad.valueAcumulado}%`
                   : "")

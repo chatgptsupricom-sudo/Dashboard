@@ -257,6 +257,8 @@ export function Sidebar({
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
+    // Personal de RMA: lo registra RMA ("Recibio por RMA" del ingreso), no Seguridad.
+    { id: "rma_personal", label: t("seg_personal"), icon: Users, slug: "/rma/personal", absoluteHref: true },
     // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
     // ve la misma ruta de egresos dentro de su grupo "Mercancia"; esta es la
     // version que ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
@@ -266,8 +268,9 @@ export function Sidebar({
     // solo se llegaba con el enlace "Gestionar..." dentro del formulario, se
     // agregan tambien al menu para que se puedan administrar sin tener que
     // empezar un registro primero.
-    { id: "almacen_almacenistas", label: t("almacen_almacenistas"), icon: Users, slug: "/seguridad/mercancia/almacenistas", absoluteHref: true },
-    { id: "almacen_choferes", label: t("almacen_choferes"), icon: IdCard, slug: "/seguridad/mercancia/choferes", absoluteHref: true },
+    // Personal de Almacen (almacenistas + choferes): cada rol registra solo a
+    // su propia gente, en su propia seccion "Personal".
+    { id: "almacen_personal", label: t("seg_personal"), icon: IdCard, slug: "/seguridad/mercancia/personal", absoluteHref: true },
     { id: "almacen_unidades", label: t("almacen_unidades"), icon: Car, slug: "/seguridad/mercancia/unidades", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.

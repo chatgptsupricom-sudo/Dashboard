@@ -33,6 +33,12 @@ type Row = {
   descripcion: string;
   estado: string;
   conciliado: boolean;
+  /** Parte del pago aplicada a facturas (lo que suma "Cobrado" en Contado/Crédito). */
+  aplicadoFacturas: number;
+  /** Parte de lo aplicado que fue a facturas de vendedores excluidos. */
+  aplicadoExcluido: number;
+  /** Parte aún sin aplicar (anticipo / saldo a favor). */
+  sinAplicar: number;
   facturasAplicadas: string;
   facturasCount: number;
   revisar: boolean;
@@ -99,19 +105,36 @@ export default function PagoClientesPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, tab]);
 
+  // "Excluir asistentes" se aplica como en Contado/Crédito: por el vendedor de
+  // la FACTURA a la que se aplicó el pago. Un pago aplicado en parte a
+  // facturas de vendedores excluidos solo pierde esa parte. Lo que no está
+  // aplicado a ninguna factura se juzga por el vendedor del pago.
+  const conciliadoVisible = useCallback(
+    (r: Row) => (r.aplicadoFacturas || 0) - (excluirAsistentes ? r.aplicadoExcluido || 0 : 0),
+    [excluirAsistentes],
+  );
+  const sinConciliarVisible = useCallback(
+    (r: Row) => (excluirAsistentes && r.esAsistente ? 0 : Math.max(0, r.montoUsd - (r.aplicadoFacturas || 0))),
+    [excluirAsistentes],
+  );
+  const incluida = useCallback(
+    (r: Row) => !excluirAsistentes || conciliadoVisible(r) > 0.005 || sinConciliarVisible(r) > 0.005 || (!r.esAsistente && (r.aplicadoFacturas || 0) === 0),
+    [excluirAsistentes, conciliadoVisible, sinConciliarVisible],
+  );
+
   const countCobros = useMemo(
-    () => rows.filter((r) => r.tipo === "cobro" && (!excluirAsistentes || !r.esAsistente)).length,
-    [rows, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === "cobro" && incluida(r)).length,
+    [rows, incluida],
   );
   const countAjustes = useMemo(
-    () => rows.filter((r) => r.tipo === "ajuste" && (!excluirAsistentes || !r.esAsistente)).length,
-    [rows, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === "ajuste" && incluida(r)).length,
+    [rows, incluida],
   );
 
   // Rows del tab actual (sin búsqueda) — base del resumen.
   const enTab = useMemo(
-    () => rows.filter((r) => r.tipo === tab && (!excluirAsistentes || !r.esAsistente)),
-    [rows, tab, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === tab && incluida(r)),
+    [rows, tab, incluida],
   );
 
   const visibles = useMemo(() => {
@@ -126,13 +149,27 @@ export default function PagoClientesPage() {
 
   const resumen = useMemo(() => {
     const base = search.trim() ? visibles : enTab;
+    // Los totales cuentan solo lo CONCILIADO (aplicado a facturas), igual que
+    // "Cobrado" en Contado/Crédito. Lo recibido que todavía no se aplicó va
+    // aparte, en "Sin conciliar", para que las dos pantallas cuadren.
+    const totalUsd = base.reduce((s, r) => s + conciliadoVisible(r), 0);
+    const sinConciliar = base.reduce((s, r) => s + sinConciliarVisible(r), 0);
+    const recibidoUsd = totalUsd + sinConciliar;
+    // Bs conciliados: la parte del monto en Bs proporcional a lo aplicado
+    // (misma tasa del pago con la que Odoo convirtió lo aplicado a USD).
+    const totalBs = base.reduce((s, r) => {
+      if (!r.montoBs || r.montoUsd <= 0) return s;
+      return s + r.montoBs * Math.min(1, conciliadoVisible(r) / r.montoUsd);
+    }, 0);
     return {
       pagos: base.length,
-      totalUsd: r2(base.reduce((s, r) => s + r.montoUsd, 0)),
-      totalBs: r2(base.reduce((s, r) => s + (r.montoBs || 0), 0)),
+      totalUsd: r2(totalUsd),
+      totalBs: r2(totalBs),
+      recibidoUsd: r2(recibidoUsd),
+      sinConciliar: r2(sinConciliar),
       porRevisar: enTab.filter((r) => r.revisar).length,
     };
-  }, [enTab, visibles, search]);
+  }, [enTab, visibles, search, conciliadoVisible, sinConciliarVisible]);
 
   const totalPages = Math.max(1, Math.ceil(visibles.length / PAGE_SIZE));
   const pageRows = visibles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -161,6 +198,8 @@ export default function PagoClientesPage() {
       "Facturas aplicadas": r.facturasAplicadas,
       "Estado": r.estado,
       "Conciliado": r.conciliado ? "Sí" : "No",
+      "Conciliado USD": r2(conciliadoVisible(r)),
+      "Sin conciliar USD": r2(sinConciliarVisible(r)),
       "Revisar": r.revisar ? "Sí" : "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -168,7 +207,7 @@ export default function PagoClientesPage() {
       { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
       { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
-      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 9 },
+      { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, tab === "cobro" ? "Cobros" : "Retenciones y ajustes");
@@ -291,10 +330,16 @@ export default function PagoClientesPage() {
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-2 sm:gap-3">
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
-        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} />
-        <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} />
+        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} hint="Cobrado del período, conciliado con facturas (= Cobrado de Contado/Crédito)" />
+        <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} hint="Conciliado con facturas" />
+        <Card
+          icon={<DollarSign size={16} className="text-slate-400" />}
+          label="Sin conciliar"
+          value={`$ ${fmtNum(resumen.sinConciliar)}`}
+          hint={`Recibido $ ${fmtNum(resumen.recibidoUsd)}. Pagos aún no aplicados a facturas (anticipos o saldo a favor): no suman al total, igual que en Contado/Crédito.`}
+        />
         <button
           type="button"
           onClick={() => setSoloRevisar((v) => !v)}
@@ -424,11 +469,12 @@ export default function PagoClientesPage() {
   );
 }
 
-function Card({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function Card({ icon, label, value, hint }: { icon: ReactNode; label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="rounded-xl border border-slate-200 bg-white p-3 min-w-0">
       <div className="flex items-center gap-1.5 text-xs text-slate-500">{icon} {label}</div>
       <div className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums break-words">{value}</div>
+      {hint && <div className="text-[10px] leading-snug text-slate-400 mt-0.5">{hint}</div>}
     </div>
   );
 }

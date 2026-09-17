@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
+import { cuadrarCobros, obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -9,7 +10,6 @@ const COMPANY_MAP: Record<string, number> = {
   panama: 7,
 };
 
-const CUSTOMER_INVOICE_TYPES = new Set(["out_invoice", "out_refund"]);
 
 function getMonthStart(year: number, month: number): Date {
   return new Date(year, month, 1);
@@ -33,24 +33,6 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 
 const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
 
-// Mismo criterio que la tarjeta "Ventas del Mes" (app/api/superadmin/stats/
-// route.ts): cuentas de vendedor internas/de prueba, distintas por sede, que
-// no cuentan como venta real. Se aplica por factura (segun su propio
-// company_id), no agrupado por vendedor como alla -- evita el caso borde de
-// esa version original donde un vendedor con facturas en mas de una sede solo
-// tomaba en cuenta la primera sede que aparecia.
-const SELLER_EXCLUSIONS: Record<number, string[]> = {
-  9: ["asistente", "yusne"],
-  10: ["asistente", "adriana"],
-  7: ["hercilio"],
-};
-const esVendedorExcluido = (inv: any): boolean => {
-  const sellerName = (inv.invoice_user_id?.[1] || "").toLowerCase();
-  const cid = inv.company_id?.[0];
-  const reglas = SELLER_EXCLUSIONS[cid] || [];
-  return reglas.some((regla) => sellerName.includes(regla));
-};
-
 // Forma comun que alimenta la clasificacion contado/credito, sin importar
 // si el monto viene de una factura entera o de un abono conciliado
 // puntual. esDelMes distingue, para el modo "cobrado", si lo cobrado
@@ -68,6 +50,9 @@ type Renglon = {
   sellerId: number | undefined;
   sellerName: string;
   invoiceName: string;
+  /** Solo en "cobrado": vencimiento de la factura e interno, para el cuadre. */
+  vencimiento?: string | null;
+  interno?: boolean;
 };
 
 async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
@@ -85,7 +70,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 
   return invoicesRaw
     .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
-    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv))
+    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .map((inv) => ({
       // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
       // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
@@ -103,142 +88,38 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
     }));
 }
 
-// Dinero que efectivamente entro el mes, sin importar cuando se emitio la
-// factura que salda -- mismo mecanismo de conciliacion que ya usa
-// app/api/superadmin/integraciondepago/route.ts (account.partial.reconcile
-// emparejado con el lado factura y el lado pago), con una sola diferencia
-// deliberada frente a esa pantalla cruda, confirmada fila por fila contra
-// el export real de "cobranza" (coincide centavo a centavo): del total (no
-// solo del desglose "por banco") se excluyen las conciliaciones contra
-// diarios que no son banco/caja real (ver esBancoReal) -- retencion de
-// IVA, descuentos, ajustes varios, Y notas de credito aplicadas directo
-// contra la factura (diario "Facturas de cliente", sin que medie ningun
-// banco) no cuentan como "cobrado" para la sede, ni siquiera en el total.
-// A diferencia de "Facturado" (que si excluye partner supricom y
-// vendedores internos/de prueba para coincidir con "Ventas del Mes"),
-// "Cobrado" NO aplica esas exclusiones por defecto -- confirmado que el
-// numero real de cobranza incluye esas facturas, porque mide plata real
-// que entro a un banco sin importar el vendedor o partner de la factura
-// que salda. El parametro excluirAsistente es el toggle opcional que pide
-// el usuario para poder ver, si quiere, el total sin Asistente de Ventas.
+// Dinero que efectivamente entro en el periodo, sin importar cuando se emitio
+// la factura que salda. Sale de lib/cxc/cobros.ts, la fuente unica de
+// "cobrado" de todo CxC (Integracion de Pagos, Clasificacion, Efectividad y
+// Recuperacion leen lo mismo), con la regla que se valido fila por fila contra
+// el export real de cobranza: solo diarios banco/caja reales, fecha de
+// CONFIRMACION del pago, y notas de credito/retenciones/ajustes fuera.
+// A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
+// vendedores internos por defecto: mide plata real que entro a un banco.
+// excluirAsistente es el toggle opcional del usuario.
 async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
-  // No filtramos account.partial.reconcile por fecha en el dominio: el
-  // campo que representa la "fecha de abono" (paymentMove.date) vive en
-  // account.move, dos saltos mas alla del reconcile. Se filtra abajo, ya
-  // emparejado, por ese unico campo.
-  const reconciles = await fetchPaginated(
-    "account.partial.reconcile",
-    [],
-    ["amount", "debit_move_id", "credit_move_id"],
-  );
-  if (reconciles.length === 0) return [];
-
-  const lineIds = new Set<number>();
-  reconciles.forEach((r) => {
-    if (r.debit_move_id) lineIds.add(r.debit_move_id[0]);
-    if (r.credit_move_id) lineIds.add(r.credit_move_id[0]);
-  });
-
-  const lines = await callOdooRPC<any[]>(
-    "account.move.line", "search_read",
-    [[["id", "in", Array.from(lineIds)]]],
-    { fields: ["move_id"] },
-  );
-  const lineToMoveMap: Record<number, number> = {};
-  (lines || []).forEach((l) => { lineToMoveMap[l.id] = l.move_id[0]; });
-
-  const moves = await fetchPaginated(
-    "account.move",
-    [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "payment_id", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
-  );
-  const moveMap: Record<number, any> = {};
-  moves.forEach((m) => { moveMap[m.id] = m; });
-
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
-  // El abono cuenta en la fecha en que se CONFIRMÓ el pago
-  // (lib/cxc/fechaConfirmacion.ts); si el asiento no es un pago, en su fecha.
-  const confirmados = await pagosConfirmadosEntre(companyIds, startStr, endStr);
+  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr });
 
-  // Para el desglose "por banco" solo cuentan diarios que son plata real
-  // entrando (bank/cash en Odoo) -- si no, aparecian como "banco" diarios
-  // de ajuste como "Descuento (Local)" u "Operaciones varias". "IVA
-  // RETENIDO POR CLIENTE" ademas se excluye por nombre aunque Odoo lo
-  // tenga mal configurado como type=bank: es una retencion, no una cuenta
-  // bancaria donde entro dinero.
-  const journalIds = [...new Set(moves.map((m) => m.journal_id?.[0]).filter(Boolean))];
-  let journalTypeMap: Record<number, string> = {};
-  if (journalIds.length > 0) {
-    try {
-      const journals = await callOdooRPC<any[]>("account.journal", "read", [journalIds], { fields: ["id", "type"] });
-      (journals || []).forEach((j) => { journalTypeMap[j.id] = j.type; });
-    } catch (_) {}
-  }
-  const esBancoReal = (journalId: number | undefined, journalName: string): boolean => {
-    if (journalId === undefined) return false;
-    const tipo = journalTypeMap[journalId];
-    if (tipo !== "bank" && tipo !== "cash") return false;
-    if (journalName.toLowerCase().includes("retenido")) return false;
-    return true;
-  };
-
-  const renglones: Renglon[] = [];
-  reconciles.forEach((r) => {
-    const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
-    const cMove = moveMap[lineToMoveMap[r.credit_move_id?.[0]]];
-    if (!dMove || !cMove) return;
-
-    const dIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(dMove.move_type);
-    const cIsCustomerInvoice = CUSTOMER_INVOICE_TYPES.has(cMove.move_type);
-    // Si ambos lados son factura/nota de credito de cliente, es una nota
-    // de credito aplicada directo contra la factura (sin banco de por
-    // medio) -- la cobranza de la sede NO la cuenta como "cobrado"
-    // (confirmado fila por fila), asi que se descarta igual que cualquier
-    // otro diario que no sea banco/caja real.
-    if (dIsCustomerInvoice === cIsCustomerInvoice) return;
-
-    const invoiceMove = dIsCustomerInvoice ? dMove : cMove;
-    const settleMove = dIsCustomerInvoice ? cMove : dMove;
-    if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
-
-    // A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
-    // vendedores internos/de prueba por defecto -- confirmado fila por fila
-    // contra el export real de cobranza: esas exclusiones son propias de
-    // "Ventas del Mes" (ingresos), pero "Cobrado" mide plata real que entro
-    // a un banco, sin importar a que vendedor o partner se le atribuye la
-    // factura que salda. excluirAsistente es el toggle opcional del
-    // usuario para verlo filtrado si quiere.
-    if (!invoiceMove.partner_id) return;
-    if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
-
-    const fechaAbono = fechaDeAbono(settleMove, confirmados);
-    if (!fechaAbono || fechaAbono < startStr || fechaAbono > endStr) return;
-
-    const fechaFactura = (invoiceMove.invoice_date || "").split(" ")[0].split("T")[0];
-    // "Del mes" = factura emitida en el mismo mes que se selecciono (o
-    // despues, caso raro de pago adelantado). "Anterior" = deuda de un
-    // mes previo que se termino de cobrar ahora.
-    const esDelMes = !fechaFactura || fechaFactura >= startStr;
-
-    const journalIdRaw = settleMove.journal_id?.[0];
-    const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
-    if (!esBancoReal(journalIdRaw, journalNameRaw)) return;
-
-    renglones.push({
-      monto: r.amount || 0,
-      partnerId: invoiceMove.partner_id[0],
-      partnerName: invoiceMove.partner_id[1] || "Sin cliente",
-      paymentTermId: invoiceMove.invoice_payment_term_id?.[0],
-      esDelMes,
-      journalId: journalIdRaw,
-      journalName: journalNameRaw,
-      sellerId: invoiceMove.invoice_user_id?.[0],
-      sellerName: invoiceMove.invoice_user_id?.[1] || "Sin vendedor",
-      invoiceName: invoiceMove.name || "",
-    });
-  });
-  return renglones;
+  return cobros
+    .filter((c) => !excluirAsistente || !esVendedorExcluido(c.vendedorName, c.companyId))
+    .map((c) => ({
+      monto: c.monto,
+      partnerId: c.partnerId ?? 0,
+      partnerName: c.partnerName || "Sin cliente",
+      paymentTermId: c.plazoId,
+      // "Del mes" = factura emitida en el periodo (o despues, pago adelantado).
+      // "Anterior" = deuda de un mes previo que se termino de cobrar ahora.
+      esDelMes: !c.fechaFactura || c.fechaFactura >= startStr,
+      journalId: c.journalId,
+      journalName: c.journalName,
+      sellerId: c.vendedorId,
+      sellerName: c.vendedorName,
+      invoiceName: c.facturaNombre,
+      vencimiento: c.vencimiento,
+      interno: c.interno,
+    }));
 }
 
 export async function GET(request: NextRequest) {
@@ -463,6 +344,16 @@ export async function GET(request: NextRequest) {
           pct: pct(anterioresMonto, totalFacturado),
           facturas: anterioresFacturas,
         },
+        // Solo en "cobrado": reparto del total en los tramos que usan los KPIs.
+        // vencidasAlInicio = "Recuperado" de Recuperacion; vencenEnPeriodo =
+        // lo cobrado en el mes de Efectividad. Los cuatro suman el total.
+        cuadre: modo === "cobrado"
+          ? cuadrarCobros(
+              renglones.map((r) => ({ monto: r.monto, vencimiento: r.vencimiento ?? null, interno: !!r.interno })),
+              monthStart.toISOString().split("T")[0],
+              monthEnd.toISOString().split("T")[0],
+            )
+          : null,
         buckets,
         bancos,
         vendedores,

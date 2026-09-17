@@ -1,8 +1,9 @@
 import { query } from "@/lib/db";
-import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   asegurarEsquemaPersonal,
   esRolPersonal,
+  rolPersonalAdministrable,
 } from "@/lib/seguridad/catalogoPersonal";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -14,14 +15,17 @@ const MAX_NOMBRE = 200;
  * Catálogo de personal de Seguridad / RMA (#50).
  *
  * De acá salen los selects "Recibió por Seguridad" y "Recibió por RMA" del
- * formulario de ingreso. Se administra desde /es/seguridad/config/personal.
+ * formulario de ingreso.
  *
- * Solo el rol `seguridad` (y superadmin) — RMA no gestiona su propia lista.
+ * Cada rol administra solo su propia lista: Seguridad desde
+ * /es/seguridad/config/personal y RMA desde /es/rma/personal. Leer, en cambio,
+ * Seguridad lee las dos — necesita elegir "Recibió por RMA" en el ingreso —
+ * y RMA solo la suya.
  */
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireSeguridad(request);
+    const auth = await requireRmaOSeguridad(request);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
@@ -30,7 +34,8 @@ export async function GET(request: NextRequest) {
     await asegurarEsquemaPersonal();
 
     const { searchParams } = new URL(request.url);
-    const rol = searchParams.get("rol");
+    const sesionRol = String(auth.payload?.role || "").toLowerCase().trim();
+    const rol = sesionRol === "rma" ? "rma" : searchParams.get("rol");
     // El formulario de ingreso solo quiere gente activa; la pantalla de
     // administración pide `?incluir_inactivos=1` para poder reactivar.
     const incluirInactivos = searchParams.get("incluir_inactivos") === "1";
@@ -67,7 +72,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSeguridad(request);
+    const auth = await requireRmaOSeguridad(request);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
@@ -89,6 +94,13 @@ export async function POST(request: NextRequest) {
     }
     if (!esRolPersonal(rol)) {
       return NextResponse.json({ error: "rol invalido" }, { status: 400 });
+    }
+    const administrable = rolPersonalAdministrable(auth.payload);
+    if (administrable === false || (administrable !== null && administrable !== rol)) {
+      return NextResponse.json(
+        { error: "Solo puedes registrar personal de tu propio rol" },
+        { status: 403 },
+      );
     }
 
     // Si ya existe (mismo nombre + rol + sucursal) se devuelve el que hay, y de

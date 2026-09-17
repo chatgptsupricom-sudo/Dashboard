@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { NextRequest, NextResponse } from "next/server";
 
 // La lectura de account.payment de un rango amplio puede traer miles de
@@ -14,17 +15,12 @@ const COMPANY_MAP: Record<string, number> = {
 };
 const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
-// Diarios que NO son un cobro real de dinero: retenciones que hace el cliente
-// (IVA / ISLR / ITBMS / IGTF), descuentos y devoluciones locales, operaciones
-// varias y facturas de cliente. Van en la pestaña "Retenciones y ajustes", no
-// en "Cobros". En la práctica sólo aparecen RIVAC, DCTO, ITBRC y RIGTF sobre
-// pagos de clientes; el resto se deja por si se usan a futuro.
-const CODIGOS_AJUSTE = new Set([
-  "RIVAC", "ISLRC", "ITBRC", "RIGTF",  // retenciones del cliente
-  "DCTO", "DCTOL", "DSCTO", "DEVLO",   // descuento / devolución (local)
-  "MISC", "MISCE",                      // operaciones varias
-  "FCLIE", "INV",                       // facturas de cliente
-]);
+// Pestaña "Cobros" vs "Retenciones y ajustes": misma regla que "Cobrado" en
+// Contado/Crédito y el resto de CxC (lib/cxc/cobros.ts) — diario de tipo
+// banco/caja y sin "retenido" en el nombre. Así el "Aplicado a facturas" de la
+// pestaña Cobros cuadra con Cobrado para el mismo rango de confirmación.
+const esDiarioBanco = (j: { type?: string; name?: any } | undefined) =>
+  !!j && (j.type === "bank" || j.type === "cash") && !String(j.name || "").toLowerCase().includes("retenido");
 
 async function fetchPaginated(model: string, domain: any[], fields: string[], order = "date desc, id desc"): Promise<any[]> {
   let result: any[] = [];
@@ -144,13 +140,73 @@ export async function GET(request: NextRequest) {
       (partners || []).forEach((p: any) => { partnerVat[p.id] = p.vat || ""; });
     }
 
-    // Código de cada diario (para clasificar cobro vs ajuste; el nombre del
-    // diario varía según el idioma, el código no).
-    const journalCode: Record<number, string> = {};
+    const journalById: Record<number, any> = {};
     const journals = await callOdooRPC<any[]>(
-      "account.journal", "search_read", [[["company_id", "in", companyIds]]], { fields: ["id", "code"], limit: 0 },
+      "account.journal", "search_read", [[["company_id", "in", companyIds]]], { fields: ["id", "code", "type", "name"], limit: 0 },
     );
-    (journals || []).forEach((j: any) => { journalCode[j.id] = j.code || ""; });
+    (journals || []).forEach((j: any) => { journalById[j.id] = j; });
+
+    // Cuánto de cada pago se aplicó a facturas y cuánto queda sin aplicar
+    // (anticipo). Sale de la línea por cobrar del pago: su saldo abierto es lo
+    // no aplicado, y sus conciliaciones contra facturas son lo aplicado — las
+    // mismas conciliaciones que suma "Cobrado" en Contado/Crédito.
+    const aplicado: Record<number, number> = {};
+    // Parte de lo aplicado que fue a facturas de vendedores excluidos (según el
+    // vendedor de la FACTURA, como hace Contado/Crédito): con el check "Excluir
+    // asistentes" la pantalla resta solo esto, no el pago entero.
+    const aplicadoExcluido: Record<number, number> = {};
+    const sinAplicar: Record<number, number> = {};
+    const pagoIds = pagos.map((p) => p.id);
+    for (let i = 0; i < pagoIds.length; i += 2000) {
+      const chunk = pagoIds.slice(i, i + 2000);
+      const lineas = await fetchPaginated(
+        "account.move.line",
+        [["payment_id", "in", chunk], ["account_id.account_type", "=", "asset_receivable"]],
+        ["id", "payment_id", "amount_residual"],
+        "id asc",
+      );
+      const pagoDeLinea: Record<number, number> = {};
+      lineas.forEach((l: any) => {
+        const pid = l.payment_id?.[0];
+        if (!pid) return;
+        pagoDeLinea[l.id] = pid;
+        sinAplicar[pid] = (sinAplicar[pid] || 0) - (Number(l.amount_residual) || 0);
+      });
+      const lineIds = Object.keys(pagoDeLinea).map(Number);
+      if (lineIds.length === 0) continue;
+      const conciliaciones = await fetchPaginated(
+        "account.partial.reconcile",
+        [["credit_move_id", "in", lineIds], ["debit_move_id.move_id.move_type", "in", ["out_invoice", "out_refund"]]],
+        ["amount", "credit_move_id", "debit_move_id"],
+        "id asc",
+      );
+
+      // Vendedor y sede de cada factura conciliada.
+      const facturaDeLinea: Record<number, number> = {};
+      const debitIds = [...new Set(conciliaciones.map((c: any) => c.debit_move_id?.[0]).filter(Boolean))];
+      if (debitIds.length) {
+        const lineasFactura = await fetchPaginated("account.move.line", [["id", "in", debitIds]], ["id", "move_id"], "id asc");
+        lineasFactura.forEach((l: any) => { if (l.move_id?.[0]) facturaDeLinea[l.id] = l.move_id[0]; });
+      }
+      const facturaExcluida: Record<number, boolean> = {};
+      const facturaIds = [...new Set(Object.values(facturaDeLinea))];
+      if (facturaIds.length) {
+        const facturas = await fetchPaginated("account.move", [["id", "in", facturaIds]], ["id", "invoice_user_id", "company_id"], "id asc");
+        facturas.forEach((f: any) => {
+          facturaExcluida[f.id] = esVendedorExcluido(f.invoice_user_id?.[1], f.company_id?.[0]);
+        });
+      }
+
+      conciliaciones.forEach((c: any) => {
+        const pid = pagoDeLinea[c.credit_move_id?.[0]];
+        if (!pid) return;
+        const monto = Number(c.amount) || 0;
+        aplicado[pid] = (aplicado[pid] || 0) + monto;
+        if (facturaExcluida[facturaDeLinea[c.debit_move_id?.[0]]]) {
+          aplicadoExcluido[pid] = (aplicadoExcluido[pid] || 0) + monto;
+        }
+      });
+    }
 
     const rows = pagos.map((p) => {
       const monedaId = p.currency_id?.[0] || null;
@@ -181,8 +237,7 @@ export async function GET(request: NextRequest) {
       else if (!esUsd && tasa != null && taxToday > 0 && Math.abs(tasa - taxToday) / Math.max(taxToday, 1) > 0.05) revisar = true;
 
       const igtf = Number(p.mount_igtf) || 0;
-      const codigo = journalCode[p.journal_id?.[0]] || "";
-      const tipo: "cobro" | "ajuste" = CODIGOS_AJUSTE.has(codigo) ? "ajuste" : "cobro";
+      const tipo: "cobro" | "ajuste" = esDiarioBanco(journalById[p.journal_id?.[0]]) ? "cobro" : "ajuste";
       const vendedor = p.salesperson_id?.[1] || "";
 
       return {
@@ -199,7 +254,8 @@ export async function GET(request: NextRequest) {
         banco: p.journal_id?.[1] || "",
         vendedor,
         tipo,
-        esAsistente: /asistente/i.test(vendedor),
+        // Misma regla que el check de Contado/Crédito (lib/cxc/vendedoresExcluidos.ts).
+        esAsistente: esVendedorExcluido(vendedor, p.company_id?.[0]),
         moneda,
         montoOriginal: r2(amount),
         montoBs: montoBs == null ? null : r2(montoBs),
@@ -212,6 +268,9 @@ export async function GET(request: NextRequest) {
         descripcion: limpiarHtml(p.payment_description),
         estado: p.state || "",
         conciliado: !!p.is_reconciled,
+        aplicadoFacturas: r2(aplicado[p.id] || 0),
+        aplicadoExcluido: r2(aplicadoExcluido[p.id] || 0),
+        sinAplicar: r2(Math.max(0, sinAplicar[p.id] || 0)),
         facturasAplicadas: (p.reconciled_invoice_ids || []).map((id: number) => invoiceName[id]).filter(Boolean).join(", "),
         facturasCount: Number(p.reconciled_invoices_count) || 0,
         revisar,

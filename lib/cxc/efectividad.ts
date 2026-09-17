@@ -1,56 +1,66 @@
-import { callOdooRPC } from "@/lib/odoo";
-import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
  *
- *   Efectividad = pagos CONFIRMADOS HASTA EL CIERRE del mes
+ *   Efectividad = cobrado HASTA EL CIERRE del mes
  *               ÷ exigible de las facturas que vencen en el mes
  *
- * ── Por qué se cambió ──
+ * ── Mes en curso: solo lo que ya venció ──
  *
- * El cálculo anterior derivaba lo cobrado de `amount_total − amount_residual`,
- * y `amount_residual` es el saldo de HOY: un pago que entró dos meses tarde
- * contaba como cobrado en el mes en que la factura vencía. Los meses cerrados
- * salían casi perfectos y el sesgo crecía cuanto más atrás se mirara. Medido
- * con fechas reales de conciliación: mayo mostraba 99,3% cuando dentro del mes
- * se cobró 81,4%; junio 99,2% vs 71,2%. Hasta 28 puntos de diferencia.
+ * Durante el mes en curso el denominador se limita a las facturas que YA
+ * vencieron. Si no, el KPI divide entre todo el exigible del mes, incluidas
+ * facturas que todavía no se podían cobrar, y sale siempre bajo: medido en
+ * Valencia al 17-sep, 38,3% contra todo el mes y 64,0% contra lo ya vencido,
+ * mientras las celdas semanales (que solo muestran semanas ya iniciadas) daban
+ * 68/46/24%. Al cerrar el mes el denominador ya es el mes completo, así que los
+ * meses cerrados no cambian y siguen siendo comparables entre sí.
  *
- * ── Fecha de cada cobro ──
+ * "Cobrado" sale de lib/cxc/cobros.ts, la misma fuente que "Cobrado" de
+ * Contado/Crédito: dinero que entró a banco/caja, fechado por la CONFIRMACIÓN
+ * del pago. Así cuadra con esa pantalla:
  *
- * Un pago cuenta el día en que se confirmó (`payment_registration_date`), no el
- * de la conciliación: ver lib/cxc/fechaConfirmacion.ts.
+ *   cobradoEnElMes = tramo "vencen en el período" de Contado/Crédito (sin internos)
+ *   cobradoAntes   = lo que esas facturas ya habían cobrado como "adelantado"
+ *                    en meses anteriores
+ *   cobradoAlCierre = cobradoEnElMes + cobradoAntes
  *
- * ── Se muestran las dos ──
+ * Notas de crédito, retenciones y descuentos NO son cobro: bajan el saldo pero
+ * no entró dinero. Las notas de crédito del mes ya restan del exigible; el
+ * resto queda visible en `ajustes` (exigible − cobrado a hoy − pendiente).
  *
- * `value` (estricta) es la que va al semáforo: es comparable entre meses y un
- * mes cerrado ya no cambia nunca. `valueAcumulado` ("cobrado a hoy", el
- * criterio viejo) se conserva como dato secundario, porque sigue siendo útil
- * para saber cuánto de lo que venció en un mes ya entró.
+ * ── Por qué estricto ──
  *
- * Ambos numeradores viven en el mismo universo de conciliaciones: la ÚNICA
- * diferencia entre ellos es la fecha de corte. No se filtran notas de crédito
- * en ninguno de los dos, para que la comparación aísle exactamente ese efecto
- * (el signo de las notas de crédito se arregló aparte, en el issue #187).
- *
- * Durante el mes en curso ambas cifras coinciden casi exactamente, porque
- * todavía no existe "después del cierre": la estricta solo se separa de la
- * acumulada una vez que el mes termina.
+ * Derivar lo cobrado de `amount_total − amount_residual` usa el saldo de HOY:
+ * un pago que entró dos meses tarde contaba en el mes en que la factura vencía
+ * y los meses cerrados salían casi perfectos (mayo 99,3% cuando dentro del mes
+ * se cobró 81,4%). `value` (estricta) va al semáforo y un mes cerrado ya no
+ * cambia; `valueAcumulado` ("cobrado a hoy") queda como dato secundario.
  */
 
 export interface EfectividadResultado {
   /** % estricto — el del semáforo. `null` si no hay exigible. */
   value: number | null;
-  /** Pagos confirmados hasta el último día del mes. */
+  /** Cobrado hasta el último día del mes (= cobradoEnElMes + cobradoAntes). */
   cobradoAlCierre: number;
-  /** Exigible del mes (con notas de crédito restando). */
+  /** Cobrado dentro del mes. */
+  cobradoEnElMes: number;
+  /** Cobrado antes de empezar el mes (pagos adelantados). */
+  cobradoAntes: number;
+  /** Exigible que ya venció (en el mes en curso) o del mes completo si ya cerró. */
   exigibleMes: number;
-  /** % con el criterio viejo, "cobrado a hoy". Dato secundario. */
+  /** Exigible del mes completo, incluso lo que aún no vence. */
+  exigibleMesCompleto: number;
+  /** true mientras el mes no cierre: `exigibleMes` es solo lo ya vencido. */
+  parcial: boolean;
+  /** % "cobrado a hoy". Dato secundario. */
   valueAcumulado: number | null;
   /** Cobrado a hoy, incluidos pagos posteriores al cierre. */
   cobradoAHoy: number;
   /** Saldo que aún queda de esas facturas. */
   pendiente: number;
+  /** Retenciones, descuentos y otros ajustes: bajaron el saldo sin ser cobro. */
+  ajustes: number;
   /** true cuando el mes ya terminó: recién ahí las dos cifras se separan. */
   mesCerrado: boolean;
   /** Fila semanal con el mismo criterio estricto. */
@@ -69,26 +79,6 @@ export interface Semana {
   fin: Date;
 }
 
-const PAGE = 5000;
-
-async function paginar(model: string, domain: any[], fields: string[]): Promise<any[]> {
-  const out: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await callOdooRPC<any[]>(model, "search_read", [domain], {
-      fields,
-      order: "id asc",
-      limit: PAGE,
-      offset,
-    });
-    if (!page || page.length === 0) break;
-    out.push(...page);
-    if (page.length < PAGE) break;
-    offset += PAGE;
-  }
-  return out;
-}
-
 const iso = (d: Date) => d.toISOString().split("T")[0];
 
 export async function calcularEfectividad(
@@ -101,79 +91,56 @@ export async function calcularEfectividad(
 ): Promise<EfectividadResultado> {
   const desde = iso(monthStart);
   const hasta = iso(monthEnd);
+  const hoyStr = iso(hoy);
 
-  const exigibleMes = facturas.reduce((s, f) => s + f.amountTotal, 0);
-  const cobradoAHoy = facturas.reduce((s, f) => s + (f.amountTotal - f.amountResidual), 0);
-  const pendiente = facturas.reduce((s, f) => s + f.amountResidual, 0);
+  const mesCerrado = hoy > monthEnd;
+  // Mes en curso: el denominador solo cuenta lo que ya venció (ver cabecera).
+  const vigentes = mesCerrado ? facturas : facturas.filter((f) => !f.dueDate || f.dueDate <= hoy);
 
-  // Conciliaciones sobre las facturas que vencen en el mes, hasta el cierre.
-  // El traversal `debit_move_id.move_id.*` funciona en el dominio de Odoo
-  // (verificado contra el SQL equivalente: mismos conjuntos exactos).
-  const conciliaciones = await paginar(
-    "account.partial.reconcile",
-    [
-      ["debit_move_id.move_id.move_type", "=", "out_invoice"],
-      ["debit_move_id.move_id.state", "=", "posted"],
-      ["debit_move_id.move_id.invoice_date_due", ">=", desde],
-      ["debit_move_id.move_id.invoice_date_due", "<=", hasta],
-      ["debit_move_id.move_id.partner_id.name", "not ilike", "supricom"],
-      ["company_id", "in", companyIds],
-      ...dominioFechaEfectiva("<=", hasta),
-    ],
-    ["id", "amount", "max_date", "debit_move_id", "credit_move_id"],
-  );
+  const exigibleMes = vigentes.reduce((s, f) => s + f.amountTotal, 0);
+  const exigibleMesCompleto = facturas.reduce((s, f) => s + f.amountTotal, 0);
+  const pendiente = vigentes.reduce((s, f) => s + f.amountResidual, 0);
 
-  const cobradoAlCierre = conciliaciones.reduce((s, c: any) => s + Number(c.amount || 0), 0);
+  // Cobros de EXACTAMENTE las facturas del exigible (mismo universo que el
+  // denominador), hasta hoy o hasta el cierre si el mes aún no terminó.
+  const idsFacturas = vigentes.map((f) => f.id);
+  const cobros = idsFacturas.length
+    ? await obtenerCobros(companyIds, {
+        hasta: hoyStr > hasta ? hoyStr : hasta,
+        dominioFactura: [["id", "in", idsFacturas]],
+      })
+    : [];
+
+  let cobradoAntes = 0;
+  let cobradoEnElMes = 0;
+  let cobradoAHoy = 0;
+  for (const c of cobros) {
+    cobradoAHoy += c.monto;
+    if (c.fecha < desde) cobradoAntes += c.monto;
+    else if (c.fecha <= hasta) cobradoEnElMes += c.monto;
+  }
+  const cobradoAlCierre = cobradoAntes + cobradoEnElMes;
 
   // ── Fila semanal, mismo criterio estricto ──
-  // Cada conciliación apunta a una LÍNEA (`debit_move_id`), no a la factura,
-  // así que hace falta el mapa línea → factura para saber en qué semana vencía
-  // lo que se pagó. Solo se leen las líneas por cobrar de esas facturas.
   const semana: (string | null)[] = semanas.map(() => null);
-  if (semanas.length > 0 && facturas.length > 0) {
-    const idsFacturas = facturas.map((f) => f.id);
-    const lineas = await paginar(
-      "account.move.line",
-      [
-        ["move_id", "in", idsFacturas],
-        ["account_id.account_type", "=", "asset_receivable"],
-      ],
-      ["id", "move_id"],
-    );
-    const facturaDeLinea = new Map<number, number>();
-    for (const l of lineas as any[]) {
-      const moveId = Array.isArray(l.move_id) ? l.move_id[0] : l.move_id;
-      if (moveId) facturaDeLinea.set(l.id, moveId);
-    }
-
-    const fechaDe = await fechasEfectivas(conciliaciones as any[]);
-
+  if (semanas.length > 0 && vigentes.length > 0) {
     const semanaDeFactura = new Map<number, number>();
-    facturas.forEach((f) => {
+    const acc = semanas.map(() => ({ exigible: 0, cobrado: 0 }));
+    vigentes.forEach((f) => {
       if (!f.dueDate) return;
       const w = semanas.findIndex((s) => f.dueDate! >= s.inicio && f.dueDate! <= s.fin);
-      if (w >= 0) semanaDeFactura.set(f.id, w);
+      if (w < 0) return;
+      semanaDeFactura.set(f.id, w);
+      acc[w].exigible += f.amountTotal;
     });
-
-    const acc = semanas.map(() => ({ exigible: 0, cobrado: 0 }));
-    facturas.forEach((f) => {
-      const w = semanaDeFactura.get(f.id);
-      if (w !== undefined) acc[w].exigible += f.amountTotal;
-    });
-    for (const c of conciliaciones as any[]) {
-      const lineaId = Array.isArray(c.debit_move_id) ? c.debit_move_id[0] : c.debit_move_id;
-      const facturaId = facturaDeLinea.get(lineaId);
-      if (facturaId === undefined) continue;
-      const w = semanaDeFactura.get(facturaId);
+    for (const c of cobros) {
+      const w = semanaDeFactura.get(c.facturaId);
       if (w === undefined) continue;
-      // Estricto también por semana: solo cuenta si el pago entró antes de que
-      // esa semana cerrara, no en cualquier momento del mes.
-      const fecha = fechaDe.get(c.id);
-      const pagoEl = fecha ? new Date(fecha + "T00:00:00") : null;
-      if (!pagoEl || pagoEl > semanas[w].fin) continue;
-      acc[w].cobrado += Number(c.amount || 0);
+      // Estricto también por semana: solo cuenta si se cobró antes de que esa
+      // semana cerrara.
+      if (c.fecha > iso(semanas[w].fin)) continue;
+      acc[w].cobrado += c.monto;
     }
-
     acc.forEach((s, i) => {
       if (semanas[i].inicio > hoy) return; // semana futura: nada que medir
       if (s.exigible <= 0) return;
@@ -188,11 +155,16 @@ export async function calcularEfectividad(
   return {
     value: pct(cobradoAlCierre),
     cobradoAlCierre: r2(cobradoAlCierre),
+    cobradoEnElMes: r2(cobradoEnElMes),
+    cobradoAntes: r2(cobradoAntes),
     exigibleMes: r2(exigibleMes),
+    exigibleMesCompleto: r2(exigibleMesCompleto),
+    parcial: !mesCerrado,
     valueAcumulado: pct(cobradoAHoy),
     cobradoAHoy: r2(cobradoAHoy),
     pendiente: r2(pendiente),
-    mesCerrado: hoy > monthEnd,
+    ajustes: r2(exigibleMes - cobradoAHoy - pendiente),
+    mesCerrado,
     semana,
   };
 }

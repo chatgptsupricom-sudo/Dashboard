@@ -89,49 +89,6 @@ async function leerPagos(domain: any[]): Promise<any[]> {
 
 const idDe = (v: any): number | undefined => (Array.isArray(v) ? v[0] : v || undefined);
 
-/**
- * Pagos confirmados en [desde, hasta], indexados por el asiento del
- * pago (`account.move` id) → fecha de confirmación.
- *
- * Para pantallas que ya tienen el asiento que salda la factura: si ese asiento
- * tiene `payment_id` y no está en este mapa, se confirmó fuera del rango; si no
- * tiene `payment_id`, no es un pago y se usa su propia fecha.
- */
-export async function pagosConfirmadosEntre(
-  companyIds: number[],
-  desde: Date | string,
-  hasta: Date | string,
-): Promise<Map<number, string>> {
-  const d = iso(desde);
-  const h = iso(hasta);
-  const pagos = await leerPagos([
-    // Sin filtrar por tipo de pago: el mapa se consulta por asiento, así que
-    // solo se usan los pagos que efectivamente saldan una factura.
-    ["company_id", "in", companyIds],
-    "|",
-    "&", ["payment_registration_date", ">=", d], ["payment_registration_date", "<=", h],
-    "&", ["payment_registration_date", "=", false],
-    "&", ["create_date", ">=", `${d} 00:00:00`], ["create_date", "<=", `${h} 23:59:59`],
-  ]);
-  const out = new Map<number, string>();
-  for (const p of pagos) {
-    const moveId = idDe(p.move_id);
-    const fecha = fechaDePago(p);
-    if (moveId && fecha) out.set(moveId, fecha);
-  }
-  return out;
-}
-
-/**
- * Fecha de abono de un asiento que salda una factura, con el mapa de
- * `pagosConfirmadosEntre`. `null` = no cae en el rango (o no tiene fecha).
- * El asiento debe traer `payment_id` y `date`.
- */
-export function fechaDeAbono(asiento: { id: number; payment_id?: any; date?: string | false }, confirmados: Map<number, string>): string | null {
-  if (idDe(asiento.payment_id)) return confirmados.get(asiento.id) ?? null;
-  return asiento.date ? String(asiento.date).split(/[ T]/)[0] : null;
-}
-
 /** Fecha de confirmación de pagos puntuales, por id de `account.payment`. */
 export async function fechasDePagos(paymentIds: number[]): Promise<Map<number, string>> {
   const out = new Map<number, string>();

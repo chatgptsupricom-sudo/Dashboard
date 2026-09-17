@@ -39,6 +39,20 @@ export async function requireAlmacenOSeguridad(
 }
 
 /**
+ * Guard exclusivo del rol `almacen` (y superadmin).
+ *
+ * Para registrar el personal de Almacen — almacenistas y choferes —: cada rol
+ * da de alta solo a su propia gente. Seguridad los sigue LEYENDO (los elige
+ * en el formulario de mercancia con `requireAlmacenOSeguridad`), pero ya no
+ * los agrega.
+ */
+export async function requireAlmacen(
+  request: NextRequest,
+): Promise<{ payload?: any; error?: NextResponse }> {
+  return requireRoles(request, ["almacen"]);
+}
+
+/**
  * Guard de las rutas de ingreso RMA que tambien puede leer el rol `rma`.
  *
  * El usuario de RMA es quien llama al cliente y decide si el ingreso quedo

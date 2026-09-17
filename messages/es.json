@@ -204,8 +204,6 @@
     "seg_merc_egresos": "Egresos",
     "almacen_egresos": "Egresos de mercancía",
     "almacen_ordenes": "Órdenes pendientes",
-    "almacen_almacenistas": "Gestionar Almacenistas",
-    "almacen_choferes": "Gestionar Choferes",
     "almacen_unidades": "Gestionar Unidades"
   },
   "rma": {
@@ -389,7 +387,7 @@
     "meta": "Meta",
     "column_title": "Título",
     "column_goal": "Meta",
-    "column_average": "Promedio",
+    "column_average": "Mes",
     "column_kpi": "KPI",
     "metrica_mensual": "métrica mensual",
     "back": "Volver",
@@ -1268,8 +1266,10 @@
     "efectividad_cobranza": "Efectividad de Cobranza",
     "meta": "Meta",
     "cobrado": "Cobrado",
+    "cobrado_exigible": "Cobrado de lo exigible",
     "cobrado_a_hoy": "Cobrado a hoy",
     "corriente": "Corriente",
+    "exigible_vencido": "Exigible ya vencido",
     "exigible": "Exigible",
     "cartera_vencida": "Cartera Vencida",
     "vencido": "Vencido",
@@ -2070,8 +2070,9 @@
       "rate_for": "Calificar a {name}"
     },
     "personal": {
-      "titulo": "Personal de Seguridad y RMA",
-      "subtitulo": "Los nombres que aparecen en los selects del ingreso",
+      "titulo_seguridad": "Personal de Seguridad",
+      "titulo_rma": "Personal de RMA",
+      "subtitulo": "Los nombres que aparecen en el acta de ingreso. Cada rol registra solo a su propio personal.",
       "col_seguridad": "Seguridad",
       "col_rma": "RMA",
       "campo": "Nombre completo",
@@ -2113,6 +2114,7 @@
         "recibido_rma": "Recibió por RMA",
         "recibido_placeholder": "Elige a la persona…",
         "recibido_sin_catalogo": "No hay personal cargado.",
+        "recibido_sin_catalogo_rma": "RMA todavía no registró a su personal.",
         "recibido_gestionar": "Gestionar personal",
         "submit": "Registrar ingreso",
         "submitting": "Registrando...",
@@ -2374,6 +2376,7 @@
       "titulo": "Firmas del acta",
       "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla y no se puede modificar.",
       "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla y no se puede modificar.",
+      "ayuda_una_ingreso": "Firma quien da fe de lo que llegó. Se guarda al terminarla y no se puede modificar.",
       "completa": "Completa",
       "faltan": "{count, plural, =1 {Falta # firma} other {Faltan # firmas}}",
       "firmado": "Firmado",
@@ -2428,6 +2431,7 @@
       "cliente": "Cliente",
       "proveedor": "Proveedor",
       "almacenista": "Almacenista que carga",
+      "almacenista_ingreso": "Almacenista que recibe",
       "chofer": "Chofer",
       "placa": "Placa del vehículo",
       "fecha": "Fecha",
@@ -2462,6 +2466,9 @@
       "motivo_placeholder": "Motivo (obligatorio)",
       "motivo_obligatorio": "Falta el motivo en algún producto marcado como \"No salió\"",
       "no_salio_resumen": "{count, plural, =1 {# producto marcado como \"No salió\"} other {# productos marcados como \"No salió\"}}",
+      "no_llego_checkbox": "No llegó",
+      "motivo_obligatorio_ingreso": "Falta el motivo en algún producto marcado como \"No llegó\"",
+      "no_llego_resumen": "{count, plural, =1 {# producto marcado como \"No llegó\"} other {# productos marcados como \"No llegó\"}}",
       "diferencia_cantidad_resumen": "{count, plural, =1 {# renglón con diferencia de cantidad} other {# renglones con diferencia de cantidad}}",
       "dashboard": {
         "titulo": "Egresos de mercancía",
@@ -2486,6 +2493,10 @@
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta orden"
+      },
+      "personal_almacen": {
+        "titulo": "Personal de Almacén",
+        "subtitulo": "Almacenistas y choferes. Solo Almacén los registra; Seguridad los elige en el formulario."
       },
       "almacenistas_catalogo": {
         "titulo": "Almacenistas",

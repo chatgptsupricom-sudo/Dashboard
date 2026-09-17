@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -125,12 +126,24 @@ export async function GET(request: NextRequest) {
         today,
       );
 
+      // Cobrado total del mes (el de Contado/Crédito), para que se vea al lado
+      // del numerador de Efectividad y no se confundan.
+      const cobrosDelMes = await obtenerCobros(companyIds, {
+        desde: monthStart.toISOString().split("T")[0],
+        hasta: monthEnd.toISOString().split("T")[0],
+      });
+
       return NextResponse.json({
         success: true,
         data: {
           type: "efectividad",
           summary: {
+            totalCobradoDelMes: Math.round(cobrosDelMes.reduce((s, c) => s + c.monto, 0) * 100) / 100,
+            cobradoEnElMes: calc.cobradoEnElMes,
+            cobradoAntes: calc.cobradoAntes,
             totalExigible: calc.exigibleMes,
+            totalExigibleMesCompleto: calc.exigibleMesCompleto,
+            parcial: calc.parcial,
             totalCobrado: calc.cobradoAlCierre,
             totalCobradoAHoy: calc.cobradoAHoy,
             totalPendiente: calc.pendiente,
@@ -221,54 +234,96 @@ export async function GET(request: NextRequest) {
       const monthEnd = new Date(currentYear, currentMonth + 1, 0);
       const calc = await calcularRecuperacion(companyIds, monthStart, monthEnd);
 
-      // Facturas que ya estaban vencidas al iniciar el mes y siguen con saldo:
-      // es la lista accionable, "lo que queda por recuperar". El desglose de
-      // qué se cobró factura por factura necesita cruzar cada conciliación con
-      // su factura y queda para una segunda vuelta.
-      const pendientes = await fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "=", "out_invoice"],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", "<", monthStart.toISOString().split("T")[0]],
-          ["amount_residual", "!=", 0],
-          ["partner_id.name", "not ilike", "supricom"],
-        ],
-        ["id", "name", "partner_id", "company_id", "invoice_date",
-         "invoice_date_due", "payment_state", "amount_total", "amount_residual"],
-      );
+      // Universo del KPI: facturas ya vencidas al iniciar el mes. Se listan las
+      // que siguen con saldo (lo que queda por recuperar) y las que recibieron
+      // cobros en el mes, aunque ya esten cerradas.
+      const desdeStr = monthStart.toISOString().split("T")[0];
+      const hastaStr = monthEnd.toISOString().split("T")[0];
+      const dominioVencidas: any[] = [
+        ["move_type", "=", "out_invoice"],
+        ["state", "=", "posted"],
+        ["company_id", "in", companyIds],
+        ["invoice_date_due", "<", desdeStr],
+        ["partner_id.name", "not ilike", "supricom"],
+      ];
+      const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
+        "invoice_date_due", "payment_state", "amount_total", "amount_residual"];
 
-      const invoices = pendientes.map((inv: any) => ({
-        id: inv.id,
-        name: inv.name || "",
-        partnerName: inv.partner_id?.[1] || "Sin cliente",
-        partnerId: inv.partner_id?.[0] || 0,
-        companyName: inv.company_id?.[1] || "",
-        invoiceDate: inv.invoice_date || null,
-        invoiceDateDue: inv.invoice_date_due || null,
-        paymentState: inv.payment_state || "not_paid",
-        amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
-        amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
-        status: "Pendiente",
-      }));
+      // Cobrado en el mes por factura: mismo numerador que la tarjeta
+      // (lib/cxc/cobros.ts), abierto factura por factura.
+      const [pendientes, cobros] = await Promise.all([
+        fetchPaginated("account.move", [...dominioVencidas, ["amount_residual", "!=", 0]], camposFactura),
+        obtenerCobros(companyIds, {
+          desde: desdeStr,
+          hasta: hastaStr,
+          dominioFactura: [
+            ["move_type", "=", "out_invoice"],
+            ["invoice_date_due", "<", desdeStr],
+            ["partner_id.name", "not ilike", "supricom"],
+          ],
+        }),
+      ]);
+
+      const cobradoPorFactura = new Map<number, number>();
+      for (const c of cobros) {
+        cobradoPorFactura.set(c.facturaId, (cobradoPorFactura.get(c.facturaId) || 0) + c.monto);
+      }
+
+      // Facturas que se cobraron en el mes y hoy ya no tienen saldo: no vienen
+      // en `pendientes` y sin ellas la tabla no explicaria lo recuperado.
+      const idsPendientes = new Set(pendientes.map((f: any) => f.id));
+      const faltantes = [...cobradoPorFactura.keys()].filter((id) => !idsPendientes.has(id));
+      const cerradas = faltantes.length
+        ? await fetchPaginated("account.move", [["id", "in", faltantes]], camposFactura)
+        : [];
+
+      const invoices = [...pendientes, ...cerradas].map((inv: any) => {
+        const cobrado = Math.round((cobradoPorFactura.get(inv.id) || 0) * 100) / 100;
+        return {
+          id: inv.id,
+          name: inv.name || "",
+          partnerName: inv.partner_id?.[1] || "Sin cliente",
+          partnerId: inv.partner_id?.[0] || 0,
+          companyName: inv.company_id?.[1] || "",
+          invoiceDate: inv.invoice_date || null,
+          invoiceDateDue: inv.invoice_date_due || null,
+          paymentState: inv.payment_state || "not_paid",
+          amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
+          amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
+          // Cobrado DEL MES sobre esta factura (no el pagado historico): es lo
+          // que suma al KPI.
+          amountPaid: cobrado,
+          status: cobrado > 0 ? "Recuperado" : "Pendiente",
+        };
+      });
+      const recuperadas = invoices.filter((i) => i.amountPaid > 0).length;
 
       return NextResponse.json({
         success: true,
         data: {
           type: "recuperacion",
           summary: {
+            // Nombres que usa el modal; los largos se mantienen por compatibilidad.
+            vencidoInicial: calc.saldoVencidoInicial,
+            recuperado: calc.recuperadoEnElMes,
+            vencidoRestante: Math.round((calc.saldoVencidoInicial - calc.recuperadoEnElMes) * 100) / 100,
+            recoveredCount: recuperadas,
             recuperacion: calc.value,
             saldoVencidoInicial: calc.saldoVencidoInicial,
             recuperadoEnElMes: calc.recuperadoEnElMes,
             saldoVencidoHoy: calc.saldoVencidoHoy,
             conciliadoDesdeElCorte: calc.conciliadoDesdeElCorte,
-            count: calc.facturasConSaldo,
-            pendingCount: invoices.length,
+            count: invoices.length,
+            pendingCount: invoices.filter((i) => i.amountResidual > 0).length,
           },
-          invoices: invoices.sort(
-            (a, b) => a.invoiceDateDue?.localeCompare(b.invoiceDateDue || "") || 0,
-          ),
+          // Primero las recuperadas (de mayor cobro a menor): son la respuesta a
+          // "que se recupero este mes". Despues las pendientes, de la mas
+          // vencida a la mas reciente.
+          invoices: invoices.sort((a, b) => {
+            if ((a.amountPaid > 0) !== (b.amountPaid > 0)) return a.amountPaid > 0 ? -1 : 1;
+            if (a.amountPaid > 0) return b.amountPaid - a.amountPaid;
+            return (a.invoiceDateDue || "").localeCompare(b.invoiceDateDue || "");
+          }),
         },
       });
     }

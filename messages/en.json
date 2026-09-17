@@ -222,8 +222,6 @@
     "seg_merc_egresos": "Outbound",
     "almacen_egresos": "Merchandise outbound",
     "almacen_ordenes": "Pending orders",
-    "almacen_almacenistas": "Manage Warehouse Workers",
-    "almacen_choferes": "Manage Drivers",
     "almacen_unidades": "Manage Vehicles"
   },
   "rma": {
@@ -407,7 +405,7 @@
     "meta": "Goal",
     "column_title": "Title",
     "column_goal": "Goal",
-    "column_average": "Average",
+    "column_average": "Month",
     "column_kpi": "KPI",
     "metrica_mensual": "monthly metric",
     "back": "Back",
@@ -1790,8 +1788,10 @@
     "efectividad_cobranza": "Collection Effectiveness",
     "meta": "Goal",
     "cobrado": "Collected",
+    "cobrado_exigible": "Collected of amount due",
     "cobrado_a_hoy": "Collected to date",
     "corriente": "Current",
+    "exigible_vencido": "Amount due so far",
     "exigible": "Due",
     "cartera_vencida": "Overdue Portfolio",
     "vencido": "Overdue",
@@ -2081,8 +2081,9 @@
       "rate_for": "Rate {name}"
     },
     "personal": {
-      "titulo": "Security and RMA staff",
-      "subtitulo": "The names shown in the intake dropdowns",
+      "titulo_seguridad": "Security staff",
+      "titulo_rma": "RMA staff",
+      "subtitulo": "The names shown on the intake record. Each role registers only its own staff.",
       "col_seguridad": "Security",
       "col_rma": "RMA",
       "campo": "Full name",
@@ -2124,6 +2125,7 @@
         "recibido_rma": "Received by RMA",
         "recibido_placeholder": "Choose the person…",
         "recibido_sin_catalogo": "No staff on file.",
+        "recibido_sin_catalogo_rma": "RMA has not registered its staff yet.",
         "recibido_gestionar": "Manage staff",
         "submit": "Register intake",
         "submitting": "Registering...",
@@ -2385,6 +2387,7 @@
       "titulo": "Record signatures",
       "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished and cannot be changed.",
       "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished and cannot be changed.",
+      "ayuda_una_ingreso": "Signed by whoever attests to what arrived. Saved as soon as it is finished and cannot be changed.",
       "completa": "Complete",
       "faltan": "{count, plural, =1 {# signature missing} other {# signatures missing}}",
       "firmado": "Signed",
@@ -2439,6 +2442,7 @@
       "cliente": "Customer",
       "proveedor": "Supplier",
       "almacenista": "Loading warehouse worker",
+      "almacenista_ingreso": "Receiving warehouse worker",
       "chofer": "Driver",
       "placa": "Vehicle plate",
       "fecha": "Date",
@@ -2473,6 +2477,9 @@
       "motivo_placeholder": "Reason (required)",
       "motivo_obligatorio": "A reason is missing on a product marked \"Did not go out\"",
       "no_salio_resumen": "{count, plural, =1 {# product marked \"Did not go out\"} other {# products marked \"Did not go out\"}}",
+      "no_llego_checkbox": "Did not arrive",
+      "motivo_obligatorio_ingreso": "A reason is missing on a product marked \"Did not arrive\"",
+      "no_llego_resumen": "{count, plural, =1 {# product marked \"Did not arrive\"} other {# products marked \"Did not arrive\"}}",
       "diferencia_cantidad_resumen": "{count, plural, =1 {# line with a quantity mismatch} other {# lines with a quantity mismatch}}",
       "dashboard": {
         "titulo": "Merchandise outbound",
@@ -2497,6 +2504,10 @@
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this order"
+      },
+      "personal_almacen": {
+        "titulo": "Warehouse staff",
+        "subtitulo": "Warehouse workers and drivers. Only Warehouse registers them; Security picks them in the form."
       },
       "almacenistas_catalogo": {
         "titulo": "Warehouse workers",

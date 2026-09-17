@@ -23,6 +23,8 @@ export default function IntegracionDePagoPage() {
   });
 
   const [selectedVendedor, setSelectedVendedor] = useState("all");
+  // Por defecto solo banco/caja: el total cuadra con "Cobrado" de Contado/Crédito.
+  const [incluirAjustes, setIncluirAjustes] = useState(false);
   const [vendedores, setVendedores] = useState<{ id: string; name: string }[]>(
     []
   );
@@ -42,6 +44,7 @@ export default function IntegracionDePagoPage() {
         limit: "10000",
         search: search,
         vendedor: selectedVendedor,
+        incluirAjustes: String(incluirAjustes),
         fechaInicio: dateRange.from
           ? new Date(dateRange.from).toISOString()
           : "",
@@ -63,6 +66,7 @@ export default function IntegracionDePagoPage() {
         "VALOR PAGADO ($)": r.valor_pagado,
         VENDEDOR: r.vendedor,
         "F. ABONO": formatDDMMYYYY(r.fecha_abono),
+        BANCO: r.banco,
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
@@ -103,6 +107,7 @@ export default function IntegracionDePagoPage() {
         limit: itemsPerPage.toString(),
         search: search,
         vendedor: selectedVendedor,
+        incluirAjustes: String(incluirAjustes),
         fechaInicio: dateRange.from
           ? new Date(dateRange.from).toISOString()
           : "",
@@ -124,7 +129,7 @@ export default function IntegracionDePagoPage() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedCid, currentPage, search, selectedVendedor, dateRange]);
+  }, [selectedCid, currentPage, search, selectedVendedor, dateRange, incluirAjustes]);
 
   const totalPages = Math.ceil((data?.total_count || 0) / itemsPerPage) || 1;
   const showingFrom =
@@ -190,6 +195,18 @@ export default function IntegracionDePagoPage() {
             />
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 md:col-span-6 order-last">
+          <input
+            type="checkbox"
+            checked={incluirAjustes}
+            onChange={(e) => {
+              setIncluirAjustes(e.target.checked);
+              setCurrentPage(1);
+            }}
+          />
+          Incluir retenciones y ajustes (por defecto solo cobros en banco/caja, igual que Contado/Crédito)
+        </label>
 
         <button
           onClick={handleExportExcel}
@@ -282,6 +299,9 @@ export default function IntegracionDePagoPage() {
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase">
             Mostrando {showingFrom} - {showingTo} de {data?.total_count || 0}
+            <span className="ml-3 text-slate-600 normal-case">
+              Total abonado: ${(data?.total_monto || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <button

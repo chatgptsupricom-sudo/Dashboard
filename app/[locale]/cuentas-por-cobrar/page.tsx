@@ -333,9 +333,26 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
+                <span>Cobrado de lo exigible: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Exigible: {formatCurrency(data.kpis.efectividad.exigibleMes)}</div>
+              {data.kpis.efectividad.cobradoAntes > 0 && (
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  En el mes {formatCurrency(data.kpis.efectividad.cobradoEnElMes)} + cobrado en meses anteriores {formatCurrency(data.kpis.efectividad.cobradoAntes)}
+                </div>
+              )}
+              <div className="text-xs text-slate-500 mt-1">
+                {data.kpis.efectividad.parcial ? "Exigible ya vencido" : "Exigible"}: {formatCurrency(data.kpis.efectividad.exigibleMes)}
+              </div>
+              {data.kpis.efectividad.parcial && data.kpis.efectividad.exigibleMesCompleto != null && (
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Del mes completo: {formatCurrency(data.kpis.efectividad.exigibleMesCompleto)} (lo que aún no vence no cuenta todavía)
+                </div>
+              )}
+              {data.kpis.efectividad.cobradoTotalMes != null && (
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Cobrado total del mes: {formatCurrency(data.kpis.efectividad.cobradoTotalMes)} (ver Contado/Crédito)
+                </div>
+              )}
               {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
                 <div className="text-xs text-slate-400 mt-1">
                   Cobrado a hoy (incl. pagos posteriores al cierre): {data.kpis.efectividad.valueAcumulado}%
@@ -1040,12 +1057,22 @@ export default function CxcDashboardPage() {
               <>
                 <div className="grid grid-cols-4 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible</span>
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">
+                      {kpiData.summary.parcial ? "Exigible ya vencido" : "Exigible"}
+                    </span>
                     <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.totalExigible)}</span>
+                    {kpiData.summary.parcial && kpiData.summary.totalExigibleMesCompleto != null && (
+                      <span className="text-[10px] text-blue-500/80 block leading-snug">
+                        del mes completo {formatCurrency(kpiData.summary.totalExigibleMesCompleto)}
+                      </span>
+                    )}
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado de lo exigible</span>
                     <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.totalCobrado)}</span>
+                    <span className="text-[10px] text-emerald-500/80 block leading-snug">
+                      hasta el cierre del mes: en el mes {formatCurrency(kpiData.summary.cobradoEnElMes)} + de meses anteriores {formatCurrency(kpiData.summary.cobradoAntes)}
+                    </span>
                   </div>
                   <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Pendiente</span>
@@ -1057,6 +1084,13 @@ export default function CxcDashboardPage() {
                     <span className="text-[10px] text-slate-400 block">{kpiData.summary.paidCount}/{kpiData.summary.count} pagadas</span>
                   </div>
                 </div>
+                {kpiData.summary.totalCobradoDelMes != null && (
+                  <p className="text-[11px] text-slate-500 -mt-2">
+                    Solo cuenta las facturas que vencen en el mes. Todo el dinero que entró en el mes son{" "}
+                    <span className="font-semibold text-slate-700">{formatCurrency(kpiData.summary.totalCobradoDelMes)}</span>{" "}
+                    (Contado/Crédito → Cobrado); la diferencia es lo cobrado de facturas ya vencidas (Recuperación) o que vencen después.
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>

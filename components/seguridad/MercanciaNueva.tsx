@@ -107,6 +107,9 @@ export default function MercanciaNueva({
   // 403; aqui se bloquea antes para no dejar llenar un formulario que
   // despues no se puede guardar.
   const bloqueadoPorRol = tipo === "ingreso" && rol === "almacen";
+  // Almacenistas y choferes son personal de Almacen: solo Almacen los
+  // registra. Seguridad los elige de la lista pero no ve "Gestionar".
+  const gestionaPersonal = rol === "almacen" || rol === "superadmin";
 
   const agregarAlmacenista = (v: string) => {
     if (!v || almacenistas.includes(v) || almacenistas.length >= 30) return;
@@ -346,13 +349,15 @@ export default function MercanciaNueva({
           )}
           <div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <label className={`${labelClases} mb-0`}>{tm("almacenista")} *</label>
-              <Link
-                href={`/${locale}/seguridad/mercancia/almacenistas`}
-                className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
-              >
-                {tAlm("gestionar")}
-              </Link>
+              <label className={`${labelClases} mb-0`}>{tm(tipo === "ingreso" ? "almacenista_ingreso" : "almacenista")} *</label>
+              {gestionaPersonal && (
+                <Link
+                  href={`/${locale}/seguridad/mercancia/personal`}
+                  className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+                >
+                  {tAlm("gestionar")}
+                </Link>
+              )}
             </div>
             <SelectChips
               valores={almacenistas}
@@ -366,12 +371,14 @@ export default function MercanciaNueva({
             <div>
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <label className={`${labelClases} mb-0`}>{tm("chofer")}</label>
-                <Link
-                  href={`/${locale}/seguridad/mercancia/choferes`}
-                  className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
-                >
-                  {tCho("gestionar")}
-                </Link>
+                {gestionaPersonal && (
+                  <Link
+                    href={`/${locale}/seguridad/mercancia/personal`}
+                    className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+                  >
+                    {tCho("gestionar")}
+                  </Link>
+                )}
               </div>
               <select
                 value={chofer}
