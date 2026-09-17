@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
+import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import AvisosMercancia from "./AvisosMercancia";
 import {
   PageHeader,
   Card,
@@ -91,6 +93,11 @@ export default function MercanciaDashboard() {
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  // En vivo: los KPIs son de egresos, asi que un ingreso no los mueve.
+  useMercanciaEnVivo((aviso) => {
+    if (aviso.tipo === "egreso") void cargar();
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -233,6 +240,9 @@ export default function MercanciaDashboard() {
           </>
         )}
       </main>
+
+      {/* Solo egresos: es de lo que habla este dashboard. */}
+      <AvisosMercancia tipo="egreso" />
     </div>
   );
 }

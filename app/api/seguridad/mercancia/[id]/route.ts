@@ -4,6 +4,7 @@ import {
   requireSeguridad,
   resolverCidsSesion,
 } from "@/lib/seguridad/auth";
+import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { evaluarDescuadre, parsearLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -213,6 +214,19 @@ export async function POST(
           `Verifico: ${verificadoPor}.`,
       );
     }
+
+    // Aviso en vivo: Almacen ve el resultado del porton (conforme o
+    // descuadre) en el momento, sin tener que ir a preguntar.
+    emitirMercancia(
+      {
+        accion: "verificado",
+        id,
+        tipo: datos.movimiento.tipo,
+        estado,
+        documento: datos.movimiento.odoo_picking_name,
+      },
+      Number(datos.movimiento.cids) || null,
+    );
 
     return NextResponse.json({
       success: true,

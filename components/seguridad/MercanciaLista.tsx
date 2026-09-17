@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Loader2, Package, Plus } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
+import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import AvisosMercancia from "./AvisosMercancia";
 import { PageHeader, EmptyState, BotonPrimario } from "./mercancia-ui";
 
 /**
@@ -59,6 +61,13 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  // En vivo: Almacen guarda una carga o Seguridad la verifica en el porton y
+  // este listado se actualiza solo, sin recargar la pagina. Se ignora lo del
+  // otro sentido (un ingreso no cambia la lista de egresos).
+  useMercanciaEnVivo((aviso) => {
+    if (aviso.tipo === tipo) void cargar();
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -121,6 +130,9 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
           </div>
         )}
       </main>
+
+      {/* Cartel de lo que va entrando mientras la pantalla esta abierta. */}
+      <AvisosMercancia tipo={tipo} />
     </div>
   );
 }
