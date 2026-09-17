@@ -2493,6 +2493,16 @@
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta orden"
       },
+      "aviso": {
+        "nuevo_egreso": "Llegó un egreso nuevo",
+        "nuevo_ingreso": "Llegó un ingreso nuevo",
+        "un_egreso": "El egreso",
+        "un_ingreso": "El ingreso",
+        "verificado_conforme": "{tipo} se verificó: conforme",
+        "verificado_descuadre": "{tipo} se verificó: descuadre",
+        "ver": "Ver",
+        "cerrar": "Cerrar aviso"
+      },
       "personal_almacen": {
         "titulo": "Personal de Almacén",
         "subtitulo": "Almacenistas y choferes. Solo Almacén los registra; Seguridad los elige en el formulario."

@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import AvisosMercancia from "./AvisosMercancia";
 import {
   PageHeader,
   Card,
@@ -239,6 +240,9 @@ export default function MercanciaDashboard() {
           </>
         )}
       </main>
+
+      {/* Solo egresos: es de lo que habla este dashboard. */}
+      <AvisosMercancia tipo="egreso" />
     </div>
   );
 }

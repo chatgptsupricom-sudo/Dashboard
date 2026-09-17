@@ -218,7 +218,13 @@ export async function POST(
     // Aviso en vivo: Almacen ve el resultado del porton (conforme o
     // descuadre) en el momento, sin tener que ir a preguntar.
     emitirMercancia(
-      { accion: "verificado", id, tipo: datos.movimiento.tipo, estado },
+      {
+        accion: "verificado",
+        id,
+        tipo: datos.movimiento.tipo,
+        estado,
+        documento: datos.movimiento.odoo_picking_name,
+      },
       Number(datos.movimiento.cids) || null,
     );
 

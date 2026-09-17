@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Loader2, Package, Plus } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import AvisosMercancia from "./AvisosMercancia";
 import { PageHeader, EmptyState, BotonPrimario } from "./mercancia-ui";
 
 /**
@@ -129,6 +130,9 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
           </div>
         )}
       </main>
+
+      {/* Cartel de lo que va entrando mientras la pantalla esta abierta. */}
+      <AvisosMercancia tipo={tipo} />
     </div>
   );
 }

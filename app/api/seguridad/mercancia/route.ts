@@ -235,7 +235,15 @@ export async function POST(request: NextRequest) {
 
     // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
     // preparar sin recargar la pantalla del porton.
-    emitirMercancia({ accion: "creado", id, tipo: tipo as "ingreso" | "egreso" }, cids);
+    emitirMercancia(
+      {
+        accion: "creado",
+        id,
+        tipo: tipo as "ingreso" | "egreso",
+        documento: truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
+      },
+      cids,
+    );
 
     return NextResponse.json({ success: true, id }, { status: 201 });
   } catch (error: any) {

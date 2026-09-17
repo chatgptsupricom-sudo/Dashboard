@@ -22,6 +22,13 @@ export type AvisoMercancia = {
   id: number;
   tipo: "ingreso" | "egreso";
   estado?: "pendiente" | "conforme" | "descuadre";
+  /**
+   * Documento con el que viaja la mercancia (orden de despacho o factura de
+   * compra). Va en el aviso solo para que el cartel diga cual llego en vez de
+   * un "hay algo nuevo" a ciegas; quien lo recibe ya puede ver ese registro
+   * entero, porque la sala es la de su sucursal.
+   */
+  documento?: string | null;
 };
 
 export function emitirMercancia(
