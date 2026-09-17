@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { NextRequest, NextResponse } from "next/server";
 
 // La lectura de account.payment de un rango amplio puede traer miles de
@@ -227,7 +228,8 @@ export async function GET(request: NextRequest) {
         banco: p.journal_id?.[1] || "",
         vendedor,
         tipo,
-        esAsistente: /asistente/i.test(vendedor),
+        // Misma regla que el check de Contado/Crédito (lib/cxc/vendedoresExcluidos.ts).
+        esAsistente: esVendedorExcluido(vendedor, p.company_id?.[0]),
         moneda,
         montoOriginal: r2(amount),
         montoBs: montoBs == null ? null : r2(montoBs),
