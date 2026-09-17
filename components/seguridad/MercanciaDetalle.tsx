@@ -65,6 +65,9 @@ export default function MercanciaDetalle({
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
   const base = `/${locale}/seguridad/mercancia/${tipo}`;
+  // El conteo y la firma son los mismos en los dos sentidos, pero en un
+  // ingreso lo que falta es lo que "No llego", no lo que "No salio".
+  const esIngreso = tipo === "ingreso";
 
   const [mov, setMov] = useState<Movimiento | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -125,7 +128,7 @@ export default function MercanciaDetalle({
   const verificar = async () => {
     setError(null);
     if (faltaMotivo) {
-      setError(tm("motivo_obligatorio"));
+      setError(tm(esIngreso ? "motivo_obligatorio_ingreso" : "motivo_obligatorio"));
       return;
     }
     setGuardando(true);
@@ -233,7 +236,7 @@ export default function MercanciaDetalle({
               {(noSalioCount > 0 || diferenciaCantidadCount > 0) && (
                 <ul className="mt-1 text-xs text-red-600 list-disc list-inside">
                   {noSalioCount > 0 && (
-                    <li>{tm("no_salio_resumen", { count: noSalioCount })}</li>
+                    <li>{tm(esIngreso ? "no_llego_resumen" : "no_salio_resumen", { count: noSalioCount })}</li>
                   )}
                   {diferenciaCantidadCount > 0 && (
                     <li>
@@ -326,7 +329,7 @@ export default function MercanciaDetalle({
                       }
                       className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-400 disabled:opacity-60"
                     />
-                    {tm("no_salio_checkbox")}
+                    {tm(esIngreso ? "no_llego_checkbox" : "no_salio_checkbox")}
                   </label>
                   {marcado && (
                     <input
@@ -365,6 +368,7 @@ export default function MercanciaDetalle({
               tipo="mercancia"
               actaId={mov.id}
               roles={["seguridad"]}
+              ayudaUna={esIngreso ? "ayuda_una_ingreso" : "ayuda_una"}
               nombresSugeridos={{ seguridad: user?.name }}
               permitirRehacer={rol === "superadmin"}
             />
