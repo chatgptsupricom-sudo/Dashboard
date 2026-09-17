@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -109,10 +110,18 @@ export async function GET(request: NextRequest) {
         "invoice_date",
         "move_type",
         "date",
+        "payment_id",
       ],
     );
 
     const moveMap = Object.fromEntries(moves.map((m) => [m.id, m]));
+
+    // Fecha de abono = CONFIRMACIÓN del pago (lib/cxc/fechaConfirmacion.ts),
+    // igual que el resto de Cuentas por Cobrar. Asientos que no son pago
+    // conservan su fecha contable.
+    const confirmacionDePago = await fechasDePagos(
+      moves.map((m) => m.payment_id?.[0]).filter(Boolean),
+    );
 
     // --- LÓGICA DE VENDEDORES DINÁMICOS ---
     // Extraemos los IDs de usuarios que aparecen en los movimientos de esta empresa
@@ -169,7 +178,10 @@ export async function GET(request: NextRequest) {
           valor_pagado: r.amount || 0,
           vendedor_id: invoiceMove.invoice_user_id?.[0],
           vendedor: invoiceMove.invoice_user_id?.[1] || "Sin Vendedor",
-          fecha_abono: paymentMove?.date || r.create_date,
+          fecha_abono:
+            (paymentMove?.payment_id?.[0] && confirmacionDePago.get(paymentMove.payment_id[0])) ||
+            paymentMove?.date ||
+            r.create_date,
         };
       })
       .filter((r): r is any => r !== null);
@@ -187,8 +199,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // FILTRO DE FECHA (ABONO) — un único campo (fecha_abono, derivado de
-    // paymentMove.date), comparado como texto YYYY-MM-DD para no reintroducir
+    // FILTRO DE FECHA (ABONO) — un único campo (fecha_abono, confirmación del
+    // pago o paymentMove.date si no es un pago), comparado como texto YYYY-MM-DD para no reintroducir
     // desfaces de huso horario al pasar por Date().
     if (fechaInicioRaw && fechaFinRaw) {
       const startStr = fechaInicioRaw.split("T")[0];

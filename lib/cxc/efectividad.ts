@@ -1,9 +1,10 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
  *
- *   Efectividad = pagos conciliados HASTA EL CIERRE del mes
+ *   Efectividad = pagos CONFIRMADOS HASTA EL CIERRE del mes
  *               ÷ exigible de las facturas que vencen en el mes
  *
  * ── Por qué se cambió ──
@@ -14,6 +15,11 @@ import { callOdooRPC } from "@/lib/odoo";
  * salían casi perfectos y el sesgo crecía cuanto más atrás se mirara. Medido
  * con fechas reales de conciliación: mayo mostraba 99,3% cuando dentro del mes
  * se cobró 81,4%; junio 99,2% vs 71,2%. Hasta 28 puntos de diferencia.
+ *
+ * ── Fecha de cada cobro ──
+ *
+ * Un pago cuenta el día en que se confirmó (`payment_registration_date`), no el
+ * de la conciliación: ver lib/cxc/fechaConfirmacion.ts.
  *
  * ── Se muestran las dos ──
  *
@@ -35,7 +41,7 @@ import { callOdooRPC } from "@/lib/odoo";
 export interface EfectividadResultado {
   /** % estricto — el del semáforo. `null` si no hay exigible. */
   value: number | null;
-  /** Pagos conciliados hasta el último día del mes. */
+  /** Pagos confirmados hasta el último día del mes. */
   cobradoAlCierre: number;
   /** Exigible del mes (con notas de crédito restando). */
   exigibleMes: number;
@@ -112,9 +118,9 @@ export async function calcularEfectividad(
       ["debit_move_id.move_id.invoice_date_due", "<=", hasta],
       ["debit_move_id.move_id.partner_id.name", "not ilike", "supricom"],
       ["company_id", "in", companyIds],
-      ["max_date", "<=", hasta],
+      ...dominioFechaEfectiva("<=", hasta),
     ],
-    ["amount", "max_date", "debit_move_id"],
+    ["id", "amount", "max_date", "debit_move_id", "credit_move_id"],
   );
 
   const cobradoAlCierre = conciliaciones.reduce((s, c: any) => s + Number(c.amount || 0), 0);
@@ -140,6 +146,8 @@ export async function calcularEfectividad(
       if (moveId) facturaDeLinea.set(l.id, moveId);
     }
 
+    const fechaDe = await fechasEfectivas(conciliaciones as any[]);
+
     const semanaDeFactura = new Map<number, number>();
     facturas.forEach((f) => {
       if (!f.dueDate) return;
@@ -160,7 +168,8 @@ export async function calcularEfectividad(
       if (w === undefined) continue;
       // Estricto también por semana: solo cuenta si el pago entró antes de que
       // esa semana cerrara, no en cualquier momento del mes.
-      const pagoEl = c.max_date ? new Date(c.max_date + "T00:00:00") : null;
+      const fecha = fechaDe.get(c.id);
+      const pagoEl = fecha ? new Date(fecha + "T00:00:00") : null;
       if (!pagoEl || pagoEl > semanas[w].fin) continue;
       acc[w].cobrado += Number(c.amount || 0);
     }

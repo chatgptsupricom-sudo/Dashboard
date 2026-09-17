@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -93,7 +94,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
   }));
 }
 
-// Abonos del cliente ese mes (fecha de conciliacion, no fecha de factura) --
+// Abonos del cliente ese mes (fecha de confirmacion del pago, no fecha de factura) --
 // mismo mecanismo que contado-credito/route.ts::renglonesCobradoDinero,
 // filtrado ademas por partner.
 async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined, bancoId: number | undefined): Promise<Factura[]> {
@@ -121,13 +122,14 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
+    ["name", "state", "amount_total", "partner_id", "move_type", "date", "payment_id", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
 
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
+  const confirmados = await pagosConfirmadosEntre(companyIds, startStr, endStr);
 
   // Mismo criterio que contado-credito/route.ts::esBancoReal -- solo
   // diarios bank/cash reales cuentan como "cobrado" (las notas de credito
@@ -150,7 +152,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   };
 
   const ptIdsVistos = new Set<number>();
-  const crudos: { move: any; paymentMove: any; monto: number }[] = [];
+  const crudos: { move: any; paymentMove: any; monto: number; fechaAbono: string }[] = [];
 
   reconciles.forEach((r) => {
     const dMove = moveMap[lineToMoveMap[r.debit_move_id?.[0]]];
@@ -173,8 +175,8 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
     if (vendedorId !== undefined && invoiceMove.invoice_user_id?.[0] !== vendedorId) return;
 
-    const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
-    if (fechaAbono < startStr || fechaAbono > endStr) return;
+    const fechaAbono = fechaDeAbono(settleMove, confirmados);
+    if (!fechaAbono || fechaAbono < startStr || fechaAbono > endStr) return;
 
     const journalIdRaw = settleMove.journal_id?.[0];
     const journalNameRaw = settleMove.journal_id?.[1] || "Sin diario";
@@ -182,7 +184,7 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
     if (bancoId !== undefined && journalIdRaw !== bancoId) return;
 
     if (invoiceMove.invoice_payment_term_id?.[0]) ptIdsVistos.add(invoiceMove.invoice_payment_term_id[0]);
-    crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0 });
+    crudos.push({ move: invoiceMove, paymentMove: settleMove, monto: r.amount || 0, fechaAbono });
   });
 
   let ptMap: Record<number, string> = {};
@@ -196,10 +198,10 @@ async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart:
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   return crudos
-    .map(({ move, paymentMove, monto }) => ({
+    .map(({ move, paymentMove, monto, fechaAbono }) => ({
       id: move.id,
       name: move.name || "",
-      invoiceDate: paymentMove.date || null,
+      invoiceDate: fechaAbono,
       moveType: move.move_type,
       amountTotal: round2(monto),
       paymentTermName: ptMap[move.invoice_payment_term_id?.[0]] || "Contado",

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -52,7 +53,7 @@ type PagoCliente = {
 
 /**
  * Pagos de clientes conciliados en el periodo, con dias de atraso reales
- * (fecha de conciliacion vs fecha de VENCIMIENTO de la factura, no fecha de
+ * (fecha de CONFIRMACION del pago vs fecha de VENCIMIENTO de la factura, no fecha de
  * emision -- a diferencia de contado-credito/route.ts, que solo distingue
  * "factura de este mes" vs "de un mes anterior" y no calcula atraso real).
  * Mismo mecanismo de account.partial.reconcile que esa pantalla.
@@ -82,12 +83,14 @@ async function pagosConciliadosDelPeriodo(companyIds: number[], desde: Date): Pr
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["name", "move_type", "partner_id", "date", "invoice_date_due", "journal_id", "company_id"],
+    ["name", "move_type", "partner_id", "date", "payment_id", "invoice_date_due", "journal_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
 
   const desdeStr = desde.toISOString().split("T")[0];
+  // El atraso se mide hasta la CONFIRMACIÓN del pago (lib/cxc/fechaConfirmacion.ts).
+  const confirmados = await pagosConfirmadosEntre(companyIds, desdeStr, new Date());
 
   // Mismo filtro de "banco/caja real" que contado-credito -- retenciones,
   // notas de credito aplicadas directo y ajustes no son "el cliente pago".
@@ -124,7 +127,7 @@ async function pagosConciliadosDelPeriodo(companyIds: number[], desde: Date): Pr
     if (CUSTOMER_INVOICE_TYPES.has(settleMove.move_type)) return;
     if (!invoiceMove.partner_id || isSupricom(invoiceMove.partner_id)) return;
 
-    const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
+    const fechaAbono = fechaDeAbono(settleMove, confirmados);
     if (!fechaAbono || fechaAbono < desdeStr) return;
 
     const journalIdRaw = settleMove.journal_id?.[0];
