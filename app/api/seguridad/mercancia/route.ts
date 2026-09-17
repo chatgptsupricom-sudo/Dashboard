@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -231,6 +232,10 @@ export async function POST(request: NextRequest) {
        VALUES ${marcadores}`,
       valores,
     );
+
+    // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
+    // preparar sin recargar la pantalla del porton.
+    emitirMercancia({ accion: "creado", id, tipo: tipo as "ingreso" | "egreso" }, cids);
 
     return NextResponse.json({ success: true, id }, { status: 201 });
   } catch (error: any) {

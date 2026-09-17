@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases } from "./mercancia-ui";
 
 /**
@@ -120,6 +121,16 @@ export default function MercanciaDetalle({
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  // En vivo: solo cuando ESTE registro queda verificado. Almacen ve el
+  // resultado del porton sin recargar.
+  //
+  // A proposito no se recarga con "creado" ni con avisos de otros registros:
+  // `cargar` pisa los conteos escritos en pantalla, y hacerlo mientras
+  // Seguridad cuenta le borraria lo que lleva tecleado.
+  useMercanciaEnVivo((aviso) => {
+    if (aviso.accion === "verificado" && aviso.id === Number(id)) void cargar();
+  });
 
   // Ningun envio a medias: si algun renglon quedo marcado "No salio" sin
   // motivo, el boton de abajo se desactiva antes de llegar al backend.

@@ -75,7 +75,7 @@ function origenPermitido(origin, callback) {
 // handshake por ser mismo origen) — nunca del valor que el cliente decida
 // mandar por `join_user_room`. Antes cualquiera podia unirse a la sala de
 // notificaciones de otro usuario adivinando su id numerico.
-function usuarioDelSocket(socket) {
+function sesionDelSocket(socket) {
   try {
     const cookieHeader = socket.handshake.headers.cookie || "";
     const crudo = cookieHeader
@@ -86,11 +86,25 @@ function usuarioDelSocket(socket) {
     const token = decodeURIComponent(crudo.slice("token=".length));
     const secret = (process.env.JWT_SECRET || "").trim();
     if (!secret) return null;
-    const payload = jwt.verify(token, secret);
-    return payload.sub || null;
+    return jwt.verify(token, secret);
   } catch {
     return null;
   }
+}
+
+// Sala de Mercancia en vivo de esta sesion.
+//
+// El movimiento de un camion solo le importa a la sucursal donde pasa, y
+// mandarselo a las tres seria contarle a Caracas lo que carga Valencia. La
+// sala sale del JWT ya verificado, no de lo que el cliente pida: unirse a la
+// sucursal ajena tendria que ser imposible aunque alguien lo intente.
+// superadmin escucha `mercancia_todas`, a donde va copia de todo.
+function salaMercancia(sesion) {
+  const rol = String(sesion?.role || "").toLowerCase().trim();
+  if (rol === "superadmin") return "mercancia_todas";
+  if (rol !== "seguridad" && rol !== "almacen") return null;
+  const cids = Number(sesion?.cids);
+  return Number.isFinite(cids) && cids > 0 ? `mercancia_${cids}` : null;
 }
 
 app.prepare().then(() => {
@@ -109,7 +123,17 @@ app.prepare().then(() => {
 
   io.on("connection", (socket) => {
     console.log(`Cliente conectado: ${socket.id}`);
-    socket.data.userId = usuarioDelSocket(socket);
+    const sesion = sesionDelSocket(socket);
+    socket.data.userId = sesion?.sub || null;
+
+    // Mercancia en vivo: la sala se resuelve al conectar, sin que el cliente
+    // pida nada — asi el listado, el detalle y los dashboards se enteran de
+    // una carga o una verificacion sin recargar la pagina.
+    const sala = salaMercancia(sesion);
+    if (sala) {
+      socket.join(sala);
+      console.log(`Socket ${socket.id} unido a sala ${sala}`);
+    }
 
     socket.on("join_user_room", () => {
       if (!socket.data.userId) return;
