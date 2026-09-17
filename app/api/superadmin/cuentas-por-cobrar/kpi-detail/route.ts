@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
+import { obtenerCobros } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -125,11 +126,21 @@ export async function GET(request: NextRequest) {
         today,
       );
 
+      // Cobrado total del mes (el de Contado/Crédito), para que se vea al lado
+      // del numerador de Efectividad y no se confundan.
+      const cobrosDelMes = await obtenerCobros(companyIds, {
+        desde: monthStart.toISOString().split("T")[0],
+        hasta: monthEnd.toISOString().split("T")[0],
+      });
+
       return NextResponse.json({
         success: true,
         data: {
           type: "efectividad",
           summary: {
+            totalCobradoDelMes: Math.round(cobrosDelMes.reduce((s, c) => s + c.monto, 0) * 100) / 100,
+            cobradoEnElMes: calc.cobradoEnElMes,
+            cobradoAntes: calc.cobradoAntes,
             totalExigible: calc.exigibleMes,
             totalCobrado: calc.cobradoAlCierre,
             totalCobradoAHoy: calc.cobradoAHoy,
