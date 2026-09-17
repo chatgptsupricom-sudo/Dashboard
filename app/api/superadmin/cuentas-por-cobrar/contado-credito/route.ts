@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { fechaDeAbono, pagosConfirmadosEntre } from "@/lib/cxc/fechaConfirmacion";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -149,13 +150,16 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
   const moves = await fetchPaginated(
     "account.move",
     [["company_id", "in", companyIds]],
-    ["name", "state", "amount_total", "partner_id", "move_type", "date", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
+    ["name", "state", "amount_total", "partner_id", "move_type", "date", "payment_id", "invoice_date", "invoice_payment_term_id", "journal_id", "invoice_user_id", "company_id"],
   );
   const moveMap: Record<number, any> = {};
   moves.forEach((m) => { moveMap[m.id] = m; });
 
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
+  // El abono cuenta en la fecha en que se CONFIRMÓ el pago
+  // (lib/cxc/fechaConfirmacion.ts); si el asiento no es un pago, en su fecha.
+  const confirmados = await pagosConfirmadosEntre(companyIds, startStr, endStr);
 
   // Para el desglose "por banco" solo cuentan diarios que son plata real
   // entrando (bank/cash en Odoo) -- si no, aparecian como "banco" diarios
@@ -208,8 +212,8 @@ async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, mo
     if (!invoiceMove.partner_id) return;
     if (excluirAsistente && esVendedorExcluido(invoiceMove)) return;
 
-    const fechaAbono = (settleMove.date || "").split(" ")[0].split("T")[0];
-    if (fechaAbono < startStr || fechaAbono > endStr) return;
+    const fechaAbono = fechaDeAbono(settleMove, confirmados);
+    if (!fechaAbono || fechaAbono < startStr || fechaAbono > endStr) return;
 
     const fechaFactura = (invoiceMove.invoice_date || "").split(" ")[0].split("T")[0];
     // "Del mes" = factura emitida en el mismo mes que se selecciono (o

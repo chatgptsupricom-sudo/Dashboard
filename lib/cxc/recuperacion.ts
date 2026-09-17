@@ -1,9 +1,10 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 
 /**
  * KPI "Recuperación Vencidos" (issue #189).
  *
- *   Recuperación = pagos conciliados DURANTE el mes sobre facturas que ya
+ *   Recuperación = pagos CONFIRMADOS durante el mes sobre facturas que ya
  *                  estaban vencidas al INICIAR el mes
  *                ÷ saldo vencido al iniciar el mes
  *
@@ -23,6 +24,12 @@ import { callOdooRPC } from "@/lib/odoo";
  * denominador terminaba siendo todo lo facturado en la historia, de modo que
  * el valor subía monótonamente cada mes por construcción (21,7% → 54,5% →
  * 71,0% → 77,5% → 81,8% → 82,4%) sin importar la gestión de cobranza.
+ *
+ * ── Fecha de cada cobro ──
+ *
+ * Un pago cuenta el día en que se CONFIRMÓ (`payment_registration_date`), no el
+ * de la conciliación: ver lib/cxc/fechaConfirmacion.ts. La reconstrucción del
+ * saldo usa la misma fecha, para que numerador y denominador corten igual.
  *
  * ── Notas de crédito ──
  *
@@ -123,14 +130,14 @@ export async function calcularRecuperacion(
     sumarCampo("account.move", [...baseFacturas, ["amount_residual", "!=", 0]], "amount_residual"),
     // Todo lo conciliado desde el corte: se suma al saldo de hoy para
     // reconstruir cuánto había vencido al iniciar el mes.
-    sumarCampo("account.partial.reconcile", [...baseConciliaciones, ["max_date", ">=", desde]], "amount"),
+    sumarCampo("account.partial.reconcile", [...baseConciliaciones, ...dominioFechaEfectiva(">=", desde)], "amount"),
     // Solo el mes, y solo pagos: una nota de crédito no es recuperación.
     sumarCampo(
       "account.partial.reconcile",
       [
         ...baseConciliaciones,
-        ["max_date", ">=", desde],
-        ["max_date", "<=", hasta],
+        ...dominioFechaEfectiva(">=", desde),
+        ...dominioFechaEfectiva("<=", hasta),
         ["credit_move_id.move_id.move_type", "!=", "out_refund"],
       ],
       "amount",

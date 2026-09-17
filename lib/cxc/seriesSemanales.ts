@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -16,8 +17,12 @@ import { callOdooRPC } from "@/lib/odoo";
  *     ÷ Σ saldo(f, finW) de toda la cartera
  *
  *   Recuperación de la semana W
- *     = pagos conciliados dentro de W sobre facturas ya vencidas al iniciar W
+ *     = pagos confirmados dentro de W sobre facturas ya vencidas al iniciar W
  *     ÷ saldo vencido al iniciar W
+ *
+ * Cada cobro se fecha por la CONFIRMACIÓN del pago, no por la conciliación
+ * (ver lib/cxc/fechaConfirmacion.ts): un pago confirmado después del corte
+ * todavía era deuda en ese corte.
  *
  * ── Por qué se incluyen facturas ya pagadas ──
  *
@@ -120,9 +125,9 @@ export async function calcularSeriesCxC(
         ["debit_move_id.move_id.state", "=", "posted"],
         ["company_id", "in", companyIds],
         ["debit_move_id.move_id.partner_id.name", "not ilike", "supricom"],
-        ["max_date", ">=", desde],
+        ...dominioFechaEfectiva(">=", desde),
       ],
-      ["amount", "max_date", "debit_move_id"],
+      ["id", "amount", "max_date", "debit_move_id", "credit_move_id"],
     ),
   ]);
 
@@ -177,12 +182,14 @@ export async function calcularSeriesCxC(
     }
   }
 
+  const fechaDe = await fechasEfectivas(conciliaciones as any[]);
   for (const c of conciliaciones as any[]) {
     const lineaId = Array.isArray(c.debit_move_id) ? c.debit_move_id[0] : c.debit_move_id;
     const facturaId = facturaDeLinea.get(lineaId);
     const f = facturaId !== undefined ? facturas.get(facturaId) : undefined;
-    if (!f || !c.max_date) continue;
-    f.pagos.push({ fecha: soloFecha(c.max_date), monto: Number(c.amount || 0) });
+    const fecha = fechaDe.get(c.id);
+    if (!f || !fecha) continue;
+    f.pagos.push({ fecha: soloFecha(fecha), monto: Number(c.amount || 0) });
   }
 
   const todas = Array.from(facturas.values());
