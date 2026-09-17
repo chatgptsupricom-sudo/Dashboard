@@ -142,6 +142,8 @@ export async function GET(request: NextRequest) {
             cobradoEnElMes: calc.cobradoEnElMes,
             cobradoAntes: calc.cobradoAntes,
             totalExigible: calc.exigibleMes,
+            totalExigibleMesCompleto: calc.exigibleMesCompleto,
+            parcial: calc.parcial,
             totalCobrado: calc.cobradoAlCierre,
             totalCobradoAHoy: calc.cobradoAHoy,
             totalPendiente: calc.pendiente,
