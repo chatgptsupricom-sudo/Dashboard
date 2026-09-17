@@ -18,6 +18,8 @@ import {
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
 import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
+import { obtenerCobros } from "@/lib/cxc/cobros";
+import { calcularEfectividad } from "@/lib/cxc/efectividad";
 
 const SIN_DATOS = {
   promesas_pago:
@@ -89,35 +91,55 @@ export async function GET(request: NextRequest) {
         ? Math.round((clientesExcedidos / clientesConLimite.length) * 1000) / 10
         : null;
 
-    // Cobros esperados vs realizados: facturas de cliente que vencian en el
-    // periodo y que ya fueron cobradas.
-    const ventasDelPeriodo =
+    // Cobros esperados vs realizados = Efectividad de Cuentas por Cobrar
+    // (lib/cxc/efectividad.ts): cobrado hasta el cierre del periodo sobre lo que
+    // vencia en el. Antes se usaba `amount_total - amount_residual`, que es el
+    // saldo de HOY: contaba pagos posteriores al periodo, notas de credito y
+    // retenciones como cobro, y no coincidia con el KPI de CxC.
+    const ventasRaw =
       (await callOdooRPC<any[]>(
         "account.move",
         "search_read",
         [
           [
             ["company_id", "in", companyIds],
-            ["move_type", "=", "out_invoice"],
+            ["move_type", "in", ["out_invoice", "out_refund"]],
             ["state", "=", "posted"],
             ["invoice_date_due", ">=", desde],
             ["invoice_date_due", "<=", hasta],
           ],
         ],
-        { fields: ["amount_total", "amount_residual", "payment_state"], limit: 0 },
+        { fields: ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"], limit: 0 },
       )) || [];
-    const esperado = ventasDelPeriodo.reduce(
-      (s, f: any) => s + Math.abs(Number(f.amount_total) || 0),
-      0,
+    // Mismo filtro de internos que el Dashboard de CxC (nombre mostrado del partner).
+    const ventasDelPeriodo = ventasRaw.filter(
+      (f: any) => !String(f.partner_id?.[1] || "").toLowerCase().includes("supricom"),
     );
-    const cobrado = ventasDelPeriodo.reduce(
-      (s, f: any) =>
-        s +
-        (Math.abs(Number(f.amount_total) || 0) -
-          Math.abs(Number(f.amount_residual) || 0)),
-      0,
-    );
-    const pctCobros = esperado > 0 ? Math.round((cobrado / esperado) * 1000) / 10 : null;
+    const [efectividad, cobrosDelPeriodo] = await Promise.all([
+      calcularEfectividad(
+        companyIds,
+        new Date(desde + "T00:00:00"),
+        new Date(hasta + "T00:00:00"),
+        ventasDelPeriodo.map((f: any) => {
+          const signo = f.move_type === "out_refund" ? -1 : 1;
+          return {
+            id: f.id,
+            amountTotal: signo * Math.abs(Number(f.amount_total) || 0),
+            amountResidual: signo * Math.abs(Number(f.amount_residual) || 0),
+            dueDate: f.invoice_date_due ? new Date(f.invoice_date_due + "T00:00:00") : null,
+          };
+        }),
+        [],
+        hoyDate,
+      ),
+      // Cobranza real del periodo = "Cobrado" de Contado/Credito (lib/cxc/cobros.ts):
+      // dinero que entro a banco/caja, por fecha de confirmacion del pago.
+      obtenerCobros(companyIds, { desde, hasta }),
+    ]);
+    const esperado = efectividad.exigibleMes;
+    const cobrado = efectividad.cobradoAlCierre;
+    const pctCobros = efectividad.value;
+    const cobranzaReal = Math.round(cobrosDelPeriodo.reduce((s, c) => s + c.monto, 0) * 100) / 100;
 
     const pct = (parte: number, total: number) =>
       total > 0 ? Math.round((parte / total) * 1000) / 10 : null;
@@ -169,10 +191,10 @@ export async function GET(request: NextRequest) {
           id: "cumplimiento_cobranza", numero: 3, nombre: "Cumplimiento meta de cobranza",
           formula: "Cobranza real / meta de cobranza × 100", peso: 4,
           metaTexto: metas.cumplimiento_cobranza ? `≥${metas.cumplimiento_cobranza}%` : "Sin meta definida",
-          valor: metas.cumplimiento_cobranza ? pct(cobrado, metas.cumplimiento_cobranza) : null,
+          valor: metas.cumplimiento_cobranza ? pct(cobranzaReal, metas.cumplimiento_cobranza) : null,
           unidad: "%", frecuencia: "Diaria/Mensual", responsable: "Cuentas por Cobrar", fuente: "Bancos / ERP",
           detalle: metas.cumplimiento_cobranza
-            ? `Cobrado ${money(cobrado)} en el período`
+            ? `Cobrado ${money(cobranzaReal)} en el período`
             : "Falta cargar la meta mensual de cobranza en parámetros",
         },
         { modo: "higher_better", verde: 95, amarillo: 85 },

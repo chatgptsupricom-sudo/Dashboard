@@ -27,6 +27,8 @@ export default function ComisionesPage() {
   const [startDate, endDate] = dateRange;
 
   const [selectedVendedor, setSelectedVendedor] = useState("all");
+  // Por defecto solo banco/caja: el total cuadra con "Cobrado" de Contado/Crédito.
+  const [incluirAjustes, setIncluirAjustes] = useState(false);
   const [vendedores, setVendedores] = useState<{ id: string; name: string }[]>(
     [],
   );
@@ -38,7 +40,7 @@ export default function ComisionesPage() {
     if (isDateRangeComplete) {
       fetchData();
     }
-  }, [selectedCid, currentPage, search, selectedVendedor, startDate, endDate]);
+  }, [selectedCid, currentPage, search, selectedVendedor, startDate, endDate, incluirAjustes]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -48,6 +50,7 @@ export default function ComisionesPage() {
         limit: itemsPerPage.toString(),
         search: search,
         vendedor: selectedVendedor,
+        incluirAjustes: String(incluirAjustes),
         fechaInicio: startDate ? startDate.toISOString() : "",
         fechaFin: endDate ? endDate.toISOString() : "",
       });
@@ -86,6 +89,7 @@ export default function ComisionesPage() {
         limit: "10000",
         search: search,
         vendedor: selectedVendedor,
+        incluirAjustes: String(incluirAjustes),
         fechaInicio: dateRange.from
           ? new Date(dateRange.from).toISOString()
           : "",
@@ -225,6 +229,17 @@ export default function ComisionesPage() {
           </div>
 
           {/* Botón Exportar */}
+          <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+            <input
+              type="checkbox"
+              checked={incluirAjustes}
+              onChange={(e) => {
+                setIncluirAjustes(e.target.checked);
+                setCurrentPage(1);
+              }}
+            />
+            Incluir retenciones y ajustes
+          </label>
           <button
             onClick={handleExportExcel}
             className="flex items-center gap-2 bg-slate-900 hover:bg-black text-white font-black py-3 px-6 rounded-xl text-[10px] uppercase tracking-widest transition-all shadow-lg"
@@ -335,6 +350,9 @@ export default function ComisionesPage() {
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase">
             Mostrando {showingFrom} - {showingTo} de {data?.total_count || 0}
+            <span className="ml-3 text-slate-600 normal-case">
+              Total abonado: ${(data?.total_monto || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <button
