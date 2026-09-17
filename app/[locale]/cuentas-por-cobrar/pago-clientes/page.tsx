@@ -35,6 +35,8 @@ type Row = {
   conciliado: boolean;
   /** Parte del pago aplicada a facturas (lo que suma "Cobrado" en Contado/Crédito). */
   aplicadoFacturas: number;
+  /** Parte de lo aplicado que fue a facturas de vendedores excluidos. */
+  aplicadoExcluido: number;
   /** Parte aún sin aplicar (anticipo / saldo a favor). */
   sinAplicar: number;
   facturasAplicadas: string;
@@ -103,19 +105,36 @@ export default function PagoClientesPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, tab]);
 
+  // "Excluir asistentes" se aplica como en Contado/Crédito: por el vendedor de
+  // la FACTURA a la que se aplicó el pago. Un pago aplicado en parte a
+  // facturas de vendedores excluidos solo pierde esa parte. Lo que no está
+  // aplicado a ninguna factura se juzga por el vendedor del pago.
+  const conciliadoVisible = useCallback(
+    (r: Row) => (r.aplicadoFacturas || 0) - (excluirAsistentes ? r.aplicadoExcluido || 0 : 0),
+    [excluirAsistentes],
+  );
+  const sinConciliarVisible = useCallback(
+    (r: Row) => (excluirAsistentes && r.esAsistente ? 0 : Math.max(0, r.montoUsd - (r.aplicadoFacturas || 0))),
+    [excluirAsistentes],
+  );
+  const incluida = useCallback(
+    (r: Row) => !excluirAsistentes || conciliadoVisible(r) > 0.005 || sinConciliarVisible(r) > 0.005 || (!r.esAsistente && (r.aplicadoFacturas || 0) === 0),
+    [excluirAsistentes, conciliadoVisible, sinConciliarVisible],
+  );
+
   const countCobros = useMemo(
-    () => rows.filter((r) => r.tipo === "cobro" && (!excluirAsistentes || !r.esAsistente)).length,
-    [rows, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === "cobro" && incluida(r)).length,
+    [rows, incluida],
   );
   const countAjustes = useMemo(
-    () => rows.filter((r) => r.tipo === "ajuste" && (!excluirAsistentes || !r.esAsistente)).length,
-    [rows, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === "ajuste" && incluida(r)).length,
+    [rows, incluida],
   );
 
   // Rows del tab actual (sin búsqueda) — base del resumen.
   const enTab = useMemo(
-    () => rows.filter((r) => r.tipo === tab && (!excluirAsistentes || !r.esAsistente)),
-    [rows, tab, excluirAsistentes],
+    () => rows.filter((r) => r.tipo === tab && incluida(r)),
+    [rows, tab, incluida],
   );
 
   const visibles = useMemo(() => {
@@ -133,23 +152,24 @@ export default function PagoClientesPage() {
     // Los totales cuentan solo lo CONCILIADO (aplicado a facturas), igual que
     // "Cobrado" en Contado/Crédito. Lo recibido que todavía no se aplicó va
     // aparte, en "Sin conciliar", para que las dos pantallas cuadren.
-    const recibidoUsd = base.reduce((s, r) => s + r.montoUsd, 0);
-    const totalUsd = base.reduce((s, r) => s + (r.aplicadoFacturas || 0), 0);
+    const totalUsd = base.reduce((s, r) => s + conciliadoVisible(r), 0);
+    const sinConciliar = base.reduce((s, r) => s + sinConciliarVisible(r), 0);
+    const recibidoUsd = totalUsd + sinConciliar;
     // Bs conciliados: la parte del monto en Bs proporcional a lo aplicado
     // (misma tasa del pago con la que Odoo convirtió lo aplicado a USD).
     const totalBs = base.reduce((s, r) => {
       if (!r.montoBs || r.montoUsd <= 0) return s;
-      return s + r.montoBs * Math.min(1, (r.aplicadoFacturas || 0) / r.montoUsd);
+      return s + r.montoBs * Math.min(1, conciliadoVisible(r) / r.montoUsd);
     }, 0);
     return {
       pagos: base.length,
       totalUsd: r2(totalUsd),
       totalBs: r2(totalBs),
       recibidoUsd: r2(recibidoUsd),
-      sinConciliar: r2(recibidoUsd - totalUsd),
+      sinConciliar: r2(sinConciliar),
       porRevisar: enTab.filter((r) => r.revisar).length,
     };
-  }, [enTab, visibles, search]);
+  }, [enTab, visibles, search, conciliadoVisible, sinConciliarVisible]);
 
   const totalPages = Math.max(1, Math.ceil(visibles.length / PAGE_SIZE));
   const pageRows = visibles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -178,8 +198,8 @@ export default function PagoClientesPage() {
       "Facturas aplicadas": r.facturasAplicadas,
       "Estado": r.estado,
       "Conciliado": r.conciliado ? "Sí" : "No",
-      "Conciliado USD": r.aplicadoFacturas,
-      "Sin conciliar USD": r2(r.montoUsd - (r.aplicadoFacturas || 0)),
+      "Conciliado USD": r2(conciliadoVisible(r)),
+      "Sin conciliar USD": r2(sinConciliarVisible(r)),
       "Revisar": r.revisar ? "Sí" : "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
