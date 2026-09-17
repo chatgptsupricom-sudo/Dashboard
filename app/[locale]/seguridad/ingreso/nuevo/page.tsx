@@ -589,9 +589,8 @@ export default function NuevoIngresoPage() {
               onChange={(v) => update("recibido_rma_nombre", v)}
               opciones={personalRma}
               placeholder={tf("recibido_placeholder")}
-              vacio={tf("recibido_sin_catalogo")}
-              gestionarHref={`/${locale}/seguridad/config/personal`}
-              gestionarLabel={tf("recibido_gestionar")}
+              // Al personal de RMA lo registra RMA, no Seguridad: sin enlace.
+              vacio={tf("recibido_sin_catalogo_rma")}
             />
           </section>
 
@@ -645,8 +644,8 @@ function PersonaSelect({
   opciones: Persona[];
   placeholder: string;
   vacio: string;
-  gestionarHref: string;
-  gestionarLabel: string;
+  gestionarHref?: string;
+  gestionarLabel?: string;
 }) {
   // Si el catálogo está vacío no hay nada que elegir: se manda a la pantalla
   // de administración en vez de dejar un select muerto.
@@ -663,12 +662,14 @@ function PersonaSelect({
       {sinOpciones ? (
         <p className="text-sm text-slate-500">
           {vacio}{" "}
-          <Link
-            href={gestionarHref}
-            className="font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
-          >
-            {gestionarLabel}
-          </Link>
+          {gestionarHref && (
+            <Link
+              href={gestionarHref}
+              className="font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+            >
+              {gestionarLabel}
+            </Link>
+          )}
         </p>
       ) : (
         <>
@@ -686,12 +687,14 @@ function PersonaSelect({
               </option>
             ))}
           </select>
-          <Link
-            href={gestionarHref}
-            className="inline-block mt-1 text-[11px] font-semibold text-slate-400 hover:text-[color:var(--portal-primary,#741DFE)]"
-          >
-            {gestionarLabel}
-          </Link>
+          {gestionarHref && (
+            <Link
+              href={gestionarHref}
+              className="inline-block mt-1 text-[11px] font-semibold text-slate-400 hover:text-[color:var(--portal-primary,#741DFE)]"
+            >
+              {gestionarLabel}
+            </Link>
+          )}
         </>
       )}
     </div>

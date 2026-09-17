@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import {
+  requireAlmacen,
+  requireAlmacenOSeguridad,
+  resolverCidsSesion,
+} from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +41,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAlmacenOSeguridad(request);
+    // Alta: solo Almacen registra a su personal. Seguridad solo lo lee (GET).
+    const auth = await requireAlmacen(request);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
