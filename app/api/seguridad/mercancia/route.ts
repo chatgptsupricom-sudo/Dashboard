@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -230,6 +231,18 @@ export async function POST(request: NextRequest) {
         (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada)
        VALUES ${marcadores}`,
       valores,
+    );
+
+    // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
+    // preparar sin recargar la pantalla del porton.
+    emitirMercancia(
+      {
+        accion: "creado",
+        id,
+        tipo: tipo as "ingreso" | "egreso",
+        documento: truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
+      },
+      cids,
     );
 
     return NextResponse.json({ success: true, id }, { status: 201 });

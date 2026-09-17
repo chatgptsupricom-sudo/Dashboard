@@ -2505,6 +2505,16 @@
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this order"
       },
+      "aviso": {
+        "nuevo_egreso": "A new outbound just came in",
+        "nuevo_ingreso": "A new inbound just came in",
+        "un_egreso": "The outbound",
+        "un_ingreso": "The inbound",
+        "verificado_conforme": "{tipo} was verified: all matches",
+        "verificado_descuadre": "{tipo} was verified: mismatch",
+        "ver": "Open",
+        "cerrar": "Dismiss"
+      },
       "personal_almacen": {
         "titulo": "Warehouse staff",
         "subtitulo": "Warehouse workers and drivers. Only Warehouse registers them; Security picks them in the form."
