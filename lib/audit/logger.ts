@@ -145,11 +145,49 @@ function extraerTabla(sql: string, accion: Accion): string | null {
   return m?.[1] ?? null;
 }
 
-// Solo matchea un WHERE de una sola igualdad al final de la sentencia — ver
-// el comentario de arriba sobre por qué no se intenta nada más ambicioso.
+// Matchea un WHERE de una sola igualdad al final de la sentencia — ver el
+// comentario de arriba sobre por qué no se intenta nada más ambicioso.
 function extraerWhereSimple(sql: string): { columna: string } | null {
   const m = sql.trim().match(/WHERE\s+`?(\w+)`?\s*=\s*\?\s*;?\s*$/i);
   return m ? { columna: m[1] } : null;
+}
+
+/**
+ * `WHERE <col> IN (?, ?, …)` al final de la sentencia: es el patrón del
+ * borrado en bloque (p.ej. el botón Eliminar del catálogo de diseños, que
+ * manda `DELETE FROM designer_designs WHERE id IN (?,?,?)`). Sin esto esos
+ * borrados quedaban registrados sin `record_id` y, peor, sin `before_data`:
+ * se sabía que alguien borró en esa tabla, pero no qué filas ni qué contenían,
+ * que es justo lo que hace falta para reconstruirlas.
+ *
+ * `n` es la cantidad de placeholders, para tomar los últimos n parámetros.
+ */
+function extraerWhereIn(sql: string): { columna: string; n: number } | null {
+  const m = sql.trim().match(/WHERE\s+`?(\w+)`?\s+IN\s*\(\s*\?(?:\s*,\s*\?)*\s*\)\s*;?\s*$/i);
+  if (!m) return null;
+  const n = (m[0].match(/\?/g) || []).length;
+  return { columna: m[1], n };
+}
+
+async function leerFilasPorColumnaIn(
+  db: Pool,
+  tabla: string,
+  columna: string,
+  valores: any[],
+): Promise<Record<string, unknown>[] | null> {
+  if (valores.length === 0) return null;
+  try {
+    const marcadores = valores.map(() => "?").join(",");
+    const [rows] = await db.execute(
+      `SELECT * FROM \`${tabla}\` WHERE \`${columna}\` IN (${marcadores})`,
+      valores,
+    );
+    const lista = Array.isArray(rows) ? (rows as any[]) : [];
+    const out = lista.map((r) => sanitizarFila(r)).filter(Boolean) as Record<string, unknown>[];
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 async function leerFilaPorColumna(
@@ -188,10 +226,21 @@ export async function capturarAntes(
   if (accion !== "UPDATE" && accion !== "DELETE") return null;
 
   const tabla = extraerTabla(sql, accion);
-  const where = extraerWhereSimple(sql);
-  if (!tabla || !where) return null;
+  if (!tabla) return null;
 
   const p = params ?? [];
+
+  const whereIn = extraerWhereIn(sql);
+  if (whereIn) {
+    const valores = p.slice(p.length - whereIn.n);
+    const filas = await leerFilasPorColumnaIn(db, tabla, whereIn.columna, valores);
+    // Varias filas: se guardan como lista, con la misma forma sanitizada.
+    return filas ? ({ filas } as Record<string, unknown>) : null;
+  }
+
+  const where = extraerWhereSimple(sql);
+  if (!where) return null;
+
   const valor = p[p.length - 1];
   if (valor === undefined) return null;
 
@@ -226,6 +275,15 @@ export async function registrarMutacion(
       if (insertId && tabla) {
         recordId = String(insertId);
         despues = await leerFilaPorColumna(db, tabla, "id", insertId);
+      }
+    } else if (extraerWhereIn(sql) && tabla) {
+      // Borrado/actualización en bloque: el record_id es la lista de ids.
+      const whereIn = extraerWhereIn(sql)!;
+      const valores = p.slice(p.length - whereIn.n);
+      recordId = valores.map((v) => String(v)).join(",").slice(0, 100);
+      if (accion === "UPDATE") {
+        const filas = await leerFilasPorColumnaIn(db, tabla, whereIn.columna, valores);
+        despues = filas ? ({ filas } as Record<string, unknown>) : null;
       }
     } else {
       const where = extraerWhereSimple(sql);
