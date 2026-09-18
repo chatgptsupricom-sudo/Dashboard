@@ -36,6 +36,8 @@ type Movimiento = {
   transaccion: string;
   documento: string;
   fecha: string | null;
+  divisa: number;
+  moneda: string;
   cargo: number;
   abono: number;
   saldo: number;
@@ -257,6 +259,7 @@ export default function EstadoCuentaCxCPage() {
                       <th className="text-left px-4 py-2.5 font-medium">Transacción</th>
                       <th className="text-left px-4 py-2.5 font-medium">Documento</th>
                       <th className="text-left px-4 py-2.5 font-medium">Fecha</th>
+                      <th className="text-right px-4 py-2.5 font-medium">Divisa</th>
                       <th className="text-right px-4 py-2.5 font-medium">Cargo</th>
                       <th className="text-right px-4 py-2.5 font-medium">Abono</th>
                       <th className="text-right px-4 py-2.5 font-medium">Saldo</th>
@@ -283,6 +286,14 @@ export default function EstadoCuentaCxCPage() {
                         <td className="px-4 py-2 text-slate-700">{m.documento}</td>
                         <td className="px-4 py-2 text-slate-500">
                           {fechaCorta(m.fecha)}
+                        </td>
+                        <td className="px-4 py-2 text-right text-slate-600 whitespace-nowrap">
+                          {monto(m.divisa)}
+                          {m.moneda ? (
+                            <span className="ml-1 text-[11px] text-slate-400">
+                              {m.moneda}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-4 py-2 text-right text-slate-700">
                           {monto(m.cargo)}
@@ -316,7 +327,7 @@ export default function EstadoCuentaCxCPage() {
                     {estado.movimientos.length === 0 && (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={9}
                           className="px-4 py-10 text-center text-slate-400"
                         >
                           Este cliente no tiene movimientos de cuentas por cobrar.
@@ -327,7 +338,7 @@ export default function EstadoCuentaCxCPage() {
                   {estado.movimientos.length > 0 && (
                     <tfoot>
                       <tr className="bg-slate-50 font-bold text-slate-800">
-                        <td className="px-4 py-2.5" colSpan={3}>
+                        <td className="px-4 py-2.5" colSpan={4}>
                           Totales
                         </td>
                         <td className="px-4 py-2.5 text-right">

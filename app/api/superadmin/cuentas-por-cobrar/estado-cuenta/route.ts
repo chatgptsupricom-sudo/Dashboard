@@ -63,6 +63,29 @@ function diasEntre(desde: string, hasta: string): number {
 const redondear = (n: number) => Math.round((n || 0) * 100) / 100;
 
 /**
+ * `blocked` es el "Excluir seguimiento" del reporte de seguimiento de Odoo:
+ * la factura sigue viva contablemente pero cobranza la saco de la gestion
+ * (acuerdo, reclamo, litigio). No tiene que aparecer ni en el saldo del
+ * listado ni en el movimiento, o se vuelve a cobrar lo que alguien decidio
+ * dejar en pausa.
+ *
+ * Solo se excluye lo que sigue ABIERTO. La marca tambien esta puesta sobre
+ * lineas de cobro ya conciliadas, y sacar una de esas rompe su par: el pago
+ * desaparece del mayor pero la factura que pago se queda con el residual ya
+ * rebajado, y el saldo corrido sube por esa diferencia. Una linea saldada
+ * ademas no tiene seguimiento que excluir. Caso real que lo destapo
+ * (DISTRIBUIDORA GEEK OR): el cobro PBANES/2026/00732 esta marcado y pago
+ * una factura que no lo esta — corria 141,75 el saldo.
+ */
+const dominioBloqueadas = (companyIds: number[]) => [
+  ["blocked", "=", true],
+  ["amount_residual", "!=", 0],
+  ["account_id.account_type", "=", "asset_receivable"],
+  ["parent_state", "=", "posted"],
+  ["company_id", "in", companyIds],
+];
+
+/**
  * Estado de cuenta por cliente para el rol Cuentas por Cobrar.
  *
  * Sin `partner_id` devuelve la lista de clientes con saldo abierto; con
@@ -113,10 +136,19 @@ export async function GET(request: NextRequest) {
         ],
       );
 
+      // `digiflex.cxc.report` no expone `blocked`, asi que las excluidas del
+      // seguimiento se piden aparte y se descuentan aqui. El id de la vista
+      // es el de la linea contable, por eso se cruzan directo.
+      const bloqueadas = new Set(
+        (await fetchPaginated("account.move.line", dominioBloqueadas(companyIds), ["id"]))
+          .map((l: any) => l.id),
+      );
+
       const porCliente: Record<number, any> = {};
       registros.forEach((r: any) => {
         const pid = r.partner_id?.[0];
         if (!pid) return;
+        if (bloqueadas.has(r.id)) return;
         if (!porCliente[pid]) {
           porCliente[pid] = {
             partnerId: pid,
@@ -174,10 +206,14 @@ export async function GET(request: NextRequest) {
         ["account_id.account_type", "=", "asset_receivable"],
         ["parent_state", "=", "posted"],
         ["company_id", "in", companyIds],
+        // Misma regla que `dominioBloqueadas`: pasa si no esta marcada, o si
+        // esta marcada pero ya saldada.
+        "|", ["blocked", "=", false], ["amount_residual", "=", 0],
       ],
       [
         "move_id", "move_name", "move_type", "journal_id",
         "date", "date_maturity", "debit", "credit", "amount_residual",
+        "amount_currency", "currency_id",
       ],
     );
 
@@ -240,6 +276,13 @@ export async function GET(request: NextRequest) {
         transaccion: tipoTransaccion(l.move_type, diario.type, diario.name),
         documento: asiento.nro_ctrl || l.move_name || "",
         fecha: l.date || null,
+        // El importe tal como se registro en la moneda del documento: en un
+        // cobro en bolivares `abono` trae los dolares y esto los Bs.F que el
+        // cliente transfirio, que es el numero con el que el reclama. Va en
+        // absoluto porque Odoo guarda los creditos en negativo y en el
+        // estado de cuenta el signo ya lo da la columna (cargo o abono).
+        divisa: redondear(Math.abs(l.amount_currency || 0)),
+        moneda: l.currency_id?.[1] || "",
         cargo,
         abono,
         saldo,
@@ -278,6 +321,8 @@ const COLUMNAS = [
   { header: "Transaccion", key: "transaccion", width: 18 },
   { header: "Documento", key: "documento", width: 20 },
   { header: "Fecha", key: "fecha", width: 12 },
+  { header: "Importe en Divisa", key: "divisa", width: 18 },
+  { header: "Moneda", key: "moneda", width: 10 },
   { header: "Cargo", key: "cargo", width: 14 },
   { header: "Abono", key: "abono", width: 14 },
   { header: "Saldo", key: "saldo", width: 14 },
@@ -328,7 +373,9 @@ async function excel(
   };
   cabecera.height = 22;
   ws.views = [{ state: "frozen", ySplit: 1 }];
-  ["D", "E", "F"].forEach((col) => {
+  // Importe en divisa, cargo, abono y saldo. Van por letra, asi que si se
+  // mueve una columna en COLUMNAS hay que mover esto con ella.
+  ["D", "F", "G", "H"].forEach((col) => {
     ws.getColumn(col).numFmt = "#,##0.00";
   });
 
