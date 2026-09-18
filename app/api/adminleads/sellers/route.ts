@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { mismaOperacion } from "@/lib/adminleads/sucursal";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["adminleads"]);
@@ -33,12 +34,14 @@ export async function PATCH(request: NextRequest) {
     if (id === undefined || activo === undefined)
       return NextResponse.json({ error: "Faltan parámetros" }, { status: 400 });
 
-    // Simetrico para las 3 sucursales (antes solo Panama estaba protegida;
-    // superadmin sigue sin restriccion de sucursal).
+    // Mismo alcance que la reasignacion: Panama aparte, Valencia y Caracas
+    // como una sola operacion. El listado de arriba ya devuelve las dos
+    // sedes juntas, asi que pedir igualdad exacta de cids dejaba a Caracas
+    // sin poder activar a los vendedores que su propia pantalla le muestra.
     if (userRole !== "superadmin" && userCids) {
       const check: any = await query(`SELECT cids FROM sellers WHERE id = ?`, [id]);
       const seller = (check.rows || check)?.[0];
-      if (!seller || seller.cids !== userCids)
+      if (!seller || !mismaOperacion(userCids, seller.cids))
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
