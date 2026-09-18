@@ -290,6 +290,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard",
       "cuentas_por_cobrar",
+      "estado_cuenta", // Estado de cuenta por cliente, con descarga a Excel
       "stoplight_reports",
       "referencia_comercial",
       "integraciondepago",
