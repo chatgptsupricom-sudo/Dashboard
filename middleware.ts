@@ -128,6 +128,7 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/disenador") ||
     pathname.includes("/administracion") ||
     pathname.includes("/seguridad") ||
+    pathname.includes("/gestion") ||
     pathname.includes("/reportes-comerciales");
 
   if (isProtectedPath) {
