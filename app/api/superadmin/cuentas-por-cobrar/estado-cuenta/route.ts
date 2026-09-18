@@ -321,10 +321,10 @@ const COLUMNAS = [
   { header: "Transaccion", key: "transaccion", width: 18 },
   { header: "Documento", key: "documento", width: 20 },
   { header: "Fecha", key: "fecha", width: 12 },
-  { header: "Importe en Divisa", key: "divisa", width: 18 },
-  { header: "Moneda", key: "moneda", width: 10 },
   { header: "Cargo", key: "cargo", width: 14 },
   { header: "Abono", key: "abono", width: 14 },
+  { header: "Importe en Divisa", key: "divisa", width: 18 },
+  { header: "Moneda", key: "moneda", width: 10 },
   { header: "Saldo", key: "saldo", width: 14 },
   { header: "Dias Atraso", key: "diasAtraso", width: 12 },
   { header: "Vendedor", key: "vendedor", width: 28 },
@@ -373,9 +373,9 @@ async function excel(
   };
   cabecera.height = 22;
   ws.views = [{ state: "frozen", ySplit: 1 }];
-  // Importe en divisa, cargo, abono y saldo. Van por letra, asi que si se
+  // Cargo, abono, importe en divisa y saldo. Van por letra, asi que si se
   // mueve una columna en COLUMNAS hay que mover esto con ella.
-  ["D", "F", "G", "H"].forEach((col) => {
+  ["D", "E", "F", "H"].forEach((col) => {
     ws.getColumn(col).numFmt = "#,##0.00";
   });
 

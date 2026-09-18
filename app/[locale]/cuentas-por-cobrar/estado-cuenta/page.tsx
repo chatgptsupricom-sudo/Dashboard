@@ -259,9 +259,9 @@ export default function EstadoCuentaCxCPage() {
                       <th className="text-left px-4 py-2.5 font-medium">Transacción</th>
                       <th className="text-left px-4 py-2.5 font-medium">Documento</th>
                       <th className="text-left px-4 py-2.5 font-medium">Fecha</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Divisa</th>
                       <th className="text-right px-4 py-2.5 font-medium">Cargo</th>
                       <th className="text-right px-4 py-2.5 font-medium">Abono</th>
+                      <th className="text-right px-4 py-2.5 font-medium">Divisa</th>
                       <th className="text-right px-4 py-2.5 font-medium">Saldo</th>
                       <th className="text-right px-4 py-2.5 font-medium">Días Atraso</th>
                       <th className="text-left px-4 py-2.5 font-medium">Vendedor</th>
@@ -287,6 +287,12 @@ export default function EstadoCuentaCxCPage() {
                         <td className="px-4 py-2 text-slate-500">
                           {fechaCorta(m.fecha)}
                         </td>
+                        <td className="px-4 py-2 text-right text-slate-700">
+                          {monto(m.cargo)}
+                        </td>
+                        <td className="px-4 py-2 text-right text-emerald-600">
+                          {monto(m.abono)}
+                        </td>
                         <td className="px-4 py-2 text-right text-slate-600 whitespace-nowrap">
                           {monto(m.divisa)}
                           {m.moneda ? (
@@ -294,12 +300,6 @@ export default function EstadoCuentaCxCPage() {
                               {m.moneda}
                             </span>
                           ) : null}
-                        </td>
-                        <td className="px-4 py-2 text-right text-slate-700">
-                          {monto(m.cargo)}
-                        </td>
-                        <td className="px-4 py-2 text-right text-emerald-600">
-                          {monto(m.abono)}
                         </td>
                         <td className="px-4 py-2 text-right font-medium text-slate-800">
                           {monto(m.saldo)}
@@ -338,7 +338,7 @@ export default function EstadoCuentaCxCPage() {
                   {estado.movimientos.length > 0 && (
                     <tfoot>
                       <tr className="bg-slate-50 font-bold text-slate-800">
-                        <td className="px-4 py-2.5" colSpan={4}>
+                        <td className="px-4 py-2.5" colSpan={3}>
                           Totales
                         </td>
                         <td className="px-4 py-2.5 text-right">
@@ -347,6 +347,8 @@ export default function EstadoCuentaCxCPage() {
                         <td className="px-4 py-2.5 text-right">
                           {monto(estado.totales.abono)}
                         </td>
+                        {/* Divisa no se totaliza: son monedas distintas por fila. */}
+                        <td />
                         <td className="px-4 py-2.5 text-right">
                           {monto(estado.totales.saldo)}
                         </td>
