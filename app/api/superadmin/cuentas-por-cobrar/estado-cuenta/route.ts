@@ -217,11 +217,9 @@ export async function GET(request: NextRequest) {
       ],
     );
 
-    // El vendedor y el numero de control fiscal viven en `account.move`, no
-    // en la linea: se leen en un solo lote por ids, no una llamada por fila.
-    // El numero de control es el que el cliente tiene impreso en su factura
-    // — en las facturas migradas `name` es el correlativo interno
-    // (FCLIE/2026/00070) y con ese numero nadie puede reclamar un cobro.
+    // El vendedor vive en `account.move`, no en la linea: se lee en un solo
+    // lote por ids, no una llamada por fila. `nro_ctrl` viaja con el solo
+    // como respaldo del numero de documento (ver mas abajo).
     const moveIds = [...new Set(lineas.map((l: any) => l.move_id?.[0]).filter(Boolean))];
     const asientos = moveIds.length
       ? (await callOdooRPC<any[]>(
@@ -274,7 +272,19 @@ export async function GET(request: NextRequest) {
 
       return {
         transaccion: tipoTransaccion(l.move_type, diario.type, diario.name),
-        documento: asiento.nro_ctrl || l.move_name || "",
+        // `move_name`, no `nro_ctrl`: son dos numeros distintos y el que
+        // identifica al documento es el primero — es el que Odoo muestra en
+        // grande arriba de la factura ("Factura de cliente 5037407"), el que
+        // va en el pedido y el que la gente dice por telefono. `nro_ctrl` es
+        // el numero de control fiscal, que es otro campo del mismo documento
+        // y casi nunca coincide (la 5037407 tiene control 5037524), asi que
+        // usarlo de primero hacia que ninguna fila del estado de cuenta se
+        // pudiera buscar en Odoo por su numero. `nro_ctrl` queda solo como
+        // respaldo para un asiento sin nombre; en las facturas migradas
+        // `move_name` es el correlativo interno (FCLIE/2026/00070) y eso es
+        // lo que se muestra, porque es tambien lo que Odoo muestra arriba en
+        // grande para ellas.
+        documento: l.move_name || asiento.nro_ctrl || "",
         fecha: l.date || null,
         // El importe tal como se registro en la moneda del documento: en un
         // cobro en bolivares `abono` trae los dolares y esto los Bs.F que el
