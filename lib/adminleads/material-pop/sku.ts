@@ -48,11 +48,18 @@ export function generateAbbreviation(name: string): string {
 /**
  * Genera un SKU único con prefijo POP-.
  * Si ya existe, agrega un número incremental.
+ *
+ * `conn` es la conexión de una transacción en curso, si la hay. Sin ella la
+ * búsqueda sale por otra conexión del pool, que no ve los productos insertados
+ * por esa transacción todavía sin commit: al importar varias filas cuyo nombre
+ * da la misma abreviación, todas recibirían el mismo SKU y chocarían contra
+ * uk_code_cids.
  */
 export async function generateSku(
   name: string,
   cids: number,
   requestedAbbreviation?: string,
+  conn?: any,
 ): Promise<string> {
   const requested = requestedAbbreviation
     ?.normalize("NFD")
@@ -64,10 +71,12 @@ export async function generateSku(
   let sku = `POP-${base}`;
 
   const exists = async (code: string): Promise<boolean> => {
-    const res = await query(
-      "SELECT id FROM pop_products WHERE code = ? AND cids = ? LIMIT 1",
-      [code, cids],
-    );
+    const sql = "SELECT id FROM pop_products WHERE code = ? AND cids = ? LIMIT 1";
+    if (conn) {
+      const res = await conn.execute(sql, [code, cids]);
+      return res[0].length > 0;
+    }
+    const res = await query(sql, [code, cids]);
     return res.rows.length > 0;
   };
 

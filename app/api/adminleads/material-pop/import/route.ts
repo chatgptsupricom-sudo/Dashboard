@@ -1,4 +1,4 @@
-import { query, getConnection } from "@/lib/db";
+import { getConnection } from "@/lib/db";
 import {
   requireAdminLeadsValencia,
   resolveMaterialPopCids,
@@ -31,49 +31,57 @@ function truncar(v: any, max: number): string | null {
   return s ? s.slice(0, max) : null;
 }
 
-/** Busca o crea una categoría y devuelve su id. */
-async function resolverCategoria(
+/**
+ * Busca o crea una fila de catalogo (categoria o unidad) y devuelve su id.
+ *
+ * OJO: recibe la conexion de la transaccion y NO usa query(). Con query() esto
+ * salia por otra conexion del pool, y como pop_products tiene FK a estas dos
+ * tablas, el INSERT del producto deja un lock compartido sobre la fila padre
+ * hasta el commit. La siguiente fila del archivo que repitiera esa categoria
+ * pedia un lock exclusivo sobre la misma fila y se quedaba esperando a la
+ * transaccion que la estaba llamando: el import se bloqueaba contra si mismo
+ * hasta el lock wait timeout. Se busca primero con SELECT para no pedir el
+ * lock exclusivo cuando la fila ya existe, que es el caso habitual.
+ */
+async function resolverCatalogo(
+  conn: any,
+  table: "pop_categories" | "pop_uoms",
   name: string,
+  maxLen: number,
   cids: number,
   userId: any,
+  allowsDecimal: boolean | null,
 ): Promise<number | null> {
-  const limpio = name.slice(0, 100);
-  const res = await query(
-    `INSERT INTO pop_categories (name, cids, created_by_user_id)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE name = name`,
-    [limpio, cids, userId],
-  );
-  const id = (res.rows as any)?.insertId;
-  if (id) return id;
-  const found = await query(
-    "SELECT id FROM pop_categories WHERE name = ? AND cids = ? LIMIT 1",
-    [limpio, cids],
-  );
-  return found.rows[0]?.id || null;
-}
+  const limpio = name.slice(0, maxLen);
 
-/** Busca o crea una unidad de medida y devuelve su id. */
-async function resolverUom(
-  name: string,
-  cids: number,
-  userId: any,
-  allowsDecimal = false,
-): Promise<number | null> {
-  const limpio = name.slice(0, 50);
-  const res = await query(
-    `INSERT INTO pop_uoms (name, allows_decimal, cids, created_by_user_id)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE name = name`,
-    [limpio, allowsDecimal ? 1 : 0, cids, userId],
-  );
-  const id = (res.rows as any)?.insertId;
-  if (id) return id;
-  const found = await query(
-    "SELECT id FROM pop_uoms WHERE name = ? AND cids = ? LIMIT 1",
+  const found = await conn.execute(
+    `SELECT id FROM ${table} WHERE name = ? AND cids = ? LIMIT 1`,
     [limpio, cids],
   );
-  return found.rows[0]?.id || null;
+  if (found[0].length > 0) return found[0][0].id;
+
+  const columns =
+    allowsDecimal === null
+      ? "(name, cids, created_by_user_id) VALUES (?, ?, ?)"
+      : "(name, allows_decimal, cids, created_by_user_id) VALUES (?, ?, ?, ?)";
+  const params =
+    allowsDecimal === null
+      ? [limpio, cids, userId]
+      : [limpio, allowsDecimal ? 1 : 0, cids, userId];
+
+  // ON DUPLICATE KEY cubre la carrera con otra importacion simultanea.
+  const res = await conn.execute(
+    `INSERT INTO ${table} ${columns} ON DUPLICATE KEY UPDATE name = name`,
+    params,
+  );
+  const id = res[0]?.insertId;
+  if (id) return id;
+
+  const retry = await conn.execute(
+    `SELECT id FROM ${table} WHERE name = ? AND cids = ? LIMIT 1`,
+    [limpio, cids],
+  );
+  return retry[0][0]?.id || null;
 }
 
 export async function POST(request: NextRequest) {
@@ -122,10 +130,10 @@ export async function POST(request: NextRequest) {
         }
 
         const categoryId = row?.category
-          ? await resolverCategoria(String(row.category), cids, userId)
+          ? await resolverCatalogo(conn, "pop_categories", String(row.category), 100, cids, userId, null)
           : null;
         const uomId = row?.uom
-          ? await resolverUom(String(row.uom), cids, userId, row.allowsDecimal === true)
+          ? await resolverCatalogo(conn, "pop_uoms", String(row.uom), 50, cids, userId, row.allowsDecimal === true)
           : null;
 
         let sku = truncar(row?.sku, 50);
@@ -190,7 +198,7 @@ export async function POST(request: NextRequest) {
           actualizados.push(sku || name);
         } else {
           // Crear producto nuevo
-          sku = sku || (await generateSku(name, cids));
+          sku = sku || (await generateSku(name, cids, undefined, conn));
           const insert = await conn.execute(
             `INSERT INTO pop_products
               (code, name, category_id, uom_id, brand, description, is_active, cids, created_by_user_id)
