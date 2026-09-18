@@ -106,7 +106,13 @@ async function fetchSystemLogs(f: ReturnType<typeof parseFilters>, fetchLimit: n
       rows: rowsResult.rows.map((r: any) => ({ ...r, source: "system" as const })),
     };
   } catch (error: any) {
-    if (error?.code === "ER_NO_SUCH_TABLE") return { total: 0, rows: [] };
+    // La tabla se crea sola en la primera mutación (lib/db.ts). Si todavía no
+    // existe, se devuelve vacío pero MARCADO: antes se veía igual que "no hay
+    // registros", y por eso no se notó que en producción la auditoría
+    // automática no estaba guardando nada.
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return { total: 0, rows: [], sinTabla: true as const };
+    }
     throw error;
   }
 }
@@ -245,6 +251,13 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(total / f.limit),
       tables: Array.from(tables).sort(),
       methods: Array.from(methods).sort(),
+      // Diagnóstico de la auditoría automática: si la tabla no existe, o
+      // existe pero nunca se escribió nada, el panel lo dice en vez de
+      // mostrar solo los registros viejos como si todo estuviera bien.
+      auditoriaAutomatica: {
+        disponible: !("sinTabla" in system && system.sinTabla),
+        registros: system.total,
+      },
     });
   } catch (error: any) {
     console.error("Error GET auditoria_panel:", error.message);

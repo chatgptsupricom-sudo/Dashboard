@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { TIPOS_ENTREGA, type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
@@ -36,6 +37,7 @@ export default function MercanciaNueva({
   tipo: "ingreso" | "egreso";
 }) {
   const tm = useTranslations("seguridad.mercancia");
+  const tf = useTranslations("seguridad.mercancia.flujo");
   const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
   const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
   const tUni = useTranslations("seguridad.mercancia.unidades");
@@ -60,6 +62,11 @@ export default function MercanciaNueva({
   // Varios almacenistas pueden cargar el mismo camion (issue #43): se agregan
   // uno por uno a una lista, en vez de un solo campo de texto.
   const [almacenistas, setAlmacenistas] = useState<string[]>([]);
+  // Egreso por etapas: arranca con quien arma y como se entrega. El
+  // almacenista de despacho, el chofer y la placa se asignan mas adelante,
+  // cuando el armado ya esta verificado (ver EgresoFlujo).
+  const [almacenistaArmado, setAlmacenistaArmado] = useState("");
+  const [tipoEntrega, setTipoEntrega] = useState<TipoEntrega | "">("");
   const [chofer, setChofer] = useState("");
   const [placa, setPlaca] = useState("");
   const [observaciones, setObservaciones] = useState("");
@@ -106,7 +113,14 @@ export default function MercanciaNueva({
   // compra) sigue siendo tarea de Seguridad. El backend ya lo rechaza con
   // 403; aqui se bloquea antes para no dejar llenar un formulario que
   // despues no se puede guardar.
-  const bloqueadoPorRol = tipo === "ingreso" && rol === "almacen";
+  // Y al reves con el egreso: lo inicia Almacen (llega la orden, asigna quien
+  // arma); Seguridad entra al final, en el porton.
+  const bloqueadoPorRol =
+    (tipo === "ingreso" && rol === "almacen") || (tipo === "egreso" && rol === "seguridad");
+  const esEgreso = tipo === "egreso";
+  const listo = esEgreso
+    ? lineas.length > 0 && !!almacenistaArmado && !!tipoEntrega
+    : lineas.length > 0 && almacenistas.length > 0;
   // Almacenistas y choferes son personal de Almacen: solo Almacen los
   // registra. Seguridad los elige de la lista pero no ve "Gestionar".
   const gestionaPersonal = rol === "almacen" || rol === "superadmin";
@@ -181,7 +195,7 @@ export default function MercanciaNueva({
 
   const guardar = async () => {
     setError(null);
-    if (almacenistas.length === 0 || lineas.length === 0) {
+    if (!listo) {
       setError(tm("error"));
       return;
     }
@@ -198,9 +212,13 @@ export default function MercanciaNueva({
           facturas:
             tipo === "egreso" ? facturas : [picking?.odoo_picking_name].filter(Boolean),
           contraparte: picking?.contraparte,
-          almacenistas,
-          chofer_nombre: chofer.trim() || undefined,
-          placa_vehiculo: placa.trim() || undefined,
+          ...(esEgreso
+            ? { almacenista_armado: almacenistaArmado, tipo_entrega: tipoEntrega }
+            : {
+                almacenistas,
+                chofer_nombre: chofer.trim() || undefined,
+                placa_vehiculo: placa.trim() || undefined,
+              }),
           observaciones: observaciones.trim() || undefined,
           items: lineas,
         }),
@@ -222,7 +240,7 @@ export default function MercanciaNueva({
             <XCircle className="w-6 h-6" />
           </span>
           <p className="text-sm font-medium text-slate-700">
-            {tm("solo_seguridad_ingreso")}
+            {esEgreso ? tf("solo_almacen_egreso") : tm("solo_seguridad_ingreso")}
           </p>
           <Link
             href={`/${locale}/seguridad/mercancia/egreso`}
@@ -347,6 +365,57 @@ export default function MercanciaNueva({
               />
             </div>
           )}
+          {esEgreso ? (
+            <>
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className={`${labelClases} mb-0`}>{tf("almacenista_armado")} *</label>
+                  {gestionaPersonal && (
+                    <Link
+                      href={`/${locale}/seguridad/mercancia/personal`}
+                      className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75 shrink-0"
+                    >
+                      {tAlm("gestionar")}
+                    </Link>
+                  )}
+                </div>
+                <select
+                  value={almacenistaArmado}
+                  onChange={(e) => setAlmacenistaArmado(e.target.value)}
+                  className={inputClases}
+                >
+                  <option value="">{tAlm("select_placeholder")}</option>
+                  {almacenistasCat.map((a) => (
+                    <option key={a.id} value={a.nombre}>
+                      {a.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClases}>{tf("tipo_entrega")} *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {TIPOS_ENTREGA.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTipoEntrega(t)}
+                      aria-pressed={tipoEntrega === t}
+                      className={`h-11 px-2 rounded-xl border text-[13px] font-semibold transition-colors ${
+                        tipoEntrega === t
+                          ? "border-[color:var(--portal-primary,#741DFE)] bg-violet-50 text-[color:var(--portal-primary,#741DFE)]"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {tf(`entrega.${t}`)}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400">{tf("entrega_ayuda")}</p>
+              </div>
+            </>
+          ) : (
+          <>
           <div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <label className={`${labelClases} mb-0`}>{tm(tipo === "ingreso" ? "almacenista_ingreso" : "almacenista")} *</label>
@@ -418,6 +487,8 @@ export default function MercanciaNueva({
               </select>
             </div>
           </div>
+          </>
+          )}
           <div>
             <label className={labelClases}>{tm("observaciones")}</label>
             <textarea
@@ -439,7 +510,7 @@ export default function MercanciaNueva({
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
           <BotonPrimario
             onClick={guardar}
-            disabled={guardando || lineas.length === 0 || almacenistas.length === 0}
+            disabled={guardando || !listo}
             className="w-full h-12"
           >
             {guardando && <Loader2 className="w-4 h-4 animate-spin" />}

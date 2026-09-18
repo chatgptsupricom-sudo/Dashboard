@@ -44,9 +44,12 @@ async function crearOMigrar(): Promise<void> {
       image_mime VARCHAR(100) NULL,
       created_by VARCHAR(255) NOT NULL DEFAULT '',
       category VARCHAR(80) NULL,
+      deleted_at TIMESTAMP NULL DEFAULT NULL,
+      deleted_by VARCHAR(255) NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_folder (folder),
       INDEX idx_category (category),
+      INDEX idx_deleted_at (deleted_at),
       INDEX idx_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
@@ -55,12 +58,23 @@ async function crearOMigrar(): Promise<void> {
   // lib/disenos/categorias.ts). En instalaciones viejas la tabla ya existe, así
   // que el CREATE de arriba no la crea: se agrega acá, solo si falta, y se
   // ignora el error de duplicado por si otro proceso la agregó en el medio.
-  const col = await query(
-    `SELECT COUNT(*) AS n FROM information_schema.columns
-     WHERE table_schema = DATABASE() AND table_name = 'designer_designs' AND column_name = 'category'`
+  const columnas = await query(
+    `SELECT column_name AS c FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = 'designer_designs'`
   );
-  if (!Number(col.rows?.[0]?.n)) {
+  const tiene = new Set((columnas.rows || []).map((r: any) => String(r.c || r.COLUMN_NAME)));
+
+  if (!tiene.has("category")) {
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN category VARCHAR(80) NULL`);
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_category (category)`);
+  }
+
+  // Papelera: borrar un diseño lo marca en vez de eliminar la fila, así se
+  // puede restaurar. La eliminación definitiva sigue existiendo, pero es un
+  // paso aparte y explícito.
+  if (!tiene.has("deleted_at")) {
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL`);
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN deleted_by VARCHAR(255) NULL`);
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_deleted_at (deleted_at)`);
   }
 }

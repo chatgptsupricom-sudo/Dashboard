@@ -2502,7 +2502,11 @@
         "verificado_conforme": "{tipo} se verificó: conforme",
         "verificado_descuadre": "{tipo} se verificó: descuadre",
         "ver": "Ver",
-        "cerrar": "Cerrar aviso"
+        "cerrar": "Cerrar aviso",
+        "nuevo_por_armar": "Nuevo egreso por armar",
+        "listo_verificar": "Egreso listo para verificar en portón",
+        "aprobado": "Seguridad aprobó y despachó",
+        "no_aprobado": "Seguridad no aprobó el egreso"
       },
       "personal_almacen": {
         "titulo": "Personal de Almacén",
@@ -2545,6 +2549,83 @@
         "select_placeholder": "-- Seleccionar placa --",
         "gestionar": "Gestionar unidades",
         "contador": "{count, plural, =1 {# unidad} other {# unidades}}"
+      },
+      "flujo": {
+        "etapa": {
+          "por_armar": "Por armar",
+          "armando": "Armando",
+          "pre_despacho": "Pre-despacho",
+          "por_empaquetar": "Por empaquetar",
+          "por_asignar_despacho": "Por asignar despacho",
+          "por_verificar": "En portón",
+          "por_calificar": "Por calificar",
+          "cerrado": "Cerrado"
+        },
+        "paso": {
+          "por_armar": "Iniciar el armado",
+          "armando": "Terminar el armado",
+          "pre_despacho": "Verificar el armado",
+          "por_empaquetar": "Empaquetar",
+          "por_asignar_despacho": "Asignar almacenista de despacho",
+          "por_verificar": "Verificar en portón",
+          "por_calificar": "Calificar al almacenista de despacho",
+          "cerrado": "Proceso terminado"
+        },
+        "tipo_entrega": "Tipo de entrega",
+        "entrega": {
+          "encomienda": "Encomienda",
+          "puerta": "Entrega en puerta"
+        },
+        "entrega_ayuda": "La encomienda pasa por empaquetado; la entrega en puerta va directo a despacho.",
+        "almacenista_armado": "Almacenista del armado",
+        "almacenista_despacho": "Almacenista de despacho",
+        "recorrido": "Recorrido",
+        "le_toca": {
+          "almacen": "Le toca a Almacén",
+          "seguridad": "Le toca a Seguridad"
+        },
+        "esperando": "Esperando a {rol}: {paso}",
+        "rol": {
+          "almacen": "Almacén",
+          "seguridad": "Seguridad"
+        },
+        "col_orden": "Orden",
+        "col_armado": "Armado",
+        "col_porton": "Portón",
+        "iniciar_armado": "Iniciar armado",
+        "terminar_armado": "Terminar armado y pasar a pre-despacho",
+        "verificar_armado": "Verificar armado",
+        "armado_ayuda": "Cuenta cada producto armado. Solo pasa a despacho si todo coincide con la orden.",
+        "armado_diferencias": "No coincide con la orden: {dif} con diferencia y {sin} sin contar. Corrige y vuelve a verificar.",
+        "empaquetar": "Empaquetado listo",
+        "asignar_despacho": "Asignar y enviar a Seguridad",
+        "verificar_ayuda": "Cuenta lo que sale. Si todo cuadra, apruebas; si no, marca No aprobar y decide.",
+        "aprobar": "Aprobar y despachar",
+        "no_aprobar": "No aprobar",
+        "aprobar_requiere": "Para aprobar, todo tiene que estar contado y cuadrar.",
+        "decision": "¿Se despacha igual?",
+        "despachar_igual": "Sí, despachar igual",
+        "no_despachar": "No despachar",
+        "motivo_no_aprobado": "Motivo de no aprobar (obligatorio)",
+        "confirmar_no_aprobado": "Registrar decisión",
+        "calificar_cerrar": "Calificar y cerrar",
+        "resultado": {
+          "aprobado": "Aprobado y despachado",
+          "no_aprobado_despachado": "No aprobado — se despachó igual",
+          "no_despachado": "No aprobado — no se despachó"
+        },
+        "motivo": "Motivo",
+        "filtro": {
+          "para_mi": "Para mí",
+          "en_proceso": "En proceso",
+          "cerrados": "Cerrados",
+          "todos": "Todos"
+        },
+        "vacio_filtro": "Nada por aquí.",
+        "en_curso": "Egresos en curso",
+        "flujo_anterior": "Registro del flujo anterior",
+        "cancelar": "Volver",
+        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón."
       }
     }
   }

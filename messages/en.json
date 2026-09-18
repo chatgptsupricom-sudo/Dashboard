@@ -2513,7 +2513,11 @@
         "verificado_conforme": "{tipo} was verified: all matches",
         "verificado_descuadre": "{tipo} was verified: mismatch",
         "ver": "Open",
-        "cerrar": "Dismiss"
+        "cerrar": "Dismiss",
+        "nuevo_por_armar": "New outbound to assemble",
+        "listo_verificar": "Outbound ready to verify at the gate",
+        "aprobado": "Security approved and dispatched",
+        "no_aprobado": "Security did not approve the outbound"
       },
       "personal_almacen": {
         "titulo": "Warehouse staff",
@@ -2556,6 +2560,83 @@
         "select_placeholder": "-- Select plate --",
         "gestionar": "Manage vehicles",
         "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
+      },
+      "flujo": {
+        "etapa": {
+          "por_armar": "To assemble",
+          "armando": "Assembling",
+          "pre_despacho": "Pre-dispatch",
+          "por_empaquetar": "To pack",
+          "por_asignar_despacho": "Assign dispatcher",
+          "por_verificar": "At the gate",
+          "por_calificar": "To rate",
+          "cerrado": "Closed"
+        },
+        "paso": {
+          "por_armar": "Start assembly",
+          "armando": "Finish assembly",
+          "pre_despacho": "Verify assembly",
+          "por_empaquetar": "Pack",
+          "por_asignar_despacho": "Assign dispatch worker",
+          "por_verificar": "Verify at the gate",
+          "por_calificar": "Rate the dispatch worker",
+          "cerrado": "Process finished"
+        },
+        "tipo_entrega": "Delivery type",
+        "entrega": {
+          "encomienda": "Courier shipment",
+          "puerta": "Door delivery"
+        },
+        "entrega_ayuda": "Courier shipments go through packing; door delivery goes straight to dispatch.",
+        "almacenista_armado": "Assembly worker",
+        "almacenista_despacho": "Dispatch worker",
+        "recorrido": "Progress",
+        "le_toca": {
+          "almacen": "Warehouse's turn",
+          "seguridad": "Security's turn"
+        },
+        "esperando": "Waiting for {rol}: {paso}",
+        "rol": {
+          "almacen": "Warehouse",
+          "seguridad": "Security"
+        },
+        "col_orden": "Order",
+        "col_armado": "Assembled",
+        "col_porton": "Gate",
+        "iniciar_armado": "Start assembly",
+        "terminar_armado": "Finish assembly and move to pre-dispatch",
+        "verificar_armado": "Verify assembly",
+        "armado_ayuda": "Count every assembled product. It only moves to dispatch if everything matches the order.",
+        "armado_diferencias": "Does not match the order: {dif} with differences and {sin} not counted. Fix it and verify again.",
+        "empaquetar": "Packing done",
+        "asignar_despacho": "Assign and send to Security",
+        "verificar_ayuda": "Count what goes out. If everything matches, approve; if not, mark Do not approve and decide.",
+        "aprobar": "Approve and dispatch",
+        "no_aprobar": "Do not approve",
+        "aprobar_requiere": "To approve, everything must be counted and match.",
+        "decision": "Dispatch anyway?",
+        "despachar_igual": "Yes, dispatch anyway",
+        "no_despachar": "Do not dispatch",
+        "motivo_no_aprobado": "Reason for not approving (required)",
+        "confirmar_no_aprobado": "Record decision",
+        "calificar_cerrar": "Rate and close",
+        "resultado": {
+          "aprobado": "Approved and dispatched",
+          "no_aprobado_despachado": "Not approved — dispatched anyway",
+          "no_despachado": "Not approved — not dispatched"
+        },
+        "motivo": "Reason",
+        "filtro": {
+          "para_mi": "For me",
+          "en_proceso": "In progress",
+          "cerrados": "Closed",
+          "todos": "All"
+        },
+        "vacio_filtro": "Nothing here.",
+        "en_curso": "Outbound in progress",
+        "flujo_anterior": "Record from the previous flow",
+        "cancelar": "Back",
+        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate."
       }
     }
   }

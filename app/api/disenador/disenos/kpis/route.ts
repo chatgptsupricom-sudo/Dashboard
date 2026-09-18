@@ -13,6 +13,8 @@ const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
  * agrupan en MySQL, no en JS: el catálogo guarda las imágenes en la misma
  * tabla, así que traer filas para contarlas movería los LONGBLOB.
  *
+ * Los diseños en la papelera (deleted_at) no cuentan.
+ *
  * `?mes=YYYY-MM` elige el mes del calendario (default: el mes en curso).
  * `?creador=` lo acota a un diseñador; sin él cuenta a todos.
  */
@@ -43,14 +45,14 @@ export async function GET(request: NextRequest) {
       query(
         `SELECT DATE(created_at) AS dia, COUNT(*) AS n
          FROM designer_designs
-         WHERE DATE(created_at) BETWEEN ? AND ?${filtroCreador}
+         WHERE deleted_at IS NULL AND DATE(created_at) BETWEEN ? AND ?${filtroCreador}
          GROUP BY dia ORDER BY dia ASC`,
         [desde, hasta, ...pCreador]
       ),
       query(
         `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
          FROM designer_designs
-         WHERE DATE(created_at) BETWEEN ? AND ?${filtroCreador}
+         WHERE deleted_at IS NULL AND DATE(created_at) BETWEEN ? AND ?${filtroCreador}
          GROUP BY categoria`,
         [desde, hasta, ...pCreador]
       ),
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
            SUM(YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())) AS mesEnCurso,
            COUNT(*) AS total
          FROM designer_designs
-         WHERE 1=1${filtroCreador}`,
+         WHERE deleted_at IS NULL${filtroCreador}`,
         pCreador
       ),
     ]);
