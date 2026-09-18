@@ -186,6 +186,10 @@ export default function AuditoriaPanelContent() {
   const [page, setPage] = useState(1);
   const [cargando, setCargando] = useState(true);
   const [expandido, setExpandido] = useState<number | null>(null);
+  // Estado de la auditoría automática (la que graba todo INSERT/UPDATE/DELETE).
+  // Si no está disponible, el panel solo muestra los registros viejos y eso
+  // antes no se distinguía de "no pasó nada".
+  const [auditoriaAutomatica, setAuditoriaAutomatica] = useState<{ disponible: boolean; registros: number } | null>(null);
 
   const [search, setSearch] = useState("");
   const [tabla, setTabla] = useState("");
@@ -207,6 +211,7 @@ export default function AuditoriaPanelContent() {
         setTotalPages(data.totalPages);
         setTablas(data.tables);
         setMetodos(data.methods ?? []);
+        setAuditoriaAutomatica(data.auditoriaAutomatica ?? null);
       }
     } catch {
       // se deja la tabla como estaba; no hay nada mas que hacer sin conexion
@@ -230,6 +235,17 @@ export default function AuditoriaPanelContent() {
         <h1 className="text-2xl font-bold text-slate-900">{t("title")}</h1>
         <p className="text-sm text-zinc-500 mt-1">{t("subtitle")}</p>
       </div>
+
+      {auditoriaAutomatica && (!auditoriaAutomatica.disponible || auditoriaAutomatica.registros === 0) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">La auditoría automática no tiene registros</p>
+          <p className="mt-1 text-amber-700">
+            {auditoriaAutomatica.disponible
+              ? "La tabla existe pero está vacía: todavía no se registró ninguna escritura. Abajo solo se ven los registros históricos de leads, cuotas y actividades."
+              : "La tabla de auditoría todavía no existe en esta base, así que ninguna escritura está quedando registrada. Se crea sola en la primera escritura; si el aviso persiste, el usuario de la base no tiene permiso para crearla."}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm">
         <Input
