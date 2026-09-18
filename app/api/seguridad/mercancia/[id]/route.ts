@@ -5,45 +5,10 @@ import {
   resolverCidsSesion,
 } from "@/lib/seguridad/auth";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { evaluarDescuadre, parsearLista } from "@/lib/seguridad/mercancia";
+import { cargarMovimiento as cargar, evaluarDescuadre } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-
-async function cargar(id: number) {
-  const mov = await query("SELECT * FROM seguridad_mercancia WHERE id = ?", [id]);
-  if (mov.rows.length === 0) return null;
-  const items = await query(
-    "SELECT * FROM seguridad_mercancia_items WHERE mercancia_id = ? ORDER BY id",
-    [id],
-  );
-  // Plural: puede haber mas de un almacenista por egreso (issue #43), y cada
-  // uno se califica aparte. Antes se traia solo uno con LIMIT 1, que se
-  // quedaba con la primera calificacion y ocultaba el resto.
-  const calif = await query(
-    `SELECT id, almacenista_nombre, calificacion, comentario, calificado_por, created_at
-       FROM seguridad_calificaciones
-      WHERE relacionado_a = 'mercancia' AND relacionado_id = ?
-      ORDER BY id`,
-    [id],
-  ).catch(() => ({ rows: [] as any[] }));
-
-  const fila = mov.rows[0] as any;
-  const facturas = parsearLista(fila.facturas_json).length
-    ? parsearLista(fila.facturas_json)
-    : fila.factura_numero
-      ? [fila.factura_numero]
-      : [];
-  const almacenistas = parsearLista(fila.almacenistas_json).length
-    ? parsearLista(fila.almacenistas_json)
-    : [fila.almacenista_nombre];
-
-  return {
-    movimiento: { ...fila, facturas, almacenistas },
-    items: items.rows,
-    calificaciones: calif.rows,
-  };
-}
 
 /**
  * GET: detalle del movimiento.
@@ -119,6 +84,16 @@ export async function POST(
 
     if (cids !== null && Number(datos.movimiento.cids) !== cids) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+
+    // Un egreso por etapas se verifica con su accion propia
+    // (/etapa, "verificar_seguridad"), que ademas decide aprobar o no y lo
+    // pasa a calificacion. Verificarlo por aca se saltaria esa decision.
+    if (datos.movimiento.etapa) {
+      return NextResponse.json(
+        { error: "Este egreso sigue el flujo por etapas" },
+        { status: 409 },
+      );
     }
 
     const verificadoPor = String(body?.verificado_por || "").trim().slice(0, 200);

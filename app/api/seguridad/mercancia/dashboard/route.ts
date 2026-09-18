@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const cidsWhere = cids !== null ? "AND cids = ?" : "";
     const cidsParam = cids !== null ? [cids] : [];
 
-    const [hoy, ayer, pendientes, descuadres, calif, recientes, topAlmacenistas] =
+    const [hoy, ayer, pendientes, descuadres, calif, recientes, topAlmacenistas, porEtapa] =
       await Promise.all([
         query(
           `SELECT COUNT(*) AS n FROM seguridad_mercancia
@@ -36,8 +36,12 @@ export async function GET(request: NextRequest) {
           cidsParam,
         ),
         query(
+          // Por etapas: lo que espera a Seguridad en el porton. Los egresos del
+          // flujo anterior (sin etapa) siguen contando por su estado.
           `SELECT COUNT(*) AS n FROM seguridad_mercancia
-            WHERE tipo = 'egreso' AND estado = 'pendiente' ${cidsWhere}`,
+            WHERE tipo = 'egreso'
+              AND (etapa = 'por_verificar' OR (etapa IS NULL AND estado = 'pendiente'))
+              ${cidsWhere}`,
           cidsParam,
         ),
         query(
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
         ),
         query(
           `SELECT id, fecha, odoo_picking_name, contraparte, almacenista_nombre,
-                  almacenistas_json, estado
+                  almacenistas_json, estado, etapa
              FROM seguridad_mercancia
             WHERE tipo = 'egreso' ${cidsWhere}
             ORDER BY fecha DESC, id DESC
@@ -78,6 +82,15 @@ export async function GET(request: NextRequest) {
             LIMIT 5`,
           cidsParam,
         ),
+        // Cuantos egresos hay en cada etapa abierta: el tablero de "donde
+        // esta cada camion" de un vistazo.
+        query(
+          `SELECT etapa, COUNT(*) AS n FROM seguridad_mercancia
+            WHERE tipo = 'egreso' AND etapa IS NOT NULL AND etapa <> 'cerrado'
+              ${cidsWhere}
+            GROUP BY etapa`,
+          cidsParam,
+        ),
       ]);
 
     const hoyN = Number((hoy.rows[0] as any)?.n || 0);
@@ -96,6 +109,9 @@ export async function GET(request: NextRequest) {
         total_calificaciones_mes: Number((calif.rows[0] as any)?.total || 0),
       },
       egresos_recientes: recientes.rows,
+      por_etapa: Object.fromEntries(
+        (porEtapa.rows as any[]).map((r) => [r.etapa, Number(r.n)]),
+      ),
       top_almacenistas: (topAlmacenistas.rows as any[]).map((r) => ({
         nombre: r.nombre,
         egresos: Number(r.egresos),

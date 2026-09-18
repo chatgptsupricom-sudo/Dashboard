@@ -9,6 +9,7 @@ import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import EgresoFlujo from "./EgresoFlujo";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases } from "./mercancia-ui";
 
 /**
@@ -44,6 +45,8 @@ type Movimiento = {
   estado: "pendiente" | "conforme" | "descuadre";
   verificado_por: string | null;
   observaciones: string | null;
+  /** Solo en egresos por etapas; null en ingresos y egresos del flujo anterior. */
+  etapa?: string | null;
 };
 
 type Calificacion = {
@@ -208,6 +211,12 @@ export default function MercanciaDetalle({
         {tm("vacio")}
       </div>
     );
+  }
+
+  // Egreso por etapas (armado -> Almacen -> Seguridad): tiene su propia
+  // pantalla. Esta se queda para el ingreso y los egresos del flujo anterior.
+  if (mov.tipo === "egreso" && mov.etapa) {
+    return <EgresoFlujo id={id} />;
   }
 
   // El resumen distingue las dos senales: lo marcado explicitamente "no

@@ -74,6 +74,49 @@ export function parsearLista(json: unknown): string[] {
 }
 
 /**
+ * Un movimiento con sus renglones y calificaciones, listo para la pantalla.
+ *
+ * Vive aca y no en una ruta porque lo usan dos: el detalle/verificacion del
+ * flujo simple y las acciones del egreso por etapas. Las dos tienen que
+ * devolver exactamente la misma forma, o la pantalla se rompe segun por que
+ * camino llego el dato.
+ */
+export async function cargarMovimiento(id: number) {
+  const mov = await query("SELECT * FROM seguridad_mercancia WHERE id = ?", [id]);
+  if (mov.rows.length === 0) return null;
+  const items = await query(
+    "SELECT * FROM seguridad_mercancia_items WHERE mercancia_id = ? ORDER BY id",
+    [id],
+  );
+  // Plural: puede haber mas de un almacenista por egreso (issue #43), y cada
+  // uno se califica aparte. Antes se traia solo uno con LIMIT 1, que se
+  // quedaba con la primera calificacion y ocultaba el resto.
+  const calif = await query(
+    `SELECT id, almacenista_nombre, calificacion, comentario, calificado_por, created_at
+       FROM seguridad_calificaciones
+      WHERE relacionado_a = 'mercancia' AND relacionado_id = ?
+      ORDER BY id`,
+    [id],
+  ).catch(() => ({ rows: [] as any[] }));
+
+  const fila = mov.rows[0] as any;
+  const facturas = parsearLista(fila.facturas_json).length
+    ? parsearLista(fila.facturas_json)
+    : fila.factura_numero
+      ? [fila.factura_numero]
+      : [];
+  const almacenistas = parsearLista(fila.almacenistas_json).length
+    ? parsearLista(fila.almacenistas_json)
+    : [fila.almacenista_nombre];
+
+  return {
+    movimiento: { ...fila, facturas, almacenistas },
+    items: items.rows as any[],
+    calificaciones: calif.rows as any[],
+  };
+}
+
+/**
  * El nombre del producto en Odoo viene como "[CODIGO] Descripcion".
  * Se separan para que el codigo se pueda leer de un vistazo en el porton,
  * que es donde alguien compara caja contra pantalla.

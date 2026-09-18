@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
@@ -129,9 +130,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // El egreso arranca en Almacen: llega la orden, se asigna quien arma y de
+    // ahi sigue por etapas hasta Seguridad (lib/seguridad/egresoFlujo). Que
+    // Seguridad lo abriera se saltaria todo el armado.
+    if (tipo === "egreso" && rol !== "almacen" && rol !== "superadmin") {
+      return NextResponse.json(
+        { error: "El egreso de mercancia lo inicia Almacen" },
+        { status: 403 },
+      );
+    }
+
     const fecha = String(body?.fecha || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       errores.push("fecha invalida (YYYY-MM-DD)");
+    }
+
+    // Egreso por etapas: quien arma y como se entrega. La entrega decide si
+    // hay paso de empaquetado (solo encomienda).
+    const almacenistaArmado =
+      tipo === "egreso" ? truncar(body?.almacenista_armado, MAX.almacenista_nombre) : null;
+    const tipoEntrega = tipo === "egreso" ? body?.tipo_entrega : null;
+    if (tipo === "egreso") {
+      if (!almacenistaArmado) errores.push("falta el almacenista del armado");
+      if (!esTipoEntrega(tipoEntrega)) errores.push("tipo de entrega invalido");
     }
 
     // Facturas: si llega `facturas` (array), es la fuente de verdad — un
@@ -148,9 +169,14 @@ export async function POST(request: NextRequest) {
     // Almacenistas: mismo patron. `almacenista_nombre` sigue obligatorio —
     // todo registro tiene que decir quien responde — y sale del primero de
     // la lista cuando se manda `almacenistas`.
-    const almacenistasJson = Array.isArray(body?.almacenistas)
-      ? serializarLista(body.almacenistas, MAX.almacenista_nombre, MAX.listas)
-      : null;
+    // En el egreso por etapas el responsable inicial es quien arma; al
+    // asignar el despacho pasa a ser el almacenista de despacho.
+    const almacenistasJson =
+      tipo === "egreso"
+        ? serializarLista([almacenistaArmado], MAX.almacenista_nombre, MAX.listas)
+        : Array.isArray(body?.almacenistas)
+          ? serializarLista(body.almacenistas, MAX.almacenista_nombre, MAX.listas)
+          : null;
     const listaAlmacenistas = parsearLista(almacenistasJson);
     const almacenista = listaAlmacenistas.length
       ? listaAlmacenistas[0]
@@ -193,8 +219,9 @@ export async function POST(request: NextRequest) {
       `INSERT INTO seguridad_mercancia
         (tipo, fecha, odoo_picking_id, odoo_picking_name, factura_numero,
          facturas_json, contraparte, almacenista_nombre, almacenistas_json,
-         chofer_nombre, placa_vehiculo, observaciones, cids)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         chofer_nombre, placa_vehiculo, observaciones, cids,
+         etapa, tipo_entrega, almacenista_armado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tipo,
         fecha,
@@ -211,6 +238,10 @@ export async function POST(request: NextRequest) {
         truncar(body?.placa_vehiculo, MAX.placa_vehiculo),
         truncar(body?.observaciones, MAX.observaciones),
         cids,
+        // Egreso: arranca en la primera etapa. Ingreso: sin etapa, flujo simple.
+        tipo === "egreso" ? "por_armar" : null,
+        tipo === "egreso" ? tipoEntrega : null,
+        almacenistaArmado,
       ],
     );
 
@@ -240,6 +271,7 @@ export async function POST(request: NextRequest) {
         accion: "creado",
         id,
         tipo: tipo as "ingreso" | "egreso",
+        etapa: tipo === "egreso" ? "por_armar" : undefined,
         documento: truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
       },
       cids,

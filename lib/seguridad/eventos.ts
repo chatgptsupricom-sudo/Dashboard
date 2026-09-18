@@ -18,10 +18,19 @@
 export const EVENTO_MERCANCIA = "mercancia_actualizada";
 
 export type AvisoMercancia = {
-  accion: "creado" | "verificado";
+  /**
+   * `creado` y `verificado` son del flujo simple (ingreso y egresos viejos);
+   * `etapa` es cada paso del egreso por etapas (ver lib/seguridad/egresoFlujo).
+   */
+  accion: "creado" | "verificado" | "etapa";
   id: number;
   tipo: "ingreso" | "egreso";
   estado?: "pendiente" | "conforme" | "descuadre";
+  /** Etapa a la que acaba de pasar el egreso (solo con `accion: "etapa"`). */
+  etapa?: string;
+  /** Resultado del porton, para avisarle a Almacen si Seguridad aprobo o no. */
+  aprobado?: boolean;
+  despachado?: boolean;
   /**
    * Documento con el que viaja la mercancia (orden de despacho o factura de
    * compra). Va en el aviso solo para que el cartel diga cual llego en vez de
