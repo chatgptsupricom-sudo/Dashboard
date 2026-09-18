@@ -153,7 +153,20 @@ export function ExcelImportDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows }),
       });
-      const json = await res.json();
+      // La respuesta puede no ser JSON: un 404 de Next o un timeout del proxy
+      // devuelven HTML, y res.json() reventaba con "Unexpected token '<'".
+      const raw = await res.text();
+      let json: any;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        throw new Error(
+          `El servidor respondió ${res.status} sin JSON. ` +
+            (res.status === 504 || res.status === 502
+              ? "La importación tardó demasiado; prueba con menos filas."
+              : "Revisa que la sesión siga activa y vuelve a intentar."),
+        );
+      }
       if (!res.ok) throw new Error(json?.error || "No se pudo importar");
       setResult(json);
       setRows(null);
