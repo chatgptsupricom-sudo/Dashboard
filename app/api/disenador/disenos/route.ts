@@ -24,11 +24,13 @@ export async function GET(request: NextRequest) {
     const search = url.searchParams.get("search") || "";
     const folder = url.searchParams.get("folder") || "";
     const category = url.searchParams.get("category") || "";
+    // Papelera: los diseños borrados no se eliminan, se marcan (deleted_at).
+    const papelera = url.searchParams.get("papelera") === "1";
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limit") || "24", 10)));
     const offset = (page - 1) * limit;
 
-    let where = "WHERE 1=1";
+    let where = papelera ? "WHERE d.deleted_at IS NOT NULL" : "WHERE d.deleted_at IS NULL";
     const params: any[] = [];
 
     if (search) {
@@ -57,16 +59,17 @@ export async function GET(request: NextRequest) {
 
     const result = await query(
       `SELECT d.id, d.title, d.folder, d.category, d.created_by, d.created_at,
+              d.deleted_at, d.deleted_by,
               CONCAT('/api/disenador/disenos/image/', d.id) AS image_path
        FROM designer_designs d ${where}
-       ORDER BY d.created_at DESC
+       ORDER BY ${papelera ? "d.deleted_at" : "d.created_at"} DESC
        LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 
     const foldersResult = await query(
       `SELECT DISTINCT folder FROM designer_designs
-       WHERE folder IS NOT NULL AND folder <> '' ORDER BY folder ASC`
+       WHERE deleted_at IS NULL AND folder IS NOT NULL AND folder <> '' ORDER BY folder ASC`
     );
     const folders = (foldersResult.rows || []).map((r: any) => r.folder);
 
@@ -74,7 +77,7 @@ export async function GET(request: NextRequest) {
     // alimenta los chips de filtro, que no deben vaciarse al filtrar.
     const porCategoriaResult = await query(
       `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
-       FROM designer_designs GROUP BY categoria`
+       FROM designer_designs WHERE deleted_at IS NULL GROUP BY categoria`
     );
     const conteoPorCategoria: Record<string, number> = {};
     for (const r of porCategoriaResult.rows || []) {
@@ -87,6 +90,9 @@ export async function GET(request: NextRequest) {
       folders,
       categorias: CATEGORIAS_DISENO,
       conteoPorCategoria,
+      enPapelera: Number(
+        (await query(`SELECT COUNT(*) AS n FROM designer_designs WHERE deleted_at IS NOT NULL`)).rows?.[0]?.n || 0
+      ),
       total,
       page,
       totalPages: Math.ceil(total / limit),
@@ -182,6 +188,12 @@ export async function PATCH(request: NextRequest) {
     const id = Number(body.id);
     if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
 
+    // Restaurar desde la papelera.
+    if (body.restaurar === true) {
+      await query(`UPDATE designer_designs SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`, [id]);
+      return NextResponse.json({ success: true, restaurado: id });
+    }
+
     const sets: string[] = [];
     const params: any[] = [];
     if (typeof body.title === "string") {
@@ -212,6 +224,10 @@ export async function PATCH(request: NextRequest) {
 }
 
 // DELETE: ?id=1  ó  ?ids=1,2,3
+// Por defecto manda a la PAPELERA (marca deleted_at); con ?definitivo=1
+// elimina la fila de verdad. Así un borrado por error se puede deshacer:
+// los diseños viven en MySQL y, una vez borrada la fila, la imagen no se
+// recupera de ningún lado (la auditoría guarda el registro, no el binario).
 export async function DELETE(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
@@ -222,6 +238,9 @@ export async function DELETE(request: NextRequest) {
     const single = url.searchParams.get("id");
     const multi = url.searchParams.get("ids");
 
+    const definitivo = url.searchParams.get("definitivo") === "1";
+    const quien = (url.searchParams.get("por") || "").slice(0, 255) || null;
+
     const ids = (multi ? multi.split(",") : single ? [single] : [])
       .map((x) => Number(x))
       .filter((n) => Number.isFinite(n) && n > 0);
@@ -231,8 +250,16 @@ export async function DELETE(request: NextRequest) {
     }
 
     const placeholders = ids.map(() => "?").join(",");
-    await query(`DELETE FROM designer_designs WHERE id IN (${placeholders})`, ids);
-    return NextResponse.json({ success: true, deleted: ids.length });
+    if (definitivo) {
+      await query(`DELETE FROM designer_designs WHERE id IN (${placeholders})`, ids);
+      return NextResponse.json({ success: true, deleted: ids.length, definitivo: true });
+    }
+
+    await query(
+      `UPDATE designer_designs SET deleted_at = NOW(), deleted_by = ? WHERE id IN (${placeholders})`,
+      [quien, ...ids]
+    );
+    return NextResponse.json({ success: true, deleted: ids.length, papelera: true });
   } catch (error: any) {
     console.error("DELETE /api/disenador/disenos:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });

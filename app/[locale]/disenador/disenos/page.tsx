@@ -29,6 +29,7 @@ import {
   FolderUp,
   Pencil,
   FileArchive,
+  RotateCcw,
 } from "lucide-react";
 
 interface Design {
@@ -36,6 +37,8 @@ interface Design {
   title: string;
   folder: string | null;
   category: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_by: string;
   created_at: string;
   image_path: string;
@@ -165,6 +168,11 @@ export default function DisenosCatalogoPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorCatalogo, setErrorCatalogo] = useState("");
+  // Papelera: borrar manda acá, no elimina. Desde acá se restaura o se
+  // elimina definitivamente.
+  const [verPapelera, setVerPapelera] = useState(false);
+  const [enPapelera, setEnPapelera] = useState(0);
+  const [purgarOpen, setPurgarOpen] = useState(false);
 
   // ── Fetch catálogo ────────────────────────────────────────────────────────
   const fetchDesigns = useCallback(async () => {
@@ -174,12 +182,14 @@ export default function DisenosCatalogoPage() {
       if (search) p.set("search", search);
       if (folderFilter) p.set("folder", folderFilter);
       if (categoryFilter) p.set("category", categoryFilter);
+      if (verPapelera) p.set("papelera", "1");
       const res = await fetch(`/api/disenador/disenos?${p}`);
       const data = await res.json();
       if (data.success) {
         setDesigns(data.designs || []);
         setFolders(data.folders || []);
         setConteoPorCategoria(data.conteoPorCategoria || {});
+        setEnPapelera(data.enPapelera || 0);
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
         setErrorCatalogo("");
@@ -194,7 +204,7 @@ export default function DisenosCatalogoPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, folderFilter, categoryFilter]);
+  }, [page, search, folderFilter, categoryFilter, verPapelera]);
 
   useEffect(() => { fetchDesigns(); }, [fetchDesigns]);
 
@@ -396,7 +406,8 @@ export default function DisenosCatalogoPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/disenador/disenos?id=${deleteTarget.id}`, { method: "DELETE" });
+      const por = encodeURIComponent(user?.name || "");
+      const res = await fetch(`/api/disenador/disenos?id=${deleteTarget.id}&por=${por}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSelected((prev) => {
         const next = new Map(prev);
@@ -417,12 +428,47 @@ export default function DisenosCatalogoPage() {
     setDeleting(true);
     try {
       const ids = Array.from(selected.keys()).join(",");
-      const res = await fetch(`/api/disenador/disenos?ids=${ids}`, { method: "DELETE" });
+      const por = encodeURIComponent(user?.name || "");
+      const res = await fetch(`/api/disenador/disenos?ids=${ids}&por=${por}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       clearSelection();
       setBulkDeleteOpen(false);
       setPage(1);
       setKpiRefresh((n) => n + 1);
+      await fetchDesigns();
+    } catch (e: any) {
+      alert("No se pudieron eliminar: " + e.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ── Papelera ──────────────────────────────────────────────────────────────
+  const restaurar = async (d: Design) => {
+    try {
+      const res = await fetch("/api/disenador/disenos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: d.id, restaurar: true }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setKpiRefresh((n) => n + 1);
+      await fetchDesigns();
+    } catch (e: any) {
+      alert("No se pudo restaurar: " + e.message);
+    }
+  };
+
+  const purgarSeleccion = async () => {
+    if (selected.size === 0) return;
+    setDeleting(true);
+    try {
+      const ids = Array.from(selected.keys()).join(",");
+      const res = await fetch(`/api/disenador/disenos?ids=${ids}&definitivo=1`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      clearSelection();
+      setPurgarOpen(false);
+      setPage(1);
       await fetchDesigns();
     } catch (e: any) {
       alert("No se pudieron eliminar: " + e.message);
@@ -624,9 +670,22 @@ export default function DisenosCatalogoPage() {
       {/* Catálogo */}
       <Card className="rounded-3xl border-none shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-          <CardTitle className="text-lg font-semibold text-slate-900">
-            Catálogo <span className="text-sm font-normal text-slate-400">({total})</span>
-          </CardTitle>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setVerPapelera(false); setPage(1); clearSelection(); }}
+              className={`text-lg font-semibold rounded-xl px-3 py-1 ${verPapelera ? "text-slate-400 hover:text-slate-600" : "bg-slate-100 text-slate-900"}`}
+            >
+              Catálogo <span className="text-sm font-normal text-slate-400">({verPapelera ? "" : total})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setVerPapelera(true); setPage(1); clearSelection(); }}
+              className={`text-lg font-semibold rounded-xl px-3 py-1 ${verPapelera ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600"}`}
+            >
+              Papelera <span className="text-sm font-normal text-slate-400">({enPapelera})</span>
+            </button>
+          </div>
           <div className="flex items-center gap-3 flex-wrap">
             {selected.size > 0 && (
               <div className="flex items-center gap-2 bg-fuchsia-50 border border-fuchsia-200 rounded-xl px-3 py-1.5">
@@ -645,15 +704,27 @@ export default function DisenosCatalogoPage() {
                   {zipping ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <FileArchive className="w-3 h-3 mr-1.5" />}
                   Descargar ZIP
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setBulkDeleteOpen(true)}
-                  className="h-7 text-xs px-3 text-red-600 border-red-200 hover:bg-red-50"
-                >
-                  <Trash2 className="w-3 h-3 mr-1.5" />
-                  Eliminar
-                </Button>
+                {verPapelera ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPurgarOpen(true)}
+                    className="h-7 text-xs px-3 text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3 h-3 mr-1.5" />
+                    Eliminar definitivamente
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkDeleteOpen(true)}
+                    className="h-7 text-xs px-3 text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3 h-3 mr-1.5" />
+                    Mover a la papelera
+                  </Button>
+                )}
               </div>
             )}
             <div className="relative w-56">
@@ -716,7 +787,7 @@ export default function DisenosCatalogoPage() {
           ) : designs.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>Aún no hay diseños en el catálogo</p>
+              <p>{verPapelera ? "La papelera está vacía" : "Aún no hay diseños en el catálogo"}</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -750,6 +821,12 @@ export default function DisenosCatalogoPage() {
                         {etiquetaCategoria(d.category)}
                       </p>
                       {d.folder && <p className="text-[10px] text-slate-400 truncate">{d.folder}</p>}
+                      {verPapelera && d.deleted_at && (
+                        <p className="text-[10px] text-red-500 truncate" title={`Borrado por ${d.deleted_by || "—"}`}>
+                          En papelera · {new Date(d.deleted_at).toLocaleDateString("es-VE")}
+                          {d.deleted_by ? ` · ${d.deleted_by}` : ""}
+                        </p>
+                      )}
                     </div>
 
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -760,20 +837,32 @@ export default function DisenosCatalogoPage() {
                       >
                         <Download className="w-3 h-3" />
                       </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openEdit(d); }}
-                        className="p-1.5 bg-slate-900/80 text-white rounded-full hover:bg-slate-900"
-                        title="Editar"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(d); }}
-                        className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      {verPapelera ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); restaurar(d); }}
+                          className="p-1.5 bg-emerald-600 text-white rounded-full hover:bg-emerald-700"
+                          title="Restaurar al catálogo"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openEdit(d); }}
+                            className="p-1.5 bg-slate-900/80 text-white rounded-full hover:bg-slate-900"
+                            title="Editar"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(d); }}
+                            className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600"
+                            title="Mover a la papelera"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -867,16 +956,16 @@ export default function DisenosCatalogoPage() {
       <Dialog open={deleteTarget !== null} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Eliminar diseño</DialogTitle>
+            <DialogTitle>Mover a la papelera</DialogTitle>
             <DialogDescription>
-              ¿Seguro que quieres eliminar «{deleteTarget?.title}»? Esta acción no se puede deshacer.
+              «{deleteTarget?.title}» sale del catálogo y queda en la papelera. Se puede restaurar desde ahí.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
             <Button variant="destructive" onClick={confirmDeleteOne} disabled={deleting}>
               {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Eliminar
+              Mover a la papelera
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -886,16 +975,35 @@ export default function DisenosCatalogoPage() {
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Eliminar {selected.size} diseño{selected.size > 1 ? "s" : ""}</DialogTitle>
+            <DialogTitle>Mover {selected.size} diseño{selected.size > 1 ? "s" : ""} a la papelera</DialogTitle>
             <DialogDescription>
-              Se eliminarán los diseños seleccionados. Esta acción no se puede deshacer.
+              Salen del catálogo y quedan en la papelera, desde donde se pueden restaurar.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={confirmBulkDelete} disabled={deleting}>
               {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Eliminar
+              Mover a la papelera
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Eliminar definitivamente (desde la papelera) */}
+      <Dialog open={purgarOpen} onOpenChange={setPurgarOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar {selected.size} diseño{selected.size > 1 ? "s" : ""} definitivamente</DialogTitle>
+            <DialogDescription>
+              Esto borra la imagen de la base de datos y no se puede deshacer: no hay forma de recuperarla después.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurgarOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={purgarSeleccion} disabled={deleting}>
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Eliminar definitivamente
             </Button>
           </DialogFooter>
         </DialogContent>
