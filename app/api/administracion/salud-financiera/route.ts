@@ -164,6 +164,9 @@ export async function GET(request: NextRequest) {
           )
         : 0;
     const metaDso = metas.dso ?? 45;
+    // Administracion fijo la meta de cobranza como % de lo que vence en el
+    // periodo, no como un monto en dolares — ver METAS_DEFAULT.
+    const metaCobranzaPct = metas.cumplimiento_cobranza ?? 90;
 
     const kpisCxC: KpiAdmin[] = [
       construirKpi(
@@ -189,15 +192,21 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "cumplimiento_cobranza", numero: 3, nombre: "Cumplimiento meta de cobranza",
-          formula: "Cobranza real / meta de cobranza × 100", peso: 4,
-          metaTexto: metas.cumplimiento_cobranza ? `≥${metas.cumplimiento_cobranza}%` : "Sin meta definida",
-          valor: metas.cumplimiento_cobranza ? pct(cobranzaReal, metas.cumplimiento_cobranza) : null,
+          formula: "Cobranza real del período / exigible del período × 100", peso: 4,
+          metaTexto: `≥${metaCobranzaPct}%`,
+          valor: pct(cobranzaReal, esperado),
           unidad: "%", frecuencia: "Diaria/Mensual", responsable: "Cuentas por Cobrar", fuente: "Bancos / ERP",
-          detalle: metas.cumplimiento_cobranza
-            ? `Cobrado ${money(cobranzaReal)} en el período`
-            : "Falta cargar la meta mensual de cobranza en parámetros",
+          // OJO, no confundir con "Cobros esperados vs realizados" (KPI 9):
+          // aquel mide, de las facturas que vencian en el periodo, que parte
+          // se cobro (tope 100%). Este mide TODO el dinero que entro a
+          // banco/caja en el periodo contra ese mismo exigible, asi que
+          // incluye cobranza de facturas viejas y puede pasar de 100% — es la
+          // lectura de flujo de caja, no la de disciplina de cobro.
+          detalle: esperado > 0
+            ? `Cobrado ${money(cobranzaReal)} contra ${money(esperado)} que vencían en el período (incluye cobros de facturas de meses anteriores, por eso puede superar el 100%)`
+            : "Sin facturas con vencimiento en el período",
         },
-        { modo: "higher_better", verde: 95, amarillo: 85 },
+        { modo: "higher_better", verde: metaCobranzaPct, amarillo: metaCobranzaPct - 10 },
       ),
       construirKpi(
         {
@@ -414,6 +423,15 @@ export async function GET(request: NextRequest) {
             // Lo "afectado" en cobros esperados es lo que todavia no se ha
             // cobrado del periodo, no el total esperado ni lo ya cobrado.
             : k.id === "cobros_esperados" ? (esperado > 0 ? Math.round((esperado - cobrado) * 100) / 100 : null)
+            // En cumplimiento de cobranza lo afectado es cuanto falto para
+            // llegar a la meta del periodo (meta% de lo exigible).
+            : k.id === "cumplimiento_cobranza"
+              ? (esperado > 0
+                  ? Math.max(
+                      0,
+                      Math.round((esperado * (metaCobranzaPct / 100) - cobranzaReal) * 100) / 100,
+                    )
+                  : null)
             : null,
           fechaDeteccion: hoy,
           accion: k.detalle || "Revisar indicador",

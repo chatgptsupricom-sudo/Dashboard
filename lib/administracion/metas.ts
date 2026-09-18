@@ -9,15 +9,19 @@ import { query } from "@/lib/db";
  * empresa.
  *
  * Hay metas que NO tienen default porque dependen de una politica interna que
- * el sistema no conoce (meta mensual de cobranza, saldo minimo operativo). Esas
- * quedan en null y su KPI se reporta como "sin datos" en vez de inventar un
- * numero — igual que Gastos y Presupuesto cuando no hay presupuesto cargado.
+ * el sistema no conoce (hoy solo el saldo minimo operativo). Esas quedan en
+ * null y su KPI se reporta como "sin datos" en vez de inventar un numero —
+ * igual que Gastos y Presupuesto cuando no hay presupuesto cargado.
  */
 export const METAS_DEFAULT: Record<string, number | null> = {
   // Cuentas por cobrar
   cartera_vencida: 10,
   dso: 45,
-  cumplimiento_cobranza: null, // meta de cobranza del mes: la fija Administracion
+  // Administracion definio la meta de cobranza como un PORCENTAJE de lo que
+  // vence en el mes ("cobrar el 90% de lo exigible"), no como un monto fijo en
+  // dolares — asi no hay que cargarle un numero nuevo cada mes y la meta se
+  // ajusta sola al tamano de la cartera que vence.
+  cumplimiento_cobranza: 90,
   cartera_90: 3,
   promesas_pago: 95,
   clientes_excedidos: 2,
