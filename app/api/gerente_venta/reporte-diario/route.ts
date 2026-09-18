@@ -10,6 +10,20 @@ const COMPANY_NAME_MAP: Record<number, string> = {
   7: "Panamá",
 };
 
+// Usuarios de Odoo que no son vendedores del equipo (no están en `sellers`)
+// pero cuya facturación sí pertenece a la sede. Su monto suma en las tarjetas
+// de VENTA / PEDIDOS / VENTA + PEDIDOS, pero NO aparecen como fila en la tabla
+// de vendedores ni compiten por cuota.
+const EXTRA_USER_IDS_BY_COMPANY: Record<number, number[]> = {
+  10: [392], // ANTONELLA ZAMPETTI
+};
+
+// Filas de `sellers` que no cuentan como vendedor del equipo (se comparan
+// contra el nombre ya normalizado, por coincidencia parcial). Mismo criterio
+// que `sellerExclusions` en app/api/gerente_venta/stats/route.ts, para que el
+// reporte diario y el dashboard midan lo mismo.
+const SELLER_EXCLUDE = ["MARIA AUXILIADORA TOVAR CARO", "ASISTENTE"];
+
 function isBusinessDay(date: Date): boolean {
   const day = date.getDay();
   return day !== 0 && day !== 6;
@@ -92,10 +106,10 @@ export async function GET(req: NextRequest) {
       `SELECT id, name, user_id, cids FROM sellers WHERE cids IN (${placeholders})`,
       companyIds,
     );
-    const sellers = (resultSellers || []).filter(
-      (s: any) =>
-        s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
-    );
+    const sellers = (resultSellers || []).filter((s: any) => {
+      const key = normalize(s.name);
+      return !SELLER_EXCLUDE.some((rule) => key.includes(rule));
+    });
 
     if (sellers.length === 0) {
       return NextResponse.json({
@@ -146,7 +160,14 @@ export async function GET(req: NextRequest) {
       .toISOString()
       .split("T")[0];
 
-    const odooUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
+    const sellerUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
+    // Extras de la(s) sede(s) consultada(s), sin pisar a un vendedor real.
+    const extraUserIds = Array.from(
+      new Set(
+        companyIds.flatMap((cid) => EXTRA_USER_IDS_BY_COMPANY[cid] || []),
+      ),
+    ).filter((id) => !sellerUserIds.includes(id));
+    const odooUserIds = [...sellerUserIds, ...extraUserIds];
 
     // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
     const allInvoices =
@@ -168,20 +189,19 @@ export async function GET(req: NextRequest) {
         },
       )) || [];
 
-    const odooNameMap: Record<string, number> = {};
+    // Se cruza solo por `user_id`: es la clave real y es la misma con la que se
+    // construyó el dominio de Odoo. Cruzar por nombre permitía que dos sellers
+    // con el mismo nombre normalizado cobraran el mismo monto, y que en la
+    // vista superadmin de todas las sedes un seller capturara la facturación
+    // del homónimo de otra sede.
     const odooUserIdMap: Record<number, number> = {};
     allInvoices.forEach((inv: any) => {
       const userId = inv.invoice_user_id?.[0] || 0;
-      const odooName = inv.invoice_user_id?.[1] || "";
       const amount =
         inv.move_type === "out_refund"
           ? -(inv.amount_untaxed || 0)
           : inv.amount_untaxed || 0;
       if (userId) odooUserIdMap[userId] = (odooUserIdMap[userId] || 0) + amount;
-      if (odooName) {
-        const key = normalize(odooName);
-        odooNameMap[key] = (odooNameMap[key] || 0) + amount;
-      }
     });
 
     // ── PEDIDOS: mismo criterio que el filtro "Pedidos Activos" de Odoo ──
@@ -215,18 +235,12 @@ export async function GET(req: NextRequest) {
         { fields: ["amount_total", "user_id"] },
       )) || [];
 
-    const orderNameMap: Record<string, number> = {};
     const orderUserIdMap: Record<number, number> = {};
     allOrders.forEach((order: any) => {
       const userId = order.user_id?.[0] || 0;
-      const odooName = order.user_id?.[1] || "";
       const amount = order.amount_total || 0;
       if (userId)
         orderUserIdMap[userId] = (orderUserIdMap[userId] || 0) + amount;
-      if (odooName) {
-        const key = normalize(odooName);
-        orderNameMap[key] = (orderNameMap[key] || 0) + amount;
-      }
     });
 
     // ── Cruzar datos ──
@@ -240,20 +254,11 @@ export async function GET(req: NextRequest) {
         const cuotaDiaria = diasHabiles > 0 ? cuota / diasHabiles : 0;
         const cuotaVendedorAlDia = cuotaDiaria * diasTranscurridos;
 
-        const sellerKey = normalize(seller.name);
         const venta = parseFloat(
-          (
-            odooNameMap[sellerKey] ??
-            odooUserIdMap[seller.user_id] ??
-            0
-          ).toFixed(2),
+          (odooUserIdMap[seller.user_id] ?? 0).toFixed(2),
         );
         const pedido = parseFloat(
-          (
-            orderNameMap[sellerKey] ??
-            orderUserIdMap[seller.user_id] ??
-            0
-          ).toFixed(2),
+          (orderUserIdMap[seller.user_id] ?? 0).toFixed(2),
         );
         const ventaMasPedidos = venta + pedido;
         const porcentaje =
@@ -276,14 +281,23 @@ export async function GET(req: NextRequest) {
       .sort((a: any, b: any) => b.venta - a.venta)
       .map((v: any, i: number) => ({ ...v, posicion: i + 1 }));
 
-    const totalVentas = vendedores.reduce(
-      (sum: number, v: any) => sum + v.venta,
+    // Los extras suman al total por user_id (nunca por nombre: no tienen fila
+    // en `sellers` contra la que cruzar).
+    const extraVentas = extraUserIds.reduce(
+      (sum: number, id: number) => sum + (odooUserIdMap[id] || 0),
       0,
     );
-    const totalPedidos = vendedores.reduce(
-      (sum: number, v: any) => sum + v.pedidos,
+    const extraPedidos = extraUserIds.reduce(
+      (sum: number, id: number) => sum + (orderUserIdMap[id] || 0),
       0,
     );
+
+    const totalVentas =
+      vendedores.reduce((sum: number, v: any) => sum + v.venta, 0) +
+      extraVentas;
+    const totalPedidos =
+      vendedores.reduce((sum: number, v: any) => sum + v.pedidos, 0) +
+      extraPedidos;
     const totalVentaMasPedidos = totalVentas + totalPedidos;
 
     return NextResponse.json({
