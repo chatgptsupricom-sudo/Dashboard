@@ -21,6 +21,7 @@ interface ImportRow {
   stockOffice?: number;
   stockWarehouse?: number;
   allowsDecimal?: boolean;
+  brand?: string;
   description?: string;
 }
 
@@ -173,6 +174,7 @@ export async function POST(request: NextRequest) {
             `UPDATE pop_products
              SET name = ?, category_id = COALESCE(?, category_id),
                  uom_id = COALESCE(?, uom_id),
+                 brand = COALESCE(?, brand),
                  description = COALESCE(?, description),
                  updated_at = NOW()
              WHERE id = ?`,
@@ -180,6 +182,7 @@ export async function POST(request: NextRequest) {
               name,
               categoryId,
               uomId,
+              truncar(row?.brand, 100),
               truncar(row?.description, 2000),
               productId,
             ],
@@ -190,13 +193,14 @@ export async function POST(request: NextRequest) {
           sku = sku || (await generateSku(name, cids));
           const insert = await conn.execute(
             `INSERT INTO pop_products
-              (code, name, category_id, uom_id, description, is_active, cids, created_by_user_id)
-             VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+              (code, name, category_id, uom_id, brand, description, is_active, cids, created_by_user_id)
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
             [
               sku,
               name,
               categoryId,
               uomId,
+              truncar(row?.brand, 100),
               truncar(row?.description, 2000),
               cids,
               userId,

@@ -147,6 +147,9 @@ export function ProductCard({
           <h3 className="mt-1.5 line-clamp-2 text-sm font-semibold text-slate-900">
             {product.name}
           </h3>
+          {product.brand && (
+            <p className="mt-0.5 text-xs font-medium text-slate-600">{product.brand}</p>
+          )}
           <p className="mt-0.5 text-xs text-slate-500">
             {product.category_name || "Sin categoría"}
             {product.uom_name ? ` · ${product.uom_name}` : ""}

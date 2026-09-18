@@ -61,7 +61,7 @@ export function CatalogTab({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por nombre o SKU..."
+              placeholder="Buscar por nombre, SKU o marca..."
               className="pl-9"
             />
           </div>

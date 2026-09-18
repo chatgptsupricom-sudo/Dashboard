@@ -64,6 +64,8 @@ export function ProductFormDialog({
   const [uomId, setUomId] = useState<string>("");
   const [newUom, setNewUom] = useState("");
   const [newUomAllowsDecimal, setNewUomAllowsDecimal] = useState(false);
+  const [brand, setBrand] = useState("");
+  const [brands, setBrands] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [stockOffice, setStockOffice] = useState("0");
   const [stockWarehouse, setStockWarehouse] = useState("0");
@@ -77,6 +79,15 @@ export function ProductFormDialog({
 
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Marcas de Odoo: se cargan una sola vez, al primer abrir del diálogo.
+  useEffect(() => {
+    if (!open || brands.length > 0) return;
+    fetch("/api/adminleads/material-pop/brands")
+      .then((r) => r.json())
+      .then((j) => setBrands(j?.brands || []))
+      .catch(() => setBrands([]));
+  }, [open, brands.length]);
+
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -86,6 +97,7 @@ export function ProductFormDialog({
       setAbbreviationEdited(false);
       setCategoryId(product.category_id ? String(product.category_id) : "");
       setUomId(product.uom_id ? String(product.uom_id) : "");
+      setBrand(product.brand || "");
       setDescription(product.description || "");
       setImageId(product.image_id);
       setImagePreview(product.image_url);
@@ -98,6 +110,7 @@ export function ProductFormDialog({
       setAbbreviationEdited(false);
       setCategoryId("");
       setUomId("");
+      setBrand("");
       setDescription("");
       setImageId(null);
       setImagePreview(null);
@@ -152,6 +165,7 @@ export function ProductFormDialog({
       const payload: any = {
         name: name.trim(),
         abbreviation: abbreviation.trim() || undefined,
+        brand: brand.trim() || null,
         description: description.trim() || null,
         imageId,
       };
@@ -393,6 +407,25 @@ export function ProductFormDialog({
                 </label>
               )}
             </div>
+          </div>
+
+          {/* Marca */}
+          <div>
+            <Label htmlFor="pop-brand">Marca</Label>
+            <Input
+              id="pop-brand"
+              list="pop-brand-options"
+              value={brand}
+              maxLength={100}
+              onChange={(e) => setBrand(e.target.value)}
+              placeholder="Elige una marca o escríbela"
+              className="mt-1.5"
+            />
+            <datalist id="pop-brand-options">
+              {brands.map((b) => (
+                <option key={b} value={b} />
+              ))}
+            </datalist>
           </div>
 
           {/* Descripción */}

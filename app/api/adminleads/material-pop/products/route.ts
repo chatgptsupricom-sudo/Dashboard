@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 const MAX = {
   code: 50,
   name: 255,
+  brand: 100,
   description: 2000,
 };
 
@@ -41,8 +42,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (q) {
-      where += " AND (p.name LIKE ? OR p.code LIKE ?)";
-      params.push(`%${q}%`, `%${q}%`);
+      where += " AND (p.name LIKE ? OR p.code LIKE ? OR p.brand LIKE ?)";
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`);
     }
 
     if (categoryId && /^\d+$/.test(categoryId)) {
@@ -181,13 +182,14 @@ export async function POST(request: NextRequest) {
 
     const productRes = await conn.execute(
       `INSERT INTO pop_products
-        (code, name, category_id, uom_id, description, image_id, is_active, cids, created_by_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (code, name, category_id, uom_id, brand, description, image_id, is_active, cids, created_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sku,
         name,
         categoryId,
         uomId,
+        truncar(body?.brand, MAX.brand),
         truncar(body?.description, MAX.description),
         body?.imageId ? Number(body.imageId) : null,
         1,
@@ -350,12 +352,13 @@ export async function PUT(request: NextRequest) {
 
     await conn.execute(
       `UPDATE pop_products
-       SET name = ?, category_id = ?, uom_id = ?, description = ?, image_id = ?, updated_at = NOW()
+       SET name = ?, category_id = ?, uom_id = ?, brand = ?, description = ?, image_id = ?, updated_at = NOW()
        WHERE id = ?`,
       [
         name,
         categoryId,
         uomId,
+        truncar(body?.brand, MAX.brand),
         truncar(body?.description, MAX.description),
         body?.imageId ? Number(body.imageId) : null,
         productId,
