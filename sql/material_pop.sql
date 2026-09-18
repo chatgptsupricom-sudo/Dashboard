@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS pop_products (
   name VARCHAR(255) NOT NULL,
   category_id INT NULL,
   uom_id INT NULL,
+  brand VARCHAR(100) NULL,
   description TEXT NULL,
   image_id INT NULL,
   is_active TINYINT DEFAULT 1,

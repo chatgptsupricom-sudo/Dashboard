@@ -36,6 +36,7 @@ export interface PopProduct {
   uom_id: number | null;
   uom_name: string | null;
   uom_allows_decimal: boolean | number;
+  brand: string | null;
   description: string | null;
   image_id: number | null;
   image_url: string | null;

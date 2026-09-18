@@ -25,6 +25,7 @@ interface ParsedRow {
   uom?: string;
   stockOffice?: number;
   stockWarehouse?: number;
+  brand?: string;
   description?: string;
 }
 
@@ -35,6 +36,7 @@ const HEADERS = [
   "Unidad de medida",
   "Stock oficina",
   "Stock almacén",
+  "Marca",
   "Descripción",
 ];
 
@@ -56,7 +58,8 @@ async function parseWorkbook(buf: ArrayBuffer): Promise<ParsedRow[]> {
       uom: String(get(4) || "").trim(),
       stockOffice: Number(get(5)) || 0,
       stockWarehouse: Number(get(6)) || 0,
-      description: String(get(7) || "").trim(),
+      brand: String(get(7) || "").trim(),
+      description: String(get(8) || "").trim(),
     });
   });
 
@@ -93,6 +96,7 @@ export function ExcelImportDialog({
       "Unidad",
       10,
       25,
+      "Genérica",
       "Ejemplo — puedes borrar esta fila",
     ]);
     ws.getRow(1).font = { bold: true };
@@ -102,7 +106,8 @@ export function ExcelImportDialog({
     ws.getColumn(4).width = 16;
     ws.getColumn(5).width = 14;
     ws.getColumn(6).width = 14;
-    ws.getColumn(7).width = 40;
+    ws.getColumn(7).width = 20;
+    ws.getColumn(8).width = 40;
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -213,7 +218,7 @@ export function ExcelImportDialog({
               {parsing ? "Leyendo archivo..." : "Clic para elegir un .xlsx"}
             </p>
             <p className="text-xs text-slate-400">
-              Columnas: SKU, Nombre, Categoría, Unidad, Stock oficina, Stock almacén, Descripción
+              Columnas: SKU, Nombre, Categoría, Unidad, Stock oficina, Stock almacén, Marca, Descripción
             </p>
           </button>
 
