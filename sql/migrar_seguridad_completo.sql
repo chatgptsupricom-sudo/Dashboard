@@ -520,10 +520,163 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================
+-- 4b. Egreso por etapas (Almacen -> Seguridad)
+--
+-- El egreso deja de ser "Almacen registra, Seguridad cuenta" y pasa a seguir
+-- el proceso real del almacen: armado -> pre-despacho -> verificacion de
+-- Almacen -> (empaquetado si es encomienda) -> almacenista de despacho ->
+-- verificacion de Seguridad -> calificacion. Cada paso guarda quien y cuando.
+--
+-- `etapa` NULL = registro del flujo anterior (o un ingreso, que no cambia):
+-- se siguen viendo como antes, no se les inventa una etapa.
+--
+-- `cantidad_armado` (en los renglones) es el conteo de Almacen al verificar
+-- el armado; `cantidad_verificada` sigue siendo el de Seguridad en el porton.
+-- Son dos conteos distintos a proposito: si coinciden los dos, nadie tuvo que
+-- confiar en el otro.
+-- ============================================================
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'etapa') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN etapa VARCHAR(30) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'tipo_entrega') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN tipo_entrega VARCHAR(20) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'almacenista_armado') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN almacenista_armado VARCHAR(200) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'armado_inicio_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN armado_inicio_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'armado_fin_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN armado_fin_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'armado_verificado_por') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN armado_verificado_por VARCHAR(200) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'armado_verificado_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN armado_verificado_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'empaquetado_por') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN empaquetado_por VARCHAR(200) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'empaquetado_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN empaquetado_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'almacenista_despacho') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN almacenista_despacho VARCHAR(200) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'despacho_asignado_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN despacho_asignado_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'aprobado') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN aprobado TINYINT(1) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'despachado') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN despachado TINYINT(1) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'motivo_no_aprobado') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN motivo_no_aprobado VARCHAR(500) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND COLUMN_NAME = 'cerrado_at') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD COLUMN cerrado_at TIMESTAMP NULL DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia_items'
+      AND COLUMN_NAME = 'cantidad_armado') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia_items ADD COLUMN cantidad_armado DECIMAL(12,3) DEFAULT NULL'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'seguridad_mercancia'
+      AND INDEX_NAME = 'idx_etapa') > 0,
+  'SELECT 1',
+  'ALTER TABLE seguridad_mercancia ADD INDEX idx_etapa (etapa)'));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ============================================================
 -- 5. Comprobacion
 --
--- En una base con el modulo RMA debe decir 10 y 15.
--- Sin rma_cases, dice 10 y 14, que tambien esta bien.
+-- En una base con el modulo RMA debe decir 10, 15 y 16.
+-- Sin rma_cases, dice 10, 14 y 16, que tambien esta bien.
 -- ============================================================
 
 SELECT
@@ -554,4 +707,23 @@ SELECT
         ('seguridad_calificaciones','cids'),
         ('seguridad_firmas','cids'),
         ('seguridad_mercancia','cids'),
-        ('rma_cases','despachado_at'))) AS columnas_de_15;
+        ('rma_cases','despachado_at'))) AS columnas_de_15,
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND (TABLE_NAME, COLUMN_NAME) IN (
+        ('seguridad_mercancia','etapa'),
+        ('seguridad_mercancia','tipo_entrega'),
+        ('seguridad_mercancia','almacenista_armado'),
+        ('seguridad_mercancia','armado_inicio_at'),
+        ('seguridad_mercancia','armado_fin_at'),
+        ('seguridad_mercancia','armado_verificado_por'),
+        ('seguridad_mercancia','armado_verificado_at'),
+        ('seguridad_mercancia','empaquetado_por'),
+        ('seguridad_mercancia','empaquetado_at'),
+        ('seguridad_mercancia','almacenista_despacho'),
+        ('seguridad_mercancia','despacho_asignado_at'),
+        ('seguridad_mercancia','aprobado'),
+        ('seguridad_mercancia','despachado'),
+        ('seguridad_mercancia','motivo_no_aprobado'),
+        ('seguridad_mercancia','cerrado_at'),
+        ('seguridad_mercancia_items','cantidad_armado'))) AS columnas_egreso_de_16;

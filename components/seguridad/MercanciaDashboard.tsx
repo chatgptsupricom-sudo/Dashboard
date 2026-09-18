@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
+import { ETAPAS, RESPONSABLE, esEtapa } from "@/lib/seguridad/egresoFlujo";
 import AvisosMercancia from "./AvisosMercancia";
 import {
   PageHeader,
@@ -52,7 +53,10 @@ type Dashboard = {
     almacenista_nombre: string;
     almacenistas_json: string | null;
     estado: "pendiente" | "conforme" | "descuadre";
+    etapa: string | null;
   }>;
+  /** Egresos abiertos por etapa (flujo por etapas). */
+  por_etapa?: Record<string, number>;
   top_almacenistas: Array<{
     nombre: string;
     egresos: number;
@@ -64,6 +68,7 @@ type Dashboard = {
 export default function MercanciaDashboard() {
   const tm = useTranslations("seguridad.mercancia");
   const td = useTranslations("seguridad.mercancia.dashboard");
+  const tf = useTranslations("seguridad.mercancia.flujo");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
@@ -171,6 +176,39 @@ export default function MercanciaDashboard() {
               />
             </section>
 
+            {/* Donde esta cada egreso abierto, etapa por etapa. Se actualiza
+                en vivo con cada paso de Almacen o de Seguridad. */}
+            <Card>
+              <h2 className="text-[13px] font-semibold text-slate-900 mb-3">{tf("en_curso")}</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+                {ETAPAS.filter((e) => e !== "cerrado").map((e) => {
+                  const n = data.por_etapa?.[e] || 0;
+                  const deSeguridad = RESPONSABLE[e] === "seguridad";
+                  return (
+                    <Link
+                      key={e}
+                      href={base}
+                      className={`rounded-xl border px-3 py-2.5 transition-colors hover:bg-slate-50 ${
+                        n > 0 ? "border-violet-200" : "border-slate-200/80"
+                      }`}
+                    >
+                      <p
+                        className={`text-xl font-semibold tabular-nums ${
+                          n > 0 ? "text-slate-900" : "text-slate-300"
+                        }`}
+                      >
+                        {n}
+                      </p>
+                      <p className="text-[11px] text-slate-500 leading-tight">{tf(`etapa.${e}`)}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {tf(`rol.${deSeguridad ? "seguridad" : "almacen"}`)}
+                      </p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </Card>
+
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
               <Card padded={false}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -201,6 +239,7 @@ export default function MercanciaDashboard() {
                           </p>
                           <p className="text-xs text-slate-500 truncate">
                             {fechaCorta(e.fecha)} · {e.almacenista_nombre}
+                            {esEtapa(e.etapa) ? ` · ${tf(`etapa.${e.etapa}`)}` : ""}
                           </p>
                         </div>
                         <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
