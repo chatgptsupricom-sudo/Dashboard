@@ -45,6 +45,10 @@ export interface KpiData {
   avgActivacion: number;
   avgClientes: number;
   avgCobertura: number;
+  /** Resumen de metas de venta por marca del mes (null si no hay). */
+  metasPorMarca?: { marcas: number } | null;
+  /** Planes de visita del mes (Cobertura territorial); null si no hay. */
+  coberturaTerritorial?: { planificadas: number; realizadas: number } | null;
   avgCicloReposicion: number | null;
   semanaMargen: (string | null)[];
   semanaVisitas: (string | null)[];

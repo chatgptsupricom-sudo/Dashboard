@@ -474,9 +474,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
   // Solo "Cumplimiento de cuota" tiene ya todo lo necesario para su peso real
   // (90%, con piso de pago del 80% -- ver pisoMinimoVentas). "Cobertura
-  // territorial" (ex "visitas_semanales", pasaria a 8%) y "Cobertura de
-  // marcas" (pasaria a 2%) quedan en 0% hasta que exista la planeacion de
-  // visitas por asesor y la meta de venta esperada por marca -- sin esa data
+  // territorial" (ex "visitas_semanales") pasa a 8% en los meses con planes de
+  // visita (hayPlanesVisita) y "Cobertura de marcas" a 2% en los meses con
+  // meta por marca (hayMetasPorMarca) -- sin esa data
   // la formula nueva no se puede calcular, y ponerles el peso nuevo con la
   // formula vieja mezclaria dos cosas distintas (decision del usuario). Los
   // demas KPIs pasan a ser solo informativos (no afectan el pago comisional,
@@ -491,18 +491,30 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     clientes_nuevos: 0,
     cobertura_marcas: 0,
   };
+  // Cobertura de marcas toma su peso nuevo (2%, mínimo 70%) solo en los
+  // meses que tienen metas por marca: sin ellas la fórmula nueva no se puede
+  // calcular (lib/stoplight/metasMarca).
+  const hayMetasPorMarca = !!kpiData?.metasPorMarca;
+  // Igual con Cobertura territorial (8%, mínimo 70%) y los planes de visita
+  // (lib/visitas/planificacion).
+  const hayPlanesVisita = !!kpiData?.coberturaTerritorial;
   const pesoDefaultVentas = (id: string): number => {
-    const tabla = selectedMes >= FECHA_CORTE_PESOS_VENTAS ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
+    const nuevo = selectedMes >= FECHA_CORTE_PESOS_VENTAS;
+    if (nuevo && id === "cobertura_marcas" && hayMetasPorMarca) return 2;
+    if (nuevo && id === "visitas_semanales" && hayPlanesVisita) return 8;
+    const tabla = nuevo ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
     return tabla[id] ?? 0;
   };
   // "Valor minimo para el pago a partir de": por debajo de este %, el KPI
   // aporta 0 al puntaje ponderado -- no es proporcional, es todo o nada
   // (decision del usuario). Solo aplica desde la misma fecha de corte de
-  // arriba. Cobertura territorial/marcas quedan reservados aca (70% cada
-  // uno) para cuando tengan su formula y peso nuevos.
+  // arriba. Cobertura de marcas y territorial usan 70% en los meses que tienen
+  // sus datos (metas por marca / planes de visita).
   const pisoMinimoVentas = (id: string): number | undefined => {
     if (selectedMes < FECHA_CORTE_PESOS_VENTAS) return undefined;
     const tabla: Record<string, number> = { cumplimiento_cuota_ventas: 80 };
+    if (hayMetasPorMarca) tabla.cobertura_marcas = 70;
+    if (hayPlanesVisita) tabla.visitas_semanales = 70;
     return tabla[id];
   };
 
@@ -543,13 +555,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "visitas_semanales",
-      title: t("kpi_visitas"),
+      // Con planes de visita en el mes es "Cobertura territorial" (foráneas
+      // realizadas ÷ planificadas, lib/visitas/planificacion): meta 100%.
+      title: hayPlanesVisita ? t("kpi_cobertura_territorial") : t("kpi_visitas"),
       peso: pesoDe("visitas_semanales", pesoDefaultVentas("visitas_semanales")),
-      average: kpiData ? String(kpiData.avgVisitas) : "0",
+      pisoMinimo: pisoMinimoVentas("visitas_semanales"),
+      average: kpiData ? (hayPlanesVisita ? `${kpiData.avgVisitas}%` : String(kpiData.avgVisitas)) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
-      goalSuffix: "",
+      goalDefault: hayPlanesVisita
+        ? "100"
+        : kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
+      metaFija: hayPlanesVisita,
+      hint: hayPlanesVisita
+        ? t("cobertura_territorial_hint", { r: kpiData?.coberturaTerritorial?.realizadas ?? 0, p: kpiData?.coberturaTerritorial?.planificadas ?? 0 })
+        : undefined,
+      goalSuffix: hayPlanesVisita ? "%" : "",
       cumple: kpiData ? kpiData.avgVisitas >= 100 : false,
     },
     {
@@ -589,10 +610,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       id: "cobertura_marcas",
       title: t("kpi_cobertura"),
       peso: pesoDe("cobertura_marcas", pesoDefaultVentas("cobertura_marcas")),
+      pisoMinimo: pisoMinimoVentas("cobertura_marcas"),
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "0",
+      // Con metas por marca la fila ya es % de lo esperado (meta 100%) y la
+      // meta se edita marca por marca en el detalle, no en esta celda.
+      goalDefault: hayMetasPorMarca
+        ? "100"
+        : kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "0",
+      metaFija: hayMetasPorMarca,
+      hint: hayMetasPorMarca ? t("cobertura_por_marca_hint", { n: kpiData?.metasPorMarca?.marcas ?? 0 }) : undefined,
       goalSuffix: "%",
       cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
     },
@@ -1466,7 +1494,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                           )}
                         </td>
                         <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
-                          {!isSuperAdmin ? (
+                          {!isSuperAdmin || kpi.metaFija ? (
                             <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <span className="inline-flex items-center gap-1">
@@ -1638,6 +1666,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
         defaultMes={selectedMes}
         ocultarCostoGanancia={gerenteVentaMode}
+        mostrarMetasMarca={!vendorMode}
+        puedeEditarMetas={isSuperAdmin}
+        onMetasChange={() => fetchData(true)}
       />
 
       {/* Activacion Cartera Modal */}

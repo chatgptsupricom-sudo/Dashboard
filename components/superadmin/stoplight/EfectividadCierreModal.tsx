@@ -169,10 +169,10 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                         {/* Ordenes */}
                         <div className="flex-1 text-center">
                           <div className="bg-indigo-50 rounded-xl p-4 mb-2">
-                            <p className="text-3xl font-bold text-indigo-700">{data.global.ordenes}</p>
+                            <p className="text-3xl font-bold text-indigo-700">{data.global.emitidas}</p>
                           </div>
-                          <p className="text-xs font-medium text-indigo-600">{t("ordenes")}</p>
-                          <p className="text-[10px] text-slate-400">{t("ordenenes_confirmadas")}</p>
+                          <p className="text-xs font-medium text-indigo-600">{t("cot_emitidas")}</p>
+                          <p className="text-[10px] text-slate-400">{t("cot_emitidas_desc")}</p>
                         </div>
                         {/* Arrow */}
                         <div className="flex flex-col items-center">
@@ -181,10 +181,12 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                         {/* Facturacion */}
                         <div className="flex-1 text-center">
                           <div className="bg-green-100 rounded-xl p-4 mb-2">
-                            <p className="text-3xl font-bold text-green-700">{data.global.facturadas}</p>
+                            <p className="text-3xl font-bold text-green-700">{data.global.confirmadas}</p>
                           </div>
-                          <p className="text-xs font-medium text-green-600">{t("facturadas_completo")}</p>
-                          <p className="text-[10px] text-slate-400">{t("invoice_status")}</p>
+                          <p className="text-xs font-medium text-green-600">{t("cot_confirmadas")}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {t("cot_resto", { pendientes: data.global.pendientes ?? 0, canceladas: data.global.canceladas ?? 0 })}
+                          </p>
                         </div>
                         {/* Efectividad */}
                         <div className="flex flex-col items-center ml-4">
@@ -201,12 +203,14 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
 
                   {/* Seller table */}
                   <div className="border rounded-xl overflow-x-auto">
-                    <table className="w-full text-sm min-w-[560px]">
+                    <table className="w-full text-sm min-w-[680px]">
                       <thead>
                         <tr className="bg-slate-50 border-b">
                           <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                          <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
-                          <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                          <th className="p-3 text-center font-medium text-indigo-600">{t("cot_emitidas")}</th>
+                          <th className="p-3 text-center font-medium text-green-600">{t("cot_confirmadas")}</th>
+                          <th className="p-3 text-center font-medium text-slate-500">{t("cot_pendientes")}</th>
+                          <th className="p-3 text-center font-medium text-red-500">{t("cot_canceladas")}</th>
                           <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                         </tr>
@@ -220,8 +224,10 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                               onClick={() => { setSelectedSeller(seller); setTab("semanal"); }}
                             >
                               <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                              <td className="p-3 text-center text-indigo-600 font-bold">{seller.ordenes}</td>
-                              <td className="p-3 text-center text-green-600 font-bold">{seller.facturadas}</td>
+                              <td className="p-3 text-center text-indigo-600 font-bold">{seller.emitidas}</td>
+                              <td className="p-3 text-center text-green-600 font-bold">{seller.confirmadas}</td>
+                              <td className="p-3 text-center text-slate-500">{seller.pendientes ?? "–"}</td>
+                              <td className="p-3 text-center text-red-500">{seller.canceladas ?? "–"}</td>
                               <td className="p-3 text-center"><Chip valor={seller.efectividad} /></td>
                               <td className="p-3 text-center"><Estado valor={seller.efectividad} /></td>
                             </tr>
@@ -266,8 +272,9 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                           <thead>
                             <tr className="bg-slate-50 border-b">
                               <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                              <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
-                              <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                              <th className="p-3 text-center font-medium text-indigo-600">{t("cot_emitidas")}</th>
+                              <th className="p-3 text-center font-medium text-green-600">{t("cot_confirmadas")}</th>
+                              <th className="p-3 text-center font-medium text-red-500">{t("cot_canceladas")}</th>
                               <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
@@ -276,8 +283,9 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                             {selectedSeller.semanas.map((sem: any) => (
                               <tr key={sem.numero} className="border-b">
                                 <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                <td className="p-3 text-center text-indigo-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
-                                <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.facturadas : "-"}</td>
+                                <td className="p-3 text-center text-indigo-600 font-bold">{sem.efectividad != null ? sem.emitidas : "-"}</td>
+                                <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.confirmadas : "-"}</td>
+                                <td className="p-3 text-center text-red-500">{sem.efectividad != null ? sem.canceladas : "-"}</td>
                                 <td className="p-3 text-center">{sem.efectividad != null ? <Chip valor={sem.efectividad} /> : <span className="text-slate-400">–</span>}</td>
                                 <td className="p-3 text-center"><Estado valor={sem.efectividad} /></td>
                               </tr>

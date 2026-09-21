@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, Package } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import MetasMarcaPanel from "./MetasMarcaPanel";
 
 interface CoberturaMarcasModalProps {
   isOpen: boolean;
@@ -16,6 +17,12 @@ interface CoberturaMarcasModalProps {
    *  bruto, issue #178). La API ya no le manda esos montos; esto decide las
    *  columnas. */
   ocultarCostoGanancia?: boolean;
+  /** Pestaña de metas por marca (no en modo vendedor: su API no la tiene). */
+  mostrarMetasMarca?: boolean;
+  /** Superadmin edita las metas por marca. */
+  puedeEditarMetas?: boolean;
+  /** Se llama al cambiar una meta, para recargar la grilla. */
+  onMetasChange?: () => void;
 }
 
 type Periodo = "mes" | "trimestre" | "anio" | "todo";
@@ -23,13 +30,13 @@ type Periodo = "mes" | "trimestre" | "anio" | "todo";
 // Modal "Cobertura de marcas": resumen global + tabla por marca + detalle
 // semanal (con drill-down a una marca), con selector de período. Autocontenido.
 // Extraído de StoplightReport.tsx (audit #23).
-export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: CoberturaMarcasModalProps) {
+export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false, mostrarMetasMarca = false, puedeEditarMetas = false, onMetasChange }: CoberturaMarcasModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
   const [mes, setMes] = useState(defaultMes);
   const [periodo, setPeriodo] = useState<Periodo>("mes");
-  const [tab, setTab] = useState<"vendedor" | "semanal">("vendedor");
+  const [tab, setTab] = useState<"vendedor" | "semanal" | "metas">("vendedor");
   const [selectedMarca, setSelectedMarca] = useState<any>(null);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -115,7 +122,7 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
 
         {/* Modal Tabs */}
         <div className="flex gap-4 px-5 pt-4 border-b">
-          {(["vendedor", "semanal"] as const).map((tb) => (
+          {(mostrarMetasMarca ? (["vendedor", "semanal", "metas"] as const) : (["vendedor", "semanal"] as const)).map((tb) => (
             <button
               key={tb}
               onClick={() => { setTab(tb); setSelectedMarca(null); }}
@@ -123,14 +130,17 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                 tab === tb ? "text-cyan-500 border-b-2 border-cyan-500" : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              {tb === "vendedor" ? t("tab_por_marca") : t("tab_detalle_semanal")}
+              {tb === "vendedor" ? t("tab_por_marca") : tb === "semanal" ? t("tab_detalle_semanal") : t("tab_metas_marca")}
             </button>
           ))}
         </div>
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
-          {loading ? (
+          {tab === "metas" ? (
+            // Las metas son mensuales: usan el mes elegido, no el período.
+            <MetasMarcaPanel companyId={companyId} mes={mes} puedeEditar={puedeEditarMetas} onChange={onMetasChange} />
+          ) : loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               {t("loading")}
             </div>
