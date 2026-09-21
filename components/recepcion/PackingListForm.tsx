@@ -32,6 +32,9 @@ type Orden = { id: number; order_number: string; supplier_name: string };
 
 const vacio = (): Renglon => ({ codigo: "", producto: "", cantidad_esperada: "", cajas_esperadas: "" });
 
+type ContenedorForm = { numero: string; precinto_esperado: string };
+const contVacio = (): ContenedorForm => ({ numero: "", precinto_esperado: "" });
+
 function hoyMas(dias: number) {
   const d = new Date(Date.now() + dias * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -46,8 +49,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const [cids, setCids] = useState<number>(Number((user as any)?.cids) || 9);
   const [proveedor, setProveedor] = useState("");
   const [referencia, setReferencia] = useState("");
-  const [contenedor, setContenedor] = useState("");
-  const [precinto, setPrecinto] = useState("");
+  const [contenedores, setContenedores] = useState<ContenedorForm[]>([contVacio()]);
   const [fecha, setFecha] = useState(hoyMas(7));
   const [ordenId, setOrdenId] = useState<number | "">("");
   const [ocRef, setOcRef] = useState("");
@@ -76,8 +78,14 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
         setCids(Number(r.cids));
         setProveedor(r.proveedor || "");
         setReferencia(r.referencia || "");
-        setContenedor(r.contenedor || "");
-        setPrecinto(r.precinto_esperado || "");
+        setContenedores(
+          (j.contenedores || []).length
+            ? j.contenedores.map((c: any) => ({
+                numero: c.numero || "",
+                precinto_esperado: c.precinto_esperado || "",
+              }))
+            : [contVacio()],
+        );
         setFecha(r.fecha_estimada ? String(r.fecha_estimada).slice(0, 10) : "");
         setOrdenId(r.purchase_order_id || "");
         setOcRef(r.oc_referencia || "");
@@ -170,10 +178,21 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const cambiar = (i: number, campo: keyof Renglon, v: string) =>
     setRenglones((p) => p.map((r, n) => (n === i ? { ...r, [campo]: v } : r)));
 
+  const cambiarCont = (i: number, campo: keyof ContenedorForm, v: string) =>
+    setContenedores((p) => p.map((c, n) => (n === i ? { ...c, [campo]: v } : c)));
+
+  const contLimpios = contenedores.filter((c) => c.numero.trim() || c.precinto_esperado.trim());
+  const numeros = contLimpios.map((c) => c.numero.trim());
+  const contenedoresOk =
+    contLimpios.length > 0 &&
+    numeros.every(Boolean) &&
+    new Set(numeros).size === numeros.length;
+
   const limpios = renglones.filter((r) => r.producto.trim() || r.cantidad_esperada.trim());
   const listo =
     proveedor.trim() &&
     referencia.trim() &&
+    contenedoresOk &&
     limpios.length > 0 &&
     limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0);
 
@@ -188,8 +207,10 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cids,
           proveedor,
           referencia,
-          contenedor,
-          precinto_esperado: precinto,
+          contenedores: contLimpios.map((c) => ({
+            numero: c.numero.trim(),
+            precinto_esperado: c.precinto_esperado.trim() || null,
+          })),
           fecha_estimada: fecha || null,
           purchase_order_id: ordenId || null,
           oc_referencia: ocRef || null,
@@ -264,19 +285,6 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               <label className={labelClases}>{t("referencia")} *</label>
               <input value={referencia} onChange={(e) => setReferencia(e.target.value.slice(0, 100))} className={inputClases} />
             </div>
-            <div>
-              <label className={labelClases}>{t("contenedor")}</label>
-              <input
-                value={contenedor}
-                onChange={(e) => setContenedor(e.target.value.toUpperCase().slice(0, 50))}
-                placeholder="MSKU1234567"
-                className={inputClases}
-              />
-            </div>
-            <div>
-              <label className={labelClases}>{t("precinto_esperado")}</label>
-              <input value={precinto} onChange={(e) => setPrecinto(e.target.value.slice(0, 50))} className={inputClases} />
-            </div>
           </div>
           <div>
             <label className={labelClases}>{t("observaciones")}</label>
@@ -286,6 +294,58 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               className={`${inputClases} h-auto min-h-[72px] py-2.5`}
             />
           </div>
+        </Card>
+
+        {/* Contenedores: un packing list puede venir en varios, y cada uno se
+            recibe por separado en el almacen (pueden llegar en dias distintos). */}
+        <Card>
+          <SectionTitle>
+            {t("contenedores")} ({contLimpios.length})
+          </SectionTitle>
+          <p className="text-xs text-slate-500 -mt-1 mb-3">{t("contenedores_ayuda")}</p>
+          <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
+            <span>{t("contenedor")} *</span>
+            <span>{t("precinto_esperado")}</span>
+            <span />
+          </div>
+          <div className="divide-y divide-slate-50">
+            {contenedores.map((c, i) => (
+              <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 py-2 items-center">
+                <input
+                  value={c.numero}
+                  onChange={(e) => cambiarCont(i, "numero", e.target.value.toUpperCase().slice(0, 50))}
+                  placeholder="MSKU1234567"
+                  aria-label={t("contenedor")}
+                  className={`${inputClases} h-10 font-mono text-xs`}
+                />
+                <input
+                  value={c.precinto_esperado}
+                  onChange={(e) => cambiarCont(i, "precinto_esperado", e.target.value.slice(0, 50))}
+                  placeholder={t("precinto_esperado")}
+                  aria-label={t("precinto_esperado")}
+                  className={`${inputClases} h-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setContenedores((p) => (p.length > 1 ? p.filter((_, n) => n !== i) : [contVacio()]))
+                  }
+                  aria-label={t("quitar")}
+                  className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setContenedores((p) => [...p, contVacio()])}
+            className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-80"
+          >
+            <Plus className="w-4 h-4" />
+            {t("agregar_contenedor")}
+          </button>
         </Card>
 
         {/* Archivo del packing list */}

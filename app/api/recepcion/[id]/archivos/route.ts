@@ -53,7 +53,17 @@ export async function POST(
     if (!puedeComo(sesion!, regla.rol)) {
       return NextResponse.json({ error: "Este archivo no le toca a tu rol" }, { status: 403 });
     }
-    if (!regla.etapas.includes(datos.recepcion.etapa)) {
+    // Las fotos de llegada/precinto/cierre son de un contenedor y se miran
+    // contra la etapa de ESE contenedor; el resto, contra la del packing list.
+    let contenedorId: number | null = null;
+    let etapaQueManda = datos.recepcion.etapa;
+    if (regla.nivel === "contenedor") {
+      contenedorId = Number(form.get("contenedor_id"));
+      const cont = datos.contenedores.find((c) => Number(c.id) === contenedorId);
+      if (!cont) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
+      etapaQueManda = cont.etapa;
+    }
+    if (!regla.etapas.includes(etapaQueManda)) {
       return NextResponse.json(
         { error: "Ya no se puede subir este archivo en esta etapa" },
         { status: 409 },
@@ -92,9 +102,19 @@ export async function POST(
     try {
       const res = await query(
         `INSERT INTO recepcion_packing_archivos
-           (recepcion_id, item_id, tipo, nombre, mime, tamano, data, subido_por)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, itemId, tipo, String(archivo.name || "").slice(0, 200) || null, mime, buf.length, buf, sesion!.nombre],
+           (recepcion_id, item_id, contenedor_id, tipo, nombre, mime, tamano, data, subido_por)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          itemId,
+          contenedorId,
+          tipo,
+          String(archivo.name || "").slice(0, 200) || null,
+          mime,
+          buf.length,
+          buf,
+          sesion!.nombre,
+        ],
       );
       return NextResponse.json(
         {
@@ -102,6 +122,7 @@ export async function POST(
           archivo: {
             id: Number((res.rows as any)?.insertId),
             item_id: itemId,
+            contenedor_id: contenedorId,
             tipo,
             nombre: archivo.name,
             mime,

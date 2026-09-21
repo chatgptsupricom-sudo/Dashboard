@@ -51,14 +51,15 @@ export function puedeComo(sesion: Sesion, rol: "compras" | "almacen"): boolean {
   return sesion.rol === "superadmin" || sesion.rol === rol;
 }
 
-/** Recepcion con renglones y la lista de archivos (sin el binario). */
+/** Recepcion con renglones, contenedores y la lista de archivos (sin el binario). */
 export async function cargarRecepcion(id: number) {
   const r = await query("SELECT * FROM recepcion_packing WHERE id = ?", [id]);
   if (r.rows.length === 0) return null;
-  const [items, archivos] = await Promise.all([
+  const [items, contenedores, archivos] = await Promise.all([
     query("SELECT * FROM recepcion_packing_items WHERE recepcion_id = ? ORDER BY id", [id]),
+    query("SELECT * FROM recepcion_packing_contenedores WHERE recepcion_id = ? ORDER BY id", [id]),
     query(
-      `SELECT id, item_id, tipo, nombre, mime, tamano, subido_por, created_at
+      `SELECT id, item_id, contenedor_id, tipo, nombre, mime, tamano, subido_por, created_at
          FROM recepcion_packing_archivos WHERE recepcion_id = ? ORDER BY id`,
       [id],
     ),
@@ -66,6 +67,7 @@ export async function cargarRecepcion(id: number) {
   return {
     recepcion: r.rows[0] as any,
     items: items.rows as any[],
+    contenedores: contenedores.rows as any[],
     archivos: archivos.rows as any[],
   };
 }
@@ -78,12 +80,20 @@ export function fueraDeAlcance(sesion: Sesion, recepcion: any): boolean {
 export const EVENTO_RECEPCION = "recepcion_actualizada";
 
 export type AvisoRecepcion = {
-  accion: "creado" | "llegada" | "cerrado" | "editado" | "eliminado";
+  /**
+   * `llegada` y `contenedor_cerrado` son de UN contenedor (van con su numero
+   * y cuantos llevan); `cerrado` es el packing list entero.
+   */
+  accion: "creado" | "llegada" | "contenedor_cerrado" | "cerrado" | "editado" | "eliminado";
   id: number;
   cids: number;
   referencia?: string | null;
   proveedor?: string | null;
   resultado?: string | null;
+  contenedor?: string | null;
+  /** Contenedores que ya llegaron / total, para "2 de 3". */
+  llegados?: number;
+  total?: number;
 };
 
 /**

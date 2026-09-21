@@ -22,9 +22,10 @@ async function buscar(request: NextRequest, params: Promise<{ id: string; archiv
   }
   const res = await query(
     `SELECT a.id, a.tipo, a.nombre, a.mime ${conData ? ", a.data" : ""},
-            r.cids, r.etapa
+            r.cids, r.etapa, c.etapa AS etapa_contenedor
        FROM recepcion_packing_archivos a
        JOIN recepcion_packing r ON r.id = a.recepcion_id
+       LEFT JOIN recepcion_packing_contenedores c ON c.id = a.contenedor_id
       WHERE a.id = ? AND a.recepcion_id = ?`,
     [archivoId, id],
   );
@@ -75,7 +76,10 @@ export async function DELETE(
     if (!puedeComo(sesion!, regla.rol)) {
       return NextResponse.json({ error: "Este archivo no le toca a tu rol" }, { status: 403 });
     }
-    if (!regla.etapas.includes(fila.etapa)) {
+    // Foto de contenedor: manda la etapa de su contenedor (una foto de
+    // llegada no se borra despues de registrar la llegada de ESE contenedor).
+    const etapa = regla.nivel === "contenedor" ? fila.etapa_contenedor : fila.etapa;
+    if (!regla.etapas.includes(etapa)) {
       return NextResponse.json(
         { error: "Esta etapa ya se cerro: el archivo queda como registro" },
         { status: 409 },

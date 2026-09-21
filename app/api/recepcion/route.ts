@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { insertarItems, validarCabeceraEItems } from "@/lib/recepcion/validacion";
+import {
+  insertarContenedores,
+  insertarItems,
+  validarCabeceraEItems,
+} from "@/lib/recepcion/validacion";
 import { emitirRecepcion, puedeComo, requireRecepcion } from "@/lib/recepcion/servidor";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -33,7 +37,13 @@ export async function GET(request: NextRequest) {
               r.creado_por, r.created_at, r.llegada_at, r.cerrado_at,
               (SELECT COUNT(*) FROM recepcion_packing_items i WHERE i.recepcion_id = r.id) AS total_items,
               (SELECT COUNT(*) FROM recepcion_packing_items i
-                WHERE i.recepcion_id = r.id AND i.cantidad_recibida IS NOT NULL) AS items_contados
+                WHERE i.recepcion_id = r.id AND i.cantidad_recibida IS NOT NULL) AS items_contados,
+              (SELECT COUNT(*) FROM recepcion_packing_contenedores c
+                WHERE c.recepcion_id = r.id) AS contenedores_total,
+              (SELECT COUNT(*) FROM recepcion_packing_contenedores c
+                WHERE c.recepcion_id = r.id AND c.etapa <> 'por_llegar') AS contenedores_llegados,
+              (SELECT GROUP_CONCAT(c.numero ORDER BY c.id SEPARATOR ', ')
+                 FROM recepcion_packing_contenedores c WHERE c.recepcion_id = r.id) AS contenedores
          FROM recepcion_packing r
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY (r.etapa = 'cerrado') ASC, COALESCE(r.fecha_estimada, DATE(r.created_at)) ASC, r.id DESC
@@ -69,7 +79,7 @@ export async function POST(request: NextRequest) {
     if ("error" in validado) {
       return NextResponse.json({ error: validado.error }, { status: 400 });
     }
-    const { cab, items } = validado;
+    const { cab, items, contenedores } = validado;
 
     const res = await query(
       `INSERT INTO recepcion_packing
@@ -91,6 +101,7 @@ export async function POST(request: NextRequest) {
     );
     const id = Number((res.rows as any)?.insertId);
     await insertarItems(id, items);
+    await insertarContenedores(id, contenedores);
 
     emitirRecepcion({
       accion: "creado",
