@@ -11,13 +11,13 @@ export function AlertsTab({
   products: PopProduct[];
   onGoToCatalog: () => void;
 }) {
-  const alerts = products.filter((product) => product.stock_office === 0 || product.stock_warehouse === 0);
+  const alerts = products.filter((product) => product.has_alert);
 
   if (alerts.length === 0) {
     return (
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
         <p className="text-sm font-semibold text-emerald-800">No hay productos agotados</p>
-        <p className="mt-1 text-xs text-emerald-700">Ambas ubicaciones tienen stock en todos los productos.</p>
+        <p className="mt-1 text-xs text-emerald-700">Todos los productos tienen existencia en alguna ubicación.</p>
       </div>
     );
   }
@@ -31,16 +31,10 @@ export function AlertsTab({
             <p className="font-mono text-xs text-slate-500">{product.code}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-medium">
-            {product.stock_office === 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-1 text-red-700">
-                <Building2 className="h-3.5 w-3.5" /> Oficina agotada
-              </span>
-            )}
-            {product.stock_warehouse === 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-1 text-red-700">
-                <Warehouse className="h-3.5 w-3.5" /> Almacén agotado
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-1 text-red-700">
+              <Building2 className="h-3.5 w-3.5" />
+              <Warehouse className="h-3.5 w-3.5" /> Sin existencia en Oficina ni Almacén
+            </span>
           </div>
         </div>
       ))}

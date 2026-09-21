@@ -76,7 +76,11 @@ export async function GET(request: NextRequest) {
       stock_office: Number(row.stock_office),
       stock_warehouse: Number(row.stock_warehouse),
       stock_total: Number(row.stock_total),
-      has_alert: Number(row.stock_office) === 0 || Number(row.stock_warehouse) === 0,
+      // Agotado = sin nada en ninguna de las dos ubicaciones. Con `||` un
+      // producto con 3000 en almacen y 0 en oficina salia como agotado, que es
+      // el caso normal: casi todo el material POP se guarda en almacen y se
+      // pasa a oficina cuando hace falta.
+      has_alert: Number(row.stock_total) <= 0,
       image_url: row.image_id
         ? `/api/adminleads/material-pop/images/${row.image_id}`
         : null,
