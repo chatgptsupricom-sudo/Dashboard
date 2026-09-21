@@ -6,7 +6,8 @@ import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "
 import { computeComprasKpis } from "@/lib/compras/kpis";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { obtenerLineasMargen, fechaLocal, fechaLocalDeDatetime } from "@/lib/stoplight/margen";
+import { obtenerLineasMargen, fechaLocal } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -444,45 +445,17 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    // --- Efectividad de cierre (sale order effectiveness per week) ---
-    let efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
-    let totalOrdenesMes = 0;
-    let totalFacturadasMes = 0;
+    // --- Efectividad de cierre de cotizaciones (por semana) ---
+    // Confirmadas ÷ emitidas, por semana de emisión (lib/stoplight/cotizaciones).
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
     try {
-      const saleOrders = await callOdooRPC<any[]>(
-        "sale.order",
-        "search_read",
-        [
-          [
-            ["state", "in", ["sale", "done"]],
-            ["company_id", "=", companyId],
-            ["date_order", ">=", fechaInicio],
-            ["date_order", "<=", fechaFin + " 23:59:59"],
-            ["user_id", "!=", false],
-          ],
-        ],
-        {
-          fields: ["id", "user_id", "state", "date_order", "amount_total", "invoice_status", "invoice_ids"],
-          limit: 10000,
-        }
-      );
-
-      (saleOrders || []).forEach((order: any) => {
-        const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-        const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-
-        totalOrdenesMes++;
-        if (isInvoiced) totalFacturadasMes++;
-
-        const orderDate = fechaLocalDeDatetime(order.date_order);
-        for (let i = 0; i < semanas.length; i++) {
-          if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-            efectividadPorSemana[i].total++;
-            if (isInvoiced) efectividadPorSemana[i].facturacion++;
-            break;
-          }
-        }
-      });
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((s) => c.fecha >= s.inicio && c.fecha <= s.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
     } catch (e: any) {
       console.error("Error calculating efectividad:", e.message);
     }
