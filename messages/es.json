@@ -2042,7 +2042,20 @@
     "always": "Siempre",
     "ranking_fuera_de_vigencia": "La regla no está vigente en este mes. Cambia el mes para ver su ranking.",
     "ranking_sin_ventas": "Ningún vendedor vendió esta marca en el mes (dentro de las fechas de la regla).",
-    "ranking_sin_ventas_producto": "Ningún vendedor vendió este producto en el mes (dentro de las fechas de la regla)."
+    "ranking_sin_ventas_producto": "Ningún vendedor vendió este producto en el mes (dentro de las fechas de la regla).",
+    "filtro_todas": "Todas",
+    "filtro_vigente": "Vigentes",
+    "filtro_proxima": "Próximas",
+    "filtro_vencida": "Vencidas",
+    "filtro_inactiva": "Inactivas",
+    "filtro_vacio": "No hay reglas con ese estado.",
+    "estado_vigente": "Vigente",
+    "estado_proxima": "Próxima",
+    "estado_vencida": "Vencida",
+    "estado_inactiva": "Inactiva",
+    "editar": "Editar",
+    "duplicar_mes_siguiente": "Duplicar para el mes siguiente",
+    "aviso_solapamiento": "Ya hay otra regla activa para esta marca/producto que se pisa con estas fechas; el spiff se pagaría dos veces por la misma venta:"
   },
   "roles": {
     "superAdmin": "Super Admin",
