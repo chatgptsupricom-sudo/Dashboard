@@ -63,11 +63,12 @@ export const ARCHIVO_PERMITIDO: Record<
 export type Contenedor = {
   id: number;
   numero: string;
-  precinto_esperado: string | null;
+  /** Un contenedor puede venir con uno o mas precintos. */
+  precintos_esperados: string[];
   etapa: Etapa;
   llegada_at: string | null;
   llegada_por: string | null;
-  precinto_recibido: string | null;
+  precintos_recibidos: string[];
   precinto_coincide: number | null;
   cerrado_at: string | null;
   cerrado_por: string | null;
@@ -149,6 +150,59 @@ export function normalizarPrecinto(v: string | null | undefined): string {
   return String(v || "")
     .toUpperCase()
     .replace(/[\s\-_.]/g, "");
+}
+
+export const MAX_PRECINTOS = 10;
+
+/**
+ * Limpia una lista de precintos: sin vacios, sin repetidos (comparando
+ * normalizado: "SL-100" y "sl 100" son el mismo) y como mucho MAX_PRECINTOS.
+ */
+export function limpiarPrecintos(lista: unknown): string[] {
+  const crudos = Array.isArray(lista) ? lista : typeof lista === "string" ? [lista] : [];
+  const vistos = new Set<string>();
+  const out: string[] = [];
+  for (const v of crudos) {
+    const s = String(v ?? "").trim().slice(0, 50);
+    const n = normalizarPrecinto(s);
+    if (!n || vistos.has(n)) continue;
+    vistos.add(n);
+    out.push(s);
+    if (out.length >= MAX_PRECINTOS) break;
+  }
+  return out;
+}
+
+/**
+ * Compara los precintos que dice el packing list con los que Almacen vio.
+ *
+ * Coincide solo si son exactamente los mismos: un precinto que falta puede
+ * ser uno que se rompio o se cambio en el camino, y uno de mas, un precinto
+ * puesto despues. Sin esperados no hay contra que comparar (`coincide: null`).
+ */
+export function compararPrecintos(
+  esperados: string[],
+  recibidos: string[],
+): { coincide: boolean | null; faltan: string[]; sobran: string[] } {
+  if (esperados.length === 0) return { coincide: null, faltan: [], sobran: [] };
+  const rec = new Set(recibidos.map(normalizarPrecinto));
+  const esp = new Set(esperados.map(normalizarPrecinto));
+  const faltan = esperados.filter((p) => !rec.has(normalizarPrecinto(p)));
+  const sobran = recibidos.filter((p) => !esp.has(normalizarPrecinto(p)));
+  return { coincide: faltan.length === 0 && sobran.length === 0, faltan, sobran };
+}
+
+/** Lee una lista de precintos guardada como JSON, o el precinto unico de antes. */
+export function leerPrecintos(json: unknown, unico?: string | null): string[] {
+  if (typeof json === "string" && json) {
+    try {
+      const v = JSON.parse(json);
+      if (Array.isArray(v)) return limpiarPrecintos(v);
+    } catch {
+      // Texto roto: se cae al precinto unico.
+    }
+  }
+  return unico ? limpiarPrecintos([unico]) : [];
 }
 
 export const SUCURSALES: Array<{ cids: number; nombre: string }> = [

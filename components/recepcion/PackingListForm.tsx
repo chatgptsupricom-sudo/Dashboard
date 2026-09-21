@@ -32,8 +32,13 @@ type Orden = { id: number; order_number: string; supplier_name: string };
 
 const vacio = (): Renglon => ({ codigo: "", producto: "", cantidad_esperada: "", cajas_esperadas: "" });
 
-type ContenedorForm = { numero: string; precinto_esperado: string };
-const contVacio = (): ContenedorForm => ({ numero: "", precinto_esperado: "" });
+// Un contenedor puede tener varios precintos: se escriben separados por coma
+// (los precintos pueden llevar espacios, "ML 445566", asi que no se separa por
+// espacio).
+type ContenedorForm = { numero: string; precintos: string };
+const contVacio = (): ContenedorForm => ({ numero: "", precintos: "" });
+const separarPrecintos = (v: string) =>
+  v.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
 
 function hoyMas(dias: number) {
   const d = new Date(Date.now() + dias * 86400000);
@@ -82,7 +87,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           (j.contenedores || []).length
             ? j.contenedores.map((c: any) => ({
                 numero: c.numero || "",
-                precinto_esperado: c.precinto_esperado || "",
+                precintos: (c.precintos_esperados || []).join(", "),
               }))
             : [contVacio()],
         );
@@ -181,7 +186,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const cambiarCont = (i: number, campo: keyof ContenedorForm, v: string) =>
     setContenedores((p) => p.map((c, n) => (n === i ? { ...c, [campo]: v } : c)));
 
-  const contLimpios = contenedores.filter((c) => c.numero.trim() || c.precinto_esperado.trim());
+  const contLimpios = contenedores.filter((c) => c.numero.trim() || c.precintos.trim());
   const numeros = contLimpios.map((c) => c.numero.trim());
   const contenedoresOk =
     contLimpios.length > 0 &&
@@ -209,7 +214,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           referencia,
           contenedores: contLimpios.map((c) => ({
             numero: c.numero.trim(),
-            precinto_esperado: c.precinto_esperado.trim() || null,
+            precintos_esperados: separarPrecintos(c.precintos),
           })),
           fecha_estimada: fecha || null,
           purchase_order_id: ordenId || null,
@@ -305,7 +310,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           <p className="text-xs text-slate-500 -mt-1 mb-3">{t("contenedores_ayuda")}</p>
           <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
             <span>{t("contenedor")} *</span>
-            <span>{t("precinto_esperado")}</span>
+            <span>{t("precintos_esperados")}</span>
             <span />
           </div>
           <div className="divide-y divide-slate-50">
@@ -319,10 +324,10 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                   className={`${inputClases} h-10 font-mono text-xs`}
                 />
                 <input
-                  value={c.precinto_esperado}
-                  onChange={(e) => cambiarCont(i, "precinto_esperado", e.target.value.slice(0, 50))}
-                  placeholder={t("precinto_esperado")}
-                  aria-label={t("precinto_esperado")}
+                  value={c.precintos}
+                  onChange={(e) => cambiarCont(i, "precintos", e.target.value.slice(0, 500))}
+                  placeholder={t("precintos_ph")}
+                  aria-label={t("precintos_esperados")}
                   className={`${inputClases} h-10`}
                 />
                 <button

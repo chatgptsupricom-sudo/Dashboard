@@ -2732,7 +2732,7 @@
     "precinto_recibido": "Seal received",
     "precinto_leido": "Seal number you see",
     "precinto_leido_ph": "Type it exactly as you read it",
-    "precinto_coincide": "Matches the packing list",
+    "precinto_coincide": "Match the packing list",
     "precinto_distinto": "Does not match the packing list (expected: {esperado})",
     "fecha_estimada": "Estimated arrival",
     "oc": "Purchase order",
@@ -2764,7 +2764,7 @@
     "error": "Could not save",
     "llegada": "Container arrival",
     "foto_llegada": "Container photo on arrival",
-    "foto_precinto": "Seal photo",
+    "foto_precinto": "Photos of the seals",
     "foto_cierre": "Container photo when finished",
     "foto_golpe": "Photo of the damaged box",
     "tomar_foto": "Take photo",
@@ -2821,6 +2821,14 @@
     "registrar_llegada_contenedor": "Register arrival of this container",
     "terminar_contenedor": "Finish unloading this container",
     "notas_contenedor": "Notes for this container (optional)",
-    "falta_contenedores": "finish {count} container(s)"
+    "falta_contenedores": "finish {count} container(s)",
+    "precintos_esperados": "Seals (per packing list)",
+    "precintos_ph": "Comma separated: SL-100, SL-101",
+    "precintos_recibidos": "Seals received",
+    "precintos_leidos": "Seals you see",
+    "agregar_precinto": "Add another seal",
+    "precintos_indicados": "{count, plural, =1 {The packing list lists # seal} other {The packing list lists # seals}}",
+    "precinto_faltan": "Missing: {lista}",
+    "precinto_sobran": "Not in the packing list: {lista}"
   }
 }
