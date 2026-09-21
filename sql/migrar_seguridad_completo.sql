@@ -20,6 +20,16 @@
 -- procedimientos almacenados, que necesitarian DELIMITER — una directiva del
 -- cliente que no todas las consolas entienden.
 --
+-- *** OJO: NO FUNCIONA EN EL PHPMYADMIN DE EASYPANEL ***
+-- Ahi el usuario root@'%' no puede leer information_schema (#1044 Acceso
+-- negado), asi que cada "agregar la columna si falta" no agrega nada y el
+-- script parece haber corrido bien. Paso con el egreso por etapas: la base
+-- quedo sin las columnas. En ese phpMyAdmin usa los scripts directos, con el
+-- nombre de la base delante de cada tabla:
+--   - sql/egreso_por_etapas.sql      (seccion 4b de este archivo)
+--   - sql/recepcion_packing_list.sql (recepcion por packing list)
+-- y verifica con SHOW COLUMNS / SHOW TABLES, no con la comprobacion del final.
+--
 -- FALTA APARTE: un usuario con rol `seguridad` en users_config
 -- (ver sql/insert_role_seguridad.sql).
 -- ============================================================

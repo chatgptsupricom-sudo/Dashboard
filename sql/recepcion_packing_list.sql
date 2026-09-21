@@ -12,10 +12,15 @@
 --   4. Almacen cierra con la foto de como quedo el contenedor.
 --
 -- Se puede correr VARIAS VECES sin romper nada (CREATE TABLE IF NOT EXISTS).
--- Al final imprime una comprobacion: debe decir 3.
+-- Al final lista las tablas creadas: tienen que salir las 3.
+--
+-- Escrito para el phpMyAdmin de EasyPanel: cada tabla lleva el nombre de la
+-- base delante y no se usa information_schema (ahi root@'%' no la puede leer
+-- y da #1044; sin el nombre de la base, hasta el CREATE TABLE falla). Si la
+-- base no se llama `supricom_panel`, reemplaza ese nombre en todo el archivo.
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS recepcion_packing (
+CREATE TABLE IF NOT EXISTS supricom_panel.recepcion_packing (
   id INT AUTO_INCREMENT PRIMARY KEY,
   -- Sucursal donde llega el contenedor (9=Valencia, 10=Caracas, 7=Panama).
   -- La elige Compras al cargarlo; Almacen solo ve los de su sucursal.
@@ -51,7 +56,7 @@ CREATE TABLE IF NOT EXISTS recepcion_packing (
 
 -- `cantidad_recibida` empieza en NULL a proposito: "todavia no lo conte" no
 -- es lo mismo que "llegaron cero".
-CREATE TABLE IF NOT EXISTS recepcion_packing_items (
+CREATE TABLE IF NOT EXISTS supricom_panel.recepcion_packing_items (
   id INT AUTO_INCREMENT PRIMARY KEY,
   recepcion_id INT NOT NULL,
   codigo VARCHAR(100) DEFAULT NULL,
@@ -65,13 +70,13 @@ CREATE TABLE IF NOT EXISTS recepcion_packing_items (
   golpeado_nota VARCHAR(300) DEFAULT NULL,
   INDEX idx_rpi_recepcion (recepcion_id),
   CONSTRAINT fk_rpi_recepcion FOREIGN KEY (recepcion_id)
-    REFERENCES recepcion_packing(id) ON DELETE CASCADE
+    REFERENCES supricom_panel.recepcion_packing(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Packing list original (PDF/Excel) y las fotos. En la base, igual que la
 -- foto del ingreso RMA: no hay almacenamiento de archivos aparte.
 -- tipo: packing_list | foto_llegada | foto_precinto | foto_cierre | foto_golpe
-CREATE TABLE IF NOT EXISTS recepcion_packing_archivos (
+CREATE TABLE IF NOT EXISTS supricom_panel.recepcion_packing_archivos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   recepcion_id INT NOT NULL,
   -- Solo en foto_golpe: el renglon (caja) golpeado.
@@ -85,11 +90,8 @@ CREATE TABLE IF NOT EXISTS recepcion_packing_archivos (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_rpa_recepcion (recepcion_id, tipo),
   CONSTRAINT fk_rpa_recepcion FOREIGN KEY (recepcion_id)
-    REFERENCES recepcion_packing(id) ON DELETE CASCADE
+    REFERENCES supricom_panel.recepcion_packing(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Comprobacion: debe decir 3.
-SELECT COUNT(*) AS tablas_de_3 FROM information_schema.TABLES
- WHERE TABLE_SCHEMA = DATABASE()
-   AND TABLE_NAME IN ('recepcion_packing','recepcion_packing_items',
-                      'recepcion_packing_archivos');
+-- Comprobacion: tienen que salir las 3 tablas.
+SHOW TABLES FROM supricom_panel LIKE 'recepcion%';
