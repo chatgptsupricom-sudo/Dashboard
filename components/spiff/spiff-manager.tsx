@@ -236,32 +236,19 @@ export default function SpiffManager({
     try {
       const res = await fetch(`/api/vendedores/spiff?company_id=${rule.company_id}`, { credentials: "include" });
       const json = await res.json();
-      const sellerBrandData = json.sellerBrandData || {};
-      const ruleMeta = rule.target_amount;
-      const ruleTarget = rule.target_amount;
-      const ruleSpiff = rule.spiff_amount;
-
-      const rows = Object.entries(sellerBrandData)
-        .map(([nombre, sbd]: [string, any]) => {
-          if (nombre === "Asistente de Ventas" || nombre.toUpperCase().trim() === "MARIA AUXILIADORA TOVAR CARO") return null;
-          const brandKey = Object.keys(sbd.marcas || {}).find(
-            (k) => k.toLowerCase() === rule.brand_name.toLowerCase()
-          );
-          const brandInfo = brandKey ? sbd.marcas[brandKey] : { monto: 0, cantidad: 0, spiff: 0 };
-          const metaAlcanzadas = rule.modo === "monto"
-            ? Math.floor(brandInfo.monto / ruleTarget)
-            : Math.floor(brandInfo.cantidad / ruleTarget);
-          const spiffGanado = metaAlcanzadas * ruleSpiff;
-          return {
-            nombre,
-            unidades: brandInfo.cantidad,
-            monto: brandInfo.monto,
-            metaAlcanzadas,
-            spiff: spiffGanado,
-          };
+      // Mismo cálculo que el resumen de gerencia (lib/spiff/calculo.ts):
+      // monto/unidades y spiff de ESTA regla por vendedor, respetando sus
+      // fechas y, en reglas de producto, solo ese producto. Asistentes y
+      // cuentas internas ya vienen fuera.
+      const sellerRuleData = json.sellerRuleData || {};
+      const rows = Object.entries(sellerRuleData)
+        .map(([nombre, reglas]: [string, any]) => {
+          const r = reglas?.[rule.id];
+          if (!r) return null;
+          return { nombre, unidades: r.cantidad, monto: r.monto, metaAlcanzadas: r.metas, spiff: r.spiff };
         })
-        .filter(Boolean)
-        .filter((r: any) => r.monto > 0 || r.unidades > 0)
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .filter((r) => r.monto > 0 || r.unidades > 0)
         .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto);
 
       setRankingModal({ rule, data: rows, loading: false });

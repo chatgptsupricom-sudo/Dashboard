@@ -42,6 +42,11 @@ export interface DetalleSpiff {
   vendido: number;
   metasCumplidas: number;
   spiff: number;
+  /** Venta sin IVA y unidades que cuentan para la regla (el modo usa uno). */
+  monto: number;
+  cantidad: number;
+  /** Productos que suman a la regla, de mayor a menor venta. */
+  productos: { nombre: string; monto: number; cantidad: number }[];
 }
 
 export interface SpiffVendedor {
@@ -49,6 +54,8 @@ export interface SpiffVendedor {
   nombre: string;
   totalSpiff: number;
   facturado: number;
+  /** Facturas (sin notas de crédito) del mes. */
+  facturas: number;
   /** Asistente / cuenta interna según `esVendedorExcluido` (la UI lo oculta
    *  por defecto, como el check de Cuentas por Cobrar). */
   excluido: boolean;
@@ -151,12 +158,14 @@ export async function calcularSpiff(
   const facturaPorId = new Map<number, any>(facturas.map((f: any) => [f.id, f]));
   const acumulado = new Map<string, SpiffVendedor>();
   const vendedor = (v: { userId: number; nombre: string }) => {
-    if (!acumulado.has(v.nombre)) acumulado.set(v.nombre, { userId: v.userId, nombre: v.nombre, totalSpiff: 0, facturado: 0, excluido: esVendedorExcluido(v.nombre, companyId), detalle: [] });
+    if (!acumulado.has(v.nombre)) acumulado.set(v.nombre, { userId: v.userId, nombre: v.nombre, totalSpiff: 0, facturado: 0, facturas: 0, excluido: esVendedorExcluido(v.nombre, companyId), detalle: [] });
     return acumulado.get(v.nombre)!;
   };
   facturas.forEach((f: any) => {
     const v = vendedorDe(f);
-    if (v) vendedor(v).facturado += Number(f.amount_untaxed_signed) || 0;
+    if (!v) return;
+    vendedor(v).facturado += Number(f.amount_untaxed_signed) || 0;
+    if (f.move_type === "out_invoice") vendedor(v).facturas += 1;
   });
 
   if (reglas.length === 0) {
@@ -190,7 +199,8 @@ export async function calcularSpiff(
   });
 
   // vendido[vendedor][regla] = monto y cantidad
-  const vendido = new Map<string, Map<number, { monto: number; cantidad: number }>>();
+  type Acc = { monto: number; cantidad: number; productos: Map<string, { monto: number; cantidad: number }> };
+  const vendido = new Map<string, Map<number, Acc>>();
   for (const l of lineas) {
     const f = facturaPorId.get(l.move_id?.[0]);
     if (!f) continue;
@@ -212,9 +222,15 @@ export async function calcularSpiff(
       }
       if (!vendido.has(v.nombre)) vendido.set(v.nombre, new Map());
       const porRegla = vendido.get(v.nombre)!;
-      const acc = porRegla.get(r.id) ?? { monto: 0, cantidad: 0 };
-      acc.monto += signo * (Number(l.price_subtotal) || 0);
-      acc.cantidad += signo * (Number(l.quantity) || 0);
+      const acc = porRegla.get(r.id) ?? { monto: 0, cantidad: 0, productos: new Map() };
+      const monto = signo * (Number(l.price_subtotal) || 0);
+      const cantidad = signo * (Number(l.quantity) || 0);
+      acc.monto += monto;
+      acc.cantidad += cantidad;
+      const pr = acc.productos.get(prod.nombre) ?? { monto: 0, cantidad: 0 };
+      pr.monto += monto;
+      pr.cantidad += cantidad;
+      acc.productos.set(prod.nombre, pr);
       porRegla.set(r.id, acc);
       vendedor(v);
     }
@@ -240,6 +256,11 @@ export async function calcularSpiff(
         vendido: Math.round(cantidadVendida * 100) / 100,
         metasCumplidas: metas,
         spiff,
+        monto: Math.round(acc.monto * 100) / 100,
+        cantidad: Math.round(acc.cantidad * 100) / 100,
+        productos: [...acc.productos.entries()]
+          .map(([nombre, x]) => ({ nombre, monto: Math.round(x.monto * 100) / 100, cantidad: Math.round(x.cantidad * 100) / 100 }))
+          .sort((a, b) => b.monto - a.monto),
       });
       sv.totalSpiff += spiff;
     }
