@@ -283,6 +283,91 @@ export async function fetchCxP(
   };
 }
 
+/**
+ * KPI "facturas pendientes de procesar" (CxP).
+ *
+ * OJO con lo que este indicador NO mide. El diseño original pedía "facturas
+ * que pasaron del plazo interno / total recibidas", contando desde que la
+ * factura se RECIBE. Se verificó contra 800 facturas reales de producción que
+ * Odoo no guarda esa fecha en ninguna parte: `date_document`,
+ * `invoice_source_email` y `delivery_date` vienen vacíos en el 100% de los
+ * casos, y como ninguna factura entra por alias de correo, `create_date`
+ * tampoco sirve de proxy de recepción — es cuándo alguien la tipeó.
+ *
+ * Se descartó a propósito medirlo como "fecha de la factura → fecha de carga":
+ * ese lapso incluye lo que tardó el PROVEEDOR en hacernos llegar la factura,
+ * que Administración no controla, y daría ~45% contra una meta de ≤5% (rojo
+ * permanente por algo ajeno). Mismo criterio por el que se descartó
+ * "documentos sin soporte" en cumplimientoControl.ts.
+ *
+ * Lo que sí se mide, que es honesto y accionable: facturas que YA entraron al
+ * sistema y siguen en borrador pasado el plazo interno. El reloj arranca en un
+ * dato confiable (cuándo entró a Odoo) y solo mide nuestro proceso. Su límite:
+ * una factura que nadie cargó nunca sigue siendo invisible — eso solo lo tapa
+ * que Administración empiece a registrar la recepción.
+ */
+export interface DatosFacturasSinProcesar {
+  /** Facturas de proveedor que entraron al sistema durante el periodo. */
+  recibidasEnPeriodo: number;
+  /** Las que siguen en borrador pasado el plazo, sin importar de cuando sean. */
+  sinProcesar: number;
+  montoSinProcesar: number;
+  /** Dias de la mas vieja que sigue sin procesar, para dimensionar el atraso. */
+  antiguedadMaximaDias: number | null;
+}
+
+export async function fetchFacturasSinProcesar(
+  companyIds: number[],
+  desde: string,
+  hasta: string,
+  plazoDias: number,
+): Promise<DatosFacturasSinProcesar> {
+  const [borradores, recibidas] = await Promise.all([
+    // Sin limite inferior de fecha, igual que las obligaciones vencidas en
+    // fetchCxP: un borrador de hace cinco meses es justamente el que importa y
+    // desapareceria del indicador si se acotara al mes en curso.
+    rpcPaginado(
+      "account.move",
+      [
+        ["company_id", "in", companyIds],
+        ["move_type", "=", "in_invoice"],
+        ["state", "=", "draft"],
+      ],
+      ["create_date", "amount_total"],
+    ),
+    rpcPaginado(
+      "account.move",
+      [
+        ["company_id", "in", companyIds],
+        ["move_type", "=", "in_invoice"],
+        ["state", "!=", "cancel"],
+        ["create_date", ">=", `${desde} 00:00:00`],
+        ["create_date", "<=", `${hasta} 23:59:59`],
+      ],
+      ["id"],
+    ),
+  ]);
+
+  const hoyMs = Date.now();
+  const edadDias = (f: any) =>
+    (hoyMs - new Date(f.create_date.replace(" ", "T") + "Z").getTime()) / 86400000;
+
+  const vencidos = borradores.filter((f: any) => edadDias(f) > plazoDias);
+
+  return {
+    recibidasEnPeriodo: recibidas.length,
+    sinProcesar: vencidos.length,
+    montoSinProcesar:
+      Math.round(
+        vencidos.reduce((s: number, f: any) => s + Math.abs(Number(f.amount_total) || 0), 0) * 100,
+      ) / 100,
+    antiguedadMaximaDias:
+      vencidos.length > 0
+        ? Math.round(Math.max(...vencidos.map(edadDias)))
+        : null,
+  };
+}
+
 // ─────────────────────────────────────────────── Tesoreria
 
 const RE_RETENCION = /retenid|retenci/i;

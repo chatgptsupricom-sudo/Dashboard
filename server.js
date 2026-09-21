@@ -98,13 +98,21 @@ function sesionDelSocket(socket) {
 // mandarselo a las tres seria contarle a Caracas lo que carga Valencia. La
 // sala sale del JWT ya verificado, no de lo que el cliente pida: unirse a la
 // sucursal ajena tendria que ser imposible aunque alguien lo intente.
-// superadmin escucha `mercancia_todas`, a donde va copia de todo.
-function salaMercancia(sesion) {
+// superadmin escucha `mercancia_todas`, a donde va copia de todo. Compras
+// escucha `compras`: carga los packing list de las tres sucursales y quiere
+// saber cuando llega y cuando se cierra cada uno.
+//
+// Almacen entra ademas a `almacen_<cids>`: la recepcion por packing list es
+// solo de Almacen (y Compras), y mandarla a `mercancia_<cids>` se la
+// contaria tambien a Seguridad, que ya no participa del ingreso.
+function salasMercancia(sesion) {
   const rol = String(sesion?.role || "").toLowerCase().trim();
-  if (rol === "superadmin") return "mercancia_todas";
-  if (rol !== "seguridad" && rol !== "almacen") return null;
+  if (rol === "superadmin") return ["mercancia_todas"];
+  if (rol === "compras") return ["compras"];
+  if (rol !== "seguridad" && rol !== "almacen") return [];
   const cids = Number(sesion?.cids);
-  return Number.isFinite(cids) && cids > 0 ? `mercancia_${cids}` : null;
+  if (!Number.isFinite(cids) || cids <= 0) return [];
+  return rol === "almacen" ? [`mercancia_${cids}`, `almacen_${cids}`] : [`mercancia_${cids}`];
 }
 
 app.prepare().then(() => {
@@ -129,10 +137,10 @@ app.prepare().then(() => {
     // Mercancia en vivo: la sala se resuelve al conectar, sin que el cliente
     // pida nada — asi el listado, el detalle y los dashboards se enteran de
     // una carga o una verificacion sin recargar la pagina.
-    const sala = salaMercancia(sesion);
-    if (sala) {
-      socket.join(sala);
-      console.log(`Socket ${socket.id} unido a sala ${sala}`);
+    const salas = salasMercancia(sesion);
+    if (salas.length) {
+      socket.join(salas);
+      console.log(`Socket ${socket.id} unido a sala(s) ${salas.join(", ")}`);
     }
 
     socket.on("join_user_room", () => {

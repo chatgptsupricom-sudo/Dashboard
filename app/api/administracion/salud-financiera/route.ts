@@ -5,6 +5,7 @@ import { cargarMetas } from "@/lib/administracion/metas";
 import {
   fetchCxC,
   fetchCxP,
+  fetchFacturasSinProcesar,
   fetchTesoreria,
 } from "@/lib/administracion/saludFinanciera";
 import {
@@ -26,8 +27,6 @@ const SIN_DATOS = {
     "No existe registro de promesas de pago en el sistema; requiere capturarlas.",
   exactitud_proyeccion:
     "Requiere guardar las proyecciones de caja para compararlas contra lo real.",
-  facturas_pendientes:
-    "Requiere definir el plazo interno de procesamiento y registrar la fecha de recepción.",
   descuentos_aprovechados:
     "Requiere registrar los descuentos por pronto pago disponibles por proveedor.",
 };
@@ -58,10 +57,14 @@ export async function GET(request: NextRequest) {
     const hasta = fmtFecha(new Date(anio, mesNum, 0));
     const hasta30 = fmtFecha(new Date(hoyDate.getTime() + 30 * 86400000));
 
-    const [cxc, cxp, tes, clientesConLimiteRaw] = await Promise.all([
+    const [cxc, cxp, tes, sinProcesar, clientesConLimiteRaw] = await Promise.all([
       fetchCxC(companyIds),
       fetchCxP(companyIds, desde, hasta, hoy, hasta30),
       fetchTesoreria(companyIds),
+      // El plazo interno (24h = 1 dia) ya lo definio Administracion para
+      // "documentos procesados a tiempo"; se reusa el mismo parametro en vez
+      // de inventar uno nuevo para lo mismo.
+      fetchFacturasSinProcesar(companyIds, desde, hasta, metas.plazo_procesamiento_dias ?? 1),
       // "credit_limit" es un campo company_dependent (se ve en Contactos >
       // Contabilidad > Límites de Crédito): no es que falte cargarlo, está
       // bien poblado (>99% de los clientes con credit_limit>0 lo tienen real,
@@ -164,6 +167,11 @@ export async function GET(request: NextRequest) {
           )
         : 0;
     const metaDso = metas.dso ?? 45;
+    // Administracion fijo la meta de cobranza como % de lo que vence en el
+    // periodo, no como un monto en dolares — ver METAS_DEFAULT.
+    const metaCobranzaPct = metas.cumplimiento_cobranza ?? 90;
+    const metaFacturasPendientes = metas.facturas_pendientes ?? 5;
+    const plazoHoras = (metas.plazo_procesamiento_dias ?? 1) * 24;
 
     const kpisCxC: KpiAdmin[] = [
       construirKpi(
@@ -189,15 +197,21 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "cumplimiento_cobranza", numero: 3, nombre: "Cumplimiento meta de cobranza",
-          formula: "Cobranza real / meta de cobranza × 100", peso: 4,
-          metaTexto: metas.cumplimiento_cobranza ? `≥${metas.cumplimiento_cobranza}%` : "Sin meta definida",
-          valor: metas.cumplimiento_cobranza ? pct(cobranzaReal, metas.cumplimiento_cobranza) : null,
+          formula: "Cobranza real del período / exigible del período × 100", peso: 4,
+          metaTexto: `≥${metaCobranzaPct}%`,
+          valor: pct(cobranzaReal, esperado),
           unidad: "%", frecuencia: "Diaria/Mensual", responsable: "Cuentas por Cobrar", fuente: "Bancos / ERP",
-          detalle: metas.cumplimiento_cobranza
-            ? `Cobrado ${money(cobranzaReal)} en el período`
-            : "Falta cargar la meta mensual de cobranza en parámetros",
+          // OJO, no confundir con "Cobros esperados vs realizados" (KPI 9):
+          // aquel mide, de las facturas que vencian en el periodo, que parte
+          // se cobro (tope 100%). Este mide TODO el dinero que entro a
+          // banco/caja en el periodo contra ese mismo exigible, asi que
+          // incluye cobranza de facturas viejas y puede pasar de 100% — es la
+          // lectura de flujo de caja, no la de disciplina de cobro.
+          detalle: esperado > 0
+            ? `Cobrado ${money(cobranzaReal)} contra ${money(esperado)} que vencían en el período (incluye cobros de facturas de meses anteriores, por eso puede superar el 100%)`
+            : "Sin facturas con vencimiento en el período",
         },
-        { modo: "higher_better", verde: 95, amarillo: 85 },
+        { modo: "higher_better", verde: metaCobranzaPct, amarillo: metaCobranzaPct - 10 },
       ),
       construirKpi(
         {
@@ -360,12 +374,24 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "facturas_pendientes", numero: 16, nombre: "Facturas pendientes de procesar",
-          formula: "Facturas > plazo interno / total recibidas × 100", peso: 2,
-          metaTexto: "≤5%", valor: null, unidad: "%", frecuencia: "Semanal",
-          responsable: "Cuentas por Pagar", fuente: "ERP / Recepción",
-          detalle: SIN_DATOS.facturas_pendientes,
+          formula: "Facturas en borrador > plazo interno / recibidas en el período × 100", peso: 2,
+          metaTexto: `≤${metaFacturasPendientes}%`,
+          valor: pct(sinProcesar.sinProcesar, sinProcesar.recibidasEnPeriodo),
+          unidad: "%", frecuencia: "Semanal",
+          responsable: "Cuentas por Pagar", fuente: "ERP / Cuentas por Pagar",
+          detalle: sinProcesar.recibidasEnPeriodo > 0
+            ? `${sinProcesar.sinProcesar} facturas siguen en borrador pasadas las ${plazoHoras}h por ${money(sinProcesar.montoSinProcesar)}${
+                sinProcesar.antiguedadMaximaDias !== null
+                  ? `; la más vieja lleva ${sinProcesar.antiguedadMaximaDias} días`
+                  : ""
+              }. Cuenta los borradores de cualquier fecha, no solo los del mes, porque son justamente los viejos los que importan. NO mide desde que llega la factura: Odoo no guarda la fecha de recepción (verificado), así que arranca cuando la factura entra al sistema.`
+            : "Ninguna factura de proveedor entró al sistema en el período",
         },
-        { modo: "lower_better", verde: 5, amarillo: 10 },
+        {
+          modo: "lower_better",
+          verde: metaFacturasPendientes,
+          amarillo: metaFacturasPendientes * 2,
+        },
       ),
       construirKpi(
         {
@@ -414,6 +440,16 @@ export async function GET(request: NextRequest) {
             // Lo "afectado" en cobros esperados es lo que todavia no se ha
             // cobrado del periodo, no el total esperado ni lo ya cobrado.
             : k.id === "cobros_esperados" ? (esperado > 0 ? Math.round((esperado - cobrado) * 100) / 100 : null)
+            // En cumplimiento de cobranza lo afectado es cuanto falto para
+            // llegar a la meta del periodo (meta% de lo exigible).
+            : k.id === "facturas_pendientes" ? (sinProcesar.montoSinProcesar || null)
+            : k.id === "cumplimiento_cobranza"
+              ? (esperado > 0
+                  ? Math.max(
+                      0,
+                      Math.round((esperado * (metaCobranzaPct / 100) - cobranzaReal) * 100) / 100,
+                    )
+                  : null)
             : null,
           fechaDeteccion: hoy,
           accion: k.detalle || "Revisar indicador",
