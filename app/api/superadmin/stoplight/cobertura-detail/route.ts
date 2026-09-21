@@ -3,12 +3,16 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { fechaLocal, margenPct } from "@/lib/stoplight/margen";
 
 export async function GET(request: NextRequest) {
   try {
     const acceso = await accesoStoplight(request);
     if (acceso.error) return acceso.error;
-    const { companyId } = acceso;
+    const { rol, companyId } = acceso;
+    // Gerencia de Ventas ve margen % pero no costo ni ganancia (igual que en
+    // Margen bruto, issue #178): se quitan de la respuesta, no solo de la UI.
+    const ocultarCosto = rol === "gerencia de ventas";
 
     const url = new URL(request.url);
     const mesParam = url.searchParams.get("mes");
@@ -43,13 +47,14 @@ export async function GET(request: NextRequest) {
       fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
       const ultimoDia = new Date(anio, mesNum, 0).getDate();
       fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
-      periodoLabel = `${now.toLocaleString("es-VE", { month: "long" })} ${anio}`;
+      // El mes elegido, no el actual (antes decía "septiembre" aunque se viera agosto).
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
     }
 
     const semanas = (() => {
       const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
-      const fechaInicioDate = new Date(fechaInicio);
-      const fechaFinDate = new Date(fechaFin);
+      const fechaInicioDate = fechaLocal(fechaInicio);
+      const fechaFinDate = fechaLocal(fechaFin);
       let inicio = new Date(fechaInicioDate);
 
       while (inicio <= fechaFinDate) {
@@ -119,15 +124,19 @@ export async function GET(request: NextRequest) {
     const productCostMap: Record<number, number> = {};
 
     if (productIds.length > 0) {
+      // `standard_price` es por empresa: sin `allowed_company_ids` se leía el
+      // costo de Valencia (empresa del usuario de la API) en todas las sedes.
+      // `active_test: false` para no perder el costo de productos archivados.
       const variants = (await callOdooRPC<any[]>(
         "product.product",
         "search_read",
-        [[["id", "in", productIds], ["active", "=", true]]],
-        { fields: ["id", "name", "product_tmpl_id"], limit: 0 }
+        [[["id", "in", productIds]]],
+        { fields: ["id", "name", "product_tmpl_id", "standard_price"], limit: 0, context: { allowed_company_ids: [companyId], active_test: false } }
       )) || [];
 
       variants.forEach((v: any) => {
         productNameMap[v.id] = v.name || "Sin nombre";
+        productCostMap[v.id] = Number(v.standard_price) || 0;
       });
 
       const variantToTmpl: Record<number, number> = {};
@@ -143,22 +152,19 @@ export async function GET(request: NextRequest) {
           "product.template",
           "search_read",
           [[["id", "in", tmplIds]]],
-          { fields: ["id", "name", "spiff_brand_id", "standard_price"], limit: 0 }
+          { fields: ["id", "name", "spiff_brand_id"], limit: 0, context: { active_test: false } }
         )) || [];
 
         const tmplBrandMap: Record<number, string> = {};
-        const tmplCostMap: Record<number, number> = {};
         templates.forEach((t: any) => {
           const brandName = t.spiff_brand_id?.[1] || null;
           tmplBrandMap[t.id] = brandName || "Sin marca";
-          tmplCostMap[t.id] = Number(t.standard_price) || 0;
         });
 
         productIds.forEach((pid: number) => {
           const tid = variantToTmpl[pid];
           if (tid) {
             productBrandMap[pid] = tmplBrandMap[tid] || "Sin marca";
-            productCostMap[pid] = tmplCostMap[tid] || 0;
           } else {
             productBrandMap[pid] = "Sin marca";
           }
@@ -202,6 +208,8 @@ export async function GET(request: NextRequest) {
       const isRefund = inv.move_type === "out_refund";
       const revenueFinal = isRefund ? -revenue : revenue;
       const costoFinal = isRefund ? -costo : costo;
+      // Las devoluciones también restan unidades (antes las sumaban).
+      const qtyFinal = isRefund ? -qty : qty;
 
       if (!brandMap[brand]) {
         brandMap[brand] = {
@@ -217,19 +225,19 @@ export async function GET(request: NextRequest) {
 
       brandMap[brand].revenue += revenueFinal;
       brandMap[brand].costo += costoFinal;
-      brandMap[brand].cantidad += qty;
+      brandMap[brand].cantidad += qtyFinal;
       brandMap[brand].productos.add(productId);
 
       const sellerName = inv.invoice_user_id?.[1];
       if (sellerName) brandMap[brand].vendedores.add(sellerName);
 
       // Distribute by week
-      const invDate = new Date(inv.invoice_date);
+      const invDate = fechaLocal(inv.invoice_date);
       for (let i = 0; i < semanas.length; i++) {
         if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
           brandMap[brand].semanas[i].revenue += revenueFinal;
           brandMap[brand].semanas[i].costo += costoFinal;
-          brandMap[brand].semanas[i].cantidad += qty;
+          brandMap[brand].semanas[i].cantidad += qtyFinal;
           break;
         }
       }
@@ -262,11 +270,13 @@ export async function GET(request: NextRequest) {
         };
       });
 
+      const margen = margenPct(brand.revenue, brand.costo);
       return {
         marca: brand.marca,
         revenue: Math.round(brand.revenue * 100) / 100,
         costo: Math.round(brand.costo * 100) / 100,
         ganancia,
+        margen: margen == null ? null : Math.round(margen * 10) / 10,
         cantidad: Math.round(brand.cantidad * 100) / 100,
         productosVendidos: brand.productos.size,
         vendedores: brand.vendedores.size,
@@ -287,9 +297,20 @@ export async function GET(request: NextRequest) {
     result.forEach(b => b.vendedoresLista.forEach(v => allVendedores.add(v)));
     const globalCantidadPct = metaCantidad > 0 ? Math.round((globalCantidad / metaCantidad) * 100) : 0;
 
+    // Gerencia de Ventas: fuera costo y ganancia (se calcularon arriba solo
+    // para el margen y los totales).
+    if (ocultarCosto) {
+      result.forEach((b: any) => {
+        delete b.costo;
+        delete b.ganancia;
+        b.semanas.forEach((sem: any) => { delete sem.costo; delete sem.ganancia; });
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
+        costoOculto: ocultarCosto,
         mes,
         periodo: periodoParam,
         periodoLabel,
@@ -298,7 +319,7 @@ export async function GET(request: NextRequest) {
         global: {
           totalMarcas: result.length,
           revenue: Math.round(globalRevenue * 100) / 100,
-          costo: Math.round(globalCosto * 100) / 100,
+          ...(ocultarCosto ? {} : { costo: Math.round(globalCosto * 100) / 100 }),
           margen: globalMargen,
           cantidad: Math.round(globalCantidad * 100) / 100,
           cantidadPct: globalCantidadPct,

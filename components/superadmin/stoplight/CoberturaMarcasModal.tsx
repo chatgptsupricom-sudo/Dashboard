@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { X, Package } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
 
@@ -12,6 +12,10 @@ interface CoberturaMarcasModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
+  /** Gerencia de Ventas ve margen % pero no costo/ganancia (como en Margen
+   *  bruto, issue #178). La API ya no le manda esos montos; esto decide las
+   *  columnas. */
+  ocultarCostoGanancia?: boolean;
 }
 
 type Periodo = "mes" | "trimestre" | "anio" | "todo";
@@ -19,8 +23,9 @@ type Periodo = "mes" | "trimestre" | "anio" | "todo";
 // Modal "Cobertura de marcas": resumen global + tabla por marca + detalle
 // semanal (con drill-down a una marca), con selector de período. Autocontenido.
 // Extraído de StoplightReport.tsx (audit #23).
-export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: CoberturaMarcasModalProps) {
+export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: CoberturaMarcasModalProps) {
   const t = useTranslations("stoplight");
+  const locale = useLocale();
 
   const [mes, setMes] = useState(defaultMes);
   const [periodo, setPeriodo] = useState<Periodo>("mes");
@@ -42,6 +47,7 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
     if (!isOpen) return;
     let cancelled = false;
     setLoading(true);
+    setData(null);
     setSelectedMarca(null);
     (async () => {
       try {
@@ -59,6 +65,12 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
   }, [isOpen, mes, periodo, companyId, apiPrefix]);
 
   if (!isOpen) return null;
+
+  const conCosto = !ocultarCostoGanancia && !data?.costoOculto;
+  const dinero = (n: number | undefined) =>
+    n == null ? "–" : `$${n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const margenTexto = (m: number | null | undefined) =>
+    m == null ? "–" : `${m.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={onClose}>
@@ -135,7 +147,7 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                   {data.global && (
                     <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                       <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("resumen_global", { periodo: data.periodoLabel })}</h3>
-                      <div className="grid grid-cols-5 gap-4">
+                      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-4 ${conCosto ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                         <div className="text-center">
                           <div className="bg-cyan-100 rounded-xl p-3 mb-2">
                             <p className="text-2xl font-bold text-cyan-700">{data.global.totalMarcas}</p>
@@ -144,21 +156,23 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                         </div>
                         <div className="text-center">
                           <div className="bg-green-100 rounded-xl p-3 mb-2">
-                            <p className="text-2xl font-bold text-green-700">${data.global.revenue?.toLocaleString()}</p>
+                            <p className="text-2xl font-bold text-green-700">{dinero(data.global.revenue)}</p>
                           </div>
                           <p className="text-xs font-medium text-green-600">{t("revenue_total")}</p>
                         </div>
-                        <div className="text-center">
-                          <div className="bg-red-100 rounded-xl p-3 mb-2">
-                            <p className="text-2xl font-bold text-red-700">${data.global.costo?.toLocaleString()}</p>
+                        {conCosto && (
+                          <div className="text-center">
+                            <div className="bg-red-100 rounded-xl p-3 mb-2">
+                              <p className="text-2xl font-bold text-red-700">{dinero(data.global.costo)}</p>
+                            </div>
+                            <p className="text-xs font-medium text-red-600">{t("costo_total")}</p>
                           </div>
-                          <p className="text-xs font-medium text-red-600">{t("costo_total")}</p>
-                        </div>
+                        )}
                         <div className="text-center">
                           <div className="bg-purple-100 rounded-xl p-3 mb-2">
                             <p className="text-2xl font-bold text-purple-700">{data.global.margen}%</p>
                           </div>
-                          <p className="text-xs font-medium text-purple-600">{t("margen_promedio")}</p>
+                          <p className="text-xs font-medium text-purple-600">{t("margen_del_mes")}</p>
                         </div>
                         <div className="text-center">
                           <div className="bg-indigo-50 rounded-xl p-3 mb-2">
@@ -171,14 +185,15 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                   )}
 
                   {/* Brands table */}
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
+                  <div className="border rounded-xl overflow-x-auto">
+                    <table className="w-full text-sm min-w-[640px]">
                       <thead>
                         <tr className="bg-slate-50 border-b">
                           <th className="p-3 text-left font-medium text-slate-600">{t("marca")}</th>
                           <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
-                          <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
-                          <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
+                          {conCosto && <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>}
+                          {conCosto && <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>}
+                          <th className="p-3 text-right font-medium text-purple-600">{t("margen_pct")}</th>
                           <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
                           <th className="p-3 text-right font-medium text-cyan-600">{t("p_vendidos")}</th>
                           <th className="p-3 text-right font-medium text-slate-600">{t("vendedores")}</th>
@@ -189,14 +204,19 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                           <tr
                             key={marca.marca}
                             className="border-b hover:bg-cyan-50/40 transition-colors cursor-pointer"
-                            onClick={() => setSelectedMarca(marca)}
+                            // Antes solo guardaba la marca y no se veía nada:
+                            // ahora abre su detalle semanal.
+                            onClick={() => { setSelectedMarca(marca); setTab("semanal"); }}
                           >
                             <td className="p-3 font-medium text-slate-800">{marca.marca}</td>
-                            <td className="p-3 text-right text-green-600 font-bold">${marca.revenue?.toLocaleString()}</td>
-                            <td className="p-3 text-right text-red-600">${marca.costo?.toLocaleString()}</td>
-                            <td className={`p-3 text-right font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              ${marca.ganancia?.toLocaleString()}
-                            </td>
+                            <td className="p-3 text-right text-green-600 font-bold">{dinero(marca.revenue)}</td>
+                            {conCosto && <td className="p-3 text-right text-red-600">{dinero(marca.costo)}</td>}
+                            {conCosto && (
+                              <td className={`p-3 text-right font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                {dinero(marca.ganancia)}
+                              </td>
+                            )}
+                            <td className="p-3 text-right text-purple-700 font-medium">{margenTexto(marca.margen)}</td>
                             <td className="p-3 text-right text-indigo-600">{marca.cantidad}</td>
                             <td className="p-3 text-right text-cyan-600">{marca.productosVendidos}</td>
                             <td className="p-3 text-right text-slate-600">{marca.vendedores}</td>
@@ -214,7 +234,7 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                   {!selectedMarca ? (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-500 mb-3">{t("selecciona_marca")}</p>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {data.marcas.map((marca: any) => (
                           <button
                             key={marca.marca}
@@ -223,11 +243,9 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                           >
                             <div>
                               <span className="font-medium text-slate-800">{marca.marca}</span>
-                              <p className="text-xs text-slate-500">${marca.revenue?.toLocaleString()} revenue</p>
+                              <p className="text-xs text-slate-500">{dinero(marca.revenue)}</p>
                             </div>
-                            <span className={`text-sm font-bold ${marca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              ${marca.ganancia?.toLocaleString()}
-                            </span>
+                            <span className="text-sm font-bold text-purple-700">{margenTexto(marca.margen)}</span>
                           </button>
                         ))}
                       </div>
@@ -239,8 +257,8 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                           {t("back")}
                         </button>
                         <h3 className="font-bold text-slate-800">{selectedMarca.marca}</h3>
-                        <span className={`text-sm font-bold ${selectedMarca.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          ${selectedMarca.ganancia?.toLocaleString()} ganancia
+                        <span className="text-sm font-bold text-purple-700">
+                          {t("margen_pct")}: {margenTexto(selectedMarca.margen)}
                         </span>
                       </div>
                       {/* Vendedores que venden esta marca */}
@@ -256,26 +274,30 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
                           </div>
                         </div>
                       )}
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
+                      <div className="border rounded-xl overflow-x-auto">
+                        <table className="w-full text-sm min-w-[480px]">
                           <thead>
                             <tr className="bg-slate-50 border-b">
                               <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
                               <th className="p-3 text-right font-medium text-green-600">{t("revenue")}</th>
-                              <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>
-                              <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>
+                              {conCosto && <th className="p-3 text-right font-medium text-red-600">{t("costo")}</th>}
+                              {conCosto && <th className="p-3 text-right font-medium text-emerald-600">{t("ganancia")}</th>}
                               <th className="p-3 text-right font-medium text-indigo-600">{t("cantidad")}</th>
                             </tr>
                           </thead>
                           <tbody>
                             {selectedMarca.semanas.map((sem: any) => (
-                              <tr key={sem.numero} className={`border-b ${sem.cantidadPct != null && sem.cantidadPct >= 100 ? "bg-green-50/30" : ""}`}>
+                              // Sin resaltado verde: comparaba unidades de la
+                              // marca contra la meta, que es un número de marcas.
+                              <tr key={sem.numero} className="border-b">
                                 <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                <td className="p-3 text-right text-green-600 font-bold">${sem.revenue?.toLocaleString()}</td>
-                                <td className="p-3 text-right text-red-600">${sem.costo?.toLocaleString()}</td>
-                                <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                  ${sem.ganancia?.toLocaleString()}
-                                </td>
+                                <td className="p-3 text-right text-green-600 font-bold">{dinero(sem.revenue)}</td>
+                                {conCosto && <td className="p-3 text-right text-red-600">{dinero(sem.costo)}</td>}
+                                {conCosto && (
+                                  <td className={`p-3 text-right font-bold ${sem.ganancia >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                    {dinero(sem.ganancia)}
+                                  </td>
+                                )}
                                 <td className="p-3 text-right text-indigo-600 font-bold">{sem.cantidad}</td>
                               </tr>
                             ))}

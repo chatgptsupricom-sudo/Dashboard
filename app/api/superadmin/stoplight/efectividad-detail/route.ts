@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { fechaLocal, fechaLocalDeDatetime } from "@/lib/stoplight/margen";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 
@@ -55,14 +56,14 @@ export async function GET(request: NextRequest) {
       fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
       const ultimoDia = new Date(anio, mesNum, 0).getDate();
       fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
-      periodoLabel = `${now.toLocaleString("es-VE", { month: "long" })} ${anio}`;
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
     }
 
     // Calculate weeks based on period
     const semanas = (() => {
       const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
-      const fechaInicioDate = new Date(fechaInicio);
-      const fechaFinDate = new Date(fechaFin);
+      const fechaInicioDate = fechaLocal(fechaInicio);
+      const fechaFinDate = fechaLocal(fechaFin);
       let inicio = new Date(fechaInicioDate);
 
       while (inicio <= fechaFinDate) {
@@ -167,7 +168,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Distribute by week
-      const orderDate = new Date(order.date_order);
+      const orderDate = fechaLocalDeDatetime(order.date_order);
       for (let i = 0; i < semanas.length; i++) {
         if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
           sellerDataMap[matchedName].semanas[i].ordenes++;

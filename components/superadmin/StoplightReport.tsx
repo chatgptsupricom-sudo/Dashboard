@@ -1637,6 +1637,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         apiPrefix={apiPrefix}
         companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
         defaultMes={selectedMes}
+        ocultarCostoGanancia={gerenteVentaMode}
       />
 
       {/* Activacion Cartera Modal */}

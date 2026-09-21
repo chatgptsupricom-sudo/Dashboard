@@ -646,7 +646,9 @@
     "margen_buscar_producto": "Buscar producto...",
     "margen_nota_costo": "Margen = (venta neta − costo) ÷ venta neta. Facturas y notas de crédito publicadas del mes; el costo es el costo actual del producto en la sede. La fila de la grilla promedia el cumplimiento de cada semana, por eso puede diferir del margen del mes.",
     "margen_cerrar": "Cerrar",
-    "margen_reintentar": "Reintentar"
+    "margen_reintentar": "Reintentar",
+    "meta_valor": "Meta: {meta}",
+    "activacion_acumulado_nota": "Clientes activos acumulados desde el inicio del período hasta el fin de cada semana."
   },
   "servicioTecnico": {
     "garantia": {

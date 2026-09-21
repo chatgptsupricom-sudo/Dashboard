@@ -664,7 +664,9 @@
     "margen_buscar_producto": "Search product...",
     "margen_nota_costo": "Margin = (net sales − cost) ÷ net sales. Posted invoices and credit notes for the month; cost is the product's current cost at the branch. The grid row averages each week's attainment, so it can differ from the month margin.",
     "margen_cerrar": "Close",
-    "margen_reintentar": "Retry"
+    "margen_reintentar": "Retry",
+    "meta_valor": "Target: {meta}",
+    "activacion_acumulado_nota": "Active clients accumulated from the start of the period to the end of each week."
   },
   "servicioTecnico": {
     "garantia": {
