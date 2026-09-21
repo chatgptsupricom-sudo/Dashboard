@@ -85,14 +85,17 @@ export function ProductCard({
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      {/* Foto */}
-      <div className="relative h-40 w-full bg-slate-100">
+      {/* Foto: marco 1:1 igual en todas las tarjetas. `object-contain` en vez
+          de `cover` porque las fotos vienen en proporciones muy distintas
+          (un paraguas vertical, un mouse pad apaisado) y recortarlas al
+          cuadrado se comía el producto. */}
+      <div className="relative aspect-square w-full bg-slate-50">
         {product.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={product.image_url}
             alt={product.name}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain p-3"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-slate-300">
