@@ -2684,8 +2684,8 @@
       "cerrado": "Cerrado"
     },
     "paso": {
-      "por_llegar": "Registrar la llegada: foto del contenedor, foto y número del precinto",
-      "descargando": "Contar contra el packing list y cerrar con la foto del contenedor",
+      "por_llegar": "Registrar la llegada de cada contenedor: fotos y número del precinto",
+      "descargando": "Recibir y descargar los contenedores, contar contra el packing list y cerrar",
       "cerrado": "Recepción terminada"
     },
     "le_toca_almacen": "Le toca a Almacén",
@@ -2750,9 +2750,9 @@
     "golpeado_nota": "¿Qué tiene? (opcional)",
     "guardar_avance": "Guardar avance",
     "avance_guardado": "Avance guardado",
-    "cierre": "Cierre",
+    "cierre": "Cierre del packing list",
     "notas_cierre": "Notas del cierre (opcional)",
-    "cerrar": "Cerrar recepción",
+    "cerrar": "Cerrar packing list",
     "faltan_para_cerrar": "Para cerrar falta:",
     "falta_contar": "{count} renglón(es) sin contar",
     "falta_motivo": "motivo en {count} renglón(es) con diferencia",

@@ -2695,8 +2695,8 @@
       "cerrado": "Closed"
     },
     "paso": {
-      "por_llegar": "Register arrival: container photo, seal photo and number",
-      "descargando": "Count against the packing list and close with the container photo",
+      "por_llegar": "Register each container's arrival: photos and seal number",
+      "descargando": "Receive and unload the containers, count against the packing list and close",
       "cerrado": "Reception finished"
     },
     "le_toca_almacen": "Warehouse's turn",
@@ -2761,9 +2761,9 @@
     "golpeado_nota": "What's wrong? (optional)",
     "guardar_avance": "Save progress",
     "avance_guardado": "Progress saved",
-    "cierre": "Closing",
+    "cierre": "Closing the packing list",
     "notas_cierre": "Closing notes (optional)",
-    "cerrar": "Close reception",
+    "cerrar": "Close packing list",
     "faltan_para_cerrar": "To close, still missing:",
     "falta_contar": "{count} line(s) not counted",
     "falta_motivo": "reason on {count} line(s) with differences",
