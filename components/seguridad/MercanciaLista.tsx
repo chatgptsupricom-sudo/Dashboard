@@ -112,7 +112,8 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
 
   // El egreso lo inicia Almacen; Seguridad no ve "Registrar" (la API igual lo
   // rechazaria). El ingreso, al reves, es de Seguridad.
-  const puedeRegistrar = esEgreso ? rol !== "seguridad" : rol !== "almacen";
+  // El ingreso ya no se registra aca: ahora es por packing list.
+  const puedeRegistrar = esEgreso ? rol !== "seguridad" : false;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">

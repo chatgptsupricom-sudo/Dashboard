@@ -123,10 +123,13 @@ export async function POST(request: NextRequest) {
     // issue #42/#43, y `requireAlmacenOSeguridad` por si solo no distingue
     // esto: lo valida aqui, por tipo, dentro del handler.
     const rol = String(auth.payload?.role || "").toLowerCase().trim();
-    if (tipo === "ingreso" && rol !== "seguridad" && rol !== "superadmin") {
+    // El ingreso por factura de compra se reemplazo por la recepcion por
+    // packing list (/api/recepcion): lo carga Compras y lo recibe Almacen.
+    // Los ingresos viejos se siguen pudiendo leer; nuevos, ya no.
+    if (tipo === "ingreso") {
       return NextResponse.json(
-        { error: "El ingreso de mercancia lo registra Seguridad" },
-        { status: 403 },
+        { error: "El ingreso de mercancia ahora se hace por packing list" },
+        { status: 410 },
       );
     }
 

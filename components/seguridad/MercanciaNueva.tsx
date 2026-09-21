@@ -115,6 +115,8 @@ export default function MercanciaNueva({
   // despues no se puede guardar.
   // Y al reves con el egreso: lo inicia Almacen (llega la orden, asigna quien
   // arma); Seguridad entra al final, en el porton.
+  // (El ingreso ya no llega a esta pantalla: /ingreso/nuevo redirige, porque
+  // ahora es por packing list. Si llegara, la API lo rechaza con 410.)
   const bloqueadoPorRol =
     (tipo === "ingreso" && rol === "almacen") || (tipo === "egreso" && rol === "seguridad");
   const esEgreso = tipo === "egreso";

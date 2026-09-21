@@ -33,6 +33,7 @@ import {
   Calendar,
   Camera,
   Car,
+  Container,
   ChevronDown,
   ClipboardList,
   CreditCard,
@@ -248,6 +249,8 @@ export function Sidebar({
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
+    // Packing lists: Compras los carga y Almacen los recibe (antes iban por correo).
+    { id: "recepcion_packing", label: t("recepcion_packing"), icon: Container, slug: "/compras/packing-list", absoluteHref: true },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
@@ -262,6 +265,7 @@ export function Sidebar({
     // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
     // ve la misma ruta de egresos dentro de su grupo "Mercancia"; esta es la
     // version que ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    { id: "almacen_recepcion", label: t("almacen_recepcion"), icon: Container, slug: "/seguridad/mercancia/recepcion", absoluteHref: true },
     { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
     { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
     // Catalogos que alimentan los selects del formulario de egreso — antes
@@ -890,7 +894,8 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { label: t("seg_merc_ingresos"), href: `/${locale}/seguridad/mercancia/ingreso` },
+                        // Sin "Ingresos": el ingreso de mercancia ahora es por
+                        // packing list (Compras lo carga, Almacen lo recibe).
                         { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
                         { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
                       ].map((sub, index) => {
