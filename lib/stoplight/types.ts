@@ -45,6 +45,8 @@ export interface KpiData {
   avgActivacion: number;
   avgClientes: number;
   avgCobertura: number;
+  /** Resumen de metas de venta por marca del mes (null si no hay). */
+  metasPorMarca?: { marcas: number } | null;
   avgCicloReposicion: number | null;
   semanaMargen: (string | null)[];
   semanaVisitas: (string | null)[];

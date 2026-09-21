@@ -4,7 +4,8 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { fechaLocal, fechaLocalDeDatetime } from "@/lib/stoplight/margen";
+import { fechaLocal, fechaLocalDeDatetime, obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -511,13 +512,38 @@ export async function GET(request: NextRequest) {
     }
 
     const metaCantidad = metasMap["cobertura_marcas"] || 0;
-    const semanaCobertura = semanaCoberturaData.map((sem, i) => {
+    let semanaCobertura: (string | null)[] = semanaCoberturaData.map((sem, i) => {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
       if (metaCantidad <= 0) return "100%";
       const pct = Math.round((sem.cantidad / metaCantidad) * 100);
       return `${pct}%`;
     });
+
+    // Con metas por marca en el mes (lib/stoplight/metasMarca), la cobertura
+    // del vendedor usa la meta de cada marca × su parte de la cuota de la sede.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    try {
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        const cuotaSede = await query(
+          `SELECT COALESCE(SUM(c.cuota), 0) AS total FROM sellers s
+           INNER JOIN (SELECT seller_id, cuota FROM cuota WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)) c
+             ON s.id = c.seller_id
+           WHERE s.cids = ?`,
+          [companyId],
+        );
+        const totalCuota = Number((cuotaSede.rows as any[])[0]?.total) || 0;
+        const factor = totalCuota > 0 ? cuotaNum / totalCuota : 0;
+        if (factor > 0) {
+          const lineas = (await obtenerLineasMargen(companyId, fechaInicio, fechaFin)).filter((l) => l.vendedorId === uid);
+          coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineas, semanas, anio, mesNum, factor, now);
+          semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+        }
+      }
+    } catch (e: any) {
+      console.error("Error en cobertura por marca (vendedor):", e.message);
+    }
 
     // === AVERAGES ===
     const avgFromWeeks = (weeks: (string | null)[]) => {
@@ -574,7 +600,8 @@ export async function GET(request: NextRequest) {
           ? 100
           : Math.round((((totalActiveClients / totalClientsActivacion) * 100) / metaActivacion) * 100),
         avgClientes: avgFromWeeks(semanaClientes),
-        avgCobertura: avgFromWeeks(semanaCobertura),
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
         metas: metasMap,
         pesos: pesosMap,
       },

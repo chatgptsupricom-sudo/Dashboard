@@ -668,7 +668,23 @@
     "margen_cerrar": "Close",
     "margen_reintentar": "Retry",
     "meta_valor": "Target: {meta}",
-    "activacion_acumulado_nota": "Active clients accumulated from the start of the period to the end of each week."
+    "activacion_acumulado_nota": "Active clients accumulated from the start of the period to the end of each week.",
+    "tab_metas_marca": "Brand targets",
+    "cobertura_por_marca_hint": "Sales target by brand · {n} brands",
+    "metas_marca_error": "Couldn't load the brand targets.",
+    "metas_marca_cobertura": "Brand coverage this month",
+    "metas_marca_sin_metas": "This month has no brand targets: the KPI uses the previous formula (number of brands sold).",
+    "metas_marca_formula": "weighted average of actual sales ÷ target per brand (capped at 100% per brand)",
+    "metas_marca_copiar": "Copy last month's targets",
+    "metas_marca_meta": "Month target",
+    "metas_marca_peso": "Weight",
+    "metas_marca_meta_al_dia": "Target to date",
+    "metas_marca_vendido": "Sold",
+    "metas_marca_cumplimiento": "Attainment",
+    "metas_marca_promedio": "3-month average",
+    "metas_marca_agregar": "Add a brand target",
+    "metas_marca_buscar": "Search brand...",
+    "metas_marca_nota": "Amounts before tax. Each brand's weight is its target over the total. Targets are prorated by business days (\"target to date\"). Overselling a brand counts as 100%: it doesn't offset unsold brands. Setting a target to 0 removes it. Each seller gets each brand target in proportion to their share of the branch quota."
   },
   "servicioTecnico": {
     "garantia": {

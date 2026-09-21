@@ -650,7 +650,23 @@
     "margen_cerrar": "Cerrar",
     "margen_reintentar": "Reintentar",
     "meta_valor": "Meta: {meta}",
-    "activacion_acumulado_nota": "Clientes activos acumulados desde el inicio del período hasta el fin de cada semana."
+    "activacion_acumulado_nota": "Clientes activos acumulados desde el inicio del período hasta el fin de cada semana.",
+    "tab_metas_marca": "Metas por marca",
+    "cobertura_por_marca_hint": "Meta de venta por marca · {n} marcas",
+    "metas_marca_error": "No se pudieron cargar las metas por marca.",
+    "metas_marca_cobertura": "Cobertura de marcas del mes",
+    "metas_marca_sin_metas": "Este mes no tiene metas por marca: el KPI usa la fórmula anterior (cantidad de marcas vendidas).",
+    "metas_marca_formula": "promedio ponderado de venta real ÷ meta por marca (tope 100% por marca)",
+    "metas_marca_copiar": "Copiar metas del mes anterior",
+    "metas_marca_meta": "Meta del mes",
+    "metas_marca_peso": "Peso",
+    "metas_marca_meta_al_dia": "Meta a hoy",
+    "metas_marca_vendido": "Vendido",
+    "metas_marca_cumplimiento": "Cumplimiento",
+    "metas_marca_promedio": "Promedio 3 meses",
+    "metas_marca_agregar": "Agregar meta a una marca",
+    "metas_marca_buscar": "Buscar marca...",
+    "metas_marca_nota": "Montos sin IVA. El peso de cada marca es su meta sobre el total de metas. La meta se prorratea por días hábiles (\"meta a hoy\"). Una marca vendida de más cuenta como 100%: no compensa a las que no se vendieron. Poner la meta en 0 la quita. A cada vendedor se le asigna la meta de cada marca según su parte de la cuota de la sede."
   },
   "servicioTecnico": {
     "garantia": {
