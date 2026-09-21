@@ -2039,7 +2039,10 @@
     "goals": "Metas",
     "mode_amount": "Monto",
     "mode_quantity_short": "Cant.",
-    "always": "Siempre"
+    "always": "Siempre",
+    "ranking_fuera_de_vigencia": "La regla no está vigente en este mes. Cambia el mes para ver su ranking.",
+    "ranking_sin_ventas": "Ningún vendedor vendió esta marca en el mes (dentro de las fechas de la regla).",
+    "ranking_sin_ventas_producto": "Ningún vendedor vendió este producto en el mes (dentro de las fechas de la regla)."
   },
   "roles": {
     "superAdmin": "Super Admin",

@@ -2058,7 +2058,10 @@
     "goals": "Goals",
     "mode_amount": "Amount",
     "mode_quantity_short": "Qty.",
-    "always": "Always"
+    "always": "Always",
+    "ranking_fuera_de_vigencia": "The rule isn't active in this month. Change the month to see its ranking.",
+    "ranking_sin_ventas": "No seller sold this brand in the month (within the rule's dates).",
+    "ranking_sin_ventas_producto": "No seller sold this product in the month (within the rule's dates)."
   },
   "seguridad": {
     "module_title": "Security / Warehouse",

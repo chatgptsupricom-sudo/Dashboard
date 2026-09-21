@@ -85,7 +85,15 @@ const fechaISO = (v: any): string | null => {
   return String(v).slice(0, 10);
 };
 
-export async function calcularSpiffDelMes(companyId: number, anio: number, mes: number): Promise<ResumenSpiff> {
+/**
+ * `incluirReglaId`: además de las reglas activas y vigentes en el mes, incluye
+ * esa regla aunque esté inactiva o fuera de fecha (el ranking de una regla en
+ * el administrador la necesita siempre; sus fechas se siguen aplicando a las
+ * facturas).
+ */
+export async function calcularSpiffDelMes(
+  companyId: number, anio: number, mes: number, opciones: { incluirReglaId?: number } = {},
+): Promise<ResumenSpiff> {
   const mm = String(mes).padStart(2, "0");
   const inicio = `${anio}-${mm}-01`;
   const fin = `${anio}-${mm}-${String(new Date(anio, mes, 0).getDate()).padStart(2, "0")}`;
@@ -93,10 +101,11 @@ export async function calcularSpiffDelMes(companyId: number, anio: number, mes: 
   const reglasRes = await query(
     `SELECT id, brand_name, tipo, product_name, product_id, target_amount, spiff_amount, modo, fecha_inicio, fecha_fin
        FROM spiff_rules
-      WHERE company_id = ? AND active = 1
-        AND (fecha_inicio IS NULL OR fecha_inicio <= ?)
-        AND (fecha_fin IS NULL OR fecha_fin >= ?)`,
-    [companyId, fin, inicio],
+      WHERE company_id = ? AND (
+        (active = 1 AND (fecha_inicio IS NULL OR fecha_inicio <= ?) AND (fecha_fin IS NULL OR fecha_fin >= ?))
+        OR id = ?
+      )`,
+    [companyId, fin, inicio, opciones.incluirReglaId ?? -1],
   );
   const reglas: ReglaSpiff[] = (reglasRes.rows as any[]).map((r) => ({
     ...r,
