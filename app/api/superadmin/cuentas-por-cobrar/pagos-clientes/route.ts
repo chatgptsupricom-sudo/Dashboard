@@ -50,6 +50,31 @@ function limpiarHtml(v: any): string {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/** Une condiciones de dominio con AND en notación polaca. */
+const conY = (conds: any[]): any[] => [...Array(Math.max(0, conds.length - 1)).fill("&"), ...conds];
+
+// `create_date` es datetime y Odoo lo guarda en UTC, pero las fechas del filtro
+// y las que ve el usuario son horas de Caracas (UTC-4 fijo, sin horario de
+// verano desde 2016). Sin corregir, un pago creado después de las 20:00 locales
+// caía en el día siguiente.
+const HORAS_CARACAS = -4;
+
+const desplazar = (iso: string, horas: number): Date => {
+  const d = new Date(iso);
+  d.setUTCHours(d.getUTCHours() + horas);
+  return d;
+};
+
+/** Borde del día de Caracas como timestamp UTC, para comparar con create_date. */
+const bordeUtc = (fecha: string, fin: boolean): string =>
+  desplazar(`${fecha}T${fin ? "23:59:59" : "00:00:00"}Z`, -HORAS_CARACAS)
+    .toISOString().slice(0, 19).replace("T", " ");
+
+/** YYYY-MM-DD en Caracas de un datetime UTC de Odoo. */
+const fechaCaracas = (utc: string): string =>
+  desplazar(`${String(utc).replace(" ", "T").replace("Z", "")}Z`, HORAS_CARACAS)
+    .toISOString().slice(0, 10);
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -73,12 +98,16 @@ export async function GET(request: NextRequest) {
     const defDesde = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const defHasta = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
 
-    // Si no viene ningún rango, se usa el mes en curso sobre la fecha de
-    // confirmación (evita traer los 13k registros del histórico).
-    const hayPago = !!(desdePago && hastaPago);
-    const hayConf = !!(desdeConf && hastaConf);
-    const cDesde = hayConf ? desdeConf! : (hayPago ? null : defDesde);
-    const cHasta = hayConf ? hastaConf! : (hayPago ? null : defHasta);
+    // Cada extremo es independiente: con solo "desde" el rango queda abierto
+    // hacia adelante. Antes se exigían los dos y, si faltaba uno, el filtro se
+    // descartaba entero y se caía al mes en curso sin avisar: la pantalla
+    // mostraba la fecha escrita y los datos eran de otro rango.
+    const hayPago = !!(desdePago || hastaPago);
+    const hayConf = !!(desdeConf || hastaConf);
+    // Sin ningún rango se usa el mes en curso sobre la fecha de confirmación
+    // (evita traer los 13k registros del histórico).
+    const cDesde = desdeConf || (hayConf || hayPago ? null : defDesde);
+    const cHasta = hastaConf || (hayConf || hayPago ? null : defHasta);
 
     // La sede sale del token, no del query string: `empresa` solo puede
     // acotar el alcance propio, nunca ampliarlo.
@@ -93,18 +122,28 @@ export async function GET(request: NextRequest) {
       ["company_id", "in", companyIds],
     ];
     if (estado !== "todos") domain.push(["state", "=", "posted"]);
-    if (desdePago && hastaPago) {
-      domain.push(["date", ">=", desdePago], ["date", "<=", hastaPago]);
-    }
-    if (cDesde && cHasta) {
-      // payment_registration_date empezó a poblarse en abr-2026; para los pocos
-      // registros previos con el campo vacío, se cae a create_date (siempre
-      // presente). En notación polaca: (reg en rango) OR (reg vacío AND create en rango).
+    if (desdePago) domain.push(["date", ">=", desdePago]);
+    if (hastaPago) domain.push(["date", "<=", hastaPago]);
+    if (cDesde || cHasta) {
+      // payment_registration_date solo está vacía en pagos en borrador o
+      // anulados (se llena al confirmar), así que la rama de create_date únicamente
+      // entra con el estado "Todos". En notación polaca:
+      // (reg en rango) OR (reg vacío AND create en rango).
+      const reg: any[] = [];
+      const creado: any[] = [];
+      if (cDesde) {
+        reg.push(["payment_registration_date", ">=", cDesde]);
+        creado.push(["create_date", ">=", bordeUtc(cDesde, false)]);
+      }
+      if (cHasta) {
+        reg.push(["payment_registration_date", "<=", cHasta]);
+        creado.push(["create_date", "<=", bordeUtc(cHasta, true)]);
+      }
       domain.push(
         "|",
-        "&", ["payment_registration_date", ">=", cDesde], ["payment_registration_date", "<=", cHasta],
+        ...conY(reg),
         "&", ["payment_registration_date", "=", false],
-        "&", ["create_date", ">=", `${cDesde} 00:00:00`], ["create_date", "<=", `${cHasta} 23:59:59`],
+        ...conY(creado),
       );
     }
 
@@ -244,7 +283,7 @@ export async function GET(request: NextRequest) {
         // Fecha de pago = fecha valor del asiento (puede estar retroactiva).
         fechaPago: p.date || null,
         // Fecha de confirmación = cuándo se registró el pago en Odoo.
-        fechaConfirmacion: p.payment_registration_date || (p.create_date ? String(p.create_date).split(/[ T]/)[0] : null),
+        fechaConfirmacion: p.payment_registration_date || (p.create_date ? fechaCaracas(p.create_date) : null),
         numeroPago: p.name || "",
         referencia: p.ref || "",
         cliente: p.partner_id?.[1] || "",
@@ -288,8 +327,9 @@ export async function GET(request: NextRequest) {
         rows: filtradas,
         filtros: {
           empresa, estado, search,
-          confirmacion: cDesde && cHasta ? { desde: cDesde, hasta: cHasta } : null,
-          pago: desdePago && hastaPago ? { desde: desdePago, hasta: hastaPago } : null,
+          // Extremos independientes: null en uno = rango abierto de ese lado.
+          confirmacion: cDesde || cHasta ? { desde: cDesde, hasta: cHasta } : null,
+          pago: desdePago || hastaPago ? { desde: desdePago, hasta: hastaPago } : null,
         },
       },
     });
