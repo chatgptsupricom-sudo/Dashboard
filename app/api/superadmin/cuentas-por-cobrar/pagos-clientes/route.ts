@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { COMPANY_NAMES, companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -7,13 +8,6 @@ import { NextRequest, NextResponse } from "next/server";
 // registros (≈3.000 pagos de clientes por mes).
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-const COMPANY_MAP: Record<string, number> = {
-  valencia: 9,
-  caracas: 10,
-  panama: 7,
-};
-const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
 // Pestaña "Cobros" vs "Retenciones y ajustes": misma regla que "Cobrado" en
 // Contado/Crédito y el resto de CxC (lib/cxc/cobros.ts) — diario de tipo
@@ -86,7 +80,12 @@ export async function GET(request: NextRequest) {
     const cDesde = hayConf ? desdeConf! : (hayPago ? null : defDesde);
     const cHasta = hayConf ? hastaConf! : (hayPago ? null : defHasta);
 
-    const companyIds = COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : [7, 9, 10];
+    // La sede sale del token, no del query string: `empresa` solo puede
+    // acotar el alcance propio, nunca ampliarlo.
+    const companyIds = companyIdsEnAlcance(auth.payload, empresa);
+    if (companyIds.length === 0) {
+      return NextResponse.json({ error: "Sede fuera de alcance" }, { status: 403 });
+    }
 
     const domain: any[] = [
       ["payment_type", "=", "inbound"],

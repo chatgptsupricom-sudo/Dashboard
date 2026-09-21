@@ -5,6 +5,15 @@ import {
   RefreshCw, Download, Search, AlertTriangle, DollarSign, Banknote, Receipt, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useAuthStore } from "@/lib/stores/auth.store";
+
+// La sede la impone el backend a partir del token; esto solo evita ofrecer en
+// el selector una sede que devolveria 403.
+const SEDES = [
+  { value: "valencia", label: "Valencia", cids: 9 },
+  { value: "caracas", label: "Caracas", cids: 10 },
+  { value: "panama", label: "Panamá", cids: 7 },
+];
 
 type Tipo = "cobro" | "ajuste";
 
@@ -68,12 +77,20 @@ export default function PagoClientesPage() {
   // Rango por fecha de pago (fecha valor) — opcional, vacío por defecto.
   const [desdePago, setDesdePago] = useState("");
   const [hastaPago, setHastaPago] = useState("");
+  const { user } = useAuthStore();
+  const sedes = useMemo(() => {
+    const propia = SEDES.filter((s) => s.cids === user?.cids);
+    const esSuperadmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
+    return esSuperadmin || propia.length === 0 ? SEDES : propia;
+  }, [user?.role, user?.cids]);
   const [empresa, setEmpresa] = useState("todas");
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
   const [excluirAsistentes, setExcluirAsistentes] = useState(true);
   const [tab, setTab] = useState<Tipo>("cobro");
+  // Usuario de una sola sede: el selector queda fijo en la suya.
+  useEffect(() => { if (sedes.length === 1) setEmpresa(sedes[0].value); }, [sedes]);
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,11 +302,10 @@ export default function PagoClientesPage() {
         <div className="flex-1 sm:flex-none min-w-[120px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Sede</label>
           <select value={empresa} onChange={(e) => setEmpresa(e.target.value)}
-            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white">
-            <option value="todas">Todas</option>
-            <option value="valencia">Valencia</option>
-            <option value="caracas">Caracas</option>
-            <option value="panama">Panamá</option>
+            disabled={sedes.length === 1}
+            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white disabled:bg-slate-100 disabled:text-slate-500">
+            {sedes.length > 1 && <option value="todas">Todas</option>}
+            {sedes.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
           </select>
         </div>
         <div className="flex-1 sm:flex-none min-w-[140px]">
