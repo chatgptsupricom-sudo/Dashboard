@@ -2677,8 +2677,8 @@
       "cerrado": "Closed"
     },
     "paso": {
-      "por_llegar": "Register arrival: container photo, seal photo and number",
-      "descargando": "Count against the packing list and close with the container photo",
+      "por_llegar": "Register each container's arrival: photos and seal number",
+      "descargando": "Receive and unload the containers, count against the packing list and close",
       "cerrado": "Reception finished"
     },
     "le_toca_almacen": "Warehouse's turn",
@@ -2743,9 +2743,9 @@
     "golpeado_nota": "What's wrong? (optional)",
     "guardar_avance": "Save progress",
     "avance_guardado": "Progress saved",
-    "cierre": "Closing",
+    "cierre": "Closing the packing list",
     "notas_cierre": "Closing notes (optional)",
-    "cerrar": "Close reception",
+    "cerrar": "Close packing list",
     "faltan_para_cerrar": "To close, still missing:",
     "falta_contar": "{count} line(s) not counted",
     "falta_motivo": "reason on {count} line(s) with differences",
@@ -2765,11 +2765,26 @@
       "creado": "New packing list to receive",
       "llegada": "The container arrived",
       "cerrado_conforme": "Reception closed: all matches",
-      "cerrado_novedades": "Reception closed with issues"
+      "cerrado_novedades": "Reception closed with issues",
+      "llegada_contenedor": "Container {contenedor} arrived ({llegados} of {total})"
     },
     "conflicto": "This reception changed while you had it open. The screen was refreshed.",
     "flujo_anterior": "Inbound goods now go through packing lists: Purchasing loads them and Warehouse receives them.",
     "autoguardando": "Saving…",
-    "autoguardado": "Count saved automatically"
+    "autoguardado": "Count saved automatically",
+    "contenedores": "Containers",
+    "contenedores_ayuda": "Each container in the packing list, with its number and seal. Warehouse receives each one separately (they may arrive on different days).",
+    "agregar_contenedor": "Add container",
+    "contenedores_recibidos": "{llegados} of {total} received",
+    "contenedores_n": "{llegados}/{total} containers",
+    "etapa_contenedor": {
+      "por_llegar": "Expected",
+      "descargando": "Unloading",
+      "cerrado": "Unloaded"
+    },
+    "registrar_llegada_contenedor": "Register arrival of this container",
+    "terminar_contenedor": "Finish unloading this container",
+    "notas_contenedor": "Notes for this container (optional)",
+    "falta_contenedores": "finish {count} container(s)"
   }
 }

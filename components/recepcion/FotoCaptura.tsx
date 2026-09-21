@@ -7,6 +7,7 @@ import { Camera, Loader2, X } from "lucide-react";
 export type ArchivoRecepcion = {
   id: number;
   item_id: number | null;
+  contenedor_id: number | null;
   tipo: string;
   nombre: string | null;
   mime: string;
@@ -43,6 +44,7 @@ export default function FotoCaptura({
   recepcionId,
   tipo,
   itemId,
+  contenedorId,
   titulo,
   fotos,
   editable,
@@ -52,6 +54,8 @@ export default function FotoCaptura({
   recepcionId: number;
   tipo: string;
   itemId?: number;
+  /** Fotos de llegada/precinto/cierre: el contenedor al que pertenecen. */
+  contenedorId?: number;
   titulo: string;
   /** Fotos ya subidas de este tipo (y renglon, si aplica). */
   fotos: ArchivoRecepcion[];
@@ -74,6 +78,7 @@ export default function FotoCaptura({
       const fd = new FormData();
       fd.append("tipo", tipo);
       if (itemId) fd.append("item_id", String(itemId));
+      if (contenedorId) fd.append("contenedor_id", String(contenedorId));
       fd.append("archivo", blob, archivo.name.replace(/\.[^.]+$/, "") + ".jpg");
       const res = await fetch(`/api/recepcion/${recepcionId}/archivos`, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));

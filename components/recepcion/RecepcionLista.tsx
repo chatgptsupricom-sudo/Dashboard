@@ -37,6 +37,10 @@ type Fila = {
   etapa: Etapa;
   resultado: "conforme" | "con_novedades" | null;
   total_items: number;
+  contenedores_total: number;
+  contenedores_llegados: number;
+  /** Numeros de contenedor separados por coma. */
+  contenedores: string | null;
   items_contados: number;
   created_at: string;
 };
@@ -79,7 +83,15 @@ export default function RecepcionLista({ base }: { base: string }) {
     let texto: string | null = null;
     let malo = false;
     if (a.accion === "creado" && (rol === "almacen" || rol === "superadmin")) texto = t("aviso.creado");
-    if (a.accion === "llegada" && esCompras) texto = t("aviso.llegada");
+    if (a.accion === "llegada" && esCompras) {
+      texto = a.contenedor
+        ? t("aviso.llegada_contenedor", {
+            contenedor: a.contenedor,
+            llegados: a.llegados ?? 1,
+            total: a.total ?? 1,
+          })
+        : t("aviso.llegada");
+    }
     if (a.accion === "cerrado" && esCompras) {
       malo = a.resultado === "con_novedades";
       texto = t(malo ? "aviso.cerrado_novedades" : "aviso.cerrado_conforme");
@@ -183,7 +195,7 @@ export default function RecepcionLista({ base }: { base: string }) {
                   <p className="text-xs text-slate-500 truncate mt-0.5">{f.proveedor}</p>
                   <p className="text-[11px] text-slate-400 mt-1.5 truncate">
                     {[
-                      f.contenedor,
+                      f.contenedores || f.contenedor,
                       f.fecha_estimada ? fechaCorta(f.fecha_estimada) : null,
                       esCompras ? SUCURSALES.find((s) => s.cids === Number(f.cids))?.nombre : null,
                     ]
@@ -202,6 +214,14 @@ export default function RecepcionLista({ base }: { base: string }) {
                     >
                       {f.etapa === "cerrado" && f.resultado ? t(`resultado.${f.resultado}`) : t(`etapa.${f.etapa}`)}
                     </span>
+                    {f.etapa !== "cerrado" && Number(f.contenedores_total) > 0 && (
+                      <span className="text-[11px] text-slate-500 tabular-nums">
+                        {t("contenedores_n", {
+                          llegados: Number(f.contenedores_llegados),
+                          total: Number(f.contenedores_total),
+                        })}
+                      </span>
+                    )}
                     {f.etapa === "descargando" && (
                       <span className="text-[11px] text-slate-500 tabular-nums">
                         {t("contados", { contados: f.items_contados, total: f.total_items })}

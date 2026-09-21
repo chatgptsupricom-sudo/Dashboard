@@ -2,9 +2,18 @@
  * Recepcion de mercancia por packing list: Compras lo carga, Almacen lo
  * recibe, lo verifica y lo cierra.
  *
- *   por_llegar ─(Almacen: llegada + foto contenedor + foto precinto)─►
- *   descargando ─(Almacen: conteo contra el packing list + foto de cierre)─►
- *   cerrado (conforme | con_novedades)
+ * El packing list puede venir en varios contenedores, y cada uno tiene su
+ * propio recorrido (pueden llegar en dias distintos):
+ *
+ *   contenedor:  por_llegar ─(llegada: foto + foto precinto + numero)─►
+ *                descargando ─(foto de como quedo)─► cerrado
+ *
+ *   packing list: por_llegar ─(llega el primer contenedor)─► descargando
+ *                 ─(todos cerrados + conteo completo)─► cerrado
+ *                 (conforme | con_novedades)
+ *
+ * El conteo contra el packing list es uno solo y se va llenando a medida que
+ * llegan los contenedores.
  *
  * Sin dependencias de servidor: lo usan la API (para validar) y las
  * pantallas (para saber que mostrar y a quien le toca).
@@ -31,16 +40,38 @@ export function esTipoArchivo(v: unknown): v is TipoArchivo {
 }
 
 /**
- * En que etapa se puede subir cada archivo y quien. El packing list lo sube
- * Compras mientras el contenedor no llega; las fotos son de Almacen, cada una
- * en su momento (la de cierre no tiene sentido antes de descargar).
+ * En que etapa se puede subir cada archivo, quien, y de que es.
+ *
+ * Un packing list puede venir en varios contenedores que llegan en dias
+ * distintos, asi que las fotos de llegada, precinto y cierre son de UN
+ * contenedor (`nivel: "contenedor"`) y se miran contra la etapa de ese
+ * contenedor. El packing list (el archivo) y la foto de una caja golpeada son
+ * del packing list entero: el conteo es uno solo.
  */
-export const ARCHIVO_PERMITIDO: Record<TipoArchivo, { rol: "compras" | "almacen"; etapas: Etapa[] }> = {
-  packing_list: { rol: "compras", etapas: ["por_llegar"] },
-  foto_llegada: { rol: "almacen", etapas: ["por_llegar"] },
-  foto_precinto: { rol: "almacen", etapas: ["por_llegar"] },
-  foto_golpe: { rol: "almacen", etapas: ["descargando"] },
-  foto_cierre: { rol: "almacen", etapas: ["descargando"] },
+export const ARCHIVO_PERMITIDO: Record<
+  TipoArchivo,
+  { rol: "compras" | "almacen"; nivel: "recepcion" | "contenedor"; etapas: Etapa[] }
+> = {
+  packing_list: { rol: "compras", nivel: "recepcion", etapas: ["por_llegar"] },
+  foto_llegada: { rol: "almacen", nivel: "contenedor", etapas: ["por_llegar"] },
+  foto_precinto: { rol: "almacen", nivel: "contenedor", etapas: ["por_llegar"] },
+  foto_cierre: { rol: "almacen", nivel: "contenedor", etapas: ["descargando"] },
+  foto_golpe: { rol: "almacen", nivel: "recepcion", etapas: ["descargando"] },
+};
+
+/** Un contenedor del packing list, cada uno con su propia llegada y cierre. */
+export type Contenedor = {
+  id: number;
+  numero: string;
+  precinto_esperado: string | null;
+  etapa: Etapa;
+  llegada_at: string | null;
+  llegada_por: string | null;
+  precinto_recibido: string | null;
+  precinto_coincide: number | null;
+  cerrado_at: string | null;
+  cerrado_por: string | null;
+  notas_cierre: string | null;
 };
 
 export type RolRecepcion = "compras" | "almacen";
