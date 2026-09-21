@@ -6,6 +6,7 @@ import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "
 import { computeComprasKpis } from "@/lib/compras/kpis";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { obtenerLineasMargen } from "@/lib/stoplight/margen";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -70,7 +71,10 @@ export async function GET(request: NextRequest) {
     const mesParam = url.searchParams.get("mes");
     const startDateParam = url.searchParams.get("startDate");
     const endDateParam = url.searchParams.get("endDate");
-    const companyId = (isCxC || isGerenteOps) ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
+    // Gerencia de Ventas tampoco elige sede: su página ya manda su propio
+    // `cids`, pero sin esto podía leer otra sede cambiando `company_id`.
+    const empresaFija = isCxC || isGerenteOps || userRole === "gerencia de ventas";
+    const companyId = empresaFija ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -408,116 +412,15 @@ export async function GET(request: NextRequest) {
     const metaCantidad = metasMap["cobertura_marcas"] || 0;
 
     // --- Margen Bruto (gross margin per week) ---
-    let margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
-    let totalRevenueMes = 0;
-    let totalCostoMes = 0;
+    // Mismo cálculo que el modal (`margen-detail`), vía lib/stoplight/margen.
+    const margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
     try {
-      const allInvoicesForMargin = await callOdooRPC<any[]>(
-        "account.move",
-        "search_read",
-        [
-          [
-            ["move_type", "in", ["out_invoice", "out_refund"]],
-            ["state", "=", "posted"],
-            ["company_id", "=", companyId],
-            ["invoice_date", ">=", fechaInicio],
-            ["invoice_date", "<=", fechaFin],
-            ["invoice_user_id", "!=", false],
-          ],
-        ],
-        {
-          fields: ["id", "invoice_user_id", "invoice_date", "move_type"],
-          limit: 10000,
-        }
-      );
-
-      const marginInvoiceIds = (allInvoicesForMargin || []).map((inv: any) => inv.id);
-      const marginInvoiceMap: Record<number, any> = {};
-      (allInvoicesForMargin || []).forEach((inv: any) => {
-        marginInvoiceMap[inv.id] = inv;
-      });
-
-      if (marginInvoiceIds.length > 0) {
-        const marginLines = (await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [
-            [
-              ["move_id", "in", marginInvoiceIds],
-              ["display_type", "=", "product"],
-              ["product_id", "!=", false],
-            ],
-          ],
-          {
-            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-            limit: 50000,
-          }
-        )) || [];
-
-        const marginProductIds = [...new Set(marginLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
-        const marginProductCostMap: Record<number, number> = {};
-
-        if (marginProductIds.length > 0) {
-          const variants = (await callOdooRPC<any[]>(
-            "product.product",
-            "search_read",
-            [[["id", "in", marginProductIds], ["active", "=", true]]],
-            { fields: ["id", "product_tmpl_id"], limit: 0 }
-          )) || [];
-
-          const variantToTmpl: Record<number, number> = {};
-          variants.forEach((v: any) => {
-            if (v.id && v.product_tmpl_id?.[0]) variantToTmpl[v.id] = v.product_tmpl_id[0];
-          });
-
-          const tmplIds = [...new Set(variants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
-          if (tmplIds.length > 0) {
-            const templates = (await callOdooRPC<any[]>(
-              "product.template",
-              "search_read",
-              [[["id", "in", tmplIds]]],
-              { fields: ["id", "standard_price"], limit: 0 }
-            )) || [];
-
-            const tmplCostMap: Record<number, number> = {};
-            templates.forEach((t: any) => {
-              tmplCostMap[t.id] = Number(t.standard_price) || 0;
-            });
-
-            marginProductIds.forEach((pid: number) => {
-              const tid = variantToTmpl[pid];
-              marginProductCostMap[pid] = tid ? (tmplCostMap[tid] || 0) : 0;
-            });
-          }
-        }
-
-        marginLines.forEach((line: any) => {
-          const moveId = line.move_id?.[0];
-          const inv = marginInvoiceMap[moveId];
-          if (!inv) return;
-
-          const productId = line.product_id?.[0];
-          const qty = Number(line.quantity) || 0;
-          const revenue = Number(line.price_subtotal) || 0;
-          const unitCost = productId ? (marginProductCostMap[productId] || 0) : 0;
-          const costo = qty * unitCost;
-
-          const isRefund = inv.move_type === "out_refund";
-          const revenueFinal = isRefund ? -revenue : revenue;
-          const costoFinal = isRefund ? -costo : costo;
-
-          totalRevenueMes += revenueFinal;
-          totalCostoMes += costoFinal;
-
-          const invDate = new Date(inv.invoice_date);
-          for (let i = 0; i < semanas.length; i++) {
-            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-              margenPorSemana[i].revenue += revenueFinal;
-              margenPorSemana[i].costo += costoFinal;
-              break;
-            }
-          }
-        });
+      const lineasMargen = await obtenerLineasMargen(companyId, fechaInicio, fechaFin);
+      for (const linea of lineasMargen) {
+        const i = semanas.findIndex((s) => linea.fecha >= s.inicio && linea.fecha <= s.fin);
+        if (i === -1) continue;
+        margenPorSemana[i].revenue += linea.ingreso;
+        margenPorSemana[i].costo += linea.costo;
       }
     } catch (e: any) {
       console.error("Error calculating margin:", e.message);
