@@ -19,12 +19,16 @@ import { callOdooRPC } from "@/lib/odoo";
  *   quedaba en 0 y el margen salía inflado.
  */
 export interface LineaMargen {
+  vendedorId: number;
   vendedor: string;
   productId: number;
   producto: string;
   cantidad: number;
   ingreso: number;
   costo: number;
+  /** Marca (`spiff.brand`) del producto; la usa Cobertura de marcas. */
+  marcaId: number | null;
+  marca: string;
   /** Fecha de factura a medianoche local (comparable con `obtenerSemanasDelMes`). */
   fecha: Date;
 }
@@ -88,16 +92,18 @@ export async function obtenerLineasMargen(
   const productIds = [...new Set(lineas.map((l: any) => l.product_id?.[0]).filter(Boolean))];
   const costoPorProducto = new Map<number, number>();
   const nombrePorProducto = new Map<number, string>();
+  const marcaPorProducto = new Map<number, [number, string]>();
   if (productIds.length > 0) {
     const productos = (await callOdooRPC<any[]>(
       "product.product",
       "search_read",
       [[["id", "in", productIds]]],
-      { fields: ["id", "name", "standard_price"], limit: 0, context },
+      { fields: ["id", "name", "standard_price", "spiff_brand_id"], limit: 0, context },
     )) || [];
     productos.forEach((p: any) => {
       costoPorProducto.set(p.id, Number(p.standard_price) || 0);
       nombrePorProducto.set(p.id, p.name || "");
+      if (p.spiff_brand_id) marcaPorProducto.set(p.id, [p.spiff_brand_id[0], p.spiff_brand_id[1] || ""]);
     });
   }
 
@@ -109,12 +115,15 @@ export async function obtenerLineasMargen(
     const signo = factura.move_type === "out_refund" ? -1 : 1;
     const cantidad = Number(l.quantity) || 0;
     resultado.push({
+      vendedorId: factura.invoice_user_id?.[0] || 0,
       vendedor: factura.invoice_user_id?.[1] || "",
       productId,
       producto: nombrePorProducto.get(productId) || l.product_id?.[1] || "",
       cantidad: signo * cantidad,
       ingreso: signo * (Number(l.price_subtotal) || 0),
       costo: signo * cantidad * (costoPorProducto.get(productId) || 0),
+      marcaId: marcaPorProducto.get(productId)?.[0] ?? null,
+      marca: marcaPorProducto.get(productId)?.[1] ?? "",
       fecha: fechaLocal(factura.invoice_date),
     });
   }

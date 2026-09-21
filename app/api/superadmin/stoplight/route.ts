@@ -6,8 +6,9 @@ import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "
 import { computeComprasKpis } from "@/lib/compras/kpis";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { obtenerLineasMargen, fechaLocal } from "@/lib/stoplight/margen";
+import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -415,9 +416,11 @@ export async function GET(request: NextRequest) {
     // --- Margen Bruto (gross margin per week) ---
     // Mismo cálculo que el modal (`margen-detail`), vía lib/stoplight/margen.
     const margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
+    // Las mismas líneas alimentan Cobertura de marcas (más abajo).
+    let lineasVentas: LineaMargen[] = [];
     try {
-      const lineasMargen = await obtenerLineasMargen(companyId, fechaInicio, fechaFin);
-      for (const linea of lineasMargen) {
+      lineasVentas = await obtenerLineasMargen(companyId, fechaInicio, fechaFin);
+      for (const linea of lineasVentas) {
         const i = semanas.findIndex((s) => linea.fecha >= s.inicio && linea.fecha <= s.fin);
         if (i === -1) continue;
         margenPorSemana[i].revenue += linea.ingreso;
@@ -656,130 +659,44 @@ export async function GET(request: NextRequest) {
     });
 
 
-    // --- Cobertura de marcas (brand coverage per week) ---
-    // Counts distinct brands (spiff_brand_id) sold each week vs. the goal (# target brands)
-    const semanaCoberturaDataBrands: Set<number>[] = semanas.map(() => new Set());
-    let totalRevenueBrandsMes = 0;
-    let totalCostoBrandsMes = 0;
+    // --- Cobertura de marcas ---
+    // Con metas por marca en el mes (lib/stoplight/metasMarca): promedio
+    // ponderado de venta real ÷ meta por marca, con tope de 100% por marca.
+    // Sin metas por marca: fórmula anterior, cantidad de marcas distintas
+    // vendidas por semana contra la meta de la columna META.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    let semanaCobertura: (string | null)[];
     try {
-      const allInvoiceIds = (invoices || []).map((inv: any) => inv.id);
-      if (allInvoiceIds.length > 0) {
-        const brandLines = (await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [
-            [
-              ["move_id", "in", allInvoiceIds],
-              ["display_type", "=", "product"],
-              ["product_id", "!=", false],
-            ],
-          ],
-          {
-            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-            limit: 50000,
-          }
-        )) || [];
-
-        const brandProductIds = [...new Set(brandLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
-        const brandProductCostMap: Record<number, number> = {};
-        const productBrandMap: Record<number, number> = {};
-
-        if (brandProductIds.length > 0) {
-          const brandVariants = (await callOdooRPC<any[]>(
-            "product.product",
-            "search_read",
-            [[["id", "in", brandProductIds], ["active", "=", true]]],
-            { fields: ["id", "product_tmpl_id"], limit: 0 }
-          )) || [];
-
-          const brandVariantToTmpl: Record<number, number> = {};
-          brandVariants.forEach((v: any) => {
-            if (v.id && v.product_tmpl_id?.[0]) brandVariantToTmpl[v.id] = v.product_tmpl_id[0];
-          });
-
-          const brandTmplIds = [...new Set(brandVariants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
-          if (brandTmplIds.length > 0) {
-            const brandTemplates = (await callOdooRPC<any[]>(
-              "product.template",
-              "search_read",
-              [[["id", "in", brandTmplIds]]],
-              { fields: ["id", "standard_price", "spiff_brand_id"], limit: 0 }
-            )) || [];
-
-            const brandTmplCostMap: Record<number, number> = {};
-            const tmplBrandMap: Record<number, number> = {};
-            brandTemplates.forEach((t: any) => {
-              brandTmplCostMap[t.id] = Number(t.standard_price) || 0;
-              const brandId = t.spiff_brand_id?.[0];
-              if (brandId) tmplBrandMap[t.id] = brandId;
-            });
-
-            brandProductIds.forEach((pid: number) => {
-              const tid = brandVariantToTmpl[pid];
-              brandProductCostMap[pid] = tid ? (brandTmplCostMap[tid] || 0) : 0;
-              if (tid && tmplBrandMap[tid]) productBrandMap[pid] = tmplBrandMap[tid];
-            });
-          }
-        }
-
-        const invDateMap: Record<number, Date> = {};
-        const invoiceMap: Record<number, any> = {};
-        (invoices || []).forEach((inv: any) => {
-          invDateMap[inv.id] = new Date(inv.invoice_date);
-          invoiceMap[inv.id] = inv;
-        });
-
-        (brandLines || []).forEach((line: any) => {
-          const moveId = line.move_id?.[0];
-          const invDate = invDateMap[moveId];
-          if (!invDate) return;
-
-          const productId = line.product_id?.[0];
-          const qty = Math.abs(Number(line.quantity) || 0);
-          const revenue = Math.abs(Number(line.price_subtotal) || 0);
-          const unitCost = productId ? (brandProductCostMap[productId] || 0) : 0;
-          const costo = qty * unitCost;
-
-          const inv = invoiceMap[moveId];
-          const isRefund = inv?.move_type === "out_refund";
-          const revenueFinal = isRefund ? -revenue : revenue;
-          const costoFinal = isRefund ? -costo : costo;
-
-          totalRevenueBrandsMes += revenueFinal;
-          totalCostoBrandsMes += costoFinal;
-
-          const brandId = productId ? productBrandMap[productId] : undefined;
-          if (brandId) {
-            for (let i = 0; i < semanas.length; i++) {
-              if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-                semanaCoberturaDataBrands[i].add(brandId);
-                break;
-              }
-            }
-          }
-        });
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineasVentas, semanas, anio, mesNum, 1, now);
       }
     } catch (e: any) {
-      console.error("Error calculating cobertura:", e.message);
+      console.error("Error leyendo metas por marca:", e.message);
     }
-
-    const semanaCobertura = semanas.map((semana, i) => {
-      const esFuturo = semana.inicio > now;
-      if (esFuturo) return null;
-      const saved = savedMap["cobertura_marcas"]?.[i];
-      if (saved) {
-        const goal = metasMap["cobertura_marcas"] || 0;
-        if (goal <= 0) return `${Math.round(saved.valor)}%`;
-        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
-        return `${pct}%`;
+    if (coberturaMarcas) {
+      semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+    } else {
+      const marcasPorSemana: Set<number>[] = semanas.map(() => new Set());
+      for (const l of lineasVentas) {
+        if (l.marcaId == null || l.ingreso <= 0) continue;
+        const i = semanas.findIndex((w) => l.fecha >= w.inicio && l.fecha <= w.fin);
+        if (i !== -1) marcasPorSemana[i].add(l.marcaId);
       }
-      const brandCount = semanaCoberturaDataBrands[i].size;
-      if (metaCantidad > 0) {
-        const pct = Math.round((brandCount / metaCantidad) * 100);
-        return `${pct}%`;
-      }
-      return brandCount > 0 ? String(brandCount) : null;
-    });
+      semanaCobertura = semanas.map((semana, i) => {
+        if (semana.inicio > now) return null;
+        const saved = savedMap["cobertura_marcas"]?.[i];
+        if (saved) {
+          const goal = metasMap["cobertura_marcas"] || 0;
+          if (goal <= 0) return `${Math.round(saved.valor)}%`;
+          const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+          return `${pct}%`;
+        }
+        const brandCount = marcasPorSemana[i].size;
+        if (metaCantidad > 0) return `${Math.round((brandCount / metaCantidad) * 100)}%`;
+        return brandCount > 0 ? String(brandCount) : null;
+      });
+    }
 
     // --- Visitas semanales (from weekly_visits table) ---
     let visitasPorSemana: number[] = semanas.map(() => 0);
@@ -895,7 +812,11 @@ export async function GET(request: NextRequest) {
         avgEfectividad: avgFromWeeks(semanaEfectividad),
         avgActivacion: avgActivacionMes,
         avgClientes: avgFromWeeks(semanaClientes),
-        avgCobertura: avgFromWeeks(semanaCobertura),
+        // Con metas por marca: el mes contra la meta prorrateada a hoy.
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        // Resumen de las metas por marca (null = el mes no tiene): el front
+        // cambia la fila de Cobertura y su META pasa a editarse por marca.
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
         avgCicloReposicion,
         semanaVarCosto,
         semanaRotacion,
