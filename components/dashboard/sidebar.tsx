@@ -424,6 +424,12 @@ export function Sidebar({
           href: `/${locale}${item.slug}`,
         };
       }
+      // Gerencia de Ventas: "Cuentas por Cobrar" es su cobranza por vendedor.
+      // Con el slug normal caía en /gerente_venta/cuentas-por-cobrar, que no
+      // existe y que el middleware redirige al dashboard.
+      if (item.id === "cuentas_por_cobrar" && basePath.endsWith("/gerente_venta")) {
+        return { ...item, href: `${basePath}/cobranza` };
+      }
       if (item.id === "catalogo_disenador" && userRole?.toLowerCase().trim() === "adminleads") {
         return {
           ...item,
