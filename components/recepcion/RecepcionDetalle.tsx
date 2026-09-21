@@ -13,6 +13,7 @@ import {
   FileText,
   Loader2,
   Pencil,
+  Plus,
   Save,
   Trash2,
   Truck,
@@ -23,6 +24,8 @@ import {
   SUCURSALES,
   esEtapa,
   evaluarConteo,
+  compararPrecintos,
+  MAX_PRECINTOS,
   type Contenedor,
   type Etapa,
 } from "@/lib/recepcion/flujo";
@@ -107,7 +110,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const [archivos, setArchivos] = useState<ArchivoRecepcion[]>([]);
   const [conteo, setConteo] = useState<Record<number, Conteo>>({});
   // Por contenedor: el precinto que se lee al llegar y la nota al terminarlo.
-  const [precintos, setPrecintos] = useState<Record<number, string>>({});
+  const [precintos, setPrecintos] = useState<Record<number, string[]>>({});
   const [notasCont, setNotasCont] = useState<Record<number, string>>({});
   const [notas, setNotas] = useState("");
   const [cargando, setCargando] = useState(true);
@@ -393,30 +396,39 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       )}
                     </div>
 
-                    {/* Precinto: el esperado no se le muestra a Almacen antes de
-                        que lea el suyo (si lo tiene en pantalla, tiende a "ver" ese). */}
-                    {(esCompras || c.etapa !== "por_llegar") && c.precinto_esperado && (
+                    {/* Precintos (puede haber varios). Los esperados no se le
+                        muestran a Almacen antes de que lea los suyos: si los tiene
+                        en pantalla, tiende a "ver" esos. */}
+                    {(esCompras || c.etapa !== "por_llegar") && c.precintos_esperados.length > 0 && (
                       <p className="text-xs text-slate-500">
-                        {t("precinto_esperado")}: <span className="font-medium text-slate-700">{c.precinto_esperado}</span>
+                        {t("precintos_esperados")}:{" "}
+                        <span className="font-medium text-slate-700">{c.precintos_esperados.join(", ")}</span>
                       </p>
                     )}
-                    {c.precinto_recibido && (
-                      <p className="text-xs text-slate-500">
-                        {t("precinto_recibido")}: <span className="font-medium text-slate-700">{c.precinto_recibido}</span>{" "}
-                        {c.precinto_coincide !== null && (
-                          <span
-                            className={`font-semibold ${
-                              Number(c.precinto_coincide) === 1 ? "text-emerald-600" : "text-red-600"
-                            }`}
-                          >
-                            ·{" "}
-                            {Number(c.precinto_coincide) === 1
-                              ? t("precinto_coincide")
-                              : t("precinto_distinto", { esperado: c.precinto_esperado || "—" })}
-                          </span>
-                        )}
-                      </p>
-                    )}
+                    {c.precintos_recibidos.length > 0 && (() => {
+                      const cmp = compararPrecintos(c.precintos_esperados, c.precintos_recibidos);
+                      return (
+                        <div className="text-xs text-slate-500 space-y-0.5">
+                          <p>
+                            {t("precintos_recibidos")}:{" "}
+                            <span className="font-medium text-slate-700">{c.precintos_recibidos.join(", ")}</span>
+                            {cmp.coincide === true && (
+                              <span className="font-semibold text-emerald-600"> · {t("precinto_coincide")}</span>
+                            )}
+                          </p>
+                          {cmp.faltan.length > 0 && (
+                            <p className="font-semibold text-red-600">
+                              {t("precinto_faltan", { lista: cmp.faltan.join(", ") })}
+                            </p>
+                          )}
+                          {cmp.sobran.length > 0 && (
+                            <p className="font-semibold text-red-600">
+                              {t("precinto_sobran", { lista: cmp.sobran.join(", ") })}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {(enLlegada || c.etapa !== "por_llegar") && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -443,41 +455,85 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       </div>
                     )}
 
-                    {enLlegada && (
-                      <>
-                        <div>
-                          <label className={labelClases}>{t("precinto_leido")} *</label>
-                          <input
-                            value={precintos[c.id] || ""}
-                            onChange={(e) =>
-                              setPrecintos((p) => ({ ...p, [c.id]: e.target.value.slice(0, 50) }))
+                    {enLlegada && (() => {
+                      // Tantas casillas como precintos indica el packing list (al
+                      // menos una): se muestra CUANTOS, no cuales, para que no se
+                      // olvide ninguno sin condicionar la lectura.
+                      const lista =
+                        precintos[c.id] ??
+                        Array.from({ length: Math.max(1, c.precintos_esperados.length) }, () => "");
+                      const poner = (n: number, v: string) =>
+                        setPrecintos((p) => ({
+                          ...p,
+                          [c.id]: lista.map((x, i) => (i === n ? v.slice(0, 50) : x)),
+                        }));
+                      const leidos = lista.map((x) => x.trim()).filter(Boolean);
+                      return (
+                        <>
+                          <div className="space-y-2">
+                            <label className={labelClases}>{t("precintos_leidos")} *</label>
+                            {c.precintos_esperados.length > 0 && (
+                              <p className="text-[11px] text-slate-400 -mt-1">
+                                {t("precintos_indicados", { count: c.precintos_esperados.length })}
+                              </p>
+                            )}
+                            {lista.map((v, n) => (
+                              <div key={n} className="flex gap-2">
+                                <input
+                                  value={v}
+                                  onChange={(e) => poner(n, e.target.value)}
+                                  placeholder={t("precinto_leido_ph")}
+                                  aria-label={`${t("precintos_leidos")} ${n + 1}`}
+                                  className={inputClases}
+                                />
+                                {lista.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPrecintos((p) => ({ ...p, [c.id]: lista.filter((_, i) => i !== n) }))
+                                    }
+                                    aria-label={t("quitar")}
+                                    className="w-11 h-11 shrink-0 flex items-center justify-center text-slate-300 hover:text-red-600"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {lista.length < MAX_PRECINTOS && (
+                              <button
+                                type="button"
+                                onClick={() => setPrecintos((p) => ({ ...p, [c.id]: [...lista, ""] }))}
+                                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-80"
+                              >
+                                <Plus className="w-4 h-4" />
+                                {t("agregar_precinto")}
+                              </button>
+                            )}
+                          </div>
+                          <BotonPrimario
+                            onClick={() =>
+                              void accionar(
+                                "registrar_llegada",
+                                { contenedor_id: c.id, precintos_recibidos: leidos },
+                                // Llega otro contenedor a mitad del conteo: no se pisa lo contado.
+                                false,
+                              )
                             }
-                            placeholder={t("precinto_leido_ph")}
-                            className={inputClases}
-                          />
-                        </div>
-                        <BotonPrimario
-                          onClick={() =>
-                            void accionar(
-                              "registrar_llegada",
-                              { contenedor_id: c.id, precinto_recibido: precintos[c.id] || "" },
-                              // Llega otro contenedor a mitad del conteo: no se pisa lo contado.
-                              false,
-                            )
-                          }
-                          disabled={
-                            enviando ||
-                            !(precintos[c.id] || "").trim() ||
-                            fotosLlegada.length === 0 ||
-                            fotosPrecinto.length === 0
-                          }
-                          icon={Truck}
-                          className="w-full h-12"
-                        >
-                          {t("registrar_llegada_contenedor")}
-                        </BotonPrimario>
-                      </>
-                    )}
+                            disabled={
+                              enviando ||
+                              leidos.length === 0 ||
+                              fotosLlegada.length === 0 ||
+                              fotosPrecinto.length === 0
+                            }
+                            icon={Truck}
+                            className="w-full h-12"
+                          >
+                            {t("registrar_llegada_contenedor")}
+                          </BotonPrimario>
+                        </>
+                      );
+                    })()}
 
                     {/* Cierre del contenedor: foto de como quedo */}
                     {(descargandolo || c.etapa === "cerrado") && (

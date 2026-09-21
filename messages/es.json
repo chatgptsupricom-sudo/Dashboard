@@ -2670,7 +2670,7 @@
     "precinto_recibido": "Precinto recibido",
     "precinto_leido": "Número de precinto que ves",
     "precinto_leido_ph": "Escríbelo tal cual lo lees",
-    "precinto_coincide": "Coincide con el packing list",
+    "precinto_coincide": "Coinciden con el packing list",
     "precinto_distinto": "No coincide con el packing list (esperado: {esperado})",
     "fecha_estimada": "Llegada estimada",
     "oc": "Orden de compra",
@@ -2702,7 +2702,7 @@
     "error": "No se pudo guardar",
     "llegada": "Llegada del contenedor",
     "foto_llegada": "Foto del contenedor al llegar",
-    "foto_precinto": "Foto del precinto",
+    "foto_precinto": "Fotos de los precintos",
     "foto_cierre": "Foto del contenedor al terminar",
     "foto_golpe": "Foto de la caja golpeada",
     "tomar_foto": "Tomar foto",
@@ -2759,6 +2759,14 @@
     "registrar_llegada_contenedor": "Registrar llegada de este contenedor",
     "terminar_contenedor": "Terminar descarga de este contenedor",
     "notas_contenedor": "Notas de este contenedor (opcional)",
-    "falta_contenedores": "terminar {count} contenedor(es)"
+    "falta_contenedores": "terminar {count} contenedor(es)",
+    "precintos_esperados": "Precintos (según packing list)",
+    "precintos_ph": "Separados por coma: SL-100, SL-101",
+    "precintos_recibidos": "Precintos recibidos",
+    "precintos_leidos": "Precintos que ves",
+    "agregar_precinto": "Agregar otro precinto",
+    "precintos_indicados": "{count, plural, =1 {El packing list indica # precinto} other {El packing list indica # precintos}}",
+    "precinto_faltan": "Faltan: {lista}",
+    "precinto_sobran": "No estaban en el packing list: {lista}"
   }
 }

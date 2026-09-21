@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { SUCURSALES } from "@/lib/recepcion/flujo";
+import { SUCURSALES, limpiarPrecintos } from "@/lib/recepcion/flujo";
 
 /**
  * Validacion de un packing list (cabecera + renglones), compartida por el
@@ -20,7 +20,7 @@ const MAX = {
   contenedores: 50,
 };
 
-export type ContenedorNuevo = { numero: string; precinto_esperado: string | null };
+export type ContenedorNuevo = { numero: string; precintos_esperados: string[] };
 
 function texto(v: unknown, max: number): string | null {
   if (v === undefined || v === null) return null;
@@ -66,19 +66,22 @@ export function validarCabeceraEItems(body: any):
   const poId = Number(body?.purchase_order_id);
 
   // Contenedores: al menos uno, cada uno con su numero (Compras lo pidio:
-  // es lo que Almacen busca en el patio). El precinto es opcional porque no
-  // siempre viene en el packing list.
+  // es lo que Almacen busca en el patio). Los precintos son opcionales porque
+  // no siempre vienen en el packing list, y puede haber mas de uno por
+  // contenedor. Se acepta tambien `precinto_esperado` suelto (lo de antes).
   const crudosCont = Array.isArray(body?.contenedores) ? body.contenedores : [];
   const contenedores: ContenedorNuevo[] = [];
   for (const [n, c] of crudosCont.entries()) {
     const numero = texto(c?.numero, MAX.contenedor)?.toUpperCase() || null;
-    const precinto = texto(c?.precinto_esperado, MAX.precinto);
-    if (!numero && !precinto) continue; // fila vacia de la grilla
+    const precintos = limpiarPrecintos(
+      Array.isArray(c?.precintos_esperados) ? c.precintos_esperados : c?.precinto_esperado,
+    );
+    if (!numero && precintos.length === 0) continue; // fila vacia de la grilla
     if (!numero) return { error: `Contenedor ${n + 1}: falta el numero` };
     if (contenedores.some((x) => x.numero === numero)) {
       return { error: `El contenedor ${numero} esta repetido` };
     }
-    contenedores.push({ numero, precinto_esperado: precinto });
+    contenedores.push({ numero, precintos_esperados: precintos });
   }
   if (contenedores.length === 0) return { error: "Falta al menos un contenedor con su numero" };
   if (contenedores.length > MAX.contenedores) {
@@ -115,7 +118,7 @@ export function validarCabeceraEItems(body: any):
       // cuando habia uno solo: se llenan con el primero para lo que las lea,
       // pero la fuente de verdad es recepcion_packing_contenedores.
       contenedor: contenedores[0].numero,
-      precinto_esperado: contenedores[0].precinto_esperado,
+      precinto_esperado: contenedores[0].precintos_esperados[0] ?? null,
       purchase_order_id: Number.isFinite(poId) && poId > 0 ? poId : null,
       oc_referencia: texto(body?.oc_referencia, MAX.oc),
       fecha_estimada: fecha,
@@ -130,12 +133,20 @@ export async function insertarContenedores(recepcionId: number, contenedores: Co
   const valores: any[] = [];
   const marcas = contenedores
     .map((c) => {
-      valores.push(recepcionId, c.numero, c.precinto_esperado);
-      return "(?, ?, ?)";
+      // La lista completa va en precintos_esperados; precinto_esperado (la
+      // columna de cuando habia uno solo) se llena con el primero.
+      valores.push(
+        recepcionId,
+        c.numero,
+        c.precintos_esperados[0] ?? null,
+        c.precintos_esperados.length ? JSON.stringify(c.precintos_esperados) : null,
+      );
+      return "(?, ?, ?, ?)";
     })
     .join(", ");
   await query(
-    `INSERT INTO recepcion_packing_contenedores (recepcion_id, numero, precinto_esperado)
+    `INSERT INTO recepcion_packing_contenedores
+       (recepcion_id, numero, precinto_esperado, precintos_esperados)
      VALUES ${marcas}`,
     valores,
   );
