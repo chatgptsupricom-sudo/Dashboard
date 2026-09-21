@@ -12,6 +12,8 @@ import {
   Package,
   Building2,
   Trophy,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -85,7 +87,7 @@ export default function SpiffManager({
   const [products, setProducts] = useState<OdooProduct[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; data: any[]; loading: boolean } | null>(null);
+  const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; mes: string; data: any[]; loading: boolean } | null>(null);
 
   useEffect(() => {
     if (showCompanyFilter) {
@@ -231,10 +233,34 @@ export default function SpiffManager({
 
   const isMontoMode = form.modo === "monto";
 
-  const handleViewRanking = async (rule: SpiffRule) => {
-    setRankingModal({ rule, data: [], loading: true });
+  // Mes del ranking: el actual si la regla está vigente; si no, el último
+  // mes de su vigencia (o el primero, si todavía no empieza).
+  const mesInicialRanking = (rule: SpiffRule): string => {
+    const hoy = new Date();
+    let mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+    const ini = rule.fecha_inicio ? String(rule.fecha_inicio).slice(0, 7) : null;
+    const fin = rule.fecha_fin ? String(rule.fecha_fin).slice(0, 7) : null;
+    if (fin && mes > fin) mes = fin;
+    if (ini && mes < ini) mes = ini;
+    return mes;
+  };
+  const moverMesRanking = (mes: string, delta: number) => {
+    const [y, m] = mes.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const reglaVigenteEn = (rule: SpiffRule, mes: string) => {
+    const ini = rule.fecha_inicio ? String(rule.fecha_inicio).slice(0, 7) : null;
+    const fin = rule.fecha_fin ? String(rule.fecha_fin).slice(0, 7) : null;
+    return (!ini || mes >= ini) && (!fin || mes <= fin);
+  };
+
+  const handleViewRanking = async (rule: SpiffRule, mes = mesInicialRanking(rule)) => {
+    setRankingModal({ rule, mes, data: [], loading: true });
     try {
-      const res = await fetch(`/api/vendedores/spiff?company_id=${rule.company_id}`, { credentials: "include" });
+      const [y, m] = mes.split("-").map(Number);
+      const params = new URLSearchParams({ company_id: String(rule.company_id), regla_id: String(rule.id), year: String(y), month: String(m) });
+      const res = await fetch(`/api/vendedores/spiff?${params}`, { credentials: "include" });
       const json = await res.json();
       // Mismo cálculo que el resumen de gerencia (lib/spiff/calculo.ts):
       // monto/unidades y spiff de ESTA regla por vendedor, respetando sus
@@ -251,7 +277,7 @@ export default function SpiffManager({
         .filter((r) => r.monto > 0 || r.unidades > 0)
         .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto);
 
-      setRankingModal({ rule, data: rows, loading: false });
+      setRankingModal({ rule, mes, data: rows, loading: false });
     } catch {
       setRankingModal((prev) => prev ? { ...prev, loading: false } : null);
     }
@@ -558,8 +584,31 @@ export default function SpiffManager({
                 </div>
                 <div>
                   <h2 className="text-base font-black text-slate-800">{t("ranking_title")}</h2>
-                  <p className="text-[11px] text-slate-400 font-medium">{rankingModal.rule.brand_name}</p>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    {rankingModal.rule.brand_name}
+                    {rankingModal.rule.tipo === "producto" && rankingModal.rule.product_name ? ` · ${rankingModal.rule.product_name}` : ""}
+                  </p>
                 </div>
+              </div>
+              <div className="flex items-center rounded-lg border border-slate-200 mx-3">
+                <button
+                  onClick={() => handleViewRanking(rankingModal.rule, moverMesRanking(rankingModal.mes, -1))}
+                  className="p-1.5 hover:bg-slate-50 rounded-l-lg text-slate-500"
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="px-2 text-xs font-bold text-slate-700 whitespace-nowrap">
+                  {new Date(Number(rankingModal.mes.slice(0, 4)), Number(rankingModal.mes.slice(5, 7)) - 1, 1)
+                    .toLocaleDateString(locale, { month: "short", year: "numeric" })}
+                </span>
+                <button
+                  onClick={() => handleViewRanking(rankingModal.rule, moverMesRanking(rankingModal.mes, 1))}
+                  className="p-1.5 hover:bg-slate-50 rounded-r-lg text-slate-500"
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight size={14} />
+                </button>
               </div>
               <button
                 onClick={() => setRankingModal(null)}
@@ -575,6 +624,15 @@ export default function SpiffManager({
                 <div className="py-12 text-center">
                   <Trophy size={36} className="mx-auto text-slate-200 mb-3" />
                   <p className="text-sm text-slate-400">{t("no_ranking_data")}</p>
+                  {/* Por qué está vacío: antes de alinearse con el resumen de
+                      gerencia el ranking sumaba la marca sin mirar la regla. */}
+                  <p className="text-xs text-slate-400 mt-1 max-w-[260px] mx-auto">
+                    {!reglaVigenteEn(rankingModal.rule, rankingModal.mes)
+                      ? t("ranking_fuera_de_vigencia")
+                      : rankingModal.rule.tipo === "producto"
+                        ? t("ranking_sin_ventas_producto")
+                        : t("ranking_sin_ventas")}
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col max-h-[50vh] overflow-y-auto">

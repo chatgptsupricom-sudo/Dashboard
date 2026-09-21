@@ -33,7 +33,10 @@ export async function GET(request: NextRequest) {
     const param = parseInt(sp.get("company_id") || "", 10);
     const companyId = puedeElegirSede && Number.isFinite(param) ? param : Number(payload.cids) || 9;
 
-    const resumen = await calcularSpiffDelMes(companyId, anio, mes);
+    // `regla_id`: el ranking de una regla del administrador la pide aunque
+    // esté inactiva o fuera de fecha.
+    const reglaId = parseInt(sp.get("regla_id") || "", 10);
+    const resumen = await calcularSpiffDelMes(companyId, anio, mes, Number.isFinite(reglaId) ? { incluirReglaId: reglaId } : {});
     const mm = String(mes).padStart(2, "0");
     const fechaInicioGlobal = `${anio}-${mm}-01`;
     const fechaFinGlobal = `${anio}-${mm}-${String(new Date(anio, mes, 0).getDate()).padStart(2, "0")}`;
