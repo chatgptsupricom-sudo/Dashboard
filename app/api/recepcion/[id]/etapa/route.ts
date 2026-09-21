@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { evaluarConteo, normalizarPrecinto } from "@/lib/recepcion/flujo";
+import { compararPrecintos, evaluarConteo, limpiarPrecintos } from "@/lib/recepcion/flujo";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -15,8 +15,9 @@ export const dynamic = "force-dynamic";
  * POST /api/recepcion/[id]/etapa  { accion, ...datos }   — solo Almacen
  *
  * Por contenedor (pueden llegar en dias distintos):
- *  registrar_llegada  { contenedor_id, precinto_recibido }
- *                     contenedor por_llegar -> descargando (fotos llegada + precinto)
+ *  registrar_llegada  { contenedor_id, precintos_recibidos: string[] }
+ *                     contenedor por_llegar -> descargando (fotos llegada + precintos;
+ *                     puede tener varios precintos, coincide si son los mismos)
  *                     y el packing list pasa a descargando con el primero
  *  cerrar_contenedor  { contenedor_id, notas_cierre }
  *                     contenedor descargando -> cerrado (foto de como quedo)
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
  * pulsan a la vez, la segunda recibe 409 en vez de repetir el paso.
  */
 
-const MAX = { precinto: 50, motivo: 300, nota: 300, notas: 5000 };
+const MAX = { motivo: 300, nota: 300, notas: 5000 };
 
 function texto(v: unknown, max: number): string | null {
   if (v === undefined || v === null) return null;
@@ -85,27 +86,28 @@ export async function POST(
       case "registrar_llegada": {
         if (!contenedor) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
         if (contenedor.etapa !== "por_llegar") return conflicto();
-        const precinto = texto(body?.precinto_recibido, MAX.precinto);
+        // Un contenedor puede tener varios precintos: Almacen anota todos los
+        // que ve. Se acepta tambien `precinto_recibido` suelto (lo de antes).
+        const precintos = limpiarPrecintos(
+          Array.isArray(body?.precintos_recibidos) ? body.precintos_recibidos : body?.precinto_recibido,
+        );
         const faltan: string[] = [];
         if (!fotosDe("foto_llegada", contenedor.id)) faltan.push("la foto del contenedor al llegar");
-        if (!fotosDe("foto_precinto", contenedor.id)) faltan.push("la foto del precinto");
-        if (!precinto) faltan.push("el numero de precinto");
+        if (!fotosDe("foto_precinto", contenedor.id)) faltan.push("la foto de los precintos");
+        if (precintos.length === 0) faltan.push("el numero de al menos un precinto");
         if (faltan.length) {
           return NextResponse.json({ error: `Falta ${faltan.join(", ")}` }, { status: 400 });
         }
-        // Sin precinto esperado no hay contra que comparar: queda NULL.
-        const coincide = contenedor.precinto_esperado
-          ? normalizarPrecinto(contenedor.precinto_esperado) === normalizarPrecinto(precinto)
-            ? 1
-            : 0
-          : null;
+        // Coincide solo si son exactamente los mismos; sin esperados, NULL.
+        const cmp = compararPrecintos(contenedor.precintos_esperados, precintos);
+        const coincide = cmp.coincide === null ? null : cmp.coincide ? 1 : 0;
 
         const res = await query(
           `UPDATE recepcion_packing_contenedores
               SET etapa = 'descargando', llegada_at = NOW(), llegada_por = ?,
-                  precinto_recibido = ?, precinto_coincide = ?
+                  precinto_recibido = ?, precintos_recibidos = ?, precinto_coincide = ?
             WHERE id = ? AND recepcion_id = ? AND etapa = 'por_llegar'`,
-          [sesion!.nombre, precinto, coincide, contenedor.id, id],
+          [sesion!.nombre, precintos[0], JSON.stringify(precintos), coincide, contenedor.id, id],
         );
         if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
 
@@ -121,8 +123,8 @@ export async function POST(
 
         if (coincide === 0) {
           console.warn(
-            `[recepcion ${id}] PRECINTO DISTINTO en ${contenedor.numero}: ` +
-              `esperado ${contenedor.precinto_esperado}, recibido ${precinto}`,
+            `[recepcion ${id}] PRECINTOS DISTINTOS en ${contenedor.numero}: ` +
+              `faltan [${cmp.faltan.join(", ")}], no esperados [${cmp.sobran.join(", ")}]`,
           );
         }
         emitirRecepcion({
