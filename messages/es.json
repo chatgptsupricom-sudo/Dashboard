@@ -668,7 +668,9 @@
     "cot_confirmadas": "Confirmadas",
     "cot_pendientes": "Pendientes",
     "cot_canceladas": "Canceladas",
-    "cot_resto": "{pendientes} pendientes · {canceladas} canceladas"
+    "cot_resto": "{pendientes} pendientes · {canceladas} canceladas",
+    "kpi_cobertura_territorial": "Cobertura territorial (visitas foráneas)",
+    "cobertura_territorial_hint": "{r} de {p} visitas foráneas planificadas realizadas"
   },
   "servicioTecnico": {
     "garantia": {

@@ -7,6 +7,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -294,6 +295,17 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
+    // Cobertura territorial del asesor (planificación de visitas).
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
+    try {
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, uid, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial (vendedor):", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
+
     // === EFECTIVIDAD === cotizaciones confirmadas ÷ emitidas (lib/stoplight/cotizaciones)
     const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
     try {
@@ -568,7 +580,10 @@ export async function GET(request: NextRequest) {
         semanaCobertura,
         avgCumplimiento: avgFromWeeks(semanaCuota),
         avgMargen: avgFromWeeks(semanaMargen),
-        avgVisitas: avgFromWeeks(semanaVisitas),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
         avgEfectividad: avgFromWeeks(semanaEfectividad),
         // Mes completo: las semanas son acumuladas, promediarlas subestima.
         avgActivacion: totalClientsActivacion <= 0

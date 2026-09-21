@@ -143,6 +143,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "top_clientes",
       "spiff",
+      "planificacion_visitas",
       "banco_imagenes_seller",
       // Stoplight Report — el grupo "Ventas" completo, pero con SUS propias
       // cifras (la API /api/vendedores/stoplight filtra por s.user_id).
@@ -175,7 +176,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
