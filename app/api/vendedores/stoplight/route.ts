@@ -4,7 +4,8 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { fechaLocal, fechaLocalDeDatetime, obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -293,38 +294,16 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    // === EFECTIVIDAD ===
-    let efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
-    let totalOrdenesMes = 0;
-    let totalFacturadasMes = 0;
+    // === EFECTIVIDAD === cotizaciones confirmadas ÷ emitidas (lib/stoplight/cotizaciones)
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
     try {
-      const saleOrders = await callOdooRPC<any[]>(
-        "sale.order", "search_read",
-        [
-          [
-            ["state", "in", ["sale", "done"]],
-            ["company_id", "=", companyId],
-            ["date_order", ">=", fechaInicio],
-            ["date_order", "<=", fechaFin + " 23:59:59"],
-            ["user_id", "=", uid],
-          ],
-        ],
-        { fields: ["id", "user_id", "state", "date_order", "amount_total", "invoice_status", "invoice_ids"], limit: 10000 }
-      );
-      (saleOrders || []).forEach((order: any) => {
-        const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-        const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-        totalOrdenesMes++;
-        if (isInvoiced) totalFacturadasMes++;
-        const orderDate = fechaLocalDeDatetime(order.date_order);
-        for (let i = 0; i < semanas.length; i++) {
-          if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-            efectividadPorSemana[i].total++;
-            if (isInvoiced) efectividadPorSemana[i].facturacion++;
-            break;
-          }
-        }
-      });
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin, [["user_id", "=", uid]]);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((w) => c.fecha >= w.inicio && c.fecha <= w.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
     } catch (_) {}
 
     const metaEfectividad = metasMap["efectividad_cierre"] || 0;
@@ -575,8 +554,6 @@ export async function GET(request: NextRequest) {
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
         totalCostoMes: Math.round(totalCostoMes * 100) / 100,
-        totalOrdenesMes,
-        totalFacturadasMes,
         totalClientsActivacion,
         totalActiveClients,
         totalClientesNuevos,
