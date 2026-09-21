@@ -76,7 +76,11 @@ export async function GET(request: NextRequest) {
       stock_office: Number(row.stock_office),
       stock_warehouse: Number(row.stock_warehouse),
       stock_total: Number(row.stock_total),
-      has_alert: Number(row.stock_office) === 0 || Number(row.stock_warehouse) === 0,
+      // Agotado = sin existencias en ningún lado. Antes bastaba con tener 0 en
+      // UNA de las dos ubicaciones, y como casi todo el material vive en el
+      // almacén y la oficina queda en 0, el catálogo entero salía marcado
+      // "Agotado" con 600 unidades en stock.
+      has_alert: Number(row.stock_total) <= 0,
       image_url: row.image_id
         ? `/api/adminleads/material-pop/images/${row.image_id}`
         : null,
