@@ -747,6 +747,9 @@ export function Sidebar({
                             // Estadisticas/Por-llegar (operacion de almacen) se mudaron
                             // al desplegable "Seguridad" aparte, mas abajo.
                             { label: t("rma"), href: `/${locale}/rma` },
+                            // Personal de RMA: lo administra RMA en su propia
+                            // seccion; superAdmin llega desde aca.
+                            { label: t("seg_personal_rma"), href: `/${locale}/rma/personal` },
                           ]
                         : [
                             { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
@@ -863,7 +866,11 @@ export function Sidebar({
                   }`}
                 >
                   <Users size={20} className="text-slate-400" />
-                  <span className="text-sm">{t("seg_personal")}</span>
+                  {/* superAdmin ve tambien el Personal de RMA y el de Almacen:
+                      se aclara de quien es este. */}
+                  <span className="text-sm">
+                    {t(userRole === "superAdmin" ? "seg_personal_seguridad" : "seg_personal")}
+                  </span>
                 </div>
               </Link>
             )}
@@ -898,6 +905,11 @@ export function Sidebar({
                         // packing list (Compras lo carga, Almacen lo recibe).
                         { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
                         { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                        // Personal de Almacen: lo administra Almacen; Seguridad no
+                        // lo ve en el menu, superAdmin si.
+                        ...(userRole === "superAdmin"
+                          ? [{ label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` }]
+                          : []),
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se
