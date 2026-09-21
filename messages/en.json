@@ -686,7 +686,9 @@
     "cot_confirmadas": "Confirmed",
     "cot_pendientes": "Pending",
     "cot_canceladas": "Cancelled",
-    "cot_resto": "{pendientes} pending · {canceladas} cancelled"
+    "cot_resto": "{pendientes} pending · {canceladas} cancelled",
+    "kpi_cobertura_territorial": "Territorial coverage (out-of-town visits)",
+    "cobertura_territorial_hint": "{r} of {p} planned out-of-town visits done"
   },
   "servicioTecnico": {
     "garantia": {

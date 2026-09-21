@@ -474,9 +474,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
   // Solo "Cumplimiento de cuota" tiene ya todo lo necesario para su peso real
   // (90%, con piso de pago del 80% -- ver pisoMinimoVentas). "Cobertura
-  // territorial" (ex "visitas_semanales", pasaria a 8%) queda en 0% hasta que
-  // exista la planeacion de visitas por asesor; "Cobertura de marcas" pasa a
-  // 2% en los meses con meta por marca (ver hayMetasPorMarca) -- sin esa data
+  // territorial" (ex "visitas_semanales") pasa a 8% en los meses con planes de
+  // visita (hayPlanesVisita) y "Cobertura de marcas" a 2% en los meses con
+  // meta por marca (hayMetasPorMarca) -- sin esa data
   // la formula nueva no se puede calcular, y ponerles el peso nuevo con la
   // formula vieja mezclaria dos cosas distintas (decision del usuario). Los
   // demas KPIs pasan a ser solo informativos (no afectan el pago comisional,
@@ -495,21 +495,26 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   // meses que tienen metas por marca: sin ellas la fórmula nueva no se puede
   // calcular (lib/stoplight/metasMarca).
   const hayMetasPorMarca = !!kpiData?.metasPorMarca;
+  // Igual con Cobertura territorial (8%, mínimo 70%) y los planes de visita
+  // (lib/visitas/planificacion).
+  const hayPlanesVisita = !!kpiData?.coberturaTerritorial;
   const pesoDefaultVentas = (id: string): number => {
     const nuevo = selectedMes >= FECHA_CORTE_PESOS_VENTAS;
     if (nuevo && id === "cobertura_marcas" && hayMetasPorMarca) return 2;
+    if (nuevo && id === "visitas_semanales" && hayPlanesVisita) return 8;
     const tabla = nuevo ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
     return tabla[id] ?? 0;
   };
   // "Valor minimo para el pago a partir de": por debajo de este %, el KPI
   // aporta 0 al puntaje ponderado -- no es proporcional, es todo o nada
   // (decision del usuario). Solo aplica desde la misma fecha de corte de
-  // arriba. Cobertura de marcas usa 70% cuando el mes tiene metas por marca;
-  // Cobertura territorial queda reservada (70%) para cuando tenga su formula.
+  // arriba. Cobertura de marcas y territorial usan 70% en los meses que tienen
+  // sus datos (metas por marca / planes de visita).
   const pisoMinimoVentas = (id: string): number | undefined => {
     if (selectedMes < FECHA_CORTE_PESOS_VENTAS) return undefined;
     const tabla: Record<string, number> = { cumplimiento_cuota_ventas: 80 };
     if (hayMetasPorMarca) tabla.cobertura_marcas = 70;
+    if (hayPlanesVisita) tabla.visitas_semanales = 70;
     return tabla[id];
   };
 
@@ -550,13 +555,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "visitas_semanales",
-      title: t("kpi_visitas"),
+      // Con planes de visita en el mes es "Cobertura territorial" (foráneas
+      // realizadas ÷ planificadas, lib/visitas/planificacion): meta 100%.
+      title: hayPlanesVisita ? t("kpi_cobertura_territorial") : t("kpi_visitas"),
       peso: pesoDe("visitas_semanales", pesoDefaultVentas("visitas_semanales")),
-      average: kpiData ? String(kpiData.avgVisitas) : "0",
+      pisoMinimo: pisoMinimoVentas("visitas_semanales"),
+      average: kpiData ? (hayPlanesVisita ? `${kpiData.avgVisitas}%` : String(kpiData.avgVisitas)) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
-      goalSuffix: "",
+      goalDefault: hayPlanesVisita
+        ? "100"
+        : kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
+      metaFija: hayPlanesVisita,
+      hint: hayPlanesVisita
+        ? t("cobertura_territorial_hint", { r: kpiData?.coberturaTerritorial?.realizadas ?? 0, p: kpiData?.coberturaTerritorial?.planificadas ?? 0 })
+        : undefined,
+      goalSuffix: hayPlanesVisita ? "%" : "",
       cumple: kpiData ? kpiData.avgVisitas >= 100 : false,
     },
     {

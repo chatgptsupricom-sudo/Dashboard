@@ -9,6 +9,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -734,6 +735,19 @@ export async function GET(request: NextRequest) {
       return total > 0 ? String(total) : null;
     });
 
+    // Cobertura territorial (planificación de visitas, lib/visitas/planificacion):
+    // si el mes tiene planes, la fila de visitas pasa a medir foráneas
+    // realizadas ÷ planificadas.
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
+    try {
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, undefined, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial:", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
+
     // 10.5. KPIs del Departamento de Compras (semanal)
     const comprasRaw = await computeComprasKpis(companyId, semanas);
     const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
@@ -808,7 +822,10 @@ export async function GET(request: NextRequest) {
         semanaCobertura,
         avgCumplimiento: avgFromWeeks(semanaCuota),
         avgMargen: avgFromWeeks(semanaMargen),
-        avgVisitas: avgFromWeeks(semanaVisitas),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
         avgEfectividad: avgFromWeeks(semanaEfectividad),
         avgActivacion: avgActivacionMes,
         avgClientes: avgFromWeeks(semanaClientes),
