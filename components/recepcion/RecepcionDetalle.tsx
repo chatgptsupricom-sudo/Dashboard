@@ -19,7 +19,13 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
-import { SUCURSALES, esEtapa, evaluarConteo, type Etapa } from "@/lib/recepcion/flujo";
+import {
+  SUCURSALES,
+  esEtapa,
+  evaluarConteo,
+  type Contenedor,
+  type Etapa,
+} from "@/lib/recepcion/flujo";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
 import {
   PageHeader,
@@ -35,10 +41,12 @@ import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 /**
  * Detalle de una recepcion por packing list.
  *
- * Almacen la trabaja: registra la llegada (fotos + precinto), cuenta contra
- * el packing list (faltantes, sobrantes, cajas golpeadas) y la cierra con la
- * foto del contenedor. Compras la sigue en vivo y puede corregir o anular el
- * packing list mientras el contenedor no haya llegado.
+ * El packing list puede venir en varios contenedores que llegan en dias
+ * distintos. Almacen recibe cada uno por su cuenta (fotos + precinto al
+ * llegar, foto de como quedo al terminar de descargarlo); el conteo contra el
+ * packing list es uno solo y se va llenando con cada contenedor; y el packing
+ * list se cierra cuando llegaron y se descargaron todos. Compras lo sigue en
+ * vivo y puede corregirlo o anularlo mientras no haya llegado ninguno.
  */
 
 type Recepcion = {
@@ -46,18 +54,12 @@ type Recepcion = {
   cids: number;
   proveedor: string;
   referencia: string;
-  contenedor: string | null;
-  precinto_esperado: string | null;
   oc_referencia: string | null;
   fecha_estimada: string | null;
   observaciones: string | null;
   etapa: Etapa;
   creado_por: string;
   created_at: string;
-  llegada_at: string | null;
-  llegada_por: string | null;
-  precinto_recibido: string | null;
-  precinto_coincide: number | null;
   cerrado_at: string | null;
   cerrado_por: string | null;
   resultado: "conforme" | "con_novedades" | null;
@@ -101,9 +103,12 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
   const [rec, setRec] = useState<Recepcion | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [contenedores, setContenedores] = useState<Contenedor[]>([]);
   const [archivos, setArchivos] = useState<ArchivoRecepcion[]>([]);
   const [conteo, setConteo] = useState<Record<number, Conteo>>({});
-  const [precinto, setPrecinto] = useState("");
+  // Por contenedor: el precinto que se lee al llegar y la nota al terminarlo.
+  const [precintos, setPrecintos] = useState<Record<number, string>>({});
+  const [notasCont, setNotasCont] = useState<Record<number, string>>({});
   const [notas, setNotas] = useState("");
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
@@ -114,6 +119,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const aplicar = useCallback((j: any, conConteo: boolean) => {
     setRec(j.recepcion);
     setItems(j.items || []);
+    setContenedores(j.contenedores || []);
     setArchivos(j.archivos || []);
     if (conConteo) {
       const c: Record<number, Conteo> = {};
@@ -150,11 +156,13 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     void cargar();
   }, [cargar]);
 
-  // En vivo: llegada, cierre, edicion o anulacion de ESTA recepcion.
+  // En vivo: llegada o cierre de un contenedor, cierre, edicion o anulacion.
+  // Sin pisar el conteo en curso: la llegada de otro contenedor no cambia lo
+  // que se lleva contado.
   useRecepcionEnVivo((a) => {
     if (a.id !== Number(id)) return;
     if (a.accion === "eliminado") setAnulada(true);
-    else void cargar();
+    else void cargar(a.accion !== "llegada" && a.accion !== "contenedor_cerrado");
   });
 
   // Tras subir/quitar una foto se recarga sin pisar lo que se esta contando.
@@ -186,7 +194,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editado]);
 
-  const accionar = async (accion: string, extra: Record<string, unknown> = {}) => {
+  const accionar = async (
+    accion: string,
+    extra: Record<string, unknown> = {},
+    conConteo = true,
+  ) => {
     setError(null);
     setAviso(null);
     setEnviando(true);
@@ -203,7 +215,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         return;
       }
       if (!res.ok) throw new Error(j.error || t("error"));
-      aplicar(j, true);
+      aplicar(j, conConteo);
       if (accion === "guardar_conteo") setAviso(t("avance_guardado"));
     } catch (e: any) {
       setError(e?.message || t("error"));
@@ -250,14 +262,20 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     );
   }
 
-  const fotos = (tipo: string, itemId?: number) =>
-    archivos.filter((a) => a.tipo === tipo && (itemId === undefined || Number(a.item_id) === itemId));
+  const fotos = (tipo: string, filtro: { itemId?: number; contenedorId?: number } = {}) =>
+    archivos.filter(
+      (a) =>
+        a.tipo === tipo &&
+        (filtro.itemId === undefined || Number(a.item_id) === filtro.itemId) &&
+        (filtro.contenedorId === undefined || Number(a.contenedor_id) === filtro.contenedorId),
+    );
   const packing = archivos.filter((a) => a.tipo === "packing_list");
 
   const trabajando = esAlmacen && rec.etapa !== "cerrado";
-  const enLlegada = esAlmacen && rec.etapa === "por_llegar";
   const contando = esAlmacen && rec.etapa === "descargando";
   const sucursal = SUCURSALES.find((s) => s.cids === Number(rec.cids))?.nombre;
+  const llegados = contenedores.filter((c) => c.etapa !== "por_llegar").length;
+  const abiertos = contenedores.filter((c) => c.etapa !== "cerrado");
 
   // Lo que falta para cerrar, calculado en pantalla (la API lo vuelve a validar).
   const fotosGolpe = new Set(archivos.filter((a) => a.tipo === "foto_golpe").map((a) => Number(a.item_id)));
@@ -272,7 +290,6 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     })),
     fotosGolpe,
   );
-  const faltaFotoCierre = fotos("foto_cierre").length === 0;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -296,7 +313,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-32">
-        <Estado rec={rec} trabajando={trabajando} t={t} />
+        <Estado rec={rec} trabajando={trabajando} llegados={llegados} total={contenedores.length} t={t} />
 
         {aviso && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{aviso}</div>
@@ -308,31 +325,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             <Card>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
                 <Dato etiqueta={t("proveedor")} valor={rec.proveedor} />
-                <Dato etiqueta={t("contenedor")} valor={rec.contenedor} />
                 <Dato etiqueta={t("fecha_estimada")} valor={rec.fecha_estimada ? fechaCorta(rec.fecha_estimada) : null} />
                 <Dato etiqueta={t("oc")} valor={rec.oc_referencia} />
-                {/* El precinto esperado no se le muestra a Almacen antes de que
-                    lea el suyo: si lo tiene en pantalla, tiende a "ver" ese. */}
-                {(esCompras || rec.etapa !== "por_llegar") && (
-                  <Dato etiqueta={t("precinto_esperado")} valor={rec.precinto_esperado} />
-                )}
-                {rec.precinto_recibido && (
-                  <div className="min-w-0">
-                    <dt className="text-[11px] font-medium text-slate-400">{t("precinto_recibido")}</dt>
-                    <dd className="text-sm text-slate-800 truncate">{rec.precinto_recibido}</dd>
-                    {rec.precinto_coincide !== null && (
-                      <dd
-                        className={`text-[11px] font-semibold ${
-                          Number(rec.precinto_coincide) === 1 ? "text-emerald-600" : "text-red-600"
-                        }`}
-                      >
-                        {Number(rec.precinto_coincide) === 1
-                          ? t("precinto_coincide")
-                          : t("precinto_distinto", { esperado: rec.precinto_esperado || "—" })}
-                      </dd>
-                    )}
-                  </div>
-                )}
+                <Dato etiqueta={t("contenedores")} valor={String(contenedores.length)} />
               </dl>
               {rec.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
@@ -360,58 +355,179 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               )}
             </Card>
 
-            {/* Llegada: fotos del contenedor y del precinto */}
-            <Card className={enLlegada ? "border-violet-200 space-y-4" : "space-y-4"}>
-              <SectionTitle>{t("llegada")}</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FotoCaptura
-                  recepcionId={rec.id}
-                  tipo="foto_llegada"
-                  titulo={t("foto_llegada")}
-                  fotos={fotos("foto_llegada")}
-                  editable={enLlegada}
-                  obligatoria
-                  onCambio={recargarArchivos}
-                />
-                <FotoCaptura
-                  recepcionId={rec.id}
-                  tipo="foto_precinto"
-                  titulo={t("foto_precinto")}
-                  fotos={fotos("foto_precinto")}
-                  editable={enLlegada}
-                  obligatoria
-                  onCambio={recargarArchivos}
-                />
-              </div>
-              {enLlegada && (
-                <>
-                  <div>
-                    <label className={labelClases}>{t("precinto_leido")} *</label>
-                    <input
-                      value={precinto}
-                      onChange={(e) => setPrecinto(e.target.value.slice(0, 50))}
-                      placeholder={t("precinto_leido_ph")}
-                      className={inputClases}
-                    />
-                  </div>
-                  <BotonPrimario
-                    onClick={() => void accionar("registrar_llegada", { precinto_recibido: precinto })}
-                    disabled={
-                      enviando ||
-                      !precinto.trim() ||
-                      fotos("foto_llegada").length === 0 ||
-                      fotos("foto_precinto").length === 0
-                    }
-                    icon={Truck}
-                    className="w-full h-12"
+            {/* Contenedores: cada uno con su llegada y su cierre */}
+            <Card className="space-y-3">
+              <SectionTitle>
+                {t("contenedores")} · {t("contenedores_recibidos", { llegados, total: contenedores.length })}
+              </SectionTitle>
+              {contenedores.map((c) => {
+                const enLlegada = esAlmacen && c.etapa === "por_llegar";
+                const descargandolo = esAlmacen && c.etapa === "descargando";
+                const fotosLlegada = fotos("foto_llegada", { contenedorId: c.id });
+                const fotosPrecinto = fotos("foto_precinto", { contenedorId: c.id });
+                const fotosCierre = fotos("foto_cierre", { contenedorId: c.id });
+                return (
+                  <div
+                    key={c.id}
+                    className={`rounded-xl border p-4 space-y-4 ${
+                      enLlegada || descargandolo ? "border-violet-200 bg-violet-50/30" : "border-slate-200"
+                    }`}
                   >
-                    {t("registrar_llegada")}
-                  </BotonPrimario>
-                </>
-              )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-sm font-semibold text-slate-900">{c.numero}</span>
+                      <span
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                          c.etapa === "cerrado"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : c.etapa === "descargando"
+                              ? "bg-sky-50 text-sky-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {t(`etapa_contenedor.${c.etapa}`)}
+                      </span>
+                      {c.llegada_at && (
+                        <span className="text-[11px] text-slate-400">
+                          {t("llego")} {hora(c.llegada_at)} · {c.llegada_por}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Precinto: el esperado no se le muestra a Almacen antes de
+                        que lea el suyo (si lo tiene en pantalla, tiende a "ver" ese). */}
+                    {(esCompras || c.etapa !== "por_llegar") && c.precinto_esperado && (
+                      <p className="text-xs text-slate-500">
+                        {t("precinto_esperado")}: <span className="font-medium text-slate-700">{c.precinto_esperado}</span>
+                      </p>
+                    )}
+                    {c.precinto_recibido && (
+                      <p className="text-xs text-slate-500">
+                        {t("precinto_recibido")}: <span className="font-medium text-slate-700">{c.precinto_recibido}</span>{" "}
+                        {c.precinto_coincide !== null && (
+                          <span
+                            className={`font-semibold ${
+                              Number(c.precinto_coincide) === 1 ? "text-emerald-600" : "text-red-600"
+                            }`}
+                          >
+                            ·{" "}
+                            {Number(c.precinto_coincide) === 1
+                              ? t("precinto_coincide")
+                              : t("precinto_distinto", { esperado: c.precinto_esperado || "—" })}
+                          </span>
+                        )}
+                      </p>
+                    )}
+
+                    {(enLlegada || c.etapa !== "por_llegar") && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <FotoCaptura
+                          recepcionId={rec.id}
+                          tipo="foto_llegada"
+                          contenedorId={c.id}
+                          titulo={t("foto_llegada")}
+                          fotos={fotosLlegada}
+                          editable={enLlegada}
+                          obligatoria
+                          onCambio={recargarArchivos}
+                        />
+                        <FotoCaptura
+                          recepcionId={rec.id}
+                          tipo="foto_precinto"
+                          contenedorId={c.id}
+                          titulo={t("foto_precinto")}
+                          fotos={fotosPrecinto}
+                          editable={enLlegada}
+                          obligatoria
+                          onCambio={recargarArchivos}
+                        />
+                      </div>
+                    )}
+
+                    {enLlegada && (
+                      <>
+                        <div>
+                          <label className={labelClases}>{t("precinto_leido")} *</label>
+                          <input
+                            value={precintos[c.id] || ""}
+                            onChange={(e) =>
+                              setPrecintos((p) => ({ ...p, [c.id]: e.target.value.slice(0, 50) }))
+                            }
+                            placeholder={t("precinto_leido_ph")}
+                            className={inputClases}
+                          />
+                        </div>
+                        <BotonPrimario
+                          onClick={() =>
+                            void accionar(
+                              "registrar_llegada",
+                              { contenedor_id: c.id, precinto_recibido: precintos[c.id] || "" },
+                              // Llega otro contenedor a mitad del conteo: no se pisa lo contado.
+                              false,
+                            )
+                          }
+                          disabled={
+                            enviando ||
+                            !(precintos[c.id] || "").trim() ||
+                            fotosLlegada.length === 0 ||
+                            fotosPrecinto.length === 0
+                          }
+                          icon={Truck}
+                          className="w-full h-12"
+                        >
+                          {t("registrar_llegada_contenedor")}
+                        </BotonPrimario>
+                      </>
+                    )}
+
+                    {/* Cierre del contenedor: foto de como quedo */}
+                    {(descargandolo || c.etapa === "cerrado") && (
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <FotoCaptura
+                          recepcionId={rec.id}
+                          tipo="foto_cierre"
+                          contenedorId={c.id}
+                          titulo={t("foto_cierre")}
+                          fotos={fotosCierre}
+                          editable={descargandolo}
+                          obligatoria
+                          onCambio={recargarArchivos}
+                        />
+                        {descargandolo ? (
+                          <>
+                            <input
+                              value={notasCont[c.id] || ""}
+                              onChange={(e) =>
+                                setNotasCont((p) => ({ ...p, [c.id]: e.target.value.slice(0, 500) }))
+                              }
+                              placeholder={t("notas_contenedor")}
+                              className={inputClases}
+                            />
+                            <BotonSecundario
+                              onClick={() =>
+                                void accionar(
+                                  "cerrar_contenedor",
+                                  { contenedor_id: c.id, notas_cierre: notasCont[c.id] || null },
+                                  false,
+                                )
+                              }
+                              disabled={enviando || fotosCierre.length === 0}
+                              icon={CheckCircle2}
+                              className="w-full"
+                            >
+                              {t("terminar_contenedor")}
+                            </BotonSecundario>
+                          </>
+                        ) : (
+                          c.notas_cierre && <p className="text-xs text-slate-600">{c.notas_cierre}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </Card>
 
-            {/* Conteo contra el packing list */}
+            {/* Conteo contra el packing list (uno solo para todos los contenedores) */}
             <Card className={contando ? "border-violet-200" : ""}>
               <SectionTitle>
                 {t("conteo")} ({items.length})
@@ -516,7 +632,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               tipo="foto_golpe"
                               itemId={i.id}
                               titulo={t("foto_golpe")}
-                              fotos={fotos("foto_golpe", i.id)}
+                              fotos={fotos("foto_golpe", { itemId: i.id })}
                               editable={contando}
                               obligatoria
                               onCambio={recargarArchivos}
@@ -548,19 +664,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               )}
             </Card>
 
-            {/* Cierre: foto de como quedo el contenedor */}
+            {/* Cierre del packing list: cuando llegaron y se descargaron todos */}
             {(contando || rec.etapa === "cerrado") && (
               <Card className={contando ? "border-violet-200 space-y-4" : "space-y-4"}>
                 <SectionTitle>{t("cierre")}</SectionTitle>
-                <FotoCaptura
-                  recepcionId={rec.id}
-                  tipo="foto_cierre"
-                  titulo={t("foto_cierre")}
-                  fotos={fotos("foto_cierre")}
-                  editable={contando}
-                  obligatoria
-                  onCambio={recargarArchivos}
-                />
                 {contando ? (
                   <>
                     <div>
@@ -571,20 +678,25 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         className={`${inputClases} h-auto min-h-[72px] py-2.5`}
                       />
                     </div>
-                    {(!ev.listo || faltaFotoCierre) && (
+                    {(!ev.listo || abiertos.length > 0) && (
                       <div className="text-xs text-slate-500">
                         <p className="font-semibold">{t("faltan_para_cerrar")}</p>
                         <ul className="list-disc list-inside">
+                          {abiertos.length > 0 && (
+                            <li>
+                              {t("falta_contenedores", { count: abiertos.length })}:{" "}
+                              {abiertos.map((c) => c.numero).join(", ")}
+                            </li>
+                          )}
                           {ev.sinContar > 0 && <li>{t("falta_contar", { count: ev.sinContar })}</li>}
                           {ev.sinMotivo > 0 && <li>{t("falta_motivo", { count: ev.sinMotivo })}</li>}
                           {ev.golpesSinFoto > 0 && <li>{t("falta_foto_golpe", { count: ev.golpesSinFoto })}</li>}
-                          {faltaFotoCierre && <li>{t("falta_foto_cierre")}</li>}
                         </ul>
                       </div>
                     )}
                     <BotonPrimario
                       onClick={() => void accionar("cerrar", { items: cuerpoConteo(), notas_cierre: notas })}
-                      disabled={enviando || !ev.listo || faltaFotoCierre}
+                      disabled={enviando || !ev.listo || abiertos.length > 0}
                       icon={CheckCircle2}
                       className="w-full h-12"
                     >
@@ -602,25 +714,27 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             )}
           </div>
 
-          {/* Recorrido */}
+          {/* Recorrido: carga, cada contenedor, cierre */}
           <Card className="md:sticky md:top-24">
             <SectionTitle>{t("recorrido")}</SectionTitle>
             <ol className="space-y-3">
               <Paso hecho titulo={t("cargado")} detalle={[rec.creado_por, hora(rec.created_at)].filter(Boolean).join(" · ")} />
-              <Paso
-                hecho={!!rec.llegada_at}
-                actual={rec.etapa === "por_llegar"}
-                titulo={rec.llegada_at ? t("llego") : t("etapa.por_llegar")}
-                detalle={[rec.llegada_por, hora(rec.llegada_at)].filter(Boolean).join(" · ")}
-              />
+              {contenedores.map((c) => (
+                <Paso
+                  key={c.id}
+                  hecho={c.etapa === "cerrado"}
+                  actual={c.etapa === "descargando"}
+                  titulo={`${c.numero} · ${t(`etapa_contenedor.${c.etapa}`)}`}
+                  detalle={
+                    c.etapa === "cerrado"
+                      ? [c.cerrado_por, hora(c.cerrado_at)].filter(Boolean).join(" · ")
+                      : [c.llegada_por, hora(c.llegada_at)].filter(Boolean).join(" · ") || null
+                  }
+                />
+              ))}
               <Paso
                 hecho={rec.etapa === "cerrado"}
-                actual={rec.etapa === "descargando"}
-                titulo={t("etapa.descargando")}
-                detalle={null}
-              />
-              <Paso
-                hecho={rec.etapa === "cerrado"}
+                actual={rec.etapa === "descargando" && abiertos.length === 0}
                 titulo={rec.resultado ? `${t("cerrado_por")} · ${t(`resultado.${rec.resultado}`)}` : t("etapa.cerrado")}
                 detalle={[rec.cerrado_por, hora(rec.cerrado_at)].filter(Boolean).join(" · ")}
               />
@@ -635,10 +749,14 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 function Estado({
   rec,
   trabajando,
+  llegados,
+  total,
   t,
 }: {
   rec: Recepcion;
   trabajando: boolean;
+  llegados: number;
+  total: number;
   t: ReturnType<typeof useTranslations>;
 }) {
   if (rec.etapa === "cerrado") {
@@ -675,7 +793,9 @@ function Estado({
         {rec.etapa === "por_llegar" ? <Truck className="w-4 h-4" /> : <Container className="w-4 h-4" />}
       </span>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-900">{t(`etapa.${rec.etapa}`)}</p>
+        <p className="text-sm font-semibold text-slate-900">
+          {t(`etapa.${rec.etapa}`)} · {t("contenedores_recibidos", { llegados, total })}
+        </p>
         <p className="text-sm text-slate-600">
           {trabajando ? t("le_toca_almacen") : t("esperando_almacen")} · {t(`paso.${rec.etapa}`)}
         </p>

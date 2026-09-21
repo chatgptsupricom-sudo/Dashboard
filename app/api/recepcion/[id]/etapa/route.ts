@@ -14,11 +14,19 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/recepcion/[id]/etapa  { accion, ...datos }   — solo Almacen
  *
- *  registrar_llegada  por_llegar  -> descargando   (fotos contenedor + precinto, numero de precinto)
- *  guardar_conteo     descargando (no avanza)      (guarda el avance del conteo)
- *  cerrar             descargando -> cerrado       (conteo completo + foto de cierre)
+ * Por contenedor (pueden llegar en dias distintos):
+ *  registrar_llegada  { contenedor_id, precinto_recibido }
+ *                     contenedor por_llegar -> descargando (fotos llegada + precinto)
+ *                     y el packing list pasa a descargando con el primero
+ *  cerrar_contenedor  { contenedor_id, notas_cierre }
+ *                     contenedor descargando -> cerrado (foto de como quedo)
  *
- * El avance se escribe con `WHERE etapa = <la esperada>`: si dos personas
+ * Del packing list entero (el conteo es uno solo):
+ *  guardar_conteo     guarda el avance, no avanza
+ *  cerrar             descargando -> cerrado: todos los contenedores cerrados
+ *                     y el conteo completo
+ *
+ * Cada avance se escribe con `WHERE etapa = <la esperada>`: si dos personas
  * pulsan a la vez, la segunda recibe 409 en vez de repetir el paso.
  */
 
@@ -63,37 +71,58 @@ export async function POST(
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
     const rec = datos.recepcion;
-    const tiposSubidos = new Set(datos.archivos.map((a) => a.tipo));
+    if (rec.etapa === "cerrado") return conflicto();
+
+    // Contenedor sobre el que se actua (acciones de contenedor).
+    const contenedor =
+      body?.contenedor_id !== undefined
+        ? datos.contenedores.find((c) => Number(c.id) === Number(body.contenedor_id))
+        : null;
+    const fotosDe = (tipo: string, contenedorId: number) =>
+      datos.archivos.some((a) => a.tipo === tipo && Number(a.contenedor_id) === contenedorId);
 
     switch (body?.accion) {
       case "registrar_llegada": {
-        if (rec.etapa !== "por_llegar") return conflicto();
+        if (!contenedor) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
+        if (contenedor.etapa !== "por_llegar") return conflicto();
         const precinto = texto(body?.precinto_recibido, MAX.precinto);
         const faltan: string[] = [];
-        if (!tiposSubidos.has("foto_llegada")) faltan.push("la foto del contenedor al llegar");
-        if (!tiposSubidos.has("foto_precinto")) faltan.push("la foto del precinto");
+        if (!fotosDe("foto_llegada", contenedor.id)) faltan.push("la foto del contenedor al llegar");
+        if (!fotosDe("foto_precinto", contenedor.id)) faltan.push("la foto del precinto");
         if (!precinto) faltan.push("el numero de precinto");
         if (faltan.length) {
           return NextResponse.json({ error: `Falta ${faltan.join(", ")}` }, { status: 400 });
         }
-        // Sin precinto esperado no hay contra que comparar: queda NULL, no "no coincide".
-        const coincide = rec.precinto_esperado
-          ? normalizarPrecinto(rec.precinto_esperado) === normalizarPrecinto(precinto)
+        // Sin precinto esperado no hay contra que comparar: queda NULL.
+        const coincide = contenedor.precinto_esperado
+          ? normalizarPrecinto(contenedor.precinto_esperado) === normalizarPrecinto(precinto)
             ? 1
             : 0
           : null;
 
         const res = await query(
-          `UPDATE recepcion_packing
+          `UPDATE recepcion_packing_contenedores
               SET etapa = 'descargando', llegada_at = NOW(), llegada_por = ?,
                   precinto_recibido = ?, precinto_coincide = ?
-            WHERE id = ? AND etapa = 'por_llegar'`,
-          [sesion!.nombre, precinto, coincide, id],
+            WHERE id = ? AND recepcion_id = ? AND etapa = 'por_llegar'`,
+          [sesion!.nombre, precinto, coincide, contenedor.id, id],
         );
         if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
+
+        // El packing list pasa a "descargando" con el primer contenedor que
+        // llega; con los siguientes esto no cambia nada.
+        await query(
+          `UPDATE recepcion_packing
+              SET etapa = 'descargando', llegada_at = COALESCE(llegada_at, NOW()),
+                  llegada_por = COALESCE(llegada_por, ?)
+            WHERE id = ? AND etapa = 'por_llegar'`,
+          [sesion!.nombre, id],
+        );
+
         if (coincide === 0) {
           console.warn(
-            `[recepcion ${id}] PRECINTO DISTINTO: esperado ${rec.precinto_esperado}, recibido ${precinto}`,
+            `[recepcion ${id}] PRECINTO DISTINTO en ${contenedor.numero}: ` +
+              `esperado ${contenedor.precinto_esperado}, recibido ${precinto}`,
           );
         }
         emitirRecepcion({
@@ -102,6 +131,35 @@ export async function POST(
           cids: Number(rec.cids),
           referencia: rec.referencia,
           proveedor: rec.proveedor,
+          contenedor: contenedor.numero,
+          llegados: datos.contenedores.filter((c) => c.etapa !== "por_llegar").length + 1,
+          total: datos.contenedores.length,
+        });
+        break;
+      }
+
+      case "cerrar_contenedor": {
+        if (!contenedor) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
+        if (contenedor.etapa !== "descargando") return conflicto();
+        if (!fotosDe("foto_cierre", contenedor.id)) {
+          return NextResponse.json(
+            { error: "Falta la foto de como quedo el contenedor" },
+            { status: 400 },
+          );
+        }
+        const res = await query(
+          `UPDATE recepcion_packing_contenedores
+              SET etapa = 'cerrado', cerrado_at = NOW(), cerrado_por = ?, notas_cierre = ?
+            WHERE id = ? AND recepcion_id = ? AND etapa = 'descargando'`,
+          [sesion!.nombre, texto(body?.notas_cierre, MAX.notas), contenedor.id, id],
+        );
+        if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
+        emitirRecepcion({
+          accion: "contenedor_cerrado",
+          id,
+          cids: Number(rec.cids),
+          referencia: rec.referencia,
+          contenedor: contenedor.numero,
         });
         break;
       }
@@ -157,11 +215,16 @@ export async function POST(
           })),
           fotosGolpe,
         );
+        const abiertos = datos.contenedores.filter((c) => c.etapa !== "cerrado");
         const faltan: string[] = [];
+        if (abiertos.length) {
+          faltan.push(
+            `terminar ${abiertos.length} contenedor(es): ${abiertos.map((c) => c.numero).join(", ")}`,
+          );
+        }
         if (ev.sinContar) faltan.push(`${ev.sinContar} renglon(es) sin contar`);
         if (ev.sinMotivo) faltan.push(`el motivo en ${ev.sinMotivo} renglon(es) con diferencia`);
         if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) golpeada(s)`);
-        if (!tiposSubidos.has("foto_cierre")) faltan.push("la foto del contenedor al terminar");
         if (faltan.length) {
           return NextResponse.json(
             { error: `No se puede cerrar: falta ${faltan.join(", ")}`, evaluacion: ev },
@@ -169,18 +232,24 @@ export async function POST(
           );
         }
 
+        const precintoDistinto = datos.contenedores.some((c) => Number(c.precinto_coincide) === 0);
         const novedades =
-          ev.faltantes > 0 ||
-          ev.sobrantes > 0 ||
-          ev.golpeados > 0 ||
-          Number(rec.precinto_coincide) === 0;
+          ev.faltantes > 0 || ev.sobrantes > 0 || ev.golpeados > 0 || precintoDistinto;
         const resultado = novedades ? "con_novedades" : "conforme";
         const res = await query(
           `UPDATE recepcion_packing
               SET etapa = 'cerrado', cerrado_at = NOW(), cerrado_por = ?,
-                  resultado = ?, notas_cierre = ?
+                  resultado = ?, notas_cierre = ?,
+                  precinto_coincide = ?
             WHERE id = ? AND etapa = 'descargando'`,
-          [sesion!.nombre, resultado, texto(body?.notas_cierre, MAX.notas), id],
+          [
+            sesion!.nombre,
+            resultado,
+            texto(body?.notas_cierre, MAX.notas),
+            // Resumen en la cabecera: 0 si algun precinto no coincidio.
+            precintoDistinto ? 0 : datos.contenedores.some((c) => c.precinto_coincide !== null) ? 1 : null,
+            id,
+          ],
         );
         if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
         emitirRecepcion({

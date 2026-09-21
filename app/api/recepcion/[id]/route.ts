@@ -1,5 +1,9 @@
 import { query } from "@/lib/db";
-import { insertarItems, validarCabeceraEItems } from "@/lib/recepcion/validacion";
+import {
+  insertarContenedores,
+  insertarItems,
+  validarCabeceraEItems,
+} from "@/lib/recepcion/validacion";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -72,7 +76,17 @@ export async function PATCH(
     }
     const validado = validarCabeceraEItems(body);
     if ("error" in validado) return NextResponse.json({ error: validado.error }, { status: 400 });
-    const { cab, items } = validado;
+
+    // Si Almacen ya empezo a recibir (subio fotos de algun contenedor aunque
+    // no haya registrado la llegada), reemplazar los contenedores dejaria esas
+    // fotos colgando de un contenedor que ya no existe.
+    if (r.datos!.archivos.some((a: any) => a.contenedor_id)) {
+      return NextResponse.json(
+        { error: "Almacen ya empezo a recibir este packing list: no se puede cambiar" },
+        { status: 409 },
+      );
+    }
+    const { cab, items, contenedores } = validado;
 
     const res = await query(
       `UPDATE recepcion_packing
@@ -97,6 +111,11 @@ export async function PATCH(
     }
     await query("DELETE FROM recepcion_packing_items WHERE recepcion_id = ?", [r.id]);
     await insertarItems(r.id!, items);
+    // Mientras ningun contenedor llego no hay fotos colgadas de ellos: se
+    // pueden reemplazar enteros (la etapa por_llegar del packing list lo
+    // garantiza — pasa a descargando con la primera llegada).
+    await query("DELETE FROM recepcion_packing_contenedores WHERE recepcion_id = ?", [r.id]);
+    await insertarContenedores(r.id!, contenedores);
 
     emitirRecepcion({ accion: "editado", id: r.id!, cids: cab.cids, referencia: cab.referencia });
     // Si cambio de sucursal, la anterior tambien tiene que enterarse.
