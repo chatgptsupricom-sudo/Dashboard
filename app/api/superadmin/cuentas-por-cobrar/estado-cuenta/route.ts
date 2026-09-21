@@ -1,12 +1,11 @@
 import ExcelJS from "exceljs";
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
-const COMPANY_IDS_ALL = [7, 9, 10];
 
 async function fetchPaginated(
   model: string,
@@ -107,18 +106,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const rol = String(auth.payload?.role || "").toLowerCase().trim();
-    const cids = Number(auth.payload?.cids);
     const empresa = (searchParams.get("empresa") || "").toLowerCase();
 
-    // El alcance sale del token, no del query string: sin el filtro de abajo
-    // un usuario de una sede leeria la cartera de otra pasando `?empresa=`.
-    const alcance =
-      rol === "superadmin" || !Number.isFinite(cids) || cids <= 0
-        ? COMPANY_IDS_ALL
-        : [cids];
-    const pedidas = COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : alcance;
-    const companyIds = pedidas.filter((id) => alcance.includes(id));
+    const companyIds = companyIdsEnAlcance(auth.payload, empresa);
     if (companyIds.length === 0) {
       return NextResponse.json({ error: "Sede fuera de alcance" }, { status: 403 });
     }
