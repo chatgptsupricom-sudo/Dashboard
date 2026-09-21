@@ -14,6 +14,8 @@ import {
   Trophy,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  AlertTriangle,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -55,6 +57,44 @@ interface SpiffManagerProps {
   readonly?: boolean;
 }
 
+// Estado de una regla según hoy: las vencidas se siguen mostrando (su ranking
+// y el resumen de meses pasados las usan) pero al final y en gris.
+type EstadoRegla = "vigente" | "proxima" | "vencida" | "inactiva";
+const hoyISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const dia = (v: string | null) => (v ? String(v).slice(0, 10) : null);
+function estadoRegla(rule: { active: number; fecha_inicio: string | null; fecha_fin: string | null }, hoy = hoyISO()): EstadoRegla {
+  const ini = dia(rule.fecha_inicio);
+  const fin = dia(rule.fecha_fin);
+  if (fin && fin < hoy) return "vencida";
+  if (!rule.active) return "inactiva";
+  if (ini && ini > hoy) return "proxima";
+  return "vigente";
+}
+const ORDEN_ESTADO: Record<EstadoRegla, number> = { vigente: 0, proxima: 1, inactiva: 2, vencida: 3 };
+/** Vigentes primero; dentro de cada estado, la más reciente arriba. */
+function ordenarReglas<T extends { active: number; fecha_inicio: string | null; fecha_fin: string | null; brand_name: string }>(rs: T[]): T[] {
+  return [...rs].sort((a, b) =>
+    ORDEN_ESTADO[estadoRegla(a)] - ORDEN_ESTADO[estadoRegla(b)]
+    || String(dia(b.fecha_inicio) || "").localeCompare(String(dia(a.fecha_inicio) || ""))
+    || a.brand_name.localeCompare(b.brand_name));
+}
+/** Primer y último día del mes siguiente al fin de la regla (o del mes actual, si es más reciente). */
+function fechasMesSiguiente(fechaFin: string | null): { inicio: string; fin: string } {
+  const hoy = new Date();
+  let y = hoy.getFullYear(), m = hoy.getMonth() + 1;
+  const f = dia(fechaFin);
+  if (f) {
+    const [fy, fm] = f.split("-").map(Number);
+    const sy = fm === 12 ? fy + 1 : fy, sm = fm === 12 ? 1 : fm + 1;
+    if (sy > y || (sy === y && sm > m)) { y = sy; m = sm; }
+  }
+  const mm = String(m).padStart(2, "0");
+  return { inicio: `${y}-${mm}-01`, fin: `${y}-${mm}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` };
+}
+
 const emptyForm = {
   company_id: "",
   brand_name: "",
@@ -88,6 +128,7 @@ export default function SpiffManager({
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; mes: string; data: any[]; loading: boolean } | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<"todas" | EstadoRegla>("todas");
 
   useEffect(() => {
     if (showCompanyFilter) {
@@ -218,6 +259,48 @@ export default function SpiffManager({
     setShowForm(true);
   };
 
+  // Duplicar: abre el formulario como regla NUEVA con los mismos datos y las
+  // fechas del mes siguiente, para revisar antes de guardar.
+  const startDuplicate = (rule: SpiffRule) => {
+    const { inicio, fin } = fechasMesSiguiente(rule.fecha_fin);
+    setEditingRule(null);
+    setForm({
+      company_id: rule.company_id?.toString() || "",
+      brand_name: rule.brand_name,
+      target_amount: rule.target_amount.toString(),
+      spiff_amount: rule.spiff_amount.toString(),
+      tipo: rule.tipo || "marca",
+      product_name: rule.product_name || "",
+      product_id: rule.product_id || null,
+      modo: rule.modo || "monto",
+      fecha_inicio: inicio,
+      fecha_fin: fin,
+    });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Otra regla de la misma marca (o producto) cuyas fechas se pisan con las
+  // del formulario: el spiff se pagaría dos veces por la misma venta.
+  const solapadas = (() => {
+    if (!showForm || !form.brand_name) return [] as SpiffRule[];
+    const ini = form.fecha_inicio || "0000-01-01";
+    const fin = form.fecha_fin || "9999-12-31";
+    const cid = showCompanyFilter ? parseInt(form.company_id || "0") : companyId;
+    return rules.filter((r) =>
+      r.id !== editingRule?.id &&
+      !!r.active &&
+      (!cid || r.company_id === cid) &&
+      r.brand_name.trim().toLowerCase() === form.brand_name.trim().toLowerCase() &&
+      (r.tipo || "marca") === form.tipo &&
+      (form.tipo !== "producto" || (r.product_id || null) === (form.product_id || null)) &&
+      (dia(r.fecha_inicio) || "0000-01-01") <= fin &&
+      (dia(r.fecha_fin) || "9999-12-31") >= ini);
+  })();
+
+  const conteo = rules.reduce((acc, r) => { acc[estadoRegla(r)]++; return acc; }, { vigente: 0, proxima: 0, vencida: 0, inactiva: 0 } as Record<EstadoRegla, number>);
+  const reglasVisibles = ordenarReglas(filtroEstado === "todas" ? rules : rules.filter((r) => estadoRegla(r) === filtroEstado));
+
   const formatDate = (d: string | null) => {
     if (!d) return t("no_end_date");
     const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -284,7 +367,7 @@ export default function SpiffManager({
   };
 
   const groupedRules = showCompanyFilter
-    ? rules.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
+    ? reglasVisibles.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
         const cid = rule.company_id;
         if (!acc[cid]) acc[cid] = [];
         acc[cid].push(rule);
@@ -485,6 +568,16 @@ export default function SpiffManager({
               </p>
             </div>
 
+            {solapadas.length > 0 && (
+              <div className="mt-3 flex items-start gap-2 p-2.5 rounded-xl border border-amber-300 bg-amber-100/60 text-[11px] text-amber-800">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  {t("aviso_solapamiento")}{" "}
+                  {solapadas.map((r) => `${formatDate(r.fecha_inicio)} → ${formatDate(r.fecha_fin)}`).join(", ")}
+                </span>
+              </div>
+            )}
+
             <div className="flex justify-end mt-4">
               <button
                 onClick={handleSave}
@@ -502,6 +595,23 @@ export default function SpiffManager({
           <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
             <Award size={16} className="text-amber-500" /> {t("rules_title")}
           </CardTitle>
+          {rules.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {(["todas", "vigente", "proxima", "vencida", "inactiva"] as const)
+                .filter((f) => f === "todas" || conteo[f] > 0)
+                .map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFiltroEstado(f)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                      filtroEstado === f ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {t(`filtro_${f}`)} {f === "todas" ? rules.length : conteo[f]}
+                  </button>
+                ))}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -511,6 +621,8 @@ export default function SpiffManager({
               <Award size={40} className="mx-auto text-slate-200 mb-3" />
               <p className="text-sm text-slate-400 font-medium">{t("no_rules")}</p>
             </div>
+          ) : reglasVisibles.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">{t("filtro_vacio")}</div>
           ) : showCompanyFilter && groupedRules ? (
             <div className="flex flex-col">
               {Object.entries(groupedRules)
@@ -530,6 +642,7 @@ export default function SpiffManager({
                         onDelete={handleDelete}
                         onToggle={handleToggle}
                         onViewRanking={handleViewRanking}
+                        onDuplicate={startDuplicate}
                         formatDate={formatDate}
                         readonly={readonly}
                       />
@@ -547,10 +660,10 @@ export default function SpiffManager({
                 <span className="w-24 text-center">{t("col_validity")}</span>
                 <span className="w-16 text-center">{t("col_status")}</span>
                 {!readonly && (
-                  <span className="w-20 text-center">{t("col_actions")}</span>
+                  <span className="w-28 text-center">{t("col_actions")}</span>
                 )}
               </div>
-              {rules.map((rule) => (
+              {reglasVisibles.map((rule) => (
                 <RuleRow
                   key={rule.id}
                   rule={rule}
@@ -558,6 +671,7 @@ export default function SpiffManager({
                   onDelete={handleDelete}
                   onToggle={handleToggle}
                   onViewRanking={handleViewRanking}
+                  onDuplicate={startDuplicate}
                   formatDate={formatDate}
                   readonly={readonly}
                 />
@@ -698,6 +812,7 @@ function RuleRow({
   onDelete,
   onToggle,
   onViewRanking,
+  onDuplicate,
   formatDate,
   readonly = false,
 }: {
@@ -706,13 +821,22 @@ function RuleRow({
   onDelete: (id: number) => void;
   onToggle: (rule: SpiffRule) => void;
   onViewRanking: (rule: SpiffRule) => void;
+  onDuplicate: (rule: SpiffRule) => void;
   formatDate: (d: string | null) => string;
   readonly?: boolean;
 }) {
   const t = useTranslations("spiff");
+  const estado = estadoRegla(rule);
+  const apagada = estado === "vencida" || estado === "inactiva";
+  const chip: Record<EstadoRegla, string> = {
+    vigente: "bg-emerald-50 text-emerald-700",
+    proxima: "bg-blue-50 text-blue-700",
+    vencida: "bg-slate-100 text-slate-500",
+    inactiva: "bg-slate-100 text-slate-500",
+  };
   return (
     <div
-      className="flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 cursor-pointer transition-all"
+      className={`flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 cursor-pointer transition-all ${apagada ? "opacity-60" : ""}`}
       onClick={() => onViewRanking(rule)}
     >
       <div className="flex-1 min-w-0">
@@ -723,6 +847,7 @@ function RuleRow({
             <Award size={12} className="text-amber-500 flex-shrink-0" />
           )}
           <p className="text-xs font-bold text-slate-700 uppercase truncate">{rule.brand_name}</p>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${chip[estado]}`}>{t(`estado_${estado}`)}</span>
         </div>
         {rule.tipo === "producto" && rule.product_name && (
           <p className="text-[10px] text-slate-400 truncate pl-5">{rule.product_name}</p>
@@ -758,9 +883,12 @@ function RuleRow({
         )}
       </div>
       {!readonly && (
-        <div className="w-20 flex gap-1 justify-center">
-          <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
+        <div className="w-28 flex gap-1 justify-center">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} title={t("editar")} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
             <Pencil size={14} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDuplicate(rule); }} title={t("duplicar_mes_siguiente")} className="p-1.5 hover:bg-amber-50 rounded-lg text-slate-400 hover:text-amber-600 transition-colors">
+            <Copy size={14} />
           </button>
           <button onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
             <Trash2 size={14} />
