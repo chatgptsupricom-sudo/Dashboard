@@ -6,7 +6,7 @@ import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "
 import { computeComprasKpis } from "@/lib/compras/kpis";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
-import { obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { obtenerLineasMargen, fechaLocal, fechaLocalDeDatetime } from "@/lib/stoplight/margen";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -474,7 +474,7 @@ export async function GET(request: NextRequest) {
         totalOrdenesMes++;
         if (isInvoiced) totalFacturadasMes++;
 
-        const orderDate = new Date(order.date_order);
+        const orderDate = fechaLocalDeDatetime(order.date_order);
         for (let i = 0; i < semanas.length; i++) {
           if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
             efectividadPorSemana[i].total++;
@@ -506,7 +506,9 @@ export async function GET(request: NextRequest) {
     });
 
     // --- Activacion de cartera (client activation per week) ---
-    let semanaActivacionData: { total: number; activos: number }[] = semanas.map(() => ({ total: 0, activos: 0 }));
+    // `clientes`: clientes distintos que compraron en esa semana (antes se
+    // contaban facturas: un cliente con 3 facturas sumaba 3).
+    let semanaActivacionData: { total: number; activos: number; clientes: Set<number> }[] = semanas.map(() => ({ total: 0, activos: 0, clientes: new Set<number>() }));
     let totalClientsActivacion = 0;
     let totalActiveClients = 0;
     const sellerAllClients: Record<string, Set<number>> = {};
@@ -546,7 +548,7 @@ export async function GET(request: NextRequest) {
         const norm = normalize(sellerName);
         const matchedName = normalizedSellerMap[norm];
         if (matchedName) {
-          invActivacionMap[inv.id] = { sellerName: matchedName, partnerId, date: new Date(inv.invoice_date) };
+          invActivacionMap[inv.id] = { sellerName: matchedName, partnerId, date: fechaLocal(inv.invoice_date) };
         }
       });
 
@@ -577,7 +579,7 @@ export async function GET(request: NextRequest) {
 
             for (let i = 0; i < semanas.length; i++) {
               if (info.date >= semanas[i].inicio && info.date <= semanas[i].fin) {
-                semanaActivacionData[i].activos++;
+                semanaActivacionData[i].clientes.add(info.partnerId);
                 break;
               }
             }
@@ -592,7 +594,14 @@ export async function GET(request: NextRequest) {
         totalActiveClients += activos;
       });
 
-      semanaActivacionData.forEach(sem => { sem.total = totalClientsActivacion; });
+      // La meta es un % mensual de la cartera, así que cada semana muestra el
+      // acumulado del mes hasta ahí: clientes distintos activos desde el día 1.
+      const acumulados = new Set<number>();
+      semanaActivacionData.forEach(sem => {
+        sem.clientes.forEach((c) => acumulados.add(c));
+        sem.activos = acumulados.size;
+        sem.total = totalClientsActivacion;
+      });
     } catch (e: any) {
       console.error("Error calculating activacion:", e.message);
     }
@@ -665,13 +674,14 @@ export async function GET(request: NextRequest) {
       }
       const sem = semanaActivacionData[i];
       if (sem.total <= 0) return null;
-      if (metaActivacion > 0) {
-        const pct = Math.round((sem.activos / metaActivacion) * 100);
-        return `${pct}%`;
-      }
-      const pct = Math.round((sem.activos / sem.total) * 100);
-      return `${pct}%`;
+      // La meta es un % (se muestra con "%"): se compara la tasa de activación
+      // (activos ÷ cartera) contra ella. Antes se dividía la CANTIDAD de
+      // activos por la meta como si fuera un número de clientes.
+      const tasa = (sem.activos / sem.total) * 100;
+      if (metaActivacion > 0) return `${Math.round((tasa / metaActivacion) * 100)}%`;
+      return `${Math.round(tasa)}%`;
     });
+
 
     // --- Cobertura de marcas (brand coverage per week) ---
     // Counts distinct brands (spiff_brand_id) sold each week vs. the goal (# target brands)
@@ -875,6 +885,15 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
+    // Valor del mes: activación del período completo. Como las semanas son
+    // acumuladas, promediarlas subestimaría el mes. Si hay semanas cargadas a
+    // mano se mantiene el promedio de semanas.
+    const hayActivacionManual = Object.keys(savedMap["activacion_cartera"] || {}).length > 0;
+    const tasaActivacionMes = totalClientsActivacion > 0 ? (totalActiveClients / totalClientsActivacion) * 100 : null;
+    const avgActivacionMes = hayActivacionManual || tasaActivacionMes == null
+      ? avgFromWeeks(semanaActivacion)
+      : Math.round(metaActivacion > 0 ? (tasaActivacionMes / metaActivacion) * 100 : tasaActivacionMes);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -901,7 +920,7 @@ export async function GET(request: NextRequest) {
         avgMargen: avgFromWeeks(semanaMargen),
         avgVisitas: avgFromWeeks(semanaVisitas),
         avgEfectividad: avgFromWeeks(semanaEfectividad),
-        avgActivacion: avgFromWeeks(semanaActivacion),
+        avgActivacion: avgActivacionMes,
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
         avgCicloReposicion,

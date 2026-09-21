@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { fechaLocal, fechaLocalDeDatetime } from "@/lib/stoplight/margen";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
       const invDateMap: Record<number, Date> = {};
       const invoiceMap: Record<number, any> = {};
       (invoices || []).forEach((inv: any) => {
-        invDateMap[inv.id] = new Date(inv.invoice_date);
+        invDateMap[inv.id] = fechaLocal(inv.invoice_date);
         invoiceMap[inv.id] = inv;
       });
 
@@ -314,7 +315,7 @@ export async function GET(request: NextRequest) {
         const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
         totalOrdenesMes++;
         if (isInvoiced) totalFacturadasMes++;
-        const orderDate = new Date(order.date_order);
+        const orderDate = fechaLocalDeDatetime(order.date_order);
         for (let i = 0; i < semanas.length; i++) {
           if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
             efectividadPorSemana[i].total++;
@@ -368,17 +369,20 @@ export async function GET(request: NextRequest) {
         const activePartnerIds = invoicePartnerIds.filter((pid: number) => clientIds.includes(pid));
         totalActiveClients = activePartnerIds.length;
 
-        // Distribute by week
+        // Por semana: clientes distintos acumulados desde el inicio del mes
+        // (la meta es un % mensual de la cartera). Antes se contaban
+        // facturas de esa semana sola.
+        const semanaDe = new Map<number, number>(); // partner -> primera semana con compra
         (invoices || []).forEach((inv: any) => {
           const partnerId = inv.partner_id?.[0];
           if (!partnerId || !activePartnerIds.includes(partnerId)) return;
-          const invDate = new Date(inv.invoice_date);
-          for (let i = 0; i < semanas.length; i++) {
-            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-              semanaActivacionData[i].activos++;
-              break;
-            }
-          }
+          const invDate = fechaLocal(inv.invoice_date);
+          const i = semanas.findIndex((sem) => invDate >= sem.inicio && invDate <= sem.fin);
+          if (i === -1) return;
+          semanaDe.set(partnerId, Math.min(semanaDe.get(partnerId) ?? i, i));
+        });
+        semanaActivacionData.forEach((sem, i) => {
+          sem.activos = [...semanaDe.values()].filter((w) => w <= i).length;
         });
       }
 
@@ -393,8 +397,10 @@ export async function GET(request: NextRequest) {
       if (esFuturo) return null;
       if (sem.total <= 0) return null;
       if (metaActivacion <= 0) return "100%";
-      const pct = Math.round((sem.activos / metaActivacion) * 100);
-      return `${pct}%`;
+      // La meta es un %: tasa (activos ÷ cartera) contra la meta, no la
+      // cantidad de activos dividida por la meta.
+      const tasa = (sem.activos / sem.total) * 100;
+      return `${Math.round((tasa / metaActivacion) * 100)}%`;
     });
 
     // === CLIENTES NUEVOS ===
@@ -435,7 +441,7 @@ export async function GET(request: NextRequest) {
           if (partnerAlreadyCounted.has(partnerId)) return;
           partnerAlreadyCounted.add(partnerId);
           totalClientesNuevos++;
-          const invDate = new Date(inv.invoice_date);
+          const invDate = fechaLocal(inv.invoice_date);
           for (let i = 0; i < semanas.length; i++) {
             if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
               clientesNuevosPorSemana[i]++;
@@ -480,7 +486,7 @@ export async function GET(request: NextRequest) {
 
         const invDateMap: Record<number, Date> = {};
         (invoices || []).forEach((inv: any) => {
-          invDateMap[inv.id] = new Date(inv.invoice_date);
+          invDateMap[inv.id] = fechaLocal(inv.invoice_date);
         });
 
         (brandLines || []).forEach((line: any) => {
@@ -561,7 +567,12 @@ export async function GET(request: NextRequest) {
         avgMargen: avgFromWeeks(semanaMargen),
         avgVisitas: avgFromWeeks(semanaVisitas),
         avgEfectividad: avgFromWeeks(semanaEfectividad),
-        avgActivacion: avgFromWeeks(semanaActivacion),
+        // Mes completo: las semanas son acumuladas, promediarlas subestima.
+        avgActivacion: totalClientsActivacion <= 0
+          ? avgFromWeeks(semanaActivacion)
+          : metaActivacion <= 0
+          ? 100
+          : Math.round((((totalActiveClients / totalClientsActivacion) * 100) / metaActivacion) * 100),
         avgClientes: avgFromWeeks(semanaClientes),
         avgCobertura: avgFromWeeks(semanaCobertura),
         metas: metasMap,

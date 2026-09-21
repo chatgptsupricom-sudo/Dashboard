@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
+import { fechaLocal } from "@/lib/stoplight/margen";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 
@@ -53,13 +54,13 @@ export async function GET(request: NextRequest) {
       fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
       const ultimoDia = new Date(anio, mesNum, 0).getDate();
       fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
-      periodoLabel = `${now.toLocaleString("es-VE", { month: "long" })} ${anio}`;
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
     }
 
     const semanas = (() => {
       const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
-      const fechaInicioDate = new Date(fechaInicio);
-      const fechaFinDate = new Date(fechaFin);
+      const fechaInicioDate = fechaLocal(fechaInicio);
+      const fechaFinDate = fechaLocal(fechaFin);
       let inicio = new Date(fechaInicioDate);
 
       while (inicio <= fechaFinDate) {
@@ -198,7 +199,7 @@ export async function GET(request: NextRequest) {
         matchedClients++;
 
         // Distribute by week
-        const invDate = new Date(inv.invoice_date);
+        const invDate = fechaLocal(inv.invoice_date);
         for (let i = 0; i < semanas.length; i++) {
           if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
             sellerActiveClientsPorSemana[norm]?.[i]?.add(partnerId);
@@ -225,22 +226,27 @@ export async function GET(request: NextRequest) {
       const data = sellerClientsMap[name];
       const activos = sellerActiveClients[name]?.size || 0;
       const total = data.total;
+      // Tasa real (% de la cartera que compró). La meta también es un %: el
+      // modal compara contra ella. Antes, con meta, se dividían los activos
+      // por la meta como si fuera una cantidad de clientes.
       const activacion = total > 0 ? Math.round((activos / total) * 100) : 0;
-      const activacionPct = metaActivacion > 0 ? Math.round((activos / metaActivacion) * 100) : (total > 0 ? Math.round((activos / total) * 100) : 0);
 
+      // Acumulado del período hasta cada semana (la meta es mensual): clientes
+      // distintos que compraron desde el inicio hasta el fin de esa semana.
+      const acumulados = new Set<number>();
       const semanasCalc = semanas.map((sem, i) => {
         const semanaInicio = sem.inicio;
         const esFuturo = semanaInicio > new Date();
-        const activosSem = sellerActiveClientsPorSemana[name]?.[i]?.size || 0;
-        const activacionSem = metaActivacion > 0
-          ? Math.round((activosSem / metaActivacion) * 100)
-          : (total > 0 ? Math.round((activosSem / total) * 100) : null);
+        const nuevosSem = sellerActiveClientsPorSemana[name]?.[i]?.size || 0;
+        sellerActiveClientsPorSemana[name]?.[i]?.forEach((c) => acumulados.add(c));
+        const activosAcum = acumulados.size;
         return {
           numero: i + 1,
           label: sem.label,
-          activos: activosSem,
+          activos: activosAcum,
+          compraronSemana: nuevosSem,
           total,
-          activacion: esFuturo ? null : activacionSem,
+          activacion: esFuturo || total <= 0 ? null : Math.round((activosAcum / total) * 100),
         };
       });
 
@@ -248,7 +254,7 @@ export async function GET(request: NextRequest) {
         nombre: name,
         totalClientes: total,
         clientesActivos: activos,
-        activacion: activacionPct,
+        activacion,
         semanas: semanasCalc,
       };
     });
@@ -268,6 +274,7 @@ export async function GET(request: NextRequest) {
         periodoLabel,
         fechaInicio,
         fechaFin,
+        metaActivacion,
         global: {
           totalClientes: globalTotal,
           clientesActivos: globalActivos,

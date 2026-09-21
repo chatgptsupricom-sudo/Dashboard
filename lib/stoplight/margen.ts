@@ -36,6 +36,20 @@ export function fechaLocal(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * Día (a medianoche local) de un datetime de Odoo ("YYYY-MM-DD HH:MM:SS", en
+ * UTC) visto en Venezuela (UTC-4, sin horario de verano). Parsearlo con
+ * `new Date(...)` daba un instante con hora, y como las semanas terminan a
+ * las 00:00 de su último día, las órdenes de ese día quedaban fuera de toda
+ * semana.
+ */
+export function fechaLocalDeDatetime(dt: string): Date {
+  const utc = Date.parse(String(dt).replace(" ", "T") + "Z");
+  if (!Number.isFinite(utc)) return fechaLocal(dt);
+  const caracas = new Date(utc - 4 * 60 * 60 * 1000);
+  return new Date(caracas.getUTCFullYear(), caracas.getUTCMonth(), caracas.getUTCDate());
+}
+
 export async function obtenerLineasMargen(
   companyId: number,
   fechaInicio: string,

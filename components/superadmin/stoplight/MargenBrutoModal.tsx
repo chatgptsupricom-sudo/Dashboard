@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, ArrowLeft, Percent, Search, AlertTriangle, ChevronRight } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
 
 interface MargenBrutoModalProps {
   isOpen: boolean;
@@ -33,26 +34,13 @@ interface Detalle {
   products: Producto[];
 }
 
-// Semáforo del margen contra la meta, con los mismos cortes que el resto del
-// Stoplight (verde ≥100% de la meta, amarillo ≥70%, rojo debajo). Sin meta
-// configurada no hay semáforo: el margen se muestra neutro.
-type Nivel = "verde" | "amarillo" | "rojo" | "neutro";
-function nivelMargen(margen: number | null, meta: number): Nivel {
-  if (margen == null || meta <= 0) return "neutro";
-  const pct = (margen / meta) * 100;
-  return pct >= 100 ? "verde" : pct >= 70 ? "amarillo" : "rojo";
-}
+// Semáforo del margen contra la meta (mismos cortes que la grilla). Sin meta
+// configurada el margen se muestra neutro.
 const NIVEL_TEXTO: Record<Nivel, string> = {
   verde: "text-emerald-700",
   amarillo: "text-amber-700",
   rojo: "text-red-700",
-  neutro: "text-slate-800",
-};
-const NIVEL_CHIP: Record<Nivel, string> = {
-  verde: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  amarillo: "bg-amber-50 text-amber-700 ring-amber-600/20",
-  rojo: "bg-red-50 text-red-700 ring-red-600/20",
-  neutro: "bg-slate-50 text-slate-700 ring-slate-500/20",
+  sin: "text-slate-800",
 };
 
 // Modal "Margen bruto": resumen del mes + tabs por vendedor / por producto /
@@ -125,7 +113,7 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
   const nombreVendedor = (v: Vendedor) => (v.esOtros ? t("margen_otros") : v.nombre);
 
   const MargenChip = ({ margen }: { margen: number | null }) => {
-    const nivel = nivelMargen(margen, meta);
+    const nivel = nivelContraMeta(margen, meta);
     return (
       <span className={`inline-flex min-w-[64px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivel]}`}>
         {pct(margen)}
@@ -139,7 +127,7 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
   };
 
   const th = "px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
-  const nivelTotal = nivelMargen(data?.totales.margen ?? null, meta);
+  const nivelTotal = nivelContraMeta(data?.totales.margen ?? null, meta);
 
   return (
     <div

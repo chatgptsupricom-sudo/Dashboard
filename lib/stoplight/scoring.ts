@@ -138,3 +138,24 @@ export function contarNiveles(kpis: any[]): { verde: number; amarillo: number; r
   }
   return acc;
 }
+
+/**
+ * Semáforo de un valor crudo (ej. 45% de efectividad) contra su meta (ej.
+ * 60%), con los mismos cortes que la grilla: verde ≥100% de la meta, amarillo
+ * ≥70%, rojo debajo. Sin meta configurada devuelve "sin" (neutro): los
+ * modales usaban umbrales fijos (60/40) que no tenían nada que ver con la
+ * meta de la fila.
+ */
+export const nivelContraMeta = (valor: number | null | undefined, meta: number | null | undefined): Nivel => {
+  if (valor == null || !meta || meta <= 0) return "sin";
+  const pct = (valor / meta) * 100;
+  return pct >= 100 ? "verde" : pct >= 70 ? "amarillo" : "rojo";
+};
+
+/** Clases de chip para `nivelContraMeta` en los modales de detalle. */
+export const NIVEL_CHIP: Record<Nivel, string> = {
+  verde: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  amarillo: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  rojo: "bg-red-50 text-red-700 ring-red-600/20",
+  sin: "bg-slate-50 text-slate-700 ring-slate-500/20",
+};
