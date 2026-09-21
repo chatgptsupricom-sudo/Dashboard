@@ -6,7 +6,7 @@
  * egreso y Seguridad no se entera hasta recargar, y al reves con el resultado
  * de la verificacion.
  *
- * Se emite a la sala de la sucursal (`mercancia_<cids>`, ver `salaMercancia`
+ * Se emite a la sala de la sucursal (`mercancia_<cids>`, ver `salasMercancia`
  * en server.js) y a `mercancia_todas`, donde escucha superadmin. El payload
  * lleva lo justo para decidir si refrescar — la pantalla vuelve a pedir sus
  * datos a la API, que es la unica que filtra por sucursal y por rol.
