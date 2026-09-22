@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
     // Load metas + pesos
     await ensureKpiTargetsPeso();
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};

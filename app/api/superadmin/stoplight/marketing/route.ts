@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
     };
     await ensureKpiTargetsPeso();
     const metasRows = await query(
-      `SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = 9 AND mes = ? AND kpi_key IN (${MARKETING_META_KEYS.map(() => "?").join(",")})`,
+      `SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = 9 AND mes = ? AND kpi_key IN (${MARKETING_META_KEYS.map(() => "?").join(",")}) ORDER BY id`,
       [mes, ...MARKETING_META_KEYS],
     );
     const marketingMetas: Record<string, number> = { ...MARKETING_META_DEFAULT };

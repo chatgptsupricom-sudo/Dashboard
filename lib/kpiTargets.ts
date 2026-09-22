@@ -38,7 +38,48 @@ export async function ensureKpiTargetsPeso(): Promise<void> {
     console.error("ensureKpiTargetsPeso (null):", e?.message);
     pesoAdmiteNull = false;
   }
+  await asegurarClaveUnica();
   ensured = true;
+}
+
+/**
+ * `kpi_targets` necesita la clave única (kpi_key, company_id, mes): los
+ * guardados de meta y de peso son `INSERT ... ON DUPLICATE KEY UPDATE`. Si la
+ * tabla se creó sin ella (bases viejas), cada guardado INSERTA una fila nueva
+ * y la lectura se puede quedar con una vieja: la meta o el peso "se reinician"
+ * al recargar.
+ *
+ * Si falta: se consolidan los duplicados en una sola fila por combinación (la
+ * meta y el peso más recientes que no estén vacíos) y se crea la clave.
+ */
+async function asegurarClaveUnica() {
+  try {
+    const idx = await query("SHOW INDEX FROM kpi_targets WHERE Key_name = 'unique_kpi'");
+    if ((idx.rows as any[]).length > 0) return;
+
+    const dup = await query(
+      `SELECT kpi_key, company_id, mes, COUNT(*) n FROM kpi_targets
+        GROUP BY kpi_key, company_id, mes HAVING COUNT(*) > 1`,
+    );
+    for (const d of dup.rows as any[]) {
+      const filas = await query(
+        "SELECT id, meta_mensual, peso FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ? ORDER BY id DESC",
+        [d.kpi_key, d.company_id, d.mes],
+      );
+      const rows = filas.rows as any[];
+      const meta = rows.find((r) => Number(r.meta_mensual) > 0)?.meta_mensual ?? rows[0].meta_mensual ?? 0;
+      const peso = rows.find((r) => r.peso !== null && r.peso !== undefined)?.peso ?? null;
+      await query("UPDATE kpi_targets SET meta_mensual = ?, peso = ? WHERE id = ?", [meta, peso, rows[0].id]);
+      await query(
+        "DELETE FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ? AND id <> ?",
+        [d.kpi_key, d.company_id, d.mes, rows[0].id],
+      );
+    }
+    await query("ALTER TABLE kpi_targets ADD UNIQUE KEY unique_kpi (kpi_key, company_id, mes)");
+    console.log(`[kpi_targets] clave única creada${(dup.rows as any[]).length ? ` tras consolidar ${(dup.rows as any[]).length} combinación(es) duplicada(s)` : ""}`);
+  } catch (e: any) {
+    console.error("asegurarClaveUnica:", e?.message);
+  }
 }
 
 /**
