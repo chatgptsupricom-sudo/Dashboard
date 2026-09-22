@@ -333,30 +333,18 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado de lo exigible: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
+                <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
               </div>
-              {data.kpis.efectividad.cobradoAntes > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  En el mes {formatCurrency(data.kpis.efectividad.cobradoEnElMes)} + cobrado en meses anteriores {formatCurrency(data.kpis.efectividad.cobradoAntes)}
-                </div>
-              )}
               <div className="text-xs text-slate-500 mt-1">
-                {data.kpis.efectividad.parcial ? "Exigible ya vencido" : "Exigible"}: {formatCurrency(data.kpis.efectividad.exigibleMes)}
+                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
               </div>
-              {data.kpis.efectividad.parcial && data.kpis.efectividad.exigibleMesCompleto != null && (
+              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  Del mes completo: {formatCurrency(data.kpis.efectividad.exigibleMesCompleto)} (lo que aún no vence no cuenta todavía)
+                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
                 </div>
               )}
-              {data.kpis.efectividad.cobradoTotalMes != null && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Cobrado total del mes: {formatCurrency(data.kpis.efectividad.cobradoTotalMes)} (ver Contado/Crédito)
-                </div>
-              )}
-              {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
-                <div className="text-xs text-slate-400 mt-1">
-                  Cobrado a hoy (incl. pagos posteriores al cierre): {data.kpis.efectividad.valueAcumulado}%
-                </div>
+              {data.kpis.efectividad.parcial && (
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
               )}
             </div>
 
@@ -1055,71 +1043,53 @@ export default function CxcDashboardPage() {
             {/* ── Efectividad Cobranza Detail ── */}
             {kpiData.type === "efectividad" && (
               <>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">
-                      {kpiData.summary.parcial ? "Exigible ya vencido" : "Exigible"}
-                    </span>
-                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.totalExigible)}</span>
-                    {kpiData.summary.parcial && kpiData.summary.totalExigibleMesCompleto != null && (
-                      <span className="text-[10px] text-blue-500/80 block leading-snug">
-                        del mes completo {formatCurrency(kpiData.summary.totalExigibleMesCompleto)}
-                      </span>
-                    )}
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Facturado del mes</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.facturado)}</span>
+                    <span className="text-[10px] text-blue-500/80 block">{kpiData.summary.facturas} facturas · con IVA</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado de lo exigible</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.totalCobrado)}</span>
-                    <span className="text-[10px] text-emerald-500/80 block leading-snug">
-                      hasta el cierre del mes: en el mes {formatCurrency(kpiData.summary.cobradoEnElMes)} + de meses anteriores {formatCurrency(kpiData.summary.cobradoAntes)}
-                    </span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado del mes</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.cobrado)}</span>
+                    <span className="text-[10px] text-emerald-500/80 block">banco y caja · con IVA</span>
                   </div>
-                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Pendiente</span>
-                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.totalPendiente)}</span>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">De lo cobrado</span>
+                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeFacturasDelMes)} de facturas del mes</span>
+                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeAnteriores)} de meses anteriores</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad</span>
-                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.efectividad}%</span>
-                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.paidCount}/{kpiData.summary.count} pagadas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</span>
+                    <span className="text-[10px] text-slate-400 block">cobrado ÷ facturado</span>
                   </div>
                 </div>
-                {kpiData.summary.totalCobradoDelMes != null && (
-                  <p className="text-[11px] text-slate-500 -mt-2">
-                    Solo cuenta las facturas que vencen en el mes. Todo el dinero que entró en el mes son{" "}
-                    <span className="font-semibold text-slate-700">{formatCurrency(kpiData.summary.totalCobradoDelMes)}</span>{" "}
-                    (Contado/Crédito → Cobrado); la diferencia es lo cobrado de facturas ya vencidas (Recuperación) o que vencen después.
-                  </p>
-                )}
+                <p className="text-[11px] text-slate-500 -mt-2">
+                  Todo el dinero que entró en el mes (de cualquier factura) contra lo facturado en el mes. Puede pasar de 100% si se cobró deuda vieja por encima de lo facturado.
+                  {kpiData.summary.parcial ? " Mes en curso: los dos van al día de hoy." : ""}
+                </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-slate-50/80">
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Tipo</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
-                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vendedor</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Facturado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cobrado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cobrado ÷ facturado</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
-                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
-                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
-                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{inv.moveType === "out_refund" ? "NC" : "Factura"}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.amountResidual <= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
-                              {inv.paymentState === "paid" || inv.amountResidual <= 0 ? "Pagada" : "Pendiente"}
-                            </span>
+                      {(kpiData.clientes || []).map((c: any) => (
+                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[260px] truncate" title={c.nombre}>{c.nombre}</td>
+                          <td className="py-2.5 px-3 text-slate-500 max-w-[160px] truncate">{c.vendedor || "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{c.facturado ? formatCurrency(c.facturado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{c.cobrado ? formatCurrency(c.cobrado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">
+                            {c.facturado > 0 ? `${Math.round((c.cobrado / c.facturado) * 100)}%` : "—"}
                           </td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
-                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.amountPaid)}</td>
-                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
                         </tr>
                       ))}
                     </tbody>

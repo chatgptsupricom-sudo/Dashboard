@@ -1,6 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
-import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { detalleEfectividadFacturado } from "@/lib/cxc/efectividad";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
@@ -62,100 +62,12 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     if (type === "efectividad") {
-      // Facturas con vencimiento en el mes, con detalle de pagado/pendiente
-      const allInvoices = await fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", ">=", monthStart.toISOString().split("T")[0]],
-          ["invoice_date_due", "<=", monthEnd.toISOString().split("T")[0]],
-        ],
-        ["id", "name", "partner_id", "company_id", "move_type",
-         "invoice_date", "invoice_date_due", "payment_state",
-         "amount_untaxed", "amount_total", "amount_residual"],
-      );
-
-      // Mismo signo coherente que route.ts (issue #187): una nota de credito
-      // resta tanto del exigible como del cobrado, en vez de forzar el saldo
-      // a valor absoluto y recortar el pago a 0 -- si no, este modal deja de
-      // coincidir con la tarjeta apenas hay notas de credito en el mes.
-      const invoices = allInvoices.map((inv: any) => {
-        const signo = inv.move_type === "out_refund" ? -1 : 1;
-        const amountTotal = signo * Math.abs(inv.amount_total || 0);
-        const amountResidual = signo * Math.abs(inv.amount_residual || 0);
-        const pagado = amountTotal - amountResidual;
-        return {
-          id: inv.id,
-          name: inv.name || "",
-          partnerName: inv.partner_id?.[1] || "Sin cliente",
-          partnerId: inv.partner_id?.[0] || 0,
-          companyName: inv.company_id?.[1] || "",
-          moveType: inv.move_type,
-          invoiceDate: inv.invoice_date || null,
-          invoiceDateDue: inv.invoice_date_due || null,
-          paymentState: inv.payment_state || "not_paid",
-          amountTotal,
-          amountPaid: Math.round(pagado * 100) / 100,
-          amountResidual: Math.round(amountResidual * 100) / 100,
-        };
-      }).filter((i) => !i.partnerName.toLowerCase().includes("supricom"));
-      // El resto de los endpoints de CxC excluyen al partner interno
-      // "Supricom" (ver type "cartera" abajo, o detail/route.ts); a este
-      // calculo se le habia quedado afuera ese filtro, asi que sus propias
-      // facturas inflaban/desinflaban el detalle de Efectividad Cobranza.
-
-      // El resumen sale del mismo helper que la tarjeta (lib/cxc/efectividad.ts)
-      // para que el modal y el KPI no vuelvan a discrepar: `efectividad` es la
-      // ESTRICTA (cobrado hasta el cierre del mes) y `efectividadAcumulada` el
-      // criterio viejo, "cobrado a hoy" (issue #188). La columna por factura
-      // sigue mostrando lo cobrado a hoy, que es lo accionable al mirar una
-      // factura concreta.
-      const calc = await calcularEfectividad(
-        companyIds,
-        monthStart,
-        monthEnd,
-        invoices.map((i) => ({
-          id: i.id,
-          amountTotal: i.amountTotal,
-          amountResidual: i.amountResidual,
-          dueDate: i.invoiceDateDue ? new Date(i.invoiceDateDue + "T00:00:00") : null,
-        })),
-        [],
-        today,
-      );
-
-      // Cobrado total del mes (el de Contado/Crédito), para que se vea al lado
-      // del numerador de Efectividad y no se confundan.
-      const cobrosDelMes = await obtenerCobros(companyIds, {
-        desde: monthStart.toISOString().split("T")[0],
-        hasta: monthEnd.toISOString().split("T")[0],
-      });
-
+      // Cobrado del mes ÷ facturado del mes, por cliente. Mismo helper que la
+      // tarjeta (lib/cxc/efectividad.ts) para que nunca discrepen.
+      const { resumen, clientes } = await detalleEfectividadFacturado(companyIds, monthStart, monthEnd, [], today);
       return NextResponse.json({
         success: true,
-        data: {
-          type: "efectividad",
-          summary: {
-            totalCobradoDelMes: Math.round(cobrosDelMes.reduce((s, c) => s + c.monto, 0) * 100) / 100,
-            cobradoEnElMes: calc.cobradoEnElMes,
-            cobradoAntes: calc.cobradoAntes,
-            totalExigible: calc.exigibleMes,
-            totalExigibleMesCompleto: calc.exigibleMesCompleto,
-            parcial: calc.parcial,
-            totalCobrado: calc.cobradoAlCierre,
-            totalCobradoAHoy: calc.cobradoAHoy,
-            totalPendiente: calc.pendiente,
-            efectividad: calc.value ?? 0,
-            efectividadAcumulada: calc.valueAcumulado ?? 0,
-            mesCerrado: calc.mesCerrado,
-            count: invoices.length,
-            paidCount: invoices.filter(i => i.paymentState === "paid" || i.amountResidual <= 0).length,
-            pendingCount: invoices.filter(i => i.paymentState !== "paid" && i.amountResidual > 0).length,
-          },
-          invoices: invoices.sort((a, b) => (a.invoiceDateDue || "").localeCompare(b.invoiceDateDue || "")),
-        },
+        data: { type: "efectividad", summary: resumen, clientes },
       });
     }
 

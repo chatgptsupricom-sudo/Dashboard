@@ -1,10 +1,9 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { calcularEfectividadFacturado } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
-import { obtenerCobros } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -260,22 +259,10 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const isSupricom = (inv: any) => (inv.partner_id?.[1] || "").toLowerCase().includes("supricom");
     const d90 = new Date(today);
     d90.setDate(d90.getDate() - 90);
 
-    const [efectividadInvoicesRaw, recuperacionCalc, creditSalesRaw] = await Promise.all([
-      fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date_due", ">=", monthStart.toISOString().split("T")[0]],
-          ["invoice_date_due", "<=", monthEnd.toISOString().split("T")[0]],
-        ],
-        ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"],
-      ),
+    const [recuperacionCalc, creditSalesRaw] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
@@ -293,28 +280,8 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    // ── Efectividad Cobranza: cobrado ÷ exigible de facturas que vencen este mes ──
-    // Una nota de credito (`out_refund`) debe restar tanto del exigible como
-    // del cobrado -- antes `amount_residual` se tomaba siempre en valor
-    // absoluto y el pago se recortaba a 0 con `Math.max(...,0)`, asi que cada
-    // nota de credito bajaba el denominador sin bajar el numerador e inflaba
-    // el cociente por encima de 100% (issue #187). Aplicando el mismo signo a
-    // `amount_total` y `amount_residual` una nota de credito resta lo mismo
-    // de los dos lados, que es lo coherente.
-    const efectividadInvoices = efectividadInvoicesRaw.filter((inv: any) => !isSupricom(inv)).map((inv: any) => {
-      const signo = inv.move_type === "out_refund" ? -1 : 1;
-      const amountTotal = signo * Math.abs(inv.amount_total || 0);
-      const amountResidual = signo * Math.abs(inv.amount_residual || 0);
-      return {
-        id: inv.id,
-        amountTotal,
-        amountResidual,
-        dueDate: inv.invoice_date_due ? new Date(inv.invoice_date_due + "T00:00:00") : null,
-      };
-    });
-
-    // ── Efectividad y su fila semanal: criterio estricto (issue #188) ──
-    // Se usan las mismas semanas que arma el Stoplight de ventas (mismo
+    // ── Efectividad y su fila semanal: cobrado ÷ facturado del mes ──
+    // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
     // helper) para que la fila quede alineada con los encabezados
     // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
     // el modal de detalle para que nunca discrepen.
@@ -326,19 +293,10 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    const [seriesCxc, efectividadCalc, cobrosDelMes] = await Promise.all([
+    const [seriesCxc, efectividadCalc] = await Promise.all([
       calcularSeriesCxC(companyIds, semanasCxc, today),
-      calcularEfectividad(companyIds, monthStart, monthEnd, efectividadInvoices, semanasCxc, today),
-      // Todo el dinero que entró en el mes, sin importar cuándo vencía la
-      // factura: es el "Cobrado" de Contado/Crédito. El numerador de
-      // Efectividad es otra cosa (solo lo exigible del mes), y mostrarlos
-      // juntos evita que se lean como si fueran el mismo número.
-      obtenerCobros(companyIds, {
-        desde: monthStart.toISOString().split("T")[0],
-        hasta: monthEnd.toISOString().split("T")[0],
-      }),
+      calcularEfectividadFacturado(companyIds, monthStart, monthEnd, semanasCxc, today),
     ]);
-    const cobradoTotalMes = Math.round(cobrosDelMes.reduce((s, c) => s + c.monto, 0) * 100) / 100;
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -392,26 +350,16 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
-            // `value` es la ESTRICTA (cobrado hasta el cierre del mes): es la
-            // que va al semáforo porque es comparable entre meses y un mes
-            // cerrado ya no cambia. `valueAcumulado` es el criterio viejo
-            // ("cobrado a hoy"), que se conserva como dato secundario porque
-            // sigue diciendo cuánto de lo que venció ya entró (issue #188).
+            // Cobrado del mes ÷ facturado del mes, ambos con IVA
+            // (lib/cxc/efectividad.ts → calcularEfectividadFacturado).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
-            cobradoMes: efectividadCalc.cobradoAlCierre,
-            // cobradoEnElMes = tramo "vencen en el período" de Contado/Crédito;
-            // cobradoAntes = abonos adelantados de meses previos.
-            cobradoEnElMes: efectividadCalc.cobradoEnElMes,
-            cobradoAntes: efectividadCalc.cobradoAntes,
-            cobradoTotalMes,
-            exigibleMes: efectividadCalc.exigibleMes,
-            exigibleMesCompleto: efectividadCalc.exigibleMesCompleto,
+            cobrado: efectividadCalc.cobrado,
+            facturado: efectividadCalc.facturado,
+            cobradoDeFacturasDelMes: efectividadCalc.cobradoDeFacturasDelMes,
+            cobradoDeAnteriores: efectividadCalc.cobradoDeAnteriores,
+            facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
-            pendiente: efectividadCalc.pendiente,
-            valueAcumulado: efectividadCalc.valueAcumulado,
-            cobradoAHoy: efectividadCalc.cobradoAHoy,
-            mesCerrado: efectividadCalc.mesCerrado,
           },
           carteraVencida: {
             // Se calcula con el mismo método que la fila semanal (reconstruyendo

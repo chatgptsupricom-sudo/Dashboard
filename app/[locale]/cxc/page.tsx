@@ -182,30 +182,18 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado de lo exigible: {formatCurrency(data.kpis.efectividad.cobradoMes)}</span>
+                <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
               </div>
-              {data.kpis.efectividad.cobradoAntes > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  En el mes {formatCurrency(data.kpis.efectividad.cobradoEnElMes)} + cobrado en meses anteriores {formatCurrency(data.kpis.efectividad.cobradoAntes)}
-                </div>
-              )}
               <div className="text-xs text-slate-500 mt-1">
-                {data.kpis.efectividad.parcial ? "Exigible ya vencido" : "Exigible"}: {formatCurrency(data.kpis.efectividad.exigibleMes)}
+                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
               </div>
-              {data.kpis.efectividad.parcial && data.kpis.efectividad.exigibleMesCompleto != null && (
+              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  Del mes completo: {formatCurrency(data.kpis.efectividad.exigibleMesCompleto)} (lo que aún no vence no cuenta todavía)
+                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
                 </div>
               )}
-              {data.kpis.efectividad.cobradoTotalMes != null && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Cobrado total del mes: {formatCurrency(data.kpis.efectividad.cobradoTotalMes)} (ver Contado/Crédito)
-                </div>
-              )}
-              {data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null && (
-                <div className="text-xs text-slate-400 mt-1">
-                  Cobrado a hoy (incl. pagos posteriores al cierre): {data.kpis.efectividad.valueAcumulado}%
-                </div>
+              {data.kpis.efectividad.parcial && (
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
               )}
             </div>
 

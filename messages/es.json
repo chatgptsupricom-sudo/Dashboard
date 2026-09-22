@@ -1339,7 +1339,9 @@
     "responsable": "Responsable",
     "cartera_total_label": "Cartera total",
     "facturas": "Facturas",
-    "descripcion": "Dashboard de Cuentas por Cobrar - KPIs de cartera"
+    "descripcion": "Dashboard de Cuentas por Cobrar - KPIs de cartera",
+    "cobrado_mes": "Cobrado del mes",
+    "facturado_mes": "Facturado del mes"
   },
   "ui": {
     "months": [
