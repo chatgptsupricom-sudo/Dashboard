@@ -212,6 +212,30 @@ export async function POST(request: NextRequest) {
       [orderId, createdBy, userRole],
     );
 
+    // La compra manual de Sugeridos (> 0) se da por usada al pedir el
+    // producto en una orden de esa sede; el 0 (bloqueo) queda hasta que el
+    // comprador lo quite. Best-effort: sin la tabla la orden se crea igual.
+    const productosPedidos = lineas
+      .map((l: any) => Number(l.product_odoo_id))
+      .filter((id: number) => Number.isInteger(id) && id > 0);
+    if (productosPedidos.length > 0) {
+      try {
+        const marcas = productosPedidos.map(() => "?").join(", ");
+        await conn.execute(
+          `UPDATE compras_sugeridos_ajustes SET compra_manual = NULL
+            WHERE cids = ? AND compra_manual > 0 AND product_odoo_id IN (${marcas})`,
+          [companyId, ...productosPedidos],
+        );
+        await conn.execute(
+          `DELETE FROM compras_sugeridos_ajustes
+            WHERE cids = ? AND eta_dias IS NULL AND compra_manual IS NULL`,
+          [companyId],
+        );
+      } catch (e: any) {
+        console.error("[ordenes] no se pudo limpiar la compra manual de sugeridos:", e.message);
+      }
+    }
+
     // Sync a Odoo (issue #166) -- best-effort, nunca tumba la creacion que ya
     // quedo guardada en MySQL arriba. Se espera el resultado (no
     // fire-and-forget) para que el detalle, apenas se redirige ahi, ya

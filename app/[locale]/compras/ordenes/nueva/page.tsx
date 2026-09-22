@@ -33,9 +33,13 @@ export default function NuevaOrdenPage() {
       const raw = sessionStorage.getItem(OC_PREFILL_KEY);
       if (!raw) return;
       sessionStorage.removeItem(OC_PREFILL_KEY);
-      const lines = JSON.parse(raw) as OrdenLinea[];
+      // Formato viejo: solo el array de lineas. Nuevo: { company_id, lines },
+      // para que la orden salga en la sede que se estaba mirando.
+      const prefill = JSON.parse(raw);
+      const lines = (Array.isArray(prefill) ? prefill : prefill?.lines) as OrdenLinea[];
+      const companyId = Array.isArray(prefill) ? null : prefill?.company_id;
       if (Array.isArray(lines) && lines.length > 0) {
-        setValue((v) => ({ ...v, lines }));
+        setValue((v) => ({ ...v, lines, ...(companyId ? { company_id: String(companyId) } : {}) }));
         toast({
           title: "Líneas prellenadas",
           description: `${lines.length} producto(s) desde Sugeridos`,
