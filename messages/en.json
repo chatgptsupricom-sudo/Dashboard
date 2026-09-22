@@ -1860,7 +1860,9 @@
     "cartera_por_responsable": "Portfolio by Collection Agent",
     "responsable": "Agent",
     "cartera_total_label": "Total portfolio",
-    "facturas": "Invoices"
+    "facturas": "Invoices",
+    "cobrado_mes": "Collected this month",
+    "facturado_mes": "Invoiced this month"
   },
   "ui": {
     "months": [
