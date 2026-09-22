@@ -299,13 +299,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const savePeso = async (kpiKey: string, value: number) => {
+  // `value` null = volver al peso por defecto (casilla vacía); 0 = no cuenta.
+  const savePeso = async (kpiKey: string, value: number | null) => {
     try {
       // Los KPIs de marketing no tienen compañía propia: su route los lee bajo
       // company_id 9 (ver #110). El resto van por la sucursal seleccionada.
       const KPIS_MARKETING = ["usuarios_totales", "sesiones", "paginas_vistas", "tasa_rebote", "clicks_sc", "impresiones_sc", "ctr_sc", "posicion_sc", "email_open_rate"];
       const cid = KPIS_MARKETING.includes(kpiKey) ? 9 : selectedCompanyId;
-      await fetch(`${apiPrefix}`, {
+      const res = await fetch(`${apiPrefix}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -316,12 +317,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           mes: selectedMes,
         }),
       });
-      fetchData(true);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await Promise.all([fetchData(true), fetchMarketingData(), fetchCxCData(), fetchCppData()]);
+      // Ya está guardado: se muestra lo que devuelve el servidor.
+      setPesoValues((prev) => { const n = { ...prev }; delete n[kpiKey]; return n; });
+      return;
       fetchMarketingData();
       fetchCxCData();
       fetchCppData();
     } catch (e) {
       console.error("Error saving peso:", e);
+      alert("No se pudo guardar el peso. Intenta de nuevo.");
     }
   };
 
@@ -329,11 +335,20 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setPesoValues((prev) => ({ ...prev, [kpiId]: value }));
   };
 
+  // Se compara contra lo GUARDADO, no contra lo que se está escribiendo:
+  // antes se comparaba con getPesoNum(), que ya leía el valor tecleado, así que
+  // nunca era distinto y el peso no se enviaba al servidor.
   const handlePesoBlur = (kpiId: string, fallback: number, value: string) => {
-    const numVal = Math.max(0, parseFloat(value) || 0);
-    if (numVal !== getPesoNum(kpiId, fallback)) {
-      savePeso(kpiId, numVal);
+    if (pesoValues[kpiId] === undefined) return; // no se tocó
+    const guardado = pesosMerged[kpiId];
+    if (value.trim() === "") {
+      if (guardado !== undefined) savePeso(kpiId, null);
+      else setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
+      return;
     }
+    const numVal = Math.max(0, parseFloat(value) || 0);
+    if (guardado === undefined ? numVal !== fallback : numVal !== guardado) savePeso(kpiId, numVal);
+    else setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
   };
 
   const openCxcModal = (kpiId: string) => {
@@ -451,10 +466,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...((cxcData?.pesos as Record<string, number>) || {}),
     ...((cppData?.pesos as Record<string, number>) || {}),
   };
+  // Lo que se está escribiendo > lo guardado (0 incluido: "no cuenta") > el
+  // valor por defecto. Casilla vacía = valor por defecto.
   const getPesoNum = (id: string, fallback: number) => {
     const override = pesoValues[id];
-    const n = override !== undefined ? parseFloat(override) : Number(pesosMerged[id]);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
+    if (override !== undefined) {
+      if (override.trim() === "") return fallback;
+      const n = parseFloat(override);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    }
+    const g = pesosMerged[id];
+    return g !== undefined && Number.isFinite(Number(g)) && Number(g) >= 0 ? Number(g) : fallback;
   };
   const pesoDe = (id: string, fallback: number) => `${getPesoNum(id, fallback)}%`;
 

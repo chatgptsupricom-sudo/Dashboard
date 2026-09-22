@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
@@ -157,8 +157,9 @@ export async function GET(request: NextRequest) {
     const pesosMap: Record<string, number> = {};
     (metasResult.rows as any[]).forEach((r) => {
       metasMap[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
     });
 
     // === CUMPLIMIENTO CUOTA ===

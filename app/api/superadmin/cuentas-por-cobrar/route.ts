@@ -6,7 +6,7 @@ import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
 
 // La lectura de `digiflex.cxc.report` es paginada y puede traer miles de
@@ -115,8 +115,9 @@ export async function GET(request: NextRequest) {
     const cxcPesos: Record<string, number> = {};
     (cxcMetasResult.rows as any[]).forEach((r: any) => {
       cxcMetas[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) cxcPesos[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) cxcPesos[r.kpi_key] = p;
     });
 
     // ═══════════════════════════════════════════════════════════════════
