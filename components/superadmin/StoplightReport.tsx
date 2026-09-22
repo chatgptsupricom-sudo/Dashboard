@@ -318,6 +318,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // El servidor devuelve lo que quedó en la base: si no coincide, el
+      // guardado no persistió (tabla sin clave única, permisos, etc.) y hay
+      // que decirlo en vez de revertir el campo sin explicación.
+      const json = await res.json().catch(() => null);
+      const guardado = json?.peso === null || json?.peso === undefined ? null : Number(json.peso);
+      if (guardado !== (value === null ? null : Number(value))) {
+        console.error("[peso] guardado distinto de lo enviado", { kpiKey, enviado: value, guardado, cid, mes: selectedMes });
+        alert(`El peso no quedó guardado (se envió ${value ?? "vacío"} y la base devolvió ${guardado ?? "vacío"}). Avísale a soporte con este mensaje.`);
+      }
       await Promise.all([fetchData(true), fetchMarketingData(), fetchCxCData(), fetchCppData()]);
       // Ya está guardado: se muestra lo que devuelve el servidor.
       setPesoValues((prev) => { const n = { ...prev }; delete n[kpiKey]; return n; });
