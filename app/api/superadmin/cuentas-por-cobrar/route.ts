@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
 
     await ensureKpiTargetsPeso();
     const cxcMetasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso')",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('efectividad_cobranza', 'cartera_vencida', 'recuperacion_vencidos', 'dso') ORDER BY id",
       [companyId, mes]
     );
     const cxcMetas: Record<string, number> = {};

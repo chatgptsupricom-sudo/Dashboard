@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
     await ensureKpiTargetsPeso();
     const cppMetasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('pagos_a_tiempo', 'cuentas_pagar_vencidas', 'procesamiento_oportuno', 'dpo')",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? AND kpi_key IN ('pagos_a_tiempo', 'cuentas_pagar_vencidas', 'procesamiento_oportuno', 'dpo') ORDER BY id",
       [companyId, mes]
     );
     const cppMetas: Record<string, number> = {};

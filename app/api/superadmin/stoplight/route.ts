@@ -330,7 +330,7 @@ export async function GET(request: NextRequest) {
     // Load metas first (needed for weekly calculations)
     const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
