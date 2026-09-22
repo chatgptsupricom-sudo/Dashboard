@@ -47,6 +47,31 @@ export type PickingResumen = {
 };
 
 /**
+ * Un renglon por producto. Odoo trae una stock.move.line por lote o
+ * ubicacion de donde se saca, asi que un producto que sale de dos estantes
+ * llegaba como dos renglones y se contaba dos veces por separado. Se suman
+ * las cantidades y se deja el orden en que aparece cada producto por primera
+ * vez. Sin id de Odoo se agrupa por codigo + nombre.
+ */
+export function agruparLineas<T extends LineaPicking>(lineas: T[]): T[] {
+  const porClave = new Map<string, T>();
+  for (const l of lineas) {
+    const clave =
+      l.odoo_product_id != null
+        ? `id:${l.odoo_product_id}`
+        : `txt:${(l.codigo || "").trim().toUpperCase()}|${l.producto.trim().toUpperCase()}`;
+    const ya = porClave.get(clave);
+    if (ya) {
+      // Redondeo para que 0.1 + 0.2 no quede en 0.30000000000000004.
+      ya.cantidad_cargada = Math.round((ya.cantidad_cargada + l.cantidad_cargada) * 1000) / 1000;
+    } else {
+      porClave.set(clave, { ...l });
+    }
+  }
+  return [...porClave.values()];
+}
+
+/**
  * Listas de facturas y almacenistas por egreso (issue #43).
  *
  * Un camion puede salir con varias facturas y con mas de un almacenista
@@ -250,16 +275,18 @@ export async function buscarPickingEgreso(
     { fields: ["product_id", "quantity"], limit: 500 },
   );
 
-  const lineas: LineaPicking[] = (lineas_raw || []).map((l: any) => {
-    const etiqueta = l.product_id?.[1] || "";
-    const { codigo, producto } = partirProducto(etiqueta);
-    return {
-      odoo_product_id: l.product_id?.[0] ?? null,
-      producto,
-      codigo,
-      cantidad_cargada: Number(l.quantity || 0),
-    };
-  });
+  const lineas: LineaPicking[] = agruparLineas(
+    (lineas_raw || []).map((l: any) => {
+      const etiqueta = l.product_id?.[1] || "";
+      const { codigo, producto } = partirProducto(etiqueta);
+      return {
+        odoo_product_id: l.product_id?.[0] ?? null,
+        producto,
+        codigo,
+        cantidad_cargada: Number(l.quantity || 0),
+      };
+    }),
+  );
 
   return {
     odoo_picking_id: p.id,
