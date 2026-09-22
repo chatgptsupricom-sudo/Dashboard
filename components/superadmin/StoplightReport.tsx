@@ -344,20 +344,29 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setPesoValues((prev) => ({ ...prev, [kpiId]: value }));
   };
 
-  // Se compara contra lo GUARDADO, no contra lo que se está escribiendo:
-  // antes se comparaba con getPesoNum(), que ya leía el valor tecleado, así que
-  // nunca era distinto y el peso no se enviaba al servidor.
-  const handlePesoBlur = (kpiId: string, fallback: number, value: string) => {
+  // Se compara SOLO contra lo guardado en el servidor (`pesosMerged`).
+  //
+  // Ojo con el parámetro `fallback` (= `kpi.peso` de la fila): sale de
+  // `pesoDe()` → `getPesoNum()`, que ya devuelve lo que se está tecleando. Al
+  // compararlo con el valor tecleado siempre daba igual y el peso NO se
+  // enviaba: el campo volvía al valor viejo al salir. Verificado en producción
+  // (se tecleaba 21 y no salía ninguna petición).
+  //
+  // Si el KPI todavía no tiene peso propio se guarda igual, aunque coincida
+  // con el valor por defecto: así queda explícito y no depende del default.
+  const handlePesoBlur = (kpiId: string, _fallback: number, value: string) => {
     if (pesoValues[kpiId] === undefined) return; // no se tocó
     const guardado = pesosMerged[kpiId];
+    const limpiarOverride = () =>
+      setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
     if (value.trim() === "") {
       if (guardado !== undefined) savePeso(kpiId, null);
-      else setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
+      else limpiarOverride();
       return;
     }
     const numVal = Math.max(0, parseFloat(value) || 0);
-    if (guardado === undefined ? numVal !== fallback : numVal !== guardado) savePeso(kpiId, numVal);
-    else setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
+    if (guardado === undefined || numVal !== Number(guardado)) savePeso(kpiId, numVal);
+    else limpiarOverride();
   };
 
   const openCxcModal = (kpiId: string) => {
