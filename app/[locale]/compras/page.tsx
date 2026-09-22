@@ -331,7 +331,7 @@ export default function ComprasDashboard() {
                 <p className="text-lg font-black text-slate-900">{r.clasA}</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Clase A</p>
                 <p className="text-[10px] text-emerald-600 font-bold mt-0.5">
-                  {Math.round(pctA)}% · top ventas
+                  {Math.round(pctA)}% · ≥ $15.000/año
                 </p>
               </div>
               <div className="text-center border-x border-slate-100">
@@ -341,7 +341,7 @@ export default function ComprasDashboard() {
                 <p className="text-lg font-black text-slate-900">{r.clasB}</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Clase B</p>
                 <p className="text-[10px] text-amber-600 font-bold mt-0.5">
-                  {Math.round(pctB)}% · media rotación
+                  {Math.round(pctB)}% · ≥ $5.000/año
                 </p>
               </div>
               <div className="text-center">
@@ -351,7 +351,7 @@ export default function ComprasDashboard() {
                 <p className="text-lg font-black text-slate-900">{r.clasC}</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Clase C</p>
                 <p className="text-[10px] text-slate-400 font-bold mt-0.5">
-                  {Math.round(pctC)}% · baja rotación
+                  {Math.round(pctC)}% · resto
                 </p>
               </div>
             </div>
