@@ -913,7 +913,16 @@ export async function POST(request: NextRequest) {
         // Vacío = volver al peso por defecto; 0 = el KPI no cuenta.
         [kpi_key, company_id, pesoParaGuardar(peso), mes]
       );
-      return NextResponse.json({ success: true });
+      // Se relee lo que quedó guardado: si la tabla no tiene la clave única o
+      // el ALTER de `peso` no se pudo hacer, el guardado "funciona" pero la
+      // pantalla sigue mostrando el valor viejo. Devolverlo deja que el
+      // front avise en vez de revertir en silencio.
+      const guardadoRes = await query(
+        "SELECT peso FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ? ORDER BY id DESC LIMIT 1",
+        [kpi_key, company_id, mes],
+      );
+      const guardado = (guardadoRes.rows as any[])[0]?.peso;
+      return NextResponse.json({ success: true, peso: guardado === null || guardado === undefined ? null : Number(guardado) });
     }
 
     if (type === "save_weekly") {
