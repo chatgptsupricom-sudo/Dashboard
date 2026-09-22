@@ -155,6 +155,15 @@ export function normalizarPrecinto(v: string | null | undefined): string {
 export const MAX_PRECINTOS = 10;
 
 /**
+ * Como se muestra un precinto: en mayusculas y sin espacios de sobra, pero
+ * con sus guiones y puntos (a diferencia de normalizarPrecinto, que es solo
+ * para comparar).
+ */
+export function mostrarPrecinto(v: string | null | undefined): string {
+  return String(v || "").trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+/**
  * Limpia una lista de precintos: sin vacios, sin repetidos (comparando
  * normalizado: "SL-100" y "sl 100" son el mismo) y como mucho MAX_PRECINTOS.
  */
@@ -163,7 +172,7 @@ export function limpiarPrecintos(lista: unknown): string[] {
   const vistos = new Set<string>();
   const out: string[] = [];
   for (const v of crudos) {
-    const s = String(v ?? "").trim().slice(0, 50);
+    const s = mostrarPrecinto(String(v ?? "").slice(0, 50));
     const n = normalizarPrecinto(s);
     if (!n || vistos.has(n)) continue;
     vistos.add(n);
@@ -190,6 +199,17 @@ export function compararPrecintos(
   const faltan = esperados.filter((p) => !rec.has(normalizarPrecinto(p)));
   const sobran = recibidos.filter((p) => !esp.has(normalizarPrecinto(p)));
   return { coincide: faltan.length === 0 && sobran.length === 0, faltan, sobran };
+}
+
+/**
+ * Los recibidos que son el mismo precinto que uno esperado se escriben igual
+ * que en el packing list ("sl 501" -> "SL-501"), para que al compararlos en
+ * pantalla se vea a simple vista que coinciden. Los que no coinciden quedan
+ * como los anoto Almacen.
+ */
+export function alinearPrecintos(recibidos: string[], esperados: string[]): string[] {
+  const porNorma = new Map(esperados.map((p) => [normalizarPrecinto(p), p]));
+  return recibidos.map((p) => porNorma.get(normalizarPrecinto(p)) ?? p);
 }
 
 /** Lee una lista de precintos guardada como JSON, o el precinto unico de antes. */

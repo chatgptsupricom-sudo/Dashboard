@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { leerPrecintos } from "@/lib/recepcion/flujo";
+import { alinearPrecintos, leerPrecintos } from "@/lib/recepcion/flujo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -70,11 +70,18 @@ export async function cargarRecepcion(id: number) {
     items: items.rows as any[],
     // Los precintos van como lista (un contenedor puede tener varios); si el
     // contenedor es de antes de eso, se arma la lista con el precinto unico.
-    contenedores: (contenedores.rows as any[]).map((c) => ({
-      ...c,
-      precintos_esperados: leerPrecintos(c.precintos_esperados, c.precinto_esperado),
-      precintos_recibidos: leerPrecintos(c.precintos_recibidos, c.precinto_recibido),
-    })),
+    // Los ya guardados tal como se escribieron se alinean tambien al leer.
+    contenedores: (contenedores.rows as any[]).map((c) => {
+      const esperados = leerPrecintos(c.precintos_esperados, c.precinto_esperado);
+      return {
+        ...c,
+        precintos_esperados: esperados,
+        precintos_recibidos: alinearPrecintos(
+          leerPrecintos(c.precintos_recibidos, c.precinto_recibido),
+          esperados,
+        ),
+      };
+    }),
     archivos: archivos.rows as any[],
   };
 }

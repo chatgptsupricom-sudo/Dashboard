@@ -1,5 +1,10 @@
 import { query } from "@/lib/db";
-import { compararPrecintos, evaluarConteo, limpiarPrecintos } from "@/lib/recepcion/flujo";
+import {
+  alinearPrecintos,
+  compararPrecintos,
+  evaluarConteo,
+  limpiarPrecintos,
+} from "@/lib/recepcion/flujo";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -88,8 +93,11 @@ export async function POST(
         if (contenedor.etapa !== "por_llegar") return conflicto();
         // Un contenedor puede tener varios precintos: Almacen anota todos los
         // que ve. Se acepta tambien `precinto_recibido` suelto (lo de antes).
-        const precintos = limpiarPrecintos(
-          Array.isArray(body?.precintos_recibidos) ? body.precintos_recibidos : body?.precinto_recibido,
+        const precintos = alinearPrecintos(
+          limpiarPrecintos(
+            Array.isArray(body?.precintos_recibidos) ? body.precintos_recibidos : body?.precinto_recibido,
+          ),
+          contenedor.precintos_esperados,
         );
         const faltan: string[] = [];
         if (!fotosDe("foto_llegada", contenedor.id)) faltan.push("la foto del contenedor al llegar");
