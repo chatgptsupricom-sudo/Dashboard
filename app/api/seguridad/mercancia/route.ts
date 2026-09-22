@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
+import { agruparLineas, parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -250,10 +250,14 @@ export async function POST(request: NextRequest) {
 
     const id = (res.rows as any)?.insertId;
 
+    // Un renglon por producto (ver agruparLineas): si el mismo producto viene
+    // dos veces se suma, para no contarlo dos veces por separado.
+    const renglones = agruparLineas(limpios as any[]);
+
     // Los renglones en una sola sentencia: 300 INSERT sueltos en el porton,
     // con el camion esperando, se notan.
     const valores: any[] = [];
-    const marcadores = limpios
+    const marcadores = renglones
       .map((i: any) => {
         valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
         return "(?, ?, ?, ?, ?)";
