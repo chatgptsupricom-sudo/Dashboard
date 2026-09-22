@@ -1477,16 +1477,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
               <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
+                <table className="w-full text-sm text-left border-collapse min-w-[720px]">
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                       <th className="py-2.5 pl-4 pr-2 w-8"></th>
-                      <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
-                      <th className="py-2.5 px-2 w-36 text-right font-semibold">{t("column_goal")}</th>
-                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
-                      <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
+                      {/* Anchos ajustados para que META, MES y PESO entren sin
+                          desplazar la tabla: con el sidebar abierto quedaban
+                          fuera del area visible y PESO se veia cortada. */}
+                      <th className="py-2.5 px-2 font-semibold min-w-[150px]">{t("column_title")}</th>
+                      <th className="py-2.5 px-1.5 w-28 text-right font-semibold">{t("column_goal")}</th>
+                      <th className="py-2.5 px-1.5 w-16 text-right font-semibold">{t("column_average")}</th>
+                      <th className="py-2.5 px-1.5 w-20 text-right font-semibold whitespace-nowrap">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
-                        <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
+                        <th key={idx} className="py-2.5 px-1.5 w-16 text-center font-medium text-slate-400 normal-case">
                           {week}
                         </th>
                       ))}
@@ -1533,7 +1536,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint || kpi.subtitle}</div>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3 px-1.5 text-right align-top" onClick={(e) => e.stopPropagation()}>
                           {!isSuperAdmin || kpi.metaFija ? (
                             <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
@@ -1543,7 +1546,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 value={getGoal(kpi.id, kpi.goalDefault)}
                                 onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
                                 onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                                className="w-28 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
+                                className="w-24 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
                               />
                               {kpi.goalSuffix && (
                                 <span className="text-slate-400 text-xs whitespace-nowrap">{kpi.goalSuffix.trim()}</span>
@@ -1551,7 +1554,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right align-top">
+                        <td className="py-3 px-1.5 text-right align-top">
                           {kpiSinMeta ? (
                             <span className="text-slate-300">–</span>
                           ) : (
@@ -1560,7 +1563,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3 px-1.5 text-right text-slate-400 tabular-nums align-top whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           {!isSuperAdmin ? (
                             kpi.peso
                           ) : (
@@ -1583,7 +1586,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         ) : kpi.weeks.map((val: string | null, idx: number) => {
                           const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                           return (
-                            <td key={idx} className="py-3 px-2 text-center align-top">
+                            <td key={idx} className="py-3 px-1.5 text-center align-top">
                               {val && !kpiSinMeta ? (
                                 <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
                                   {val}
