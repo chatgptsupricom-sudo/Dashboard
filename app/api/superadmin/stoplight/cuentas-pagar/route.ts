@@ -1,7 +1,7 @@
 import { callOdooRPC, OdooUnreachableError } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -86,8 +86,9 @@ export async function GET(request: NextRequest) {
     const cppPesos: Record<string, number> = {};
     (cppMetasResult.rows as any[]).forEach((r: any) => {
       cppMetas[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) cppPesos[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) cppPesos[r.kpi_key] = p;
     });
 
     // ========================================

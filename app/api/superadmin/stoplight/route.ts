@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { computeComprasKpis } from "@/lib/compras/kpis";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila, pesoParaGuardar } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
@@ -29,7 +29,7 @@ async function ensureTables() {
     kpi_key VARCHAR(100) NOT NULL,
     company_id INT NOT NULL,
     meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
-    peso DECIMAL(5,2) NOT NULL DEFAULT 0,
+    peso DECIMAL(5,2) NULL DEFAULT NULL,
     mes VARCHAR(7) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -337,8 +337,9 @@ export async function GET(request: NextRequest) {
     const pesosMap: Record<string, number> = {};
     (metasResult.rows as any[]).forEach((r) => {
       metasMap[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
     });
 
     const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
@@ -909,7 +910,8 @@ export async function POST(request: NextRequest) {
         `INSERT INTO kpi_targets (kpi_key, company_id, peso, mes)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE peso = VALUES(peso)`,
-        [kpi_key, company_id, Math.max(0, Number(peso) || 0), mes]
+        // Vacío = volver al peso por defecto; 0 = el KPI no cuenta.
+        [kpi_key, company_id, pesoParaGuardar(peso), mes]
       );
       return NextResponse.json({ success: true });
     }
