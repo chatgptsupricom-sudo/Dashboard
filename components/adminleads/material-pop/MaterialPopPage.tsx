@@ -7,6 +7,7 @@ import {
   History,
   PackageMinus,
   PackagePlus,
+  Users,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CatalogTab } from "./CatalogTab";
@@ -14,6 +15,7 @@ import { EntriesTab } from "./EntriesTab";
 import { ExitsTab } from "./ExitsTab";
 import { HistoryTab } from "./HistoryTab";
 import { AlertsTab } from "./AlertsTab";
+import { BrandClientsTab } from "./BrandClientsTab";
 import type { PopCategory, PopProduct, PopUom } from "@/lib/adminleads/material-pop/types";
 
 export function MaterialPopPage() {
@@ -105,6 +107,10 @@ export function MaterialPopPage() {
             <History className="h-4 w-4" />
             Historial
           </TabsTrigger>
+          <TabsTrigger value="brand-clients" className="gap-2 px-3 py-2">
+            <Users className="h-4 w-4" />
+            Clientes por marca
+          </TabsTrigger>
           <TabsTrigger value="alerts" className="gap-2 px-3 py-2">
             <AlertTriangle className="h-4 w-4" />
             Alertas
@@ -144,6 +150,10 @@ export function MaterialPopPage() {
 
         <TabsContent value="history">
           <HistoryTab onGoToCatalog={() => setTab("catalog")} />
+        </TabsContent>
+
+        <TabsContent value="brand-clients">
+          <BrandClientsTab />
         </TabsContent>
 
         <TabsContent value="alerts">
