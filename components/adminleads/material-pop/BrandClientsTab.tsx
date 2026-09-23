@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandClientDetailDialog } from "./BrandClientDetailDialog";
 
 type ClienteMarca = {
   partnerId: number;
@@ -49,6 +50,12 @@ export function BrandClientsTab() {
   const [totales, setTotales] = useState({ unidades: 0, monto: 0, clientes: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Fila abierta en el modal de detalle, y en qué pestaña abrirlo.
+  const [detalle, setDetalle] = useState<{
+    partnerId: number;
+    cliente: string;
+    foco: "productos" | "facturas";
+  } | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -200,17 +207,55 @@ export function BrandClientsTab() {
                   <td className="p-3">
                     <span className="text-xs text-slate-600">{c.marcas.join(", ")}</span>
                   </td>
-                  <td className="p-3 text-right font-medium text-slate-800">{fmtNum(c.unidades)}</td>
-                  <td className="p-3 text-right font-semibold text-slate-900">
-                    $ {fmtNum(c.monto, 2)}
+                  <td className="p-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetalle({ partnerId: c.partnerId, cliente: c.cliente, foco: "productos" })
+                      }
+                      className="font-medium text-slate-800 underline decoration-dotted underline-offset-2 hover:text-violet-700"
+                    >
+                      {fmtNum(c.unidades)}
+                    </button>
                   </td>
-                  <td className="p-3 text-right text-slate-600">{c.facturas}</td>
+                  <td className="p-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetalle({ partnerId: c.partnerId, cliente: c.cliente, foco: "productos" })
+                      }
+                      className="font-semibold text-slate-900 underline decoration-dotted underline-offset-2 hover:text-violet-700"
+                    >
+                      $ {fmtNum(c.monto, 2)}
+                    </button>
+                  </td>
+                  <td className="p-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetalle({ partnerId: c.partnerId, cliente: c.cliente, foco: "facturas" })
+                      }
+                      className="text-slate-600 underline decoration-dotted underline-offset-2 hover:text-violet-700"
+                    >
+                      {c.facturas}
+                    </button>
+                  </td>
                   <td className="p-3 whitespace-nowrap text-slate-600">{fmtFecha(c.ultimaCompra)}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+
+      <BrandClientDetailDialog
+        partnerId={detalle?.partnerId ?? null}
+        cliente={detalle?.cliente ?? ""}
+        foco={detalle?.foco ?? "productos"}
+        desde={desde}
+        hasta={hasta}
+        marca={marca}
+        onClose={() => setDetalle(null)}
+      />
     </div>
   );
 }
