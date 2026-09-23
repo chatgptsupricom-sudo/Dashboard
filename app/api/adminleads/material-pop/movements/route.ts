@@ -6,6 +6,7 @@ import {
 } from "@/lib/adminleads/material-pop/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { cambiarStock, leerStock } from "@/lib/adminleads/material-pop/stock";
 import {
   isValidMovementDate,
   validateNonNegativeQuantity,
@@ -21,35 +22,6 @@ function truncar(v: any, max: number): string | null {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
   return s ? s.slice(0, max) : null;
-}
-
-/** Actualiza (suma o resta) el stock de una ubicación para un producto. */
-async function cambiarStock(
-  conn: any,
-  productId: number,
-  location: string,
-  delta: number,
-): Promise<void> {
-  await conn.execute(
-    `INSERT INTO pop_stock (product_id, location, quantity)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)`,
-    [productId, location, delta],
-  );
-}
-
-/** Lee el stock actual de un producto en una ubicación. */
-async function leerStock(
-  conn: any,
-  productId: number,
-  location: string,
-): Promise<number> {
-  const [rows] = await conn.execute(
-    "SELECT quantity FROM pop_stock WHERE product_id = ? AND location = ? FOR UPDATE",
-    [productId, location],
-  );
-  if (rows.length === 0) return 0;
-  return Number(rows[0].quantity) || 0;
 }
 
 export async function GET(request: NextRequest) {

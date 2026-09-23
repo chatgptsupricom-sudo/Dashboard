@@ -1,6 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import {
-  requireAdminLeadsValencia,
+  requireLecturaMaterialPop,
   resolveMaterialPopCids,
 } from "@/lib/adminleads/material-pop/auth";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAdminLeadsValencia(request);
+    // El vendedor tambien busca clientes al armar una solicitud.
+    const auth = await requireLecturaMaterialPop(request);
     if (auth.error) return auth.error;
 
     // El cids de la sesión (9 para adminLeads Valencia) define la empresa en Odoo

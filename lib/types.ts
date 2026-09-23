@@ -145,6 +145,9 @@ export const rolePermissions: RolePermissions = {
       "spiff",
       "planificacion_visitas",
       "banco_imagenes_seller",
+      // Solicitudes de Material POP (solo vendedores de Valencia; el corte por
+      // sede lo imponen el middleware y el cidsOnly del menu)
+      "material_pop_seller",
       // Stoplight Report — el grupo "Ventas" completo, pero con SUS propias
       // cifras (la API /api/vendedores/stoplight filtra por s.user_id).
       "stoplight_reports",

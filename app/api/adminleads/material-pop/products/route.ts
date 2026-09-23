@@ -1,6 +1,7 @@
 import { query, getConnection } from "@/lib/db";
 import {
   requireAdminLeadsValencia,
+  requireLecturaMaterialPop,
   resolveMaterialPopCids,
 } from "@/lib/adminleads/material-pop/auth";
 import { generateSku } from "@/lib/adminleads/material-pop/sku";
@@ -24,7 +25,9 @@ function truncar(v: any, max: number): string | null {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAdminLeadsValencia(request);
+    // Leer el catálogo tambien lo necesita el vendedor para armar su solicitud.
+    // Crear, editar y borrar siguen siendo solo del adminLeads.
+    const auth = await requireLecturaMaterialPop(request);
     if (auth.error) return auth.error;
 
     const cids = resolveMaterialPopCids(auth.payload);

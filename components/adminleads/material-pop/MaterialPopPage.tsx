@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Boxes,
+  ClipboardList,
   History,
   PackageMinus,
   PackagePlus,
@@ -16,6 +17,7 @@ import { ExitsTab } from "./ExitsTab";
 import { HistoryTab } from "./HistoryTab";
 import { AlertsTab } from "./AlertsTab";
 import { BrandClientsTab } from "./BrandClientsTab";
+import { RequestsTab } from "./RequestsTab";
 import type { PopCategory, PopProduct, PopUom } from "@/lib/adminleads/material-pop/types";
 
 export function MaterialPopPage() {
@@ -25,6 +27,7 @@ export function MaterialPopPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("catalog");
+  const [pendientes, setPendientes] = useState(0);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -57,6 +60,19 @@ export function MaterialPopPage() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  // Contador de solicitudes por revisar, para que la pestaña avise sin tener
+  // que entrar a mirar.
+  const loadPendientes = useCallback(() => {
+    fetch("/api/adminleads/material-pop/requests?status=pendiente")
+      .then((r) => r.json())
+      .then((j) => setPendientes(j?.pendientes || 0))
+      .catch(() => setPendientes(0));
+  }, []);
+
+  useEffect(() => {
+    loadPendientes();
+  }, [loadPendientes, tab]);
 
   const alertCount = products.filter((p) => p.has_alert).length;
 
@@ -107,6 +123,15 @@ export function MaterialPopPage() {
             <History className="h-4 w-4" />
             Historial
           </TabsTrigger>
+          <TabsTrigger value="requests" className="gap-2 px-3 py-2">
+            <ClipboardList className="h-4 w-4" />
+            Solicitudes
+            {pendientes > 0 && (
+              <span className="rounded-md bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700">
+                {pendientes}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="brand-clients" className="gap-2 px-3 py-2">
             <Users className="h-4 w-4" />
             Clientes por marca
@@ -150,6 +175,15 @@ export function MaterialPopPage() {
 
         <TabsContent value="history">
           <HistoryTab onGoToCatalog={() => setTab("catalog")} />
+        </TabsContent>
+
+        <TabsContent value="requests">
+          <RequestsTab
+            onStockChange={() => {
+              loadAll();
+              loadPendientes();
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="brand-clients">
