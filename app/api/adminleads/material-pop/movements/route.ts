@@ -227,8 +227,12 @@ export async function POST(request: NextRequest) {
     }
 
     const notas = truncar(body?.notes, 2000);
-    // Un solo producto no forma grupo: la columna queda NULL como antes.
-    const grupoId = items.length > 1 ? randomUUID() : null;
+    // Todo movimiento lleva grupo, no solo los de varios productos: es lo que
+    // permite volver a él después, por ejemplo para imprimir la nota de
+    // entrega de una salida a cliente.
+    const grupoId = randomUUID();
+    // Orden de venta de Odoo, solo para salidas a cliente.
+    const ordenVenta = truncar(body?.odooOrderName, 50);
 
     conn = await getConnection();
     await conn.beginTransaction();
@@ -355,10 +359,9 @@ export async function POST(request: NextRequest) {
         if (reasonType !== "cliente" && !destination) {
           throw new ErrorMovimiento("Indica el destino de la salida");
         }
-        // Una salida repartida entre dos ubicaciones también se agrupa, igual
-        // que antes; si el movimiento ya tiene grupo, se reutiliza ese.
-        const movementGroupId =
-          grupoId || (useOtherLocation && actual < quantity ? randomUUID() : null);
+        // Las porciones de una salida partida entre dos ubicaciones comparten
+        // el grupo del movimiento, igual que el resto de los productos.
+        const movementGroupId = grupoId;
         const portions = [
           { location, quantity: Math.min(actual, quantity) },
           ...(useOtherLocation && actual < quantity
@@ -371,9 +374,9 @@ export async function POST(request: NextRequest) {
           await conn.execute(
             `INSERT INTO pop_movements
               (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
-               client_id, client_name, client_cids, destination,
+               client_id, client_name, client_cids, destination, odoo_order_name,
                created_by_user_id, created_by_name, cids, movement_date, notes)
-             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               movementGroupId,
               productId,
@@ -385,6 +388,7 @@ export async function POST(request: NextRequest) {
               clientName,
               cids,
               destination,
+              ordenVenta,
               userId,
               userName,
               cids,
@@ -451,7 +455,14 @@ export async function POST(request: NextRequest) {
 
     await conn.commit();
 
-    return NextResponse.json({ success: true, type, productos: resultados.length, resultados });
+    return NextResponse.json({
+      success: true,
+      type,
+      // El grupo identifica el movimiento completo: con él se pide la nota.
+      movementGroupId: grupoId,
+      productos: resultados.length,
+      resultados,
+    });
   } catch (error: any) {
     if (conn) await conn.rollback();
     if (error instanceof ErrorMovimiento) {

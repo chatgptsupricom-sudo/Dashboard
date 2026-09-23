@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarX, Loader2, PackageMinus, UserRound } from "lucide-react";
+import { CalendarX, Loader2, PackageMinus, Printer, UserRound } from "lucide-react";
 import { MovementLines, lineaVacia, type MovementLine } from "./MovementLines";
 import { OdooClientSelect } from "./OdooClientSelect";
 import type { PopProduct } from "@/lib/adminleads/material-pop/types";
@@ -41,6 +41,9 @@ export function ExitsTab({
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [useOtherLocation, setUseOtherLocation] = useState(false);
   const [client, setClient] = useState<any>(null);
+  const [ordenVenta, setOrdenVenta] = useState("");
+  // Grupo de la última salida registrada: con él se pide su nota de entrega.
+  const [ultimaSalida, setUltimaSalida] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
   const [movementDate, setMovementDate] = useState(today());
   const [notes, setNotes] = useState("");
@@ -101,6 +104,7 @@ export function ExitsTab({
       body.clientId = client.id;
       body.clientName = client.name;
       body.clientCids = null;
+      body.odooOrderName = ordenVenta.trim() || null;
     } else {
       body.destination = destination.trim();
     }
@@ -120,10 +124,15 @@ export function ExitsTab({
 
       toast({
         title: "Salida registrada",
-        description: "El stock se actualizó correctamente.",
+        description:
+          kind === "cliente"
+            ? "El stock se actualizó. Ya puedes imprimir la nota de entrega."
+            : "El stock se actualizó correctamente.",
       });
+      setUltimaSalida(kind === "cliente" ? json?.movementGroupId || null : null);
 
       setLines([lineaVacia()]);
+      setOrdenVenta("");
       setDestination("");
       setClient(null);
       setUseOtherLocation(false);
@@ -208,12 +217,26 @@ export function ExitsTab({
             )}
 
             {kind === "cliente" && (
-              <div>
-                <Label>Cliente (Odoo)</Label>
-                <div className="mt-1.5">
-                  <OdooClientSelect value={client} onChange={setClient} />
+              <>
+                <div>
+                  <Label>Cliente (Odoo)</Label>
+                  <div className="mt-1.5">
+                    <OdooClientSelect value={client} onChange={setClient} />
+                  </div>
                 </div>
-              </div>
+                <div>
+                  <Label>Orden de venta (Odoo)</Label>
+                  <Input
+                    value={ordenVenta}
+                    onChange={(e) => setOrdenVenta(e.target.value)}
+                    placeholder="Ej: S-05457 · opcional"
+                    className="mt-1.5"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Sale impresa en la nota de entrega.
+                  </p>
+                </div>
+              </>
             )}
 
             {kind !== "cliente" && (
@@ -275,6 +298,25 @@ export function ExitsTab({
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Registrar salida
             </Button>
+
+            {/* Queda a mano después de registrar: es el papel que firma quien
+                recibe el material en el otro almacén. */}
+            {ultimaSalida && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() =>
+                  window.open(
+                    `/api/adminleads/material-pop/movements/nota?group=${ultimaSalida}`,
+                    "_blank",
+                  )
+                }
+              >
+                <Printer className="h-4 w-4" />
+                Nota de entrega de la última salida
+              </Button>
+            )}
           </div>
         </>
       )}

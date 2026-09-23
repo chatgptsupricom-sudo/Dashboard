@@ -66,6 +66,21 @@ const VALID_LOCATION = ["office", "warehouse"];
 
 const n = (v: any): number => Number(v) || 0;
 
+/**
+ * Fecha/hora de MySQL a texto "YYYY-MM-DD HH:mm".
+ *
+ * mysql2 devuelve las columnas DATETIME como objetos Date, y `String(fecha)`
+ * daba "Wed Sep 23 2026 14:02:11 GMT-0400": al recortar por el primer espacio
+ * la pantalla mostraba "Wed" como fecha de autorización.
+ */
+function textoFecha(v: any): string | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(String(v).replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return String(v);
+  const p2 = (x: number) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
 /** Cantidad comprometida por producto: solicitudes aprobadas sin entregar. */
 export async function reservadoPorProducto(
   cids: number | null,
@@ -182,10 +197,10 @@ export async function listarSolicitudes(opts: {
     notes: r.notes || null,
     reviewNotes: r.review_notes || null,
     reviewedByName: r.reviewed_by_name || null,
-    reviewedAt: r.reviewed_at ? String(r.reviewed_at) : null,
-    deliveredAt: r.delivered_at ? String(r.delivered_at) : null,
+    reviewedAt: textoFecha(r.reviewed_at),
+    deliveredAt: textoFecha(r.delivered_at),
     movementGroupId: r.movement_group_id || null,
-    createdAt: r.created_at ? String(r.created_at) : null,
+    createdAt: textoFecha(r.created_at),
     items: porSolicitud.get(Number(r.id)) || [],
   }));
 }

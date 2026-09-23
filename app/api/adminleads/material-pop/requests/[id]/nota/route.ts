@@ -50,7 +50,31 @@ export async function GET(
     }
     if (origen !== "office" && origen !== "warehouse") origen = "warehouse";
 
-    return new NextResponse(notaEntregaHtml(solicitud, origen), {
+    const html = notaEntregaHtml({
+      codigo: solicitud.code,
+      cliente: solicitud.clientName,
+      vendedor: solicitud.sellerName,
+      autorizadoPor: solicitud.reviewedByName || "",
+      fecha: solicitud.reviewedAt,
+      ordenOdoo: solicitud.odooOrderName,
+      condicion:
+        solicitud.deliveryCondition === "al_comprar"
+          ? "Contra la compra del cliente"
+          : "Entrega inmediata",
+      observaciones: [solicitud.notes, solicitud.reviewNotes].filter(Boolean).join(" · ") || null,
+      // Solo lo aprobado: lo pedido de más no sale del almacén.
+      items: solicitud.items
+        .filter((it) => (it.approvedQuantity ?? 0) > 0)
+        .map((it) => ({
+          code: it.code,
+          name: it.name,
+          brand: it.brand,
+          quantity: it.approvedQuantity ?? 0,
+        })),
+      origen,
+    });
+
+    return new NextResponse(html, {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
