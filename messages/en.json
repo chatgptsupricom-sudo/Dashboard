@@ -214,6 +214,7 @@
     "material_pop": "POP Material",
     "seg_grupo_rma": "RMA",
     "seg_grupo_mercancia": "Merchandise",
+    "seg_grupo_almacen": "Warehouse",
     "seg_ingreso": "Intake",
     "seg_egreso": "Dispatch",
     "seg_estadisticas": "RMA statistics",
