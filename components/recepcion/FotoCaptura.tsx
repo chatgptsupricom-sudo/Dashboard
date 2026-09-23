@@ -11,6 +11,8 @@ export type ArchivoRecepcion = {
   tipo: string;
   nombre: string | null;
   mime: string;
+  /** Cuando se subio: la primera foto de llegada marca el inicio del tiempo de recepcion. */
+  created_at?: string | null;
 };
 
 /**

@@ -2,7 +2,6 @@ import { query } from "@/lib/db";
 import {
   alinearPrecintos,
   compararPrecintos,
-  evaluarConteo,
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
 import {
@@ -19,12 +18,10 @@ import { NextRequest, NextResponse } from "next/server";
  * { precintos_recibidos: string[], motivo: string }
  *
  * Corrige los precintos que Almacen anoto al llegar el contenedor (ej. un
- * error de tipeo: "FX445T2691" en vez de "FX44502691"). Se puede hacer
- * aunque el packing list ya este cerrado, pero nunca sin dejar rastro: se
- * guarda que habia antes, que quedo, el motivo y quien lo hizo.
+ * error de tipeo: "FX445T2691" en vez de "FX44502691"), nunca sin dejar
+ * rastro: se guarda que habia antes, que quedo, el motivo y quien lo hizo.
  *
- * Si el packing list ya estaba cerrado, se recalcula su resultado: si el
- * precinto era la unica novedad, pasa a conforme.
+ * Solo mientras el packing list esta abierto: cerrado, no se modifica nada.
  */
 
 const MOTIVO_MIN = 5;
@@ -58,6 +55,13 @@ export async function POST(
     const datos = await cargarRecepcion(id);
     if (!datos || fueraDeAlcance(sesion!, datos.recepcion)) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+    // Cerrado = no se modifica nada, tampoco los precintos.
+    if (datos.recepcion.etapa === "cerrado") {
+      return NextResponse.json(
+        { error: "El packing list esta cerrado: ya no se puede modificar" },
+        { status: 409 },
+      );
     }
     const contenedor = datos.contenedores.find((c) => Number(c.id) === contenedorId);
     if (!contenedor) return NextResponse.json({ error: "Contenedor invalido" }, { status: 404 });
@@ -104,7 +108,8 @@ export async function POST(
           SET precinto_recibido = ?, precintos_recibidos = ?, precinto_coincide = ?,
               precintos_correcciones = ?
         WHERE id = ? AND recepcion_id = ?
-          AND COALESCE(precintos_recibidos, '') = COALESCE(?, '')`,
+          AND COALESCE(precintos_recibidos, '') = COALESCE(?, '')
+          AND (SELECT etapa FROM recepcion_packing WHERE id = ?) <> 'cerrado'`,
       [
         nuevos[0],
         JSON.stringify(nuevos),
@@ -113,49 +118,17 @@ export async function POST(
         contenedorId,
         id,
         guardado,
+        id,
       ],
     );
     if (Number((res.rows as any)?.affectedRows || 0) !== 1) {
       return NextResponse.json(
-        { error: "Los precintos cambiaron mientras tanto. Se actualizo la pantalla." },
+        { error: "Los precintos o el packing list cambiaron mientras tanto. Se actualizo la pantalla." },
         { status: 409 },
       );
     }
 
-    // Packing list ya cerrado: el resultado se recalcula con el precinto nuevo.
     const rec = datos.recepcion;
-    if (rec.etapa === "cerrado") {
-      const contenedores = datos.contenedores.map((c) =>
-        Number(c.id) === contenedorId ? { ...c, precinto_coincide: coincide } : c,
-      );
-      const precintoDistinto = contenedores.some((c) => Number(c.precinto_coincide) === 0);
-      const fotosGolpe = new Set(
-        datos.archivos
-          .filter((a) => a.tipo === "foto_golpe" && a.item_id)
-          .map((a) => Number(a.item_id)),
-      );
-      const ev = evaluarConteo(
-        datos.items.map((i) => ({
-          id: Number(i.id),
-          cantidad_esperada: Number(i.cantidad_esperada),
-          cantidad_recibida: i.cantidad_recibida === null ? null : Number(i.cantidad_recibida),
-          motivo_diferencia: i.motivo_diferencia,
-          golpeado: Number(i.golpeado) === 1,
-        })),
-        fotosGolpe,
-      );
-      const novedades = ev.faltantes > 0 || ev.sobrantes > 0 || ev.golpeados > 0 || precintoDistinto;
-      await query(
-        `UPDATE recepcion_packing SET resultado = ?, precinto_coincide = ?
-          WHERE id = ? AND etapa = 'cerrado'`,
-        [
-          novedades ? "con_novedades" : "conforme",
-          precintoDistinto ? 0 : contenedores.some((c) => c.precinto_coincide !== null) ? 1 : null,
-          id,
-        ],
-      );
-    }
-
     console.warn(
       `[recepcion ${id}] precintos de ${contenedor.numero} corregidos por ${sesion!.nombre}: ` +
         `[${antes.join(", ")}] -> [${nuevos.join(", ")}]. Motivo: ${motivo}`,

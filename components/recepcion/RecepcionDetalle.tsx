@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  Timer,
   Container,
   FileSpreadsheet,
   FileText,
@@ -27,6 +28,9 @@ import {
   compararPrecintos,
   MAX_PRECINTOS,
   TIPOS_DANO,
+  duracion,
+  formatearDuracion,
+  inicioRecepcion,
   separarPrecintos,
   type Contenedor,
   type Etapa,
@@ -131,7 +135,16 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Correccion de precintos ya anotados (ej. un error de tipeo): contenedor
   // que se esta corrigiendo, los precintos correctos y el motivo.
   const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
+  // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
+  const [ahora, setAhora] = useState(() => new Date());
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
+
+  const abierto = rec !== null && rec.etapa !== "cerrado";
+  useEffect(() => {
+    if (!abierto) return;
+    const t = setInterval(() => setAhora(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, [abierto]);
 
   const aplicar = useCallback((j: any, conConteo: boolean) => {
     setRec(j.recepcion);
@@ -443,6 +456,26 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           {t("llego")} {hora(c.llegada_at)} · {c.llegada_por}
                         </span>
                       )}
+                      {(() => {
+                        // Desde su foto de llegada hasta que se termina el contenedor.
+                        const ms = duracion(
+                          inicioRecepcion(archivos, c.id),
+                          c.etapa === "cerrado" ? c.cerrado_at : null,
+                          ahora,
+                        );
+                        if (ms === null) return null;
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 tabular-nums"
+                            title={t("tiempo_contenedor_ayuda")}
+                          >
+                            <Timer className="w-3 h-3" />
+                            {c.etapa === "cerrado"
+                              ? formatearDuracion(ms)
+                              : t("tiempo_lleva", { tiempo: formatearDuracion(ms) })}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Precintos (puede haber varios). Los esperados no se le
@@ -489,8 +522,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             </p>
                           ))}
 
-                          {/* Corregir lo anotado (ej. un error de tipeo), aun con el packing list cerrado. */}
-                          {esAlmacen && corrigiendo !== c.id && (
+                          {/* Corregir lo anotado (ej. un error de tipeo). Cerrado, ya no se modifica. */}
+                          {esAlmacen && rec.etapa !== "cerrado" && corrigiendo !== c.id && (
                             <button
                               type="button"
                               onClick={() => {
@@ -502,7 +535,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               {t("corregir_precintos")}
                             </button>
                           )}
-                          {esAlmacen && corrigiendo === c.id && (
+                          {esAlmacen && rec.etapa !== "cerrado" && corrigiendo === c.id && (
                             <div className="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3">
                               <input
                                 value={correccion.precintos}
@@ -951,6 +984,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
           {/* Recorrido: carga, cada contenedor, cierre */}
           <Card className="md:sticky md:top-24">
             <SectionTitle>{t("recorrido")}</SectionTitle>
+            {(() => {
+              // Desde la primera foto de llegada hasta el cierre del packing list.
+              const ms = duracion(
+                inicioRecepcion(archivos),
+                rec.etapa === "cerrado" ? rec.cerrado_at : null,
+                ahora,
+              );
+              if (ms === null) return null;
+              return (
+                <div
+                  className="mb-4 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2"
+                  title={t("tiempo_ayuda")}
+                >
+                  <Timer className="w-4 h-4 text-slate-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-slate-500">
+                      {rec.etapa === "cerrado" ? t("tiempo_total") : t("tiempo_en_curso")}
+                    </p>
+                    <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatearDuracion(ms)}</p>
+                  </div>
+                </div>
+              );
+            })()}
             <ol className="space-y-3">
               <Paso hecho titulo={t("cargado")} detalle={[rec.creado_por, hora(rec.created_at)].filter(Boolean).join(" · ")} />
               {contenedores.map((c) => (
