@@ -200,11 +200,27 @@ export function mostrarPrecinto(v: string | null | undefined): string {
 }
 
 /**
+ * Un texto con varios precintos se parte en varios: por coma, punto y coma,
+ * salto de linea o espacio. El campo SEAL NUMBER del packing list suele
+ * traerlos separados por un espacio ("FX44502691 003561" son dos precintos,
+ * no uno), y guardarlo entero no coincidia nunca con lo que anota Almacen.
+ */
+export function separarPrecintos(v: unknown): string[] {
+  return String(v ?? "")
+    .split(/[\s,;]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+/**
  * Limpia una lista de precintos: sin vacios, sin repetidos (comparando
  * normalizado: "SL-100" y "sl 100" son el mismo) y como mucho MAX_PRECINTOS.
+ * Cada elemento puede traer varios precintos juntos (ver separarPrecintos).
  */
 export function limpiarPrecintos(lista: unknown): string[] {
-  const crudos = Array.isArray(lista) ? lista : typeof lista === "string" ? [lista] : [];
+  const crudos = (Array.isArray(lista) ? lista : typeof lista === "string" ? [lista] : []).flatMap(
+    separarPrecintos,
+  );
   const vistos = new Set<string>();
   const out: string[] = [];
   for (const v of crudos) {
