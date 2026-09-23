@@ -84,6 +84,42 @@ export const RESPONSABLE: Record<Etapa, RolRecepcion | null> = {
   cerrado: null,
 };
 
+/**
+ * En que estado llego la caja. Una misma caja puede estar en mas de uno
+ * (humeda y abierta, por ejemplo), por eso se guarda una lista y no un solo
+ * valor. La columna vieja `golpeado` (0/1) queda como "tiene algo".
+ */
+export const TIPOS_DANO = ["danada", "humeda", "abierta"] as const;
+export type TipoDano = (typeof TIPOS_DANO)[number];
+
+export function limpiarTiposDano(v: unknown): TipoDano[] {
+  const crudos = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+  const out: TipoDano[] = [];
+  for (const x of crudos) {
+    const s = String(x ?? "").trim().toLowerCase() as TipoDano;
+    if (TIPOS_DANO.includes(s) && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Lee los tipos guardados. Un renglon marcado antes de que existieran los
+ * tipos (solo `golpeado = 1`) se lee como una caja danada, que es lo que
+ * significaba.
+ */
+export function leerTiposDano(json: unknown, golpeado?: unknown): TipoDano[] {
+  if (typeof json === "string" && json) {
+    try {
+      const v = JSON.parse(json);
+      const tipos = limpiarTiposDano(v);
+      if (tipos.length) return tipos;
+    } catch {
+      // Texto roto: se cae al 0/1 de antes.
+    }
+  }
+  return Number(golpeado) === 1 ? ["danada"] : [];
+}
+
 export type ItemConteo = {
   id: number;
   cantidad_esperada: number;

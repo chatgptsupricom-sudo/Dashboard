@@ -4,6 +4,7 @@ import {
   compararPrecintos,
   evaluarConteo,
   limpiarPrecintos,
+  limpiarTiposDano,
 } from "@/lib/recepcion/flujo";
 import {
   cargarRecepcion,
@@ -191,19 +192,26 @@ export async function POST(
               { status: 400 },
             );
           }
-          const golpeado = c?.golpeado === true;
+          // En que estado llego la caja: danada, humeda y/o abierta. Se
+          // acepta tambien el `golpeado` suelto de antes (= danada).
+          const tipos = limpiarTiposDano(
+            Array.isArray(c?.golpeado_tipos) ? c.golpeado_tipos : c?.golpeado === true ? ["danada"] : [],
+          );
+          const golpeado = tipos.length > 0;
           const motivo = texto(c?.motivo_diferencia, MAX.motivo);
           const nota = golpeado ? texto(c?.golpeado_nota, MAX.nota) : null;
           await query(
             `UPDATE recepcion_packing_items
-                SET cantidad_recibida = ?, motivo_diferencia = ?, golpeado = ?, golpeado_nota = ?
+                SET cantidad_recibida = ?, motivo_diferencia = ?, golpeado = ?,
+                    golpeado_tipos = ?, golpeado_nota = ?
               WHERE id = ? AND recepcion_id = ?`,
-            [cantidad, motivo, golpeado ? 1 : 0, nota, item.id, id],
+            [cantidad, motivo, golpeado ? 1 : 0, golpeado ? JSON.stringify(tipos) : null, nota, item.id, id],
           );
           Object.assign(item, {
             cantidad_recibida: cantidad,
             motivo_diferencia: motivo,
             golpeado: golpeado ? 1 : 0,
+            golpeado_tipos: tipos,
             golpeado_nota: nota,
           });
         }
@@ -234,7 +242,7 @@ export async function POST(
         }
         if (ev.sinContar) faltan.push(`${ev.sinContar} renglon(es) sin contar`);
         if (ev.sinMotivo) faltan.push(`el motivo en ${ev.sinMotivo} renglon(es) con diferencia`);
-        if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) golpeada(s)`);
+        if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) en mal estado`);
         if (faltan.length) {
           return NextResponse.json(
             { error: `No se puede cerrar: falta ${faltan.join(", ")}`, evaluacion: ev },
