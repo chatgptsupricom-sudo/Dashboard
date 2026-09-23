@@ -60,7 +60,7 @@ export default function VendedoresLayout({
         onToggle={() => setSidebarOpen(!sidebarOpen)}
       />
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ${
+        className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ${
           sidebarOpen ? "md:pl-72" : "pl-0"
         }`}
       >

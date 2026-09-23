@@ -87,7 +87,9 @@ export async function GET(request: NextRequest) {
       // si fuera deuda adicional.
       const residual = r.amount_residual || 0;
       b.totalReceivable += residual;
-      if ((r.days_overdue || 0) > 0) b.totalOverdue += residual;
+      // Solo saldos a favor: un pago sin aplicar (residual negativo) también
+      // trae días de atraso y restaba del vencido.
+      if ((r.days_overdue || 0) > 0 && residual > 0) b.totalOverdue += residual;
       b.invoiceCount++;
       const pid = r.partner_id?.[0];
       if (pid) b.clientIds.add(pid);

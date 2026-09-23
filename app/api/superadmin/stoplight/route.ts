@@ -4,8 +4,12 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { computeComprasKpis } from "@/lib/compras/kpis";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila, pesoParaGuardar } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -25,7 +29,7 @@ async function ensureTables() {
     kpi_key VARCHAR(100) NOT NULL,
     company_id INT NOT NULL,
     meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
-    peso DECIMAL(5,2) NOT NULL DEFAULT 0,
+    peso DECIMAL(5,2) NULL DEFAULT NULL,
     mes VARCHAR(7) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -70,7 +74,10 @@ export async function GET(request: NextRequest) {
     const mesParam = url.searchParams.get("mes");
     const startDateParam = url.searchParams.get("startDate");
     const endDateParam = url.searchParams.get("endDate");
-    const companyId = (isCxC || isGerenteOps) ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
+    // Gerencia de Ventas tampoco elige sede: su página ya manda su propio
+    // `cids`, pero sin esto podía leer otra sede cambiando `company_id`.
+    const empresaFija = isCxC || isGerenteOps || userRole === "gerencia de ventas";
+    const companyId = empresaFija ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -323,15 +330,16 @@ export async function GET(request: NextRequest) {
     // Load metas first (needed for weekly calculations)
     const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
     const pesosMap: Record<string, number> = {};
     (metasResult.rows as any[]).forEach((r) => {
       metasMap[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
     });
 
     const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
@@ -408,116 +416,17 @@ export async function GET(request: NextRequest) {
     const metaCantidad = metasMap["cobertura_marcas"] || 0;
 
     // --- Margen Bruto (gross margin per week) ---
-    let margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
-    let totalRevenueMes = 0;
-    let totalCostoMes = 0;
+    // Mismo cálculo que el modal (`margen-detail`), vía lib/stoplight/margen.
+    const margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
+    // Las mismas líneas alimentan Cobertura de marcas (más abajo).
+    let lineasVentas: LineaMargen[] = [];
     try {
-      const allInvoicesForMargin = await callOdooRPC<any[]>(
-        "account.move",
-        "search_read",
-        [
-          [
-            ["move_type", "in", ["out_invoice", "out_refund"]],
-            ["state", "=", "posted"],
-            ["company_id", "=", companyId],
-            ["invoice_date", ">=", fechaInicio],
-            ["invoice_date", "<=", fechaFin],
-            ["invoice_user_id", "!=", false],
-          ],
-        ],
-        {
-          fields: ["id", "invoice_user_id", "invoice_date", "move_type"],
-          limit: 10000,
-        }
-      );
-
-      const marginInvoiceIds = (allInvoicesForMargin || []).map((inv: any) => inv.id);
-      const marginInvoiceMap: Record<number, any> = {};
-      (allInvoicesForMargin || []).forEach((inv: any) => {
-        marginInvoiceMap[inv.id] = inv;
-      });
-
-      if (marginInvoiceIds.length > 0) {
-        const marginLines = (await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [
-            [
-              ["move_id", "in", marginInvoiceIds],
-              ["display_type", "=", "product"],
-              ["product_id", "!=", false],
-            ],
-          ],
-          {
-            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-            limit: 50000,
-          }
-        )) || [];
-
-        const marginProductIds = [...new Set(marginLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
-        const marginProductCostMap: Record<number, number> = {};
-
-        if (marginProductIds.length > 0) {
-          const variants = (await callOdooRPC<any[]>(
-            "product.product",
-            "search_read",
-            [[["id", "in", marginProductIds], ["active", "=", true]]],
-            { fields: ["id", "product_tmpl_id"], limit: 0 }
-          )) || [];
-
-          const variantToTmpl: Record<number, number> = {};
-          variants.forEach((v: any) => {
-            if (v.id && v.product_tmpl_id?.[0]) variantToTmpl[v.id] = v.product_tmpl_id[0];
-          });
-
-          const tmplIds = [...new Set(variants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
-          if (tmplIds.length > 0) {
-            const templates = (await callOdooRPC<any[]>(
-              "product.template",
-              "search_read",
-              [[["id", "in", tmplIds]]],
-              { fields: ["id", "standard_price"], limit: 0 }
-            )) || [];
-
-            const tmplCostMap: Record<number, number> = {};
-            templates.forEach((t: any) => {
-              tmplCostMap[t.id] = Number(t.standard_price) || 0;
-            });
-
-            marginProductIds.forEach((pid: number) => {
-              const tid = variantToTmpl[pid];
-              marginProductCostMap[pid] = tid ? (tmplCostMap[tid] || 0) : 0;
-            });
-          }
-        }
-
-        marginLines.forEach((line: any) => {
-          const moveId = line.move_id?.[0];
-          const inv = marginInvoiceMap[moveId];
-          if (!inv) return;
-
-          const productId = line.product_id?.[0];
-          const qty = Number(line.quantity) || 0;
-          const revenue = Number(line.price_subtotal) || 0;
-          const unitCost = productId ? (marginProductCostMap[productId] || 0) : 0;
-          const costo = qty * unitCost;
-
-          const isRefund = inv.move_type === "out_refund";
-          const revenueFinal = isRefund ? -revenue : revenue;
-          const costoFinal = isRefund ? -costo : costo;
-
-          totalRevenueMes += revenueFinal;
-          totalCostoMes += costoFinal;
-
-          const invDate = new Date(inv.invoice_date);
-          for (let i = 0; i < semanas.length; i++) {
-            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-              margenPorSemana[i].revenue += revenueFinal;
-              margenPorSemana[i].costo += costoFinal;
-              break;
-            }
-          }
-        });
+      lineasVentas = await obtenerLineasMargen(companyId, fechaInicio, fechaFin);
+      for (const linea of lineasVentas) {
+        const i = semanas.findIndex((s) => linea.fecha >= s.inicio && linea.fecha <= s.fin);
+        if (i === -1) continue;
+        margenPorSemana[i].revenue += linea.ingreso;
+        margenPorSemana[i].costo += linea.costo;
       }
     } catch (e: any) {
       console.error("Error calculating margin:", e.message);
@@ -541,45 +450,17 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    // --- Efectividad de cierre (sale order effectiveness per week) ---
-    let efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
-    let totalOrdenesMes = 0;
-    let totalFacturadasMes = 0;
+    // --- Efectividad de cierre de cotizaciones (por semana) ---
+    // Confirmadas ÷ emitidas, por semana de emisión (lib/stoplight/cotizaciones).
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
     try {
-      const saleOrders = await callOdooRPC<any[]>(
-        "sale.order",
-        "search_read",
-        [
-          [
-            ["state", "in", ["sale", "done"]],
-            ["company_id", "=", companyId],
-            ["date_order", ">=", fechaInicio],
-            ["date_order", "<=", fechaFin + " 23:59:59"],
-            ["user_id", "!=", false],
-          ],
-        ],
-        {
-          fields: ["id", "user_id", "state", "date_order", "amount_total", "invoice_status", "invoice_ids"],
-          limit: 10000,
-        }
-      );
-
-      (saleOrders || []).forEach((order: any) => {
-        const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-        const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-
-        totalOrdenesMes++;
-        if (isInvoiced) totalFacturadasMes++;
-
-        const orderDate = new Date(order.date_order);
-        for (let i = 0; i < semanas.length; i++) {
-          if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-            efectividadPorSemana[i].total++;
-            if (isInvoiced) efectividadPorSemana[i].facturacion++;
-            break;
-          }
-        }
-      });
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((s) => c.fecha >= s.inicio && c.fecha <= s.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
     } catch (e: any) {
       console.error("Error calculating efectividad:", e.message);
     }
@@ -603,7 +484,9 @@ export async function GET(request: NextRequest) {
     });
 
     // --- Activacion de cartera (client activation per week) ---
-    let semanaActivacionData: { total: number; activos: number }[] = semanas.map(() => ({ total: 0, activos: 0 }));
+    // `clientes`: clientes distintos que compraron en esa semana (antes se
+    // contaban facturas: un cliente con 3 facturas sumaba 3).
+    let semanaActivacionData: { total: number; activos: number; clientes: Set<number> }[] = semanas.map(() => ({ total: 0, activos: 0, clientes: new Set<number>() }));
     let totalClientsActivacion = 0;
     let totalActiveClients = 0;
     const sellerAllClients: Record<string, Set<number>> = {};
@@ -643,7 +526,7 @@ export async function GET(request: NextRequest) {
         const norm = normalize(sellerName);
         const matchedName = normalizedSellerMap[norm];
         if (matchedName) {
-          invActivacionMap[inv.id] = { sellerName: matchedName, partnerId, date: new Date(inv.invoice_date) };
+          invActivacionMap[inv.id] = { sellerName: matchedName, partnerId, date: fechaLocal(inv.invoice_date) };
         }
       });
 
@@ -674,7 +557,7 @@ export async function GET(request: NextRequest) {
 
             for (let i = 0; i < semanas.length; i++) {
               if (info.date >= semanas[i].inicio && info.date <= semanas[i].fin) {
-                semanaActivacionData[i].activos++;
+                semanaActivacionData[i].clientes.add(info.partnerId);
                 break;
               }
             }
@@ -689,7 +572,14 @@ export async function GET(request: NextRequest) {
         totalActiveClients += activos;
       });
 
-      semanaActivacionData.forEach(sem => { sem.total = totalClientsActivacion; });
+      // La meta es un % mensual de la cartera, así que cada semana muestra el
+      // acumulado del mes hasta ahí: clientes distintos activos desde el día 1.
+      const acumulados = new Set<number>();
+      semanaActivacionData.forEach(sem => {
+        sem.clientes.forEach((c) => acumulados.add(c));
+        sem.activos = acumulados.size;
+        sem.total = totalClientsActivacion;
+      });
     } catch (e: any) {
       console.error("Error calculating activacion:", e.message);
     }
@@ -762,138 +652,53 @@ export async function GET(request: NextRequest) {
       }
       const sem = semanaActivacionData[i];
       if (sem.total <= 0) return null;
-      if (metaActivacion > 0) {
-        const pct = Math.round((sem.activos / metaActivacion) * 100);
-        return `${pct}%`;
-      }
-      const pct = Math.round((sem.activos / sem.total) * 100);
-      return `${pct}%`;
+      // La meta es un % (se muestra con "%"): se compara la tasa de activación
+      // (activos ÷ cartera) contra ella. Antes se dividía la CANTIDAD de
+      // activos por la meta como si fuera un número de clientes.
+      const tasa = (sem.activos / sem.total) * 100;
+      if (metaActivacion > 0) return `${Math.round((tasa / metaActivacion) * 100)}%`;
+      return `${Math.round(tasa)}%`;
     });
 
-    // --- Cobertura de marcas (brand coverage per week) ---
-    // Counts distinct brands (spiff_brand_id) sold each week vs. the goal (# target brands)
-    const semanaCoberturaDataBrands: Set<number>[] = semanas.map(() => new Set());
-    let totalRevenueBrandsMes = 0;
-    let totalCostoBrandsMes = 0;
+
+    // --- Cobertura de marcas ---
+    // Con metas por marca en el mes (lib/stoplight/metasMarca): promedio
+    // ponderado de venta real ÷ meta por marca, con tope de 100% por marca.
+    // Sin metas por marca: fórmula anterior, cantidad de marcas distintas
+    // vendidas por semana contra la meta de la columna META.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    let semanaCobertura: (string | null)[];
     try {
-      const allInvoiceIds = (invoices || []).map((inv: any) => inv.id);
-      if (allInvoiceIds.length > 0) {
-        const brandLines = (await callOdooRPC<any[]>(
-          "account.move.line",
-          "search_read",
-          [
-            [
-              ["move_id", "in", allInvoiceIds],
-              ["display_type", "=", "product"],
-              ["product_id", "!=", false],
-            ],
-          ],
-          {
-            fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-            limit: 50000,
-          }
-        )) || [];
-
-        const brandProductIds = [...new Set(brandLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
-        const brandProductCostMap: Record<number, number> = {};
-        const productBrandMap: Record<number, number> = {};
-
-        if (brandProductIds.length > 0) {
-          const brandVariants = (await callOdooRPC<any[]>(
-            "product.product",
-            "search_read",
-            [[["id", "in", brandProductIds], ["active", "=", true]]],
-            { fields: ["id", "product_tmpl_id"], limit: 0 }
-          )) || [];
-
-          const brandVariantToTmpl: Record<number, number> = {};
-          brandVariants.forEach((v: any) => {
-            if (v.id && v.product_tmpl_id?.[0]) brandVariantToTmpl[v.id] = v.product_tmpl_id[0];
-          });
-
-          const brandTmplIds = [...new Set(brandVariants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
-          if (brandTmplIds.length > 0) {
-            const brandTemplates = (await callOdooRPC<any[]>(
-              "product.template",
-              "search_read",
-              [[["id", "in", brandTmplIds]]],
-              { fields: ["id", "standard_price", "spiff_brand_id"], limit: 0 }
-            )) || [];
-
-            const brandTmplCostMap: Record<number, number> = {};
-            const tmplBrandMap: Record<number, number> = {};
-            brandTemplates.forEach((t: any) => {
-              brandTmplCostMap[t.id] = Number(t.standard_price) || 0;
-              const brandId = t.spiff_brand_id?.[0];
-              if (brandId) tmplBrandMap[t.id] = brandId;
-            });
-
-            brandProductIds.forEach((pid: number) => {
-              const tid = brandVariantToTmpl[pid];
-              brandProductCostMap[pid] = tid ? (brandTmplCostMap[tid] || 0) : 0;
-              if (tid && tmplBrandMap[tid]) productBrandMap[pid] = tmplBrandMap[tid];
-            });
-          }
-        }
-
-        const invDateMap: Record<number, Date> = {};
-        const invoiceMap: Record<number, any> = {};
-        (invoices || []).forEach((inv: any) => {
-          invDateMap[inv.id] = new Date(inv.invoice_date);
-          invoiceMap[inv.id] = inv;
-        });
-
-        (brandLines || []).forEach((line: any) => {
-          const moveId = line.move_id?.[0];
-          const invDate = invDateMap[moveId];
-          if (!invDate) return;
-
-          const productId = line.product_id?.[0];
-          const qty = Math.abs(Number(line.quantity) || 0);
-          const revenue = Math.abs(Number(line.price_subtotal) || 0);
-          const unitCost = productId ? (brandProductCostMap[productId] || 0) : 0;
-          const costo = qty * unitCost;
-
-          const inv = invoiceMap[moveId];
-          const isRefund = inv?.move_type === "out_refund";
-          const revenueFinal = isRefund ? -revenue : revenue;
-          const costoFinal = isRefund ? -costo : costo;
-
-          totalRevenueBrandsMes += revenueFinal;
-          totalCostoBrandsMes += costoFinal;
-
-          const brandId = productId ? productBrandMap[productId] : undefined;
-          if (brandId) {
-            for (let i = 0; i < semanas.length; i++) {
-              if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-                semanaCoberturaDataBrands[i].add(brandId);
-                break;
-              }
-            }
-          }
-        });
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineasVentas, semanas, anio, mesNum, 1, now);
       }
     } catch (e: any) {
-      console.error("Error calculating cobertura:", e.message);
+      console.error("Error leyendo metas por marca:", e.message);
     }
-
-    const semanaCobertura = semanas.map((semana, i) => {
-      const esFuturo = semana.inicio > now;
-      if (esFuturo) return null;
-      const saved = savedMap["cobertura_marcas"]?.[i];
-      if (saved) {
-        const goal = metasMap["cobertura_marcas"] || 0;
-        if (goal <= 0) return `${Math.round(saved.valor)}%`;
-        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
-        return `${pct}%`;
+    if (coberturaMarcas) {
+      semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+    } else {
+      const marcasPorSemana: Set<number>[] = semanas.map(() => new Set());
+      for (const l of lineasVentas) {
+        if (l.marcaId == null || l.ingreso <= 0) continue;
+        const i = semanas.findIndex((w) => l.fecha >= w.inicio && l.fecha <= w.fin);
+        if (i !== -1) marcasPorSemana[i].add(l.marcaId);
       }
-      const brandCount = semanaCoberturaDataBrands[i].size;
-      if (metaCantidad > 0) {
-        const pct = Math.round((brandCount / metaCantidad) * 100);
-        return `${pct}%`;
-      }
-      return brandCount > 0 ? String(brandCount) : null;
-    });
+      semanaCobertura = semanas.map((semana, i) => {
+        if (semana.inicio > now) return null;
+        const saved = savedMap["cobertura_marcas"]?.[i];
+        if (saved) {
+          const goal = metasMap["cobertura_marcas"] || 0;
+          if (goal <= 0) return `${Math.round(saved.valor)}%`;
+          const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+          return `${pct}%`;
+        }
+        const brandCount = marcasPorSemana[i].size;
+        if (metaCantidad > 0) return `${Math.round((brandCount / metaCantidad) * 100)}%`;
+        return brandCount > 0 ? String(brandCount) : null;
+      });
+    }
 
     // --- Visitas semanales (from weekly_visits table) ---
     let visitasPorSemana: number[] = semanas.map(() => 0);
@@ -930,6 +735,19 @@ export async function GET(request: NextRequest) {
       }
       return total > 0 ? String(total) : null;
     });
+
+    // Cobertura territorial (planificación de visitas, lib/visitas/planificacion):
+    // si el mes tiene planes, la fila de visitas pasa a medir foráneas
+    // realizadas ÷ planificadas.
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
+    try {
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, undefined, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial:", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
 
     // 10.5. KPIs del Departamento de Compras (semanal)
     const comprasRaw = await computeComprasKpis(companyId, semanas);
@@ -972,6 +790,15 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
+    // Valor del mes: activación del período completo. Como las semanas son
+    // acumuladas, promediarlas subestimaría el mes. Si hay semanas cargadas a
+    // mano se mantiene el promedio de semanas.
+    const hayActivacionManual = Object.keys(savedMap["activacion_cartera"] || {}).length > 0;
+    const tasaActivacionMes = totalClientsActivacion > 0 ? (totalActiveClients / totalClientsActivacion) * 100 : null;
+    const avgActivacionMes = hayActivacionManual || tasaActivacionMes == null
+      ? avgFromWeeks(semanaActivacion)
+      : Math.round(metaActivacion > 0 ? (tasaActivacionMes / metaActivacion) * 100 : tasaActivacionMes);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -996,11 +823,18 @@ export async function GET(request: NextRequest) {
         semanaCobertura,
         avgCumplimiento: avgFromWeeks(semanaCuota),
         avgMargen: avgFromWeeks(semanaMargen),
-        avgVisitas: avgFromWeeks(semanaVisitas),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
         avgEfectividad: avgFromWeeks(semanaEfectividad),
-        avgActivacion: avgFromWeeks(semanaActivacion),
+        avgActivacion: avgActivacionMes,
         avgClientes: avgFromWeeks(semanaClientes),
-        avgCobertura: avgFromWeeks(semanaCobertura),
+        // Con metas por marca: el mes contra la meta prorrateada a hoy.
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        // Resumen de las metas por marca (null = el mes no tiene): el front
+        // cambia la fila de Cobertura y su META pasa a editarse por marca.
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
         avgCicloReposicion,
         semanaVarCosto,
         semanaRotacion,
@@ -1076,9 +910,19 @@ export async function POST(request: NextRequest) {
         `INSERT INTO kpi_targets (kpi_key, company_id, peso, mes)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE peso = VALUES(peso)`,
-        [kpi_key, company_id, Math.max(0, Number(peso) || 0), mes]
+        // Vacío = volver al peso por defecto; 0 = el KPI no cuenta.
+        [kpi_key, company_id, pesoParaGuardar(peso), mes]
       );
-      return NextResponse.json({ success: true });
+      // Se relee lo que quedó guardado: si la tabla no tiene la clave única o
+      // el ALTER de `peso` no se pudo hacer, el guardado "funciona" pero la
+      // pantalla sigue mostrando el valor viejo. Devolverlo deja que el
+      // front avise en vez de revertir en silencio.
+      const guardadoRes = await query(
+        "SELECT peso FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ? ORDER BY id DESC LIMIT 1",
+        [kpi_key, company_id, mes],
+      );
+      const guardado = (guardadoRes.rows as any[])[0]?.peso;
+      return NextResponse.json({ success: true, peso: guardado === null || guardado === undefined ? null : Number(guardado) });
     }
 
     if (type === "save_weekly") {

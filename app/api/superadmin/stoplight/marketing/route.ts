@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
     };
     await ensureKpiTargetsPeso();
     const metasRows = await query(
-      `SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = 9 AND mes = ? AND kpi_key IN (${MARKETING_META_KEYS.map(() => "?").join(",")})`,
+      `SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = 9 AND mes = ? AND kpi_key IN (${MARKETING_META_KEYS.map(() => "?").join(",")}) ORDER BY id`,
       [mes, ...MARKETING_META_KEYS],
     );
     const marketingMetas: Record<string, number> = { ...MARKETING_META_DEFAULT };
@@ -220,8 +220,9 @@ export async function GET(request: NextRequest) {
     (metasRows.rows as any[]).forEach((r: any) => {
       const n = Number(r.meta_mensual);
       if (Number.isFinite(n) && n > 0) marketingMetas[r.kpi_key] = n;
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) marketingPesos[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) marketingPesos[r.kpi_key] = p;
     });
     const rangeEnd = new Date(endDate);
 

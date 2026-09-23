@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { X, Check, ArrowLeft } from "lucide-react";
+import { X, ArrowLeft, Percent, Search, AlertTriangle, ChevronRight } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
 
 interface MargenBrutoModalProps {
   isOpen: boolean;
@@ -12,28 +13,57 @@ interface MargenBrutoModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
-  /** Gerencia de Ventas ve el margen % pero no el detalle de costo/ganancia (issue #178). */
+  /** Gerencia de Ventas ve el margen % pero no el detalle de costo/ganancia
+   *  (issue #178). La API ya no manda esos montos a ese rol; esto solo decide
+   *  las columnas. */
   ocultarCostoGanancia?: boolean;
 }
 
-// Modal "Margen bruto": tabs por vendedor / por producto / detalle semanal,
-// con drill-down a un vendedor en la semanal. Autocontenido. Extraído de
-// StoplightReport.tsx (audit #23).
+type Tab = "vendedor" | "producto" | "semanal";
+
+interface Montos { revenue: number; costo?: number; ganancia?: number; margen: number | null }
+interface Semana extends Montos { numero: number; inicio: string; fin: string; futura: boolean }
+interface Vendedor extends Montos { nombre: string | null; esOtros: boolean; semanas: Semana[] }
+interface Producto extends Montos { productId: number; nombre: string; cantidadVendida: number }
+interface Detalle {
+  mes: string;
+  meta: number;
+  costoOculto: boolean;
+  totales: Montos & { productos: number };
+  sellers: Vendedor[];
+  products: Producto[];
+}
+
+// Semáforo del margen contra la meta (mismos cortes que la grilla). Sin meta
+// configurada el margen se muestra neutro.
+const NIVEL_TEXTO: Record<Nivel, string> = {
+  verde: "text-emerald-700",
+  amarillo: "text-amber-700",
+  rojo: "text-red-700",
+  sin: "text-slate-800",
+};
+
+// Modal "Margen bruto": resumen del mes + tabs por vendedor / por producto /
+// detalle semanal (con drill-down a un vendedor). Autocontenido.
 export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: MargenBrutoModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
   const [mes, setMes] = useState(defaultMes);
-  const [tab, setTab] = useState<"vendedor" | "producto" | "semanal">("vendedor");
-  const [selectedSeller, setSelectedSeller] = useState<any>(null);
-  const [data, setData] = useState<any>(null);
+  const [tab, setTab] = useState<Tab>("vendedor");
+  const [selectedSeller, setSelectedSeller] = useState<Vendedor | null>(null);
+  const [filtroProducto, setFiltroProducto] = useState("");
+  const [data, setData] = useState<Detalle | null>(null);
+  const [error, setError] = useState<"permisos" | "general" | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reintento, setReintento] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
       setMes(defaultMes);
       setTab("vendedor");
       setSelectedSeller(null);
+      setFiltroProducto("");
     }
   }, [isOpen, defaultMes]);
 
@@ -41,64 +71,107 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
     if (!isOpen) return;
     let cancelled = false;
     setLoading(true);
+    setError(null);
+    setData(null);
     setSelectedSeller(null);
     (async () => {
       try {
         const params = new URLSearchParams({ mes });
         if (companyId != null) params.set("company_id", String(companyId));
         const res = await fetch(`${apiPrefix}/margen-detail?${params.toString()}`);
-        const json = await res.json();
-        if (!cancelled && json.success) setData(json.data);
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (res.ok && json?.success) setData(json.data);
+        else setError(res.status === 401 || res.status === 403 ? "permisos" : "general");
       } catch (e) {
         console.error("Error fetching margen detail:", e);
+        if (!cancelled) setError("general");
       }
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [isOpen, mes, companyId, apiPrefix]);
+  }, [isOpen, mes, companyId, apiPrefix, reintento]);
+
+  const productosFiltrados = useMemo(() => {
+    const q = filtroProducto.trim().toLowerCase();
+    if (!data) return [];
+    return q ? data.products.filter((p) => p.nombre.toLowerCase().includes(q)) : data.products;
+  }, [data, filtroProducto]);
 
   if (!isOpen) return null;
 
+  // Costo/ganancia visibles solo si el rol los puede ver y la API los mandó.
+  const conCosto = !ocultarCostoGanancia && !data?.costoOculto;
+  const meta = data?.meta ?? 0;
+
+  const dinero = (n: number | undefined) =>
+    n == null ? "–" : `$${n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const pct = (n: number | null) =>
+    n == null ? "–" : `${n.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  const fechaCorta = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString(locale, { day: "numeric", month: "short" });
+  const nombreVendedor = (v: Vendedor) => (v.esOtros ? t("margen_otros") : v.nombre);
+
+  const MargenChip = ({ margen }: { margen: number | null }) => {
+    const nivel = nivelContraMeta(margen, meta);
+    return (
+      <span className={`inline-flex min-w-[64px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivel]}`}>
+        {pct(margen)}
+      </span>
+    );
+  };
+
+  const abrirSemanal = (seller: Vendedor) => {
+    setSelectedSeller(seller);
+    setTab("semanal");
+  };
+
+  const th = "px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+  const nivelTotal = nivelContraMeta(data?.totales.margen ?? null, meta);
+
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
-          <div className="flex items-center gap-3">
-            {selectedSeller && (
-              <button
-                onClick={() => setSelectedSeller(null)}
-                className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft size={16} /> {t("back")}
-              </button>
-            )}
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{t("margen_bruto_title")}</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                {t("margen_bruto_subtitle", { mes: data?.mes || mes })}
-              </p>
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="margen-bruto-title"
+      >
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5 border-b border-slate-100">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-violet-100 rounded-lg shrink-0">
+              <Percent size={20} className="text-violet-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 id="margen-bruto-title" className="text-lg font-semibold text-slate-900 tracking-tight">{t("margen_bruto_title")}</h2>
+              {data && (
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {meta > 0 ? t("margen_meta_label", { meta: pct(meta) }) : t("margen_sin_meta")}
+                </p>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <ModalMonthPicker value={mes} onChange={setMes} />
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-            >
+            <button onClick={onClose} aria-label={t("margen_cerrar")} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
               <X size={20} className="text-slate-500" />
             </button>
           </div>
         </div>
 
-        {/* Modal Tabs */}
-        <div className="flex gap-4 px-5 pt-4 border-b">
+        {/* Tabs */}
+        <div className="flex gap-5 px-4 sm:px-5 border-b border-slate-100 overflow-x-auto">
           {(["vendedor", "producto", "semanal"] as const).map((tb) => (
             <button
               key={tb}
-              onClick={() => { setTab(tb); setSelectedSeller(null); }}
-              className={`pb-3 text-sm font-medium capitalize transition-colors ${
-                tab === tb ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-500 hover:text-slate-800"
+              onClick={() => { setTab(tb); if (tb !== "semanal") setSelectedSeller(null); }}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                tab === tb ? "text-violet-700 border-violet-600" : "text-slate-500 border-transparent hover:text-slate-800"
               }`}
             >
               {tb === "vendedor" ? t("tab_por_vendedor") : tb === "producto" ? t("tab_por_producto") : t("tab_detalle_semanal")}
@@ -106,299 +179,235 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
           ))}
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-auto p-5">
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-4 sm:p-5">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-slate-400">
-              {t("loading")}
+            <div className="space-y-4 animate-pulse">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((i) => <div key={i} className="h-20 rounded-xl bg-slate-100" />)}
+              </div>
+              <div className="h-64 rounded-xl bg-slate-100" />
             </div>
-          ) : !data ? (
-            <div className="flex items-center justify-center py-20 text-slate-400">
-              {t("no_available_data")}
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <AlertTriangle size={28} className="text-amber-500" />
+              <p className="text-sm text-slate-600 max-w-sm">
+                {error === "permisos" ? t("margen_error_permisos") : t("margen_error")}
+              </p>
+              {error === "general" && (
+                <button
+                  onClick={() => setReintento((n) => n + 1)}
+                  className="px-3 h-8 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50"
+                >
+                  {t("margen_reintentar")}
+                </button>
+              )}
+            </div>
+          ) : !data || data.totales.revenue === 0 ? (
+            <div className="flex items-center justify-center py-20 text-sm text-slate-400">
+              {t("margen_sin_ventas")}
             </div>
           ) : (
             <>
-              {/* POR VENDEDOR Tab */}
-              {tab === "vendedor" && (
-                <div className="space-y-4">
-                  {/* Summary cards */}
-                  {(() => {
-                    const totalRevenue = data.sellers.reduce((sum: number, s: any) => sum + s.revenue, 0);
-                    const totalCosto = data.sellers.reduce((sum: number, s: any) => sum + s.costo, 0);
-                    const totalGanancia = totalRevenue - totalCosto;
-                    const margenPromedio = data.sellers.length > 0
-                      ? Math.round(data.sellers.reduce((sum: number, s: any) => sum + s.margenMensual, 0) / data.sellers.length)
-                      : 0;
-                    return (
-                      <div className="grid grid-cols-4 gap-4 mb-6">
-                        <div className="bg-purple-50 rounded-xl p-4">
-                          <p className="text-xs text-purple-600 font-medium">{t("revenue_total")}</p>
-                          <p className="text-2xl font-bold text-purple-700">
-                            ${totalRevenue.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-red-50 rounded-xl p-4">
-                          <p className="text-xs text-red-600 font-medium">{t("costo_total")}</p>
-                          <p className="text-2xl font-bold text-red-700">
-                            ${totalCosto.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-green-50 rounded-xl p-4">
-                          <p className="text-xs text-green-600 font-medium">{t("ganancia_total")}</p>
-                          <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
-                            ${totalGanancia.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-indigo-50 rounded-xl p-4">
-                          <p className="text-xs text-indigo-600 font-medium">{t("margen_promedio")}</p>
-                          <p className="text-2xl font-bold text-indigo-700">{margenPromedio}%</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Seller table */}
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                          {!ocultarCostoGanancia && (
-                            <>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
-                            </>
-                          )}
-                          <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.sellers.map((seller: any) => {
-                          const ganancia = seller.revenue - seller.costo;
-                          const cumple = seller.margenMensual >= 15;
-                          return (
-                            <tr
-                              key={seller.nombre}
-                              className="border-b hover:bg-purple-50/40 transition-colors cursor-pointer"
-                              onClick={() => setSelectedSeller(seller)}
-                            >
-                              <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                              <td className="p-3 text-center">${seller.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                              {!ocultarCostoGanancia && (
-                                <>
-                                  <td className="p-3 text-center text-red-600">${seller.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                  <td className={`p-3 text-center font-bold ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                    ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                                  </td>
-                                </>
-                              )}
-                              <td className="p-3 text-center">
-                                <span className={`font-bold ${seller.margenMensual >= 15 ? "text-green-600" : seller.margenMensual >= 0 ? "text-yellow-600" : "text-red-600"}`}>
-                                  {seller.margenMensual}%
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                {cumple ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                    <Check size={12} /> {t("cumple")}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                    <X size={12} /> {t("no_cumple")}
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+              {/* Resumen del mes: mismo total que la fila de la grilla */}
+              <div className={`grid gap-3 mb-5 ${conCosto ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-2 lg:grid-cols-3"}`}>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500">{t("revenue_total")}</p>
+                  <p className="text-xl font-semibold text-slate-900 tabular-nums mt-1">{dinero(data.totales.revenue)}</p>
                 </div>
-              )}
-
-              {/* POR PRODUCTO Tab */}
-              {tab === "producto" && (
-                <div className="space-y-4">
-                  {/* Summary cards */}
-                  {(() => {
-                    const totalRevenue = data.products.reduce((sum: number, p: any) => sum + p.revenue, 0);
-                    const totalCosto = data.products.reduce((sum: number, p: any) => sum + p.costo, 0);
-                    const totalGanancia = totalRevenue - totalCosto;
-                    const totalProductos = data.products.length;
-                    return (
-                      <div className="grid grid-cols-4 gap-4 mb-6">
-                        <div className="bg-purple-50 rounded-xl p-4">
-                          <p className="text-xs text-purple-600 font-medium">{t("revenue_total")}</p>
-                          <p className="text-2xl font-bold text-purple-700">
-                            ${totalRevenue.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-red-50 rounded-xl p-4">
-                          <p className="text-xs text-red-600 font-medium">{t("costo_total")}</p>
-                          <p className="text-2xl font-bold text-red-700">
-                            ${totalCosto.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-green-50 rounded-xl p-4">
-                          <p className="text-xs text-green-600 font-medium">{t("ganancia_total")}</p>
-                          <p className={`text-2xl font-bold ${totalGanancia >= 0 ? "text-green-700" : "text-red-700"}`}>
-                            ${totalGanancia.toLocaleString(locale, { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <p className="text-xs text-slate-600 font-medium">{t("total_productos")}</p>
-                          <p className="text-2xl font-bold text-slate-700">{totalProductos}</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Product table */}
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">{t("producto")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("cant_vendida")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                          {!ocultarCostoGanancia && (
-                            <>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
-                            </>
-                          )}
-                          <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.products.map((product: any) => (
-                          <tr key={product.productId} className="border-b hover:bg-purple-50/40 transition-colors">
-                            <td className="p-3 font-medium text-slate-800 max-w-[300px] truncate" title={product.nombre}>
-                              {product.nombre}
-                            </td>
-                            <td className="p-3 text-center">{product.cantidadVendida}</td>
-                            <td className="p-3 text-center">${product.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                            {!ocultarCostoGanancia && (
-                              <>
-                                <td className="p-3 text-center text-red-600">${product.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                <td className={`p-3 text-center font-bold ${product.ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                  ${product.ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                                </td>
-                              </>
-                            )}
-                            <td className="p-3 text-center">
-                              <span className={`font-bold ${product.margen >= 15 ? "text-green-600" : product.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
-                                {product.margen}%
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* DETALLE SEMANAL Tab */}
-              {tab === "semanal" && (
-                <div>
-                  {!selectedSeller ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_margen")}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        {data.sellers.map((seller: any) => (
-                          <button
-                            key={seller.nombre}
-                            onClick={() => setSelectedSeller(seller)}
-                            className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
-                          >
-                            <span className="font-medium text-slate-800">{seller.nombre}</span>
-                            <span className={`text-sm font-bold ${seller.margenMensual >= 15 ? "text-green-600" : "text-red-600"}`}>
-                              {seller.margenMensual}%
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                {conCosto && (
+                  <>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <p className="text-xs font-medium text-slate-500">{t("costo_total")}</p>
+                      <p className="text-xl font-semibold text-slate-900 tabular-nums mt-1">{dinero(data.totales.costo)}</p>
                     </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-center gap-3 mb-4">
-                        <button onClick={() => setSelectedSeller(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                          {t("back")}
-                        </button>
-                        <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
-                        <span className={`text-sm font-bold ${selectedSeller.margenMensual >= 15 ? "text-green-600" : "text-red-600"}`}>
-                          {selectedSeller.margenMensual}%
-                        </span>
-                      </div>
-                      <div className="border rounded-xl overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 border-b">
-                              <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("revenue")}</th>
-                              {!ocultarCostoGanancia && (
-                                <>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("costo")}</th>
-                                  <th className="p-3 text-center font-medium text-slate-600">{t("ganancia")}</th>
-                                </>
-                              )}
-                              <th className="p-3 text-center font-medium text-slate-600">{t("margen_pct")}</th>
-                              <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedSeller.semanas.map((sem: any) => {
-                              const ganancia = sem.revenue - sem.costo;
-                              return (
-                                <tr key={sem.numero} className={`border-b ${sem.margen != null && sem.margen >= 15 ? "bg-green-50/30" : ""}`}>
-                                <td className="p-3 font-medium">{t("semana_numero", { num: sem.numero })}</td>
-                                  <td className="p-3 text-center">${sem.revenue.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                  {!ocultarCostoGanancia && (
-                                    <>
-                                      <td className="p-3 text-center text-red-600">${sem.costo.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
-                                      <td className={`p-3 text-center font-medium ${ganancia >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                        ${ganancia.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                                      </td>
-                                    </>
-                                  )}
-                                  <td className="p-3 text-center">
-                                    {sem.margen != null ? (
-                                      <span className={`font-bold ${sem.margen >= 15 ? "text-green-600" : sem.margen >= 0 ? "text-yellow-600" : "text-red-600"}`}>
-                                        {sem.margen}%
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {sem.margen != null ? (
-                                      sem.margen >= 15 ? (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                          <Check size={12} /> {t("ok")}
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                          <X size={12} /> {t("bajo")}
-                                        </span>
-                                      )
-                                    ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <p className="text-xs font-medium text-slate-500">{t("ganancia_total")}</p>
+                      <p className={`text-xl font-semibold tabular-nums mt-1 ${(data.totales.ganancia ?? 0) < 0 ? "text-red-700" : "text-slate-900"}`}>
+                        {dinero(data.totales.ganancia)}
+                      </p>
                     </div>
+                  </>
+                )}
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500">{t("margen_del_mes")}</p>
+                  <p className={`text-xl font-semibold tabular-nums mt-1 ${NIVEL_TEXTO[nivelTotal]}`}>{pct(data.totales.margen)}</p>
+                  {meta > 0 && data.totales.margen != null && (
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {t("margen_vs_meta", { pct: Math.round((data.totales.margen / meta) * 100) })}
+                    </p>
                   )}
                 </div>
+                {!conCosto && (
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <p className="text-xs font-medium text-slate-500">{t("total_productos")}</p>
+                    <p className="text-xl font-semibold text-slate-900 tabular-nums mt-1">{data.totales.productos}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* POR VENDEDOR */}
+              {tab === "vendedor" && (
+                <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm min-w-[560px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className={`${th} text-left`}>{t("vendedor")}</th>
+                        <th className={`${th} text-right`}>{t("revenue")}</th>
+                        {conCosto && <th className={`${th} text-right`}>{t("costo")}</th>}
+                        {conCosto && <th className={`${th} text-right`}>{t("ganancia")}</th>}
+                        <th className={`${th} text-center`}>{t("margen_pct")}</th>
+                        <th className="w-8" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {data.sellers.map((seller) => (
+                        <tr
+                          key={seller.nombre ?? "otros"}
+                          className="hover:bg-violet-50/40 transition-colors cursor-pointer"
+                          onClick={() => abrirSemanal(seller)}
+                        >
+                          <td className={`px-3 py-2.5 font-medium ${seller.esOtros ? "text-slate-500 italic" : "text-slate-800"}`}>
+                            {nombreVendedor(seller)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{dinero(seller.revenue)}</td>
+                          {conCosto && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{dinero(seller.costo)}</td>}
+                          {conCosto && (
+                            <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${(seller.ganancia ?? 0) < 0 ? "text-red-700" : "text-slate-800"}`}>
+                              {dinero(seller.ganancia)}
+                            </td>
+                          )}
+                          <td className="px-3 py-2.5 text-center"><MargenChip margen={seller.margen} /></td>
+                          <td className="pr-3 text-slate-300"><ChevronRight size={16} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
+
+              {/* POR PRODUCTO */}
+              {tab === "producto" && (
+                <div className="space-y-3">
+                  <div className="relative max-w-sm">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={filtroProducto}
+                      onChange={(e) => setFiltroProducto(e.target.value)}
+                      placeholder={t("margen_buscar_producto")}
+                      className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                    />
+                  </div>
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                    <table className="w-full text-sm min-w-[600px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className={`${th} text-left`}>{t("producto")}</th>
+                          <th className={`${th} text-right`}>{t("cant_vendida")}</th>
+                          <th className={`${th} text-right`}>{t("revenue")}</th>
+                          {conCosto && <th className={`${th} text-right`}>{t("costo")}</th>}
+                          {conCosto && <th className={`${th} text-right`}>{t("ganancia")}</th>}
+                          <th className={`${th} text-center`}>{t("margen_pct")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {productosFiltrados.map((product) => (
+                          <tr key={product.productId} className="hover:bg-slate-50/60">
+                            <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[320px] truncate" title={product.nombre}>
+                              {product.nombre}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{product.cantidadVendida.toLocaleString(locale)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{dinero(product.revenue)}</td>
+                            {conCosto && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{dinero(product.costo)}</td>}
+                            {conCosto && (
+                              <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${(product.ganancia ?? 0) < 0 ? "text-red-700" : "text-slate-800"}`}>
+                                {dinero(product.ganancia)}
+                              </td>
+                            )}
+                            <td className="px-3 py-2.5 text-center"><MargenChip margen={product.margen} /></td>
+                          </tr>
+                        ))}
+                        {productosFiltrados.length === 0 && (
+                          <tr>
+                            <td colSpan={conCosto ? 6 : 4} className="px-3 py-8 text-center text-slate-400">{t("no_available_data")}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* DETALLE SEMANAL */}
+              {tab === "semanal" && (
+                !selectedSeller ? (
+                  <div>
+                    <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_margen")}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {data.sellers.map((seller) => (
+                        <button
+                          key={seller.nombre ?? "otros"}
+                          onClick={() => setSelectedSeller(seller)}
+                          className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-left"
+                        >
+                          <span className={`font-medium truncate ${seller.esOtros ? "text-slate-500 italic" : "text-slate-800"}`}>
+                            {nombreVendedor(seller)}
+                          </span>
+                          <MargenChip margen={seller.margen} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3 mb-3">
+                      <button
+                        onClick={() => setSelectedSeller(null)}
+                        className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+                      >
+                        <ArrowLeft size={15} /> {t("back")}
+                      </button>
+                      <h3 className="font-semibold text-slate-800">{nombreVendedor(selectedSeller)}</h3>
+                      <MargenChip margen={selectedSeller.margen} />
+                    </div>
+                    <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                      <table className="w-full text-sm min-w-[520px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className={`${th} text-left`}>{t("semana")}</th>
+                            <th className={`${th} text-right`}>{t("revenue")}</th>
+                            {conCosto && <th className={`${th} text-right`}>{t("costo")}</th>}
+                            {conCosto && <th className={`${th} text-right`}>{t("ganancia")}</th>}
+                            <th className={`${th} text-center`}>{t("margen_pct")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedSeller.semanas.map((sem) => (
+                            <tr key={sem.numero} className={sem.futura ? "text-slate-400" : ""}>
+                              <td className="px-3 py-2.5">
+                                <span className="font-medium">{t("semana_numero", { num: sem.numero })}</span>
+                                <span className="ml-2 text-xs text-slate-400">{fechaCorta(sem.inicio)} – {fechaCorta(sem.fin)}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">{sem.futura ? "–" : dinero(sem.revenue)}</td>
+                              {conCosto && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{sem.futura ? "–" : dinero(sem.costo)}</td>}
+                              {conCosto && (
+                                <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${(sem.ganancia ?? 0) < 0 ? "text-red-700" : ""}`}>
+                                  {sem.futura ? "–" : dinero(sem.ganancia)}
+                                </td>
+                              )}
+                              <td className="px-3 py-2.5 text-center">
+                                {sem.futura || sem.margen == null ? <span className="text-slate-400">–</span> : <MargenChip margen={sem.margen} />}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              )}
+
+              <p className="mt-4 text-[11px] leading-relaxed text-slate-400">{t("margen_nota_costo")}</p>
             </>
           )}
         </div>

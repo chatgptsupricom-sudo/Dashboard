@@ -128,6 +128,7 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/disenador") ||
     pathname.includes("/administracion") ||
     pathname.includes("/seguridad") ||
+    pathname.includes("/gestion") ||
     pathname.includes("/reportes-comerciales");
 
   if (isProtectedPath) {
@@ -242,6 +243,27 @@ export default async function middleware(request: NextRequest) {
       if (pathname.includes("/disenador")) {
         const userCids = Number(payload.cids);
         if (!isDisenador && !isSuperAdmin && !(isAdminLeads && userCids === 9)) {
+          return NextResponse.redirect(
+            new URL(`/${locale}/dashboard`, request.url),
+          );
+        }
+      }
+
+      // 5c. Lógica para Material POP (acceso: adminleads de Valencia cids=9, superAdmin)
+      if (pathname.includes("/adminleads/material-pop")) {
+        const userCids = Number(payload.cids);
+        if (!isSuperAdmin && !(isAdminLeads && userCids === 9)) {
+          return NextResponse.redirect(
+            new URL(`/${locale}/dashboard`, request.url),
+          );
+        }
+      }
+
+      // 5d. Solicitudes de Material POP del vendedor: mismo corte por sede que
+      // el módulo (Valencia, cids=9).
+      if (pathname.includes("/vendedores/material-pop")) {
+        const userCids = Number(payload.cids);
+        if (!isSuperAdmin && !(isVendedor && userCids === 9)) {
           return NextResponse.redirect(
             new URL(`/${locale}/dashboard`, request.url),
           );

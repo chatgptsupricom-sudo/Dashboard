@@ -1,4 +1,5 @@
 import { obtenerCobros } from "@/lib/cxc/cobros";
+import { callOdooRPC } from "@/lib/odoo";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
@@ -166,5 +167,146 @@ export async function calcularEfectividad(
     ajustes: r2(exigibleMes - cobradoAHoy - pendiente),
     mesCerrado,
     semana,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Efectividad de cobranza = COBRADO del mes ÷ FACTURADO del mes (2026-09-22)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Definición del usuario: la efectividad de cobranza mide lo cobrado contra lo
+// facturado. Todo el dinero que entró en el período (de cualquier factura,
+// también de meses anteriores) ÷ lo facturado en el período, ambos CON IVA:
+// dice si la cobranza acompaña el ritmo de facturación.
+//
+//  - Facturado: facturas − notas de crédito publicadas con `invoice_date` en
+//    el período (`amount_total_signed`, con IVA).
+//  - Cobrado: `obtenerCobros` (lib/cxc/cobros.ts), la fuente única de cobrado:
+//    banco/caja, fechado por la confirmación del pago. Es el mismo "Cobrado"
+//    de Contado/Crédito.
+//  - El cliente interno Supricom queda fuera de los dos lados.
+//  - Mes en curso: los dos van al día de hoy, así que el cociente ya es
+//    comparable (no hace falta prorratear).
+//  - Puede pasar de 100%: un mes en que se cobra deuda vieja por encima de lo
+//    facturado.
+//
+// `calcularEfectividad` (arriba: cobrado ÷ lo que VENCÍA en el mes) sigue
+// existiendo para "Cobros esperados vs realizados" de Salud financiera, que
+// es otro indicador.
+
+export interface EfectividadFacturadoResultado {
+  /** Cobrado ÷ facturado × 100. `null` si no hubo facturación. */
+  value: number | null;
+  cobrado: number;
+  facturado: number;
+  /** De lo cobrado: facturas emitidas en el mismo período. */
+  cobradoDeFacturasDelMes: number;
+  /** De lo cobrado: facturas de períodos anteriores (deuda vieja). */
+  cobradoDeAnteriores: number;
+  /** Cantidad de facturas (sin notas de crédito) del período. */
+  facturas: number;
+  /** true mientras el mes no cierra: ambos lados van al día de hoy. */
+  parcial: boolean;
+  semana: (string | null)[];
+}
+
+const esSupricom = (nombre: string) => nombre.toLowerCase().includes("supricom");
+
+async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string, dominioExtra: any[] = []) {
+  const out: any[] = [];
+  for (let offset = 0; ; offset += 5000) {
+    const page = (await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [[
+        ["move_type", "in", ["out_invoice", "out_refund"]],
+        ["state", "=", "posted"],
+        ["company_id", "in", companyIds],
+        ["invoice_date", ">=", desde],
+        ["invoice_date", "<=", hasta],
+        ...dominioExtra,
+      ]],
+      { fields: ["id", "name", "partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed"], order: "id asc", limit: 5000, offset },
+    )) || [];
+    out.push(...page);
+    if (page.length < 5000) break;
+  }
+  return out.filter((f) => f.partner_id && !esSupricom(f.partner_id[1] || ""));
+}
+
+export interface DetalleEfectividadFacturado {
+  resumen: EfectividadFacturadoResultado;
+  /** Por cliente: facturado y cobrado del período. */
+  clientes: { partnerId: number; nombre: string; vendedor: string; facturado: number; cobrado: number }[];
+}
+
+export async function calcularEfectividadFacturado(
+  companyIds: number[],
+  monthStart: Date,
+  monthEnd: Date,
+  semanas: Semana[],
+  hoy: Date,
+): Promise<EfectividadFacturadoResultado> {
+  return (await detalleEfectividadFacturado(companyIds, monthStart, monthEnd, semanas, hoy)).resumen;
+}
+
+export async function detalleEfectividadFacturado(
+  companyIds: number[],
+  monthStart: Date,
+  monthEnd: Date,
+  semanas: Semana[],
+  hoy: Date,
+): Promise<DetalleEfectividadFacturado> {
+  const desde = iso(monthStart);
+  const hasta = iso(monthEnd);
+  const [facturas, cobrosTodos] = await Promise.all([
+    facturasDelPeriodo(companyIds, desde, hasta),
+    obtenerCobros(companyIds, { desde, hasta }),
+  ]);
+  const cobros = cobrosTodos.filter((c) => !c.interno);
+
+  const facturado = facturas.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
+  const cobrado = cobros.reduce((s, c) => s + c.monto, 0);
+  const cobradoDeFacturasDelMes = cobros
+    .filter((c) => c.fechaFactura && c.fechaFactura >= desde && c.fechaFactura <= hasta)
+    .reduce((s, c) => s + c.monto, 0);
+
+  // Fila semanal: cobrado de la semana ÷ facturado de la semana.
+  const semana: (string | null)[] = semanas.map((s) => {
+    if (s.inicio > hoy) return null;
+    const a = iso(s.inicio), b = iso(s.fin);
+    const fac = facturas.filter((f) => f.invoice_date >= a && f.invoice_date <= b)
+      .reduce((acc, f) => acc + (Number(f.amount_total_signed) || 0), 0);
+    if (fac <= 0) return null;
+    const cob = cobros.filter((c) => c.fecha >= a && c.fecha <= b).reduce((acc, c) => acc + c.monto, 0);
+    return `${Math.round((cob / fac) * 100)}%`;
+  });
+
+  // Por cliente.
+  const porCliente = new Map<number, { partnerId: number; nombre: string; vendedor: string; facturado: number; cobrado: number }>();
+  const cliente = (id: number, nombre: string, vendedor: string) => {
+    if (!porCliente.has(id)) porCliente.set(id, { partnerId: id, nombre, vendedor, facturado: 0, cobrado: 0 });
+    const c = porCliente.get(id)!;
+    if (!c.vendedor && vendedor) c.vendedor = vendedor;
+    return c;
+  };
+  facturas.forEach((f) => { cliente(f.partner_id[0], f.partner_id[1] || "", f.invoice_user_id?.[1] || "").facturado += Number(f.amount_total_signed) || 0; });
+  cobros.forEach((c) => { if (c.partnerId) cliente(c.partnerId, c.partnerName, c.vendedorName).cobrado += c.monto; });
+
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    resumen: {
+      value: facturado > 0 ? Math.round((cobrado / facturado) * 10000) / 100 : null,
+      cobrado: r2(cobrado),
+      facturado: r2(facturado),
+      cobradoDeFacturasDelMes: r2(cobradoDeFacturasDelMes),
+      cobradoDeAnteriores: r2(cobrado - cobradoDeFacturasDelMes),
+      facturas: facturas.filter((f) => f.move_type === "out_invoice").length,
+      parcial: hoy <= monthEnd,
+      semana,
+    },
+    clientes: [...porCliente.values()]
+      .map((c) => ({ ...c, facturado: r2(c.facturado), cobrado: r2(c.cobrado) }))
+      .sort((a, b) => b.facturado + b.cobrado - (a.facturado + a.cobrado)),
   };
 }

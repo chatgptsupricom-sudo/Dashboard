@@ -1,32 +1,33 @@
+import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { accesoStoplight } from "@/lib/stoplight/acceso";
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { rol, companyId } = acceso;
 
     const url = new URL(request.url);
-    const company_id = url.searchParams.get("company_id");
     const seller_user_id = url.searchParams.get("seller_user_id");
 
-    if (!company_id || !seller_user_id) {
+    // `company_id` ya no es obligatorio: gerente de operaciones no lo manda
+    // (usa la empresa del token) y la ruta le respondía 400.
+    if (!seller_user_id) {
       return NextResponse.json({ error: "Faltan parámetros" }, { status: 400 });
     }
 
     const userId = parseInt(seller_user_id);
-    console.log(`[SellerClients] company=${company_id}, seller_user_id=${userId}`);
+
+    // Fuera de superadmin, solo vendedores de la propia empresa.
+    if (rol !== "superadmin") {
+      const propio = await query("SELECT 1 FROM sellers WHERE user_id = ? AND cids = ? LIMIT 1", [userId, companyId]);
+      if ((propio.rows as any[]).length === 0) {
+        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      }
+    }
+    console.log(`[SellerClients] company=${companyId}, seller_user_id=${userId}`);
 
     const clientSet = new Map<number, string>();
 

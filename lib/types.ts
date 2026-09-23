@@ -78,6 +78,7 @@ export const rolePermissions: RolePermissions = {
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
       "catalogo_disenos", // Catálogo de Diseños del Diseñador
+      "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -142,7 +143,11 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "top_clientes",
       "spiff",
+      "planificacion_visitas",
       "banco_imagenes_seller",
+      // Solicitudes de Material POP (solo vendedores de Valencia; el corte por
+      // sede lo imponen el middleware y el cidsOnly del menu)
+      "material_pop_seller",
       // Stoplight Report — el grupo "Ventas" completo, pero con SUS propias
       // cifras (la API /api/vendedores/stoplight filtra por s.user_id).
       "stoplight_reports",
@@ -165,6 +170,7 @@ export const rolePermissions: RolePermissions = {
       "banco_imagenes",
       "actividad",
       "vista_custom",
+      "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
   },
   [UserRole.GERENTE_VENTA]: {
@@ -173,7 +179,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -291,6 +297,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard",
       "cuentas_por_cobrar",
+      "estado_cuenta", // Estado de cuenta por cliente, con descarga a Excel
       "stoplight_reports",
       "referencia_comercial",
       "integraciondepago",

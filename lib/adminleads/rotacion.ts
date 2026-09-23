@@ -71,6 +71,11 @@ export async function calcularRotacion(
       ["move_id.invoice_date", "<=", hasta],
       ["product_id", "!=", false],
       ["quantity", ">", 0],
+      // Clientes internos / inter-compañía: sin esto, sus movimientos inflan
+      // "vendidas30/60" y rompen el ranking de rotación (mismo criterio que
+      // el resto de los reportes de ventas del panel).
+      ["partner_id.name", "not ilike", "supricom"],
+      ["partner_id.name", "not ilike", "office solution"],
       companyFilter,
     ],
   ], { fields: ["product_id", "quantity", "date"], limit: 100000 });

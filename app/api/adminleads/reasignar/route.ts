@@ -147,6 +147,7 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { mismaOperacion } from "@/lib/adminleads/sucursal";
 
 declare global {
   var io: any;
@@ -191,12 +192,17 @@ export async function PATCH(request: NextRequest) {
         { status: 404 },
       );
 
-    // Simetrico para las 3 sucursales, no solo Panama (antes cids 9/10
-    // podian reasignar leads a cualquier vendedor de cualquier sucursal;
-    // superadmin sigue sin restriccion de sucursal).
-    if (userRole !== "superadmin" && userCids && currentLead.new_seller_cids !== userCids)
+    // Panama no se cruza con Venezuela; Valencia y Caracas si, que es como ya
+    // se comportan el listado de leads y el de vendedores. Antes esto pedia
+    // igualdad exacta de cids: la pantalla le ofrecia a AdminLeads de Caracas
+    // los vendedores de Valencia y aqui se rechazaban con 403. superadmin
+    // sigue sin restriccion de sucursal.
+    if (
+      userRole !== "superadmin" &&
+      !mismaOperacion(userCids, currentLead.new_seller_cids)
+    )
       return NextResponse.json(
-        { error: "No autorizado: el vendedor no pertenece a tu sucursal" },
+        { error: "No autorizado: el vendedor no pertenece a tu operación" },
         { status: 403 },
       );
 

@@ -299,13 +299,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const savePeso = async (kpiKey: string, value: number) => {
+  // `value` null = volver al peso por defecto (casilla vacía); 0 = no cuenta.
+  const savePeso = async (kpiKey: string, value: number | null) => {
     try {
       // Los KPIs de marketing no tienen compañía propia: su route los lee bajo
       // company_id 9 (ver #110). El resto van por la sucursal seleccionada.
       const KPIS_MARKETING = ["usuarios_totales", "sesiones", "paginas_vistas", "tasa_rebote", "clicks_sc", "impresiones_sc", "ctr_sc", "posicion_sc", "email_open_rate"];
       const cid = KPIS_MARKETING.includes(kpiKey) ? 9 : selectedCompanyId;
-      await fetch(`${apiPrefix}`, {
+      const res = await fetch(`${apiPrefix}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -316,12 +317,26 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           mes: selectedMes,
         }),
       });
-      fetchData(true);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // El servidor devuelve lo que quedó en la base: si no coincide, el
+      // guardado no persistió (tabla sin clave única, permisos, etc.) y hay
+      // que decirlo en vez de revertir el campo sin explicación.
+      const json = await res.json().catch(() => null);
+      const guardado = json?.peso === null || json?.peso === undefined ? null : Number(json.peso);
+      if (guardado !== (value === null ? null : Number(value))) {
+        console.error("[peso] guardado distinto de lo enviado", { kpiKey, enviado: value, guardado, cid, mes: selectedMes });
+        alert(`El peso no quedó guardado (se envió ${value ?? "vacío"} y la base devolvió ${guardado ?? "vacío"}). Avísale a soporte con este mensaje.`);
+      }
+      await Promise.all([fetchData(true), fetchMarketingData(), fetchCxCData(), fetchCppData()]);
+      // Ya está guardado: se muestra lo que devuelve el servidor.
+      setPesoValues((prev) => { const n = { ...prev }; delete n[kpiKey]; return n; });
+      return;
       fetchMarketingData();
       fetchCxCData();
       fetchCppData();
     } catch (e) {
       console.error("Error saving peso:", e);
+      alert("No se pudo guardar el peso. Intenta de nuevo.");
     }
   };
 
@@ -329,11 +344,29 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     setPesoValues((prev) => ({ ...prev, [kpiId]: value }));
   };
 
-  const handlePesoBlur = (kpiId: string, fallback: number, value: string) => {
-    const numVal = Math.max(0, parseFloat(value) || 0);
-    if (numVal !== getPesoNum(kpiId, fallback)) {
-      savePeso(kpiId, numVal);
+  // Se compara SOLO contra lo guardado en el servidor (`pesosMerged`).
+  //
+  // Ojo con el parámetro `fallback` (= `kpi.peso` de la fila): sale de
+  // `pesoDe()` → `getPesoNum()`, que ya devuelve lo que se está tecleando. Al
+  // compararlo con el valor tecleado siempre daba igual y el peso NO se
+  // enviaba: el campo volvía al valor viejo al salir. Verificado en producción
+  // (se tecleaba 21 y no salía ninguna petición).
+  //
+  // Si el KPI todavía no tiene peso propio se guarda igual, aunque coincida
+  // con el valor por defecto: así queda explícito y no depende del default.
+  const handlePesoBlur = (kpiId: string, _fallback: number, value: string) => {
+    if (pesoValues[kpiId] === undefined) return; // no se tocó
+    const guardado = pesosMerged[kpiId];
+    const limpiarOverride = () =>
+      setPesoValues((prev) => { const n = { ...prev }; delete n[kpiId]; return n; });
+    if (value.trim() === "") {
+      if (guardado !== undefined) savePeso(kpiId, null);
+      else limpiarOverride();
+      return;
     }
+    const numVal = Math.max(0, parseFloat(value) || 0);
+    if (guardado === undefined || numVal !== Number(guardado)) savePeso(kpiId, numVal);
+    else limpiarOverride();
   };
 
   const openCxcModal = (kpiId: string) => {
@@ -451,10 +484,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     ...((cxcData?.pesos as Record<string, number>) || {}),
     ...((cppData?.pesos as Record<string, number>) || {}),
   };
+  // Lo que se está escribiendo > lo guardado (0 incluido: "no cuenta") > el
+  // valor por defecto. Casilla vacía = valor por defecto.
   const getPesoNum = (id: string, fallback: number) => {
     const override = pesoValues[id];
-    const n = override !== undefined ? parseFloat(override) : Number(pesosMerged[id]);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
+    if (override !== undefined) {
+      if (override.trim() === "") return fallback;
+      const n = parseFloat(override);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    }
+    const g = pesosMerged[id];
+    return g !== undefined && Number.isFinite(Number(g)) && Number(g) >= 0 ? Number(g) : fallback;
   };
   const pesoDe = (id: string, fallback: number) => `${getPesoNum(id, fallback)}%`;
 
@@ -474,9 +514,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   };
   // Solo "Cumplimiento de cuota" tiene ya todo lo necesario para su peso real
   // (90%, con piso de pago del 80% -- ver pisoMinimoVentas). "Cobertura
-  // territorial" (ex "visitas_semanales", pasaria a 8%) y "Cobertura de
-  // marcas" (pasaria a 2%) quedan en 0% hasta que exista la planeacion de
-  // visitas por asesor y la meta de venta esperada por marca -- sin esa data
+  // territorial" (ex "visitas_semanales") pasa a 8% en los meses con planes de
+  // visita (hayPlanesVisita) y "Cobertura de marcas" a 2% en los meses con
+  // meta por marca (hayMetasPorMarca) -- sin esa data
   // la formula nueva no se puede calcular, y ponerles el peso nuevo con la
   // formula vieja mezclaria dos cosas distintas (decision del usuario). Los
   // demas KPIs pasan a ser solo informativos (no afectan el pago comisional,
@@ -491,18 +531,30 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     clientes_nuevos: 0,
     cobertura_marcas: 0,
   };
+  // Cobertura de marcas toma su peso nuevo (2%, mínimo 70%) solo en los
+  // meses que tienen metas por marca: sin ellas la fórmula nueva no se puede
+  // calcular (lib/stoplight/metasMarca).
+  const hayMetasPorMarca = !!kpiData?.metasPorMarca;
+  // Igual con Cobertura territorial (8%, mínimo 70%) y los planes de visita
+  // (lib/visitas/planificacion).
+  const hayPlanesVisita = !!kpiData?.coberturaTerritorial;
   const pesoDefaultVentas = (id: string): number => {
-    const tabla = selectedMes >= FECHA_CORTE_PESOS_VENTAS ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
+    const nuevo = selectedMes >= FECHA_CORTE_PESOS_VENTAS;
+    if (nuevo && id === "cobertura_marcas" && hayMetasPorMarca) return 2;
+    if (nuevo && id === "visitas_semanales" && hayPlanesVisita) return 8;
+    const tabla = nuevo ? PESOS_VENTAS_NUEVO : PESOS_VENTAS_ANTERIOR;
     return tabla[id] ?? 0;
   };
   // "Valor minimo para el pago a partir de": por debajo de este %, el KPI
   // aporta 0 al puntaje ponderado -- no es proporcional, es todo o nada
   // (decision del usuario). Solo aplica desde la misma fecha de corte de
-  // arriba. Cobertura territorial/marcas quedan reservados aca (70% cada
-  // uno) para cuando tengan su formula y peso nuevos.
+  // arriba. Cobertura de marcas y territorial usan 70% en los meses que tienen
+  // sus datos (metas por marca / planes de visita).
   const pisoMinimoVentas = (id: string): number | undefined => {
     if (selectedMes < FECHA_CORTE_PESOS_VENTAS) return undefined;
     const tabla: Record<string, number> = { cumplimiento_cuota_ventas: 80 };
+    if (hayMetasPorMarca) tabla.cobertura_marcas = 70;
+    if (hayPlanesVisita) tabla.visitas_semanales = 70;
     return tabla[id];
   };
 
@@ -543,13 +595,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     },
     {
       id: "visitas_semanales",
-      title: t("kpi_visitas"),
+      // Con planes de visita en el mes es "Cobertura territorial" (foráneas
+      // realizadas ÷ planificadas, lib/visitas/planificacion): meta 100%.
+      title: hayPlanesVisita ? t("kpi_cobertura_territorial") : t("kpi_visitas"),
       peso: pesoDe("visitas_semanales", pesoDefaultVentas("visitas_semanales")),
-      average: kpiData ? String(kpiData.avgVisitas) : "0",
+      pisoMinimo: pisoMinimoVentas("visitas_semanales"),
+      average: kpiData ? (hayPlanesVisita ? `${kpiData.avgVisitas}%` : String(kpiData.avgVisitas)) : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
-      goalSuffix: "",
+      goalDefault: hayPlanesVisita
+        ? "100"
+        : kpiData?.metas?.["visitas_semanales"] ? String(kpiData.metas["visitas_semanales"]) : "0",
+      metaFija: hayPlanesVisita,
+      hint: hayPlanesVisita
+        ? t("cobertura_territorial_hint", { r: kpiData?.coberturaTerritorial?.realizadas ?? 0, p: kpiData?.coberturaTerritorial?.planificadas ?? 0 })
+        : undefined,
+      goalSuffix: hayPlanesVisita ? "%" : "",
       cumple: kpiData ? kpiData.avgVisitas >= 100 : false,
     },
     {
@@ -589,10 +650,17 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       id: "cobertura_marcas",
       title: t("kpi_cobertura"),
       peso: pesoDe("cobertura_marcas", pesoDefaultVentas("cobertura_marcas")),
+      pisoMinimo: pisoMinimoVentas("cobertura_marcas"),
       average: kpiData ? `${kpiData.avgCobertura}%` : "0%",
       weeks: kpiData?.semanaCobertura || defaultWeeks,
       isClickable: true,
-      goalDefault: kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "0",
+      // Con metas por marca la fila ya es % de lo esperado (meta 100%) y la
+      // meta se edita marca por marca en el detalle, no en esta celda.
+      goalDefault: hayMetasPorMarca
+        ? "100"
+        : kpiData?.metas?.["cobertura_marcas"] ? String(kpiData.metas["cobertura_marcas"]) : "0",
+      metaFija: hayMetasPorMarca,
+      hint: hayMetasPorMarca ? t("cobertura_por_marca_hint", { n: kpiData?.metasPorMarca?.marcas ?? 0 }) : undefined,
       goalSuffix: "%",
       cumple: kpiData ? kpiData.avgCobertura >= 100 : false,
     },
@@ -1409,16 +1477,19 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
             {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Weekly" && (
               <div className="overflow-x-auto border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                <table className="w-full text-sm text-left border-collapse min-w-[880px]">
+                <table className="w-full text-sm text-left border-collapse min-w-[720px]">
                   <thead>
                     <tr className="bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-400">
                       <th className="py-2.5 pl-4 pr-2 w-8"></th>
-                      <th className="py-2.5 px-2 font-semibold min-w-[260px]">{t("column_title")}</th>
-                      <th className="py-2.5 px-2 w-36 text-right font-semibold">{t("column_goal")}</th>
-                      <th className="py-2.5 px-2 w-20 text-right font-semibold">{t("column_average")}</th>
-                      <th className="py-2.5 px-2 w-14 text-right font-semibold">{t("peso")}</th>
+                      {/* Anchos ajustados para que META, MES y PESO entren sin
+                          desplazar la tabla: con el sidebar abierto quedaban
+                          fuera del area visible y PESO se veia cortada. */}
+                      <th className="py-2.5 px-2 font-semibold min-w-[150px]">{t("column_title")}</th>
+                      <th className="py-2.5 px-1.5 w-28 text-right font-semibold">{t("column_goal")}</th>
+                      <th className="py-2.5 px-1.5 w-16 text-right font-semibold">{t("column_average")}</th>
+                      <th className="py-2.5 px-1.5 w-20 text-right font-semibold whitespace-nowrap">{t("peso")}</th>
                       {(group as any).weekHeaders.map((week: string, idx: number) => (
-                        <th key={idx} className="py-2.5 px-2 w-24 text-center font-medium text-slate-400 normal-case">
+                        <th key={idx} className="py-2.5 px-1.5 w-16 text-center font-medium text-slate-400 normal-case">
                           {week}
                         </th>
                       ))}
@@ -1465,8 +1536,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint || kpi.subtitle}</div>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right align-top" onClick={(e) => e.stopPropagation()}>
-                          {!isSuperAdmin ? (
+                        <td className="py-3 px-1.5 text-right align-top" onClick={(e) => e.stopPropagation()}>
+                          {!isSuperAdmin || kpi.metaFija ? (
                             <span className="text-sm font-medium text-slate-600 tabular-nums">{getGoal(kpi.id, kpi.goalDefault)}{kpi.goalSuffix}</span>
                           ) : (
                             <span className="inline-flex items-center gap-1">
@@ -1475,7 +1546,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                                 value={getGoal(kpi.id, kpi.goalDefault)}
                                 onChange={(e) => handleGoalChange(kpi.id, e.target.value)}
                                 onBlur={(e) => handleGoalBlur(kpi.id, e.target.value)}
-                                className="w-28 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
+                                className="w-24 text-right text-sm font-medium text-slate-700 tabular-nums bg-slate-50 border border-slate-200 rounded-md px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-shadow"
                               />
                               {kpi.goalSuffix && (
                                 <span className="text-slate-400 text-xs whitespace-nowrap">{kpi.goalSuffix.trim()}</span>
@@ -1483,7 +1554,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right align-top">
+                        <td className="py-3 px-1.5 text-right align-top">
                           {kpiSinMeta ? (
                             <span className="text-slate-300">–</span>
                           ) : (
@@ -1492,7 +1563,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right text-slate-400 tabular-nums align-top" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3 px-1.5 text-right text-slate-400 tabular-nums align-top whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           {!isSuperAdmin ? (
                             kpi.peso
                           ) : (
@@ -1515,7 +1586,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         ) : kpi.weeks.map((val: string | null, idx: number) => {
                           const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                           return (
-                            <td key={idx} className="py-3 px-2 text-center align-top">
+                            <td key={idx} className="py-3 px-1.5 text-center align-top">
                               {val && !kpiSinMeta ? (
                                 <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
                                   {val}
@@ -1637,6 +1708,10 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         apiPrefix={apiPrefix}
         companyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
         defaultMes={selectedMes}
+        ocultarCostoGanancia={gerenteVentaMode}
+        mostrarMetasMarca={!vendorMode}
+        puedeEditarMetas={isSuperAdmin}
+        onMetasChange={() => fetchData(true)}
       />
 
       {/* Activacion Cartera Modal */}

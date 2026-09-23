@@ -1,11 +1,9 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { fechaLocal } from "@/lib/stoplight/margen";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { accesoStoplight } from "@/lib/stoplight/acceso";
 
 function normalize(str: string): string {
   return str
@@ -19,21 +17,13 @@ function normalize(str: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { companyId } = acceso;
 
     const url = new URL(request.url);
-    const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
     const periodoParam = url.searchParams.get("periodo") || "mes";
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -64,13 +54,13 @@ export async function GET(request: NextRequest) {
       fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
       const ultimoDia = new Date(anio, mesNum, 0).getDate();
       fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
-      periodoLabel = `${now.toLocaleString("es-VE", { month: "long" })} ${anio}`;
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
     }
 
     const semanas = (() => {
       const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
-      const fechaInicioDate = new Date(fechaInicio);
-      const fechaFinDate = new Date(fechaFin);
+      const fechaInicioDate = fechaLocal(fechaInicio);
+      const fechaFinDate = fechaLocal(fechaFin);
       let inicio = new Date(fechaInicioDate);
 
       while (inicio <= fechaFinDate) {
@@ -209,7 +199,7 @@ export async function GET(request: NextRequest) {
         matchedClients++;
 
         // Distribute by week
-        const invDate = new Date(inv.invoice_date);
+        const invDate = fechaLocal(inv.invoice_date);
         for (let i = 0; i < semanas.length; i++) {
           if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
             sellerActiveClientsPorSemana[norm]?.[i]?.add(partnerId);
@@ -236,22 +226,27 @@ export async function GET(request: NextRequest) {
       const data = sellerClientsMap[name];
       const activos = sellerActiveClients[name]?.size || 0;
       const total = data.total;
+      // Tasa real (% de la cartera que compró). La meta también es un %: el
+      // modal compara contra ella. Antes, con meta, se dividían los activos
+      // por la meta como si fuera una cantidad de clientes.
       const activacion = total > 0 ? Math.round((activos / total) * 100) : 0;
-      const activacionPct = metaActivacion > 0 ? Math.round((activos / metaActivacion) * 100) : (total > 0 ? Math.round((activos / total) * 100) : 0);
 
+      // Acumulado del período hasta cada semana (la meta es mensual): clientes
+      // distintos que compraron desde el inicio hasta el fin de esa semana.
+      const acumulados = new Set<number>();
       const semanasCalc = semanas.map((sem, i) => {
         const semanaInicio = sem.inicio;
         const esFuturo = semanaInicio > new Date();
-        const activosSem = sellerActiveClientsPorSemana[name]?.[i]?.size || 0;
-        const activacionSem = metaActivacion > 0
-          ? Math.round((activosSem / metaActivacion) * 100)
-          : (total > 0 ? Math.round((activosSem / total) * 100) : null);
+        const nuevosSem = sellerActiveClientsPorSemana[name]?.[i]?.size || 0;
+        sellerActiveClientsPorSemana[name]?.[i]?.forEach((c) => acumulados.add(c));
+        const activosAcum = acumulados.size;
         return {
           numero: i + 1,
           label: sem.label,
-          activos: activosSem,
+          activos: activosAcum,
+          compraronSemana: nuevosSem,
           total,
-          activacion: esFuturo ? null : activacionSem,
+          activacion: esFuturo || total <= 0 ? null : Math.round((activosAcum / total) * 100),
         };
       });
 
@@ -259,7 +254,7 @@ export async function GET(request: NextRequest) {
         nombre: name,
         totalClientes: total,
         clientesActivos: activos,
-        activacion: activacionPct,
+        activacion,
         semanas: semanasCalc,
       };
     });
@@ -279,6 +274,7 @@ export async function GET(request: NextRequest) {
         periodoLabel,
         fechaInicio,
         fechaFin,
+        metaActivacion,
         global: {
           totalClientes: globalTotal,
           clientesActivos: globalActivos,

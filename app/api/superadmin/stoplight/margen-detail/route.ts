@@ -1,11 +1,8 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { contarDiasUtiles, esDiaUtil, esFeriado } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { obtenerSemanasDelMes } from "@/lib/feriados";
+import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { obtenerLineasMargen, margenPct } from "@/lib/stoplight/margen";
 
 function normalize(str: string): string {
   return str
@@ -17,313 +14,133 @@ function normalize(str: string): string {
     .replace(/\s+/g, " ");
 }
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const r1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Clave del grupo que junta las facturas de usuarios que no están en `sellers`. */
+const OTROS = "__otros__";
+
+// Detalle del KPI "Margen bruto" (modal del Stoplight): totales, por vendedor
+// (con su serie semanal) y por producto. Usa las mismas líneas que la fila de
+// la grilla, así que el total del modal cuadra con ella.
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { rol, companyId } = acceso;
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
-
-    const url = new URL(request.url);
-    const companyIdParam = url.searchParams.get("company_id");
-    const mesParam = url.searchParams.get("mes");
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
+    // Gerencia de Ventas ve margen % pero no costo ni ganancia (issue #178).
+    // Se quita acá y no solo en la UI, para que no viaje en la respuesta.
+    const ocultarCosto = rol === "gerencia de ventas";
 
     const now = new Date();
-    const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const [anioStr, mesStr] = mes.split("-");
-    const anio = parseInt(anioStr, 10);
-    const mesNum = parseInt(mesStr, 10);
+    const mesParam = request.nextUrl.searchParams.get("mes");
+    const mes = /^\d{4}-\d{2}$/.test(mesParam || "")
+      ? mesParam!
+      : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [anio, mesNum] = mes.split("-").map(Number);
+    const fechaInicio = `${mes}-01`;
+    const fechaFin = `${mes}-${String(new Date(anio, mesNum, 0).getDate()).padStart(2, "0")}`;
 
-    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
-    const ultimoDia = new Date(anio, mesNum, 0).getDate();
-    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
+    // Mismas semanas que las columnas de la grilla.
+    const semanas = obtenerSemanasDelMes(anio, mesNum);
 
-    const semanas = (() => {
-      const result: { inicio: Date; fin: Date; diasUtiles: number }[] = [];
-      const primerDia = new Date(anio, mesNum - 1, 1);
-      let inicio = new Date(primerDia);
-      const ultimoDiaMes = new Date(anio, mesNum, 0);
+    const [lineas, sellersResult, metaResult] = await Promise.all([
+      obtenerLineasMargen(companyId, fechaInicio, fechaFin),
+      query("SELECT name FROM sellers WHERE cids = ?", [companyId]),
+      query(
+        "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
+        ["margen_bruto", companyId, mes],
+      ),
+    ]);
+    const meta = Number((metaResult.rows as any[])[0]?.meta_mensual) || 0;
 
-      while (inicio <= ultimoDiaMes) {
-        let fin = new Date(inicio);
-        fin.setDate(fin.getDate() + 6);
-        if (fin > ultimoDiaMes) fin = new Date(ultimoDiaMes);
-        result.push({
-          inicio: new Date(inicio),
-          fin: new Date(fin),
-          diasUtiles: contarDiasUtiles(inicio, fin),
-        });
-        inicio = new Date(fin);
-        inicio.setDate(inicio.getDate() + 1);
+    // Vendedores: todos los de la sede (como la grilla, sin exigir cuota).
+    // Las facturas de usuarios que no están en `sellers` van a "Otros" para
+    // que la suma de vendedores dé el total.
+    type Acum = { ingreso: number; costo: number; semanas: { ingreso: number; costo: number }[] };
+    const nuevo = (): Acum => ({ ingreso: 0, costo: 0, semanas: semanas.map(() => ({ ingreso: 0, costo: 0 })) });
+    const nombrePorNorm = new Map<string, string>();
+    const porVendedor = new Map<string, Acum>();
+    (sellersResult.rows as any[]).forEach((s) => {
+      nombrePorNorm.set(normalize(s.name), s.name);
+      porVendedor.set(s.name, nuevo());
+    });
+
+    const porProducto = new Map<number, { nombre: string; cantidad: number; ingreso: number; costo: number }>();
+    let ingresoTotal = 0;
+    let costoTotal = 0;
+
+    for (const l of lineas) {
+      ingresoTotal += l.ingreso;
+      costoTotal += l.costo;
+
+      const clave = nombrePorNorm.get(normalize(l.vendedor)) ?? OTROS;
+      if (!porVendedor.has(clave)) porVendedor.set(clave, nuevo());
+      const v = porVendedor.get(clave)!;
+      v.ingreso += l.ingreso;
+      v.costo += l.costo;
+      const i = semanas.findIndex((s) => l.fecha >= s.inicio && l.fecha <= s.fin);
+      if (i !== -1) {
+        v.semanas[i].ingreso += l.ingreso;
+        v.semanas[i].costo += l.costo;
       }
-      return result;
-    })();
 
-    const totalDiasUtilesMes = contarDiasUtiles(
-      new Date(anio, mesNum - 1, 1),
-      new Date(anio, mesNum, 0)
-    );
-
-    // 1. Fetch sellers + cuotas
-    const cuotaResult = await query(
-      `SELECT s.id as seller_id, s.name, s.user_id, c.cuota
-       FROM sellers s
-       INNER JOIN (
-         SELECT seller_id, cuota FROM cuota
-         WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
-       ) c ON s.id = c.seller_id
-       WHERE s.cids = ?`,
-      [companyId]
-    );
-    const sellers = cuotaResult.rows as any[];
-
-    // 2. Fetch invoices (out_invoice + out_refund)
-    const invoices = await callOdooRPC<any[]>(
-      "account.move",
-      "search_read",
-      [
-        [
-          ["move_type", "in", ["out_invoice", "out_refund"]],
-          ["state", "=", "posted"],
-          ["company_id", "=", companyId],
-          ["invoice_date", ">=", fechaInicio],
-          ["invoice_date", "<=", fechaFin],
-          ["invoice_user_id", "!=", false],
-        ],
-      ],
-      {
-        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date", "move_type"],
-        limit: 10000,
-      }
-    );
-
-    // 3. Fetch invoice lines (product lines only)
-    const invoiceIds = (invoices || []).map((inv: any) => inv.id);
-    let invoiceLines: any[] = [];
-    if (invoiceIds.length > 0) {
-      invoiceLines = (await callOdooRPC<any[]>(
-        "account.move.line",
-        "search_read",
-        [
-          [
-            ["move_id", "in", invoiceIds],
-            ["display_type", "=", "product"],
-            ["product_id", "!=", false],
-          ],
-        ],
-        {
-          fields: ["move_id", "product_id", "quantity", "price_subtotal"],
-          limit: 50000,
-        }
-      )) || [];
+      const p = porProducto.get(l.productId) ?? { nombre: l.producto, cantidad: 0, ingreso: 0, costo: 0 };
+      p.cantidad += l.cantidad;
+      p.ingreso += l.ingreso;
+      p.costo += l.costo;
+      porProducto.set(l.productId, p);
     }
 
-    // 4. Fetch product costs and names
-    const productIds = [...new Set(invoiceLines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
-    const productCostMap: Record<number, number> = {};
-    const productNameMap: Record<number, string> = {};
+    // Montos de costo/ganancia: se omiten para Gerencia de Ventas.
+    const montos = (ingreso: number, costo: number) =>
+      ocultarCosto ? { revenue: r2(ingreso) } : { revenue: r2(ingreso), costo: r2(costo), ganancia: r2(ingreso - costo) };
 
-    if (productIds.length > 0) {
-      // Get product names directly from product.product
-      const productDetails = (await callOdooRPC<any[]>(
-        "product.product",
-        "search_read",
-        [[["id", "in", productIds], ["active", "=", true]]],
-        { fields: ["id", "name", "product_tmpl_id"], limit: 0 }
-      )) || [];
-
-      productDetails.forEach((p: any) => {
-        productNameMap[p.id] = p.name || "Sin nombre";
-      });
-
-      const variantToTmpl: Record<number, number> = {};
-      productDetails.forEach((p: any) => {
-        if (p.id && p.product_tmpl_id?.[0]) variantToTmpl[p.id] = p.product_tmpl_id[0];
-      });
-
-      const tmplIds = [...new Set(productDetails.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
-
-      if (tmplIds.length > 0) {
-        const templates = (await callOdooRPC<any[]>(
-          "product.template",
-          "search_read",
-          [[["id", "in", tmplIds]]],
-          { fields: ["id", "standard_price"], limit: 0 }
-        )) || [];
-
-        const tmplCostMap: Record<number, number> = {};
-        templates.forEach((t: any) => {
-          tmplCostMap[t.id] = Number(t.standard_price) || 0;
-        });
-
-        productIds.forEach((pid: number) => {
-          const tid = variantToTmpl[pid];
-          productCostMap[pid] = tid ? (tmplCostMap[tid] || 0) : 0;
-        });
-      }
-    }
-
-    // 5. Build invoice lookup
-    const invoiceMap: Record<number, any> = {};
-    (invoices || []).forEach((inv: any) => {
-      invoiceMap[inv.id] = inv;
-    });
-
-    // 6. Normalize seller names
-    const normalizedSellerMap: Record<string, string> = {};
-    const sellerDataMap: Record<string, {
-      nombre: string;
-      revenue: number;
-      costo: number;
-      semanas: { revenue: number; costo: number }[];
-    }> = {};
-
-    sellers.forEach((s: any) => {
-      const norm = normalize(s.name);
-      normalizedSellerMap[norm] = s.name;
-      sellerDataMap[s.name] = {
-        nombre: s.name,
-        revenue: 0,
-        costo: 0,
-        semanas: semanas.map(() => ({ revenue: 0, costo: 0 })),
-      };
-    });
-
-    // 6b. Product data map
-    const productDataMap: Record<number, {
-      productId: number;
-      nombre: string;
-      cantidadVendida: number;
-      revenue: number;
-      costo: number;
-    }> = {};
-
-    // 7. Calculate margin per line, distribute by seller and week
-    invoiceLines.forEach((line: any) => {
-      const moveId = line.move_id?.[0];
-      const inv = invoiceMap[moveId];
-      if (!inv) return;
-
-      const sellerName = inv.invoice_user_id?.[1];
-      if (!sellerName) return;
-      const norm = normalize(sellerName);
-      const matchedName = normalizedSellerMap[norm];
-      if (!matchedName || !sellerDataMap[matchedName]) return;
-
-      const productId = line.product_id?.[0];
-      const qty = Number(line.quantity) || 0;
-      const revenue = Number(line.price_subtotal) || 0;
-      const unitCost = productId ? (productCostMap[productId] || 0) : 0;
-      const costo = qty * unitCost;
-
-      const isRefund = inv.move_type === "out_refund";
-      const revenueFinal = isRefund ? -revenue : revenue;
-      const costoFinal = isRefund ? -costo : costo;
-
-      sellerDataMap[matchedName].revenue += revenueFinal;
-      sellerDataMap[matchedName].costo += costoFinal;
-
-      // Accumulate by product
-      if (productId) {
-        if (!productDataMap[productId]) {
-          productDataMap[productId] = {
-            productId,
-            nombre: productNameMap[productId] || "Sin nombre",
-            cantidadVendida: 0,
-            revenue: 0,
-            costo: 0,
-          };
-        }
-        productDataMap[productId].cantidadVendida += qty;
-        productDataMap[productId].revenue += revenueFinal;
-        productDataMap[productId].costo += costoFinal;
-      }
-
-      // Distribute by week
-      const invDate = new Date(inv.invoice_date);
-      for (let i = 0; i < semanas.length; i++) {
-        if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-          sellerDataMap[matchedName].semanas[i].revenue += revenueFinal;
-          sellerDataMap[matchedName].semanas[i].costo += costoFinal;
-          break;
-        }
-      }
-    });
-
-    // 8. Load meta
-    const metaResult = await query(
-      "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
-      ["margen_bruto", companyId, mes]
-    );
-    const metaMargen = (metaResult.rows as any[])[0]?.meta_mensual || 0;
-
-    // 9. Build response
-    const result = Object.values(sellerDataMap).map((seller) => {
-      const margenMensual = seller.revenue > 0
-        ? Math.round(((seller.revenue - seller.costo) / seller.revenue) * 100)
-        : 0;
-      const margenMensualPct = metaMargen > 0 ? Math.round((margenMensual / metaMargen) * 100) : 0;
-
-      const semanasCalc = seller.semanas.map((sem, i) => {
-        const semanaInicio = semanas[i].inicio;
-        const esFuturo = semanaInicio > new Date();
-        const margenActual = sem.revenue > 0
-          ? ((sem.revenue - sem.costo) / sem.revenue) * 100
-          : null;
-        const margen = margenActual !== null && metaMargen > 0
-          ? Math.round((margenActual / metaMargen) * 100)
-          : null;
-        return {
+    const sellers = [...porVendedor.entries()]
+      // Vendedores sin movimiento en el mes no aportan nada a la tabla.
+      .filter(([, v]) => v.ingreso !== 0 || v.costo !== 0)
+      .map(([nombre, v]) => ({
+        nombre: nombre === OTROS ? null : nombre,
+        esOtros: nombre === OTROS,
+        ...montos(v.ingreso, v.costo),
+        margen: r1(margenPct(v.ingreso, v.costo)),
+        semanas: v.semanas.map((s, i) => ({
           numero: i + 1,
-          revenue: Math.round(sem.revenue * 100) / 100,
-          costo: Math.round(sem.costo * 100) / 100,
-          margen: esFuturo ? null : margen,
-        };
-      });
+          inicio: ymd(semanas[i].inicio),
+          fin: ymd(semanas[i].fin),
+          futura: semanas[i].inicio > now,
+          ...montos(s.ingreso, s.costo),
+          margen: r1(margenPct(s.ingreso, s.costo)),
+        })),
+      }))
+      .sort((a, b) => Number(a.esOtros) - Number(b.esOtros) || b.revenue - a.revenue);
 
-      return {
-        nombre: seller.nombre,
-        revenue: Math.round(seller.revenue * 100) / 100,
-        costo: Math.round(seller.costo * 100) / 100,
-        margenMensual,
-        margenMensualPct,
-        semanas: semanasCalc,
-      };
-    });
-
-    result.sort((a, b) => b.margenMensualPct - a.margenMensualPct);
-
-    // 9. Build products result
-    const productsResult = Object.values(productDataMap).map((prod) => {
-      const margen = prod.revenue > 0
-        ? Math.round(((prod.revenue - prod.costo) / prod.revenue) * 100)
-        : 0;
-      return {
-        productId: prod.productId,
-        nombre: prod.nombre,
-        cantidadVendida: Math.round(prod.cantidadVendida * 100) / 100,
-        revenue: Math.round(prod.revenue * 100) / 100,
-        costo: Math.round(prod.costo * 100) / 100,
-        ganancia: Math.round((prod.revenue - prod.costo) * 100) / 100,
-        margen,
-      };
-    });
-
-    productsResult.sort((a, b) => b.revenue - a.revenue);
+    const products = [...porProducto.entries()]
+      .map(([productId, p]) => ({
+        productId,
+        nombre: p.nombre,
+        cantidadVendida: r2(p.cantidad),
+        ...montos(p.ingreso, p.costo),
+        margen: r1(margenPct(p.ingreso, p.costo)),
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
 
     return NextResponse.json({
       success: true,
       data: {
         mes,
-        totalDiasUtilesMes,
-        sellers: result,
-        products: productsResult,
+        meta,
+        costoOculto: ocultarCosto,
+        totales: {
+          ...montos(ingresoTotal, costoTotal),
+          margen: r1(margenPct(ingresoTotal, costoTotal)),
+          productos: products.length,
+        },
+        sellers,
+        products,
       },
     });
   } catch (error: any) {

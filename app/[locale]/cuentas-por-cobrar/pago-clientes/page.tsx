@@ -5,6 +5,15 @@ import {
   RefreshCw, Download, Search, AlertTriangle, DollarSign, Banknote, Receipt, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useAuthStore } from "@/lib/stores/auth.store";
+
+// La sede la impone el backend a partir del token; esto solo evita ofrecer en
+// el selector una sede que devolveria 403.
+const SEDES = [
+  { value: "valencia", label: "Valencia", cids: 9 },
+  { value: "caracas", label: "Caracas", cids: 10 },
+  { value: "panama", label: "Panamá", cids: 7 },
+];
 
 type Tipo = "cobro" | "ajuste";
 
@@ -50,7 +59,12 @@ const primerDiaMes = () => {
   const n = new Date();
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`;
 };
-const hoy = () => new Date().toISOString().split("T")[0];
+// Fecha local, no UTC: con toISOString, después de las 20:00 en Caracas el
+// "hasta" por defecto saltaba al día siguiente.
+const hoy = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+};
 
 const fmtNum = (n: number | null, dec = 2) =>
   n == null ? "—" : n.toLocaleString("es-VE", { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -68,14 +82,25 @@ export default function PagoClientesPage() {
   // Rango por fecha de pago (fecha valor) — opcional, vacío por defecto.
   const [desdePago, setDesdePago] = useState("");
   const [hastaPago, setHastaPago] = useState("");
+  const { user } = useAuthStore();
+  const sedes = useMemo(() => {
+    const propia = SEDES.filter((s) => s.cids === user?.cids);
+    const esSuperadmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
+    return esSuperadmin || propia.length === 0 ? SEDES : propia;
+  }, [user?.role, user?.cids]);
   const [empresa, setEmpresa] = useState("todas");
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
   const [excluirAsistentes, setExcluirAsistentes] = useState(true);
   const [tab, setTab] = useState<Tipo>("cobro");
+  // Usuario de una sola sede: el selector queda fijo en la suya.
+  useEffect(() => { if (sedes.length === 1) setEmpresa(sedes[0].value); }, [sedes]);
 
   const [rows, setRows] = useState<Row[]>([]);
+  // Rango que el servidor aplicó de verdad: sin fechas cae al mes en curso, y
+  // antes la pantalla no lo decía en ningún lado.
+  const [rangoConf, setRangoConf] = useState<{ desde: string | null; hasta: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -93,6 +118,7 @@ export default function PagoClientesPage() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "No se pudo cargar");
       setRows(json.data.rows);
+      setRangoConf(json.data.filtros?.confirmacion ?? null);
       setPage(1);
     } catch (e: any) {
       setError(e?.message || "Error");
@@ -266,6 +292,15 @@ export default function PagoClientesPage() {
             <input type="date" value={hastaConf} onChange={(e) => setHastaConf(e.target.value)}
               className="w-full border rounded-lg px-2 py-1.5 text-sm" />
           </div>
+          <p className="mt-1 text-[10px] text-slate-500">
+            {!rangoConf
+              ? "Sin filtro de confirmación"
+              : !rangoConf.desde
+                ? `Hasta ${fmtFecha(rangoConf.hasta)}`
+                : !rangoConf.hasta
+                  ? `Desde ${fmtFecha(rangoConf.desde)}`
+                  : `${fmtFecha(rangoConf.desde)} a ${fmtFecha(rangoConf.hasta)}`}
+          </p>
         </div>
         <div className="w-full sm:w-auto rounded-lg border border-slate-200 p-2">
           <div className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-2">
@@ -285,11 +320,10 @@ export default function PagoClientesPage() {
         <div className="flex-1 sm:flex-none min-w-[120px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Sede</label>
           <select value={empresa} onChange={(e) => setEmpresa(e.target.value)}
-            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white">
-            <option value="todas">Todas</option>
-            <option value="valencia">Valencia</option>
-            <option value="caracas">Caracas</option>
-            <option value="panama">Panamá</option>
+            disabled={sedes.length === 1}
+            className="w-full sm:w-auto border rounded-lg px-3 py-1.5 text-sm bg-white disabled:bg-slate-100 disabled:text-slate-500">
+            {sedes.length > 1 && <option value="todas">Todas</option>}
+            {sedes.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
           </select>
         </div>
         <div className="flex-1 sm:flex-none min-w-[140px]">

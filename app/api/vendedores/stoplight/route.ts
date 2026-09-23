@@ -2,8 +2,12 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { ensureKpiTargetsPeso } from "@/lib/kpiTargets";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -146,15 +150,16 @@ export async function GET(request: NextRequest) {
     // Load metas + pesos
     await ensureKpiTargetsPeso();
     const metasResult = await query(
-      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ?",
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
       [companyId, mes]
     );
     const metasMap: Record<string, number> = {};
     const pesosMap: Record<string, number> = {};
     (metasResult.rows as any[]).forEach((r) => {
       metasMap[r.kpi_key] = Number(r.meta_mensual);
-      const p = Number(r.peso);
-      if (Number.isFinite(p) && p > 0) pesosMap[r.kpi_key] = p;
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
     });
 
     // === CUMPLIMIENTO CUOTA ===
@@ -223,7 +228,7 @@ export async function GET(request: NextRequest) {
       const invDateMap: Record<number, Date> = {};
       const invoiceMap: Record<number, any> = {};
       (invoices || []).forEach((inv: any) => {
-        invDateMap[inv.id] = new Date(inv.invoice_date);
+        invDateMap[inv.id] = fechaLocal(inv.invoice_date);
         invoiceMap[inv.id] = inv;
       });
 
@@ -291,38 +296,27 @@ export async function GET(request: NextRequest) {
       return `${pct}%`;
     });
 
-    // === EFECTIVIDAD ===
-    let efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
-    let totalOrdenesMes = 0;
-    let totalFacturadasMes = 0;
+    // Cobertura territorial del asesor (planificación de visitas).
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
     try {
-      const saleOrders = await callOdooRPC<any[]>(
-        "sale.order", "search_read",
-        [
-          [
-            ["state", "in", ["sale", "done"]],
-            ["company_id", "=", companyId],
-            ["date_order", ">=", fechaInicio],
-            ["date_order", "<=", fechaFin + " 23:59:59"],
-            ["user_id", "=", uid],
-          ],
-        ],
-        { fields: ["id", "user_id", "state", "date_order", "amount_total", "invoice_status", "invoice_ids"], limit: 10000 }
-      );
-      (saleOrders || []).forEach((order: any) => {
-        const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-        const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-        totalOrdenesMes++;
-        if (isInvoiced) totalFacturadasMes++;
-        const orderDate = new Date(order.date_order);
-        for (let i = 0; i < semanas.length; i++) {
-          if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-            efectividadPorSemana[i].total++;
-            if (isInvoiced) efectividadPorSemana[i].facturacion++;
-            break;
-          }
-        }
-      });
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, uid, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial (vendedor):", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
+
+    // === EFECTIVIDAD === cotizaciones confirmadas ÷ emitidas (lib/stoplight/cotizaciones)
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
+    try {
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin, [["user_id", "=", uid]]);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((w) => c.fecha >= w.inicio && c.fecha <= w.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
     } catch (_) {}
 
     const metaEfectividad = metasMap["efectividad_cierre"] || 0;
@@ -368,17 +362,20 @@ export async function GET(request: NextRequest) {
         const activePartnerIds = invoicePartnerIds.filter((pid: number) => clientIds.includes(pid));
         totalActiveClients = activePartnerIds.length;
 
-        // Distribute by week
+        // Por semana: clientes distintos acumulados desde el inicio del mes
+        // (la meta es un % mensual de la cartera). Antes se contaban
+        // facturas de esa semana sola.
+        const semanaDe = new Map<number, number>(); // partner -> primera semana con compra
         (invoices || []).forEach((inv: any) => {
           const partnerId = inv.partner_id?.[0];
           if (!partnerId || !activePartnerIds.includes(partnerId)) return;
-          const invDate = new Date(inv.invoice_date);
-          for (let i = 0; i < semanas.length; i++) {
-            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
-              semanaActivacionData[i].activos++;
-              break;
-            }
-          }
+          const invDate = fechaLocal(inv.invoice_date);
+          const i = semanas.findIndex((sem) => invDate >= sem.inicio && invDate <= sem.fin);
+          if (i === -1) return;
+          semanaDe.set(partnerId, Math.min(semanaDe.get(partnerId) ?? i, i));
+        });
+        semanaActivacionData.forEach((sem, i) => {
+          sem.activos = [...semanaDe.values()].filter((w) => w <= i).length;
         });
       }
 
@@ -393,8 +390,10 @@ export async function GET(request: NextRequest) {
       if (esFuturo) return null;
       if (sem.total <= 0) return null;
       if (metaActivacion <= 0) return "100%";
-      const pct = Math.round((sem.activos / metaActivacion) * 100);
-      return `${pct}%`;
+      // La meta es un %: tasa (activos ÷ cartera) contra la meta, no la
+      // cantidad de activos dividida por la meta.
+      const tasa = (sem.activos / sem.total) * 100;
+      return `${Math.round((tasa / metaActivacion) * 100)}%`;
     });
 
     // === CLIENTES NUEVOS ===
@@ -435,7 +434,7 @@ export async function GET(request: NextRequest) {
           if (partnerAlreadyCounted.has(partnerId)) return;
           partnerAlreadyCounted.add(partnerId);
           totalClientesNuevos++;
-          const invDate = new Date(inv.invoice_date);
+          const invDate = fechaLocal(inv.invoice_date);
           for (let i = 0; i < semanas.length; i++) {
             if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
               clientesNuevosPorSemana[i]++;
@@ -480,7 +479,7 @@ export async function GET(request: NextRequest) {
 
         const invDateMap: Record<number, Date> = {};
         (invoices || []).forEach((inv: any) => {
-          invDateMap[inv.id] = new Date(inv.invoice_date);
+          invDateMap[inv.id] = fechaLocal(inv.invoice_date);
         });
 
         (brandLines || []).forEach((line: any) => {
@@ -505,13 +504,38 @@ export async function GET(request: NextRequest) {
     }
 
     const metaCantidad = metasMap["cobertura_marcas"] || 0;
-    const semanaCobertura = semanaCoberturaData.map((sem, i) => {
+    let semanaCobertura: (string | null)[] = semanaCoberturaData.map((sem, i) => {
       const esFuturo = semanas[i].inicio > now;
       if (esFuturo) return null;
       if (metaCantidad <= 0) return "100%";
       const pct = Math.round((sem.cantidad / metaCantidad) * 100);
       return `${pct}%`;
     });
+
+    // Con metas por marca en el mes (lib/stoplight/metasMarca), la cobertura
+    // del vendedor usa la meta de cada marca × su parte de la cuota de la sede.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    try {
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        const cuotaSede = await query(
+          `SELECT COALESCE(SUM(c.cuota), 0) AS total FROM sellers s
+           INNER JOIN (SELECT seller_id, cuota FROM cuota WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)) c
+             ON s.id = c.seller_id
+           WHERE s.cids = ?`,
+          [companyId],
+        );
+        const totalCuota = Number((cuotaSede.rows as any[])[0]?.total) || 0;
+        const factor = totalCuota > 0 ? cuotaNum / totalCuota : 0;
+        if (factor > 0) {
+          const lineas = (await obtenerLineasMargen(companyId, fechaInicio, fechaFin)).filter((l) => l.vendedorId === uid);
+          coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineas, semanas, anio, mesNum, factor, now);
+          semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+        }
+      }
+    } catch (e: any) {
+      console.error("Error en cobertura por marca (vendedor):", e.message);
+    }
 
     // === AVERAGES ===
     const avgFromWeeks = (weeks: (string | null)[]) => {
@@ -543,8 +567,6 @@ export async function GET(request: NextRequest) {
         totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
         totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
         totalCostoMes: Math.round(totalCostoMes * 100) / 100,
-        totalOrdenesMes,
-        totalFacturadasMes,
         totalClientsActivacion,
         totalActiveClients,
         totalClientesNuevos,
@@ -559,11 +581,20 @@ export async function GET(request: NextRequest) {
         semanaCobertura,
         avgCumplimiento: avgFromWeeks(semanaCuota),
         avgMargen: avgFromWeeks(semanaMargen),
-        avgVisitas: avgFromWeeks(semanaVisitas),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
         avgEfectividad: avgFromWeeks(semanaEfectividad),
-        avgActivacion: avgFromWeeks(semanaActivacion),
+        // Mes completo: las semanas son acumuladas, promediarlas subestima.
+        avgActivacion: totalClientsActivacion <= 0
+          ? avgFromWeeks(semanaActivacion)
+          : metaActivacion <= 0
+          ? 100
+          : Math.round((((totalActiveClients / totalClientsActivacion) * 100) / metaActivacion) * 100),
         avgClientes: avgFromWeeks(semanaClientes),
-        avgCobertura: avgFromWeeks(semanaCobertura),
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
         metas: metasMap,
         pesos: pesosMap,
       },

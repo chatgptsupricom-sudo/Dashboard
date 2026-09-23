@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
 
@@ -52,87 +52,57 @@ export async function GET(request: NextRequest) {
     );
     const sellers = sellerResult.rows as any[];
     if (sellers.length === 0) {
-      return NextResponse.json({ success: true, data: { mes, global: { ordenes: 0, facturadas: 0, efectividad: 0 }, sellers: [] } });
+      return NextResponse.json({ success: true, data: { mes, metaEfectividad: 0, global: { emitidas: 0, confirmadas: 0, canceladas: 0, pendientes: 0, montoEmitido: 0, montoConfirmado: 0, efectividad: 0 }, sellers: [] } });
     }
 
-    const orders = await callOdooRPC<any[]>(
-      "sale.order", "search_read",
-      [[
-        ["state", "in", ["sale", "done"]],
-        ["company_id", "=", companyId],
-        ["date_order", ">=", fechaInicio],
-        ["date_order", "<=", fechaFin + " 23:59:59"],
-        ["user_id", "=", uid],
-      ]],
-      { fields: ["id", "user_id", "state", "date_order", "amount_total", "partner_id", "invoice_status", "invoice_ids"], limit: 50000 }
-    );
+    // Cotizaciones del vendedor: confirmadas ÷ emitidas (lib/stoplight/cotizaciones).
+    // Mismo formato que /api/superadmin/stoplight/efectividad-detail.
+    const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin, [["user_id", "=", uid]]);
 
-    const semanasData = semanas.map(() => ({ ordenes: 0, facturadas: 0, montoOrdenes: 0, montoFacturadas: 0 }));
-    let totalOrdenes = 0;
-    let totalFacturadas = 0;
-    let totalMonto = 0;
-    let totalMontoFact = 0;
-
-    (orders || []).forEach((order: any) => {
-      const amount = Number(order.amount_total) || 0;
-      const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-      const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-
-      totalOrdenes++;
-      totalMonto += amount;
-      if (isInvoiced) { totalFacturadas++; totalMontoFact += amount; }
-
-      const orderDate = new Date(order.date_order);
-      for (let i = 0; i < semanas.length; i++) {
-        if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-          semanasData[i].ordenes++;
-          semanasData[i].montoOrdenes += amount;
-          if (isInvoiced) { semanasData[i].facturadas++; semanasData[i].montoFacturadas += amount; }
-          break;
-        }
-      }
-    });
+    type Acum = { emitidas: number; confirmadas: number; canceladas: number; pendientes: number; montoEmitido: number; montoConfirmado: number };
+    const vacio = (): Acum => ({ emitidas: 0, confirmadas: 0, canceladas: 0, pendientes: 0, montoEmitido: 0, montoConfirmado: 0 });
+    const sumar = (acc: Acum, estado: string, monto: number) => {
+      acc.emitidas++;
+      acc.montoEmitido += monto;
+      if (estado === "confirmada") { acc.confirmadas++; acc.montoConfirmado += monto; }
+      else if (estado === "cancelada") acc.canceladas++;
+      else acc.pendientes++;
+    };
+    const total = vacio();
+    const porSemana = semanas.map(vacio);
+    for (const c of cotizaciones) {
+      sumar(total, c.estado, c.monto);
+      const i = semanas.findIndex((w) => c.fecha >= w.inicio && c.fecha <= w.fin);
+      if (i !== -1) sumar(porSemana[i], c.estado, c.monto);
+    }
 
     const metaResult = await query(
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["efectividad_cierre", companyId, mes]
     );
-    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
+    const metaEfectividad = Number((metaResult.rows as any[])[0]?.meta_mensual) || 0;
 
-    // Tasa de cierre cruda: facturadas / órdenes
-    const efectividad = totalOrdenes > 0 ? Math.round((totalFacturadas / totalOrdenes) * 100) : 0;
-    // % de cumplimiento de la meta (si hay meta configurada)
-    const cumplimientoMeta = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : null;
-
-    const sellerSemanas = semanasData.map((sem, i) => {
-      const esFuturo = semanas[i].inicio > now;
-      const efectividadSem = sem.ordenes > 0 ? Math.round((sem.facturadas / sem.ordenes) * 100) : null;
-      return {
-        numero: i + 1,
-        label: semanas[i].label,
-        ordenes: sem.ordenes,
-        facturadas: sem.facturadas,
-        montoOrdenes: Math.round(sem.montoOrdenes * 100) / 100,
-        montoFacturadas: Math.round(sem.montoFacturadas * 100) / 100,
-        efectividad: esFuturo ? null : efectividadSem,
-      };
-    });
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const tasa = (a: Acum) => (a.emitidas > 0 ? Math.round((a.confirmadas / a.emitidas) * 100) : null);
+    const plano = (a: Acum) => ({ ...a, montoEmitido: r2(a.montoEmitido), montoConfirmado: r2(a.montoConfirmado) });
+    const efectividad = tasa(total) ?? 0;
 
     return NextResponse.json({
       success: true,
       data: {
         mes,
         metaEfectividad,
-        global: { ordenes: totalOrdenes, facturadas: totalFacturadas, efectividad, cumplimientoMeta },
+        global: { ...plano(total), efectividad },
         sellers: [{
           nombre: sellers[0].name,
-          ordenes: totalOrdenes,
-          facturadas: totalFacturadas,
-          montoOrdenes: Math.round(totalMonto * 100) / 100,
-          montoFacturadas: Math.round(totalMontoFact * 100) / 100,
+          ...plano(total),
           efectividad,
-          cumplimientoMeta,
-          semanas: sellerSemanas,
+          semanas: porSemana.map((w, i) => ({
+            numero: i + 1,
+            label: semanas[i].label,
+            ...plano(w),
+            efectividad: semanas[i].inicio > now ? null : tasa(w),
+          })),
         }],
       },
     });

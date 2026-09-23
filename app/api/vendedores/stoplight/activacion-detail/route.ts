@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { fechaLocal } from "@/lib/stoplight/margen";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -85,33 +86,43 @@ export async function GET(request: NextRequest) {
     );
     const metaActivacion = (metaResult.rows as any[])[0]?.meta_mensual || 0;
 
-    const semanaActivacion = semanas.map((sem) => {
-      const esFuturo = sem.inicio > now;
-      if (esFuturo) return null;
-      if (total <= 0) return null;
-      if (metaActivacion > 0) {
-        const count = (invoices || []).filter((inv: any) => {
-          const pid = inv.partner_id?.[0];
-          const d = new Date(inv.invoice_date);
-          return pid && activePartnerIds.includes(pid) && d >= sem.inicio && d <= sem.fin;
-        }).length;
-        return `${Math.round((count / metaActivacion) * 100)}%`;
-      }
-      return null;
+    // Mismo formato que /api/superadmin/stoplight/activacion-detail (lo
+    // consume el mismo modal): tasa real + meta en %, semanas acumuladas.
+    // Antes devolvía otra forma y el modal del vendedor salía vacío.
+    const semanaDe = new Map<number, number>(); // partner -> primera semana con compra
+    (invoices || []).forEach((inv: any) => {
+      const pid = inv.partner_id?.[0];
+      if (!pid || !activePartnerIds.includes(pid)) return;
+      const d = fechaLocal(inv.invoice_date);
+      const i = semanas.findIndex((sem) => d >= sem.inicio && d <= sem.fin);
+      if (i === -1) return;
+      semanaDe.set(pid, Math.min(semanaDe.get(pid) ?? i, i));
     });
+    const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+    const semanasCalc = semanas.map((sem, i) => {
+      const activosAcum = [...semanaDe.values()].filter((w) => w <= i).length;
+      return {
+        numero: i + 1,
+        label: `${sem.inicio.toLocaleDateString("es-VE", opts)} - ${sem.fin.toLocaleDateString("es-VE", opts)}`,
+        activos: activosAcum,
+        total,
+        activacion: sem.inicio > now || total <= 0 ? null : Math.round((activosAcum / total) * 100),
+      };
+    });
+    const activacion = total > 0 ? Math.round((activos / total) * 100) : 0;
 
     return NextResponse.json({
       success: true,
       data: {
         mes,
+        metaActivacion,
+        global: { totalClientes: total, clientesActivos: activos, activacion },
         sellers: [{
           nombre: sellers[0].name,
-          sellerId: sellers[0].seller_id,
-          total,
-          activos,
-          metaActivacion,
-          pctMeta: metaActivacion > 0 ? Math.round((activos / metaActivacion) * 100) : (total > 0 ? Math.round((activos / total) * 100) : 0),
-          semanas: semanaActivacion,
+          totalClientes: total,
+          clientesActivos: activos,
+          activacion,
+          semanas: semanasCalc,
         }],
       },
     });
