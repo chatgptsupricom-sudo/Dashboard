@@ -23,7 +23,10 @@ export function ProductSelect({
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q),
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.code.toLowerCase().includes(q) ||
+        (p.brand || "").toLowerCase().includes(q),
     );
   }, [products, query]);
 
@@ -46,6 +49,9 @@ export function ProductSelect({
             <span className="truncate font-medium text-slate-800">
               {selected.name}
             </span>
+            {selected.brand && (
+              <span className="shrink-0 text-xs text-slate-500">{selected.brand}</span>
+            )}
           </span>
         ) : (
           <span className="text-slate-400">Selecciona un producto…</span>
@@ -64,7 +70,7 @@ export function ProductSelect({
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar producto o SKU…"
+                  placeholder="Buscar producto, SKU o marca…"
                   className="h-8 w-full rounded-md border border-slate-200 pl-8 pr-2 text-sm focus:border-violet-300 focus:outline-none"
                 />
               </div>
@@ -92,8 +98,15 @@ export function ProductSelect({
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600">
                         {p.code}
                       </span>
-                      <span className="truncate font-medium text-slate-800">
-                        {p.name}
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-slate-800">
+                          {p.name}
+                        </span>
+                        {p.brand && (
+                          <span className="block truncate text-[11px] text-slate-500">
+                            {p.brand}
+                          </span>
+                        )}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-500">
