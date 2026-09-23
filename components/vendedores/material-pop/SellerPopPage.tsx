@@ -32,6 +32,7 @@ type Solicitud = {
     code: string;
     name: string;
     brand: string | null;
+    imageUrl: string | null;
     quantity: number;
     approvedQuantity: number | null;
   }[];
@@ -345,11 +346,24 @@ export function SellerPopPage() {
 
                 <ul className="mt-3 space-y-1 text-sm">
                   {r.items.map((it) => (
-                    <li key={it.productId} className="flex justify-between gap-2">
-                      <span className="min-w-0 truncate text-slate-700">
-                        <span className="font-mono text-[11px] text-slate-400">{it.code}</span>{" "}
-                        {it.name}
-                        {it.brand ? <span className="text-slate-400"> · {it.brand}</span> : null}
+                    <li key={it.productId} className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-2 text-slate-700">
+                        {it.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={it.imageUrl}
+                            alt={it.name}
+                            loading="lazy"
+                            className="h-8 w-8 shrink-0 rounded-md border border-slate-200 bg-white object-contain"
+                          />
+                        ) : (
+                          <span className="h-8 w-8 shrink-0 rounded-md bg-slate-100" />
+                        )}
+                        <span className="min-w-0 truncate">
+                          <span className="font-mono text-[11px] text-slate-400">{it.code}</span>{" "}
+                          {it.name}
+                          {it.brand ? <span className="text-slate-400"> · {it.brand}</span> : null}
+                        </span>
                       </span>
                       <span className="shrink-0 text-slate-600">
                         {it.approvedQuantity != null && it.approvedQuantity !== it.quantity ? (

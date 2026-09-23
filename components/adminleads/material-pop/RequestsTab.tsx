@@ -14,6 +14,7 @@ type Item = {
   code: string;
   name: string;
   brand: string | null;
+  imageUrl: string | null;
   quantity: number;
   approvedQuantity: number | null;
   stockTotal: number;
@@ -273,15 +274,30 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                         return (
                           <tr key={it.productId} className="border-t border-slate-100">
                             <td className="py-2 pr-3">
-                              <span className="font-mono text-[11px] text-slate-400">
-                                {it.code}
-                              </span>{" "}
-                              {it.name}
-                              {it.brand && (
-                                <span className="text-xs text-slate-400"> · {it.brand}</span>
-                              )}
-                              <span className="block text-[11px] text-slate-400">
-                                Oficina {it.stockOffice} · Almacén {it.stockWarehouse}
+                              <span className="flex items-start gap-2">
+                                {it.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={it.imageUrl}
+                                    alt={it.name}
+                                    loading="lazy"
+                                    className="h-10 w-10 shrink-0 rounded-md border border-slate-200 bg-white object-contain"
+                                  />
+                                ) : (
+                                  <span className="h-10 w-10 shrink-0 rounded-md bg-slate-100" />
+                                )}
+                                <span className="min-w-0">
+                                  <span className="font-mono text-[11px] text-slate-400">
+                                    {it.code}
+                                  </span>{" "}
+                                  {it.name}
+                                  {it.brand && (
+                                    <span className="text-xs text-slate-400"> · {it.brand}</span>
+                                  )}
+                                  <span className="block text-[11px] text-slate-400">
+                                    Oficina {it.stockOffice} · Almacén {it.stockWarehouse}
+                                  </span>
+                                </span>
                               </span>
                             </td>
                             <td className="py-2 text-right font-medium">{it.quantity}</td>

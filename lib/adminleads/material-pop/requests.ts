@@ -31,6 +31,8 @@ export interface SolicitudItem {
   code: string;
   name: string;
   brand: string | null;
+  /** Foto del producto, para saber qué se está pidiendo sin abrir el catálogo. */
+  imageUrl: string | null;
   quantity: number;
   approvedQuantity: number | null;
   stockTotal: number;
@@ -129,7 +131,7 @@ export async function listarSolicitudes(opts: {
   const ids = filas.map((r: any) => Number(r.id));
   const marcadores = ids.map(() => "?").join(",");
   const detalle = await query(
-    `SELECT ri.*, p.code, p.name, p.brand,
+    `SELECT ri.*, p.code, p.name, p.brand, p.image_id,
             COALESCE(SUM(CASE WHEN s.location = 'office' THEN s.quantity END), 0) AS stock_office,
             COALESCE(SUM(CASE WHEN s.location = 'warehouse' THEN s.quantity END), 0) AS stock_warehouse,
             COALESCE(SUM(s.quantity), 0) AS stock_total
@@ -154,6 +156,7 @@ export async function listarSolicitudes(opts: {
       code: row.code || "",
       name: row.name || "",
       brand: row.brand || null,
+      imageUrl: row.image_id ? `/api/adminleads/material-pop/images/${row.image_id}` : null,
       quantity: n(row.quantity),
       approvedQuantity: row.approved_quantity == null ? null : n(row.approved_quantity),
       stockTotal: n(row.stock_total),

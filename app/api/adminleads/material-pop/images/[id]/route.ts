@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireAdminLeadsValencia } from "@/lib/adminleads/material-pop/auth";
+import { requireLecturaMaterialPop } from "@/lib/adminleads/material-pop/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await requireAdminLeadsValencia(request);
+    // El vendedor tambien ve las fotos: sin ellas no sabe que esta pidiendo.
+    const auth = await requireLecturaMaterialPop(request);
     if (auth.error) return auth.error;
 
     const { id } = await params;

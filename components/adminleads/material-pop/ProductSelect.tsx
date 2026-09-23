@@ -5,6 +5,32 @@ import { Building2, Check, Search, Warehouse } from "lucide-react";
 import type { PopProduct } from "@/lib/adminleads/material-pop/types";
 import { cn } from "@/lib/utils";
 
+/**
+ * Miniatura del producto. Sin foto queda un recuadro gris del mismo tamaño,
+ * para que la lista no baile de altura entre productos con y sin imagen.
+ */
+function Miniatura({ product, size }: { product: PopProduct | null; size: number }) {
+  if (!product?.image_url) {
+    return (
+      <span
+        className="shrink-0 rounded-md bg-slate-100"
+        style={{ width: size, height: size }}
+        aria-hidden
+      />
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={product.image_url}
+      alt={product.name}
+      loading="lazy"
+      className="shrink-0 rounded-md border border-slate-200 bg-white object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 export function ProductSelect({
   products,
   value,
@@ -42,7 +68,8 @@ export function ProductSelect({
         className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm transition-colors hover:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
       >
         {selected ? (
-          <span className="flex items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <Miniatura product={selected} size={32} />
             <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-violet-700">
               {selected.code}
             </span>
@@ -95,6 +122,7 @@ export function ProductSelect({
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2">
+                      <Miniatura product={p} size={36} />
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600">
                         {p.code}
                       </span>
