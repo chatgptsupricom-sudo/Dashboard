@@ -126,6 +126,7 @@ export function Sidebar({
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
+  const [isAlmacenOpen, setIsAlmacenOpen] = useState(false);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
@@ -368,7 +369,7 @@ export function Sidebar({
     allowedSections.includes("tendencia") ||
     allowedSections.includes("pareto_80_20");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["ordenes_compra", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
+  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
@@ -382,7 +383,7 @@ export function Sidebar({
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
   const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
-  const marketingSuperAdminIds = ["catalogo_disenos"];
+  const marketingSuperAdminIds = ["catalogo_disenos", "material_pop"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -895,8 +896,11 @@ export function Sidebar({
               </Link>
             )}
 
-            {/* Carga y descarga de camiones, con la calificacion del almacenista. */}
-            {allowedSections.includes("seguridad") && (
+            {/* Carga y descarga de camiones, con la calificacion del
+                almacenista. Es la vista de Seguridad; el superAdmin ve el
+                grupo "Almacen" de mas abajo, que ademas trae la recepcion,
+                las ordenes por llegar, el personal y las unidades. */}
+            {allowedSections.includes("seguridad") && !isSuperAdminRole && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsMercanciaOpen(!isMercanciaOpen)}
@@ -962,6 +966,64 @@ export function Sidebar({
               </div>
             )}
 
+            {/* Lo que opera el rol Almacen, en un solo desplegable: para el
+                rol Almacen son items planos, y el superAdmin no los tenia en
+                ningun lado. */}
+            {isSuperAdminRole && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsAlmacenOpen(!isAlmacenOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Container size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_almacen")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isAlmacenOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isAlmacenOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("almacen_recepcion"), href: `/${locale}/seguridad/mercancia/recepcion` },
+                        { label: t("almacen_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        { label: t("almacen_ordenes"), href: `/${locale}/seguridad/mercancia/ordenes` },
+                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                        { label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` },
+                        { label: t("almacen_unidades"), href: `/${locale}/seguridad/mercancia/unidades` },
+                      ].map((sub, index) => {
+                        const isSubActive = pathname.startsWith(sub.href);
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             {/* Submenú Desplegable de COMPRAS (solo para roles que no son Compras) */}
             {hasComprasPermission && !isComprasRole && (
               <div className="space-y-1">
@@ -994,6 +1056,13 @@ export function Sidebar({
                             ? `/${locale}/superadmin/ordenes-compra`
                             : `/${locale}/compras/ordenes`,
                           permission: "ordenes_compra",
+                        },
+                        {
+                          // Los packing list son de Compras (los carga) aunque
+                          // quien los reciba sea Almacen.
+                          label: t("recepcion_packing"),
+                          href: `/${locale}/compras/packing-list`,
+                          permission: "recepcion_packing",
                         },
                         {
                           label: t("sugerencia_compras"),
@@ -1334,6 +1403,9 @@ export function Sidebar({
                         { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
                         { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
                         { label: "KPI de Diseños", href: `${basePath}/disenos` },
+                        // Material POP vive en /adminleads (no hay copia bajo
+                        // /superadmin): el enlace va a esa ruta.
+                        { label: t("material_pop"), href: `/${locale}/adminleads/material-pop` },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (

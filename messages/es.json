@@ -196,6 +196,7 @@
     "material_pop": "Material POP",
     "seg_grupo_rma": "RMA",
     "seg_grupo_mercancia": "Mercancía",
+    "seg_grupo_almacen": "Almacén",
     "seg_ingreso": "Ingreso",
     "seg_egreso": "Egreso",
     "seg_estadisticas": "Estadísticas de RMA",
