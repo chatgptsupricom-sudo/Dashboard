@@ -1,10 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { accesoStoplight } from "@/lib/stoplight/acceso";
 
 function normalize(str: string): string {
   return str
@@ -18,21 +15,13 @@ function normalize(str: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { companyId } = acceso;
 
     const url = new URL(request.url);
-    const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
     const sellerName = url.searchParams.get("seller_name");
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
     if (!sellerName) {
       return NextResponse.json({ error: "Falta seller_name" }, { status: 400 });

@@ -30,12 +30,10 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // `value` = estricta (cobrado hasta el cierre del mes, la del semáforo);
-  // `valueAcumulado` = "cobrado a hoy", dato secundario (issue #188).
+  // Cobrado del mes ÷ facturado del mes (lib/cxc/efectividad.ts).
   efectividad: {
-    value: number; meta: number; cobradoMes: number; exigibleMes: number; pendiente: number;
-    exigibleMesCompleto?: number; parcial?: boolean;
-    valueAcumulado: number | null; cobradoAHoy: number; mesCerrado: boolean;
+    value: number | null; meta: number; cobrado: number; facturado: number;
+    cobradoDeFacturasDelMes: number; cobradoDeAnteriores: number; facturas: number; parcial: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
@@ -251,16 +249,13 @@ export default function CxCReport() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <KPICard
               title={t("efectividad_cobranza")}
-              value={`${data.kpis.efectividad.value}%`}
+              value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("cobrado_exigible")}: ${formatCurrency(data.kpis.efectividad.cobradoMes)} / ${data.kpis.efectividad.parcial ? t("exigible_vencido") : t("exigible")}: ${formatCurrency(data.kpis.efectividad.exigibleMes)}` +
-                (data.kpis.efectividad.mesCerrado && data.kpis.efectividad.valueAcumulado !== null
-                  ? ` · ${t("cobrado_a_hoy")}: ${data.kpis.efectividad.valueAcumulado}%`
-                  : "")
+                `${t("cobrado_mes")}: ${formatCurrency(data.kpis.efectividad.cobrado)} / ${t("facturado_mes")}: ${formatCurrency(data.kpis.efectividad.facturado)}`
               }
-              color={getTrafficLight(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
-              dot={getTrafficDot(data.kpis.efectividad.value, { green: 95, yellow: 85 })}
+              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
+              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
               icon={<TrendingUp size={20} />}
               weight="35%"
             />

@@ -1,26 +1,17 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { accesoStoplight, ROLES_DETALLE_VENTAS } from "@/lib/stoplight/acceso";
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
+    // CxC también abre facturas desde su modal (vista multi-sede, igual que
+    // gerente de operaciones), por eso va en la lista.
+    const acceso = await accesoStoplight(request, [...ROLES_DETALLE_VENTAS, "cuentas por cobrar"]);
+    if (acceso.error) return acceso.error;
+    const { rol, companyId } = acceso;
 
     const url = new URL(request.url);
     const invoiceId = url.searchParams.get("invoice_id");
-    const companyIdParam = url.searchParams.get("company_id");
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : 0;
 
     if (!invoiceId) {
       return NextResponse.json({ error: "Falta invoice_id" }, { status: 400 });
@@ -31,7 +22,10 @@ export async function GET(request: NextRequest) {
       "account.move",
       "search_read",
       [
-        [["id", "=", parseInt(invoiceId, 10)]],
+        // Gerencia de Ventas solo ve facturas de su sede.
+        rol === "gerencia de ventas"
+          ? [["id", "=", parseInt(invoiceId, 10)], ["company_id", "=", companyId]]
+          : [["id", "=", parseInt(invoiceId, 10)]],
       ],
       {
         fields: ["id", "name", "invoice_date", "amount_untaxed", "amount_tax", "amount_total", "move_type", "partner_id", "invoice_user_id"],

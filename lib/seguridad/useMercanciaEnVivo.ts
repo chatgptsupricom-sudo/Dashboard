@@ -8,7 +8,7 @@ import { EVENTO_MERCANCIA, type AvisoMercancia } from "@/lib/seguridad/eventos";
  * Escucha los avisos de Mercancia y llama a `alAvisar` cuando llega uno.
  *
  * La sala la asigna el servidor al conectar, a partir del JWT de la cookie
- * (ver `salaMercancia` en server.js): el cliente no pide nada ni puede
+ * (ver `salasMercancia` en server.js): el cliente no pide nada ni puede
  * escuchar la sucursal de al lado.
  *
  * El aviso solo dice "algo cambio": quien lo recibe vuelve a pedir sus datos

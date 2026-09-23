@@ -1,11 +1,9 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { fechaLocal } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { jwtSecretBytes } from "@/lib/secretos";
-
-const JWT_SECRET = jwtSecretBytes();
+import { accesoStoplight } from "@/lib/stoplight/acceso";
 
 function normalize(str: string): string {
   return str
@@ -19,21 +17,13 @@ function normalize(str: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerente de operaciones") {
-      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-    }
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { companyId } = acceso;
 
     const url = new URL(request.url);
-    const companyIdParam = url.searchParams.get("company_id");
     const mesParam = url.searchParams.get("mes");
     const periodoParam = url.searchParams.get("periodo") || "mes"; // mes, trimestre, anio, todo
-    const companyId = companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number);
 
     const now = new Date();
     const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -66,14 +56,14 @@ export async function GET(request: NextRequest) {
       fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
       const ultimoDia = new Date(anio, mesNum, 0).getDate();
       fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${ultimoDia}`;
-      periodoLabel = `${now.toLocaleString("es-VE", { month: "long" })} ${anio}`;
+      periodoLabel = `${new Date(anio, mesNum - 1, 1).toLocaleString("es-VE", { month: "long" })} ${anio}`;
     }
 
     // Calculate weeks based on period
     const semanas = (() => {
       const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
-      const fechaInicioDate = new Date(fechaInicio);
-      const fechaFinDate = new Date(fechaFin);
+      const fechaInicioDate = fechaLocal(fechaInicio);
+      const fechaFinDate = fechaLocal(fechaFin);
       let inicio = new Date(fechaInicioDate);
 
       while (inicio <= fechaFinDate) {
@@ -105,145 +95,68 @@ export async function GET(request: NextRequest) {
     );
     const sellers = cuotaResult.rows as any[];
 
-    // 2. Fetch sale.order for the period
-    const orders = await callOdooRPC<any[]>(
-      "sale.order",
-      "search_read",
-      [
-        [
-          ["state", "in", ["sale", "done"]],
-          ["company_id", "=", companyId],
-          ["date_order", ">=", fechaInicio],
-          ["date_order", "<=", fechaFin + " 23:59:59"],
-          ["user_id", "!=", false],
-        ],
-      ],
-      {
-        fields: ["id", "user_id", "state", "date_order", "amount_total", "partner_id", "invoice_status", "invoice_ids"],
-        limit: 50000,
-      }
-    );
+    // 2. Cotizaciones emitidas en el período (lib/stoplight/cotizaciones):
+    // efectividad = confirmadas ÷ emitidas.
+    const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin);
 
-    // DEBUG
-    const totalOrders = (orders || []).length;
-    const byInvoiceStatus: Record<string, number> = {};
-    (orders || []).forEach((o: any) => {
-      byInvoiceStatus[o.invoice_status || "null"] = (byInvoiceStatus[o.invoice_status || "null"] || 0) + 1;
-    });
-    console.log(`[Efectividad] company=${companyId} periodo=${periodoParam} (${fechaInicio} a ${fechaFin}) totalOrders=${totalOrders}`);
-    console.log(`[Efectividad] byInvoiceStatus:`, JSON.stringify(byInvoiceStatus));
-
-    // 3. Normalize seller names
+    // 3. Por vendedor (solo los de `sellers` de la sede) y por semana.
+    type Acum = { emitidas: number; confirmadas: number; canceladas: number; pendientes: number; montoEmitido: number; montoConfirmado: number };
+    const vacio = (): Acum => ({ emitidas: 0, confirmadas: 0, canceladas: 0, pendientes: 0, montoEmitido: 0, montoConfirmado: 0 });
+    const sumar = (acc: Acum, estado: string, monto: number) => {
+      acc.emitidas++;
+      acc.montoEmitido += monto;
+      if (estado === "confirmada") { acc.confirmadas++; acc.montoConfirmado += monto; }
+      else if (estado === "cancelada") acc.canceladas++;
+      else acc.pendientes++;
+    };
     const normalizedSellerMap: Record<string, string> = {};
-    const sellerDataMap: Record<string, {
-      nombre: string;
-      ordenes: number;
-      facturadas: number;
-      montoOrdenes: number;
-      montoFacturadas: number;
-      semanas: { ordenes: number; facturadas: number; montoOrdenes: number; montoFacturadas: number }[];
-    }> = {};
-
+    const sellerDataMap: Record<string, { nombre: string; total: Acum; semanas: Acum[] }> = {};
     sellers.forEach((s: any) => {
-      const norm = normalize(s.name);
-      normalizedSellerMap[norm] = s.name;
-      sellerDataMap[s.name] = {
-        nombre: s.name,
-        ordenes: 0,
-        facturadas: 0,
-        montoOrdenes: 0,
-        montoFacturadas: 0,
-        semanas: semanas.map(() => ({ ordenes: 0, facturadas: 0, montoOrdenes: 0, montoFacturadas: 0 })),
-      };
+      normalizedSellerMap[normalize(s.name)] = s.name;
+      sellerDataMap[s.name] = { nombre: s.name, total: vacio(), semanas: semanas.map(vacio) };
     });
 
-    // 4. Process orders
-    (orders || []).forEach((order: any) => {
-      const sellerName = order.user_id?.[1];
-      if (!sellerName) return;
-      const norm = normalize(sellerName);
-      const matchedName = normalizedSellerMap[norm];
-      if (!matchedName || !sellerDataMap[matchedName]) return;
+    for (const c of cotizaciones) {
+      const matchedName = normalizedSellerMap[normalize(c.vendedor)];
+      const sd = matchedName ? sellerDataMap[matchedName] : undefined;
+      if (!sd) continue;
+      sumar(sd.total, c.estado, c.monto);
+      const i = semanas.findIndex((w) => c.fecha >= w.inicio && c.fecha <= w.fin);
+      if (i !== -1) sumar(sd.semanas[i], c.estado, c.monto);
+    }
 
-      const amount = Number(order.amount_total) || 0;
-      const hasInvoiceIds = order.invoice_ids && order.invoice_ids.length > 0;
-      const isInvoiced = hasInvoiceIds || order.invoice_status === "invoiced";
-
-      sellerDataMap[matchedName].ordenes++;
-      sellerDataMap[matchedName].montoOrdenes += amount;
-
-      if (isInvoiced) {
-        sellerDataMap[matchedName].facturadas++;
-        sellerDataMap[matchedName].montoFacturadas += amount;
-      }
-
-      // Distribute by week
-      const orderDate = new Date(order.date_order);
-      for (let i = 0; i < semanas.length; i++) {
-        if (orderDate >= semanas[i].inicio && orderDate <= semanas[i].fin) {
-          sellerDataMap[matchedName].semanas[i].ordenes++;
-          sellerDataMap[matchedName].semanas[i].montoOrdenes += amount;
-          if (isInvoiced) {
-            sellerDataMap[matchedName].semanas[i].facturadas++;
-            sellerDataMap[matchedName].semanas[i].montoFacturadas += amount;
-          }
-          break;
-        }
-      }
-    });
-
-    // 5. Load meta
+    // 4. Meta
     const metaResult = await query(
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["efectividad_cierre", companyId, mes]
     );
-    const metaEfectividad = (metaResult.rows as any[])[0]?.meta_mensual || 0;
+    const metaEfectividad = Number((metaResult.rows as any[])[0]?.meta_mensual) || 0;
 
-    // 6. Build response
-    const result = Object.values(sellerDataMap).map((seller) => {
-      // Tasa de cierre cruda: facturadas / órdenes
-      const efectividad = seller.ordenes > 0
-        ? Math.round((seller.facturadas / seller.ordenes) * 100)
-        : 0;
-      // % de cumplimiento de la meta (si hay meta configurada)
-      const cumplimientoMeta = metaEfectividad > 0 ? Math.round((efectividad / metaEfectividad) * 100) : null;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const tasa = (a: Acum) => (a.emitidas > 0 ? Math.round((a.confirmadas / a.emitidas) * 100) : null);
+    const plano = (a: Acum) => ({ ...a, montoEmitido: r2(a.montoEmitido), montoConfirmado: r2(a.montoConfirmado) });
 
-      const semanasCalc = seller.semanas.map((sem, i) => {
-        const semanaInicio = semanas[i].inicio;
-        const esFuturo = semanaInicio > now;
-        const efectividadSem = sem.ordenes > 0
-          ? Math.round((sem.facturadas / sem.ordenes) * 100)
-          : null;
-        return {
+    // 5. Respuesta
+    const result = Object.values(sellerDataMap)
+      .filter((sd) => sd.total.emitidas > 0)
+      .map((sd) => ({
+        nombre: sd.nombre,
+        ...plano(sd.total),
+        efectividad: tasa(sd.total) ?? 0,
+        semanas: sd.semanas.map((w, i) => ({
           numero: i + 1,
           label: semanas[i].label,
-          ordenes: sem.ordenes,
-          facturadas: sem.facturadas,
-          montoOrdenes: Math.round(sem.montoOrdenes * 100) / 100,
-          montoFacturadas: Math.round(sem.montoFacturadas * 100) / 100,
-          efectividad: esFuturo ? null : efectividadSem,
-        };
-      });
+          ...plano(w),
+          efectividad: semanas[i].inicio > now ? null : tasa(w),
+        })),
+      }))
+      .sort((a, b) => b.efectividad - a.efectividad || b.emitidas - a.emitidas);
 
-      return {
-        nombre: seller.nombre,
-        ordenes: seller.ordenes,
-        facturadas: seller.facturadas,
-        montoOrdenes: Math.round(seller.montoOrdenes * 100) / 100,
-        montoFacturadas: Math.round(seller.montoFacturadas * 100) / 100,
-        efectividad,
-        cumplimientoMeta,
-        semanas: semanasCalc,
-      };
-    });
-
-    result.sort((a, b) => b.efectividad - a.efectividad);
-
-    // 6. Calculate global totals
-    const globalOrdenes = result.reduce((sum, s) => sum + s.ordenes, 0);
-    const globalFacturadas = result.reduce((sum, s) => sum + s.facturadas, 0);
-    const globalEfectividad = globalOrdenes > 0 ? Math.round((globalFacturadas / globalOrdenes) * 100) : 0;
-    const globalCumplimientoMeta = metaEfectividad > 0 ? Math.round((globalEfectividad / metaEfectividad) * 100) : null;
+    const global = result.reduce((acc, s) => {
+      acc.emitidas += s.emitidas; acc.confirmadas += s.confirmadas; acc.canceladas += s.canceladas;
+      acc.pendientes += s.pendientes; acc.montoEmitido += s.montoEmitido; acc.montoConfirmado += s.montoConfirmado;
+      return acc;
+    }, vacio());
 
     return NextResponse.json({
       success: true,
@@ -254,12 +167,7 @@ export async function GET(request: NextRequest) {
         fechaInicio,
         fechaFin,
         metaEfectividad,
-        global: {
-          ordenes: globalOrdenes,
-          facturadas: globalFacturadas,
-          efectividad: globalEfectividad,
-          cumplimientoMeta: globalCumplimientoMeta,
-        },
+        global: { ...plano(global), efectividad: tasa(global) ?? 0 },
         sellers: result,
       },
     });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { X, Check, ArrowLeft } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
 
 interface EfectividadCierreModalProps {
   isOpen: boolean;
@@ -59,6 +60,30 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
   }, [isOpen, mes, periodo, companyId, apiPrefix]);
 
   if (!isOpen) return null;
+
+  // Semáforo contra la meta de la fila (`metaEfectividad`, en %), no contra un
+  // 60/40 fijo. Sin meta: neutro y sin "Cumple / No cumple".
+  const meta = Number(data?.metaEfectividad) || 0;
+  const nivel = (v: number | null | undefined): Nivel => nivelContraMeta(v, meta);
+  const Chip = ({ valor }: { valor: number | null | undefined }) => (
+    <span className={`inline-flex min-w-[52px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivel(valor)]}`}>
+      {valor == null ? "–" : `${valor}%`}
+    </span>
+  );
+  const Estado = ({ valor }: { valor: number | null | undefined }) => {
+    if (valor == null) return <span className="text-slate-400">–</span>;
+    const n = nivel(valor);
+    if (n === "sin") return <span className="text-xs text-slate-400">{t("sin_meta")}</span>;
+    return n === "verde" ? (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+        <Check size={12} /> {t("cumple")}
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+        <X size={12} /> {t("no_cumple")}
+      </span>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
@@ -144,10 +169,10 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                         {/* Ordenes */}
                         <div className="flex-1 text-center">
                           <div className="bg-indigo-50 rounded-xl p-4 mb-2">
-                            <p className="text-3xl font-bold text-indigo-700">{data.global.ordenes}</p>
+                            <p className="text-3xl font-bold text-indigo-700">{data.global.emitidas}</p>
                           </div>
-                          <p className="text-xs font-medium text-indigo-600">{t("ordenes")}</p>
-                          <p className="text-[10px] text-slate-400">{t("ordenenes_confirmadas")}</p>
+                          <p className="text-xs font-medium text-indigo-600">{t("cot_emitidas")}</p>
+                          <p className="text-[10px] text-slate-400">{t("cot_emitidas_desc")}</p>
                         </div>
                         {/* Arrow */}
                         <div className="flex flex-col items-center">
@@ -156,10 +181,12 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                         {/* Facturacion */}
                         <div className="flex-1 text-center">
                           <div className="bg-green-100 rounded-xl p-4 mb-2">
-                            <p className="text-3xl font-bold text-green-700">{data.global.facturadas}</p>
+                            <p className="text-3xl font-bold text-green-700">{data.global.confirmadas}</p>
                           </div>
-                          <p className="text-xs font-medium text-green-600">{t("facturadas_completo")}</p>
-                          <p className="text-[10px] text-slate-400">{t("invoice_status")}</p>
+                          <p className="text-xs font-medium text-green-600">{t("cot_confirmadas")}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {t("cot_resto", { pendientes: data.global.pendientes ?? 0, canceladas: data.global.canceladas ?? 0 })}
+                          </p>
                         </div>
                         {/* Efectividad */}
                         <div className="flex flex-col items-center ml-4">
@@ -168,50 +195,41 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                           </div>
                           <p className="text-xs font-medium text-purple-600">{t("efectividad")}</p>
                           <p className="text-[10px] text-slate-400">{t("formula_efectividad")}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{meta > 0 ? t("meta_valor", { meta: `${meta}%` }) : t("sin_meta")}</p>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {/* Seller table */}
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
+                  <div className="border rounded-xl overflow-x-auto">
+                    <table className="w-full text-sm min-w-[680px]">
                       <thead>
                         <tr className="bg-slate-50 border-b">
                           <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                          <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
-                          <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                          <th className="p-3 text-center font-medium text-indigo-600">{t("cot_emitidas")}</th>
+                          <th className="p-3 text-center font-medium text-green-600">{t("cot_confirmadas")}</th>
+                          <th className="p-3 text-center font-medium text-slate-500">{t("cot_pendientes")}</th>
+                          <th className="p-3 text-center font-medium text-red-500">{t("cot_canceladas")}</th>
                           <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.sellers.map((seller: any) => {
-                          const cumple = seller.efectividad >= 60;
                           return (
                             <tr
                               key={seller.nombre}
-                              className="border-b hover:bg-blue-50/40 transition-colors"
+                              className="border-b hover:bg-blue-50/40 transition-colors cursor-pointer"
+                              onClick={() => { setSelectedSeller(seller); setTab("semanal"); }}
                             >
                               <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                              <td className="p-3 text-center text-indigo-600 font-bold">{seller.ordenes}</td>
-                              <td className="p-3 text-center text-green-600 font-bold">{seller.facturadas}</td>
-                              <td className="p-3 text-center">
-                                <span className={`font-bold ${seller.efectividad >= 60 ? "text-green-600" : seller.efectividad >= 40 ? "text-yellow-600" : "text-red-600"}`}>
-                                  {seller.efectividad}%
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                {cumple ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                    <Check size={12} /> {t("cumple")}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                    <X size={12} /> {t("no_cumple")}
-                                  </span>
-                                )}
-                              </td>
+                              <td className="p-3 text-center text-indigo-600 font-bold">{seller.emitidas}</td>
+                              <td className="p-3 text-center text-green-600 font-bold">{seller.confirmadas}</td>
+                              <td className="p-3 text-center text-slate-500">{seller.pendientes ?? "–"}</td>
+                              <td className="p-3 text-center text-red-500">{seller.canceladas ?? "–"}</td>
+                              <td className="p-3 text-center"><Chip valor={seller.efectividad} /></td>
+                              <td className="p-3 text-center"><Estado valor={seller.efectividad} /></td>
                             </tr>
                           );
                         })}
@@ -227,7 +245,7 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                   {!selectedSeller ? (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {data.sellers.map((seller: any) => (
                           <button
                             key={seller.nombre}
@@ -235,9 +253,7 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                             className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
                           >
                             <span className="font-medium text-slate-800">{seller.nombre}</span>
-                            <span className={`text-sm font-bold ${seller.efectividad >= 60 ? "text-green-600" : "text-red-600"}`}>
-                              {seller.efectividad}%
-                            </span>
+                            <Chip valor={seller.efectividad} />
                           </button>
                         ))}
                       </div>
@@ -249,51 +265,29 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                           {t("back")}
                         </button>
                         <h3 className="font-bold text-slate-800">{selectedSeller.nombre}</h3>
-                        <span className={`text-sm font-bold ${selectedSeller.efectividad >= 60 ? "text-green-600" : "text-red-600"}`}>
-                          {selectedSeller.efectividad}%
-                        </span>
+                        <Chip valor={selectedSeller.efectividad} />
                       </div>
                       <div className="border rounded-xl overflow-hidden">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 border-b">
                               <th className="p-3 text-left font-medium text-slate-600">{t("semana")}</th>
-                              <th className="p-3 text-center font-medium text-indigo-600">{t("ordenes")}</th>
-                              <th className="p-3 text-center font-medium text-green-600">{t("facturadas_completo")}</th>
+                              <th className="p-3 text-center font-medium text-indigo-600">{t("cot_emitidas")}</th>
+                              <th className="p-3 text-center font-medium text-green-600">{t("cot_confirmadas")}</th>
+                              <th className="p-3 text-center font-medium text-red-500">{t("cot_canceladas")}</th>
                               <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
                               <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                             </tr>
                           </thead>
                           <tbody>
                             {selectedSeller.semanas.map((sem: any) => (
-                              <tr key={sem.numero} className={`border-b ${sem.efectividad != null && sem.efectividad >= 60 ? "bg-green-50/30" : ""}`}>
+                              <tr key={sem.numero} className="border-b">
                                 <td className="p-3 font-medium text-sm">{sem.label || t("semana_numero", { num: sem.numero })}</td>
-                                <td className="p-3 text-center text-indigo-600 font-bold">{sem.efectividad != null ? sem.ordenes : "-"}</td>
-                                <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.facturadas : "-"}</td>
-                                <td className="p-3 text-center">
-                                  {sem.efectividad != null ? (
-                                    <span className={`font-bold ${sem.efectividad >= 60 ? "text-green-600" : sem.efectividad >= 40 ? "text-yellow-600" : "text-red-600"}`}>
-                                      {sem.efectividad}%
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400">-</span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  {sem.efectividad != null ? (
-                                    sem.efectividad >= 60 ? (
-                                      <span className="inline-flex items-center gap-0.5 text-xs text-green-600 font-medium">
-                                        <Check size={12} /> {t("ok")}
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-0.5 text-xs text-red-600 font-medium">
-                                        <X size={12} /> Bajo
-                                      </span>
-                                    )
-                                  ) : (
-                                    <span className="text-slate-400">-</span>
-                                  )}
-                                </td>
+                                <td className="p-3 text-center text-indigo-600 font-bold">{sem.efectividad != null ? sem.emitidas : "-"}</td>
+                                <td className="p-3 text-center text-green-600 font-bold">{sem.efectividad != null ? sem.confirmadas : "-"}</td>
+                                <td className="p-3 text-center text-red-500">{sem.efectividad != null ? sem.canceladas : "-"}</td>
+                                <td className="p-3 text-center">{sem.efectividad != null ? <Chip valor={sem.efectividad} /> : <span className="text-slate-400">–</span>}</td>
+                                <td className="p-3 text-center"><Estado valor={sem.efectividad} /></td>
                               </tr>
                             ))}
                           </tbody>

@@ -33,6 +33,7 @@ import {
   Calendar,
   Camera,
   Car,
+  Container,
   ChevronDown,
   ClipboardList,
   CreditCard,
@@ -43,6 +44,7 @@ import {
   LayoutDashboard,
   LogOut,
   Map,
+  MapPin,
   Megaphone,
   Package,
   Palette,
@@ -244,10 +246,13 @@ export function Sidebar({
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
     { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
     { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
+    { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
+    // Packing lists: Compras los carga y Almacen los recibe (antes iban por correo).
+    { id: "recepcion_packing", label: t("recepcion_packing"), icon: Container, slug: "/compras/packing-list", absoluteHref: true },
     { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
@@ -262,6 +267,7 @@ export function Sidebar({
     // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
     // ve la misma ruta de egresos dentro de su grupo "Mercancia"; esta es la
     // version que ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    { id: "almacen_recepcion", label: t("almacen_recepcion"), icon: Container, slug: "/seguridad/mercancia/recepcion", absoluteHref: true },
     { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
     { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
     // Catalogos que alimentan los selects del formulario de egreso — antes
@@ -419,6 +425,12 @@ export function Sidebar({
           ...item,
           href: `/${locale}${item.slug}`,
         };
+      }
+      // Gerencia de Ventas: "Cuentas por Cobrar" es su cobranza por vendedor.
+      // Con el slug normal caía en /gerente_venta/cuentas-por-cobrar, que no
+      // existe y que el middleware redirige al dashboard.
+      if (item.id === "cuentas_por_cobrar" && basePath.endsWith("/gerente_venta")) {
+        return { ...item, href: `${basePath}/cobranza` };
       }
       if (item.id === "catalogo_disenador" && userRole?.toLowerCase().trim() === "adminleads") {
         return {
@@ -749,6 +761,9 @@ export function Sidebar({
                             // Estadisticas/Por-llegar (operacion de almacen) se mudaron
                             // al desplegable "Seguridad" aparte, mas abajo.
                             { label: t("rma"), href: `/${locale}/rma` },
+                            // Personal de RMA: lo administra RMA en su propia
+                            // seccion; superAdmin llega desde aca.
+                            { label: t("seg_personal_rma"), href: `/${locale}/rma/personal` },
                           ]
                         : [
                             { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
@@ -865,7 +880,11 @@ export function Sidebar({
                   }`}
                 >
                   <Users size={20} className="text-slate-400" />
-                  <span className="text-sm">{t("seg_personal")}</span>
+                  {/* superAdmin ve tambien el Personal de RMA y el de Almacen:
+                      se aclara de quien es este. */}
+                  <span className="text-sm">
+                    {t(userRole === "superAdmin" ? "seg_personal_seguridad" : "seg_personal")}
+                  </span>
                 </div>
               </Link>
             )}
@@ -896,9 +915,15 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { label: t("seg_merc_ingresos"), href: `/${locale}/seguridad/mercancia/ingreso` },
+                        // Sin "Ingresos": el ingreso de mercancia ahora es por
+                        // packing list (Compras lo carga, Almacen lo recibe).
                         { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
                         { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                        // Personal de Almacen: lo administra Almacen; Seguridad no
+                        // lo ve en el menu, superAdmin si.
+                        ...(userRole === "superAdmin"
+                          ? [{ label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` }]
+                          : []),
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se
