@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { alinearPrecintos, leerPrecintos, leerTiposDano } from "@/lib/recepcion/flujo";
+import { alinearPrecintos, leerCorrecciones, leerDanos, leerPrecintos } from "@/lib/recepcion/flujo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -69,10 +69,10 @@ export async function cargarRecepcion(id: number) {
     recepcion: r.rows[0] as any,
     // Los tipos de dano van como lista; un renglon de antes de que existieran
     // se lee como caja danada.
-    items: (items.rows as any[]).map((i) => ({
-      ...i,
-      golpeado_tipos: leerTiposDano(i.golpeado_tipos, i.golpeado),
-    })),
+    items: (items.rows as any[]).map((i) => {
+      const danos = leerDanos(i.golpeado_tipos, i.golpeado);
+      return { ...i, danos, golpeado_tipos: danos.map((d) => d.tipo) };
+    }),
     // Los precintos van como lista (un contenedor puede tener varios); si el
     // contenedor es de antes de eso, se arma la lista con el precinto unico.
     // Los ya guardados tal como se escribieron se alinean tambien al leer.
@@ -80,6 +80,7 @@ export async function cargarRecepcion(id: number) {
       const esperados = leerPrecintos(c.precintos_esperados, c.precinto_esperado);
       return {
         ...c,
+        precintos_correcciones: leerCorrecciones(c.precintos_correcciones),
         precintos_esperados: esperados,
         precintos_recibidos: alinearPrecintos(
           leerPrecintos(c.precintos_recibidos, c.precinto_recibido),

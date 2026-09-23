@@ -3,8 +3,8 @@ import {
   alinearPrecintos,
   compararPrecintos,
   evaluarConteo,
+  limpiarDanos,
   limpiarPrecintos,
-  limpiarTiposDano,
 } from "@/lib/recepcion/flujo";
 import {
   cargarRecepcion,
@@ -192,12 +192,20 @@ export async function POST(
               { status: 400 },
             );
           }
-          // En que estado llego la caja: danada, humeda y/o abierta. Se
-          // acepta tambien el `golpeado` suelto de antes (= danada).
-          const tipos = limpiarTiposDano(
-            Array.isArray(c?.golpeado_tipos) ? c.golpeado_tipos : c?.golpeado === true ? ["danada"] : [],
+          // En que estado llego la caja (danada, humeda y/o abierta) y
+          // cuantas unidades de cada una: no siempre es todo el renglon. Se
+          // aceptan tambien la lista de tipos sin cantidad y el `golpeado`
+          // suelto de antes (= danada).
+          const danos = limpiarDanos(
+            Array.isArray(c?.danos)
+              ? c.danos
+              : Array.isArray(c?.golpeado_tipos)
+                ? c.golpeado_tipos
+                : c?.golpeado === true
+                  ? ["danada"]
+                  : [],
           );
-          const golpeado = tipos.length > 0;
+          const golpeado = danos.length > 0;
           const motivo = texto(c?.motivo_diferencia, MAX.motivo);
           const nota = golpeado ? texto(c?.golpeado_nota, MAX.nota) : null;
           await query(
@@ -205,13 +213,14 @@ export async function POST(
                 SET cantidad_recibida = ?, motivo_diferencia = ?, golpeado = ?,
                     golpeado_tipos = ?, golpeado_nota = ?
               WHERE id = ? AND recepcion_id = ?`,
-            [cantidad, motivo, golpeado ? 1 : 0, golpeado ? JSON.stringify(tipos) : null, nota, item.id, id],
+            [cantidad, motivo, golpeado ? 1 : 0, golpeado ? JSON.stringify(danos) : null, nota, item.id, id],
           );
           Object.assign(item, {
             cantidad_recibida: cantidad,
             motivo_diferencia: motivo,
             golpeado: golpeado ? 1 : 0,
-            golpeado_tipos: tipos,
+            danos,
+            golpeado_tipos: danos.map((d) => d.tipo),
             golpeado_nota: nota,
           });
         }
@@ -230,6 +239,7 @@ export async function POST(
             cantidad_recibida: i.cantidad_recibida === null ? null : Number(i.cantidad_recibida),
             motivo_diferencia: i.motivo_diferencia,
             golpeado: Number(i.golpeado) === 1,
+            danos: i.danos || [],
           })),
           fotosGolpe,
         );
@@ -243,6 +253,12 @@ export async function POST(
         if (ev.sinContar) faltan.push(`${ev.sinContar} renglon(es) sin contar`);
         if (ev.sinMotivo) faltan.push(`el motivo en ${ev.sinMotivo} renglon(es) con diferencia`);
         if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) en mal estado`);
+        if (ev.danosSinCantidad) {
+          faltan.push(`cuantas unidades en ${ev.danosSinCantidad} dano(s) marcado(s) (danada, humeda o abierta)`);
+        }
+        if (ev.danosDeMas) {
+          faltan.push(`corregir ${ev.danosDeMas} dano(s) con mas unidades que las recibidas`);
+        }
         if (faltan.length) {
           return NextResponse.json(
             { error: `No se puede cerrar: falta ${faltan.join(", ")}`, evaluacion: ev },
