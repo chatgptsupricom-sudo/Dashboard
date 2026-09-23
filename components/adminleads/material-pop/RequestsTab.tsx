@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Loader2, PackageCheck, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, PackageCheck, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,7 +137,10 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
       .catch(() => setOrden(null));
   }, [abierta, requests]);
 
-  async function accion(id: number, action: "aprobar" | "rechazar" | "entregar") {
+  async function accion(
+    id: number,
+    action: "aprobar" | "rechazar" | "entregar" | "cancelar" | "revertir",
+  ) {
     setEnviando(true);
     try {
       const body: any = { action };
@@ -147,7 +150,7 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
         );
         body.notes = motivo.trim() || null;
       }
-      if (action === "rechazar") body.notes = motivo.trim() || null;
+      if (action === "rechazar" || action === "revertir") body.notes = motivo.trim() || null;
       if (action === "entregar") body.location = ubicacion;
 
       const res = await fetch(`/api/adminleads/material-pop/requests/${id}`, {
@@ -160,18 +163,19 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
         toast({ title: json?.error || "No se pudo completar", variant: "destructive" });
         return;
       }
-      toast({
-        title:
-          action === "aprobar"
-            ? "Solicitud aprobada"
-            : action === "rechazar"
-              ? "Solicitud rechazada"
-              : "Entrega registrada",
-      });
+      const titulos: Record<string, string> = {
+        aprobar: "Solicitud aprobada",
+        rechazar: "Solicitud rechazada",
+        entregar: "Entrega registrada",
+        cancelar: "Solicitud cancelada",
+        revertir: "Entrega revertida: el material volvió al stock",
+      };
+      toast({ title: titulos[action] });
       setAbierta(null);
       await cargar();
-      // La entrega mueve stock: el catálogo de la página tiene que refrescarse.
-      if (action === "entregar") onStockChange();
+      // Entregar y revertir mueven stock; cancelar libera la reserva. Los tres
+      // cambian lo que muestra el catálogo.
+      onStockChange();
     } finally {
       setEnviando(false);
     }
@@ -411,6 +415,54 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                       >
                         <PackageCheck className="h-4 w-4" />
                         Registrar entrega
+                      </Button>
+                      {/* Cancelar una aprobada no toca stock: solo libera la
+                          reserva, que es derivada. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-slate-600"
+                        disabled={enviando}
+                        onClick={() => {
+                          if (confirm("¿Cancelar la solicitud y liberar el material reservado?")) {
+                            accion(r.id, "cancelar");
+                          }
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                        Cancelar y liberar
+                      </Button>
+                    </div>
+                  )}
+
+                  {r.status === "entregada" && (
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-xs">Motivo del reverso</Label>
+                        <Textarea
+                          value={motivo}
+                          onChange={(e) => setMotivo(e.target.value)}
+                          placeholder="Por qué vuelve el material"
+                          className="mt-1"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={enviando}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              "¿Revertir la entrega? El material vuelve al stock con un movimiento de entrada y la solicitud queda aprobada otra vez.",
+                            )
+                          ) {
+                            accion(r.id, "revertir");
+                          }
+                        }}
+                      >
+                        <Undo2 className="h-4 w-4" />
+                        Revertir entrega
                       </Button>
                     </div>
                   )}

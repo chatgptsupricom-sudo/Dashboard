@@ -99,6 +99,15 @@ export function MovementLines({
               <p className="mt-2 text-xs text-slate-500">
                 Stock — Oficina: <strong>{producto.stock_office}</strong> · Almacén:{" "}
                 <strong>{producto.stock_warehouse}</strong>
+                {/* Lo comprometido en solicitudes aprobadas todavía está en el
+                    almacén, pero ya tiene dueño: mostrarlo evita pedir o sacar
+                    material que en la práctica no está libre. */}
+                {producto.stock_reserved > 0 && (
+                  <>
+                    {" · "}reservado: <strong>{producto.stock_reserved}</strong> · disponible:{" "}
+                    <strong>{producto.stock_available}</strong>
+                  </>
+                )}
               </p>
             )}
           </div>

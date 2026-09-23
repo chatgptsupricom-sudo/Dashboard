@@ -287,8 +287,15 @@ export async function cancelarSolicitud(opts: {
   const res = await query(`SELECT status FROM pop_requests WHERE ${where} LIMIT 1`, params);
   const actual = res.rows?.[0];
   if (!actual) throw new ErrorSolicitud("Solicitud no encontrada", 404);
-  if (actual.status !== "pendiente") {
-    throw new ErrorSolicitud("Solo se puede cancelar una solicitud pendiente");
+  // Pendiente no tiene nada tomado; aprobada sí, pero como la reserva es
+  // derivada, cancelar la libera solo con cambiar el estado. Entregada ya movió
+  // stock: para esa hay que revertir la entrega primero.
+  if (actual.status !== "pendiente" && actual.status !== "aprobada") {
+    throw new ErrorSolicitud(
+      actual.status === "entregada"
+        ? "La solicitud ya se entregó: revierte la entrega antes de cancelarla"
+        : `La solicitud ya está ${actual.status}`,
+    );
   }
   await query("UPDATE pop_requests SET status = 'cancelada' WHERE id = ?", [opts.id]);
 }
@@ -451,6 +458,96 @@ export async function entregarSolicitud(opts: {
 
     await conn.commit();
     return { movementGroupId };
+  } catch (e) {
+    if (conn) await conn.rollback();
+    throw e;
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+/**
+ * Deshace una entrega: devuelve el material al stock y la solicitud a
+ * 'aprobada', con la reserva otra vez tomada.
+ *
+ * El stock se repone con movimientos de ENTRADA que espejan las salidas, no
+ * editando `pop_stock` a mano: el historial tiene que mostrar que el material
+ * salió y volvió. Un inventario que cuadra con un historial que no lo explica
+ * es peor que uno descuadrado, porque nadie lo detecta.
+ */
+export async function revertirEntrega(opts: {
+  id: number;
+  cids: number | null;
+  revisorId: number | null;
+  revisorNombre: string;
+  motivo: string | null;
+}): Promise<void> {
+  const [solicitud] = await listarSolicitudes({ cids: opts.cids, id: opts.id });
+  if (!solicitud) throw new ErrorSolicitud("Solicitud no encontrada", 404);
+  if (solicitud.status !== "entregada") {
+    throw new ErrorSolicitud("Solo se revierte una solicitud entregada");
+  }
+
+  // Las salidas de la entrega dicen de qué ubicación salió cada producto: la
+  // devolución entra por la misma, no por una elegida al azar.
+  const salidas = await query(
+    `SELECT product_id, location, quantity
+     FROM pop_movements
+     WHERE movement_group_id = ? AND type = 'exit'`,
+    [solicitud.movementGroupId],
+  );
+  const filas = salidas.rows || [];
+  if (filas.length === 0) {
+    throw new ErrorSolicitud("No se encontraron los movimientos de la entrega");
+  }
+
+  const hoy = new Date();
+  const movementDate = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+
+  let conn: any;
+  try {
+    conn = await getConnection();
+    await conn.beginTransaction();
+
+    for (const fila of filas) {
+      const productId = Number(fila.product_id);
+      const location = String(fila.location || "office");
+      const cantidad = n(fila.quantity);
+      if (cantidad <= 0) continue;
+
+      await cambiarStock(conn, productId, location, cantidad);
+      await conn.execute(
+        `INSERT INTO pop_movements
+          (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
+           created_by_user_id, created_by_name, cids, movement_date, notes)
+         VALUES (?, 'entry', ?, ?, ?, 'devolucion', ?, ?, ?, ?, ?, ?)`,
+        [
+          solicitud.movementGroupId,
+          productId,
+          location,
+          cantidad,
+          `Reverso de la solicitud ${solicitud.code}`,
+          opts.revisorId,
+          opts.revisorNombre.slice(0, 255),
+          opts.cids ?? 9,
+          movementDate,
+          opts.motivo
+            ? `Reverso de la entrega de ${solicitud.code}: ${opts.motivo}`
+            : `Reverso de la entrega de ${solicitud.code}`,
+        ],
+      );
+    }
+
+    // Vuelve a 'aprobada': el material queda reservado otra vez. Si además hay
+    // que soltarlo, se cancela después — una acción por concepto.
+    await conn.execute(
+      `UPDATE pop_requests
+       SET status = 'aprobada', delivered_at = NULL, movement_group_id = NULL
+       WHERE id = ?`,
+      [opts.id],
+    );
+
+    await conn.commit();
   } catch (e) {
     if (conn) await conn.rollback();
     throw e;

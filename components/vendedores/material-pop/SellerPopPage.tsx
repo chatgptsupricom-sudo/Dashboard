@@ -182,7 +182,7 @@ export function SellerPopPage() {
   }
 
   async function cancelar(id: number) {
-    if (!confirm("¿Cancelar esta solicitud?")) return;
+    if (!confirm("¿Cancelar esta solicitud? Si ya estaba aprobada, el material queda libre.")) return;
     const res = await fetch("/api/vendedores/material-pop/requests", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -379,14 +379,16 @@ export function SellerPopPage() {
                   </p>
                 )}
 
-                {r.status === "pendiente" && (
+                {/* Aprobada tiene material reservado: cancelar lo libera para
+                    otro vendedor. Entregada ya no se toca desde acá. */}
+                {(r.status === "pendiente" || r.status === "aprobada") && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mt-2 h-7 text-xs text-slate-500"
                     onClick={() => cancelar(r.id)}
                   >
-                    Cancelar solicitud
+                    {r.status === "aprobada" ? "Ya no lo necesito" : "Cancelar solicitud"}
                   </Button>
                 )}
               </div>

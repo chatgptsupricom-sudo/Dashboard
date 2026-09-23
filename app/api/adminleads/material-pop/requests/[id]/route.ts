@@ -4,9 +4,11 @@ import {
 } from "@/lib/adminleads/material-pop/auth";
 import {
   ErrorSolicitud,
+  cancelarSolicitud,
   entregarSolicitud,
   leerOrden,
   listarSolicitudes,
+  revertirEntrega,
   revisarSolicitud,
 } from "@/lib/adminleads/material-pop/requests";
 import { NextRequest, NextResponse } from "next/server";
@@ -72,6 +74,24 @@ export async function PATCH(
         revisorNombre,
       });
       return NextResponse.json({ success: true, ...salida });
+    }
+
+    if (body?.action === "revertir") {
+      await revertirEntrega({
+        id: solicitudId,
+        cids,
+        revisorId,
+        revisorNombre,
+        motivo: notas,
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (body?.action === "cancelar") {
+      // El adminLeads cancela cualquiera de la sede; el vendedor solo las
+      // propias, desde su propia ruta.
+      await cancelarSolicitud({ id: solicitudId, cids, sellerUserId: null });
+      return NextResponse.json({ success: true });
     }
 
     if (body?.action === "aprobar" || body?.action === "rechazar") {
