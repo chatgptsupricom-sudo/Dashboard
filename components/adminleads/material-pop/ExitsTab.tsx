@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarX, Loader2, PackageMinus, Printer, UserRound } from "lucide-react";
 import { MovementLines, lineaVacia, type MovementLine } from "./MovementLines";
 import { OdooClientSelect } from "./OdooClientSelect";
@@ -42,6 +42,8 @@ export function ExitsTab({
   const [useOtherLocation, setUseOtherLocation] = useState(false);
   const [client, setClient] = useState<any>(null);
   const [ordenVenta, setOrdenVenta] = useState("");
+  const [vendedor, setVendedor] = useState("");
+  const [vendedores, setVendedores] = useState<{ id: number; name: string }[]>([]);
   // Grupo de la última salida registrada: con él se pide su nota de entrega.
   const [ultimaSalida, setUltimaSalida] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
@@ -50,6 +52,15 @@ export function ExitsTab({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Vendedores de la sede, para anotar quién atiende al cliente. Se cargan una
+  // sola vez: la lista no cambia mientras se llena el formulario.
+  useEffect(() => {
+    fetch("/api/adminleads/material-pop/sellers")
+      .then((r) => r.json())
+      .then((j) => setVendedores(j?.sellers || []))
+      .catch(() => setVendedores([]));
+  }, []);
 
   // Alguna fila pide más de lo que hay en la ubicación elegida: ahí aparece la
   // opción de completar con la otra.
@@ -105,6 +116,7 @@ export function ExitsTab({
       body.clientName = client.name;
       body.clientCids = null;
       body.odooOrderName = ordenVenta.trim() || null;
+      body.sellerName = vendedor.trim() || null;
     } else {
       body.destination = destination.trim();
     }
@@ -133,6 +145,7 @@ export function ExitsTab({
 
       setLines([lineaVacia()]);
       setOrdenVenta("");
+      setVendedor("");
       setDestination("");
       setClient(null);
       setUseOtherLocation(false);
@@ -225,6 +238,21 @@ export function ExitsTab({
                   </div>
                 </div>
                 <div>
+                  <Label>Vendedor que atiende</Label>
+                  <select
+                    value={vendedores.some((v) => v.name === vendedor) ? vendedor : ""}
+                    onChange={(e) => setVendedor(e.target.value)}
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                  >
+                    <option value="">Sin vendedor</option>
+                    {vendedores.map((v) => (
+                      <option key={v.id} value={v.name}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <Label>Orden de venta (Odoo)</Label>
                   <Input
                     value={ordenVenta}
@@ -233,7 +261,7 @@ export function ExitsTab({
                     className="mt-1.5"
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Sale impresa en la nota de entrega.
+                    El vendedor y la orden salen impresos en la nota de entrega.
                   </p>
                 </div>
               </>

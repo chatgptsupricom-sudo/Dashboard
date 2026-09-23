@@ -231,8 +231,10 @@ export async function POST(request: NextRequest) {
     // permite volver a él después, por ejemplo para imprimir la nota de
     // entrega de una salida a cliente.
     const grupoId = randomUUID();
-    // Orden de venta de Odoo, solo para salidas a cliente.
+    // Orden de venta de Odoo y vendedor que atiende: solo para salidas a
+    // cliente, y los dos salen impresos en la nota de entrega.
     const ordenVenta = truncar(body?.odooOrderName, 50);
+    const vendedor = truncar(body?.sellerName, 255);
 
     conn = await getConnection();
     await conn.beginTransaction();
@@ -374,9 +376,9 @@ export async function POST(request: NextRequest) {
           await conn.execute(
             `INSERT INTO pop_movements
               (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
-               client_id, client_name, client_cids, destination, odoo_order_name,
+               client_id, client_name, client_cids, destination, odoo_order_name, seller_name,
                created_by_user_id, created_by_name, cids, movement_date, notes)
-             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               movementGroupId,
               productId,
@@ -389,6 +391,7 @@ export async function POST(request: NextRequest) {
               cids,
               destination,
               ordenVenta,
+              vendedor,
               userId,
               userName,
               cids,

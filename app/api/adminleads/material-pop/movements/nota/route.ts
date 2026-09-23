@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     const res = await query(
-      `SELECT m.location, m.quantity, m.client_name, m.odoo_order_name, m.notes,
+      `SELECT m.location, m.quantity, m.client_name, m.odoo_order_name, m.seller_name, m.notes,
               m.created_by_name, m.movement_date, m.reason_type,
               p.code, p.name, p.brand
        FROM pop_movements m
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     const html = notaEntregaHtml({
       codigo: `Salida ${grupo.slice(0, 8).toUpperCase()}`,
       cliente: filas[0].client_name || "",
-      vendedor: null,
+      vendedor: filas[0].seller_name || null,
       autorizadoPor: filas[0].created_by_name || "",
       fecha,
       ordenOdoo: filas[0].odoo_order_name || null,
