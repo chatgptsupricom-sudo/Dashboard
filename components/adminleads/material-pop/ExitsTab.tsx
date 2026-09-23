@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CalendarX, Loader2, PackageMinus, UserRound } from "lucide-react";
-import { ProductSelect } from "./ProductSelect";
+import { MovementLines, lineaVacia, type MovementLine } from "./MovementLines";
 import { OdooClientSelect } from "./OdooClientSelect";
 import type { PopProduct } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
@@ -37,10 +37,9 @@ export function ExitsTab({
   const { toast } = useToast();
   const [kind, setKind] = useState<ExitKind>("cliente");
 
-  const [productId, setProductId] = useState<number | null>(null);
+  const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [useOtherLocation, setUseOtherLocation] = useState(false);
-  const [quantity, setQuantity] = useState("");
   const [client, setClient] = useState<any>(null);
   const [destination, setDestination] = useState("");
   const [movementDate, setMovementDate] = useState(today());
@@ -49,19 +48,27 @@ export function ExitsTab({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentProduct = products.find((p) => p.id === productId) || null;
-  const allowsDecimal = Boolean(currentProduct?.uom_allows_decimal);
-  const currentStock =
-    currentProduct?.[location === "office" ? "stock_office" : "stock_warehouse"] ?? 0;
+  // Alguna fila pide más de lo que hay en la ubicación elegida: ahí aparece la
+  // opción de completar con la otra.
+  const faltaEnUbicacion = lines.some((l) => {
+    const producto = products.find((p) => p.id === l.productId);
+    if (!producto) return false;
+    const stock = location === "office" ? producto.stock_office : producto.stock_warehouse;
+    return stock < Number(l.quantity || 0);
+  });
 
   async function submit() {
     setError(null);
-    if (!productId) {
+    const conProducto = lines.filter((l) => l.productId !== null);
+    if (conProducto.length === 0) {
       setError("Selecciona un producto");
       return;
     }
-    const q = Number(quantity);
-    if (!Number.isFinite(q) || q <= 0) {
+    const items = conProducto.map((l) => ({
+      productId: l.productId,
+      quantity: Number(l.quantity),
+    }));
+    if (items.some((it) => !Number.isFinite(it.quantity) || it.quantity <= 0)) {
       setError("Cantidad inválida");
       return;
     }
@@ -82,9 +89,8 @@ export function ExitsTab({
 
     const body: any = {
       type: "exit",
-      productId,
+      items,
       location,
-      quantity: q,
       useOtherLocation,
       reasonType,
       movementDate,
@@ -117,13 +123,12 @@ export function ExitsTab({
         description: "El stock se actualizó correctamente.",
       });
 
-      setQuantity("");
+      setLines([lineaVacia()]);
       setDestination("");
       setClient(null);
       setUseOtherLocation(false);
       setNotes("");
       setMovementDate(today());
-      setProductId(null);
       await onDone();
     } catch (e: any) {
       setError(e.message || "Error de conexión");
@@ -172,55 +177,21 @@ export function ExitsTab({
           </div>
 
           <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <MovementLines products={products} lines={lines} onChange={setLines} />
+
             <div>
-              <Label>Producto</Label>
-              <div className="mt-1.5">
-                <ProductSelect
-                  products={products}
-                  value={productId}
-                  onChange={setProductId}
-                />
-              </div>
+              <Label>Ubicación de salida</Label>
+              <select
+                value={location}
+                onChange={(e) => setLocation(e.target.value as any)}
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm sm:w-56"
+              >
+                <option value="office">Oficina</option>
+                <option value="warehouse">Almacén</option>
+              </select>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Ubicación de salida</Label>
-                <select
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value as any)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                >
-                  <option value="office">Oficina</option>
-                  <option value="warehouse">Almacén</option>
-                </select>
-                {currentProduct && (
-                  <p className="mt-1 text-xs text-slate-400">
-                    Disponible:{" "}
-                    <strong>
-                      {location === "office"
-                        ? currentProduct.stock_office
-                        : currentProduct.stock_warehouse}
-                    </strong>
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label>Cantidad</Label>
-                <Input
-                  type="number"
-                  min="0"
-                   max={currentProduct?.stock_total}
-                   step={allowsDecimal ? "0.01" : "1"}
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="0"
-                  className="mt-1.5"
-                />
-              </div>
-            </div>
-
-            {currentProduct && currentStock < Number(quantity || 0) && (
+            {faltaEnUbicacion && (
               <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <input
                   type="checkbox"
@@ -229,8 +200,9 @@ export function ExitsTab({
                   className="mt-0.5"
                 />
                 <span>
-                  Usar también la otra ubicación para completar la salida.
-                  Disponible total: {currentProduct.stock_total}.
+                  Algún producto no alcanza en{" "}
+                  {location === "office" ? "Oficina" : "Almacén"}. Usar también la otra
+                  ubicación para completar la salida.
                 </span>
               </label>
             )}
