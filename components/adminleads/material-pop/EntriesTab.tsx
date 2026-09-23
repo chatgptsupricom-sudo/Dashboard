@@ -7,7 +7,7 @@ import {
   PackagePlus,
   SlidersHorizontal,
 } from "lucide-react";
-import { ProductSelect } from "./ProductSelect";
+import { MovementLines, lineaVacia, type MovementLine } from "./MovementLines";
 import type { PopProduct } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,10 +43,8 @@ export function EntriesTab({
   const { toast } = useToast();
   const [mode, setMode] = useState<Mode>("entry");
 
-  const [productId, setProductId] = useState<number | null>(null);
+  const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
-  const [quantity, setQuantity] = useState("");
-  const [newQuantity, setNewQuantity] = useState("");
   const [source, setSource] = useState<"office" | "warehouse">("office");
   const [target, setTarget] = useState<"office" | "warehouse">("warehouse");
   const [reason, setReason] = useState("Compra");
@@ -63,14 +61,31 @@ export function EntriesTab({
 
   async function submit() {
     setError(null);
-    if (!productId) {
+    const conProducto = lines.filter((l) => l.productId !== null);
+    if (conProducto.length === 0) {
       setError("Selecciona un producto");
+      return;
+    }
+
+    // En ajuste la cantidad es la real contada y puede ser 0; en el resto tiene
+    // que ser mayor que 0.
+    const esAjuste = mode === "adjustment";
+    const items = conProducto.map((l) => {
+      const q = Number(l.quantity);
+      return { productId: l.productId, cantidad: q };
+    });
+    if (items.some((it) => !Number.isFinite(it.cantidad) || (esAjuste ? it.cantidad < 0 : it.cantidad <= 0))) {
+      setError(esAjuste ? "Cantidad real inválida" : "Cantidad inválida");
       return;
     }
 
     const body: any = {
       type: mode,
-      productId,
+      items: items.map((it) =>
+        esAjuste
+          ? { productId: it.productId, newQuantity: it.cantidad }
+          : { productId: it.productId, quantity: it.cantidad },
+      ),
       movementDate,
       notes: notes.trim() || null,
     };
@@ -78,33 +93,8 @@ export function EntriesTab({
     if (mode === "transfer") {
       body.sourceLocation = source;
       body.targetLocation = target;
-      const q = Number(quantity);
-      if (!Number.isFinite(q) || q <= 0) {
-        setError("Cantidad inválida");
-        return;
-      }
-      body.quantity = q;
-    } else if (mode === "adjustment") {
-      body.location = location;
-      const nq = Number(newQuantity);
-      if (!Number.isFinite(nq) || nq < 0) {
-        setError("Cantidad real inválida");
-        return;
-      }
-      body.newQuantity = nq;
-      body.reasonType = reason === "Otro" && customReason.trim()
-        ? customReason.trim()
-        : reason.toLowerCase().replace(/\s+/g, "_");
-      body.reasonCustom = reason === "Otro" ? customReason.trim() || null : null;
     } else {
-      // entry
       body.location = location;
-      const q = Number(quantity);
-      if (!Number.isFinite(q) || q <= 0) {
-        setError("Cantidad inválida");
-        return;
-      }
-      body.quantity = q;
       body.reasonType = reason === "Otro" && customReason.trim()
         ? customReason.trim()
         : reason.toLowerCase().replace(/\s+/g, "_");
@@ -129,11 +119,9 @@ export function EntriesTab({
         description: "El stock se actualizó correctamente.",
       });
 
-      setQuantity("");
-      setNewQuantity("");
       setNotes("");
       setMovementDate(today());
-      setProductId(null);
+      setLines([lineaVacia()]);
       await onDone();
     } catch (e: any) {
       setError(e.message || "Error de conexión");
@@ -141,9 +129,6 @@ export function EntriesTab({
       setSaving(false);
     }
   }
-
-  const currentProduct = products.find((p) => p.id === productId) || null;
-  const allowsDecimal = Boolean(currentProduct?.uom_allows_decimal);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
@@ -185,16 +170,12 @@ export function EntriesTab({
           </div>
 
           <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
-            <div>
-              <Label>Producto</Label>
-              <div className="mt-1.5">
-                <ProductSelect
-                  products={products}
-                  value={productId}
-                  onChange={setProductId}
-                />
-              </div>
-            </div>
+            <MovementLines
+              products={products}
+              lines={lines}
+              onChange={setLines}
+              quantityLabel={mode === "adjustment" ? "Real" : "Cantidad"}
+            />
 
             {mode === "entry" && (
               <>
@@ -243,18 +224,6 @@ export function EntriesTab({
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <Label>Cantidad</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step={allowsDecimal ? "0.01" : "1"}
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      placeholder="0"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
                     <Label>Fecha</Label>
                     <Input
                       type="date"
@@ -297,18 +266,6 @@ export function EntriesTab({
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <Label>Cantidad a trasladar</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step={allowsDecimal ? "0.01" : "1"}
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      placeholder="0"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
                     <Label>Fecha</Label>
                     <Input
                       type="date"
@@ -319,13 +276,6 @@ export function EntriesTab({
                     />
                   </div>
                 </div>
-                {currentProduct && (
-                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                    Stock disponible — Oficina:{" "}
-                    <strong>{currentProduct.stock_office}</strong> · Almacén:{" "}
-                    <strong>{currentProduct.stock_warehouse}</strong>
-                  </p>
-                )}
               </>
             )}
 
@@ -376,30 +326,6 @@ export function EntriesTab({
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <Label>Cantidad real (contada)</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step={allowsDecimal ? "0.01" : "1"}
-                      value={newQuantity}
-                      onChange={(e) => setNewQuantity(e.target.value)}
-                      placeholder="0"
-                      className="mt-1.5"
-                    />
-                    {currentProduct && (
-                      <p className="mt-1 text-xs text-slate-400">
-                        Actual en{" "}
-                        {location === "office" ? "Oficina" : "Almacén"}:{" "}
-                        <strong>
-                          {location === "office"
-                            ? currentProduct.stock_office
-                            : currentProduct.stock_warehouse}
-                        </strong>{" "}
-                        — el sistema calcula la diferencia.
-                      </p>
-                    )}
-                  </div>
-                  <div>
                     <Label>Fecha</Label>
                     <Input
                       type="date"
@@ -410,6 +336,11 @@ export function EntriesTab({
                     />
                   </div>
                 </div>
+                <p className="text-xs text-slate-400">
+                  La cantidad de cada fila es la real contada en{" "}
+                  {location === "office" ? "Oficina" : "Almacén"}: el sistema calcula la
+                  diferencia contra el stock que se muestra bajo cada producto.
+                </p>
               </>
             )}
 

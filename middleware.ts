@@ -259,6 +259,17 @@ export default async function middleware(request: NextRequest) {
         }
       }
 
+      // 5d. Solicitudes de Material POP del vendedor: mismo corte por sede que
+      // el módulo (Valencia, cids=9).
+      if (pathname.includes("/vendedores/material-pop")) {
+        const userCids = Number(payload.cids);
+        if (!isSuperAdmin && !(isVendedor && userCids === 9)) {
+          return NextResponse.redirect(
+            new URL(`/${locale}/dashboard`, request.url),
+          );
+        }
+      }
+
       // 6. Lógica para Recursos Humanos
       if (
         pathname.includes("/recursos_humanos") &&

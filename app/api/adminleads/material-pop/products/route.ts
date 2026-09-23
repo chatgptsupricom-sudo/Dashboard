@@ -1,9 +1,11 @@
 import { query, getConnection } from "@/lib/db";
 import {
   requireAdminLeadsValencia,
+  requireLecturaMaterialPop,
   resolveMaterialPopCids,
 } from "@/lib/adminleads/material-pop/auth";
 import { generateSku } from "@/lib/adminleads/material-pop/sku";
+import { reservadoPorProducto } from "@/lib/adminleads/material-pop/requests";
 import { NextRequest, NextResponse } from "next/server";
 import { validateNonNegativeQuantity } from "@/lib/adminleads/material-pop/validation";
 
@@ -24,7 +26,9 @@ function truncar(v: any, max: number): string | null {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAdminLeadsValencia(request);
+    // Leer el catálogo tambien lo necesita el vendedor para armar su solicitud.
+    // Crear, editar y borrar siguen siendo solo del adminLeads.
+    const auth = await requireLecturaMaterialPop(request);
     if (auth.error) return auth.error;
 
     const cids = resolveMaterialPopCids(auth.payload);
@@ -71,6 +75,10 @@ export async function GET(request: NextRequest) {
       params,
     );
 
+    // Reservado: lo comprometido en solicitudes aprobadas sin entregar. No se
+    // guarda en ninguna columna, se calcula (ver lib/.../requests.ts).
+    const reservado = await reservadoPorProducto(cids);
+
     const products = res.rows.map((row: any) => ({
       ...row,
       stock_office: Number(row.stock_office),
@@ -80,6 +88,8 @@ export async function GET(request: NextRequest) {
       // producto con 3000 en almacen y 0 en oficina salia como agotado, que es
       // el caso normal: casi todo el material POP se guarda en almacen y se
       // pasa a oficina cuando hace falta.
+      stock_reserved: reservado.get(Number(row.id)) || 0,
+      stock_available: Number(row.stock_total) - (reservado.get(Number(row.id)) || 0),
       has_alert: Number(row.stock_total) <= 0,
       image_url: row.image_id
         ? `/api/adminleads/material-pop/images/${row.image_id}`

@@ -45,6 +45,10 @@ export interface PopProduct {
   stock_office: number;
   stock_warehouse: number;
   stock_total: number;
+  /** Comprometido en solicitudes aprobadas sin entregar. */
+  stock_reserved: number;
+  /** stock_total menos lo reservado: lo que se puede comprometer hoy. */
+  stock_available: number;
   has_alert: boolean;
   created_at: string;
 }
