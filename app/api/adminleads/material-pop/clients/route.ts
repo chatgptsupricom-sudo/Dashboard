@@ -25,11 +25,17 @@ export async function GET(request: NextRequest) {
     ];
 
     if (q) {
-      domain.push([
-        "|",
-        ["name", "ilike", q],
-        ["vat", "ilike", q.replace(/[^0-9]/g, "")],
-      ]);
+      // El dominio de Odoo es una lista PLANA en notación polaca. Esto iba
+      // dentro de un array anidado y Odoo leía el "|" como nombre de campo:
+      // «Invalid field res.partner.| in leaf ('|', [...], [...])». La ruta
+      // devolvía 500 y el buscador mostraba "Sin resultados" para todo.
+      const digitos = q.replace(/[^0-9]/g, "");
+      if (digitos) {
+        domain.push("|", ["name", "ilike", q], ["vat", "ilike", digitos]);
+      } else {
+        // Sin dígitos no se busca por RIF: `vat ilike ""` casa con cualquiera.
+        domain.push(["name", "ilike", q]);
+      }
     }
 
     const clients = await callOdooRPC<any[]>(

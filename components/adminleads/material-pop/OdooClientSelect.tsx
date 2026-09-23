@@ -32,6 +32,7 @@ export function OdooClientSelect({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OdooClient[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const debouncedQuery = useDebounced(query, 350);
 
   useEffect(() => {
@@ -43,19 +44,29 @@ export function OdooClientSelect({
     }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     const controller = new AbortController();
     fetch(
       `/api/adminleads/material-pop/clients?q=${encodeURIComponent(debouncedQuery)}&limit=20`,
       { signal: controller.signal },
     )
-      .then((r) => r.json())
+      // Un error del servidor se mostraba como "Sin resultados", porque solo se
+      // leía json.clients. Así un 500 parecía una búsqueda sin coincidencias.
+      .then(async (r) => {
+        const json = await r.json();
+        if (!r.ok) throw new Error(json?.error || "No se pudo buscar en Odoo");
+        return json;
+      })
       .then((json) => {
         if (cancelled) return;
         setResults(json.clients || []);
         setLoading(false);
       })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
+      .catch((e) => {
+        if (cancelled || e?.name === "AbortError") return;
+        setError(e?.message || "Error buscando clientes");
+        setResults([]);
+        setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -117,7 +128,10 @@ export function OdooClientSelect({
                   Escribe para buscar clientes
                 </li>
               )}
-              {!loading && results.length === 0 && query.trim().length >= 2 && (
+              {!loading && error && (
+                <li className="px-3 py-2 text-sm text-red-600">{error}</li>
+              )}
+              {!loading && !error && results.length === 0 && query.trim().length >= 2 && (
                 <li className="px-3 py-2 text-sm text-slate-400">
                   Sin resultados
                 </li>
