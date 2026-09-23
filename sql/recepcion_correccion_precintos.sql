@@ -2,8 +2,8 @@
 -- RECEPCION POR PACKING LIST: CORRECCION DE PRECINTOS CON REGISTRO
 --
 -- Si Almacen anoto mal un precinto al llegar el contenedor (ej. un error de
--- tipeo: "FX445T2691" en vez de "FX44502691"), lo puede corregir aunque el
--- packing list ya este cerrado. No se pisa lo anotado sin dejar rastro: se
+-- tipeo: "FX445T2691" en vez de "FX44502691"), lo puede corregir mientras el
+-- packing list esta abierto (cerrado no se modifica). No se pisa lo anotado: se
 -- guarda la lista de correcciones con que habia antes, que quedo, el motivo,
 -- quien y cuando.
 --

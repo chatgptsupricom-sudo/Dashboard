@@ -232,6 +232,45 @@ export function evaluarConteo(
   };
 }
 
+/**
+ * Cuanto tarda la recepcion: desde que se sube la foto del contenedor al
+ * llegar hasta que se cierra. Para el packing list, desde la primera foto de
+ * llegada de cualquiera de sus contenedores hasta el cierre del packing list;
+ * para un contenedor, desde su foto de llegada hasta que se termina ese
+ * contenedor. Sin cierre todavia, corre hasta `ahora`.
+ */
+export type ArchivoConFecha = { tipo: string; contenedor_id?: number | null; created_at?: string | null };
+
+export function inicioRecepcion(archivos: ArchivoConFecha[], contenedorId?: number): string | null {
+  let min: string | null = null;
+  for (const a of archivos) {
+    if (a.tipo !== "foto_llegada" || !a.created_at) continue;
+    if (contenedorId !== undefined && Number(a.contenedor_id) !== contenedorId) continue;
+    if (min === null || new Date(a.created_at) < new Date(min)) min = a.created_at;
+  }
+  return min;
+}
+
+/** Milisegundos entre el inicio y el fin (o ahora, si todavia no termino). */
+export function duracion(inicio: string | null, fin: string | null, ahora: Date = new Date()): number | null {
+  if (!inicio) return null;
+  const desde = new Date(inicio).getTime();
+  const hasta = fin ? new Date(fin).getTime() : ahora.getTime();
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta)) return null;
+  return Math.max(0, hasta - desde);
+}
+
+/** "45 min", "2 h 15 min", "3 d 4 h". */
+export function formatearDuracion(ms: number): string {
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "< 1 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
+}
+
 /** Normaliza un precinto para compararlo: sin espacios ni guiones, en mayusculas. */
 export function normalizarPrecinto(v: string | null | undefined): string {
   return String(v || "")

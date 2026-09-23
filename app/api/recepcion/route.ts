@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
               (SELECT COUNT(*) FROM recepcion_packing_contenedores c
                 WHERE c.recepcion_id = r.id AND c.etapa <> 'por_llegar') AS contenedores_llegados,
               (SELECT GROUP_CONCAT(c.numero ORDER BY c.id SEPARATOR ', ')
-                 FROM recepcion_packing_contenedores c WHERE c.recepcion_id = r.id) AS contenedores
+                 FROM recepcion_packing_contenedores c WHERE c.recepcion_id = r.id) AS contenedores,
+              -- Inicio del tiempo de recepcion: la primera foto del contenedor al llegar.
+              (SELECT MIN(a.created_at) FROM recepcion_packing_archivos a
+                WHERE a.recepcion_id = r.id AND a.tipo = 'foto_llegada') AS inicio_at
          FROM recepcion_packing r
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY (r.etapa = 'cerrado') ASC, COALESCE(r.fecha_estimada, DATE(r.created_at)) ASC, r.id DESC
