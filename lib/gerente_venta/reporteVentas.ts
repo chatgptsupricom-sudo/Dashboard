@@ -34,7 +34,8 @@ export const MARCA_TODAS = "TODAS";
 /** Clientes internos / inter-compañía que nunca entran al reporte. */
 const CLIENTES_EXCLUIDOS_SUBSTR = ["supricom", "office solution"];
 
-function clienteExcluido(nombre: string): boolean {
+/** Exportada: Material POP aplica la misma exclusion en "Clientes por marca". */
+export function clienteExcluido(nombre: string): boolean {
   const n = (nombre || "").toLowerCase();
   return CLIENTES_EXCLUIDOS_SUBSTR.some((s) => n.includes(s));
 }

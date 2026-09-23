@@ -1,5 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { clienteExcluido } from "@/lib/gerente_venta/reporteVentas";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 
 /**
  * Top de clientes que compran las marcas del catálogo Material POP.
@@ -19,6 +21,12 @@ import { query } from "@/lib/db";
  * cliente confirmadas, con `price_subtotal` (sin IVA) y la nota de crédito
  * restando. Es el mismo criterio del reporte de ventas de Gerencia
  * (lib/gerente_venta/reporteVentas.ts), para que las cifras coincidan.
+ *
+ * Quedan fuera las facturas entre empresas del grupo (Supricom, Office
+ * Solution) y las de los vendedores internos o de prueba. Las dos reglas se
+ * importan de donde ya viven, en vez de copiar las listas: la de clientes del
+ * reporte de Gerencia y la de vendedores de lib/cxc/vendedoresExcluidos.ts,
+ * que es por sede.
  */
 
 export interface ClienteMarca {
@@ -46,6 +54,38 @@ export interface TopClientesResult {
   totales: { unidades: number; monto: number; clientes: number };
 }
 
+export interface DetalleProducto {
+  producto: string;
+  marca: string;
+  unidades: number;
+  monto: number;
+}
+
+export interface DetalleFactura {
+  numero: string;
+  fecha: string | null;
+  vendedor: string;
+  unidades: number;
+  monto: number;
+  esNotaCredito: boolean;
+}
+
+export interface DetalleCliente {
+  cliente: string;
+  productos: DetalleProducto[];
+  facturas: DetalleFactura[];
+  totales: { unidades: number; monto: number; facturas: number };
+}
+
+export interface OpcionesConsulta {
+  cids: number | null;
+  companyIds: number[];
+  desde: string;
+  hasta: string;
+  /** Una marca concreta del POP, o null para todas. */
+  marca?: string | null;
+}
+
 const PAGE = 2000;
 
 /** Mayúsculas, sin acentos ni espacios de más, para cruzar nombres de marca. */
@@ -56,6 +96,11 @@ function normalizar(s: string): string {
     .toUpperCase()
     .trim()
     .replace(/\s+/g, " ");
+}
+
+/** "[A-057H] ASTA TONER CANON" -> "ASTA TONER CANON". */
+function limpiarProducto(s: string): string {
+  return (s || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -106,28 +151,16 @@ export async function marcasDelCatalogo(cids: number | null): Promise<string[]> 
   return (res.rows || []).map((r: any) => String(r.brand));
 }
 
-export async function topClientesPorMarca(opts: {
-  cids: number | null;
-  companyIds: number[];
-  desde: string;
-  hasta: string;
-  /** Una marca concreta del POP, o null para todas. */
-  marca?: string | null;
-}): Promise<TopClientesResult> {
-  const vacio = (marcasPop: string[], marcasSinVentas: string[]): TopClientesResult => ({
-    clientes: [],
-    marcasPop,
-    marcasSinVentas,
-    totales: { unidades: 0, monto: 0, clientes: 0 },
-  });
+/** Productos de Odoo de las marcas del POP, con el nombre de su marca. */
+async function productosDeMarcasPop(
+  cids: number | null,
+  marca?: string | null,
+): Promise<{ marcasPop: string[]; marcasSinVentas: string[]; marcaDeProducto: Map<number, string> }> {
+  const marcaDeProducto = new Map<number, string>();
+  const marcasPop = await marcasDelCatalogo(cids);
+  const pedidas = marca ? marcasPop.filter((m) => normalizar(m) === normalizar(marca)) : marcasPop;
+  if (pedidas.length === 0) return { marcasPop, marcasSinVentas: [], marcaDeProducto };
 
-  const marcasPop = await marcasDelCatalogo(opts.cids);
-  const pedidas = opts.marca
-    ? marcasPop.filter((m) => normalizar(m) === normalizar(opts.marca!))
-    : marcasPop;
-  if (pedidas.length === 0) return vacio(marcasPop, []);
-
-  // Marcas de Odoo que coinciden por nombre con las del POP.
   const marcasOdoo =
     (await callOdooRPC<any[]>("spiff.brand", "search_read", [[]], {
       fields: ["id", "name"],
@@ -149,7 +182,7 @@ export async function topClientesPorMarca(opts: {
     if (id) brandIds.push(id);
     else marcasSinVentas.push(m);
   }
-  if (brandIds.length === 0) return vacio(marcasPop, marcasSinVentas);
+  if (brandIds.length === 0) return { marcasPop, marcasSinVentas, marcaDeProducto };
 
   const productos =
     (await callOdooRPC<any[]>(
@@ -158,25 +191,46 @@ export async function topClientesPorMarca(opts: {
       [[["x_studio_marca", "in", brandIds]]],
       { fields: ["id", "x_studio_marca"], limit: 0 },
     )) || [];
-  if (productos.length === 0) return vacio(marcasPop, marcasSinVentas);
-
-  const marcaDeProducto = new Map<number, string>();
   for (const p of productos) {
     const id = Array.isArray(p.x_studio_marca) ? p.x_studio_marca[0] : null;
     marcaDeProducto.set(p.id, (id && nombrePorId.get(id)) || "Sin marca");
   }
+  return { marcasPop, marcasSinVentas, marcaDeProducto };
+}
+
+function dominioLineas(opts: OpcionesConsulta, productIds: number[], partnerId?: number): any[] {
+  const dom: any[] = [
+    ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
+    ["move_id.state", "=", "posted"],
+    ["move_id.company_id", "in", opts.companyIds],
+    ["move_id.invoice_date", ">=", opts.desde],
+    ["move_id.invoice_date", "<=", opts.hasta],
+    ["display_type", "=", "product"],
+    ["product_id", "in", productIds],
+  ];
+  if (partnerId) dom.push(["partner_id", "=", partnerId]);
+  return dom;
+}
+
+const CAMPOS_MOVE = ["name", "move_type", "invoice_date", "invoice_user_id", "company_id"];
+
+export async function topClientesPorMarca(opts: OpcionesConsulta): Promise<TopClientesResult> {
+  const vacio = (marcasPop: string[], marcasSinVentas: string[]): TopClientesResult => ({
+    clientes: [],
+    marcasPop,
+    marcasSinVentas,
+    totales: { unidades: 0, monto: 0, clientes: 0 },
+  });
+
+  const { marcasPop, marcasSinVentas, marcaDeProducto } = await productosDeMarcasPop(
+    opts.cids,
+    opts.marca,
+  );
+  if (marcaDeProducto.size === 0) return vacio(marcasPop, marcasSinVentas);
 
   const lineas = await searchReadPaginado(
     "account.move.line",
-    [
-      ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
-      ["move_id.state", "=", "posted"],
-      ["move_id.company_id", "in", opts.companyIds],
-      ["move_id.invoice_date", ">=", opts.desde],
-      ["move_id.invoice_date", "<=", opts.hasta],
-      ["display_type", "=", "product"],
-      ["product_id", "in", [...marcaDeProducto.keys()]],
-    ],
+    dominioLineas(opts, [...marcaDeProducto.keys()]),
     ["move_id", "partner_id", "product_id", "quantity", "price_subtotal"],
   );
   if (lineas.length === 0) return vacio(marcasPop, marcasSinVentas);
@@ -184,7 +238,7 @@ export async function topClientesPorMarca(opts: {
   const moves = await readEnLotes(
     "account.move",
     lineas.map((l) => l.move_id?.[0]),
-    ["move_type", "invoice_date", "invoice_user_id"],
+    CAMPOS_MOVE,
   );
 
   type Acum = ClienteMarca & { movesVistos: Set<number>; montoPorMarca: Map<string, number> };
@@ -193,7 +247,9 @@ export async function topClientesPorMarca(opts: {
   for (const l of lineas) {
     const partnerId = l.partner_id?.[0];
     if (!partnerId) continue;
+    if (clienteExcluido(l.partner_id?.[1] || "")) continue;
     const mv = moves.get(l.move_id?.[0]) || {};
+    if (esVendedorExcluido(mv.invoice_user_id?.[1], mv.company_id?.[0])) continue;
     // La nota de crédito resta: son unidades devueltas y plata que vuelve.
     const signo = mv.move_type === "out_refund" ? -1 : 1;
     const unidades = signo * (Number(l.quantity) || 0);
@@ -266,6 +322,105 @@ export async function topClientesPorMarca(opts: {
       unidades: r2(clientes.reduce((s, c) => s + c.unidades, 0)),
       monto: r2(clientes.reduce((s, c) => s + c.monto, 0)),
       clientes: clientes.length,
+    },
+  };
+}
+
+/**
+ * Desglose de un cliente: qué productos compró y en qué facturas.
+ *
+ * Mismo dominio que el listado, acotado a un `partner_id`, para que los totales
+ * del detalle cuadren con la fila de la que se abrió.
+ */
+export async function detalleClienteMarca(
+  opts: OpcionesConsulta & { partnerId: number },
+): Promise<DetalleCliente> {
+  const vacio: DetalleCliente = {
+    cliente: "",
+    productos: [],
+    facturas: [],
+    totales: { unidades: 0, monto: 0, facturas: 0 },
+  };
+
+  const { marcaDeProducto } = await productosDeMarcasPop(opts.cids, opts.marca);
+  if (marcaDeProducto.size === 0) return vacio;
+
+  const lineas = await searchReadPaginado(
+    "account.move.line",
+    dominioLineas(opts, [...marcaDeProducto.keys()], opts.partnerId),
+    ["move_id", "partner_id", "product_id", "quantity", "price_subtotal"],
+  );
+  if (lineas.length === 0) return vacio;
+
+  const moves = await readEnLotes(
+    "account.move",
+    lineas.map((l) => l.move_id?.[0]),
+    CAMPOS_MOVE,
+  );
+
+  const porProducto = new Map<string, DetalleProducto>();
+  const porFactura = new Map<number, DetalleFactura>();
+  let cliente = "";
+
+  for (const l of lineas) {
+    const nombreCliente = l.partner_id?.[1] || "";
+    if (clienteExcluido(nombreCliente)) continue;
+    const mv = moves.get(l.move_id?.[0]) || {};
+    if (esVendedorExcluido(mv.invoice_user_id?.[1], mv.company_id?.[0])) continue;
+    cliente = cliente || nombreCliente;
+
+    const signo = mv.move_type === "out_refund" ? -1 : 1;
+    const unidades = signo * (Number(l.quantity) || 0);
+    const monto = signo * (Number(l.price_subtotal) || 0);
+    const productoId = l.product_id?.[0];
+    const clave = String(productoId);
+
+    const prod = porProducto.get(clave);
+    if (prod) {
+      prod.unidades += unidades;
+      prod.monto += monto;
+    } else {
+      porProducto.set(clave, {
+        producto: limpiarProducto(l.product_id?.[1] || "") || "(sin producto)",
+        marca: marcaDeProducto.get(productoId) || "Sin marca",
+        unidades,
+        monto,
+      });
+    }
+
+    const moveId = l.move_id?.[0];
+    if (!moveId) continue;
+    const fac = porFactura.get(moveId);
+    if (fac) {
+      fac.unidades += unidades;
+      fac.monto += monto;
+    } else {
+      porFactura.set(moveId, {
+        numero: mv.name || l.move_id?.[1] || "",
+        fecha: soloFecha(mv.invoice_date),
+        vendedor: mv.invoice_user_id?.[1] || "",
+        unidades,
+        monto,
+        esNotaCredito: mv.move_type === "out_refund",
+      });
+    }
+  }
+
+  const productos = [...porProducto.values()]
+    .map((p) => ({ ...p, unidades: r2(p.unidades), monto: r2(p.monto) }))
+    .sort((a, b) => b.monto - a.monto);
+  const facturas = [...porFactura.values()]
+    .map((f) => ({ ...f, unidades: r2(f.unidades), monto: r2(f.monto) }))
+    .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+
+  return {
+    cliente,
+    productos,
+    facturas,
+    totales: {
+      unidades: r2(productos.reduce((s, p) => s + p.unidades, 0)),
+      monto: r2(productos.reduce((s, p) => s + p.monto, 0)),
+      facturas: facturas.length,
     },
   };
 }
