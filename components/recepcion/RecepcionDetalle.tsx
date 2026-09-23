@@ -26,8 +26,10 @@ import {
   evaluarConteo,
   compararPrecintos,
   MAX_PRECINTOS,
+  TIPOS_DANO,
   type Contenedor,
   type Etapa,
+  type TipoDano,
 } from "@/lib/recepcion/flujo";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
 import {
@@ -78,10 +80,12 @@ type Item = {
   cantidad_recibida: string | number | null;
   motivo_diferencia: string | null;
   golpeado: number;
+  /** En que estado llego la caja: danada, humeda y/o abierta. */
+  golpeado_tipos: TipoDano[];
   golpeado_nota: string | null;
 };
 
-type Conteo = { recibida: string; motivo: string; golpeado: boolean; nota: string };
+type Conteo = { recibida: string; motivo: string; tipos: TipoDano[]; nota: string };
 
 function hora(valor: string | null): string | null {
   if (!valor) return null;
@@ -130,7 +134,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         c[i.id] = {
           recibida: i.cantidad_recibida === null ? "" : String(Number(i.cantidad_recibida)),
           motivo: i.motivo_diferencia || "",
-          golpeado: Number(i.golpeado) === 1,
+          tipos: Array.isArray(i.golpeado_tipos) ? i.golpeado_tipos : [],
           nota: i.golpeado_nota || "",
         };
       }
@@ -234,8 +238,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         id: i.id,
         cantidad_recibida: c?.recibida === "" || c?.recibida === undefined ? null : Number(c.recibida),
         motivo_diferencia: c?.motivo || null,
-        golpeado: !!c?.golpeado,
-        golpeado_nota: c?.golpeado ? c.nota || null : null,
+        golpeado_tipos: c?.tipos || [],
+        golpeado_nota: c?.tipos?.length ? c.nota || null : null,
       };
     });
 
@@ -289,7 +293,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       cantidad_recibida:
         conteo[i.id]?.recibida === "" || conteo[i.id]?.recibida === undefined ? null : Number(conteo[i.id].recibida),
       motivo_diferencia: conteo[i.id]?.motivo || null,
-      golpeado: !!conteo[i.id]?.golpeado,
+      golpeado: (conteo[i.id]?.tipos?.length ?? 0) > 0,
     })),
     fotosGolpe,
   );
@@ -597,7 +601,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               </div>
 
               {items.map((i) => {
-                const c = conteo[i.id] || { recibida: "", motivo: "", golpeado: false, nota: "" };
+                const c = conteo[i.id] || { recibida: "", motivo: "", tipos: [], nota: "" };
+                const conDano = c.tipos.length > 0;
                 const esperado = Number(i.cantidad_esperada);
                 const hayDif = c.recibida !== "" && Number(c.recibida) !== esperado;
                 const set = (p: Partial<Conteo>) => {
@@ -658,20 +663,40 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         </p>
                       ))}
 
-                    {/* Caja golpeada: checkbox + nota + foto */}
-                    {(contando || c.golpeado) && (
+                    {/* Estado de la caja: danada, humeda y/o abierta (pueden ir
+                        juntas), con su nota y su foto. */}
+                    {(contando || conDano) && (
                       <div className="mt-2 space-y-2">
-                        <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 select-none cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={c.golpeado}
-                            disabled={!contando}
-                            onChange={(e) => set({ golpeado: e.target.checked })}
-                            className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-400 disabled:opacity-60"
-                          />
-                          {t("golpeado")}
-                        </label>
-                        {c.golpeado && (
+                        {contando ? (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="text-xs font-medium text-slate-500">{t("dano_titulo")}</span>
+                            {TIPOS_DANO.map((tipo) => (
+                              <label
+                                key={tipo}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 select-none cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={c.tipos.includes(tipo)}
+                                  onChange={(e) =>
+                                    set({
+                                      tipos: e.target.checked
+                                        ? [...c.tipos, tipo]
+                                        : c.tipos.filter((x) => x !== tipo),
+                                    })
+                                  }
+                                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                                />
+                                {t(`dano_${tipo}`)}
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-medium text-amber-800">
+                            {t("dano_titulo")}: {c.tipos.map((tipo) => t(`dano_${tipo}`)).join(", ")}
+                          </p>
+                        )}
+                        {conDano && (
                           <div className="pl-5 space-y-2">
                             {contando ? (
                               <input
