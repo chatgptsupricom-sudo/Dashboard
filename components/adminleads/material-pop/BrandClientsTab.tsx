@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Loader2, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandClientDetailDialog } from "./BrandClientDetailDialog";
 
@@ -43,11 +43,11 @@ export function BrandClientsTab() {
   const [desde, setDesde] = useState(primerDiaAno());
   const [hasta, setHasta] = useState(hoy());
   const [marca, setMarca] = useState("");
+  const [busqueda, setBusqueda] = useState("");
 
   const [clientes, setClientes] = useState<ClienteMarca[]>([]);
   const [marcasPop, setMarcasPop] = useState<string[]>([]);
   const [marcasSinVentas, setMarcasSinVentas] = useState<string[]>([]);
-  const [totales, setTotales] = useState({ unidades: 0, monto: 0, clientes: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Fila abierta en el modal de detalle, y en qué pestaña abrirlo.
@@ -69,7 +69,6 @@ export function BrandClientsTab() {
       setClientes(json.clientes || []);
       setMarcasPop(json.marcasPop || []);
       setMarcasSinVentas(json.marcasSinVentas || []);
-      setTotales(json.totales || { unidades: 0, monto: 0, clientes: 0 });
     } catch (e: any) {
       setError(e?.message || "Error");
       setClientes([]);
@@ -81,6 +80,29 @@ export function BrandClientsTab() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // La búsqueda es local: el fetch pesa (va a Odoo) y la lista de clientes del
+  // rango ya está en memoria.
+  const visibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return clientes;
+    return clientes.filter((c) =>
+      [c.cliente, c.rif, c.vendedor, c.ciudad, c.marcas.join(" ")].some((campo) =>
+        (campo || "").toLowerCase().includes(q),
+      ),
+    );
+  }, [clientes, busqueda]);
+
+  // Los totales siguen a lo que se ve: con la búsqueda puesta, suman solo las
+  // filas que quedaron.
+  const totales = useMemo(
+    () => ({
+      clientes: visibles.length,
+      unidades: visibles.reduce((s, c) => s + c.unidades, 0),
+      monto: Math.round(visibles.reduce((s, c) => s + c.monto, 0) * 100) / 100,
+    }),
+    [visibles],
+  );
 
   return (
     <div className="space-y-4">
@@ -118,6 +140,18 @@ export function BrandClientsTab() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="min-w-[220px] flex-1">
+          <label className="block text-[11px] font-medium text-slate-500">Buscar</label>
+          <div className="relative mt-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Cliente, RIF, vendedor o ciudad…"
+              className="w-full rounded-lg border border-slate-200 py-1.5 pl-8 pr-2 text-sm"
+            />
+          </div>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={cargar} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -182,15 +216,17 @@ export function BrandClientsTab() {
                 </td>
               </tr>
             )}
-            {!loading && clientes.length === 0 && (
+            {!loading && visibles.length === 0 && (
               <tr>
                 <td colSpan={10} className="p-6 text-center text-slate-400">
-                  Sin compras de estas marcas en el rango
+                  {clientes.length === 0
+                    ? "Sin compras de estas marcas en el rango"
+                    : "Ningún cliente coincide con la búsqueda"}
                 </td>
               </tr>
             )}
             {!loading &&
-              clientes.map((c, i) => (
+              visibles.map((c, i) => (
                 <tr key={c.partnerId} className="border-t border-slate-100 align-top">
                   <td className="p-3 text-slate-400">{i + 1}</td>
                   <td className="p-3">
