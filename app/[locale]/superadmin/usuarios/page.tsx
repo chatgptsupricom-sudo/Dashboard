@@ -2,7 +2,7 @@
 
 import { CustomSelect } from "@/components/superadmin/CustomSelect";
 import { Title } from "@tremor/react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Check,
   ChevronLeft,
@@ -445,9 +445,13 @@ export default function UserManagement() {
       </div>
 
       {/* VENTANA MODAL ASIGNACIÓN DE PRIVILEGIOS */}
-      {/* VENTANA MODAL ASIGNACIÓN DE PRIVILEGIOS */}
-      <AnimatePresence>
-        {isOpen && createPortal(
+      {/* Sin <AnimatePresence> alrededor: filtra sus hijos con isValidElement
+          y createPortal devuelve un portal, no un elemento, así que el modal
+          se descartaba entero y el botón parecía no hacer nada (la API
+          respondía 200 y no se veía nada). Si hace falta la animación de
+          salida, el portal tiene que envolver a AnimatePresence, no al revés. */}
+      {isOpen &&
+        createPortal(
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
@@ -612,7 +616,6 @@ export default function UserManagement() {
           </div>,
           document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }
