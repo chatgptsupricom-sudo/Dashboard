@@ -228,7 +228,8 @@
     "almacen_ordenes": "Pending orders",
     "almacen_unidades": "Manage Vehicles",
     "almacen_recepcion": "Reception (packing list)",
-    "recepcion_packing": "Packing lists"
+    "recepcion_packing": "Packing lists",
+    "llegadas": "Arrivals"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
@@ -2899,5 +2900,15 @@
     "pistola_terminar": "Done",
     "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
     "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\"."
+  },
+  "llegadas": {
+    "titulo": "Arrivals",
+    "subtitulo": "Products received at the Valencia warehouse, by arrival date.",
+    "buscar": "Search product or code",
+    "limpiar": "Clear search",
+    "resumen": "{productos, plural, one {# product} other {# products}} · {unidades, plural, one {# unit} other {# units}}",
+    "vacio": "No arrivals recorded yet.",
+    "sin_resultados": "No product matches the search.",
+    "error": "Could not load arrivals."
   }
 }

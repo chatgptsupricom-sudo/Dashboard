@@ -167,6 +167,7 @@ export const rolePermissions: RolePermissions = {
       "configuracion_leads",
       "catalogo_adminleads",
       "catalogo_disenador",
+      "llegadas_disenador",
       "banco_imagenes",
       "actividad",
       "vista_custom",
@@ -319,6 +320,7 @@ export const rolePermissions: RolePermissions = {
       "sales_dashboard",
       "actividad",
       "catalogo_disenador",
+      "llegadas_disenador",
       "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
       "editor_ia_disenador", // Editor con IA (Seedream vía KIE)
       "vista_custom",
