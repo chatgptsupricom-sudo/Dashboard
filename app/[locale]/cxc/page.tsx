@@ -169,10 +169,10 @@ export default function CxcDashboardPage() {
           {/* 4 KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Efectividad */}
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
+            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">35%</span>
@@ -187,13 +187,11 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">
                 Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
               </div>
-              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
-                </div>
-              )}
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Exigible {formatCurrency(data.kpis.efectividad.exigible)} (CxC inicial + facturado − CxC final no vencida)
+              </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
             </div>
 

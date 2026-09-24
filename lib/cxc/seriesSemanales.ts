@@ -57,6 +57,12 @@ export interface SeriesCxC {
   recuperacionSemana: (string | null)[];
   /** Cartera vencida de HOY, con el mismo método que las semanas. */
   carteraHoy: { pct: number | null; vencido: number; total: number };
+  /**
+   * Cartera reconstruida en cualquier corte desde el inicio de la primera
+   * semana (la usa el CEI de lib/cxc/efectividad.ts). Un corte anterior a esa
+   * fecha no tiene las conciliaciones necesarias y sale mal.
+   */
+  carteraEn: (corte: Date) => { total: number; vencido: number; pct: number | null };
 }
 
 const PAGE = 5000;
@@ -98,6 +104,7 @@ export async function calcularSeriesCxC(
     carteraVencidaSemana: semanas.map(() => null),
     recuperacionSemana: semanas.map(() => null),
     carteraHoy: { pct: null, vencido: 0, total: 0 },
+    carteraEn: () => ({ total: 0, vencido: 0, pct: null }),
   };
   if (semanas.length === 0) return vacio;
 
@@ -263,5 +270,6 @@ export async function calcularSeriesCxC(
       vencido: Math.round(hoyCartera.vencido * 100) / 100,
       total: Math.round(hoyCartera.total * 100) / 100,
     },
+    carteraEn,
   };
 }

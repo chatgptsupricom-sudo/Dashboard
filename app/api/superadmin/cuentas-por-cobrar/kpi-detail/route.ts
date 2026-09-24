@@ -1,6 +1,8 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
-import { detalleEfectividadFacturado } from "@/lib/cxc/efectividad";
+import { detalleCEI } from "@/lib/cxc/efectividad";
+import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
+import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
@@ -62,9 +64,11 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     if (type === "efectividad") {
-      // Cobrado del mes ÷ facturado del mes, por cliente. Mismo helper que la
-      // tarjeta (lib/cxc/efectividad.ts) para que nunca discrepen.
-      const { resumen, clientes } = await detalleEfectividadFacturado(companyIds, monthStart, monthEnd, [], today);
+      // CEI con su detalle por cliente. Mismos helpers que la tarjeta
+      // (lib/cxc/efectividad.ts) para que nunca discrepen.
+      const semanas = obtenerSemanasDelMes(currentYear, currentMonth + 1);
+      const { carteraEn } = await calcularSeriesCxC(companyIds, semanas, today);
+      const { resumen, clientes } = await detalleCEI(companyIds, monthStart, monthEnd, [], today, carteraEn);
       return NextResponse.json({
         success: true,
         data: { type: "efectividad", summary: resumen, clientes },

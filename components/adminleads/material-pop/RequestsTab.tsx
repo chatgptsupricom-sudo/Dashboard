@@ -324,7 +324,6 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                                 <Input
                                   type="number"
                                   min="0"
-                                  max={it.quantity}
                                   value={aprobadas[it.productId] ?? ""}
                                   onChange={(e) =>
                                     setAprobadas((prev) => ({

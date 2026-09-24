@@ -275,7 +275,10 @@ export async function GET(request: NextRequest) {
       else if (!esUsd && tasa != null && taxToday > 0 && Math.abs(tasa - taxToday) / Math.max(taxToday, 1) > 0.05) revisar = true;
 
       const igtf = Number(p.mount_igtf) || 0;
-      const tipo: "cobro" | "ajuste" = esDiarioBanco(journalById[p.journal_id?.[0]]) ? "cobro" : "ajuste";
+      // El 25% de IVA que paga el cliente (retiene el 75%) no es cobro: somos
+      // agentes de retención. Misma regla que lib/cxc/cobros.ts.
+      const es25Iva = limpiarHtml(p.payment_description).includes("25%");
+      const tipo: "cobro" | "ajuste" = esDiarioBanco(journalById[p.journal_id?.[0]]) && !es25Iva ? "cobro" : "ajuste";
       const vendedor = p.salesperson_id?.[1] || "";
 
       return {

@@ -354,9 +354,10 @@ export async function revisarSolicitud(opts: {
     if (!Number.isFinite(cantidad) || cantidad < 0) {
       throw new ErrorSolicitud(`${it.code}: cantidad aprobada inválida`);
     }
-    if (cantidad > pedida) {
-      throw new ErrorSolicitud(`${it.code}: no se puede aprobar más de lo pedido`);
-    }
+    // Se puede aprobar MÁS de lo pedido: el adminLeads conoce el stock y la
+    // campaña, y a veces conviene mandar más de lo que el vendedor pidió. El
+    // único techo real es el material libre.
+    //
     // Aprobar reserva material, así que no puede comprometer lo que ya está
     // comprometido en otra solicitud.
     const disponible = it.stockTotal - it.reservadoOtras;

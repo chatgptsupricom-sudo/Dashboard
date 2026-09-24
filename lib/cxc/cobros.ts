@@ -23,7 +23,9 @@ import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
  *    cargado a mano) se usa la fecha del asiento. Ver lib/cxc/fechaConfirmacion.ts.
  *  - Diario: tipo bank/cash y sin "retenido" en el nombre. Retenciones de IVA,
  *    descuentos, ajustes y notas de crédito aplicadas NO son cobro: bajan el
- *    saldo, pero no entró dinero.
+ *    saldo, pero no entró dinero. Tampoco los pagos del 25% de IVA ("25%" en
+ *    la descripción del pago): somos agentes de retención. Solo lo aplica el
+ *    dominio con `soloBanco` (el único modo que se usa hoy).
  *  - Nada se filtra por vendedor ni por partner: cada pantalla decide (los KPIs
  *    sacan a los internos, Contado/Crédito tiene su toggle de asistentes).
  *
@@ -144,6 +146,11 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
     dominio.push(
       ["credit_move_id.journal_id.type", "in", ["bank", "cash"]],
       ["credit_move_id.journal_id.name", "not ilike", "retenido"],
+      // Pagos del 25% de IVA ("25% de iva factura …"): lo que el cliente paga
+      // aparte porque retiene el 75%. Somos agentes de retención, no es cobro.
+      // `\%` = % literal. Los asientos que no son un pago pasan.
+      "|", ["credit_move_id.payment_id", "=", false],
+      ["credit_move_id.payment_id.payment_description", "not ilike", "25\\%"],
     );
   }
   if (opts.dominioFactura?.length) dominio.push(...prefijar(opts.dominioFactura, "debit_move_id.move_id."));
