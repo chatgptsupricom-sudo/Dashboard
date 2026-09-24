@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // La sede la impone el backend a partir del token; esto solo evita ofrecer en
 // el selector una sede que devolveria 403.
@@ -92,6 +93,9 @@ export default function PagoClientesPage() {
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
+  const [vendedorFiltro, setVendedorFiltro] = useState("");
+  const [bancoFiltro, setBancoFiltro] = useState("");
+  const [detalleId, setDetalleId] = useState<number | null>(null);
   const [excluirAsistentes, setExcluirAsistentes] = useState(true);
   const [excluirRetenciones, setExcluirRetenciones] = useState(true);
   const [excluirIva25, setExcluirIva25] = useState(true);
@@ -131,7 +135,16 @@ export default function PagoClientesPage() {
   }, [desdeConf, hastaConf, desdePago, hastaPago, empresa, estado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, excluirRetenciones, excluirIva25, tab]);
+  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, excluirRetenciones, excluirIva25, tab, vendedorFiltro, bancoFiltro]);
+
+  // Opciones de los selectores: todo lo que vino del servidor, para que la
+  // lista no se vacíe a medida que se filtra.
+  const vendedores = useMemo(() => [...new Set(rows.map((r) => r.vendedor).filter(Boolean))].sort(), [rows]);
+  const bancos = useMemo(() => [...new Set(rows.map((r) => r.banco).filter(Boolean))].sort(), [rows]);
+  const pasaFiltros = useCallback(
+    (r: Row) => (!vendedorFiltro || r.vendedor === vendedorFiltro) && (!bancoFiltro || r.banco === bancoFiltro),
+    [vendedorFiltro, bancoFiltro],
+  );
 
   // Con los dos checks marcados (default) es la regla de Contado/Crédito
   // (lib/cxc/cobros.ts). Desmarcar uno pasa esos pagos de "Retenciones y
@@ -160,18 +173,18 @@ export default function PagoClientesPage() {
   );
 
   const countCobros = useMemo(
-    () => rows.filter((r) => tipoDe(r) === "cobro" && incluida(r)).length,
-    [rows, incluida, tipoDe],
+    () => rows.filter((r) => tipoDe(r) === "cobro" && incluida(r) && pasaFiltros(r)).length,
+    [rows, incluida, tipoDe, pasaFiltros],
   );
   const countAjustes = useMemo(
-    () => rows.filter((r) => tipoDe(r) === "ajuste" && incluida(r)).length,
-    [rows, incluida, tipoDe],
+    () => rows.filter((r) => tipoDe(r) === "ajuste" && incluida(r) && pasaFiltros(r)).length,
+    [rows, incluida, tipoDe, pasaFiltros],
   );
 
   // Rows del tab actual (sin búsqueda) — base del resumen.
   const enTab = useMemo(
-    () => rows.filter((r) => tipoDe(r) === tab && incluida(r)),
-    [rows, tab, incluida, tipoDe],
+    () => rows.filter((r) => tipoDe(r) === tab && incluida(r) && pasaFiltros(r)),
+    [rows, tab, incluida, tipoDe, pasaFiltros],
   );
 
   const visibles = useMemo(() => {
@@ -222,7 +235,6 @@ export default function PagoClientesPage() {
       "Sede": r.sede,
       "Banco / Diario": r.banco,
       "Vendedor": r.vendedor,
-      "Moneda": r.moneda,
       // Pagos en Bs: su conversión va en "Equiv. USD", no en "Monto USD",
       // para que sumar "Monto USD" dé solo los dólares que entraron.
       "Monto Bs": r.montoBs,
@@ -244,7 +256,7 @@ export default function PagoClientesPage() {
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [
       { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
-      { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
+      { wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
       { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
@@ -347,6 +359,22 @@ export default function PagoClientesPage() {
             <option value="todos">Todos (incl. borrador / anulados)</option>
           </select>
         </div>
+        <div className="flex-1 sm:flex-none min-w-[140px]">
+          <label className="block text-xs font-medium text-slate-500 mb-1">Vendedor</label>
+          <select value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}
+            className="w-full sm:w-auto sm:max-w-[200px] border rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">Todos</option>
+            {vendedores.map((v) => (<option key={v} value={v}>{v}</option>))}
+          </select>
+        </div>
+        <div className="flex-1 sm:flex-none min-w-[140px]">
+          <label className="block text-xs font-medium text-slate-500 mb-1">Banco / Diario</label>
+          <select value={bancoFiltro} onChange={(e) => setBancoFiltro(e.target.value)}
+            className="w-full sm:w-auto sm:max-w-[200px] border rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">Todos</option>
+            {bancos.map((b) => (<option key={b} value={b}>{b}</option>))}
+          </select>
+        </div>
         <div className="w-full lg:flex-1 lg:min-w-[200px]">
           <label className="block text-xs font-medium text-slate-500 mb-1">Buscar</label>
           <div className="relative">
@@ -432,7 +460,6 @@ export default function PagoClientesPage() {
                 <th className="p-3">Sede</th>
                 <th className="p-3">Banco / Diario</th>
                 <th className="p-3">Vendedor</th>
-                <th className="p-3 text-center">Mon.</th>
                 <th className="p-3 text-right">Monto Bs</th>
                 <th className="p-3 text-right">Equiv. USD</th>
                 <th className="p-3 text-right">Monto USD</th>
@@ -445,12 +472,12 @@ export default function PagoClientesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={16} className="p-10 text-center text-slate-400">Cargando…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
+                <tr><td colSpan={16} className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
               ) : (
                 pageRows.map((r) => (
-                  <tr key={r.id} className={`border-b hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
+                  <tr key={r.id} onClick={() => setDetalleId(r.id)} className={`border-b cursor-pointer hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
                     <td className="p-3 whitespace-nowrap">
                       <div className="text-slate-800">{fmtFecha(r.fechaConfirmacion)}</div>
                       {r.fechaPago && r.fechaPago !== r.fechaConfirmacion && (
@@ -471,11 +498,6 @@ export default function PagoClientesPage() {
                     <td className="p-3 max-w-[160px] truncate text-slate-600" title={r.vendedor}>
                       {r.vendedor}
                       {r.esAsistente && <span className="ml-1 text-[9px] text-slate-400" title="Asistente de ventas">·asist</span>}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.moneda === "USD" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"}`}>
-                        {r.moneda}
-                      </span>
                     </td>
                     <td className="p-3 text-right tabular-nums text-slate-700">{fmtNum(r.montoBs)}</td>
                     <td className="p-3 text-right tabular-nums text-slate-500">{fmtNum(r.moneda === "Bs" ? r.montoUsd : null)}</td>
@@ -508,7 +530,7 @@ export default function PagoClientesPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400 text-sm">Sin registros en el rango seleccionado.</div>
         ) : (
           <>
-            {pageRows.map((r) => <PagoCard key={r.id} r={r} />)}
+            {pageRows.map((r) => <PagoCard key={r.id} r={r} onClick={() => setDetalleId(r.id)} />)}
             {visibles.length > PAGE_SIZE && (
               <div className="bg-white rounded-xl border border-slate-200">
                 <Paginacion page={page} totalPages={totalPages} total={visibles.length} setPage={setPage} />
@@ -524,7 +546,108 @@ export default function PagoClientesPage() {
         desprende de los montos no coinciden (&gt;5 %), o el equivalente en USD quedó en cero — conviene
         verificarla en Odoo.
       </p>
+
+      <DetallePago id={detalleId} onClose={() => setDetalleId(null)} />
     </div>
+  );
+}
+
+type Detalle = {
+  id: number; numeroPago: string; estado: string; tipoPago: string; cliente: string;
+  importe: number; moneda: "USD" | "Bs"; monedaOdoo: string; tasaCustom: boolean;
+  fechaPago: string | null; fechaConfirmacion: string | null; tasa: number | null;
+  importeLocal: number; memo: string; diario: string; metodoPago: string; cuentaBancaria: string;
+  descripcion: string; igtf: number; montoTotal: number; vendedor: string;
+  adjuntos: { id: number; nombre: string; mimetype: string }[];
+};
+
+// Ficha del pago como la muestra Odoo, con el comprobante adjunto al lado.
+function DetallePago({ id, onClose }: { id: number | null; onClose: () => void }) {
+  const [d, setD] = useState<Detalle | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [adjunto, setAdjunto] = useState(0);
+
+  useEffect(() => {
+    if (id == null) return;
+    let vigente = true;
+    setD(null); setError(null); setAdjunto(0);
+    fetch(`/api/superadmin/cuentas-por-cobrar/pagos-clientes/detalle?id=${id}`)
+      .then((r) => r.json())
+      .then((j) => { if (vigente) j.success ? setD(j.data) : setError(j.error || "Error al cargar el pago"); })
+      .catch(() => { if (vigente) setError("Error al cargar el pago"); });
+    return () => { vigente = false; };
+  }, [id]);
+
+  const a = d?.adjuntos[adjunto];
+  const urlAdjunto = a ? `/api/superadmin/cuentas-por-cobrar/pagos-clientes/detalle?id=${d!.id}&adjunto=${a.id}` : "";
+  const campo = (label: string, valor: ReactNode) => (
+    <div className="grid grid-cols-[140px_1fr] gap-2 py-1 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-800 break-words">{valor || "—"}</span>
+    </div>
+  );
+
+  return (
+    <Dialog open={id != null} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {d?.numeroPago || "Pago"}
+            {d && d.estado !== "posted" && (
+              <span className="ml-2 align-middle text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{d.estado}</span>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+        {error ? (
+          <p className="text-sm text-red-600">{error}</p>
+        ) : !d ? (
+          <p className="text-sm text-slate-400">Cargando…</p>
+        ) : (
+          <div className={`grid gap-6 ${d.adjuntos.length ? "lg:grid-cols-2" : ""}`}>
+            <div>
+              {campo("Tipo de pago", d.tipoPago)}
+              {campo("Cliente", d.cliente)}
+              {campo("Importe", `${d.moneda === "USD" ? "$" : "Bs"} ${fmtNum(d.importe)}`)}
+              {campo("Tasa personalizada", d.tasaCustom ? "Sí" : "No")}
+              {campo("Fecha", fmtFecha(d.fechaPago))}
+              {campo("Fecha de registro (confirmación)", fmtFecha(d.fechaConfirmacion))}
+              {d.moneda === "Bs" && campo("Tasa", fmtNum(d.tasa, 4))}
+              {campo("Importe local", `$ ${fmtNum(d.importeLocal)}`)}
+              {campo("Memo", d.memo)}
+              {campo("Diario", d.diario)}
+              {campo("Método de pago", d.metodoPago)}
+              {campo("Cuenta bancaria", d.cuentaBancaria)}
+              {campo("Vendedor", d.vendedor)}
+              {d.igtf > 0 && campo("IGTF", fmtNum(d.igtf))}
+              {campo("Descripción", d.descripcion)}
+            </div>
+            {d.adjuntos.length > 0 && a && (
+              <div className="min-w-0">
+                {d.adjuntos.length > 1 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {d.adjuntos.map((x, i) => (
+                      <button key={x.id} onClick={() => setAdjunto(i)}
+                        className={`text-xs px-2 py-1 rounded border truncate max-w-[180px] ${i === adjunto ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200"}`}>
+                        {x.nombre}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {a.mimetype.startsWith("image/") ? (
+                  <a href={urlAdjunto} target="_blank" rel="noreferrer">
+                    <img src={urlAdjunto} alt={a.nombre} className="w-full rounded border border-slate-200" />
+                  </a>
+                ) : a.mimetype === "application/pdf" ? (
+                  <iframe src={urlAdjunto} title={a.nombre} className="w-full h-[60vh] rounded border border-slate-200" />
+                ) : (
+                  <a href={urlAdjunto} className="text-sm text-blue-600 underline">Descargar {a.nombre}</a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -555,9 +678,9 @@ function Paginacion({ page, totalPages, total, setPage }: {
   );
 }
 
-function PagoCard({ r }: { r: Row }) {
+function PagoCard({ r, onClick }: { r: Row; onClick: () => void }) {
   return (
-    <div className={`bg-white rounded-xl border p-3 ${r.revisar ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}>
+    <div onClick={onClick} className={`cursor-pointer bg-white rounded-xl border p-3 ${r.revisar ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 flex-wrap">
