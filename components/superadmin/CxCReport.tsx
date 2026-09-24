@@ -255,8 +255,8 @@ export default function CxCReport() {
               subtitle={
                 `${t("cobrado_mes")}: ${formatCurrency(data.kpis.efectividad.cobrado)} / ${t("facturado_mes")}: ${formatCurrency(data.kpis.efectividad.facturado)}`
               }
-              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
-              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
+              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
+              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
               icon={<TrendingUp size={20} />}
               weight="35%"
             />

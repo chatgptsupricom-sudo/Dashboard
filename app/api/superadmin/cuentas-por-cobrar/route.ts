@@ -353,7 +353,7 @@ export async function GET(request: NextRequest) {
             // CEI: pagos registrados ÷ (CxC inicial + facturado − CxC final
             // no vencida) (lib/cxc/efectividad.ts → calcularCEI).
             value: efectividad,
-            meta: cxcMetas["efectividad_cobranza"] || 95,
+            meta: cxcMetas["efectividad_cobranza"] || 85,
             cobrado: efectividadCalc.cobrado,
             facturado: efectividadCalc.facturado,
             carteraInicial: efectividadCalc.carteraInicial,

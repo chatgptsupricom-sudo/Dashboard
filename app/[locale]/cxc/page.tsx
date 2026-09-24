@@ -169,10 +169,10 @@ export default function CxcDashboardPage() {
           {/* 4 KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Efectividad */}
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
+            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">35%</span>
