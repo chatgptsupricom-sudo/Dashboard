@@ -2890,6 +2890,10 @@
     "agregar_precinto": "Add another seal",
     "precintos_indicados": "{count, plural, =1 {The packing list lists # seal} other {The packing list lists # seals}}",
     "precinto_faltan": "Missing: {lista}",
-    "precinto_sobran": "Not in the packing list: {lista}"
+    "precinto_sobran": "Not in the packing list: {lista}",
+    "recien_contado": "Just counted",
+    "buscar_producto": "Search product by name or code",
+    "limpiar_busqueda": "Clear search",
+    "sin_resultados": "No product matches the search."
   }
 }

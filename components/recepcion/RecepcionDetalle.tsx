@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,6 +12,7 @@ import {
   Container,
   Download,
   ScanBarcode,
+  Search,
   X,
   FileSpreadsheet,
   FileText,
@@ -148,6 +149,13 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Pistola: producto con serial seleccionado y renglones con la lista de seriales abierta.
   const [seleccionado, setSeleccionado] = useState<number | null>(null);
   const [verSeriales, setVerSeriales] = useState<Record<number, boolean>>({});
+  // El ultimo renglon contado se ilumina unos segundos y se trae a la vista,
+  // para ver que producto sumo cada lectura de la pistola.
+  const [ultimo, setUltimo] = useState<number | null>(null);
+  const timerUltimo = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Buscar un producto por nombre o codigo (cajas que solo traen el nombre:
+  // se busca y se escribe la cantidad total en su campo).
+  const [filtro, setFiltro] = useState("");
   // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
   const [ahora, setAhora] = useState(() => new Date());
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
@@ -242,7 +250,20 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
   // Cada lectura de la pistola ya quedo guardada en el servidor: aca solo se
   // refleja en pantalla (sin disparar el guardado automatico).
+  const marcar = (itemId: number) => {
+    setUltimo(itemId);
+    if (timerUltimo.current) clearTimeout(timerUltimo.current);
+    timerUltimo.current = setTimeout(() => setUltimo(null), 3500);
+    // Se trae a la vista sin quitarle el foco al campo de la pistola.
+    setTimeout(() => {
+      document.getElementById(`renglon-${itemId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+  };
+
   const alEscanear = (r: ResultadoEscaneo) => {
+    // Si habia una busqueda escrita, se limpia: el renglon leido tiene que verse.
+    setFiltro("");
+    marcar(r.item_id);
     if (r.resultado === "seleccionado") {
       setSeleccionado(r.item_id);
       return;
@@ -825,13 +846,59 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 </div>
               )}
 
+              {items.length > 3 && (
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    value={filtro}
+                    onChange={(e) => setFiltro(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      const q = filtro.trim().toLowerCase();
+                      const primero = items.find(
+                        (i) => !i.lleva_serial && `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(q),
+                      );
+                      if (primero) {
+                        const campo = document.getElementById(`cantidad-${primero.id}`) as HTMLInputElement | null;
+                        campo?.focus();
+                        campo?.select();
+                      }
+                    }}
+                    placeholder={t("buscar_producto")}
+                    aria-label={t("buscar_producto")}
+                    className="w-full h-10 pl-9 pr-9 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-100"
+                  />
+                  {filtro && (
+                    <button
+                      type="button"
+                      onClick={() => setFiltro("")}
+                      aria-label={t("limpiar_busqueda")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_5rem_6rem] gap-x-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
                 <span>{t("producto")}</span>
                 <span className="text-right">{t("esperado")}</span>
                 <span className="text-right">{t("recibido")}</span>
               </div>
 
-              {items.map((i) => {
+              {filtro.trim() &&
+                !items.some((i) =>
+                  `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
+                ) && <p className="py-4 text-center text-sm text-slate-400">{t("sin_resultados")}</p>}
+              {items
+                .filter(
+                  (i) =>
+                    !filtro.trim() ||
+                    `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
+                )
+                .map((i) => {
                 const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
                 const conDano = c.danos.length > 0;
                 const recibidaNum = c.recibida === "" ? null : Number(c.recibida);
@@ -846,12 +913,22 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 return (
                   <div
                     key={i.id}
-                    className={`py-3 border-b border-slate-50 last:border-0 ${
-                      esSeleccionado ? "-mx-2 px-2 rounded-lg bg-violet-50 ring-1 ring-violet-300" : ""
+                    id={`renglon-${i.id}`}
+                    className={`py-3 border-b border-slate-50 last:border-0 transition-colors duration-500 ${
+                      ultimo === i.id
+                        ? "-mx-2 px-2 rounded-lg bg-emerald-50 ring-2 ring-emerald-400"
+                        : esSeleccionado
+                          ? "-mx-2 px-2 rounded-lg bg-violet-50 ring-1 ring-violet-300"
+                          : ""
                     }`}
                   >
                     <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_5rem_6rem] gap-x-2 items-center">
                       <div className="min-w-0">
+                        {ultimo === i.id && (
+                          <span className="inline-block mb-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
+                            {t("recien_contado")}
+                          </span>
+                        )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
                         <p className="text-[11px] text-slate-400 truncate">
                           {[i.codigo, i.cajas_esperadas !== null ? `${i.cajas_esperadas} ${t("cajas").toLowerCase()}` : null]
@@ -891,6 +968,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         </span>
                       ) : contando ? (
                         <input
+                          id={`cantidad-${i.id}`}
                           type="number"
                           inputMode="decimal"
                           min={0}

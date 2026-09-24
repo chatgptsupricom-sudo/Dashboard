@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Keyboard, Loader2, ScanBarcode } from "lucide-react";
+import { Keyboard, Loader2, ScanBarcode, Search } from "lucide-react";
 
 /**
  * Campo para la pistola de codigos de barras.
@@ -71,6 +71,7 @@ export default function Pistola({
   const [mensaje, setMensaje] = useState<Mensaje | null>(null);
   // Codigo que no se reconocio: se pregunta de que producto es.
   const [desconocido, setDesconocido] = useState<string | null>(null);
+  const [busca, setBusca] = useState("");
 
   const producto = (id: number | null) => items.find((i) => i.id === id) || null;
   const activo = producto(seleccionado);
@@ -109,6 +110,7 @@ export default function Pistola({
       }
       if (j.resultado === "desconocido") {
         pitar(false);
+        setBusca("");
         setDesconocido(j.codigo);
         setMensaje(null);
         return;
@@ -240,8 +242,26 @@ export default function Pistola({
           <p className="text-sm text-slate-800">
             {t("pistola_desconocido", { codigo: desconocido })}
           </p>
+          {items.length > 3 && (
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder={t("buscar_producto")}
+                aria-label={t("buscar_producto")}
+                className="w-full h-9 pl-8 pr-2 rounded-md border border-slate-200 text-sm focus:outline-none"
+              />
+            </div>
+          )}
           <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-            {items.map((i) => (
+            {items
+              .filter(
+                (i) =>
+                  !busca.trim() ||
+                  `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(busca.trim().toLowerCase()),
+              )
+              .map((i) => (
               <div key={i.id} className="flex flex-wrap items-center gap-2 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-slate-800 truncate">{i.producto}</p>

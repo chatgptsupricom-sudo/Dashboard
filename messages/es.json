@@ -2879,6 +2879,10 @@
     "agregar_precinto": "Agregar otro precinto",
     "precintos_indicados": "{count, plural, =1 {El packing list indica # precinto} other {El packing list indica # precintos}}",
     "precinto_faltan": "Faltan: {lista}",
-    "precinto_sobran": "No estaban en el packing list: {lista}"
+    "precinto_sobran": "No estaban en el packing list: {lista}",
+    "recien_contado": "Recién contado",
+    "buscar_producto": "Buscar producto por nombre o código",
+    "limpiar_busqueda": "Limpiar búsqueda",
+    "sin_resultados": "Ningún producto coincide con la búsqueda."
   }
 }
