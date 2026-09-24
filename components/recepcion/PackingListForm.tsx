@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, FileSpreadsheet, FileText, Loader2, Plus, Send, Trash2, Upload, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { SUCURSALES, separarPrecintos } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
@@ -11,7 +11,6 @@ import {
   PageHeader,
   Card,
   SectionTitle,
-  BotonPrimario,
   BotonSecundario,
   inputClases,
   labelClases,
@@ -21,10 +20,11 @@ import {
  * Compras carga el packing list (antes lo mandaba por correo a Almacen).
  *
  * Los renglones se pueden sacar de tres lados, porque cada proveedor lo manda
- * distinto: leidos de un Excel, tomados de una orden de compra del panel
- * (cuando el packing list es un PDF) o escritos a mano. Siempre quedan en la
- * grilla para revisarlos antes de guardar. El archivo original se adjunta
- * igual, para que Almacen lo pueda abrir.
+ * distinto: leidos solos del archivo del packing list al subirlo (Excel en la
+ * pantalla, PDF o foto con IA), tomados de una orden de compra del panel o
+ * escritos a mano. Siempre quedan en la grilla para revisarlos antes de
+ * guardar. El archivo original se adjunta igual, para que Almacen lo pueda
+ * abrir.
  */
 
 type Renglon = { codigo: string; producto: string; cantidad_esperada: string; cajas_esperadas: string };
@@ -67,7 +67,6 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const [guardando, setGuardando] = useState(false);
   const [cargando, setCargando] = useState(editando);
   const [leyendo, setLeyendo] = useState(false);
-  const inputExcel = useRef<HTMLInputElement>(null);
   const inputArchivo = useRef<HTMLInputElement>(null);
 
   // Edicion: se carga lo que hay.
@@ -255,6 +254,15 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
     limpios.length > 0 &&
     limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0);
 
+  const faltaParaGuardar: string[] = [];
+  if (!proveedor.trim()) faltaParaGuardar.push(t("falta_pl_proveedor"));
+  if (!referencia.trim()) faltaParaGuardar.push(t("falta_pl_referencia"));
+  if (!contenedoresOk) faltaParaGuardar.push(t("falta_pl_contenedor"));
+  if (limpios.length === 0) faltaParaGuardar.push(t("falta_pl_renglones"));
+  else if (!limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0)) {
+    faltaParaGuardar.push(t("falta_pl_renglon_incompleto"));
+  }
+
   const guardar = async () => {
     setError(null);
     setGuardando(true);
@@ -321,7 +329,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
     <div className="min-h-screen bg-slate-50 font-sans">
       <PageHeader titulo={editando ? t("editar") : t("nuevo")} volverA={editando ? `${base}/${id}` : base} />
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-28">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 space-y-4">
         <Card className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -452,21 +460,9 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           <SectionTitle>
             {t("renglones")} ({limpios.length})
           </SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-            <BotonSecundario icon={FileSpreadsheet} onClick={() => inputExcel.current?.click()}>
-              {t("importar_excel")}
-            </BotonSecundario>
-            <input
-              ref={inputExcel}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void importarExcel(f);
-                e.target.value = "";
-              }}
-            />
+          {/* Los renglones se leen solos al subir el archivo del packing list
+              (Excel, PDF o foto); aca queda tomarlos de una orden de compra. */}
+          <div className="mb-4">
             <select
               value={ordenId}
               onChange={(e) => void importarOrden(Number(e.target.value))}
@@ -494,19 +490,19 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             {renglones.map((r, i) => (
               <div
                 key={i}
-                className="grid grid-cols-[minmax(0,1fr)_5rem_4rem_2rem] sm:grid-cols-[7rem_minmax(0,1fr)_6rem_5rem_2rem] gap-2 py-2 items-center"
+                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] sm:grid-cols-[7rem_minmax(0,1fr)_6rem_5rem_2rem] gap-2 py-2 items-center border-b border-slate-100 last:border-0 sm:border-0"
               >
                 <input
                   value={r.codigo}
                   onChange={(e) => cambiar(i, "codigo", e.target.value.slice(0, 100))}
                   placeholder={t("codigo")}
-                  className={`${inputClases} h-10 font-mono text-xs col-span-4 sm:col-span-1`}
+                  className={`${inputClases} h-10 font-mono text-xs col-span-3 sm:col-span-1`}
                 />
                 <input
                   value={r.producto}
                   onChange={(e) => cambiar(i, "producto", e.target.value.slice(0, 300))}
                   placeholder={t("producto")}
-                  className={`${inputClases} h-10`}
+                  className={`${inputClases} h-10 col-span-3 sm:col-span-1`}
                 />
                 <input
                   type="number"
@@ -550,16 +546,41 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
-      </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200/70 bg-white/90 backdrop-blur">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
-          <BotonPrimario onClick={guardar} disabled={guardando || !listo} className="w-full h-12">
-            {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-            {editando ? t("guardar_cambios") : t("guardar")}
-          </BotonPrimario>
+        <div className="sticky bottom-0 z-10 pb-4 pt-2 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-[0_4px_16px_rgba(15,23,42,0.08)]">
+            <div className="min-w-0 flex-1 text-xs">
+              {faltaParaGuardar.length > 0 ? (
+                <p className="flex items-start gap-1.5 text-amber-700">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+                  <span>{t("falta_pl", { lista: faltaParaGuardar.join(", ") })}</span>
+                </p>
+              ) : (
+                <p className="text-slate-500">
+                  {t("resumen_pl", { renglones: limpios.length, contenedores: contLimpios.length })}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 sm:shrink-0">
+              <BotonSecundario href={editando ? `${base}/${id}` : base} className="w-full sm:w-auto">
+                {t("cancelar_pl")}
+              </BotonSecundario>
+              {/* Deshabilitado en gris (no el violeta lavado): se lee como "todavia
+                  no", y el porque esta escrito a la izquierda. */}
+              <button
+                type="button"
+                onClick={guardar}
+                disabled={guardando || !listo}
+                style={guardando || !listo ? undefined : { backgroundColor: "var(--portal-primary,#741DFE)" }}
+                className="w-full sm:w-auto whitespace-nowrap inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 disabled:cursor-not-allowed disabled:hover:opacity-100"
+              >
+                {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {editando ? t("guardar_cambios") : t("guardar")}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
