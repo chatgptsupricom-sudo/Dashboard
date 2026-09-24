@@ -302,6 +302,9 @@ export function Sidebar({
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
+    // Lo que llego al almacen (packing list cerrados): solo fecha y productos.
+    // Diseñador y AdminLeads de Valencia; misma pagina para los dos roles.
+    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
     { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
