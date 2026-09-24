@@ -213,8 +213,11 @@ export default function PagoClientesPage() {
       "Vendedor": r.vendedor,
       "Moneda": r.moneda,
       "Monto (moneda original)": r.montoOriginal,
+      // Pagos en Bs: su conversión va en "Equiv. USD", no en "Monto USD",
+      // para que sumar "Monto USD" dé solo los dólares que entraron.
       "Monto Bs": r.montoBs,
-      "Monto USD": r.montoUsd,
+      "Equiv. USD": r.moneda === "Bs" ? r.montoUsd : null,
+      "Monto USD": r.moneda === "USD" ? r.montoUsd : null,
       "Tasa (Bs/USD)": r.tasa,
       "Tasa registrada": r.tasaRegistrada,
       "Tasa personalizada": r.tasaCustom ? "Sí" : "No",
@@ -231,7 +234,7 @@ export default function PagoClientesPage() {
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [
       { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
-      { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 16 },
+      { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
       { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
@@ -396,7 +399,7 @@ export default function PagoClientesPage() {
       {/* Tabla (lg+) */}
       <div className="hidden lg:block bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1400px]">
+          <table className="w-full text-sm min-w-[1500px]">
             <thead>
               <tr className="bg-slate-50 border-b text-[11px] uppercase tracking-wide text-slate-500 text-left">
                 <th className="p-3">Fecha<span className="normal-case font-normal text-slate-400"> (confirm. / pago)</span></th>
@@ -410,6 +413,7 @@ export default function PagoClientesPage() {
                 <th className="p-3 text-center">Mon.</th>
                 <th className="p-3 text-right">Monto original</th>
                 <th className="p-3 text-right">Monto Bs</th>
+                <th className="p-3 text-right">Equiv. USD</th>
                 <th className="p-3 text-right">Monto USD</th>
                 <th className="p-3 text-right">Tasa</th>
                 <th className="p-3 text-right">IGTF</th>
@@ -420,9 +424,9 @@ export default function PagoClientesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={18} className="p-10 text-center text-slate-400">Cargando…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
+                <tr><td colSpan={18}className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
               ) : (
                 pageRows.map((r) => (
                   <tr key={r.id} className={`border-b hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
@@ -454,7 +458,8 @@ export default function PagoClientesPage() {
                     </td>
                     <td className="p-3 text-right tabular-nums text-slate-700">{fmtNum(r.montoOriginal)}</td>
                     <td className="p-3 text-right tabular-nums text-slate-700">{fmtNum(r.montoBs)}</td>
-                    <td className="p-3 text-right tabular-nums font-medium text-slate-900">{fmtNum(r.montoUsd)}</td>
+                    <td className="p-3 text-right tabular-nums text-slate-500">{fmtNum(r.moneda === "Bs" ? r.montoUsd : null)}</td>
+                    <td className="p-3 text-right tabular-nums font-medium text-slate-900">{fmtNum(r.moneda === "USD" ? r.montoUsd : null)}</td>
                     <td className="p-3 text-right tabular-nums text-slate-600">
                       {r.tasa == null ? "—" : fmtNum(r.tasa)}
                       {r.tasaCustom && <span className="ml-1 text-[9px] text-amber-600" title="Tasa personalizada">✎</span>}
@@ -559,8 +564,8 @@ function PagoCard({ r }: { r: Row }) {
           <div className="tabular-nums text-slate-700 text-sm">{fmtNum(r.montoBs)}</div>
         </div>
         <div>
-          <div className="text-[10px] text-slate-400 text-left">USD</div>
-          <div className="tabular-nums font-semibold text-slate-900 text-sm">{fmtNum(r.montoUsd)}</div>
+          <div className="text-[10px] text-slate-400 text-left">{r.moneda === "Bs" ? "Equiv. USD" : "USD"}</div>
+          <div className={`tabular-nums text-sm ${r.moneda === "Bs" ? "text-slate-500" : "font-semibold text-slate-900"}`}>{fmtNum(r.montoUsd)}</div>
         </div>
         <div>
           <div className="text-[10px] text-slate-400 text-left">Tasa</div>
