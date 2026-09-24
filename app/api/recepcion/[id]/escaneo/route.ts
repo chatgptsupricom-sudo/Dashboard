@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { normalizarCodigo } from "@/lib/recepcion/flujo";
+import { esCodigoDeProducto, normalizarCodigo, productoPorPrefijo } from "@/lib/recepcion/flujo";
 import { buscarAlias, recontarSeriales } from "@/lib/recepcion/seriales";
 import {
   cargarRecepcion,
@@ -16,13 +16,17 @@ import { NextRequest, NextResponse } from "next/server";
  * Lo que lee la pistola durante el conteo. La pistola "escribe" el codigo y
  * pulsa Enter; la pantalla lo manda aca y esto decide que es:
  *
- *  1. El codigo de un producto del packing list (o un codigo de caja ya
- *     aprendido que apunta a uno):
+ *  1. El codigo de un producto del packing list, su codigo con una variante
+ *     ("5HB10D#B1K" es la caja de "5HB10D") o un codigo de caja ya
+ *     aprendido que apunta a uno:
  *       - sin serial: suma 1 a lo recibido            -> "conteo"
  *       - con serial: lo deja seleccionado            -> "seleccionado"
  *  2. Si no, y hay un producto con serial seleccionado (`item_id`), es un
  *     serial de ese producto: se guarda y suma 1     -> "serial"
  *     (repetido en el mismo packing list             -> 409 "repetido")
+ *     Salvo que parezca un UPC/EAN (codigo del modelo, igual en todas las
+ *     cajas): eso no se guarda como serial sin que lo confirmen
+ *     (`forzar_serial`)                              -> "desconocido"
  *  3. Si no, no se sabe que es                        -> "desconocido"
  *     y la pantalla pregunta de que producto es. Al responder, vuelve con
  *     `aprender_item_id`: se guarda el codigo de caja -> producto y se
@@ -90,8 +94,8 @@ export async function POST(
       );
     }
 
-    // 1. Codigo de producto (directo o aprendido).
-    let producto = porCodigo(codigo);
+    // 1. Codigo de producto (directo, con variante o aprendido).
+    let producto = porCodigo(codigo) || productoPorPrefijo(items, codigo);
     if (!producto) {
       const alias = await buscarAlias(codigo);
       if (alias) producto = porCodigo(alias);
@@ -119,6 +123,9 @@ export async function POST(
       body?.item_id !== undefined && body?.item_id !== null
         ? items.find((i) => Number(i.id) === Number(body.item_id))
         : null;
+    if (seleccionado?.lleva_serial && esCodigoDeProducto(codigo) && body?.forzar_serial !== true) {
+      return NextResponse.json({ resultado: "desconocido", codigo, pista: "codigo_de_producto" });
+    }
     if (seleccionado?.lleva_serial) {
       const repetido = await query(
         "SELECT item_id FROM recepcion_packing_seriales WHERE recepcion_id = ? AND serial = ?",

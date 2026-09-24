@@ -828,9 +828,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               {contando && (
                 <Pistola
                   recepcionId={rec.id}
-                  items={items.map((i) => ({ id: i.id, codigo: i.codigo, producto: i.producto, lleva_serial: !!i.lleva_serial }))}
+                  items={items.map((i) => ({
+                    id: i.id,
+                    codigo: i.codigo,
+                    producto: i.producto,
+                    lleva_serial: !!i.lleva_serial,
+                    esperado: Number(i.cantidad_esperada),
+                    recibido: i.lleva_serial ? (i.seriales || []).length : Number(conteo[i.id]?.recibida || 0),
+                  }))}
                   seleccionado={seleccionado}
                   onResultado={alEscanear}
+                  onTerminar={() => setSeleccionado(null)}
                 />
               )}
               {items.some((i) => (i.seriales || []).length > 0) && (

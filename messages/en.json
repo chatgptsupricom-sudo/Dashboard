@@ -2894,6 +2894,10 @@
     "recien_contado": "Just counted",
     "buscar_producto": "Search product by name or code",
     "limpiar_busqueda": "Clear search",
-    "sin_resultados": "No product matches the search."
+    "sin_resultados": "No product matches the search.",
+    "pistola_van_de": "{recibido} of {esperado}",
+    "pistola_terminar": "Done",
+    "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
+    "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\"."
   }
 }

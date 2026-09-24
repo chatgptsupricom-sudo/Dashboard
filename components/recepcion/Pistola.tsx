@@ -15,7 +15,14 @@ import { Keyboard, Loader2, ScanBarcode, Search } from "lucide-react";
  * puede escribir un codigo a mano.
  */
 
-export type ItemPistola = { id: number; codigo: string | null; producto: string; lleva_serial: boolean };
+export type ItemPistola = {
+  id: number;
+  codigo: string | null;
+  producto: string;
+  lleva_serial: boolean;
+  esperado: number;
+  recibido: number;
+};
 
 export type ResultadoEscaneo =
   | { resultado: "conteo"; item_id: number; cantidad: number; codigo: string }
@@ -56,11 +63,14 @@ export default function Pistola({
   items,
   seleccionado,
   onResultado,
+  onTerminar,
 }: {
   recepcionId: number;
   items: ItemPistola[];
   seleccionado: number | null;
   onResultado: (r: ResultadoEscaneo) => void;
+  /** Salir del modo seriales del producto seleccionado. */
+  onTerminar: () => void;
 }) {
   const t = useTranslations("recepcion");
   const campo = useRef<HTMLInputElement>(null);
@@ -71,6 +81,8 @@ export default function Pistola({
   const [mensaje, setMensaje] = useState<Mensaje | null>(null);
   // Codigo que no se reconocio: se pregunta de que producto es.
   const [desconocido, setDesconocido] = useState<string | null>(null);
+  // Lo leido parece el codigo del modelo (UPC/EAN), no un serial.
+  const [pareceProducto, setPareceProducto] = useState(false);
   const [busca, setBusca] = useState("");
 
   const producto = (id: number | null) => items.find((i) => i.id === id) || null;
@@ -111,6 +123,7 @@ export default function Pistola({
       if (j.resultado === "desconocido") {
         pitar(false);
         setBusca("");
+        setPareceProducto(j.pista === "codigo_de_producto");
         setDesconocido(j.codigo);
         setMensaje(null);
         return;
@@ -135,6 +148,14 @@ export default function Pistola({
               }
             : { tipo: "ok", texto: t("pistola_serial", { serial: j.serial.serial, cantidad: j.cantidad }) },
         );
+        // Completo lo esperado: sale solo del modo seriales.
+        if (p && j.cantidad >= p.esperado) {
+          setMensaje({
+            tipo: "ok",
+            texto: t("pistola_completo", { producto: p.producto, cantidad: j.cantidad, esperado: p.esperado }),
+          });
+          onTerminar();
+        }
       }
     } catch {
       pitar(false);
@@ -159,7 +180,7 @@ export default function Pistola({
     if (comoSerial) {
       // Es un serial de ese producto: se selecciona y se vuelve a mandar.
       onResultado({ resultado: "seleccionado", item_id: item.id, codigo });
-      await enviar(codigo, { item_id: item.id });
+      await enviar(codigo, { item_id: item.id, forzar_serial: true });
     } else {
       // Es el codigo de la caja de ese producto: se aprende.
       await enviar(codigo, { aprender_item_id: item.id });
@@ -221,15 +242,31 @@ export default function Pistola({
         </button>
       </div>
 
-      <p className="text-xs text-slate-600">
-        {activo ? (
-          <>
-            {t("pistola_activo")}: <span className="font-semibold text-violet-700">{activo.producto}</span>
-          </>
-        ) : (
-          t("pistola_ayuda")
-        )}
-      </p>
+      {activo ? (
+        // Mientras esta activo, TODO lo que se pistolee (salvo el codigo de
+        // otro producto) se guarda como serial de este: tiene que verse.
+        <div className="flex items-center gap-2 rounded-lg bg-violet-600 text-white px-3 py-2">
+          <ScanBarcode className="w-4 h-4 shrink-0" />
+          <p className="flex-1 min-w-0 text-xs">
+            {t("pistola_activo")}: <span className="font-semibold">{activo.producto}</span>
+            <span className="ml-1 opacity-90 tabular-nums">
+              · {t("pistola_van_de", { recibido: activo.recibido, esperado: activo.esperado })}
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              onTerminar();
+              enfocar();
+            }}
+            className="shrink-0 h-7 px-3 rounded-md bg-white text-violet-700 text-xs font-semibold"
+          >
+            {t("pistola_terminar")}
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-600">{t("pistola_ayuda")}</p>
+      )}
 
       {mensaje && (
         <p role="status" className={`text-xs font-medium rounded-lg border px-3 py-2 ${estilos[mensaje.tipo]}`}>
@@ -242,6 +279,9 @@ export default function Pistola({
           <p className="text-sm text-slate-800">
             {t("pistola_desconocido", { codigo: desconocido })}
           </p>
+          {pareceProducto && (
+            <p className="text-xs text-amber-800 bg-amber-50 rounded-md px-2 py-1">{t("pistola_parece_producto")}</p>
+          )}
           {items.length > 3 && (
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
