@@ -1,7 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { calcularEfectividadFacturado } from "@/lib/cxc/efectividad";
+import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
@@ -280,7 +280,7 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    // ── Efectividad y su fila semanal: cobrado ÷ facturado del mes ──
+    // ── Efectividad (CEI) y su fila semanal ──
     // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
     // helper) para que la fila quede alineada con los encabezados
     // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
@@ -293,10 +293,10 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    const [seriesCxc, efectividadCalc] = await Promise.all([
-      calcularSeriesCxC(companyIds, semanasCxc, today),
-      calcularEfectividadFacturado(companyIds, monthStart, monthEnd, semanasCxc, today),
-    ]);
+    // El CEI usa la cartera reconstruida al inicio y al final del mes, así
+    // que va después de las series.
+    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraEn);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -350,14 +350,17 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
-            // Cobrado del mes ÷ facturado del mes, ambos con IVA
-            // (lib/cxc/efectividad.ts → calcularEfectividadFacturado).
+            // CEI: pagos registrados ÷ (CxC inicial + facturado − CxC final
+            // no vencida) (lib/cxc/efectividad.ts → calcularCEI).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 95,
             cobrado: efectividadCalc.cobrado,
             facturado: efectividadCalc.facturado,
-            cobradoDeFacturasDelMes: efectividadCalc.cobradoDeFacturasDelMes,
-            cobradoDeAnteriores: efectividadCalc.cobradoDeAnteriores,
+            carteraInicial: efectividadCalc.carteraInicial,
+            carteraFinal: efectividadCalc.carteraFinal,
+            carteraFinalNoVencida: efectividadCalc.carteraFinalNoVencida,
+            exigible: efectividadCalc.exigible,
+            pagos: efectividadCalc.pagos,
             facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
           },

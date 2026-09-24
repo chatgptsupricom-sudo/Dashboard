@@ -30,10 +30,11 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // Cobrado del mes ÷ facturado del mes (lib/cxc/efectividad.ts).
+  // CEI: pagos registrados ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
   efectividad: {
     value: number | null; meta: number; cobrado: number; facturado: number;
-    cobradoDeFacturasDelMes: number; cobradoDeAnteriores: number; facturas: number; parcial: boolean;
+    carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
+    pagos: number; facturas: number; parcial: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };

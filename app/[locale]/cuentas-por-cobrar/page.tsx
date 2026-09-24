@@ -336,15 +336,14 @@ export default function CxcDashboardPage() {
                 <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
+                Exigible: {formatCurrency(data.kpis.efectividad.exigible)}
               </div>
-              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
-                </div>
-              )}
+              <div className="text-[11px] text-slate-500 mt-0.5">Cobrado ÷ exigible · clic para ver el detalle</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                CxC inicial {formatCurrency(data.kpis.efectividad.carteraInicial)} + facturado {formatCurrency(data.kpis.efectividad.facturado)} − no vencida {formatCurrency(data.kpis.efectividad.carteraFinalNoVencida)}
+              </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
             </div>
 
@@ -1045,30 +1044,50 @@ export default function CxcDashboardPage() {
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Facturado del mes</span>
-                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.facturado)}</span>
-                    <span className="text-[10px] text-blue-500/80 block">{kpiData.summary.facturas} facturas · con IVA</span>
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible del mes</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.exigible)}</span>
+                    <span className="text-[10px] text-blue-500/80 block">CxC inicial + facturado − CxC final no vencida</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado del mes</span>
                     <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.cobrado)}</span>
-                    <span className="text-[10px] text-emerald-500/80 block">banco y caja · con IVA</span>
+                    <span className="text-[10px] text-emerald-500/80 block">{kpiData.summary.pagos} pagos registrados · banco y caja</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">De lo cobrado</span>
-                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeFacturasDelMes)} de facturas del mes</span>
-                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeAnteriores)} de meses anteriores</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Componentes</span>
+                    <span className="text-xs font-semibold text-slate-700 block">CxC inicial {formatCurrency(kpiData.summary.carteraInicial)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">+ Facturado {formatCurrency(kpiData.summary.facturado)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">− No vencida {formatCurrency(kpiData.summary.carteraFinalNoVencida)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad (CEI)</span>
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</span>
-                    <span className="text-[10px] text-slate-400 block">cobrado ÷ facturado</span>
+                    <span className="text-[10px] text-slate-400 block">cobrado ÷ exigible</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500 -mt-2">
-                  Todo el dinero que entró en el mes (de cualquier factura) contra lo facturado en el mes. Puede pasar de 100% si se cobró deuda vieja por encima de lo facturado.
-                  {kpiData.summary.parcial ? " Mes en curso: los dos van al día de hoy." : ""}
-                </p>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-[11px] text-slate-600 space-y-2">
+                  <div className="text-xs font-bold text-slate-700">¿Cómo se calcula?</div>
+                  <div className="font-mono text-slate-700 bg-white border border-slate-100 rounded-lg p-2 overflow-x-auto">
+                    CEI = Cobrado ÷ (CxC inicial + Facturado − CxC final no vencida) × 100
+                    <br />
+                    = {formatCurrency(kpiData.summary.cobrado)} ÷ ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.facturado)} − {formatCurrency(kpiData.summary.carteraFinalNoVencida)})
+                    {" "}= <strong>{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</strong>
+                  </div>
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li><strong>Cobrado:</strong> los pagos de clientes registrados y confirmados en Odoo durante el mes, según su fecha de confirmación. Solo cuenta dinero que entró a banco o caja: las retenciones no son cobro. Es la misma cifra que &quot;Recibido&quot; en Pago de Clientes (pestaña Cobros), sin el cliente interno Supricom.</li>
+                    <li><strong>CxC inicial:</strong> lo que los clientes debían al empezar el mes.</li>
+                    <li><strong>Facturado:</strong> facturas del mes menos notas de crédito, con IVA.</li>
+                    <li><strong>CxC final no vencida:</strong> lo que los clientes deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"} y todavía no ha vencido. Se resta porque no se podía exigir.</li>
+                    <li><strong>Exigible</strong> = CxC inicial + Facturado − CxC final no vencida: todo lo que se podía cobrar en el mes.</li>
+                  </ul>
+                  <p className="text-slate-500">
+                    Odoo solo guarda el saldo de hoy. La CxC de una fecha pasada se calcula así: saldo de hoy de cada factura + los pagos que recibió después de esa fecha. Es el mismo cálculo que usa Cartera Vencida.
+                  </p>
+                  <p className="text-slate-500">
+                    100% = se cobró todo lo exigible. Puede pasar de 100% cuando entran anticipos que todavía no se aplicaron a facturas.
+                    {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}
+                  </p>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
