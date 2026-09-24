@@ -271,6 +271,15 @@ export function formatearDuracion(ms: number): string {
   return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
 }
 
+/**
+ * Un codigo leido por la pistola (o escrito), listo para comparar: sin
+ * espacios de mas y en mayusculas. Los guiones se respetan: en los codigos de
+ * producto significan algo ("SCT5170SR" no es "SCT-5170-SR").
+ */
+export function normalizarCodigo(v: string | null | undefined): string {
+  return String(v || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
 /** Normaliza un precinto para compararlo: sin espacios ni guiones, en mayusculas. */
 export function normalizarPrecinto(v: string | null | undefined): string {
   return String(v || "")

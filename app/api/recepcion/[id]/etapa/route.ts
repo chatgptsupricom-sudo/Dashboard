@@ -184,7 +184,17 @@ export async function POST(
         for (const c of Array.isArray(body?.items) ? body.items : []) {
           const item = porId.get(Number(c?.id));
           if (!item) continue;
-          const bruto = c?.cantidad_recibida;
+          // Un renglon con serial vale lo que se pistoleo: su cantidad es la
+          // cantidad de seriales, no lo que venga escrito. Sin ningun serial
+          // solo se acepta un 0 explicito (no llego ninguno).
+          const escrito = c?.cantidad_recibida;
+          const bruto = item.lleva_serial
+            ? item.seriales.length > 0
+              ? item.seriales.length
+              : escrito !== null && escrito !== undefined && escrito !== "" && Number(escrito) === 0
+                ? 0
+                : null
+            : escrito;
           const cantidad = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
           if (cantidad !== null && (!Number.isFinite(cantidad) || cantidad < 0)) {
             return NextResponse.json(

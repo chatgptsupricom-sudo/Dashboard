@@ -10,6 +10,9 @@ import {
   Clock,
   Timer,
   Container,
+  Download,
+  ScanBarcode,
+  X,
   FileSpreadsheet,
   FileText,
   Loader2,
@@ -37,6 +40,8 @@ import {
   type TipoDano,
 } from "@/lib/recepcion/flujo";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
+import * as XLSX from "xlsx";
+import Pistola, { type ResultadoEscaneo } from "@/components/recepcion/Pistola";
 import {
   PageHeader,
   Card,
@@ -88,7 +93,12 @@ type Item = {
   /** En que estado llego la caja (danada, humeda y/o abierta) y cuantas unidades. */
   danos: Array<{ tipo: TipoDano; cantidad: number | null }>;
   golpeado_nota: string | null;
+  /** En Odoo lleva numero de serie: se cuenta pistoleando cada serial. */
+  lleva_serial: boolean;
+  seriales: SerialItem[];
 };
+
+type SerialItem = { id: number; item_id: number; serial: string; escaneado_por: string | null; created_at: string };
 
 /** Cada dano marcado con la cantidad tal como se escribe en el campo. */
 type DanoForm = { tipo: TipoDano; cantidad: string };
@@ -135,6 +145,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Correccion de precintos ya anotados (ej. un error de tipeo): contenedor
   // que se esta corrigiendo, los precintos correctos y el motivo.
   const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
+  // Pistola: producto con serial seleccionado y renglones con la lista de seriales abierta.
+  const [seleccionado, setSeleccionado] = useState<number | null>(null);
+  const [verSeriales, setVerSeriales] = useState<Record<number, boolean>>({});
   // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
   const [ahora, setAhora] = useState(() => new Date());
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
@@ -226,6 +239,58 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     // cuerpoConteo lee `conteo`, que cambia junto con `editado`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editado]);
+
+  // Cada lectura de la pistola ya quedo guardada en el servidor: aca solo se
+  // refleja en pantalla (sin disparar el guardado automatico).
+  const alEscanear = (r: ResultadoEscaneo) => {
+    if (r.resultado === "seleccionado") {
+      setSeleccionado(r.item_id);
+      return;
+    }
+    setConteo((prev) => ({
+      ...prev,
+      [r.item_id]: { ...(prev[r.item_id] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: String(r.cantidad) },
+    }));
+    if (r.resultado === "serial") {
+      setItems((prev) =>
+        prev.map((i) => (i.id === r.item_id ? { ...i, seriales: [...(i.seriales || []), r.serial] } : i)),
+      );
+    }
+  };
+
+  const quitarSerial = async (itemId: number, serialId: number) => {
+    setError(null);
+    const res = await fetch(`/api/recepcion/${id}/seriales/${serialId}`, { method: "DELETE" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(j.error || t("error"));
+      return;
+    }
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, seriales: (i.seriales || []).filter((x) => x.id !== serialId) } : i)),
+    );
+    setConteo((prev) => ({
+      ...prev,
+      [itemId]: { ...(prev[itemId] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: j.cantidad ? String(j.cantidad) : "" },
+    }));
+  };
+
+  // Los seriales en Excel, como los llevaban hasta ahora.
+  const descargarSeriales = () => {
+    if (!rec) return;
+    const filas = items.flatMap((i) =>
+      (i.seriales || []).map((x) => ({
+        Codigo: i.codigo || "",
+        Producto: i.producto,
+        Serial: x.serial,
+        "Pistoleado por": x.escaneado_por || "",
+        Fecha: x.created_at ? new Date(x.created_at).toLocaleString("es-VE") : "",
+      })),
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), "Seriales");
+    XLSX.writeFile(wb, `Seriales_${rec.referencia}.xlsx`);
+  };
 
   const corregirPrecintos = async (contenedorId: number) => {
     setError(null);
@@ -739,6 +804,26 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 {t("conteo")} ({items.length})
               </SectionTitle>
               {contando && <p className="text-xs text-slate-500 -mt-1 mb-3">{t("conteo_ayuda")}</p>}
+              {contando && (
+                <Pistola
+                  recepcionId={rec.id}
+                  items={items.map((i) => ({ id: i.id, codigo: i.codigo, producto: i.producto, lleva_serial: !!i.lleva_serial }))}
+                  seleccionado={seleccionado}
+                  onResultado={alEscanear}
+                />
+              )}
+              {items.some((i) => (i.seriales || []).length > 0) && (
+                <div className="mb-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={descargarSeriales}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_5rem_6rem] gap-x-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
                 <span>{t("producto")}</span>
@@ -756,8 +841,15 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   setConteo((prev) => ({ ...prev, [i.id]: { ...c, ...p } }));
                   setEditado((n) => n + 1);
                 };
+                const esSeleccionado = seleccionado === i.id;
+                const seriales = i.seriales || [];
                 return (
-                  <div key={i.id} className="py-3 border-b border-slate-50 last:border-0">
+                  <div
+                    key={i.id}
+                    className={`py-3 border-b border-slate-50 last:border-0 ${
+                      esSeleccionado ? "-mx-2 px-2 rounded-lg bg-violet-50 ring-1 ring-violet-300" : ""
+                    }`}
+                  >
                     <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_5rem_6rem] gap-x-2 items-center">
                       <div className="min-w-0">
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
@@ -766,9 +858,38 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             .filter(Boolean)
                             .join(" · ")}
                         </p>
+                        {i.lleva_serial && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                              {t("con_serial")}
+                            </span>
+                            {contando && (
+                              <button
+                                type="button"
+                                onClick={() => setSeleccionado(esSeleccionado ? null : i.id)}
+                                className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold ${
+                                  esSeleccionado ? "bg-violet-600 text-white" : "border border-violet-300 text-violet-700 bg-white"
+                                }`}
+                              >
+                                <ScanBarcode className="w-3.5 h-3.5" />
+                                {esSeleccionado ? t("pistoleando") : t("pistolear_seriales")}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">{esperado}</span>
-                      {contando ? (
+                      {contando && i.lleva_serial ? (
+                        // Con serial: se cuenta pistoleando, no se escribe.
+                        <span
+                          title={t("cuenta_seriales")}
+                          className={`w-full h-10 px-2 flex items-center justify-end rounded-lg border bg-slate-50 text-sm tabular-nums ${
+                            hayDif ? "border-red-300 text-red-700 font-semibold" : "border-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {c.recibida === "" ? "—" : c.recibida}
+                        </span>
+                      ) : contando ? (
                         <input
                           type="number"
                           inputMode="decimal"
@@ -789,6 +910,54 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         </span>
                       )}
                     </div>
+
+                    {i.lleva_serial && (seriales.length > 0 || contando) && (
+                      <div className="mt-2 space-y-1">
+                        <div className="flex flex-wrap items-center gap-3">
+                          {seriales.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setVerSeriales((v) => ({ ...v, [i.id]: !v[i.id] }))}
+                              className="text-[11px] font-semibold text-violet-700 hover:underline"
+                            >
+                              {verSeriales[i.id] ? t("ocultar_seriales") : t("ver_seriales", { count: seriales.length })}
+                            </button>
+                          )}
+                          {/* Si no llego ninguno se anota 0 a mano (no hay que pistolear). */}
+                          {contando && seriales.length === 0 && (
+                            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+                              <input
+                                type="checkbox"
+                                checked={c.recibida === "0"}
+                                onChange={(e) => set({ recibida: e.target.checked ? "0" : "" })}
+                                className="w-3.5 h-3.5 rounded border-slate-300"
+                              />
+                              {t("no_llego_ninguno")}
+                            </label>
+                          )}
+                        </div>
+                        {verSeriales[i.id] && (
+                          <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 divide-y divide-slate-100">
+                            {seriales.map((x) => (
+                              <li key={x.id} className="flex items-center gap-2 px-2 py-1 text-[11px]">
+                                <span className="font-mono text-slate-700 flex-1 truncate">{x.serial}</span>
+                                <span className="text-slate-400 truncate hidden sm:inline">{x.escaneado_por}</span>
+                                {contando && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void quitarSerial(i.id, x.id)}
+                                    aria-label={t("quitar_serial", { serial: x.serial })}
+                                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-600"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
 
                     {/* Motivo de la diferencia: obligatorio si falta o sobra */}
                     {hayDif &&
