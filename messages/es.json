@@ -2879,6 +2879,14 @@
     "agregar_precinto": "Agregar otro precinto",
     "precintos_indicados": "{count, plural, =1 {El packing list indica # precinto} other {El packing list indica # precintos}}",
     "precinto_faltan": "Faltan: {lista}",
-    "precinto_sobran": "No estaban en el packing list: {lista}"
+    "precinto_sobran": "No estaban en el packing list: {lista}",
+    "recien_contado": "Recién contado",
+    "buscar_producto": "Buscar producto por nombre o código",
+    "limpiar_busqueda": "Limpiar búsqueda",
+    "sin_resultados": "Ningún producto coincide con la búsqueda.",
+    "pistola_van_de": "{recibido} de {esperado}",
+    "pistola_terminar": "Terminar",
+    "pistola_completo": "{producto}: completo ({cantidad} de {esperado}). Pistolee el siguiente producto.",
+    "pistola_parece_producto": "Parece el código del modelo (UPC/EAN), que es igual en todas las cajas, no un serial. Si es el código de la caja, elija \"Es su código\"."
   }
 }
