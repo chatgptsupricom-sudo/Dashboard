@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { alinearPrecintos, leerCorrecciones, leerDanos, leerPrecintos } from "@/lib/recepcion/flujo";
+import { completarLlevaSerial, leerSeriales } from "@/lib/recepcion/seriales";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -56,7 +57,7 @@ export function puedeComo(sesion: Sesion, rol: "compras" | "almacen"): boolean {
 export async function cargarRecepcion(id: number) {
   const r = await query("SELECT * FROM recepcion_packing WHERE id = ?", [id]);
   if (r.rows.length === 0) return null;
-  const [items, contenedores, archivos] = await Promise.all([
+  const [items, contenedores, archivos, seriales] = await Promise.all([
     query("SELECT * FROM recepcion_packing_items WHERE recepcion_id = ? ORDER BY id", [id]),
     query("SELECT * FROM recepcion_packing_contenedores WHERE recepcion_id = ? ORDER BY id", [id]),
     query(
@@ -64,14 +65,24 @@ export async function cargarRecepcion(id: number) {
          FROM recepcion_packing_archivos WHERE recepcion_id = ? ORDER BY id`,
       [id],
     ),
+    leerSeriales(id),
   ]);
+  // Que renglon lleva serial lo dice Odoo; se consulta una sola vez.
+  await completarLlevaSerial(items.rows as any[]);
   return {
     recepcion: r.rows[0] as any,
     // Los tipos de dano van como lista; un renglon de antes de que existieran
     // se lee como caja danada.
     items: (items.rows as any[]).map((i) => {
       const danos = leerDanos(i.golpeado_tipos, i.golpeado);
-      return { ...i, danos, golpeado_tipos: danos.map((d) => d.tipo) };
+      return {
+        ...i,
+        danos,
+        golpeado_tipos: danos.map((d) => d.tipo),
+        lleva_serial: Number(i.lleva_serial) === 1,
+        // Los seriales pistoleados de este renglon.
+        seriales: seriales.filter((s) => Number(s.item_id) === Number(i.id)),
+      };
     }),
     // Los precintos van como lista (un contenedor puede tener varios); si el
     // contenedor es de antes de eso, se arma la lista con el precinto unico.

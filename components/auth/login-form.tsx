@@ -261,6 +261,8 @@ export function LoginForm() {
         router.push(`/${locale}/dashboard`);
       } else if (role === "seguridad") {
         router.push(`/${locale}/seguridad`);
+      } else if (role === "diseñador") {
+        router.push(`/${locale}/disenador/dashboard`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);
