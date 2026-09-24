@@ -230,7 +230,7 @@
     "almacen_unidades": "Manage Vehicles",
     "almacen_recepcion": "Reception (packing list)",
     "recepcion_packing": "Packing lists",
-    "llegadas": "Arrivals"
+    "llegadas": "Packing List"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
@@ -2903,7 +2903,7 @@
     "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\"."
   },
   "llegadas": {
-    "titulo": "Arrivals",
+    "titulo": "Packing List",
     "subtitulo": "Goods that arrived and are coming to the Valencia warehouse. Tap a day to see the products.",
     "buscar": "Search product or code",
     "limpiar": "Clear search",
