@@ -391,7 +391,7 @@ export default function PagoClientesPage() {
       {/* Resumen */}
       <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-2 sm:gap-3">
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
-        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} hint="Cobrado del período, conciliado con facturas (= Cobrado de Contado/Crédito)" />
+        <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} hint="Cobrado del período, conciliado con facturas (= Cobrado de Contado/Crédito con los mismos checks)" />
         <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} hint="Conciliado con facturas" />
         <Card
           icon={<DollarSign size={16} className="text-slate-400" />}

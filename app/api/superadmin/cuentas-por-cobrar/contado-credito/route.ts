@@ -97,10 +97,13 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
 // vendedores internos por defecto: mide plata real que entro a un banco.
 // excluirAsistente es el toggle opcional del usuario.
-async function renglonesCobradoDinero(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
+async function renglonesCobradoDinero(
+  companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
+  excluirRetenciones: boolean, excluirIva25: boolean,
+): Promise<Renglon[]> {
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
-  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr });
+  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr, excluirRetenciones, excluirIva25 });
 
   return cobros
     .filter((c) => !excluirAsistente || !esVendedorExcluido(c.vendedorName, c.companyId))
@@ -143,6 +146,10 @@ export async function GET(request: NextRequest) {
     // (coincide con el export real de cobranza).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
     const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    // Solo en Cobrado. Default true = la regla historica de lib/cxc/cobros.ts
+    // (retenciones y pagos del 25% de IVA no son cobro).
+    const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
+    const excluirIva25 = searchParams.get("excluirIva25") !== "false";
     // Filtros adicionales, iguales a los que ya tiene "Integracion de
     // Pagos" en Odoo: vendedor puntual, busqueda libre (cliente o numero
     // de factura), y banco/diario puntual (solo aplica en Cobrado).
@@ -174,7 +181,7 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     const renglonesSinFiltrar = modo === "cobrado"
-      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente)
+      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25)
       : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
 
     // Vendedores para el dropdown: todos los que aparecen en el periodo,
@@ -367,6 +374,8 @@ export async function GET(request: NextRequest) {
           companyIds,
           modo,
           excluirAsistente,
+          excluirRetenciones,
+          excluirIva25,
           vendedorId,
           search: search || undefined,
           bancoId,
