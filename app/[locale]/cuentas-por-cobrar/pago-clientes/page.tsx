@@ -28,10 +28,10 @@ type Row = {
   sede: string;
   banco: string;
   vendedor: string;
-  tipo: Tipo;
+  esRetencion: boolean;
+  es25Iva: boolean;
   esAsistente: boolean;
   moneda: "USD" | "Bs";
-  montoOriginal: number;
   montoBs: number | null;
   montoUsd: number;
   tasa: number | null;
@@ -93,6 +93,8 @@ export default function PagoClientesPage() {
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
   const [excluirAsistentes, setExcluirAsistentes] = useState(true);
+  const [excluirRetenciones, setExcluirRetenciones] = useState(true);
+  const [excluirIva25, setExcluirIva25] = useState(true);
   const [tab, setTab] = useState<Tipo>("cobro");
   // Usuario de una sola sede: el selector queda fijo en la suya.
   useEffect(() => { if (sedes.length === 1) setEmpresa(sedes[0].value); }, [sedes]);
@@ -129,7 +131,16 @@ export default function PagoClientesPage() {
   }, [desdeConf, hastaConf, desdePago, hastaPago, empresa, estado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, tab]);
+  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, excluirRetenciones, excluirIva25, tab]);
+
+  // Con los dos checks marcados (default) es la regla de Contado/Crédito
+  // (lib/cxc/cobros.ts). Desmarcar uno pasa esos pagos de "Retenciones y
+  // ajustes" a Cobros; un pago que es las dos cosas necesita ambos desmarcados.
+  const tipoDe = useCallback(
+    (r: Row): Tipo =>
+      (r.esRetencion && excluirRetenciones) || (r.es25Iva && excluirIva25) ? "ajuste" : "cobro",
+    [excluirRetenciones, excluirIva25],
+  );
 
   // "Excluir asistentes" se aplica como en Contado/Crédito: por el vendedor de
   // la FACTURA a la que se aplicó el pago. Un pago aplicado en parte a
@@ -149,18 +160,18 @@ export default function PagoClientesPage() {
   );
 
   const countCobros = useMemo(
-    () => rows.filter((r) => r.tipo === "cobro" && incluida(r)).length,
-    [rows, incluida],
+    () => rows.filter((r) => tipoDe(r) === "cobro" && incluida(r)).length,
+    [rows, incluida, tipoDe],
   );
   const countAjustes = useMemo(
-    () => rows.filter((r) => r.tipo === "ajuste" && incluida(r)).length,
-    [rows, incluida],
+    () => rows.filter((r) => tipoDe(r) === "ajuste" && incluida(r)).length,
+    [rows, incluida, tipoDe],
   );
 
   // Rows del tab actual (sin búsqueda) — base del resumen.
   const enTab = useMemo(
-    () => rows.filter((r) => r.tipo === tab && incluida(r)),
-    [rows, tab, incluida],
+    () => rows.filter((r) => tipoDe(r) === tab && incluida(r)),
+    [rows, tab, incluida, tipoDe],
   );
 
   const visibles = useMemo(() => {
@@ -212,7 +223,6 @@ export default function PagoClientesPage() {
       "Banco / Diario": r.banco,
       "Vendedor": r.vendedor,
       "Moneda": r.moneda,
-      "Monto (moneda original)": r.montoOriginal,
       // Pagos en Bs: su conversión va en "Equiv. USD", no en "Monto USD",
       // para que sumar "Monto USD" dé solo los dólares que entraron.
       "Monto Bs": r.montoBs,
@@ -234,7 +244,7 @@ export default function PagoClientesPage() {
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [
       { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 10 },
-      { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
+      { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
       { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
@@ -354,6 +364,18 @@ export default function PagoClientesPage() {
             onChange={(e) => setExcluirAsistentes(e.target.checked)} className="rounded border-slate-300" />
           Excluir asistentes de ventas
         </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600 pb-1.5 cursor-pointer select-none"
+          title="Diarios que no son banco/caja o dicen «retenido» (IVA/ISLR retenido, descuentos, devoluciones…)">
+          <input type="checkbox" checked={excluirRetenciones}
+            onChange={(e) => setExcluirRetenciones(e.target.checked)} className="rounded border-slate-300" />
+          Excluir retenciones
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600 pb-1.5 cursor-pointer select-none"
+          title="Pagos del 25% de IVA: somos agentes de retención, no es cobro">
+          <input type="checkbox" checked={excluirIva25}
+            onChange={(e) => setExcluirIva25(e.target.checked)} className="rounded border-slate-300" />
+          Excluir 25% de IVA
+        </label>
         <div className="flex gap-2 w-full sm:w-auto">
           <button onClick={fetchData} disabled={loading}
             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
@@ -399,7 +421,7 @@ export default function PagoClientesPage() {
       {/* Tabla (lg+) */}
       <div className="hidden lg:block bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1500px]">
+          <table className="w-full text-sm min-w-[1400px]">
             <thead>
               <tr className="bg-slate-50 border-b text-[11px] uppercase tracking-wide text-slate-500 text-left">
                 <th className="p-3">Fecha<span className="normal-case font-normal text-slate-400"> (confirm. / pago)</span></th>
@@ -411,7 +433,6 @@ export default function PagoClientesPage() {
                 <th className="p-3">Banco / Diario</th>
                 <th className="p-3">Vendedor</th>
                 <th className="p-3 text-center">Mon.</th>
-                <th className="p-3 text-right">Monto original</th>
                 <th className="p-3 text-right">Monto Bs</th>
                 <th className="p-3 text-right">Equiv. USD</th>
                 <th className="p-3 text-right">Monto USD</th>
@@ -424,9 +445,9 @@ export default function PagoClientesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={18} className="p-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Cargando…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={18}className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
+                <tr><td colSpan={17} className="p-10 text-center text-slate-400">Sin registros en el rango seleccionado.</td></tr>
               ) : (
                 pageRows.map((r) => (
                   <tr key={r.id} className={`border-b hover:bg-slate-50/60 ${r.revisar ? "bg-amber-50/40" : ""}`}>
@@ -456,7 +477,6 @@ export default function PagoClientesPage() {
                         {r.moneda}
                       </span>
                     </td>
-                    <td className="p-3 text-right tabular-nums text-slate-700">{fmtNum(r.montoOriginal)}</td>
                     <td className="p-3 text-right tabular-nums text-slate-700">{fmtNum(r.montoBs)}</td>
                     <td className="p-3 text-right tabular-nums text-slate-500">{fmtNum(r.moneda === "Bs" ? r.montoUsd : null)}</td>
                     <td className="p-3 text-right tabular-nums font-medium text-slate-900">{fmtNum(r.moneda === "USD" ? r.montoUsd : null)}</td>

@@ -278,7 +278,10 @@ export async function GET(request: NextRequest) {
       // El 25% de IVA que paga el cliente (retiene el 75%) no es cobro: somos
       // agentes de retención. Misma regla que lib/cxc/cobros.ts.
       const es25Iva = limpiarHtml(p.payment_description).includes("25%");
-      const tipo: "cobro" | "ajuste" = esDiarioBanco(journalById[p.journal_id?.[0]]) && !es25Iva ? "cobro" : "ajuste";
+      // Retención = diario que no es banco/caja o que dice "retenido". Con los
+      // checks de la pantalla marcados (default) ambos van a "Retenciones y
+      // ajustes"; desmarcados, la pantalla los suma a Cobros.
+      const esRetencion = !esDiarioBanco(journalById[p.journal_id?.[0]]);
       const vendedor = p.salesperson_id?.[1] || "";
 
       return {
@@ -294,11 +297,11 @@ export async function GET(request: NextRequest) {
         sede: COMPANY_NAMES[p.company_id?.[0]] || "",
         banco: p.journal_id?.[1] || "",
         vendedor,
-        tipo,
+        esRetencion,
+        es25Iva,
         // Misma regla que el check de Contado/Crédito (lib/cxc/vendedoresExcluidos.ts).
         esAsistente: esVendedorExcluido(vendedor, p.company_id?.[0]),
         moneda,
-        montoOriginal: r2(amount),
         montoBs: montoBs == null ? null : r2(montoBs),
         montoUsd: r2(montoUsd),
         tasa,
