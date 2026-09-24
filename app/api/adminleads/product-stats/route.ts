@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  // El Diseñador usa este mismo dashboard en /disenador/dashboard: ve las
+  // ventas de su sucursal (cids) igual que AdminLeads.
+  const auth = await requireRoles(request, ["adminleads", "diseñador"]);
   if (auth.error) return auth.error;
 
   try {
