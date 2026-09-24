@@ -459,7 +459,12 @@ export function Sidebar({
         const bPos = bIdx >= 0 ? bIdx : availableItems.length;
         return aPos - bPos;
       })
-    : availableItems;
+    : userRole?.toLowerCase().trim() === "diseñador"
+      ? [
+          ...availableItems.filter((i) => i.id === "sales_dashboard"),
+          ...availableItems.filter((i) => i.id !== "sales_dashboard"),
+        ]
+      : availableItems;
 
   const saveSidebarOrder = async (newOrder: string[]) => {
     setSidebarOrder(newOrder);
@@ -929,11 +934,8 @@ export function Sidebar({
                         // packing list (Compras lo carga, Almacen lo recibe).
                         { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
                         { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
-                        // Personal de Almacen: lo administra Almacen; Seguridad no
-                        // lo ve en el menu, superAdmin si.
-                        ...(userRole === "superAdmin"
-                          ? [{ label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` }]
-                          : []),
+                        // Personal de Almacen: lo administra Almacen. El superAdmin
+                        // lo tiene en su grupo "Almacen" (este grupo no se le muestra).
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
                         // registro siga marcando su seccion. El panel se

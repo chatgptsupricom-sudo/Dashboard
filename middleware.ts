@@ -359,6 +359,13 @@ export default async function middleware(request: NextRequest) {
           new URL(`/${locale}/seguridad`, request.url),
         );
       }
+      // El Diseñador tiene su propio dashboard en /disenador/dashboard: el
+      // general no es su inicio (no hay loop: el regex es de /dashboard exacto).
+      if (esDashboardComun && isDisenador) {
+        return NextResponse.redirect(
+          new URL(`/${locale}/disenador/dashboard`, request.url),
+        );
+      }
       // El gate de la seccion 11 deja pasar a Almacen por CUALQUIER ruta bajo
       // /seguridad (incluida la bare /seguridad), asi que no basta con
       // atajar el /dashboard -> /seguridad de arriba: si Almacen entra
