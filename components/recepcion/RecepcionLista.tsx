@@ -10,12 +10,13 @@ import {
   Container,
   PackageOpen,
   Plus,
+  Timer,
   Truck,
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
-import { SUCURSALES, type Etapa } from "@/lib/recepcion/flujo";
+import { SUCURSALES, duracion, formatearDuracion, type Etapa } from "@/lib/recepcion/flujo";
 import type { AvisoRecepcion } from "@/lib/recepcion/servidor";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
 import { PageHeader, EmptyState, BotonPrimario } from "@/components/seguridad/mercancia-ui";
@@ -43,6 +44,9 @@ type Fila = {
   contenedores: string | null;
   items_contados: number;
   created_at: string;
+  cerrado_at: string | null;
+  /** Primera foto del contenedor al llegar: desde ahi corre el tiempo. */
+  inicio_at: string | null;
 };
 
 type Filtro = Etapa | "todos";
@@ -227,6 +231,21 @@ export default function RecepcionLista({ base }: { base: string }) {
                         {t("contados", { contados: f.items_contados, total: f.total_items })}
                       </span>
                     )}
+                    {(() => {
+                      const ms = duracion(f.inicio_at, f.etapa === "cerrado" ? f.cerrado_at : null);
+                      if (ms === null) return null;
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] text-slate-500 tabular-nums"
+                          title={t("tiempo_ayuda")}
+                        >
+                          <Timer className="w-3 h-3" />
+                          {f.etapa === "cerrado"
+                            ? formatearDuracion(ms)
+                            : t("tiempo_lleva", { tiempo: formatearDuracion(ms) })}
+                        </span>
+                      );
+                    })()}
                     <span className="text-[11px] text-slate-400 tabular-nums ml-auto">
                       {t("renglones_n", { count: Number(f.total_items) })}
                     </span>

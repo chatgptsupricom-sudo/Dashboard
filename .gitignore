@@ -7,3 +7,5 @@ uploads/custom-views/
 .env.local
 .env*.local
 .DS_Store
+.claude/settings.local.json
+tsconfig.tsbuildinfo

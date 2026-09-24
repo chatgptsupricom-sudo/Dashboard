@@ -73,6 +73,8 @@ export type Contenedor = {
   cerrado_at: string | null;
   cerrado_por: string | null;
   notas_cierre: string | null;
+  /** Correcciones de los precintos recibidos, de la mas vieja a la mas nueva. */
+  precintos_correcciones: CorreccionPrecintos[];
 };
 
 export type RolRecepcion = "compras" | "almacen";
@@ -103,21 +105,51 @@ export function limpiarTiposDano(v: unknown): TipoDano[] {
 }
 
 /**
- * Lee los tipos guardados. Un renglon marcado antes de que existieran los
- * tipos (solo `golpeado = 1`) se lee como una caja danada, que es lo que
- * significaba.
+ * Un dano con cuantas unidades lo tienen: no siempre es todo el renglon (de
+ * 50 pueden venir 3 humedas y 1 abierta). `cantidad` null = todavia no se
+ * anoto (lo marcado antes de que se pidiera la cantidad).
  */
-export function leerTiposDano(json: unknown, golpeado?: unknown): TipoDano[] {
+export type Dano = { tipo: TipoDano; cantidad: number | null };
+
+/**
+ * Limpia la lista de danos. Acepta la forma nueva ({ tipo, cantidad }) y la
+ * de antes (solo el nombre del tipo). Sin tipos repetidos ni inventados; una
+ * cantidad que no es un entero positivo queda en null.
+ */
+export function limpiarDanos(v: unknown): Dano[] {
+  const crudos = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+  const out: Dano[] = [];
+  for (const x of crudos) {
+    const tipo = String((x && typeof x === "object" ? (x as any).tipo : x) ?? "")
+      .trim()
+      .toLowerCase() as TipoDano;
+    if (!TIPOS_DANO.includes(tipo) || out.some((d) => d.tipo === tipo)) continue;
+    const n = x && typeof x === "object" ? Number((x as any).cantidad) : NaN;
+    out.push({ tipo, cantidad: Number.isInteger(n) && n > 0 ? n : null });
+  }
+  return out;
+}
+
+/**
+ * Lee los danos guardados (columna golpeado_tipos). Un renglon marcado
+ * antes de que existieran los tipos (solo `golpeado = 1`) se lee como una
+ * caja danada, sin cantidad.
+ */
+export function leerDanos(json: unknown, golpeado?: unknown): Dano[] {
   if (typeof json === "string" && json) {
     try {
-      const v = JSON.parse(json);
-      const tipos = limpiarTiposDano(v);
-      if (tipos.length) return tipos;
+      const danos = limpiarDanos(JSON.parse(json));
+      if (danos.length) return danos;
     } catch {
       // Texto roto: se cae al 0/1 de antes.
     }
   }
-  return Number(golpeado) === 1 ? ["danada"] : [];
+  return Number(golpeado) === 1 ? [{ tipo: "danada", cantidad: null }] : [];
+}
+
+/** Solo los tipos (sin cantidades), para lo que ya los leia asi. */
+export function leerTiposDano(json: unknown, golpeado?: unknown): TipoDano[] {
+  return leerDanos(json, golpeado).map((d) => d.tipo);
 }
 
 export type ItemConteo = {
@@ -126,6 +158,8 @@ export type ItemConteo = {
   cantidad_recibida: number | null;
   motivo_diferencia: string | null;
   golpeado: boolean;
+  /** Tipos de dano marcados con su cantidad. */
+  danos?: Dano[];
 };
 
 /**
@@ -134,7 +168,9 @@ export type ItemConteo = {
  * Se cierra solo si:
  *  - todos los renglones estan contados (null es "no lo conte", no cero);
  *  - todo renglon con diferencia (falta o sobra) tiene motivo;
- *  - todo renglon golpeado tiene al menos una foto.
+ *  - todo renglon golpeado tiene al menos una foto;
+ *  - cada tipo de dano marcado dice cuantas unidades, y no mas de las
+ *    recibidas.
  * La foto del contenedor al terminar se valida aparte (es de la recepcion,
  * no de un renglon).
  */
@@ -145,6 +181,8 @@ export function evaluarConteo(
   sinContar: number;
   sinMotivo: number;
   golpesSinFoto: number;
+  danosSinCantidad: number;
+  danosDeMas: number;
   faltantes: number;
   sobrantes: number;
   golpeados: number;
@@ -153,6 +191,8 @@ export function evaluarConteo(
   let sinContar = 0;
   let sinMotivo = 0;
   let golpesSinFoto = 0;
+  let danosSinCantidad = 0;
+  let danosDeMas = 0;
   let faltantes = 0;
   let sobrantes = 0;
   let golpeados = 0;
@@ -169,16 +209,66 @@ export function evaluarConteo(
       golpeados++;
       if (!fotosGolpePorItem.has(i.id)) golpesSinFoto++;
     }
+    for (const d of i.danos || []) {
+      if (d.cantidad === null) danosSinCantidad++;
+      else if (i.cantidad_recibida !== null && d.cantidad > Number(i.cantidad_recibida)) danosDeMas++;
+    }
   }
   return {
     sinContar,
     sinMotivo,
     golpesSinFoto,
+    danosSinCantidad,
+    danosDeMas,
     faltantes,
     sobrantes,
     golpeados,
-    listo: sinContar === 0 && sinMotivo === 0 && golpesSinFoto === 0,
+    listo:
+      sinContar === 0 &&
+      sinMotivo === 0 &&
+      golpesSinFoto === 0 &&
+      danosSinCantidad === 0 &&
+      danosDeMas === 0,
   };
+}
+
+/**
+ * Cuanto tarda la recepcion: desde que se sube la foto del contenedor al
+ * llegar hasta que se cierra. Para el packing list, desde la primera foto de
+ * llegada de cualquiera de sus contenedores hasta el cierre del packing list;
+ * para un contenedor, desde su foto de llegada hasta que se termina ese
+ * contenedor. Sin cierre todavia, corre hasta `ahora`.
+ */
+export type ArchivoConFecha = { tipo: string; contenedor_id?: number | null; created_at?: string | null };
+
+export function inicioRecepcion(archivos: ArchivoConFecha[], contenedorId?: number): string | null {
+  let min: string | null = null;
+  for (const a of archivos) {
+    if (a.tipo !== "foto_llegada" || !a.created_at) continue;
+    if (contenedorId !== undefined && Number(a.contenedor_id) !== contenedorId) continue;
+    if (min === null || new Date(a.created_at) < new Date(min)) min = a.created_at;
+  }
+  return min;
+}
+
+/** Milisegundos entre el inicio y el fin (o ahora, si todavia no termino). */
+export function duracion(inicio: string | null, fin: string | null, ahora: Date = new Date()): number | null {
+  if (!inicio) return null;
+  const desde = new Date(inicio).getTime();
+  const hasta = fin ? new Date(fin).getTime() : ahora.getTime();
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta)) return null;
+  return Math.max(0, hasta - desde);
+}
+
+/** "45 min", "2 h 15 min", "3 d 4 h". */
+export function formatearDuracion(ms: number): string {
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "< 1 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
 }
 
 /** Normaliza un precinto para compararlo: sin espacios ni guiones, en mayusculas. */
@@ -199,12 +289,37 @@ export function mostrarPrecinto(v: string | null | undefined): string {
   return String(v || "").trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+/** Largo minimo de un pedazo para contarlo como un precinto entero. */
+const MIN_PRECINTO_ENTERO = 5;
+
+/**
+ * Un texto con varios precintos se parte en varios. Coma, punto y coma y
+ * salto de linea separan siempre. El espacio separa solo si cada pedazo tiene
+ * largo de precinto entero: el SEAL NUMBER del packing list suele traerlos
+ * asi ("FX44502691 003561" son dos precintos), pero un precinto tambien puede
+ * llevar un espacio adentro ("SL 501", "ML 445566") y ese no se parte.
+ */
+export function separarPrecintos(v: unknown): string[] {
+  return String(v ?? "")
+    .split(/[,;\n]+/)
+    .flatMap((trozo) => {
+      const partes = trozo.trim().split(/\s+/).filter(Boolean);
+      return partes.length > 1 && partes.every((x) => x.length >= MIN_PRECINTO_ENTERO)
+        ? partes
+        : [trozo.trim()];
+    })
+    .filter(Boolean);
+}
+
 /**
  * Limpia una lista de precintos: sin vacios, sin repetidos (comparando
  * normalizado: "SL-100" y "sl 100" son el mismo) y como mucho MAX_PRECINTOS.
+ * Cada elemento puede traer varios precintos juntos (ver separarPrecintos).
  */
 export function limpiarPrecintos(lista: unknown): string[] {
-  const crudos = Array.isArray(lista) ? lista : typeof lista === "string" ? [lista] : [];
+  const crudos = (Array.isArray(lista) ? lista : typeof lista === "string" ? [lista] : []).flatMap(
+    separarPrecintos,
+  );
   const vistos = new Set<string>();
   const out: string[] = [];
   for (const v of crudos) {
@@ -246,6 +361,29 @@ export function compararPrecintos(
 export function alinearPrecintos(recibidos: string[], esperados: string[]): string[] {
   const porNorma = new Map(esperados.map((p) => [normalizarPrecinto(p), p]));
   return recibidos.map((p) => porNorma.get(normalizarPrecinto(p)) ?? p);
+}
+
+/**
+ * Una correccion de los precintos anotados al llegar (ej. un error de
+ * tipeo). No se pisa lo anotado sin dejar rastro: queda que habia antes,
+ * que quedo, por que y quien lo hizo.
+ */
+export type CorreccionPrecintos = {
+  antes: string[];
+  despues: string[];
+  motivo: string;
+  por: string;
+  at: string;
+};
+
+export function leerCorrecciones(json: unknown): CorreccionPrecintos[] {
+  if (typeof json !== "string" || !json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((c) => c && Array.isArray(c.antes) && Array.isArray(c.despues)) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Lee una lista de precintos guardada como JSON, o el precinto unico de antes. */

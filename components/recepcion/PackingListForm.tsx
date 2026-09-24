@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { SUCURSALES } from "@/lib/recepcion/flujo";
+import { SUCURSALES, separarPrecintos } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
 import {
   PageHeader,
@@ -33,12 +33,10 @@ type Orden = { id: number; order_number: string; supplier_name: string };
 const vacio = (): Renglon => ({ codigo: "", producto: "", cantidad_esperada: "", cajas_esperadas: "" });
 
 // Un contenedor puede tener varios precintos: se escriben separados por coma
-// (los precintos pueden llevar espacios, "ML 445566", asi que no se separa por
-// espacio).
+// o por espacio (el SEAL NUMBER del packing list suele venir asi:
+// "FX44502691 003561" son dos precintos).
 type ContenedorForm = { numero: string; precintos: string };
 const contVacio = (): ContenedorForm => ({ numero: "", precintos: "" });
-const separarPrecintos = (v: string) =>
-  v.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
 
 function hoyMas(dias: number) {
   const d = new Date(Date.now() + dias * 86400000);
@@ -68,6 +66,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [cargando, setCargando] = useState(editando);
+  const [leyendo, setLeyendo] = useState(false);
   const inputExcel = useRef<HTMLInputElement>(null);
   const inputArchivo = useRef<HTMLInputElement>(null);
 
@@ -150,6 +149,61 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
       setArchivos((p) => (p.some((f) => f.name === archivo.name) ? p : [...p, archivo]));
     } catch {
       setError(t("excel_error"));
+    }
+  };
+
+  const esExcel = (f: File) => /\.(xlsx|xls)$/i.test(f.name);
+
+  /**
+   * Lee un PDF o una foto del packing list con IA y llena lo que encuentra.
+   * Solo completa proveedor, referencia y contenedor si estan vacios: manda
+   * lo que ya escribio Compras. Los renglones si los reemplaza (con aviso).
+   */
+  const leerDocumento = async (archivo: File) => {
+    setError(null);
+    setAviso(null);
+    if (!confirmarReemplazo()) return;
+    setLeyendo(true);
+    try {
+      const fd = new FormData();
+      fd.append("archivo", archivo, archivo.name);
+      const r = await fetch("/api/recepcion/leer-documento", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.success) {
+        setError(j.error || t("documento_error"));
+        return;
+      }
+      const d = j.datos || {};
+      if (!proveedor.trim() && d.proveedor) setProveedor(d.proveedor);
+      if (!referencia.trim() && d.referencia) setReferencia(d.referencia);
+      if (d.contenedor || (d.precintos || []).length) {
+        setContenedores((prev) => {
+          const yaEsta = prev.some(
+            (c) => c.numero.trim().toUpperCase() === String(d.contenedor || "").toUpperCase(),
+          );
+          if (yaEsta) return prev;
+          const fila = { numero: d.contenedor || "", precintos: (d.precintos || []).join(", ") };
+          const vacios = prev.filter((c) => c.numero.trim() || c.precintos.trim());
+          return vacios.length ? [...vacios, fila] : [fila];
+        });
+      }
+      if ((d.renglones || []).length === 0) {
+        setError(t("documento_sin_renglones"));
+        return;
+      }
+      setRenglones(
+        d.renglones.map((l: any) => ({
+          codigo: l.codigo || "",
+          producto: l.producto,
+          cantidad_esperada: String(l.cantidad_esperada),
+          cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
+        })),
+      );
+      setAviso(t("documento_leido", { count: d.renglones.length }));
+    } catch {
+      setError(t("documento_error"));
+    } finally {
+      setLeyendo(false);
     }
   };
 
@@ -366,6 +420,11 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             <BotonSecundario icon={Upload} onClick={() => inputArchivo.current?.click()}>
               {t("subir_archivo")}
             </BotonSecundario>
+            {leyendo && (
+              <span className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> {t("documento_leyendo")}
+              </span>
+            )}
             <input
               ref={inputArchivo}
               type="file"
@@ -376,6 +435,13 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 const fs = Array.from(e.target.files || []);
                 setArchivos((p) => [...p, ...fs.filter((f) => !p.some((x) => x.name === f.name))]);
                 e.target.value = "";
+                // El archivo que se adjunta ES el packing list: se leen los
+                // renglones solos, sin tener que pedirlo aparte.
+                const paraLeer = fs[0];
+                if (paraLeer) {
+                  if (esExcel(paraLeer)) void importarExcel(paraLeer);
+                  else void leerDocumento(paraLeer);
+                }
               }}
             />
           </div>

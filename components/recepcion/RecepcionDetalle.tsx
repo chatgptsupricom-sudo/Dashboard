@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  Timer,
   Container,
   FileSpreadsheet,
   FileText,
@@ -27,6 +28,10 @@ import {
   compararPrecintos,
   MAX_PRECINTOS,
   TIPOS_DANO,
+  duracion,
+  formatearDuracion,
+  inicioRecepcion,
+  separarPrecintos,
   type Contenedor,
   type Etapa,
   type TipoDano,
@@ -80,12 +85,17 @@ type Item = {
   cantidad_recibida: string | number | null;
   motivo_diferencia: string | null;
   golpeado: number;
-  /** En que estado llego la caja: danada, humeda y/o abierta. */
-  golpeado_tipos: TipoDano[];
+  /** En que estado llego la caja (danada, humeda y/o abierta) y cuantas unidades. */
+  danos: Array<{ tipo: TipoDano; cantidad: number | null }>;
   golpeado_nota: string | null;
 };
 
-type Conteo = { recibida: string; motivo: string; tipos: TipoDano[]; nota: string };
+/** Cada dano marcado con la cantidad tal como se escribe en el campo. */
+type DanoForm = { tipo: TipoDano; cantidad: string };
+type Conteo = { recibida: string; motivo: string; danos: DanoForm[]; nota: string };
+
+const danosANumero = (danos: DanoForm[] = []) =>
+  danos.map((d) => ({ tipo: d.tipo, cantidad: d.cantidad.trim() === "" ? null : Number(d.cantidad) }));
 
 function hora(valor: string | null): string | null {
   if (!valor) return null;
@@ -122,6 +132,19 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [anulada, setAnulada] = useState(false);
+  // Correccion de precintos ya anotados (ej. un error de tipeo): contenedor
+  // que se esta corrigiendo, los precintos correctos y el motivo.
+  const [corrigiendo, setCorrigiendo] = useState<number | null>(null);
+  // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
+  const [ahora, setAhora] = useState(() => new Date());
+  const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
+
+  const abierto = rec !== null && rec.etapa !== "cerrado";
+  useEffect(() => {
+    if (!abierto) return;
+    const t = setInterval(() => setAhora(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, [abierto]);
 
   const aplicar = useCallback((j: any, conConteo: boolean) => {
     setRec(j.recepcion);
@@ -134,7 +157,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         c[i.id] = {
           recibida: i.cantidad_recibida === null ? "" : String(Number(i.cantidad_recibida)),
           motivo: i.motivo_diferencia || "",
-          tipos: Array.isArray(i.golpeado_tipos) ? i.golpeado_tipos : [],
+          danos: (Array.isArray(i.danos) ? i.danos : []).map((d: any) => ({
+            tipo: d.tipo,
+            cantidad: d.cantidad === null || d.cantidad === undefined ? "" : String(d.cantidad),
+          })),
           nota: i.golpeado_nota || "",
         };
       }
@@ -201,6 +227,37 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editado]);
 
+  const corregirPrecintos = async (contenedorId: number) => {
+    setError(null);
+    setAviso(null);
+    setEnviando(true);
+    try {
+      const res = await fetch(`/api/recepcion/${id}/contenedores/${contenedorId}/precintos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          precintos_recibidos: separarPrecintos(correccion.precintos),
+          motivo: correccion.motivo,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        setAviso(j.error || t("conflicto"));
+        await cargar();
+        return;
+      }
+      if (!res.ok) throw new Error(j.error || t("error"));
+      // Sin tocar el conteo que se este llenando: solo cambia el contenedor.
+      aplicar(j, false);
+      setCorrigiendo(null);
+      setAviso(t("precinto_corregido"));
+    } catch (e: any) {
+      setError(e?.message || t("error"));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   const accionar = async (
     accion: string,
     extra: Record<string, unknown> = {},
@@ -238,8 +295,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         id: i.id,
         cantidad_recibida: c?.recibida === "" || c?.recibida === undefined ? null : Number(c.recibida),
         motivo_diferencia: c?.motivo || null,
-        golpeado_tipos: c?.tipos || [],
-        golpeado_nota: c?.tipos?.length ? c.nota || null : null,
+        danos: danosANumero(c?.danos),
+        golpeado_nota: c?.danos?.length ? c.nota || null : null,
       };
     });
 
@@ -293,7 +350,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       cantidad_recibida:
         conteo[i.id]?.recibida === "" || conteo[i.id]?.recibida === undefined ? null : Number(conteo[i.id].recibida),
       motivo_diferencia: conteo[i.id]?.motivo || null,
-      golpeado: (conteo[i.id]?.tipos?.length ?? 0) > 0,
+      golpeado: (conteo[i.id]?.danos?.length ?? 0) > 0,
+      danos: danosANumero(conteo[i.id]?.danos),
     })),
     fotosGolpe,
   );
@@ -398,6 +456,26 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           {t("llego")} {hora(c.llegada_at)} · {c.llegada_por}
                         </span>
                       )}
+                      {(() => {
+                        // Desde su foto de llegada hasta que se termina el contenedor.
+                        const ms = duracion(
+                          inicioRecepcion(archivos, c.id),
+                          c.etapa === "cerrado" ? c.cerrado_at : null,
+                          ahora,
+                        );
+                        if (ms === null) return null;
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 tabular-nums"
+                            title={t("tiempo_contenedor_ayuda")}
+                          >
+                            <Timer className="w-3 h-3" />
+                            {c.etapa === "cerrado"
+                              ? formatearDuracion(ms)
+                              : t("tiempo_lleva", { tiempo: formatearDuracion(ms) })}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Precintos (puede haber varios). Los esperados no se le
@@ -429,6 +507,74 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             <p className="font-semibold text-red-600">
                               {t("precinto_sobran", { lista: cmp.sobran.join(", ") })}
                             </p>
+                          )}
+
+                          {/* Correcciones anteriores: quedan a la vista, no se pisan. */}
+                          {(c.precintos_correcciones || []).map((k, n) => (
+                            <p key={n} className="text-[11px] text-amber-800 bg-amber-50 rounded-md px-2 py-1">
+                              {t("correccion_linea", {
+                                por: k.por,
+                                fecha: hora(k.at) || "",
+                                antes: k.antes.join(", ") || "—",
+                                despues: k.despues.join(", "),
+                                motivo: k.motivo,
+                              })}
+                            </p>
+                          ))}
+
+                          {/* Corregir lo anotado (ej. un error de tipeo). Cerrado, ya no se modifica. */}
+                          {esAlmacen && rec.etapa !== "cerrado" && corrigiendo !== c.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCorrigiendo(c.id);
+                                setCorreccion({ precintos: c.precintos_recibidos.join(", "), motivo: "" });
+                              }}
+                              className="text-[11px] font-semibold text-violet-700 hover:underline"
+                            >
+                              {t("corregir_precintos")}
+                            </button>
+                          )}
+                          {esAlmacen && rec.etapa !== "cerrado" && corrigiendo === c.id && (
+                            <div className="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                              <input
+                                value={correccion.precintos}
+                                onChange={(e) => setCorreccion((p) => ({ ...p, precintos: e.target.value }))}
+                                placeholder={t("correccion_precintos_ph")}
+                                aria-label={t("correccion_precintos_ph")}
+                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm font-mono uppercase focus:outline-none"
+                              />
+                              <input
+                                value={correccion.motivo}
+                                onChange={(e) => setCorreccion((p) => ({ ...p, motivo: e.target.value.slice(0, 300) }))}
+                                placeholder={t("correccion_motivo_ph")}
+                                aria-label={t("correccion_motivo_ph")}
+                                className={`w-full h-10 px-3 rounded-lg border text-sm focus:outline-none ${
+                                  correccion.motivo.trim().length >= 5 ? "border-slate-200" : "border-red-300 bg-red-50"
+                                }`}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={
+                                    enviando ||
+                                    correccion.motivo.trim().length < 5 ||
+                                    separarPrecintos(correccion.precintos).length === 0
+                                  }
+                                  onClick={() => void corregirPrecintos(c.id)}
+                                  className="h-9 px-3 rounded-lg bg-violet-600 text-white text-xs font-semibold disabled:opacity-50"
+                                >
+                                  {t("guardar_correccion")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCorrigiendo(null)}
+                                  className="h-9 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600"
+                                >
+                                  {t("cancelar_correccion")}
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       );
@@ -601,8 +747,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               </div>
 
               {items.map((i) => {
-                const c = conteo[i.id] || { recibida: "", motivo: "", tipos: [], nota: "" };
-                const conDano = c.tipos.length > 0;
+                const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
+                const conDano = c.danos.length > 0;
+                const recibidaNum = c.recibida === "" ? null : Number(c.recibida);
                 const esperado = Number(i.cantidad_esperada);
                 const hayDif = c.recibida !== "" && Number(c.recibida) !== esperado;
                 const set = (p: Partial<Conteo>) => {
@@ -670,30 +817,65 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         {contando ? (
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                             <span className="text-xs font-medium text-slate-500">{t("dano_titulo")}</span>
-                            {TIPOS_DANO.map((tipo) => (
-                              <label
-                                key={tipo}
-                                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 select-none cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={c.tipos.includes(tipo)}
-                                  onChange={(e) =>
-                                    set({
-                                      tipos: e.target.checked
-                                        ? [...c.tipos, tipo]
-                                        : c.tipos.filter((x) => x !== tipo),
-                                    })
-                                  }
-                                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
-                                />
-                                {t(`dano_${tipo}`)}
-                              </label>
-                            ))}
+                            {TIPOS_DANO.map((tipo) => {
+                              const marcado = c.danos.find((d) => d.tipo === tipo);
+                              const cant = marcado && marcado.cantidad.trim() !== "" ? Number(marcado.cantidad) : null;
+                              // Cuantas unidades tienen ese dano: no siempre es todo el renglon.
+                              const cantMal =
+                                !!marcado &&
+                                (cant === null ||
+                                  !Number.isInteger(cant) ||
+                                  cant < 1 ||
+                                  (recibidaNum !== null && cant > recibidaNum));
+                              return (
+                                <span key={tipo} className="inline-flex items-center gap-1.5">
+                                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 select-none cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!marcado}
+                                      onChange={(e) =>
+                                        set({
+                                          danos: e.target.checked
+                                            ? [...c.danos, { tipo, cantidad: "" }]
+                                            : c.danos.filter((d) => d.tipo !== tipo),
+                                        })
+                                      }
+                                      className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                                    />
+                                    {t(`dano_${tipo}`)}
+                                  </label>
+                                  {marcado && (
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={1}
+                                      step={1}
+                                      value={marcado.cantidad}
+                                      placeholder={t("dano_cantidad_ph")}
+                                      title={t("dano_cantidad_title")}
+                                      aria-label={`${t(`dano_${tipo}`)}: ${t("dano_cantidad_title")}`}
+                                      onChange={(e) =>
+                                        set({
+                                          danos: c.danos.map((d) =>
+                                            d.tipo === tipo ? { ...d, cantidad: e.target.value } : d,
+                                          ),
+                                        })
+                                      }
+                                      className={`w-16 h-8 px-2 text-right rounded-lg border text-xs tabular-nums focus:outline-none ${
+                                        cantMal ? "border-red-300 bg-red-50" : "border-slate-200"
+                                      }`}
+                                    />
+                                  )}
+                                </span>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="text-xs font-medium text-amber-800">
-                            {t("dano_titulo")}: {c.tipos.map((tipo) => t(`dano_${tipo}`)).join(", ")}
+                            {t("dano_titulo")}:{" "}
+                            {c.danos
+                              .map((d) => (d.cantidad.trim() === "" ? t(`dano_${d.tipo}`) : `${t(`dano_${d.tipo}`)} (${d.cantidad})`))
+                              .join(", ")}
                           </p>
                         )}
                         {conDano && (
@@ -772,6 +954,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           {ev.sinContar > 0 && <li>{t("falta_contar", { count: ev.sinContar })}</li>}
                           {ev.sinMotivo > 0 && <li>{t("falta_motivo", { count: ev.sinMotivo })}</li>}
                           {ev.golpesSinFoto > 0 && <li>{t("falta_foto_golpe", { count: ev.golpesSinFoto })}</li>}
+                          {ev.danosSinCantidad > 0 && (
+                            <li>{t("falta_cantidad_dano", { count: ev.danosSinCantidad })}</li>
+                          )}
+                          {ev.danosDeMas > 0 && <li>{t("falta_dano_de_mas", { count: ev.danosDeMas })}</li>}
                         </ul>
                       </div>
                     )}
@@ -798,6 +984,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
           {/* Recorrido: carga, cada contenedor, cierre */}
           <Card className="md:sticky md:top-24">
             <SectionTitle>{t("recorrido")}</SectionTitle>
+            {(() => {
+              // Desde la primera foto de llegada hasta el cierre del packing list.
+              const ms = duracion(
+                inicioRecepcion(archivos),
+                rec.etapa === "cerrado" ? rec.cerrado_at : null,
+                ahora,
+              );
+              if (ms === null) return null;
+              return (
+                <div
+                  className="mb-4 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2"
+                  title={t("tiempo_ayuda")}
+                >
+                  <Timer className="w-4 h-4 text-slate-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-slate-500">
+                      {rec.etapa === "cerrado" ? t("tiempo_total") : t("tiempo_en_curso")}
+                    </p>
+                    <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatearDuracion(ms)}</p>
+                  </div>
+                </div>
+              );
+            })()}
             <ol className="space-y-3">
               <Paso hecho titulo={t("cargado")} detalle={[rec.creado_por, hora(rec.created_at)].filter(Boolean).join(" · ")} />
               {contenedores.map((c) => (

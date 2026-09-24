@@ -31,11 +31,12 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
         <div className="text-sm text-slate-600 leading-relaxed space-y-3">
           {kpiId === "efectividad_cobranza" && (
             <>
-              <p><strong>{t("info_que_mide")}</strong> Si la cobranza del mes acompaña el ritmo de facturación: todo lo que se cobró en el mes contra lo que se facturó en el mes.</p>
-              <p><strong>{t("info_formula")}</strong> Cobrado del mes ÷ Facturado del mes × 100 (ambos con IVA)</p>
-              <p><strong>Facturado del mes:</strong> Facturas menos notas de crédito emitidas en el período.</p>
-              <p><strong>Cobrado del mes:</strong> Dinero que entró por banco o caja en el período, por la fecha de confirmación del pago, de cualquier factura (también de meses anteriores). Retenciones y notas de crédito no son cobro. Puede pasar de 100% si se cobró deuda vieja por encima de lo facturado.</p>
-              <p><strong>{t("info_semaforo")}</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
+              <p><strong>{t("info_que_mide")}</strong> Índice de Efectividad de Cobranza (CEI): qué parte de lo que se podía cobrar en el mes se cobró.</p>
+              <p><strong>{t("info_formula")}</strong> Cobrado ÷ (CxC inicial + Facturado − CxC final no vencida) × 100</p>
+              <p><strong>Cobrado:</strong> Pagos de clientes registrados y confirmados en Odoo en el mes (por fecha de confirmación), en banco o caja. Retenciones no son cobro. Puede pasar de 100% por anticipos aún no aplicados a facturas.</p>
+              <p><strong>CxC inicial / final no vencida:</strong> Lo que los clientes debían al empezar el mes, y lo que deben al cierre (o hoy, en el mes en curso) que todavía no vence y por eso no era exigible.</p>
+              <p><strong>Facturado:</strong> Facturas menos notas de crédito emitidas en el período, con IVA.</p>
+              <p><strong>{t("info_semaforo")}</strong> Verde ≥85% | Amarillo 75%–84.99% | Rojo &lt;75%</p>
             </>
           )}
           {kpiId === "cartera_vencida" && (
