@@ -189,7 +189,8 @@ export async function calcularEfectividad(
 //  - Cobrado: PAGOS REGISTRADOS en Odoo (`account.payment` de cliente,
 //    confirmados), fechados por la confirmación (`payment_registration_date`,
 //    ver lib/cxc/fechaConfirmacion.ts), en diarios de banco/caja sin
-//    "retenido". Es el "Recibido" de la pestaña Cobros de Pago de Clientes:
+//    "retenido", sin los pagos del 25% de IVA ("25%" en la descripción).
+//    Es el "Recibido" de la pestaña Cobros de Pago de Clientes:
 //    incluye anticipos aún no aplicados a facturas, así que puede pasar de 100%.
 //  - Facturado: facturas − notas de crédito con `invoice_date` en el período
 //    (`amount_total_signed`, con IVA).
@@ -261,6 +262,10 @@ async function pagosRegistrados(companyIds: number[], desde: string, hasta: stri
         ["company_id", "in", companyIds],
         ["journal_id.type", "in", ["bank", "cash"]],
         ["journal_id.name", "not ilike", "retenido"],
+        // "25% de iva factura …": el 25% del IVA que el cliente paga aparte en
+        // Bs porque retiene el 75%. Somos agentes de retención y no cuenta
+        // como cobro. `\%` = % literal (en ilike un % suelto es comodín).
+        ["payment_description", "not ilike", "25\\%"],
         // Confirmación en rango; sin confirmación, create_date en rango.
         "|",
         "&", ["payment_registration_date", ">=", desde], ["payment_registration_date", "<=", hasta],
