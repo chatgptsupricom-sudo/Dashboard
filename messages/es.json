@@ -211,7 +211,7 @@
     "almacen_unidades": "Gestionar Unidades",
     "almacen_recepcion": "Recepción (packing list)",
     "recepcion_packing": "Packing lists",
-    "llegadas": "Lo que llegó"
+    "llegadas": "Packing List"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
@@ -2891,7 +2891,7 @@
     "pistola_parece_producto": "Parece el código del modelo (UPC/EAN), que es igual en todas las cajas, no un serial. Si es el código de la caja, elija \"Es su código\"."
   },
   "llegadas": {
-    "titulo": "Lo que llegó",
+    "titulo": "Packing List",
     "subtitulo": "Mercancía que llegó y que va a llegar al almacén de Valencia. Toca un día para ver los productos.",
     "buscar": "Buscar producto o código",
     "limpiar": "Limpiar búsqueda",
