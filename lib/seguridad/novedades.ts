@@ -36,6 +36,33 @@ const MAX = { producto: 300, serial: 100, orden: 100, detalle: 300, nombre: 200 
 const recortar = (v: unknown, max: number) =>
   v === null || v === undefined || v === "" ? null : String(v).slice(0, max);
 
+let hayRonda = false;
+
+/**
+ * Si ya se corrio sql/egreso_verificacion_c4.sql (columnas ronda_verificacion
+ * y verificado_en). SHOW COLUMNS y no information_schema: el phpMyAdmin de
+ * EasyPanel no deja leerlo. Se cachea solo el "si": cuando se corre la
+ * migracion, empieza a usarse sin reiniciar.
+ */
+export async function hayColumnasVerificacion(): Promise<boolean> {
+  if (hayRonda) return true;
+  try {
+    const r = await query("SHOW COLUMNS FROM seguridad_mercancia LIKE 'ronda_verificacion'");
+    hayRonda = (r.rows as any[]).length > 0;
+  } catch {
+    hayRonda = false;
+  }
+  return hayRonda;
+}
+
+/**
+ * SQL de "el egreso volvio de Seguridad al menos una vez" (ronda > 1): tuvo
+ * novedades en una ronda anterior aunque la ultima saliera limpia.
+ */
+export async function sqlFueDevuelto(alias = "m"): Promise<string> {
+  return (await hayColumnasVerificacion()) ? `${alias}.ronda_verificacion > 1` : "FALSE";
+}
+
 /** Todas las novedades del egreso, de todas las rondas. Sin la tabla: ninguna. */
 export async function leerNovedades(mercanciaId: number): Promise<NovedadGuardada[]> {
   try {

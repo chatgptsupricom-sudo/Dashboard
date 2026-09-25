@@ -2759,7 +2759,8 @@
           "ronda": "Verificación {n}",
           "pistola_novedad_serial_sobra": "El serial {serial} no está en el picking de {producto}. No se contó: queda como novedad.",
           "pistola_novedad_serial_otra_orden": "El serial {serial} es de otra orden ({referencia}). No se contó: queda como novedad.",
-          "pistola_novedad_producto_ajeno": "{serial} no está en la orden: queda como novedad (van {cantidad})."
+          "pistola_novedad_producto_ajeno": "{serial} no está en la orden: queda como novedad (van {cantidad}).",
+          "rondas_previas": "{n, plural, =1 {Seguridad lo devolvió una vez} other {Seguridad lo devolvió # veces}} antes de despacharlo:"
         },
         "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
         "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."

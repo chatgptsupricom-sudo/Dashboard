@@ -463,9 +463,15 @@ export default function EgresoFlujo({ id }: { id: string }) {
     despacho: mov.almacenista_despacho || mov.almacenista_nombre || null,
   };
   // Lo que Seguridad encontro al verificar: se ve al calificar, para no
-  // calificar a ciegas (misma regla que la API).
+  // calificar a ciegas (misma regla que la API). Incluye las de rondas
+  // anteriores: si Seguridad lo devolvio, el picking fallo aunque la ultima
+  // verificacion saliera limpia.
+  const novedadesPrevias = novedadesGuardadas.filter((n) => n.origen === "cierre" && n.ronda < ronda);
   const hayNovedades =
-    novedades.length > 0 || (mov.aprobado !== null && Number(mov.aprobado) === 0);
+    novedades.length > 0 ||
+    ronda > 1 ||
+    novedadesPrevias.length > 0 ||
+    (mov.aprobado !== null && Number(mov.aprobado) === 0);
   const faltaComentarioPicking =
     pideComentarioPicking(notas.picking.estrellas, hayNovedades) && !notas.picking.comentario.trim();
 
@@ -947,14 +953,24 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {hayNovedades && (
                       <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
                         <p className="font-semibold">{tf("novedades_titulo")}</p>
-                        {novedades.length === 0 ? (
+                        {novedades.length === 0 && novedadesPrevias.length === 0 ? (
                           <p>{tf("no_aprobado_sin_renglones")}</p>
                         ) : (
-                          novedades.map((n, i) => (
-                            <p key={i} className="truncate">
+                          novedades.map((n) => (
+                            <p key={claveNovedad(n)} className="truncate">
                               {textoNovedad(n, tf)}
                             </p>
                           ))
+                        )}
+                        {ronda > 1 && (
+                          <div className="pt-1.5 mt-1.5 border-t border-amber-200/70 space-y-1">
+                            <p className="font-semibold">{tf("verificacion.rondas_previas", { n: ronda - 1 })}</p>
+                            {novedadesPrevias.map((n) => (
+                              <p key={`${n.ronda}-${claveNovedad(n)}`} className="truncate">
+                                {tf("verificacion.ronda", { n: n.ronda })} · {textoNovedad(n, tf)}
+                              </p>
+                            ))}
+                          </div>
                         )}
                       </div>
                     )}
@@ -1134,6 +1150,11 @@ function EstadoActual({
  * calificar. Sin renglon (producto que no esta en la orden, serial de otra
  * orden) no lleva el nombre delante.
  */
+/** Clave de React: un renglon puede tener varias (un serial_falta por serial). */
+function claveNovedad(n: Novedad): string {
+  return `${n.tipo}-${n.item_id ?? "x"}-${n.serial ?? n.producto}`;
+}
+
 function textoNovedad(n: Novedad, tf: ReturnType<typeof useTranslations>): string {
   const texto = tf(`novedad.${n.tipo}`, {
     contado: n.contado ?? 0,
@@ -1161,8 +1182,8 @@ function TarjetaNovedades({
   const rondas = [...new Set(guardadas.map((n) => n.ronda))].sort((a, b) => b - a);
   const lista = (novedades: Novedad[]) => (
     <ul className="divide-y divide-slate-100">
-      {novedades.map((n, i) => (
-        <li key={i} className="py-2 flex items-start gap-2 text-sm">
+      {novedades.map((n) => (
+        <li key={claveNovedad(n)} className="py-2 flex items-start gap-2 text-sm">
           <span
             className={`shrink-0 mt-1 w-1.5 h-1.5 rounded-full ${
               n.tipo === "falta" || n.tipo === "no_salio" || n.tipo === "serial_falta"

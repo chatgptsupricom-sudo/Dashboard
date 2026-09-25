@@ -2770,7 +2770,8 @@
           "ronda": "Check {n}",
           "pistola_novedad_serial_sobra": "Serial {serial} is not in the picking of {producto}. Not counted: recorded as an issue.",
           "pistola_novedad_serial_otra_orden": "Serial {serial} belongs to another order ({referencia}). Not counted: recorded as an issue.",
-          "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far)."
+          "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far).",
+          "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:"
         },
         "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
         "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."

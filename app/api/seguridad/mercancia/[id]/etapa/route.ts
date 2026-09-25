@@ -20,7 +20,11 @@ import {
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { cargarMovimiento } from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
-import { guardarNovedadesCierre, novedadesDeEscaneo } from "@/lib/seguridad/novedades";
+import {
+  guardarNovedadesCierre,
+  hayColumnasVerificacion,
+  novedadesDeEscaneo,
+} from "@/lib/seguridad/novedades";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -434,15 +438,21 @@ async function ejecutar(
       // No despachar: vuelve a Almacen a asignar despacho, en una ronda
       // nueva. Lo pistoleado se conserva; aprobado/despachado = 0 quedan
       // como el resultado de esta ronda hasta la siguiente verificacion.
+      // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
+      // la ronda: la verificacion no puede quedar trabada por una migracion.
+      const conRonda = await hayColumnasVerificacion();
+      if (!conRonda) {
+        console.warn("[egreso] falta correr sql/egreso_verificacion_c4.sql: se cierra sin ronda ni local");
+      }
       const ok = await avanzar(
         id,
         "por_verificar",
         etapaTrasVerificacion(despachar),
-        `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP, verificado_en = ?,
+        `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
-           despachar ? "" : ", ronda_verificacion = ronda_verificacion + 1"
+           conRonda ? `, verificado_en = ?${despachar ? "" : ", ronda_verificacion = ronda_verificacion + 1"}` : ""
          }`,
-        [estado, quien, LOCAL_DESPACHO, aprobado ? 1 : 0, despachar ? 1 : 0, motivo],
+        [estado, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : [])],
       );
       if (!ok) return conflicto();
 
@@ -501,12 +511,17 @@ async function ejecutar(
 
       // Con novedades, un 4 o un 5 al picking no se da a ciegas.
       // Con los seriales y lo que sobro al pistolear en C4 (#301), de la
-      // ronda que termino en despacho.
+      // ronda que termino en despacho. Y las de rondas anteriores: si la
+      // primera salio con faltas y Seguridad lo devolvio, la segunda puede
+      // salir limpia, pero el picking igual fallo (Lino, #301).
+      const ronda = Number(mov.ronda_verificacion || 1);
       const hayNovedades =
         novedadesVerificacion(items, {
           seriales: datos.seriales,
-          sobrantes: novedadesDeEscaneo(datos.novedades, Number(mov.ronda_verificacion || 1)),
+          sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
         }).length > 0 ||
+        ronda > 1 ||
+        datos.novedades.some((n) => n.origen === "cierre") ||
         (mov.aprobado !== null && Number(mov.aprobado) === 0);
       const picking = notas.find((n) => n.aspecto === "picking")!;
       if (pideComentarioPicking(picking.estrellas, hayNovedades) && !picking.comentario) {

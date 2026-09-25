@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { sqlAspecto } from "@/lib/seguridad/calificaciones";
+import { sqlFueDevuelto } from "@/lib/seguridad/novedades";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,9 @@ export async function GET(request: NextRequest) {
     // Aspecto de cada nota (issue #302): picking o despacho. Las de antes,
     // con una sola nota, cuentan como despacho.
     const aspecto = await sqlAspecto("c");
+    // Un egreso que Seguridad devolvio a Almacen tuvo novedades aunque la
+    // ultima verificacion saliera limpia (#301).
+    const devuelto = await sqlFueDevuelto("m");
     const cidsParam = cids !== null ? [cids] : [];
 
     const [hoy, ayer, pendientes, descuadres, calif, recientes, topAlmacenistas, porEtapa] =
@@ -76,7 +80,7 @@ export async function GET(request: NextRequest) {
         ),
         // Ranking del mes (issue #302): por almacenista y por aspecto. Con dos
         // notas por egreso, "egresos" es DISTINCT: antes COUNT(*) contaba
-        // notas. Con novedades = Seguridad no aprobo o hubo descuadre.
+        // notas. Con novedades = Seguridad no aprobo, hubo descuadre o lo devolvio a Almacen.
         query(
           `SELECT c.almacenista_nombre AS nombre,
                   COUNT(DISTINCT c.relacionado_id) AS egresos,
@@ -86,7 +90,7 @@ export async function GET(request: NextRequest) {
                   SUM(${aspecto} = 'picking') AS n_picking,
                   AVG(CASE WHEN ${aspecto} = 'despacho' THEN c.calificacion END) AS promedio_despacho,
                   SUM(${aspecto} = 'despacho') AS n_despacho,
-                  COUNT(DISTINCT CASE WHEN m.estado = 'descuadre' OR m.aprobado = 0
+                  COUNT(DISTINCT CASE WHEN m.estado = 'descuadre' OR m.aprobado = 0 OR ${devuelto}
                                       THEN c.relacionado_id END) AS con_novedades
              FROM seguridad_calificaciones c
              JOIN seguridad_mercancia m ON m.id = c.relacionado_id
