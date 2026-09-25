@@ -78,6 +78,8 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
   // Filtro por tipo de entrega: va al servidor, asi el Excel sale con el
   // mismo criterio que la lista.
   const [entrega, setEntrega] = useState<TipoEntrega | "">("");
+  const [exportando, setExportando] = useState(false);
+  const [errorExcel, setErrorExcel] = useState<string | null>(null);
   const consulta = new URLSearchParams({ tipo, ...(entrega ? { tipo_entrega: entrega } : {}) }).toString();
 
   const cargar = useCallback(async () => {
@@ -130,6 +132,33 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               : true,
       );
 
+  // Se baja con fetch y no navegando: si el servidor falla, el error se ve
+  // aca y no se pierde la pantalla (ni el filtro elegido).
+  const exportarExcel = async () => {
+    setErrorExcel(null);
+    setExportando(true);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/export?${consulta}`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const nombre =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] ||
+        "egresos-mercancia.xlsx";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setErrorExcel(e?.message || tm("error"));
+    } finally {
+      setExportando(false);
+    }
+  };
+
   // El egreso lo inicia Almacen; Seguridad no ve "Registrar" (la API igual lo
   // rechazaria). El ingreso, al reves, es de Seguridad.
   // El ingreso ya no se registra aca: ahora es por packing list.
@@ -165,14 +194,18 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               ))}
             </select>
             <BotonSecundario
-              onClick={() => {
-                window.location.href = `/api/seguridad/mercancia/export?${consulta}`;
-              }}
+              onClick={() => void exportarExcel()}
+              disabled={exportando}
               icon={Download}
               className="ml-auto"
             >
               {tf("exportar_excel")}
             </BotonSecundario>
+          </div>
+        )}
+        {esEgreso && errorExcel && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorExcel}
           </div>
         )}
 

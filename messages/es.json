@@ -2687,7 +2687,9 @@
         "en_curso": "Egresos en curso",
         "flujo_anterior": "Registro del flujo anterior",
         "cancelar": "Volver",
-        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón."
+        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón.",
+        "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
+        "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
     }
   },

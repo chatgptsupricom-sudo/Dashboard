@@ -2698,7 +2698,9 @@
         "en_curso": "Outbound in progress",
         "flujo_anterior": "Record from the previous flow",
         "cancelar": "Back",
-        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate."
+        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate.",
+        "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
+        "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }
     }
   },

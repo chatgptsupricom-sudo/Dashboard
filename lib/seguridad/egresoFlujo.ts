@@ -142,3 +142,15 @@ export function evaluarArmado(
   ).length;
   return { completo: sinContar === 0 && diferencias === 0, diferencias, sinContar };
 }
+
+export type ResultadoEgreso = "aprobado" | "no_aprobado_despachado" | "no_despachado";
+
+/** Resultado del porton (null = Seguridad todavia no verifico). */
+export function resultadoEgreso(m: {
+  aprobado: number | string | null;
+  despachado: number | string | null;
+}): ResultadoEgreso | null {
+  if (m.aprobado === null || m.aprobado === undefined) return null;
+  if (Number(m.aprobado) === 1) return "aprobado";
+  return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
+}

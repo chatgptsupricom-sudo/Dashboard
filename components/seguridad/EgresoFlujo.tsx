@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +29,7 @@ import {
   etapasDelRecorrido,
   indiceEtapa,
   requiereVehiculo,
+  resultadoEgreso,
   type Accion,
   type Etapa,
   type TipoEntrega,
@@ -139,6 +141,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
   const rol = (user?.role || "").toLowerCase().trim();
+  // Choferes y unidades son de Almacen: solo Almacen ve "Gestionar".
+  const gestionaPersonal = rol === "almacen" || rol === "superadmin";
 
   const [mov, setMov] = useState<Movimiento | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -241,6 +245,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
     })();
   }, [mov?.etapa, esRuta]);
 
+  // Un egreso por ruta que ya traia chofer y placa (registrado antes de que
+  // se pidieran al asignar) arranca con esos valores, no en blanco.
+  useEffect(() => {
+    if (mov?.etapa !== "por_asignar_despacho" || !esRuta) return;
+    if (mov.chofer_nombre) setChofer((v) => v || mov.chofer_nombre || "");
+    if (mov.placa_vehiculo) setPlaca((v) => v || mov.placa_vehiculo || "");
+  }, [mov?.etapa, esRuta, mov?.chofer_nombre, mov?.placa_vehiculo]);
+
   const accionar = async (accion: Accion, extra: Record<string, unknown> = {}) => {
     setError(null);
     setAviso(null);
@@ -318,14 +330,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
     cerrado: hora(mov.cerrado_at),
   };
 
-  const resultado =
-    mov.aprobado === null
-      ? null
-      : Number(mov.aprobado) === 1
-        ? "aprobado"
-        : Number(mov.despachado) === 1
-          ? "no_aprobado_despachado"
-          : "no_despachado";
+  const resultado = resultadoEgreso(mov);
 
   // Conteo del porton en pantalla: aprobar exige todo contado y cuadrando
   // (la API lo vuelve a validar).
@@ -560,16 +565,27 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {esRuta && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className={labelClases}>{tm("chofer")} *</label>
+                          <EtiquetaCatalogo
+                            etiqueta={`${tm("chofer")} *`}
+                            vacio={choferesCat.length === 0}
+                            gestionar={gestionaPersonal ? { href: `/${locale}/seguridad/mercancia/personal`, texto: tCho("gestionar") } : null}
+                          />
                           <select value={chofer} onChange={(e) => setChofer(e.target.value)} className={inputClases}>
                             <option value="">{tCho("select_placeholder")}</option>
                             {choferesCat.map((n) => (
                               <option key={n} value={n}>{n}</option>
                             ))}
                           </select>
+                          {choferesCat.length === 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700">{tf("catalogo_vacio_chofer")}</p>
+                          )}
                         </div>
                         <div>
-                          <label className={labelClases}>{tm("placa")} *</label>
+                          <EtiquetaCatalogo
+                            etiqueta={`${tm("placa")} *`}
+                            vacio={unidadesCat.length === 0}
+                            gestionar={gestionaPersonal ? { href: `/${locale}/seguridad/mercancia/unidades`, texto: tUni("gestionar") } : null}
+                          />
                           <select value={placa} onChange={(e) => setPlaca(e.target.value)} className={inputClases}>
                             <option value="">{tUni("select_placeholder")}</option>
                             {unidadesCat.map((u) => (
@@ -578,6 +594,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                               </option>
                             ))}
                           </select>
+                          {unidadesCat.length === 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700">{tf("catalogo_vacio_unidad")}</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -821,6 +840,33 @@ function EstadoActual({
 
 function PanelPaso({ children }: { children: React.ReactNode }) {
   return <Card className="space-y-3 border-violet-200">{children}</Card>;
+}
+
+/** Etiqueta de un select de catalogo, con "Gestionar" para quien lo administra. */
+function EtiquetaCatalogo({
+  etiqueta,
+  vacio,
+  gestionar,
+}: {
+  etiqueta: string;
+  vacio: boolean;
+  gestionar: { href: string; texto: string } | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-1.5">
+      <label className={`${labelClases} mb-0`}>{etiqueta}</label>
+      {gestionar && (
+        <Link
+          href={gestionar.href}
+          className={`text-[11px] font-semibold hover:opacity-75 shrink-0 ${
+            vacio ? "text-amber-700" : "text-[color:var(--portal-primary,#741DFE)]"
+          }`}
+        >
+          {gestionar.texto}
+        </Link>
+      )}
+    </div>
+  );
 }
 
 function Dato({ etiqueta, valor }: { etiqueta: string; valor: string | null | undefined }) {

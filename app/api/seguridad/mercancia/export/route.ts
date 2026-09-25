@@ -2,39 +2,41 @@ import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { construirExcel, fechaExcel, respuestaExcel } from "@/lib/seguridad/excel";
 import { filtroMercancia } from "@/lib/seguridad/filtros";
+import { esEtapa, esTipoEntrega, resultadoEgreso } from "@/lib/seguridad/egresoFlujo";
 import { parsearLista } from "@/lib/seguridad/mercancia";
-import { NextRequest } from "next/server";
+import es from "@/messages/es.json";
+import { createTranslator } from "next-intl";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const ENTREGA: Record<string, string> = {
-  ruta: "Ruta",
-  puerta: "Retira el cliente",
-  encomienda: "Encomienda",
-};
+// Las etiquetas salen de los mismos textos que la pantalla, en espanol como
+// los demas Excel del modulo: si se renombra una etapa, el Excel se entera.
+const tf = createTranslator({
+  locale: "es",
+  messages: es as any,
+  namespace: "seguridad.mercancia.flujo" as any,
+}) as unknown as (clave: string) => string;
 
-const ETAPA: Record<string, string> = {
-  por_armar: "Por armar",
-  armando: "Armando",
-  pre_despacho: "Pre-despacho",
-  por_empaquetar: "Por empaquetar",
-  por_asignar_despacho: "Por asignar despacho",
-  por_verificar: "En portón",
-  por_calificar: "Por calificar",
-  cerrado: "Cerrado",
-};
-
-function resultado(f: any): string {
-  if (f.aprobado === null || f.aprobado === undefined) return "";
-  if (Number(f.aprobado) === 1) return "Aprobado y despachado";
-  return Number(f.despachado) === 1 ? "No aprobado — se despachó igual" : "No aprobado — no se despachó";
-}
+const etiqueta = (grupo: string, valor: unknown) =>
+  valor ? tf(`${grupo}.${String(valor)}`) : "";
 
 // GET /api/seguridad/mercancia/export — mismos filtros que el listado
 // (tipo, estado, tipo_entrega). Lo ven Almacen y Seguridad, igual que la lista.
 export async function GET(request: NextRequest) {
+  try {
+    return await exportar(request);
+  } catch (error: any) {
+    // JSON y no la pagina de error de Next: la lista lo baja con fetch y
+    // muestra el mensaje ahi mismo, sin sacar al usuario del panel.
+    console.error("Error exportando egresos de mercancia:", error);
+    return NextResponse.json({ error: error?.message || "No se pudo exportar" }, { status: 500 });
+  }
+}
+
+async function exportar(request: NextRequest) {
   const auth = await requireAlmacenOSeguridad(request);
   if (auth.error) return auth.error;
 
@@ -67,7 +69,9 @@ export async function GET(request: NextRequest) {
       { header: "Orden", key: "odoo_picking_name", width: 20 },
       { header: "Cliente", key: "contraparte", width: 34 },
       {
-        header: "Factura(s)",
+        // En el egreso, facturas_json son las ordenes de despacho del camion
+        // (asi las llama la pantalla), no facturas de venta.
+        header: "Orden(es) de despacho",
         key: "facturas_json",
         width: 22,
         valor: (f) => {
@@ -75,13 +79,13 @@ export async function GET(request: NextRequest) {
           return (lista.length ? lista : [f.factura_numero].filter(Boolean)).join(", ");
         },
       },
-      { header: "Tipo de entrega", key: "tipo_entrega", width: 18, valor: (f) => ENTREGA[f.tipo_entrega] ?? "" },
+      { header: "Tipo de entrega", key: "tipo_entrega", width: 18, valor: (f) => (esTipoEntrega(f.tipo_entrega) ? etiqueta("entrega", f.tipo_entrega) : "") },
       { header: "Chofer", key: "chofer_nombre", width: 24 },
       { header: "Placa", key: "placa_vehiculo", width: 14 },
       { header: "Almacenista del armado", key: "almacenista_armado", width: 24 },
       { header: "Almacenista de despacho", key: "almacenista_despacho", width: 24 },
-      { header: "Etapa", key: "etapa", width: 20, valor: (f) => ETAPA[f.etapa] ?? "" },
-      { header: "Resultado", key: "aprobado", width: 30, valor: resultado },
+      { header: "Etapa", key: "etapa", width: 20, valor: (f) => (esEtapa(f.etapa) ? etiqueta("etapa", f.etapa) : "") },
+      { header: "Resultado", key: "aprobado", width: 30, valor: (f) => etiqueta("resultado", resultadoEgreso(f)) },
       { header: "Motivo", key: "motivo_no_aprobado", width: 40 },
       { header: "Renglones", key: "total_items", width: 11 },
       { header: "Con diferencia", key: "items_con_diferencia", width: 14 },
