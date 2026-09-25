@@ -7,6 +7,7 @@ import {
   esAccion,
   esTipoEntrega,
   etapaTrasArmado,
+  esDecision,
   etapaTrasVerificacion,
   evaluarArmado,
   novedadesVerificacion,
@@ -15,6 +16,7 @@ import {
   requiereVehiculo,
   type Accion,
   type Aspecto,
+  type DecisionSeguridad,
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
@@ -419,25 +421,41 @@ async function ejecutar(
         );
       }
 
-      let despachar = true;
+      let decision: DecisionSeguridad = "despachar";
       let motivo: string | null = null;
       if (!aprobado) {
-        if (typeof body?.despachar !== "boolean") {
-          return NextResponse.json({ error: "Decide si se despacha o no" }, { status: 400 });
+        // `despachar: true/false` es como lo mandaba la pantalla antes de la
+        // opcion "cancelar": se sigue aceptando.
+        const pedida = esDecision(body?.decision)
+          ? body.decision
+          : typeof body?.despachar === "boolean"
+            ? body.despachar
+              ? "despachar"
+              : "devolver"
+            : null;
+        if (!pedida) {
+          return NextResponse.json(
+            { error: "Decide si se despacha, vuelve a Almacen o se cancela" },
+            { status: 400 },
+          );
         }
         motivo = texto(body?.motivo, MAX.motivo);
         if (!motivo) {
           return NextResponse.json(
-            { error: "El motivo es obligatorio para despachar con novedades o no despachar" },
+            { error: "El motivo es obligatorio si no se aprueba" },
             { status: 400 },
           );
         }
-        despachar = body.despachar;
+        decision = pedida;
       }
+      const despachar = decision === "despachar";
+      const devolver = decision === "devolver";
 
-      // No despachar: vuelve a Almacen a asignar despacho, en una ronda
-      // nueva. Lo pistoleado se conserva; aprobado/despachado = 0 quedan
-      // como el resultado de esta ronda hasta la siguiente verificacion.
+      // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
+      // pistoleado se conserva; aprobado/despachado = 0 quedan como el
+      // resultado de esta ronda hasta la siguiente verificacion.
+      // Cancelar: no sale; pasa a calificar con despachado = 0 y se cierra
+      // como cualquier otro (antes de #301 era el unico "no despachar").
       // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
       // la ronda: la verificacion no puede quedar trabada por una migracion.
       const conRonda = await hayColumnasVerificacion();
@@ -447,10 +465,10 @@ async function ejecutar(
       const ok = await avanzar(
         id,
         "por_verificar",
-        etapaTrasVerificacion(despachar),
+        etapaTrasVerificacion(decision),
         `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
-           conRonda ? `, verificado_en = ?${despachar ? "" : ", ronda_verificacion = ronda_verificacion + 1"}` : ""
+           conRonda ? `, verificado_en = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}` : ""
          }`,
         [estado, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : [])],
       );
@@ -471,7 +489,9 @@ async function ejecutar(
       if (!aprobado) {
         console.warn(
           `[egreso ${id}] NO APROBADO por ${quien} en ${LOCAL_DESPACHO} (ronda ${ronda}, ` +
-            `${novedades.length} novedad(es)). ${despachar ? "Se despacha igual" : "NO se despacha: vuelve a Almacen"}. ` +
+            `${novedades.length} novedad(es)). ${
+              despachar ? "Se despacha igual" : devolver ? "NO se despacha: vuelve a Almacen" : "NO se despacha: cancelado"
+            }. ` +
             `Motivo: ${motivo}`,
         );
       }

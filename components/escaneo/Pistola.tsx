@@ -88,6 +88,7 @@ export default function Pistola({
   onTerminar,
   onNovedad,
   permitirSobrante = false,
+  permitirAprender = true,
 }: {
   /** POST { codigo, item_id?, aprender_item_id?, forzar_serial? } */
   endpoint: string;
@@ -105,6 +106,11 @@ export default function Pistola({
    * `sobrante: true`). En la recepcion no aplica: ahi se aprende el codigo.
    */
   permitirSobrante?: boolean;
+  /**
+   * Ofrecer "Es su codigo" (aprender el codigo de caja, que queda para
+   * siempre). En la verificacion del egreso no: ahi se buscan sobrantes.
+   */
+  permitirAprender?: boolean;
 }) {
   const t = useTranslations(textos);
   const campo = useRef<HTMLInputElement>(null);
@@ -345,6 +351,8 @@ export default function Pistola({
           )}
           <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
             {items
+              // Sin "Es su codigo", un producto sin serial no tiene boton: no se lista.
+              .filter((i) => permitirAprender || i.lleva_serial)
               .filter(
                 (i) =>
                   !busca.trim() ||
@@ -365,7 +373,7 @@ export default function Pistola({
                     {t("pistola_es_serial")}
                   </button>
                 )}
-                {i.codigo && (
+                {i.codigo && permitirAprender && (
                   <button
                     type="button"
                     onClick={() => void asignar(i, false)}

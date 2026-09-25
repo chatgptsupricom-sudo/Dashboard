@@ -29,12 +29,15 @@ import {
   ASPECTOS,
   RESPONSABLE,
   enAlmacen,
+  esAnormalEnVivo,
+  faltanPorPistolear,
   esEtapa,
   esTipoEntrega,
   evaluarSeriales,
   novedadesVerificacion,
   pideComentarioPicking,
   type Aspecto,
+  type DecisionSeguridad,
   etapasDelRecorrido,
   indiceEtapa,
   requiereVehiculo,
@@ -221,7 +224,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // Decision de Seguridad cuando no aprueba.
   const [noAprobar, setNoAprobar] = useState(false);
-  const [despacharIgual, setDespacharIgual] = useState<boolean | null>(null);
+  const [decision, setDecision] = useState<DecisionSeguridad | null>(null);
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
 
   // Calificacion final.
@@ -435,6 +438,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
     seriales,
     sobrantes: novedadesGuardadas.filter((n) => n.ronda === ronda && n.origen === "escaneo"),
   });
+  // En vivo, mientras se pistolea: solo lo anormal; las faltas, contadas. Al
+  // decidir (o fuera del porton), la lista completa.
+  const faltan = faltanPorPistolear(novedades);
+  const novedadesEnVivo = noAprobar ? novedades : novedades.filter(esAnormalEnVivo);
   const porSerial = (it: Item) => verificaPorSerial(it, seriales);
   const verificadosDe = (itemId: number) =>
     seriales.filter((x) => Number(x.item_id) === itemId && x.verificado_at).length;
@@ -540,6 +547,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   endpoint={`/api/seguridad/mercancia/${id}/escaneo`}
                   textos="seguridad.mercancia.flujo.verificacion"
                   permitirSobrante
+                  permitirAprender={false}
                   items={items.map((it) => ({
                     id: it.id,
                     codigo: it.codigo,
@@ -705,9 +713,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
             {/* Novedades de la verificacion en C4 (#301): las de la ronda en curso
                 mientras Seguridad pistolea, y el historial de las anteriores. */}
             {(novedadesGuardadas.some((n) => n.origen === "cierre") ||
-              (contandoPorton && novedades.length > 0)) && (
+              (contandoPorton && (novedadesEnVivo.length > 0 || faltan > 0))) && (
               <TarjetaNovedades
-                actuales={contandoPorton ? novedades : []}
+                actuales={contandoPorton ? novedadesEnVivo : []}
+                faltan={contandoPorton && !noAprobar ? faltan : 0}
                 guardadas={novedadesGuardadas.filter((n) => n.origen === "cierre")}
                 tf={tf}
               />
@@ -880,7 +889,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         </BotonPrimario>
                         {novedades.length > 0 && (
                           <p className="text-xs text-slate-500 text-center">
-                            {tf("verificacion.aprobar_requiere", { n: novedades.length })}
+                            {novedades.some(esAnormalEnVivo)
+                              ? tf("verificacion.aprobar_requiere", { n: novedades.length })
+                              : tf("verificacion.faltan", { n: faltan })}
                           </p>
                         )}
                         <BotonSecundario onClick={() => setNoAprobar(true)} disabled={enviando} icon={XCircle} className="w-full">
@@ -890,26 +901,26 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     ) : (
                       <div className="space-y-3">
                         <p className={labelClases}>{tf("decision")}</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[true, false].map((v) => (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {DECISIONES_UI.map(({ valor, etiqueta, activa }) => (
                             <button
-                              key={String(v)}
+                              key={valor}
                               type="button"
-                              onClick={() => setDespacharIgual(v)}
-                              className={`h-11 rounded-xl border text-[13px] font-semibold transition-colors ${
-                                despacharIgual === v
-                                  ? v
-                                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                                    : "border-red-300 bg-red-50 text-red-800"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                              onClick={() => setDecision(valor)}
+                              aria-pressed={decision === valor}
+                              className={`min-h-11 px-2 py-2 rounded-xl border text-[13px] font-semibold transition-colors ${
+                                decision === valor ? activa : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                               }`}
                             >
-                              {v ? tf("despachar_igual") : tf("verificacion.no_despachar")}
+                              {tf(etiqueta)}
                             </button>
                           ))}
                         </div>
-                        {despacharIgual === false && (
+                        {decision === "devolver" && (
                           <p className="text-xs text-slate-500">{tf("verificacion.no_despachar_ayuda")}</p>
+                        )}
+                        {decision === "cancelar" && (
+                          <p className="text-xs text-slate-500">{tf("verificacion.cancelar_ayuda")}</p>
                         )}
                         <textarea
                           value={motivoNoAprobado}
@@ -925,13 +936,13 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             onClick={() =>
                               accionar("verificar_seguridad", {
                                 aprobado: false,
-                                despachar: despacharIgual,
+                                decision,
                                 motivo: motivoNoAprobado.trim(),
                               })
                             }
                             disabled={
                               enviando ||
-                              despacharIgual === null ||
+                              decision === null ||
                               !motivoNoAprobado.trim() ||
                               faltaMotivoRenglon
                             }
@@ -1172,10 +1183,13 @@ function textoNovedad(n: Novedad, tf: ReturnType<typeof useTranslations>): strin
  */
 function TarjetaNovedades({
   actuales,
+  faltan = 0,
   guardadas,
   tf,
 }: {
   actuales: Novedad[];
+  /** Mientras se pistolea: unidades que faltan (no se listan una por una). */
+  faltan?: number;
   guardadas: NovedadGuardada[];
   tf: ReturnType<typeof useTranslations>;
 }) {
@@ -1199,6 +1213,9 @@ function TarjetaNovedades({
   return (
     <Card>
       <SectionTitle>{tf("novedades_titulo")}</SectionTitle>
+      {faltan > 0 && (
+        <p className="text-sm text-slate-500 tabular-nums">{tf("verificacion.faltan", { n: faltan })}</p>
+      )}
       {actuales.length > 0 && lista(actuales)}
       {rondas.map((r) => (
         <div key={r} className="mt-3 pt-3 border-t border-slate-100 first:mt-0 first:pt-0 first:border-0">
@@ -1209,6 +1226,13 @@ function TarjetaNovedades({
     </Card>
   );
 }
+
+/** Opciones cuando Seguridad no aprueba (ver DECISIONES en egresoFlujo). */
+const DECISIONES_UI: Array<{ valor: DecisionSeguridad; etiqueta: string; activa: string }> = [
+  { valor: "despachar", etiqueta: "despachar_igual", activa: "border-emerald-300 bg-emerald-50 text-emerald-800" },
+  { valor: "devolver", etiqueta: "verificacion.no_despachar", activa: "border-amber-300 bg-amber-50 text-amber-800" },
+  { valor: "cancelar", etiqueta: "verificacion.cancelar", activa: "border-red-300 bg-red-50 text-red-800" },
+];
 
 function PanelPaso({ children }: { children: React.ReactNode }) {
   return <Card className="space-y-3 border-violet-200">{children}</Card>;
