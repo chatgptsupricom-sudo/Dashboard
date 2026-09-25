@@ -371,7 +371,8 @@ export type ResultadoEgreso =
   | "aprobado"
   | "no_aprobado_despachado"
   | "no_despachado"
-  | "devuelto";
+  | "devuelto"
+  | "cancelado";
 
 /**
  * Resultado del porton (null = Seguridad todavia no verifico). Con `etapa`:
@@ -382,8 +383,12 @@ export function resultadoEgreso(m: {
   aprobado: number | string | null;
   despachado: number | string | null;
   etapa?: string | null;
+  decision_seguridad?: string | null;
 }): ResultadoEgreso | null {
   if (m.aprobado === null || m.aprobado === undefined) return null;
+  // No salio porque se cancelo (el cliente, por ejemplo): no es un rechazo
+  // de Seguridad por lo que armo Almacen.
+  if (esCancelado(m)) return "cancelado";
   if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
   if (Number(m.aprobado) === 1) return "aprobado";
   return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
@@ -408,4 +413,43 @@ export function faltanPorPistolear(novedades: Novedad[]): number {
     else if (x.tipo === "falta") n += Math.max(0, x.esperado - (x.contado ?? 0));
   }
   return n;
+}
+
+/**
+ * Seguridad lo cancelo: no salio nunca (#316). Solo se sabe con
+ * sql/egreso_verificacion_c4.sql corrido (columna decision_seguridad); sin
+ * ella un cancelado se ve como "no despachado".
+ */
+export function esCancelado(m: { decision_seguridad?: string | null }): boolean {
+  return m.decision_seguridad === "cancelar";
+}
+
+/**
+ * Que se califica. Un cancelado solo el picking: el despacho nunca ocurrio.
+ */
+export function aspectosACalificar(m: { decision_seguridad?: string | null }): readonly Aspecto[] {
+  return esCancelado(m) ? ["picking"] : ASPECTOS;
+}
+
+/**
+ * Si al calificar hubo novedades (para pedir comentario con 4 o 5 estrellas
+ * al picking). Misma regla en la API y en la pantalla.
+ *  - `actuales`: las de la ronda que termino (novedadesVerificacion).
+ *  - `previas`: las guardadas de rondas anteriores. Si Seguridad lo
+ *    devolvio, el picking fallo aunque la ultima ronda saliera limpia.
+ * Un cancelado no cuenta como novedad por si solo: si el cliente cancelo un
+ * pedido bien armado, nadie se equivoco. Tampoco sus faltas (no se pistoleo
+ * porque no salia); si las sobras, lo de otra orden o lo que no estaba en la
+ * orden, que si son errores del armado.
+ */
+export function hayNovedadesAlCalificar(p: {
+  actuales: Novedad[];
+  previas: Novedad[];
+  ronda: number;
+  aprobado: number | string | null;
+  cancelado: boolean;
+}): boolean {
+  if (p.previas.length > 0 || p.ronda > 1) return true;
+  if (p.cancelado) return p.actuales.some(esAnormalEnVivo);
+  return p.actuales.length > 0 || (p.aprobado !== null && Number(p.aprobado) === 0);
 }

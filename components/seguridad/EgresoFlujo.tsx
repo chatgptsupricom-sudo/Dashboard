@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Box,
@@ -26,10 +26,12 @@ import FirmasActa from "@/components/seguridad/FirmasActa";
 import Pistola from "@/components/escaneo/Pistola";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import {
-  ASPECTOS,
+  aspectosACalificar,
   RESPONSABLE,
   enAlmacen,
   esAnormalEnVivo,
+  esCancelado,
+  hayNovedadesAlCalificar,
   faltanPorPistolear,
   esEtapa,
   esTipoEntrega,
@@ -140,6 +142,8 @@ type Movimiento = {
   /** Suma 1 cada vez que Seguridad no despacha y vuelve a Almacen (#301). */
   ronda_verificacion?: number | null;
   verificado_en?: string | null;
+  /** despachar | devolver | cancelar (#316); null sin la migracion. */
+  decision_seguridad?: string | null;
 };
 
 type Calificacion = {
@@ -236,9 +240,22 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const cambiarNota = (a: Aspecto, cambio: Partial<Nota>) =>
     setNotas((p) => ({ ...p, [a]: { ...p[a], ...cambio } }));
 
+  // Etapa y ronda con que se pinto la ultima vez (ver aplicar).
+  const etapaRonda = useRef<string | null>(null);
+
   const aplicar = useCallback((json: any) => {
     const m = json.movimiento as Movimiento;
     setMov(m);
+    // Si el egreso cambio de etapa o de ronda (lo devolvieron y volvio al
+    // porton), la decision de la vez anterior no queda elegida: un toque en
+    // Confirmar lo devolveria otra vez sin que nadie lo decida (Lino, #316).
+    const clave = `${m.etapa}|${m.ronda_verificacion || 1}`;
+    if (etapaRonda.current !== null && etapaRonda.current !== clave) {
+      setNoAprobar(false);
+      setDecision(null);
+      setMotivoNoAprobado("");
+    }
+    etapaRonda.current = clave;
     const its = (json.items || []) as Item[];
     setItems(its);
     setCalificaciones(json.calificaciones || []);
@@ -474,11 +491,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // anteriores: si Seguridad lo devolvio, el picking fallo aunque la ultima
   // verificacion saliera limpia.
   const novedadesPrevias = novedadesGuardadas.filter((n) => n.origen === "cierre" && n.ronda < ronda);
-  const hayNovedades =
-    novedades.length > 0 ||
-    ronda > 1 ||
-    novedadesPrevias.length > 0 ||
-    (mov.aprobado !== null && Number(mov.aprobado) === 0);
+  const cancelado = esCancelado(mov);
+  const hayNovedades = hayNovedadesAlCalificar({
+    actuales: novedades,
+    previas: novedadesPrevias,
+    ronda,
+    aprobado: mov.aprobado,
+    cancelado,
+  });
+  // Un cancelado solo califica el picking: el despacho nunca ocurrio.
+  const aspectos = aspectosACalificar(mov);
+  // Lo que se lista al calificar: en un cancelado, sin las faltas (no se
+  // pistoleo porque no salia).
+  const novedadesAlCalificar = cancelado ? novedades.filter(esAnormalEnVivo) : novedades;
   const faltaComentarioPicking =
     pideComentarioPicking(notas.picking.estrellas, hayNovedades) && !notas.picking.comentario.trim();
 
@@ -743,7 +768,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     <span className="font-medium">{tf("motivo")}:</span> {mov.motivo_no_aprobado}
                   </p>
                 )}
-                {ASPECTOS.map((a) => {
+                {aspectos.map((a) => {
                   const nota = notaDe(a);
                   if (!nota) return null;
                   return (
@@ -889,9 +914,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         </BotonPrimario>
                         {novedades.length > 0 && (
                           <p className="text-xs text-slate-500 text-center">
-                            {novedades.some(esAnormalEnVivo)
-                              ? tf("verificacion.aprobar_requiere", { n: novedades.length })
-                              : tf("verificacion.faltan", { n: faltan })}
+                            {[
+                              novedades.some(esAnormalEnVivo)
+                                ? tf("verificacion.aprobar_requiere", { n: novedades.filter(esAnormalEnVivo).length })
+                                : null,
+                              faltan > 0 ? tf("verificacion.faltan", { n: faltan }) : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </p>
                         )}
                         <BotonSecundario onClick={() => setNoAprobar(true)} disabled={enviando} icon={XCircle} className="w-full">
@@ -964,10 +994,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {hayNovedades && (
                       <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
                         <p className="font-semibold">{tf("novedades_titulo")}</p>
-                        {novedades.length === 0 && novedadesPrevias.length === 0 ? (
+                        {novedadesAlCalificar.length === 0 && novedadesPrevias.length === 0 ? (
                           <p>{tf("no_aprobado_sin_renglones")}</p>
                         ) : (
-                          novedades.map((n) => (
+                          novedadesAlCalificar.map((n) => (
                             <p key={claveNovedad(n)} className="truncate">
                               {textoNovedad(n, tf)}
                             </p>
@@ -985,7 +1015,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         )}
                       </div>
                     )}
-                    {ASPECTOS.map((a) => (
+                    {aspectos.map((a) => (
                       <div key={a} className="space-y-2">
                         <div>
                           <p className="text-[13px] font-semibold text-slate-900">
@@ -1017,16 +1047,20 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             calificacion: notas.picking.estrellas,
                             comentario: notas.picking.comentario.trim() || null,
                           },
-                          despacho: {
-                            calificacion: notas.despacho.estrellas,
-                            comentario: notas.despacho.comentario.trim() || null,
-                          },
+                          ...(cancelado
+                            ? {}
+                            : {
+                                despacho: {
+                                  calificacion: notas.despacho.estrellas,
+                                  comentario: notas.despacho.comentario.trim() || null,
+                                },
+                              }),
                         })
                       }
                       disabled={
                         enviando ||
                         notas.picking.estrellas < 1 ||
-                        notas.despacho.estrellas < 1 ||
+                        (!cancelado && notas.despacho.estrellas < 1) ||
                         faltaComentarioPicking
                       }
                       className="w-full h-12"
@@ -1105,6 +1139,8 @@ function EstadoActual({
   if (etapa === "cerrado") {
     const malo = resultado === "no_despachado";
     const regular = resultado === "no_aprobado_despachado";
+    // Cancelado: no salio, pero no es un error de Almacen ni de Seguridad.
+    const neutro = resultado === "cancelado";
     return (
       <div
         className={`rounded-2xl border p-4 flex items-center gap-3 ${
@@ -1112,11 +1148,15 @@ function EstadoActual({
             ? "border-red-200 bg-red-50"
             : regular
               ? "border-amber-200 bg-amber-50"
-              : "border-emerald-200 bg-emerald-50"
+              : neutro
+                ? "border-slate-200 bg-slate-50"
+                : "border-emerald-200 bg-emerald-50"
         }`}
       >
         {malo ? (
           <XCircle className="w-5 h-5 text-red-600 shrink-0" />
+        ) : neutro ? (
+          <Circle className="w-5 h-5 text-slate-400 shrink-0" />
         ) : regular ? (
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
         ) : (

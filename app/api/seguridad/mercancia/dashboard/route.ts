@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { sqlAspecto } from "@/lib/seguridad/calificaciones";
-import { sqlFueDevuelto } from "@/lib/seguridad/novedades";
+import { sqlEsCancelado, sqlFueDevuelto } from "@/lib/seguridad/novedades";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
     // Un egreso que Seguridad devolvio a Almacen tuvo novedades aunque la
     // ultima verificacion saliera limpia (#301).
     const devuelto = await sqlFueDevuelto("m");
+    // Un cancelado (no salio nunca) no es una novedad del almacenista por si
+    // solo: su estado ya es 'descuadre' si tuvo algo anormal (#316).
+    const cancelado = await sqlEsCancelado("m");
     const cidsParam = cids !== null ? [cids] : [];
 
     const [hoy, ayer, pendientes, descuadres, calif, recientes, topAlmacenistas, porEtapa] =
@@ -90,7 +93,7 @@ export async function GET(request: NextRequest) {
                   SUM(${aspecto} = 'picking') AS n_picking,
                   AVG(CASE WHEN ${aspecto} = 'despacho' THEN c.calificacion END) AS promedio_despacho,
                   SUM(${aspecto} = 'despacho') AS n_despacho,
-                  COUNT(DISTINCT CASE WHEN m.estado = 'descuadre' OR m.aprobado = 0 OR ${devuelto}
+                  COUNT(DISTINCT CASE WHEN m.estado = 'descuadre' OR (m.aprobado = 0 AND NOT (${cancelado})) OR ${devuelto}
                                       THEN c.relacionado_id END) AS con_novedades
              FROM seguridad_calificaciones c
              JOIN seguridad_mercancia m ON m.id = c.relacionado_id

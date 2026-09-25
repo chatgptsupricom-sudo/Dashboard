@@ -2723,7 +2723,8 @@
           "aprobado": "Approved and dispatched",
           "no_aprobado_despachado": "Not approved — dispatched anyway",
           "no_despachado": "Not approved — not dispatched",
-          "devuelto": "Not dispatched — sent back to Warehouse"
+          "devuelto": "Not dispatched — sent back to Warehouse",
+          "cancelado": "Cancelled — never left"
         },
         "motivo": "Reason",
         "filtro": {

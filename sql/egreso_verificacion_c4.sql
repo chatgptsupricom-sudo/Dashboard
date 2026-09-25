@@ -10,6 +10,11 @@
 --                                            el egreso vuelve a Almacen.
 --   seguridad_mercancia.verificado_en        local donde se verifico (hoy
 --                                            siempre 'C4').
+--   seguridad_mercancia.decision_seguridad   que decidio Seguridad en la
+--                                            ultima verificacion: despachar
+--                                            (aprobado o despachado igual),
+--                                            devolver (volvio a Almacen) o
+--                                            cancelar (no salio nunca).
 --   seguridad_mercancia_novedades            las novedades de cada ronda, con
 --                                            la misma forma que `Novedad` en
 --                                            lib/seguridad/egresoFlujo.ts:
@@ -34,6 +39,7 @@
 -- ANTES DE CORRERLO, mira si ya esta aplicado:
 --   SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'ronda_verificacion';
 --   SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'verificado_en';
+--   SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'decision_seguridad';
 -- Si alguna devuelve una fila, ese ALTER ya se corrio: sacalo y corre el resto
 -- (el CREATE TABLE se puede repetir, es IF NOT EXISTS).
 -- (MySQL no tiene ADD COLUMN IF NOT EXISTS: el ALTER fallaria.)
@@ -44,6 +50,9 @@ ALTER TABLE supricom_panel.seguridad_mercancia
 
 ALTER TABLE supricom_panel.seguridad_mercancia
   ADD COLUMN verificado_en VARCHAR(50) DEFAULT NULL;
+
+ALTER TABLE supricom_panel.seguridad_mercancia
+  ADD COLUMN decision_seguridad VARCHAR(20) DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS supricom_panel.seguridad_mercancia_novedades (
   id INT NOT NULL AUTO_INCREMENT,
@@ -65,7 +74,8 @@ CREATE TABLE IF NOT EXISTS supricom_panel.seguridad_mercancia_novedades (
   KEY idx_novedad_fecha (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Comprobacion: tienen que aparecer las dos columnas y la tabla.
+-- Comprobacion: tienen que aparecer las tres columnas y la tabla.
 SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'ronda_verificacion';
 SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'verificado_en';
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'decision_seguridad';
 SHOW TABLES FROM supricom_panel LIKE 'seguridad_mercancia_novedades';

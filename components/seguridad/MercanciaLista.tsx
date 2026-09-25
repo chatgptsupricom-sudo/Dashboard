@@ -56,6 +56,7 @@ type Movimiento = {
   tipo_entrega: string | null;
   aprobado: number | null;
   despachado: number | null;
+  decision_seguridad?: string | null;
 };
 
 type Filtro = "para_mi" | "en_proceso" | "cerrados" | "todos";
@@ -322,7 +323,9 @@ function EtapaBadge({ m }: { m: Movimiento }) {
       ? { icon: CheckCircle2, clase: "bg-emerald-50 text-emerald-600" }
       : Number(m.despachado) === 1
         ? { icon: AlertTriangle, clase: "bg-amber-50 text-amber-600" }
-        : { icon: XCircle, clase: "bg-red-50 text-red-600" };
+        : m.decision_seguridad === "cancelar"
+          ? { icon: XCircle, clase: "bg-slate-100 text-slate-400" }
+          : { icon: XCircle, clase: "bg-red-50 text-red-600" };
   const Icon = conf.icon;
   return (
     <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${conf.clase}`}>

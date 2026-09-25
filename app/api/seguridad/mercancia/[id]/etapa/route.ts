@@ -1,7 +1,10 @@
 import { getConnection, query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
-  ASPECTOS,
+  aspectosACalificar,
+  esAnormalEnVivo,
+  esCancelado,
+  hayNovedadesAlCalificar,
   ETAPA_DE_ACCION,
   LOCAL_DESPACHO,
   esAccion,
@@ -450,6 +453,14 @@ async function ejecutar(
       }
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
+      // Un cancelado no se termino de pistolear porque no salia: sus faltas no
+      // son un descuadre. Si lo son las sobras, lo de otra orden, etc.
+      const estadoFinal =
+        decision === "cancelar"
+          ? novedades.some(esAnormalEnVivo)
+            ? "descuadre"
+            : "conforme"
+          : estado;
 
       // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
       // pistoleado se conserva; aprobado/despachado = 0 quedan como el
@@ -483,9 +494,11 @@ async function ejecutar(
         etapaTrasVerificacion(decision),
         `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
-           conRonda ? `, verificado_en = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}` : ""
+           conRonda
+             ? `, verificado_en = ?, decision_seguridad = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}`
+             : ""
          }`,
-        [estado, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : [])],
+        [estadoFinal, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO, decision] : [])],
       );
       if (!ok) return conflicto();
 
@@ -515,13 +528,14 @@ async function ejecutar(
 
     case "calificar": {
       // Dos notas (issue #302): el picking al que armo y el despacho al que
-      // despacho. Si es la misma persona, igual son dos.
+      // despacho. Si es la misma persona, igual son dos. Un cancelado, solo
+      // el picking: el despacho nunca ocurrio.
       const notas: Array<{ aspecto: Aspecto; almacenista: string; estrellas: number; comentario: string | null }> = [];
       const quienes: Record<Aspecto, string | null> = {
         picking: mov.almacenista_armado || mov.almacenista_nombre || null,
         despacho: mov.almacenista_despacho || mov.almacenista_nombre || null,
       };
-      for (const aspecto of ASPECTOS) {
+      for (const aspecto of aspectosACalificar(mov)) {
         const estrellas = parseInt(String(body?.[aspecto]?.calificacion ?? ""), 10);
         if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) {
           return NextResponse.json(
@@ -544,20 +558,19 @@ async function ejecutar(
         });
       }
 
-      // Con novedades, un 4 o un 5 al picking no se da a ciegas.
-      // Con los seriales y lo que sobro al pistolear en C4 (#301), de la
-      // ronda que termino en despacho. Y las de rondas anteriores: si la
-      // primera salio con faltas y Seguridad lo devolvio, la segunda puede
-      // salir limpia, pero el picking igual fallo (Lino, #301).
+      // Con novedades, un 4 o un 5 al picking no se da a ciegas: las de la
+      // ronda que termino y las de rondas anteriores (hayNovedadesAlCalificar).
       const ronda = Number(mov.ronda_verificacion || 1);
-      const hayNovedades =
-        novedadesVerificacion(items, {
+      const hayNovedades = hayNovedadesAlCalificar({
+        actuales: novedadesVerificacion(items, {
           seriales: datos.seriales,
           sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
-        }).length > 0 ||
-        ronda > 1 ||
-        datos.novedades.some((n) => n.origen === "cierre") ||
-        (mov.aprobado !== null && Number(mov.aprobado) === 0);
+        }),
+        previas: datos.novedades.filter((n) => n.origen === "cierre" && n.ronda < ronda),
+        ronda,
+        aprobado: mov.aprobado,
+        cancelado: esCancelado(mov),
+      });
       const picking = notas.find((n) => n.aspecto === "picking")!;
       if (pideComentarioPicking(picking.estrellas, hayNovedades) && !picking.comentario) {
         return NextResponse.json(
@@ -585,7 +598,10 @@ async function ejecutar(
         // Sin la migracion (sql/egreso_calificaciones.sql) no hay donde
         // distinguirlas: se guarda solo la del despacho, que es lo que se
         // guardaba antes, en vez de dos notas que despues no se separan.
-        const aGuardar = conAspecto ? notas : notas.filter((n) => n.aspecto === "despacho");
+        // Un cancelado no tiene nota de despacho: ahi va la del picking.
+        const aGuardar = conAspecto
+          ? notas
+          : [notas.find((n) => n.aspecto === "despacho") || notas[0]];
         const valores: Array<string | number | null> = [];
         const marcadores = aGuardar
           .map((n) => {

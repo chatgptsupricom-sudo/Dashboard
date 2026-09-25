@@ -39,9 +39,10 @@ const recortar = (v: unknown, max: number) =>
 let hayRonda = false;
 
 /**
- * Si ya se corrio sql/egreso_verificacion_c4.sql (columnas ronda_verificacion
- * y verificado_en). SHOW COLUMNS y no information_schema: el phpMyAdmin de
- * EasyPanel no deja leerlo. Se cachea solo el "si": cuando se corre la
+ * Si ya se corrio sql/egreso_verificacion_c4.sql (columnas ronda_verificacion,
+ * verificado_en y decision_seguridad: van juntas en la misma migracion).
+ * SHOW COLUMNS y no information_schema: el phpMyAdmin de EasyPanel no deja
+ * leerlo. Se cachea solo el "si": cuando se corre la
  * migracion, empieza a usarse sin reiniciar.
  */
 export async function hayColumnasVerificacion(): Promise<boolean> {
@@ -53,6 +54,14 @@ export async function hayColumnasVerificacion(): Promise<boolean> {
     hayRonda = false;
   }
   return hayRonda;
+}
+
+/**
+ * SQL de "Seguridad lo cancelo" (no salio nunca). decision_seguridad viene
+ * en la misma migracion que ronda_verificacion.
+ */
+export async function sqlEsCancelado(alias = "m"): Promise<string> {
+  return (await hayColumnasVerificacion()) ? `COALESCE(${alias}.decision_seguridad, '') = 'cancelar'` : "FALSE";
 }
 
 /**
