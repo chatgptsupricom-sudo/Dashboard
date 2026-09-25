@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Circle,
   ChevronRight,
   Clock,
   Download,
@@ -18,6 +19,7 @@ import { fechaCorta } from "@/lib/fecha";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import {
   RESPONSABLE,
+  resultadoEgreso,
   TIPOS_ENTREGA,
   esEtapa,
   esTipoEntrega,
@@ -56,6 +58,8 @@ type Movimiento = {
   tipo_entrega: string | null;
   aprobado: number | null;
   despachado: number | null;
+  /** despachar | devolver | cancelar (sql/egreso_decision_seguridad.sql). */
+  decision_seguridad?: string | null;
 };
 
 type Filtro = "para_mi" | "en_proceso" | "cerrados" | "todos";
@@ -316,13 +320,17 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
  */
 function EtapaBadge({ m }: { m: Movimiento }) {
   const cerrado = m.etapa === "cerrado" || m.etapa === "por_calificar";
+  // Misma regla que el detalle y el Excel: un cancelado no es un rechazo.
+  const resultado = resultadoEgreso(m);
   const conf = !cerrado
     ? { icon: Clock, clase: "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]" }
-    : Number(m.aprobado) === 1
+    : resultado === "aprobado"
       ? { icon: CheckCircle2, clase: "bg-emerald-50 text-emerald-600" }
-      : Number(m.despachado) === 1
+      : resultado === "no_aprobado_despachado"
         ? { icon: AlertTriangle, clase: "bg-amber-50 text-amber-600" }
-        : { icon: XCircle, clase: "bg-red-50 text-red-600" };
+        : resultado === "cancelado"
+          ? { icon: Circle, clase: "bg-slate-100 text-slate-400" }
+          : { icon: XCircle, clase: "bg-red-50 text-red-600" };
   const Icon = conf.icon;
   return (
     <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${conf.clase}`}>
