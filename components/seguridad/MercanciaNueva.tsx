@@ -157,7 +157,7 @@ export default function MercanciaNueva({
         // Encontrada pero sin facturar: no se deja registrar (issue #298), y
         // el mensaje tiene que decir por que, no "no la encontramos".
         const json = await res.json().catch(() => ({}));
-        setErrorOrden(json?.codigo === "sin_factura" ? tm("sin_factura") : tm("no_encontrada"));
+        setErrorOrden(json?.codigo === "sin_factura" ? tm("orden_sin_facturar") : tm("no_encontrada"));
         setPicking(null);
         setLineas([]);
         return;

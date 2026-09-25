@@ -2487,7 +2487,7 @@
       "nuevo": "Registrar",
       "buscar": "Buscar",
       "no_encontrada": "No encontramos ese documento en Odoo",
-      "sin_factura": "Esta orden todavía no está facturada",
+      "orden_sin_facturar": "Esta orden todavía no está facturada",
       "factura_venta": "Factura de venta",
       "cliente": "Cliente",
       "proveedor": "Proveedor",

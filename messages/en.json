@@ -2498,7 +2498,7 @@
       "nuevo": "Register",
       "buscar": "Search",
       "no_encontrada": "We could not find that document in Odoo",
-      "sin_factura": "This order has not been invoiced yet",
+      "orden_sin_facturar": "This order has not been invoiced yet",
       "factura_venta": "Sales invoice",
       "cliente": "Customer",
       "proveedor": "Supplier",

@@ -48,7 +48,7 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(json?.codigo === "sin_factura" ? tm("sin_factura") : to("error"));
+        setError(json?.codigo === "sin_factura" ? tm("orden_sin_facturar") : to("error"));
         return;
       }
       setPicking(json.picking);
