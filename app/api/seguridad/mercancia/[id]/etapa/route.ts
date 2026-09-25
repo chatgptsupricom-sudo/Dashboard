@@ -440,7 +440,19 @@ async function ejecutar(
       // como el resultado de esta ronda hasta la siguiente verificacion.
       // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
       // la ronda: la verificacion no puede quedar trabada por una migracion.
+      // Salvo devolverlo a Almacen: sin ronda no queda registrado que volvio,
+      // y si la siguiente verificacion sale limpia, el picking se calificaria
+      // como si nada (ver `calificar`). Aprobar o despachar igual si se puede.
       const conRonda = await hayColumnasVerificacion();
+      if (!despachar && !conRonda) {
+        return NextResponse.json(
+          {
+            error:
+              "No se puede devolver el egreso a Almacen: falta correr sql/egreso_verificacion_c4.sql. Avisale a sistemas.",
+          },
+          { status: 400 },
+        );
+      }
       if (!conRonda) {
         console.warn("[egreso] falta correr sql/egreso_verificacion_c4.sql: se cierra sin ronda ni local");
       }

@@ -123,11 +123,21 @@ export async function registrarNovedadEscaneo(
     await query("UPDATE seguridad_mercancia_novedades SET contado = contado + 1 WHERE id = ?", [fila.id]);
     return { repetido: false, contado: Number(fila.contado || 0) + 1 };
   }
-  await query(
-    `INSERT INTO seguridad_mercancia_novedades
+  // Nueva. Si otra persona pistoleo el mismo codigo entre el SELECT de arriba
+  // y aca, la clave unica (sql/egreso_novedades_unica.sql) la frena: no queda
+  // duplicada, y si acumula, se suma a la que ya existe. Sin esa clave se
+  // inserta como antes (la carrera queda posible).
+  //
+  // Dos sentencias distintas a proposito: mysql2 abre la conexion con
+  // FOUND_ROWS, y con eso un ON DUPLICATE KEY UPDATE que no cambia nada
+  // devuelve affectedRows 1, igual que una fila nueva. Con INSERT IGNORE un
+  // duplicado da 0; con `contado + 1` un duplicado siempre cambia y da 2.
+  const res = await query(
+    `INSERT ${acumula ? "" : "IGNORE "}INTO seguridad_mercancia_novedades
       (mercancia_id, ronda, origen, tipo, item_id, producto, serial, esperado, contado,
        otra_orden, registrado_por)
-     VALUES (?, ?, 'escaneo', ?, ?, ?, ?, 0, 1, ?, ?)`,
+     VALUES (?, ?, 'escaneo', ?, ?, ?, ?, 0, 1, ?, ?)
+     ${acumula ? "ON DUPLICATE KEY UPDATE contado = contado + 1" : ""}`,
     [
       mercanciaId,
       ronda,
@@ -139,7 +149,16 @@ export async function registrarNovedadEscaneo(
       recortar(quien, MAX.nombre),
     ],
   );
-  return { repetido: false, contado: 1 };
+  const afectadas = Number((res.rows as any)?.affectedRows || 0);
+  if (afectadas === 1) return { repetido: false, contado: 1 };
+  if (!acumula) return { repetido: true, contado: 1 };
+  const ahora = await query(
+    `SELECT contado FROM seguridad_mercancia_novedades
+      WHERE mercancia_id = ? AND ronda = ? AND origen = 'escaneo' AND tipo = ? AND serial = ?
+      LIMIT 1`,
+    [mercanciaId, ronda, n.tipo, recortar(n.serial, MAX.serial)],
+  );
+  return { repetido: false, contado: Number((ahora.rows as any[])[0]?.contado || 1) };
 }
 
 /** Guarda las novedades con que se cerro una ronda (ya calculadas). */
@@ -169,8 +188,10 @@ export async function guardarNovedadesCierre(
       return "(?, ?, 'cierre', ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     })
     .join(", ");
+  // IGNORE: con la clave unica, una fila repetida (el mismo serial dos
+  // veces en la lista) se salta en vez de hacer fallar todo el cierre.
   await query(
-    `INSERT INTO seguridad_mercancia_novedades
+    `INSERT IGNORE INTO seguridad_mercancia_novedades
       (mercancia_id, ronda, origen, tipo, item_id, producto, serial, esperado, contado,
        otra_orden, detalle, registrado_por)
      VALUES ${marcadores}`,
