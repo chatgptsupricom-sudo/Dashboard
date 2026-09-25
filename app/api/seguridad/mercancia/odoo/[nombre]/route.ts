@@ -62,6 +62,15 @@ export async function GET(
       );
     }
 
+    // Una orden sin facturar no se arma (issue #298): se avisa y no se deja
+    // seguir. El POST del egreso lo vuelve a comprobar por su cuenta.
+    if (tipo !== "ingreso" && (factura.facturas || []).length === 0) {
+      return NextResponse.json(
+        { error: "Esta orden todavía no está facturada", codigo: "sin_factura" },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json({ success: true, picking: factura });
   } catch (error: any) {
     console.error("Error buscando factura en Odoo:", error);

@@ -55,6 +55,7 @@ export default function MercanciaNueva({
     odoo_picking_id: number;
     odoo_picking_name: string;
     contraparte: string;
+    facturas: { numero: string; fecha: string | null }[];
   } | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
 
@@ -153,7 +154,10 @@ export default function MercanciaNueva({
         `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}`,
       );
       if (!res.ok) {
-        setErrorOrden(tm("no_encontrada"));
+        // Encontrada pero sin facturar: no se deja registrar (issue #298), y
+        // el mensaje tiene que decir por que, no "no la encontramos".
+        const json = await res.json().catch(() => ({}));
+        setErrorOrden(json?.codigo === "sin_factura" ? tm("sin_factura") : tm("no_encontrada"));
         setPicking(null);
         setLineas([]);
         return;
@@ -164,6 +168,7 @@ export default function MercanciaNueva({
         odoo_picking_id: p.odoo_picking_id,
         odoo_picking_name: p.odoo_picking_name,
         contraparte: p.contraparte,
+        facturas: p.facturas || [],
       });
       setLineas(p.lineas || []);
       // La orden buscada es una de las que salen en el camion: se agrega
@@ -309,6 +314,14 @@ export default function MercanciaNueva({
                 {tm(tipo === "ingreso" ? "proveedor" : "cliente")}:{" "}
                 {picking.contraparte || "—"}
               </p>
+              {picking.facturas.length > 0 && (
+                <p className="text-xs text-violet-700/80 mt-0.5">
+                  {tm("factura_venta")}:{" "}
+                  <span className="font-mono">
+                    {picking.facturas.map((f) => f.numero).join(", ")}
+                  </span>
+                </p>
+              )}
             </div>
           )}
         </Card>

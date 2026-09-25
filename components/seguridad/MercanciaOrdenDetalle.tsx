@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, FileText, Loader2, Package, Send } from "lucide-react";
+import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, Card, SectionTitle, BotonPrimario } from "./mercancia-ui";
 
 /**
@@ -26,6 +27,7 @@ type Picking = {
   estado: string;
   origen: string | null;
   lineas: Linea[];
+  facturas?: { numero: string; fecha: string | null }[];
 };
 
 export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
@@ -36,22 +38,26 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
 
   const [picking, setPicking] = useState<Picking | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(false);
+  // Texto del error; "sin_factura" tiene su propio mensaje (issue #298).
+  const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     try {
       const res = await fetch(
         `/api/seguridad/mercancia/odoo/${encodeURIComponent(nombre)}?tipo=egreso`,
       );
-      if (!res.ok) throw new Error("fetch failed");
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json?.codigo === "sin_factura" ? tm("sin_factura") : to("error"));
+        return;
+      }
       setPicking(json.picking);
     } catch {
-      setError(true);
+      setError(to("error"));
     } finally {
       setCargando(false);
     }
-  }, [nombre]);
+  }, [nombre, tm, to]);
 
   useEffect(() => {
     void cargar();
@@ -73,7 +79,7 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
         ) : error || !picking ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 flex items-center gap-2.5">
             <AlertTriangle className="w-5 h-5 shrink-0" />
-            {to("error")}
+            {error || to("error")}
           </div>
         ) : (
           <>
@@ -86,6 +92,19 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
               </p>
               {picking.origen && (
                 <p className="text-xs text-slate-400 mt-1">{picking.origen}</p>
+              )}
+              {!!picking.facturas?.length && (
+                <>
+                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mt-3">
+                    {tm("factura_venta")}
+                  </p>
+                  <p className="text-sm text-slate-800 mt-0.5">
+                    <span className="font-mono">
+                      {picking.facturas.map((f) => f.numero).join(", ")}
+                    </span>
+                    <span className="text-slate-400"> · {fechaCorta(picking.facturas[0].fecha)}</span>
+                  </p>
+                </>
               )}
             </Card>
 
