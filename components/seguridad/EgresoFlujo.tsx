@@ -13,6 +13,7 @@ import {
   Package,
   PackageCheck,
   Play,
+  RefreshCw,
   ShieldCheck,
   Truck,
   XCircle,
@@ -23,8 +24,10 @@ import FirmasActa from "@/components/seguridad/FirmasActa";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import {
   RESPONSABLE,
+  enAlmacen,
   esEtapa,
   esTipoEntrega,
+  evaluarSeriales,
   etapasDelRecorrido,
   indiceEtapa,
   type Accion,
@@ -64,7 +67,19 @@ type Item = {
   cantidad_verificada: string | number | null;
   observacion: string | null;
   no_salio: number | boolean;
+  /** 1 = lleva serial en Odoo; null = todavia no se leyo (issue #299). */
+  lleva_serial?: number | null;
 };
+
+type Serial = {
+  id: number;
+  item_id: number;
+  serial: string;
+  verificado_at: string | null;
+};
+
+// Seriales que se ven de entrada por renglon; el resto, al desplegar.
+const SERIALES_VISIBLES = 6;
 
 type Movimiento = {
   id: number;
@@ -95,6 +110,7 @@ type Movimiento = {
   despachado: number | null;
   motivo_no_aprobado: string | null;
   cerrado_at: string | null;
+  seriales_leidos_at?: string | null;
 };
 
 type Calificacion = {
@@ -141,6 +157,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [mov, setMov] = useState<Movimiento | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [calificaciones, setCalificaciones] = useState<Calificacion[]>([]);
+  const [seriales, setSeriales] = useState<Serial[]>([]);
+  const [leyendoSeriales, setLeyendoSeriales] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +191,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
     const its = (json.items || []) as Item[];
     setItems(its);
     setCalificaciones(json.calificaciones || []);
+    setSeriales(json.seriales || []);
     const a: Record<number, string> = {};
     const p: Record<number, string> = {};
     const ns: Record<number, boolean> = {};
@@ -242,7 +261,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
         await cargar();
         return;
       }
-      if (!res.ok) throw new Error(json.error || tm("error"));
+      if (!res.ok) {
+        // Al asignar el despacho la API relee los seriales aunque no deje
+        // avanzar: se recarga para mostrar cuales faltan.
+        if (json.seriales_estado) await cargar();
+        throw new Error(json.error || tm("error"));
+      }
       aplicar(json);
       if (accion === "verificar_armado" && json.avanzo === false && json.armado) {
         setError(
@@ -256,6 +280,23 @@ export default function EgresoFlujo({ id }: { id: string }) {
       setError(e?.message || tm("error"));
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // "Actualizar desde Odoo" (issue #299): relee los seriales del picking.
+  const actualizarSeriales = async () => {
+    setError(null);
+    setAviso(null);
+    setLeyendoSeriales(true);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/seriales`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || tm("error"));
+      aplicar(json);
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+    } finally {
+      setLeyendoSeriales(false);
     }
   };
 
@@ -317,6 +358,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
     (it) => !noSalio[it.id] && porton[it.id] !== "" && Number(porton[it.id]) === Number(it.cantidad_cargada),
   );
   const faltaMotivoRenglon = items.some((it) => noSalio[it.id] && !motivos[it.id]?.trim());
+
+  // Seriales: los relee Almacen mientras el egreso es suyo; despues quedan
+  // fijos. El estado se calcula igual que en la API (evaluarSeriales).
+  const estadoSeriales = evaluarSeriales(items, seriales);
+  const hayConSerial = items.some((it) => Number(it.lleva_serial) === 1);
+  const puedeLeerSeriales =
+    enAlmacen(mov.etapa) && (rol === "almacen" || rol === "superadmin");
+  const serialesPorItem = new Map<number, Serial[]>();
+  for (const s of seriales) {
+    const lista = serialesPorItem.get(Number(s.item_id)) || [];
+    lista.push(s);
+    serialesPorItem.set(Number(s.item_id), lista);
+  }
 
   const contandoArmado = mov.etapa === "pre_despacho" && meToca;
   const contandoPorton = mov.etapa === "por_verificar" && meToca;
@@ -388,6 +442,36 @@ export default function EgresoFlujo({ id }: { id: string }) {
               {contandoArmado && <p className="text-xs text-slate-500 -mt-1 mb-3">{tf("armado_ayuda")}</p>}
               {contandoPorton && <p className="text-xs text-slate-500 -mt-1 mb-3">{tf("verificar_ayuda")}</p>}
 
+              {/* Seriales del picking (issue #299): Almacen los trae de Odoo y
+                  no pasa a Seguridad hasta que esten todos. */}
+              {(puedeLeerSeriales || hayConSerial) && (
+                <div className="mb-3 space-y-2">
+                  {puedeLeerSeriales && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <BotonSecundario
+                        onClick={actualizarSeriales}
+                        disabled={leyendoSeriales}
+                        icon={leyendoSeriales ? undefined : RefreshCw}
+                      >
+                        {leyendoSeriales && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {tf("seriales_actualizar")}
+                      </BotonSecundario>
+                      <span className="text-[11px] text-slate-400">
+                        {mov.seriales_leidos_at
+                          ? tf("seriales_leidos", { hora: hora(mov.seriales_leidos_at) || "—" })
+                          : tf("seriales_sin_leer")}
+                      </span>
+                    </div>
+                  )}
+                  {estadoSeriales.faltantes.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+                      <span>{tf("seriales_faltan")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className={`grid ${COLUMNAS} gap-x-2 items-center text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100`}>
                 <span>{tm("producto")}</span>
                 <span className="text-right">{tf("col_orden")}</span>
@@ -407,6 +491,20 @@ export default function EgresoFlujo({ id }: { id: string }) {
                       <div className="min-w-0">
                         <p className="text-sm text-slate-800 truncate">{it.producto}</p>
                         {it.codigo && <p className="text-[11px] font-mono text-slate-400 truncate">{it.codigo}</p>}
+                        {Number(it.lleva_serial) === 1 && (
+                          <p
+                            className={`text-[11px] font-medium mt-0.5 ${
+                              (serialesPorItem.get(it.id)?.length || 0) === orden
+                                ? "text-emerald-600"
+                                : "text-amber-700"
+                            }`}
+                          >
+                            {tf("seriales_conteo", {
+                              cargados: serialesPorItem.get(it.id)?.length || 0,
+                              esperados: orden,
+                            })}
+                          </p>
+                        )}
                       </div>
                       <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">{orden}</span>
                       <Celda
@@ -422,6 +520,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         onChange={(v) => setPorton((p) => ({ ...p, [it.id]: v }))}
                       />
                     </div>
+
+                    {!!serialesPorItem.get(it.id)?.length && (
+                      <ListaSeriales seriales={serialesPorItem.get(it.id)!} tf={tf} />
+                    )}
 
                     {/* "No salio" solo en el porton, que es donde se ve si salio. */}
                     {(contandoPorton || noSalio[it.id]) && (
@@ -776,6 +878,34 @@ function EstadoActual({
 
 function PanelPaso({ children }: { children: React.ReactNode }) {
   return <Card className="space-y-3 border-violet-200">{children}</Card>;
+}
+
+/** Chips de seriales de un renglon; con muchos, los primeros y el resto al desplegar. */
+function ListaSeriales({ seriales, tf }: { seriales: Serial[]; tf: (k: string, v?: any) => string }) {
+  const [abierto, setAbierto] = useState(false);
+  const visibles = abierto ? seriales : seriales.slice(0, SERIALES_VISIBLES);
+  const resto = seriales.length - visibles.length;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {visibles.map((s) => (
+        <span
+          key={s.id}
+          className="px-1.5 py-0.5 rounded-md bg-slate-100 text-[11px] font-mono text-slate-600"
+        >
+          {s.serial}
+        </span>
+      ))}
+      {resto > 0 && (
+        <button
+          type="button"
+          onClick={() => setAbierto(true)}
+          className="px-1.5 py-0.5 rounded-md text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)] hover:opacity-75"
+        >
+          {tf("seriales_mas", { n: resto })}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Dato({ etiqueta, valor }: { etiqueta: string; valor: string | null | undefined }) {

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
+import { leerSerialesEgreso } from "@/lib/seguridad/seriales";
 
 /**
  * Documentos de Odoo para la seccion Mercancia.
@@ -27,6 +28,8 @@ export type LineaPicking = {
   producto: string;
   codigo: string | null;
   cantidad_cargada: number;
+  /** Solo egreso: el producto lleva serial en Odoo (`tracking = 'serial'`). */
+  lleva_serial?: boolean;
 };
 
 /** Factura de cliente publicada de la orden de venta de un picking (issue #298). */
@@ -150,11 +153,14 @@ export async function cargarMovimiento(id: number) {
   // Facturas de venta traidas de Odoo al registrar (issue #298). Aparte de
   // `facturas`, que en el egreso son las ordenes de despacho del camion.
   const facturas_venta = parsearLista(fila.facturas_venta_json);
+  // Seriales esperados, leidos del picking de Odoo (issue #299).
+  const seriales = fila.tipo === "egreso" ? await leerSerialesEgreso(id) : [];
 
   return {
     movimiento: { ...fila, facturas, almacenistas, facturas_venta },
     items: items.rows as any[],
     calificaciones: calif.rows as any[],
+    seriales,
   };
 }
 
@@ -370,9 +376,11 @@ async function leerPickingEgreso(
     "stock.move.line",
     "search_read",
     [[["picking_id", "=", p.id]]],
-    { fields: ["product_id", "quantity"], limit: 500 },
+    { fields: ["product_id", "quantity", "tracking"], limit: 500 },
   );
 
+  // Los seriales NO se leen aca: en un picking "Listo" todavia no estan (ver
+  // lib/seguridad/seriales.ts). Solo se anota que producto los lleva.
   const lineas: LineaPicking[] = agruparLineas(
     (lineas_raw || []).map((l: any) => {
       const etiqueta = l.product_id?.[1] || "";
@@ -382,6 +390,7 @@ async function leerPickingEgreso(
         producto,
         codigo,
         cantidad_cargada: Number(l.quantity || 0),
+        lleva_serial: l.tracking === "serial",
       };
     }),
   );
