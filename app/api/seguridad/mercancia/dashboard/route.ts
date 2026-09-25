@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { sqlAspecto } from "@/lib/seguridad/calificaciones";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,9 @@ export async function GET(request: NextRequest) {
     if (cidsError) return cidsError;
 
     const cidsWhere = cids !== null ? "AND cids = ?" : "";
+    // Aspecto de cada nota (issue #302): picking o despacho. Las de antes,
+    // con una sola nota, cuentan como despacho.
+    const aspecto = await sqlAspecto("c");
     const cidsParam = cids !== null ? [cids] : [];
 
     const [hoy, ayer, pendientes, descuadres, calif, recientes, topAlmacenistas, porEtapa] =
@@ -51,7 +55,9 @@ export async function GET(request: NextRequest) {
           cidsParam,
         ),
         query(
-          `SELECT AVG(c.calificacion) AS promedio, COUNT(*) AS total
+          `SELECT AVG(c.calificacion) AS promedio, COUNT(*) AS total,
+                  AVG(CASE WHEN ${aspecto} = 'picking' THEN c.calificacion END) AS promedio_picking,
+                  AVG(CASE WHEN ${aspecto} = 'despacho' THEN c.calificacion END) AS promedio_despacho
              FROM seguridad_calificaciones c
              JOIN seguridad_mercancia m ON m.id = c.relacionado_id
             WHERE c.relacionado_a = 'mercancia' AND m.tipo = 'egreso'
@@ -68,17 +74,27 @@ export async function GET(request: NextRequest) {
             LIMIT 8`,
           cidsParam,
         ),
+        // Ranking del mes (issue #302): por almacenista y por aspecto. Con dos
+        // notas por egreso, "egresos" es DISTINCT: antes COUNT(*) contaba
+        // notas. Con novedades = Seguridad no aprobo o hubo descuadre.
         query(
           `SELECT c.almacenista_nombre AS nombre,
-                  COUNT(*) AS egresos,
+                  COUNT(DISTINCT c.relacionado_id) AS egresos,
                   AVG(c.calificacion) AS promedio,
-                  COUNT(c.id) AS calificaciones
+                  COUNT(c.id) AS calificaciones,
+                  AVG(CASE WHEN ${aspecto} = 'picking' THEN c.calificacion END) AS promedio_picking,
+                  SUM(${aspecto} = 'picking') AS n_picking,
+                  AVG(CASE WHEN ${aspecto} = 'despacho' THEN c.calificacion END) AS promedio_despacho,
+                  SUM(${aspecto} = 'despacho') AS n_despacho,
+                  COUNT(DISTINCT CASE WHEN m.estado = 'descuadre' OR m.aprobado = 0
+                                      THEN c.relacionado_id END) AS con_novedades
              FROM seguridad_calificaciones c
              JOIN seguridad_mercancia m ON m.id = c.relacionado_id
             WHERE c.relacionado_a = 'mercancia' AND m.tipo = 'egreso'
+              AND c.created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')
               ${cids !== null ? "AND m.cids = ?" : ""}
             GROUP BY c.almacenista_nombre
-            ORDER BY promedio DESC
+            ORDER BY promedio DESC, calificaciones DESC
             LIMIT 5`,
           cidsParam,
         ),
@@ -107,6 +123,8 @@ export async function GET(request: NextRequest) {
           ? Number((calif.rows[0] as any).promedio)
           : null,
         total_calificaciones_mes: Number((calif.rows[0] as any)?.total || 0),
+        promedio_picking: numeroONull((calif.rows[0] as any)?.promedio_picking),
+        promedio_despacho: numeroONull((calif.rows[0] as any)?.promedio_despacho),
       },
       egresos_recientes: recientes.rows,
       por_etapa: Object.fromEntries(
@@ -117,10 +135,19 @@ export async function GET(request: NextRequest) {
         egresos: Number(r.egresos),
         promedio: Number(r.promedio),
         calificaciones: Number(r.calificaciones),
+        promedio_picking: numeroONull(r.promedio_picking),
+        n_picking: Number(r.n_picking || 0),
+        promedio_despacho: numeroONull(r.promedio_despacho),
+        n_despacho: Number(r.n_despacho || 0),
+        con_novedades: Number(r.con_novedades || 0),
       })),
     });
   } catch (error: any) {
     console.error("Error cargando dashboard de mercancia:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+function numeroONull(v: unknown): number | null {
+  return v === null || v === undefined ? null : Number(v);
 }

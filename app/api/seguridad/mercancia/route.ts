@@ -201,6 +201,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errores.join("; ") }, { status: 400 });
     }
 
+    // Quien arma tiene que estar en el personal de Almacen de la sucursal,
+    // igual que quien despacha (issue #302): se le califica el picking, y un
+    // nombre escrito a mano no se suma a su historial.
+    const armadoEnCatalogo = await query(
+      `SELECT id FROM seguridad_catalogo_almacenistas
+        WHERE nombre = ? ${cids !== null ? "AND cids = ?" : ""} LIMIT 1`,
+      cids !== null ? [almacenistaArmado, cids] : [almacenistaArmado],
+    );
+    if (armadoEnCatalogo.rows.length === 0) {
+      return NextResponse.json(
+        { error: "El almacenista del armado no esta en el personal de Almacen" },
+        { status: 400 },
+      );
+    }
+
     // La orden se relee de Odoo por su id en vez de creerle al navegador
     // (issue #298): de ahi salen el cliente, los renglones y la factura. Asi
     // no se registra una orden sin facturar aunque alguien arme el POST a

@@ -2553,7 +2553,9 @@
         "kpi_promedio": "Average rating",
         "kpi_total_calif": "{count, plural, =1 {# rating this month} other {# ratings this month}}",
         "recientes": "Recent outbound",
-        "top_almacenistas": "Top rated",
+        "top_almacenistas": "Top rated this month",
+        "kpi_por_aspecto": "Picking {picking} · Dispatch {despacho}",
+        "egresos_novedades": "{egresos, plural, =1 {# outbound} other {# outbounds}} · {novedades, plural, =0 {no issues} other {# with issues}}",
         "ver_todos": "View all",
         "ver_ordenes": "View pending orders",
         "vacio": "No outbound movements registered yet."
@@ -2687,6 +2689,22 @@
         "no_despachar": "Do not dispatch",
         "motivo_no_aprobado": "Reason for not approving (required)",
         "confirmar_no_aprobado": "Record decision",
+        "aspecto": {
+          "picking": "Picking",
+          "despacho": "Dispatch"
+        },
+        "calificar_picking": "Picking — {name}",
+        "calificar_picking_ayuda": "Assembled complete, nothing missing or extra, with the right serial numbers.",
+        "calificar_despacho": "Dispatch — {name}",
+        "calificar_despacho_ayuda": "Handover, packing and order at C4.",
+        "novedades_titulo": "Issues found at verification",
+        "novedad": {
+          "falta": "Missing: {contado} of {esperado}",
+          "sobra": "Extra: {contado} of {esperado}",
+          "no_salio": "Did not leave"
+        },
+        "no_aprobado_sin_renglones": "Security did not approve this outbound.",
+        "comentario_picking_obligatorio": "There were issues: explain why picking deserves {n} stars.",
         "calificar_cerrar": "Rate and close",
         "resultado": {
           "aprobado": "Approved and dispatched",
