@@ -2648,10 +2648,13 @@
         },
         "tipo_entrega": "Delivery type",
         "entrega": {
-          "encomienda": "Courier shipment",
-          "puerta": "Door delivery"
+          "ruta": "Route",
+          "puerta": "Customer pickup",
+          "encomienda": "Courier shipment"
         },
-        "entrega_ayuda": "Courier shipments go through packing; door delivery goes straight to dispatch.",
+        "entrega_ayuda": "Courier shipments go through packing; route and customer pickup go straight to dispatch. For a route, the driver and vehicle are set when assigning the dispatch.",
+        "entrega_todas": "All deliveries",
+        "exportar_excel": "Export Excel",
         "almacenista_armado": "Assembly worker",
         "almacenista_despacho": "Dispatch worker",
         "recorrido": "Progress",
@@ -2722,7 +2725,9 @@
         "en_curso": "Outbound in progress",
         "flujo_anterior": "Record from the previous flow",
         "cancelar": "Back",
-        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate."
+        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate.",
+        "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
+        "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }
     }
   },
