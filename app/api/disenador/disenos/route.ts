@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO, esCategoriaValida } from "@/lib/disenos/categorias";
+import { COLUMNA_FECHA, aISO, fechaValida } from "@/lib/disenos/fecha";
 import { NextRequest, NextResponse } from "next/server";
 
 // El matcher del middleware excluye /api, asi que el guard va aqui.
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest) {
     const category = url.searchParams.get("category") || "";
     // Papelera: los diseños borrados no se eliminan, se marcan (deleted_at).
     const papelera = url.searchParams.get("papelera") === "1";
+    // `?dia=YYYY-MM-DD`: los diseños de ese día, para el detalle del calendario.
+    const dia = fechaValida(url.searchParams.get("dia"));
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limit") || "24", 10)));
     const offset = (page - 1) * limit;
@@ -44,6 +47,10 @@ export async function GET(request: NextRequest) {
     }
     // "sin_categoria" es el filtro para los diseños viejos, cargados antes de
     // que la categoría fuera obligatoria.
+    if (dia) {
+      where += ` AND ${COLUMNA_FECHA} = ?`;
+      params.push(dia);
+    }
     if (category === "sin_categoria") {
       where += " AND (d.category IS NULL OR d.category = '')";
     } else if (category) {
@@ -59,10 +66,10 @@ export async function GET(request: NextRequest) {
 
     const result = await query(
       `SELECT d.id, d.title, d.folder, d.category, d.created_by, d.created_at,
-              d.deleted_at, d.deleted_by,
+              d.deleted_at, d.deleted_by, ${COLUMNA_FECHA} AS design_date,
               CONCAT('/api/disenador/disenos/image/', d.id) AS image_path
        FROM designer_designs d ${where}
-       ORDER BY ${papelera ? "d.deleted_at" : "d.created_at"} DESC
+       ORDER BY ${papelera ? "d.deleted_at" : dia ? `${COLUMNA_FECHA} DESC, d.id` : "d.created_at"} DESC
        LIMIT ${limit} OFFSET ${offset}`,
       params
     );
@@ -86,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      designs: result.rows,
+      designs: (result.rows || []).map((r: any) => ({ ...r, design_date: aISO(r.design_date) })),
       folders,
       categorias: CATEGORIAS_DISENO,
       conteoPorCategoria,
@@ -110,6 +117,9 @@ export async function GET(request: NextRequest) {
 //   folders    -> JSON string[] alineado por índice con images
 //   categories -> JSON string[] alineado por índice con images (obligatorio,
 //                 ids de lib/disenos/categorias.ts)
+//   dates      -> JSON string[] "YYYY-MM-DD" alineado por índice (opcional):
+//                 el día del diseño, que es el que cuenta para los KPIs. Sin
+//                 él, queda el día de la subida.
 //   created_by
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
@@ -132,6 +142,7 @@ export async function POST(request: NextRequest) {
     let titles: string[] = [];
     let folders: string[] = [];
     let categories: string[] = [];
+    let dates: string[] = [];
     try {
       titles = JSON.parse((formData.get("titles") as string) || "[]");
     } catch { titles = []; }
@@ -141,6 +152,9 @@ export async function POST(request: NextRequest) {
     try {
       categories = JSON.parse((formData.get("categories") as string) || "[]");
     } catch { categories = []; }
+    try {
+      dates = JSON.parse((formData.get("dates") as string) || "[]");
+    } catch { dates = []; }
 
     // La categoría es obligatoria: se valida ANTES de insertar, para no dejar
     // media carga guardada y media rechazada.
@@ -162,10 +176,14 @@ export async function POST(request: NextRequest) {
       const title = (titles[i] || file.name.replace(/\.[^.]+$/, "") || "Sin título").slice(0, 255);
       const folder = (folders[i] || "").slice(0, 255) || null;
 
+      // Sin fecha válida se usa el día de la subida (NOW en la base), que es
+      // el comportamiento anterior.
+      const designDate = fechaValida(dates[i]);
+
       await query(
-        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [title, folder, categories[i], buffer, mime, created_by]
+        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by, design_date)
+         VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURDATE()))`,
+        [title, folder, categories[i], buffer, mime, created_by, designDate]
       );
       inserted++;
     }
@@ -210,6 +228,14 @@ export async function PATCH(request: NextRequest) {
       }
       sets.push("category = ?");
       params.push(body.category);
+    }
+    // Fecha del diseño: la cambia el formulario de edición y, sobre todo,
+    // arrastrar el flyer a otro día en el calendario.
+    if (body.design_date !== undefined) {
+      const fecha = fechaValida(body.design_date);
+      if (!fecha) return NextResponse.json({ error: "Fecha inválida" }, { status: 400 });
+      sets.push("design_date = ?");
+      params.push(fecha);
     }
     if (sets.length === 0) {
       return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });

@@ -1,5 +1,6 @@
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { callOdooRPC } from "@/lib/odoo";
+import { fechaDePago } from "@/lib/cxc/fechaConfirmacion";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
@@ -170,49 +171,63 @@ export async function calcularEfectividad(
   };
 }
 
+
 // ═══════════════════════════════════════════════════════════════════════════
-// Efectividad de cobranza = COBRADO del mes ÷ FACTURADO del mes (2026-09-22)
+// Efectividad de cobranza = Índice de Efectividad de Cobranza (CEI) (2026-09-24)
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Definición del usuario: la efectividad de cobranza mide lo cobrado contra lo
-// facturado. Todo el dinero que entró en el período (de cualquier factura,
-// también de meses anteriores) ÷ lo facturado en el período, ambos CON IVA:
-// dice si la cobranza acompaña el ritmo de facturación.
+//              cobrado del período
+//   CEI = ─────────────────────────────────────────────────────────── × 100
+//         CxC al inicio + facturado del período − CxC final NO vencida
 //
-//  - Facturado: facturas − notas de crédito publicadas con `invoice_date` en
-//    el período (`amount_total_signed`, con IVA).
-//  - Cobrado: `obtenerCobros` (lib/cxc/cobros.ts), la fuente única de cobrado:
-//    banco/caja, fechado por la confirmación del pago. Es el mismo "Cobrado"
-//    de Contado/Crédito.
-//  - El cliente interno Supricom queda fuera de los dos lados.
-//  - Mes en curso: los dos van al día de hoy, así que el cociente ya es
-//    comparable (no hace falta prorratear).
-//  - Puede pasar de 100%: un mes en que se cobra deuda vieja por encima de lo
-//    facturado.
+// El denominador es lo que se PODÍA cobrar en el período: toda la cartera que
+// había al empezar más lo facturado, menos lo que al cerrar todavía no vencía
+// (eso no era exigible). 100% = se cobró todo lo exigible. Reemplaza a
+// "cobrado ÷ facturado", que dependía de cuánto se facturó en el mes (un mes de
+// mucha facturación bajaba el % aunque la cobranza fuera igual de buena).
+//
+//  - Cobrado: PAGOS REGISTRADOS en Odoo (`account.payment` de cliente,
+//    confirmados), fechados por la confirmación (`payment_registration_date`,
+//    ver lib/cxc/fechaConfirmacion.ts), en diarios de banco/caja sin
+//    "retenido", sin los pagos del 25% de IVA ("25%" en la descripción).
+//    Es el "Recibido" de la pestaña Cobros de Pago de Clientes:
+//    incluye anticipos aún no aplicados a facturas, así que puede pasar de 100%.
+//  - Facturado: facturas − notas de crédito con `invoice_date` en el período
+//    (`amount_total_signed`, con IVA).
+//  - CxC al inicio / al final: cartera reconstruida en el corte
+//    (lib/cxc/seriesSemanales.ts → carteraEn), mismo método que Cartera Vencida.
+//  - Mes en curso: el corte final es hoy.
+//  - El cliente interno Supricom queda fuera de todo.
 //
 // `calcularEfectividad` (arriba: cobrado ÷ lo que VENCÍA en el mes) sigue
-// existiendo para "Cobros esperados vs realizados" de Salud financiera, que
-// es otro indicador.
+// existiendo para "Cobros esperados vs realizados" de Salud financiera.
 
-export interface EfectividadFacturadoResultado {
-  /** Cobrado ÷ facturado × 100. `null` si no hubo facturación. */
+export interface CEIResultado {
+  /** CEI en %. `null` si no había nada exigible. */
   value: number | null;
+  /** Pagos registrados en el período. */
   cobrado: number;
   facturado: number;
-  /** De lo cobrado: facturas emitidas en el mismo período. */
-  cobradoDeFacturasDelMes: number;
-  /** De lo cobrado: facturas de períodos anteriores (deuda vieja). */
-  cobradoDeAnteriores: number;
+  carteraInicial: number;
+  carteraFinal: number;
+  /** Parte de la cartera final que todavía no vencía en el corte. */
+  carteraFinalNoVencida: number;
+  /** Denominador: carteraInicial + facturado − carteraFinalNoVencida. */
+  exigible: number;
+  /** Cantidad de pagos registrados. */
+  pagos: number;
   /** Cantidad de facturas (sin notas de crédito) del período. */
   facturas: number;
-  /** true mientras el mes no cierra: ambos lados van al día de hoy. */
+  /** true mientras el mes no cierra: el corte final es hoy. */
   parcial: boolean;
   semana: (string | null)[];
 }
 
+type CarteraEn = (corte: Date) => { total: number; vencido: number };
+
 const esSupricom = (nombre: string) => nombre.toLowerCase().includes("supricom");
 
-async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string, dominioExtra: any[] = []) {
+async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string) {
   const out: any[] = [];
   for (let offset = 0; ; offset += 5000) {
     const page = (await callOdooRPC<any[]>(
@@ -224,7 +239,6 @@ async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: st
         ["company_id", "in", companyIds],
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
-        ...dominioExtra,
       ]],
       { fields: ["id", "name", "partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed"], order: "id asc", limit: 5000, offset },
     )) || [];
@@ -234,52 +248,108 @@ async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: st
   return out.filter((f) => f.partner_id && !esSupricom(f.partner_id[1] || ""));
 }
 
-export interface DetalleEfectividadFacturado {
-  resumen: EfectividadFacturadoResultado;
-  /** Por cliente: facturado y cobrado del período. */
+/** Pagos de cliente confirmados en banco/caja, con su fecha de confirmación. */
+async function pagosRegistrados(companyIds: number[], desde: string, hasta: string) {
+  const out: any[] = [];
+  for (let offset = 0; ; offset += 5000) {
+    const page = (await callOdooRPC<any[]>(
+      "account.payment",
+      "search_read",
+      [[
+        ["payment_type", "=", "inbound"],
+        ["partner_type", "=", "customer"],
+        ["state", "=", "posted"],
+        ["company_id", "in", companyIds],
+        ["journal_id.type", "in", ["bank", "cash"]],
+        ["journal_id.name", "not ilike", "retenido"],
+        // "25% de iva factura …": el 25% del IVA que el cliente paga aparte en
+        // Bs porque retiene el 75%. Somos agentes de retención y no cuenta
+        // como cobro. `\%` = % literal (en ilike un % suelto es comodín).
+        ["payment_description", "not ilike", "25\\%"],
+        // Confirmación en rango; sin confirmación, create_date en rango.
+        "|",
+        "&", ["payment_registration_date", ">=", desde], ["payment_registration_date", "<=", hasta],
+        "&", "&", ["payment_registration_date", "=", false],
+        ["create_date", ">=", `${desde} 00:00:00`], ["create_date", "<=", `${hasta} 23:59:59`],
+      ]],
+      { fields: ["id", "partner_id", "salesperson_id", "payment_registration_date", "create_date", "amount_company_currency_signed"], order: "id asc", limit: 5000, offset },
+    )) || [];
+    out.push(...page);
+    if (page.length < 5000) break;
+  }
+  return out
+    .filter((p) => !esSupricom(p.partner_id?.[1] || ""))
+    .map((p) => ({
+      fecha: fechaDePago(p) || desde,
+      monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
+      partnerId: p.partner_id?.[0] as number | undefined,
+      partnerName: p.partner_id?.[1] || "",
+      vendedor: p.salesperson_id?.[1] || "",
+    }));
+}
+
+/** Fin del día anterior: la cartera "al inicio" de `d`. */
+const antesDe = (d: Date) => new Date(d.getTime() - 1);
+
+/** CEI con sus componentes. Exportado para probarlo sin Odoo. */
+export function cei(cobrado: number, carteraInicial: number, facturado: number, finalNoVencida: number) {
+  const exigible = carteraInicial + facturado - finalNoVencida;
+  return { exigible, value: exigible > 0 ? Math.round((cobrado / exigible) * 10000) / 100 : null };
+}
+
+export interface DetalleCEI {
+  resumen: CEIResultado;
+  /** Por cliente: facturado y pagos registrados del período. */
   clientes: { partnerId: number; nombre: string; vendedor: string; facturado: number; cobrado: number }[];
 }
 
-export async function calcularEfectividadFacturado(
+export async function calcularCEI(
   companyIds: number[],
   monthStart: Date,
   monthEnd: Date,
   semanas: Semana[],
   hoy: Date,
-): Promise<EfectividadFacturadoResultado> {
-  return (await detalleEfectividadFacturado(companyIds, monthStart, monthEnd, semanas, hoy)).resumen;
+  carteraEn: CarteraEn,
+): Promise<CEIResultado> {
+  return (await detalleCEI(companyIds, monthStart, monthEnd, semanas, hoy, carteraEn)).resumen;
 }
 
-export async function detalleEfectividadFacturado(
+export async function detalleCEI(
   companyIds: number[],
   monthStart: Date,
   monthEnd: Date,
   semanas: Semana[],
   hoy: Date,
-): Promise<DetalleEfectividadFacturado> {
+  carteraEn: CarteraEn,
+): Promise<DetalleCEI> {
   const desde = iso(monthStart);
   const hasta = iso(monthEnd);
-  const [facturas, cobrosTodos] = await Promise.all([
+  const [facturas, pagos] = await Promise.all([
     facturasDelPeriodo(companyIds, desde, hasta),
-    obtenerCobros(companyIds, { desde, hasta }),
+    pagosRegistrados(companyIds, desde, hasta),
   ]);
-  const cobros = cobrosTodos.filter((c) => !c.interno);
 
-  const facturado = facturas.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
-  const cobrado = cobros.reduce((s, c) => s + c.monto, 0);
-  const cobradoDeFacturasDelMes = cobros
-    .filter((c) => c.fechaFactura && c.fechaFactura >= desde && c.fechaFactura <= hasta)
-    .reduce((s, c) => s + c.monto, 0);
+  const sumaFacturado = (a: string, b: string) => facturas
+    .filter((f) => f.invoice_date >= a && f.invoice_date <= b)
+    .reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
+  const sumaPagos = (a: string, b: string) => pagos
+    .filter((p) => p.fecha >= a && p.fecha <= b)
+    .reduce((s, p) => s + p.monto, 0);
 
-  // Fila semanal: cobrado de la semana ÷ facturado de la semana.
+  const cobrado = sumaPagos(desde, hasta);
+  const facturado = sumaFacturado(desde, hasta);
+  const inicial = carteraEn(antesDe(monthStart));
+  const final = carteraEn(hoy < monthEnd ? hoy : monthEnd);
+  const finalNoVencida = final.total - final.vencido;
+  const { exigible, value } = cei(cobrado, inicial.total, facturado, finalNoVencida);
+
+  // Fila semanal: el mismo CEI con la semana como período.
   const semana: (string | null)[] = semanas.map((s) => {
     if (s.inicio > hoy) return null;
     const a = iso(s.inicio), b = iso(s.fin);
-    const fac = facturas.filter((f) => f.invoice_date >= a && f.invoice_date <= b)
-      .reduce((acc, f) => acc + (Number(f.amount_total_signed) || 0), 0);
-    if (fac <= 0) return null;
-    const cob = cobros.filter((c) => c.fecha >= a && c.fecha <= b).reduce((acc, c) => acc + c.monto, 0);
-    return `${Math.round((cob / fac) * 100)}%`;
+    const fin = carteraEn(hoy < s.fin ? hoy : s.fin);
+    const r = cei(sumaPagos(a, b), carteraEn(antesDe(s.inicio)).total, sumaFacturado(a, b), fin.total - fin.vencido);
+    return r.value === null ? null : `${Math.round(r.value)}%`;
   });
 
   // Por cliente.
@@ -291,16 +361,19 @@ export async function detalleEfectividadFacturado(
     return c;
   };
   facturas.forEach((f) => { cliente(f.partner_id[0], f.partner_id[1] || "", f.invoice_user_id?.[1] || "").facturado += Number(f.amount_total_signed) || 0; });
-  cobros.forEach((c) => { if (c.partnerId) cliente(c.partnerId, c.partnerName, c.vendedorName).cobrado += c.monto; });
+  pagos.forEach((p) => { if (p.partnerId) cliente(p.partnerId, p.partnerName, p.vendedor).cobrado += p.monto; });
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
     resumen: {
-      value: facturado > 0 ? Math.round((cobrado / facturado) * 10000) / 100 : null,
+      value,
       cobrado: r2(cobrado),
       facturado: r2(facturado),
-      cobradoDeFacturasDelMes: r2(cobradoDeFacturasDelMes),
-      cobradoDeAnteriores: r2(cobrado - cobradoDeFacturasDelMes),
+      carteraInicial: r2(inicial.total),
+      carteraFinal: r2(final.total),
+      carteraFinalNoVencida: r2(finalNoVencida),
+      exigible: r2(exigible),
+      pagos: pagos.length,
       facturas: facturas.filter((f) => f.move_type === "out_invoice").length,
       parcial: hoy <= monthEnd,
       semana,

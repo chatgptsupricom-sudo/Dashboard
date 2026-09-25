@@ -46,6 +46,7 @@ import {
   Map,
   MapPin,
   Megaphone,
+  MessageSquareHeart,
   Package,
   Palette,
   PieChart,
@@ -250,6 +251,8 @@ export function Sidebar({
     { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    // Respuestas de la encuesta pública a clientes (landing "Queremos conocer su opinión").
+    { id: "opiniones", label: t("opiniones"), icon: MessageSquareHeart, slug: "/opiniones" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
     // Packing lists: Compras los carga y Almacen los recibe (antes iban por correo).

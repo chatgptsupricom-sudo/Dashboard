@@ -30,10 +30,11 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // Cobrado del mes ÷ facturado del mes (lib/cxc/efectividad.ts).
+  // CEI: pagos registrados ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
   efectividad: {
     value: number | null; meta: number; cobrado: number; facturado: number;
-    cobradoDeFacturasDelMes: number; cobradoDeAnteriores: number; facturas: number; parcial: boolean;
+    carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
+    pagos: number; facturas: number; parcial: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
@@ -254,8 +255,8 @@ export default function CxCReport() {
               subtitle={
                 `${t("cobrado_mes")}: ${formatCurrency(data.kpis.efectividad.cobrado)} / ${t("facturado_mes")}: ${formatCurrency(data.kpis.efectividad.facturado)}`
               }
-              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
-              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
+              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
+              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
               icon={<TrendingUp size={20} />}
               weight="35%"
             />

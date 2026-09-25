@@ -23,7 +23,9 @@ import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
  *    cargado a mano) se usa la fecha del asiento. Ver lib/cxc/fechaConfirmacion.ts.
  *  - Diario: tipo bank/cash y sin "retenido" en el nombre. Retenciones de IVA,
  *    descuentos, ajustes y notas de crédito aplicadas NO son cobro: bajan el
- *    saldo, pero no entró dinero.
+ *    saldo, pero no entró dinero. Tampoco los pagos del 25% de IVA ("25%" en
+ *    la descripción del pago): somos agentes de retención. Solo lo aplica el
+ *    dominio con `soloBanco` (el único modo que se usa hoy).
  *  - Nada se filtra por vendedor ni por partner: cada pantalla decide (los KPIs
  *    sacan a los internos, Contado/Crédito tiene su toggle de asistentes).
  *
@@ -74,6 +76,13 @@ export interface OpcionesCobros {
   hasta: Date | string;
   /** true (default): solo diarios de banco/caja. false: también retenciones y ajustes. */
   soloBanco?: boolean;
+  /**
+   * Desglose de `soloBanco` para los checks de Contado/Crédito. Sin valor
+   * heredan `soloBanco`. excluirRetenciones: fuera diarios que no son
+   * banco/caja o dicen "retenido". excluirIva25: fuera pagos del 25% de IVA.
+   */
+  excluirRetenciones?: boolean;
+  excluirIva25?: boolean;
   /** Dominio extra sobre la FACTURA (`account.move`), p.ej. vencimiento o partner. */
   dominioFactura?: any[];
 }
@@ -133,6 +142,8 @@ async function leerPorIds(model: string, ids: number[], fields: string[]): Promi
 
 export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros): Promise<Cobro[]> {
   const soloBanco = opts.soloBanco !== false;
+  const excluirRetenciones = opts.excluirRetenciones ?? soloBanco;
+  const excluirIva25 = opts.excluirIva25 ?? soloBanco;
   const dominio: any[] = [
     ["company_id", "in", companyIds],
     ["debit_move_id.move_id.move_type", "in", TIPOS_FACTURA],
@@ -140,10 +151,19 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
     ...dominioFecha("<=", iso(opts.hasta)),
   ];
   if (opts.desde) dominio.push(...dominioFecha(">=", iso(opts.desde)));
-  if (soloBanco) {
+  if (excluirRetenciones) {
     dominio.push(
       ["credit_move_id.journal_id.type", "in", ["bank", "cash"]],
       ["credit_move_id.journal_id.name", "not ilike", "retenido"],
+    );
+  }
+  if (excluirIva25) {
+    dominio.push(
+      // Pagos del 25% de IVA ("25% de iva factura …"): lo que el cliente paga
+      // aparte porque retiene el 75%. Somos agentes de retención, no es cobro.
+      // `\%` = % literal. Los asientos que no son un pago pasan.
+      "|", ["credit_move_id.payment_id", "=", false],
+      ["credit_move_id.payment_id.payment_description", "not ilike", "25\\%"],
     );
   }
   if (opts.dominioFactura?.length) dominio.push(...prefijar(opts.dominioFactura, "debit_move_id.move_id."));
@@ -176,7 +196,7 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
     ]),
     leerPorIds("account.move", Array.from(pagoMoveIds), ["id", "name", "state"]),
     fechasDePagos(lineas.map((l) => idDe(l.payment_id)).filter(Boolean) as number[]),
-    soloBanco
+    excluirRetenciones
       ? Promise.resolve([] as any[])
       : leerPorIds("account.journal", lineas.map((l) => idDe(l.journal_id)) as number[], ["id", "type", "name"]),
   ]);
@@ -198,7 +218,7 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
     const journalId = idDe(cr.journal_id);
     const journalName = nombreDe(cr.journal_id) || "Sin diario";
     let esBanco = true;
-    if (!soloBanco) {
+    if (!excluirRetenciones) {
       const j = journalId !== undefined ? diario.get(journalId) : undefined;
       esBanco = !!j && (j.type === "bank" || j.type === "cash") && !journalName.toLowerCase().includes("retenido");
     }
