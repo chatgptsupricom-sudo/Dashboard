@@ -79,6 +79,20 @@ async function exportar(request: NextRequest) {
           return (lista.length ? lista : [f.factura_numero].filter(Boolean)).join(", ");
         },
       },
+      // Factura de venta traida de Odoo al registrar el egreso (#298). Sin la
+      // migracion sql/egreso_facturas_venta.sql la columna no existe y sale vacia.
+      {
+        header: "Factura de venta",
+        key: "facturas_venta_json",
+        width: 22,
+        valor: (f) => parsearLista(f.facturas_venta_json).join(", "),
+      },
+      {
+        header: "Fecha de factura",
+        key: "factura_venta_fecha",
+        width: 14,
+        valor: (f) => fechaExcel(f.factura_venta_fecha),
+      },
       { header: "Tipo de entrega", key: "tipo_entrega", width: 18, valor: (f) => (esTipoEntrega(f.tipo_entrega) ? etiqueta("entrega", f.tipo_entrega) : "") },
       { header: "Chofer", key: "chofer_nombre", width: 24 },
       { header: "Placa", key: "placa_vehiculo", width: 14 },
