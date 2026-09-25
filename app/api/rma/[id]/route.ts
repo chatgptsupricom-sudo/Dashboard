@@ -3,6 +3,12 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoReparado } from "@/lib/rma/emailReparado";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import {
+  espejarEnProductoUnico,
+  leerProductos,
+  limpiarDespachoProductos,
+  marcarProductosDespachados,
+} from "@/lib/rma/items";
 
 export async function GET(
   request: NextRequest,
@@ -68,11 +74,21 @@ export async function GET(
       adjuntos = [];
     }
 
+    // Productos del envío (issue #331). Aditivo: el panel todavía lee los
+    // campos del caso; [] si no se corrió la migración.
+    let items: any[] = [];
+    try {
+      items = await leerProductos(caseData.id);
+    } catch (e: any) {
+      console.warn("rma_case_items no disponible:", e?.message);
+    }
+
     return NextResponse.json({
       success: true,
       case: caseData,
       history: historyResult.rows,
       adjuntos,
+      items,
     });
   } catch (error: any) {
     console.error("Error fetching RMA case:", error);
@@ -133,6 +149,7 @@ export async function PUT(
         `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
         [id],
       );
+      await marcarProductosDespachados(casoActual.id);
       return NextResponse.json({ success: true });
     }
 
@@ -157,6 +174,7 @@ export async function PUT(
          WHERE id = ?`,
         [id],
       );
+      await limpiarDespachoProductos(casoActual.id);
       return NextResponse.json({ success: true });
     }
 
@@ -193,6 +211,20 @@ export async function PUT(
 
     values.push(id);
     await query(`UPDATE rma_cases SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    // Con un solo producto en el envío, el caso y el producto son lo mismo:
+    // lo editado se copia al producto (issue #331).
+    await espejarEnProductoUnico(casoActual.id, {
+      product_code,
+      hardware,
+      brand,
+      model,
+      serial_quantity,
+      reported_fault,
+      status: status && status !== oldStatus ? status : undefined,
+      diagnosis,
+      notes,
+    });
 
     // Aviso al cliente de "tu equipo esta reparado" (issue #119). Solo en
     // la TRANSICION hacia reparado -- si el caso ya estaba reparado (ej. se

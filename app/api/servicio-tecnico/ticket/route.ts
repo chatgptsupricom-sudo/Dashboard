@@ -13,6 +13,7 @@ import {
   respuesta429,
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
+import { crearProductos } from "@/lib/rma/items";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -457,6 +458,30 @@ export async function POST(request: NextRequest) {
             [caseId, trackingToken, uploadToken],
           );
         }
+
+        // El producto del envío (issue #331). Por ahora el portal manda uno
+        // solo, el mismo que quedó en los campos del caso.
+        await crearProductos(
+          caseId,
+          [
+            {
+              product_code: matched.codigo || null,
+              hardware: matched.categoria || null,
+              brand: matched.marca || null,
+              model: matched.nombre || null,
+              serial: serialFinal,
+              odoo_product_id: matched.producto_id,
+              reported_fault: reportedFault,
+              garantia_estado: matched.garantia?.estado || null,
+              garantia_meses: matched.garantia?.meses_cubiertos ?? null,
+              garantia_vence: matched.garantia?.fecha_vencimiento
+                ? matched.garantia.fecha_vencimiento.slice(0, 10)
+                : null,
+              garantia_marca: matched.garantia?.marca_resuelta || null,
+            },
+          ],
+          conn,
+        );
 
         break; // exito, salir del loop
       } catch (e: any) {

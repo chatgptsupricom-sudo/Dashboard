@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
+import { crearProductos } from "@/lib/rma/items";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -145,6 +146,18 @@ export async function POST(request: NextRequest) {
        VALUES (?, NULL, 'recibido', ?, 'Caso creado')`,
       [caseId, created_by]
     );
+
+    // El producto del envío (issue #331): el caso interno trae uno solo.
+    await crearProductos(caseId, [
+      {
+        product_code: product_code || null,
+        hardware: hardware || null,
+        brand: brand || null,
+        model: model || null,
+        serial: serial_quantity || null,
+        reported_fault,
+      },
+    ]);
 
     return NextResponse.json({ success: true, id: caseId, case_number, tracking_token: trackingToken }, { status: 201 });
   } catch (error: any) {
