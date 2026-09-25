@@ -10,9 +10,10 @@ import { jwtSecretBytes } from "@/lib/secretos";
  *
  * Lee Odoo por el JSON-RPC del panel (lib/odoo.ts, usuario de integración):
  * read_group, search_read, search_count, fields_get e ir.model — cualquier
- * modelo, como el MCP de Odoo pero sin SQL directo. No usa ese MCP porque en
- * Odoo está en modo OAuth, cuyos tokens duran poco y un servidor no puede
- * renovarlos solo. Lee además la MySQL del panel.
+ * modelo. Si ODOO_MCP_URL/ODOO_MCP_TOKEN están definidas, suma además el MCP
+ * de Odoo (rag_odoo_mcp_server) por el conector MCP de la API de Claude, con
+ * allowlist de lectura y SQL directo; el módulo tiene que estar en modo API
+ * tokens (en OAuth los tokens caducan). Lee además la MySQL del panel.
  *
  * Escritura en Odoo: NUNCA directa. Para cambiar algo, Claude llama
  * `preparar_cambio_odoo`, que
@@ -21,7 +22,13 @@ import { jwtSecretBytes } from "@/lib/secretos";
  * JSON-RPC con el usuario de integración del panel.
  */
 
-const MODELO = "claude-opus-5";
+// Modelo configurable por entorno (AGENTE_IA_MODELO), ej. claude-sonnet-5
+// para abaratar. Haiku 4.5 no tiene thinking adaptativo: corre sin thinking.
+// El respaldo automático ante rechazos (`fallbacks`) solo se pide en los
+// modelos para los que está documentado.
+const MODELO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
+const THINKING_ADAPTATIVO = !MODELO.startsWith("claude-haiku-4");
+const CON_FALLBACK = ["claude-opus-5", "claude-fable-5-1", "claude-fable-5"].includes(MODELO);
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
 const VIGENCIA_CAMBIO_MS = 15 * 60_000;
@@ -472,7 +479,7 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
   const mcpUrl = process.env.ODOO_MCP_URL;
   const mcpToken = process.env.ODOO_MCP_TOKEN;
   const conMcp = !!(mcpUrl && mcpToken);
-  console.log(`[agenteia] consulta de ${uid} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
+  console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 
   const cambios: string[] = [];
   let hayTexto = false;
@@ -482,9 +489,12 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
     const stream = anthropic().beta.messages.stream({
       model: MODELO,
       max_tokens: 64000,
-      betas: conMcp ? ["server-side-fallback-2026-07-01", "mcp-client-2025-11-20"] : ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      thinking: { type: "adaptive" },
+      betas: [
+        ...(CON_FALLBACK ? ["server-side-fallback-2026-07-01" as const] : []),
+        ...(conMcp ? ["mcp-client-2025-11-20" as const] : []),
+      ],
+      ...(CON_FALLBACK && { fallbacks: "default" as const }),
+      ...(THINKING_ADAPTATIVO && { thinking: { type: "adaptive" as const } }),
       system: [
         { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
         ...(conMcp ? [{ type: "text" as const, text: SISTEMA_MCP }] : []),
