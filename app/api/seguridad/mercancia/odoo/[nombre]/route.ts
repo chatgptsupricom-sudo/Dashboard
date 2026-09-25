@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/seguridad/mercancia/odoo/{nombre}?tipo=ingreso|egreso
+ * GET /api/seguridad/mercancia/odoo/{nombre}?tipo=ingreso|egreso[&id=<picking>]
  *
  * Trae de Odoo el documento con el que viaja la mercancia y sus lineas, para
  * prellenar el acta:
@@ -32,7 +32,11 @@ export async function GET(
     if (cidsError) return cidsError;
 
     const { nombre } = await params;
-    const tipo = new URL(request.url).searchParams.get("tipo");
+    const sp = new URL(request.url).searchParams;
+    const tipo = sp.get("tipo");
+    // Id del picking, cuando se llega desde la lista de pendientes: el nombre
+    // se repite entre compañias y, sin sucursal (superadmin), no alcanza.
+    const pickingId = Number(sp.get("id"));
     const buscado = decodeURIComponent(nombre);
 
     // El ingreso (factura de compra) sigue siendo exclusivo de Seguridad —
@@ -48,7 +52,7 @@ export async function GET(
     const factura =
       tipo === "ingreso"
         ? await buscarFacturaCompra(buscado, cids)
-        : await buscarPickingEgreso(buscado, cids);
+        : await buscarPickingEgreso(buscado, cids, Number.isInteger(pickingId) ? pickingId : null);
 
     if (!factura) {
       return NextResponse.json(

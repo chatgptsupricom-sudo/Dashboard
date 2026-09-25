@@ -96,7 +96,8 @@ export default function MercanciaOrdenes() {
             {ordenes.map((o) => (
               <Link
                 key={o.odoo_picking_id}
-                href={`/${locale}/seguridad/mercancia/ordenes/${encodeURIComponent(o.odoo_picking_name)}`}
+                // Con el id: el nombre se repite entre compañias (ver lib/seguridad/mercancia).
+                href={`/${locale}/seguridad/mercancia/ordenes/${encodeURIComponent(o.odoo_picking_name)}?id=${o.odoo_picking_id}`}
                 className="group relative flex flex-col gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-violet-200 hover:shadow-[0_4px_14px_rgba(116,29,254,0.1)] hover:-translate-y-0.5 transition-all"
               >
                 <div className="flex items-start justify-between">

@@ -144,14 +144,16 @@ export default function MercanciaNueva({
   const quitarFactura = (v: string) =>
     setFacturas((p) => p.filter((x) => x !== v));
 
-  const buscarOrden = async (valor?: string) => {
+  // `id`: solo para la orden que llega prellenada desde la lista de
+  // pendientes. Escrita a mano se busca por nombre.
+  const buscarOrden = async (valor?: string, id?: string | null) => {
     const v = (valor ?? orden).trim();
     if (!v) return;
     setBuscando(true);
     setErrorOrden(null);
     try {
       const res = await fetch(
-        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}`,
+        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}${id ? `&id=${id}` : ""}`,
       );
       if (!res.ok) {
         // Encontrada pero sin facturar: no se deja registrar (issue #298), y
@@ -193,10 +195,12 @@ export default function MercanciaNueva({
   // este pide en build (mismo criterio que ingreso/nuevo/page.tsx).
   useEffect(() => {
     if (tipo !== "egreso") return;
-    const pre = new URLSearchParams(window.location.search).get("factura")?.trim();
+    const sp = new URLSearchParams(window.location.search);
+    const pre = sp.get("factura")?.trim();
     if (!pre) return;
+    const id = sp.get("id");
     setOrden(pre);
-    void buscarOrden(pre);
+    void buscarOrden(pre, id && /^\d+$/.test(id) ? id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
