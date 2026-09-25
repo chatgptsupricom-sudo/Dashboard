@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { filtroDespachos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { marcarProductosDespachados } from "@/lib/rma/items";
 
 
 
@@ -262,6 +263,7 @@ export async function POST(request: NextRequest) {
            WHERE id = ? AND despachado_at IS NULL`,
           [fechaDespacho, rmaCaseId],
         );
+        await marcarProductosDespachados(rmaCaseId, fechaDespacho);
       } catch (e: any) {
         console.warn(
           `[despacho ${insertId}] no se pudo marcar despachado_at en rma_cases ${rmaCaseId}:`,
