@@ -151,7 +151,8 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
       a.href = url;
       a.download = nombre;
       a.click();
-      URL.revokeObjectURL(url);
+      // Liberarla en el mismo tick cancela la descarga en algunos Safari.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (e: any) {
       setErrorExcel(e?.message || tm("error"));
     } finally {
