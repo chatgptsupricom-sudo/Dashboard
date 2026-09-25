@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ORIGENES } from "@/lib/seguridad/origenes";
 
 /**
  * Calificaciones de un egreso por aspecto (issue #302): `picking` y
@@ -47,4 +48,35 @@ export async function leerCalificacionesEgreso(mercanciaId: number) {
   } catch {
     return [];
   }
+}
+
+/**
+ * Origen de cada nota como expresion SQL (ver lib/seguridad/origenes):
+ *  - `rma`: `relacionado_a` 'ingreso' o 'despacho'.
+ *  - `picking` / `despacho`: `relacionado_a = 'mercancia'` de un egreso, por
+ *    su aspecto (sin aspecto = despacho).
+ *  - `NULL`: lo demas (ingresos de mercancia del flujo viejo): no entra en
+ *    ningun grupo.
+ *
+ * Necesita `JOIN_MERCANCIA` para saber si el registro de mercancia es egreso.
+ */
+export const JOIN_MERCANCIA =
+  "LEFT JOIN seguridad_mercancia m_origen ON c.relacionado_a = 'mercancia' AND m_origen.id = c.relacionado_id";
+
+export async function sqlOrigen(): Promise<string> {
+  const aspecto = await sqlAspecto("c");
+  return `CASE
+      WHEN c.relacionado_a IN ('ingreso', 'despacho') THEN 'rma'
+      WHEN c.relacionado_a = 'mercancia' AND m_origen.tipo = 'egreso' THEN ${aspecto}
+      ELSE NULL
+    END`;
+}
+
+/** Columnas `promedio_<origen>` y `total_<origen>` para un SELECT agregado sobre `c`. */
+export function columnasPorOrigen(origen: string): string {
+  return ORIGENES.map(
+    (o) =>
+      `AVG(CASE WHEN ${origen} = '${o}' THEN c.calificacion END) AS promedio_${o},
+       SUM(${origen} = '${o}') AS total_${o}`,
+  ).join(",\n       ");
 }

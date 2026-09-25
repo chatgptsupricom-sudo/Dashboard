@@ -2414,6 +2414,11 @@
       "top_almacenistas": "Top almacenistas del mes",
       "dias_en_taller": "{count}d en taller",
       "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
+      "origen": {
+        "rma": "RMA",
+        "picking": "Egreso: picking",
+        "despacho": "Egreso: despacho"
+      },
       "ver_todos": "Ver todos"
     },
     "foto_estado": {
