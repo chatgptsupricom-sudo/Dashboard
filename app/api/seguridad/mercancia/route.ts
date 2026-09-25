@@ -2,7 +2,14 @@ import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { agruparLineas, parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
+import { filtroMercancia } from "@/lib/seguridad/filtros";
+import {
+  agruparLineas,
+  buscarPickingEgresoPorId,
+  parsearLista,
+  serializarLista,
+  type PickingOdoo,
+} from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -40,27 +47,8 @@ export async function GET(request: NextRequest) {
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
-    const sp = new URL(request.url).searchParams;
-    const tipo = (sp.get("tipo") || "").trim();
-    const estado = (sp.get("estado") || "").trim();
-
-    let where = "WHERE 1=1";
-    const params: any[] = [];
-    if (tipo === "ingreso" || tipo === "egreso") {
-      where += " AND tipo = ?";
-      params.push(tipo);
-    }
-    if (["pendiente", "conforme", "descuadre"].includes(estado)) {
-      where += " AND estado = ?";
-      params.push(estado);
-    }
-    // null = superadmin, ve todas las sucursales. Las filas viejas sin cids
-    // (de antes de este filtro) quedan fuera para todos los demas — no se les
-    // asigna una sucursal adivinada.
-    if (cids !== null) {
-      where += " AND m.cids = ?";
-      params.push(cids);
-    }
+    // El mismo builder que usa el Excel: lo exportado es lo que se ve.
+    const { where, params } = filtroMercancia(new URL(request.url).searchParams, cids);
 
     const res = await query(
       `SELECT m.*,
@@ -191,62 +179,136 @@ export async function POST(request: NextRequest) {
       errores.push("almacenista_nombre es obligatorio");
     }
 
-    const items = Array.isArray(body?.items) ? body.items : [];
-    if (items.length === 0) {
-      errores.push("hace falta al menos un renglon");
-    } else if (items.length > MAX.items) {
-      errores.push(`maximo ${MAX.items} renglones`);
-    }
-
-    const limpios = items.slice(0, MAX.items).map((it: any) => ({
-      odoo_product_id: Number.isFinite(Number(it?.odoo_product_id))
-        ? Number(it.odoo_product_id)
-        : null,
-      producto: truncar(it?.producto, MAX.producto),
-      codigo: truncar(it?.codigo, MAX.codigo),
-      cantidad_cargada: Number(it?.cantidad_cargada),
-    }));
-
-    if (limpios.some((i: any) => !i.producto)) {
-      errores.push("todos los renglones necesitan producto");
-    }
-    if (limpios.some((i: any) => !Number.isFinite(i.cantidad_cargada) || i.cantidad_cargada < 0)) {
-      errores.push("cantidad_cargada invalida");
-    }
-
     if (errores.length > 0) {
       return NextResponse.json({ error: errores.join("; ") }, { status: 400 });
     }
 
-    const res = await query(
-      `INSERT INTO seguridad_mercancia
-        (tipo, fecha, odoo_picking_id, odoo_picking_name, factura_numero,
-         facturas_json, contraparte, almacenista_nombre, almacenistas_json,
-         chofer_nombre, placa_vehiculo, observaciones, cids,
-         etapa, tipo_entrega, almacenista_armado)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        tipo,
-        fecha,
-        Number.isFinite(Number(body?.odoo_picking_id))
-          ? Number(body.odoo_picking_id)
-          : null,
-        truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
-        facturaPrincipal,
-        facturasJson,
-        truncar(body?.contraparte, MAX.contraparte),
-        almacenista,
-        almacenistasJson,
-        truncar(body?.chofer_nombre, MAX.chofer_nombre),
-        truncar(body?.placa_vehiculo, MAX.placa_vehiculo),
-        truncar(body?.observaciones, MAX.observaciones),
-        cids,
-        // Egreso: arranca en la primera etapa. Ingreso: sin etapa, flujo simple.
-        tipo === "egreso" ? "por_armar" : null,
-        tipo === "egreso" ? tipoEntrega : null,
-        almacenistaArmado,
-      ],
+    // Quien arma tiene que estar en el personal de Almacen de la sucursal,
+    // igual que quien despacha (issue #302): se le califica el picking, y un
+    // nombre escrito a mano no se suma a su historial.
+    const armadoEnCatalogo = await query(
+      `SELECT id FROM seguridad_catalogo_almacenistas
+        WHERE nombre = ? ${cids !== null ? "AND cids = ?" : ""} LIMIT 1`,
+      cids !== null ? [almacenistaArmado, cids] : [almacenistaArmado],
     );
+    if (armadoEnCatalogo.rows.length === 0) {
+      return NextResponse.json(
+        { error: "El almacenista del armado no esta en el personal de Almacen" },
+        { status: 400 },
+      );
+    }
+
+    // La orden se relee de Odoo por su id en vez de creerle al navegador
+    // (issue #298): de ahi salen el cliente, los renglones y la factura. Asi
+    // no se registra una orden sin facturar aunque alguien arme el POST a
+    // mano, ni con renglones distintos a los del picking.
+    const pickingId = Number(body?.odoo_picking_id);
+    let picking: PickingOdoo | null;
+    try {
+      picking = await buscarPickingEgresoPorId(pickingId, cids);
+    } catch (e: any) {
+      console.error("Error releyendo la orden de despacho en Odoo:", e?.message || e);
+      return NextResponse.json({ error: "No se pudo consultar Odoo" }, { status: 502 });
+    }
+    if (!picking) {
+      return NextResponse.json(
+        { error: "No encontramos esa orden de despacho en Odoo" },
+        { status: 404 },
+      );
+    }
+    const facturasVenta = picking.facturas || [];
+    if (facturasVenta.length === 0) {
+      return NextResponse.json(
+        { error: "Esta orden todavía no está facturada", codigo: "sin_factura" },
+        { status: 409 },
+      );
+    }
+
+    // Una orden de despacho, un egreso. La lista de pendientes ya las
+    // esconde, pero buscando por numero se podia registrar dos veces.
+    // El id de picking es unico en todo Odoo: no hace falta filtrar por cids.
+    const repetido = await query(
+      `SELECT id FROM seguridad_mercancia
+        WHERE tipo = 'egreso' AND odoo_picking_id = ? LIMIT 1`,
+      [picking.odoo_picking_id],
+    );
+    if (repetido.rows.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Esta orden ya se registró como egreso",
+          id: Number((repetido.rows[0] as any).id),
+        },
+        { status: 409 },
+      );
+    }
+
+    if (picking.lineas.length === 0) {
+      return NextResponse.json(
+        { error: "La orden de despacho no tiene renglones en Odoo" },
+        { status: 400 },
+      );
+    }
+    if (picking.lineas.length > MAX.items) {
+      return NextResponse.json({ error: `maximo ${MAX.items} renglones` }, { status: 400 });
+    }
+    const limpios = picking.lineas.map((l) => ({
+      odoo_product_id: l.odoo_product_id,
+      producto: truncar(l.producto, MAX.producto) || "—",
+      codigo: truncar(l.codigo, MAX.codigo),
+      cantidad_cargada: l.cantidad_cargada,
+      lleva_serial: l.lleva_serial ? 1 : 0,
+    }));
+
+    const columnas = [
+      "tipo", "fecha", "odoo_picking_id", "odoo_picking_name", "factura_numero",
+      "facturas_json", "contraparte", "almacenista_nombre", "almacenistas_json",
+      "chofer_nombre", "placa_vehiculo", "observaciones", "cids",
+      "etapa", "tipo_entrega", "almacenista_armado",
+    ];
+    const valoresMov: unknown[] = [
+      tipo,
+      fecha,
+      picking.odoo_picking_id,
+      truncar(picking.odoo_picking_name, MAX.odoo_picking_name),
+      facturaPrincipal,
+      facturasJson,
+      truncar(picking.contraparte, MAX.contraparte),
+      almacenista,
+      almacenistasJson,
+      truncar(body?.chofer_nombre, MAX.chofer_nombre),
+      truncar(body?.placa_vehiculo, MAX.placa_vehiculo),
+      truncar(body?.observaciones, MAX.observaciones),
+      cids,
+      "por_armar",
+      tipoEntrega,
+      almacenistaArmado,
+    ];
+    // La factura se guarda sola, de Odoo: Almacen no la escribe.
+    const columnasFactura = ["facturas_venta_json", "factura_venta_fecha"];
+    const valoresFactura = [
+      serializarLista(facturasVenta.map((f) => f.numero), MAX.factura_numero, MAX.listas),
+      facturasVenta[0].fecha,
+    ];
+
+    const insertar = (cols: string[], vals: unknown[]) =>
+      query(
+        `INSERT INTO seguridad_mercancia (${cols.join(", ")})
+         VALUES (${cols.map(() => "?").join(", ")})`,
+        vals,
+      );
+
+    let res;
+    try {
+      res = await insertar([...columnas, ...columnasFactura], [...valoresMov, ...valoresFactura]);
+    } catch (e: any) {
+      // Sin la migracion (sql/egreso_facturas_venta.sql) el egreso se registra
+      // igual, sin la factura: no se frena el despacho por una columna.
+      if (!/Unknown column/i.test(e?.message || "")) throw e;
+      console.warn(
+        "[egreso] falta correr sql/egreso_facturas_venta.sql: se registra sin la factura",
+      );
+      res = await insertar(columnas, valoresMov);
+    }
 
     const id = (res.rows as any)?.insertId;
 
@@ -256,20 +318,31 @@ export async function POST(request: NextRequest) {
 
     // Los renglones en una sola sentencia: 300 INSERT sueltos en el porton,
     // con el camion esperando, se notan.
-    const valores: any[] = [];
-    const marcadores = renglones
-      .map((i: any) => {
-        valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
-        return "(?, ?, ?, ?, ?)";
-      })
-      .join(", ");
-
-    await query(
-      `INSERT INTO seguridad_mercancia_items
-        (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada)
-       VALUES ${marcadores}`,
-      valores,
-    );
+    // `lleva_serial` (issue #299) sale del tracking de Odoo. Sin la migracion
+    // (sql/egreso_seriales.sql) se registra igual, sin esa columna.
+    const insertarRenglones = (conSerial: boolean) => {
+      const valores: any[] = [];
+      const marcadores = renglones
+        .map((i: any) => {
+          valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
+          if (conSerial) valores.push(i.lleva_serial);
+          return conSerial ? "(?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?)";
+        })
+        .join(", ");
+      return query(
+        `INSERT INTO seguridad_mercancia_items
+          (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada${conSerial ? ", lleva_serial" : ""})
+         VALUES ${marcadores}`,
+        valores,
+      );
+    };
+    try {
+      await insertarRenglones(true);
+    } catch (e: any) {
+      if (!/Unknown column/i.test(e?.message || "")) throw e;
+      console.warn("[egreso] falta correr sql/egreso_seriales.sql: renglones sin lleva_serial");
+      await insertarRenglones(false);
+    }
 
     // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
     // preparar sin recargar la pantalla del porton.
@@ -279,7 +352,7 @@ export async function POST(request: NextRequest) {
         id,
         tipo: tipo as "ingreso" | "egreso",
         etapa: tipo === "egreso" ? "por_armar" : undefined,
-        documento: truncar(body?.odoo_picking_name, MAX.odoo_picking_name),
+        documento: picking.odoo_picking_name,
       },
       cids,
     );

@@ -735,7 +735,7 @@
       "captchaRequired": "Please confirm you're not a robot.",
       "rifLabel": "Customer tax ID",
       "rifPlaceholder": "e.g. J-31737690-0",
-      "rifHelp": "The one for the customer shown on the invoice. With or without dashes, either works.",
+      "rifHelp": "Pick the type and enter the customer's number shown on the invoice, with or without dashes.",
       "searchCta": "Find my invoice",
       "searching": "Searching...",
       "notFound": "We couldn't find that invoice. Check the number; if you're sure it's right, get in touch and we'll look into it with you.",
@@ -745,7 +745,7 @@
       "multipleTitle": "We found more than one invoice with that number",
       "multipleHelp": "Pick yours to continue.",
       "productTitle": "Which product has the problem?",
-      "productHelp": "Select the device that failed. If you bought several identical units, pick the one with the matching serial.",
+      "productHelp": "The invoice's products are grouped by brand. Pick the one that failed and, if you bought several identical units, the serial of the faulty one.",
       "client": "Customer",
       "date": "Date",
       "serial": "Serial",
@@ -763,7 +763,47 @@
       "waitUploads": "Waiting for uploads to finish...",
       "sending": "Sending...",
       "submit": "Send my report",
-      "stepOf": "Step {n} of {total}"
+      "stepOf": "Step {n} of {total}",
+      "docLabelPa": "Customer's ID card, RUC or passport",
+      "docTypeLabel": "Document type",
+      "docNumberLabel": "Document number",
+      "docTipo": {
+        "VE": {
+          "V": "V · Venezuelan",
+          "J": "J · Company",
+          "E": "E · Foreigner",
+          "P": "P · Passport",
+          "G": "G · Government"
+        },
+        "PA": {
+          "cedula": "ID card (cédula)",
+          "ruc": "RUC",
+          "pasaporte": "Passport",
+          "E": "E ID card",
+          "PE": "PE ID card"
+        }
+      },
+      "docEjemplo": {
+        "VE": {
+          "V": "E.g. 12345678",
+          "J": "E.g. 31737690-0",
+          "E": "E.g. 82123456",
+          "P": "E.g. A1234567",
+          "G": "E.g. 20000000-0"
+        },
+        "PA": {
+          "cedula": "E.g. 8-123-456",
+          "ruc": "E.g. 155591597-2-2015",
+          "pasaporte": "E.g. PA1234567",
+          "E": "E.g. 8-12345",
+          "PE": "E.g. 8-1234"
+        }
+      },
+      "docSoloNumeros": "For this document type, enter numbers only (dashes are fine).",
+      "docLargo": "The number doesn't have the expected length for this document type. Please check it.",
+      "otraMarca": "Other brands",
+      "productosN": "{n, plural, one {# product} other {# products}}",
+      "eligeSerial": "{n, plural, one {# unit} other {# units}} · pick the serial of the faulty one"
     },
     "metaTitle": "Technical Service | Supricom",
     "metaDescription": "Report a problem with your device or check the status of a report you already sent.",
@@ -2426,6 +2466,11 @@
       "top_almacenistas": "Top warehouse workers this month",
       "dias_en_taller": "{count}d in shop",
       "almacenista_stats": "{ingresos} intakes · {despachos} dispatches",
+      "origen": {
+        "rma": "RMA",
+        "picking": "Outbound: picking",
+        "despacho": "Outbound: dispatch"
+      },
       "ver_todos": "View all"
     },
     "foto_estado": {
@@ -2499,6 +2544,8 @@
       "nuevo": "Register",
       "buscar": "Search",
       "no_encontrada": "We could not find that document in Odoo",
+      "orden_sin_facturar": "This order has not been invoiced yet",
+      "factura_venta": "Sales invoice",
       "cliente": "Customer",
       "proveedor": "Supplier",
       "almacenista": "Loading warehouse worker",
@@ -2552,15 +2599,18 @@
         "kpi_promedio": "Average rating",
         "kpi_total_calif": "{count, plural, =1 {# rating this month} other {# ratings this month}}",
         "recientes": "Recent outbound",
-        "top_almacenistas": "Top rated",
+        "top_almacenistas": "Top rated this month",
+        "kpi_por_aspecto": "Picking {picking} · Dispatch {despacho}",
+        "egresos_novedades": "{egresos, plural, =1 {# outbound} other {# outbounds}} · {novedades, plural, =0 {no issues} other {# with issues}}",
         "ver_todos": "View all",
         "ver_ordenes": "View pending orders",
         "vacio": "No outbound movements registered yet."
       },
       "ordenes": {
         "titulo": "Pending delivery orders",
-        "subtitulo": "Ready in Odoo, not yet processed as outbound",
-        "vacio": "No delivery orders ready in Odoo.",
+        "subtitulo": "Ready and invoiced in Odoo, not yet processed as outbound",
+        "vacio": "No delivery orders ready and invoiced in Odoo.",
+        "sin_facturar": "{n, plural, one {# order ready in Odoo is not invoiced yet} other {# orders ready in Odoo are not invoiced yet}}: they show up here once they are invoiced.",
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this order"
@@ -2577,7 +2627,8 @@
         "nuevo_por_armar": "New outbound to assemble",
         "listo_verificar": "Outbound ready to verify at the gate",
         "aprobado": "Security approved and dispatched",
-        "no_aprobado": "Security did not approve the outbound"
+        "no_aprobado": "Security did not approve the outbound",
+        "devuelto": "Security didn't dispatch an outbound: it's back in Warehouse"
       },
       "personal_almacen": {
         "titulo": "Warehouse staff",
@@ -2644,10 +2695,13 @@
         },
         "tipo_entrega": "Delivery type",
         "entrega": {
-          "encomienda": "Courier shipment",
-          "puerta": "Door delivery"
+          "ruta": "Route",
+          "puerta": "Customer pickup",
+          "encomienda": "Courier shipment"
         },
-        "entrega_ayuda": "Courier shipments go through packing; door delivery goes straight to dispatch.",
+        "entrega_ayuda": "Courier shipments go through packing; route and customer pickup go straight to dispatch. For a route, the driver and vehicle are set when assigning the dispatch.",
+        "entrega_todas": "All deliveries",
+        "exportar_excel": "Export Excel",
         "almacenista_armado": "Assembly worker",
         "almacenista_despacho": "Dispatch worker",
         "recorrido": "Progress",
@@ -2667,6 +2721,12 @@
         "terminar_armado": "Finish assembly and move to pre-dispatch",
         "verificar_armado": "Verify assembly",
         "armado_ayuda": "Count every assembled product. It only moves to dispatch if everything matches the order.",
+        "seriales_actualizar": "Refresh serial numbers from Odoo",
+        "seriales_leidos": "Read from Odoo: {hora}",
+        "seriales_sin_leer": "Serial numbers have not been read from Odoo yet.",
+        "seriales_conteo": "{cargados} of {esperados} serial numbers",
+        "seriales_faltan": "Serial numbers are missing in the Odoo picking. Add them there and refresh: it does not move to Security until they are all in.",
+        "seriales_mas": "+{n} more",
         "armado_diferencias": "Does not match the order: {dif} with differences and {sin} not counted. Fix it and verify again.",
         "empaquetar": "Packing done",
         "asignar_despacho": "Assign and send to Security",
@@ -2679,11 +2739,33 @@
         "no_despachar": "Do not dispatch",
         "motivo_no_aprobado": "Reason for not approving (required)",
         "confirmar_no_aprobado": "Record decision",
+        "aspecto": {
+          "picking": "Picking",
+          "despacho": "Dispatch"
+        },
+        "calificar_picking": "Picking — {name}",
+        "calificar_picking_ayuda": "Assembled complete, nothing missing or extra, with the right serial numbers.",
+        "calificar_despacho": "Dispatch — {name}",
+        "calificar_despacho_ayuda": "Handover, packing and order at C4.",
+        "novedades_titulo": "Issues found at verification",
+        "novedad": {
+          "falta": "Missing: {contado} of {esperado}",
+          "sobra": "Extra: {contado} of {esperado}",
+          "no_salio": "Did not leave",
+          "serial_falta": "Serial {serial} was not scanned",
+          "serial_sobra": "Serial {serial} is not in the picking",
+          "serial_otra_orden": "Serial {serial} belongs to order {otra_orden}",
+          "producto_ajeno": "{contado, plural, =1 {Not in the order} other {Not in the order (×#)}}"
+        },
+        "no_aprobado_sin_renglones": "Security did not approve this outbound.",
+        "comentario_picking_obligatorio": "There were issues: explain why picking deserves {n} stars.",
         "calificar_cerrar": "Rate and close",
         "resultado": {
           "aprobado": "Approved and dispatched",
           "no_aprobado_despachado": "Not approved — dispatched anyway",
-          "no_despachado": "Not approved — not dispatched"
+          "no_despachado": "Not approved — not dispatched",
+          "devuelto": "Not dispatched — sent back to Warehouse",
+          "cancelado": "Cancelled: the order did not leave"
         },
         "motivo": "Reason",
         "filtro": {
@@ -2696,7 +2778,48 @@
         "en_curso": "Outbound in progress",
         "flujo_anterior": "Record from the previous flow",
         "cancelar": "Back",
-        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate."
+        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate.",
+        "verificacion": {
+          "ayuda": "Scan what goes out. A serial from the picking already tells which product it is; products without serial add 1 with their code. If a box has no code, type the quantity.",
+          "pistola_titulo": "Barcode scanner",
+          "pistola_lista": "Ready: scan a code or serial…",
+          "pistola_tocar": "Tap here to scan",
+          "pistola_teclado": "Type a code with the keyboard",
+          "pistola_activo": "Scanning serials of",
+          "pistola_ayuda": "Scan each serial or the product code. Anything not in the order is recorded as an issue.",
+          "pistola_repetido": "Serial {serial} was already scanned. Not counted again.",
+          "pistola_conteo": "+1 {producto} · {cantidad} so far",
+          "pistola_seleccionado": "{producto}: now scan its serials.",
+          "pistola_serial": "Serial {serial} · {cantidad} so far",
+          "pistola_serial_en_otro": "Serial {serial} · {cantidad} so far. Note: this serial belongs to order {referencia}.",
+          "pistola_desconocido": "Code {codigo} is not from any product in this order. What is it?",
+          "pistola_es_serial": "It's a serial",
+          "pistola_es_codigo": "It's its code",
+          "pistola_ignorar": "Nothing, ignore",
+          "pistola_no_esta": "Not in the order",
+          "pistola_van_de": "{recibido} of {esperado}",
+          "pistola_terminar": "Done",
+          "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
+          "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it's the box of a product that isn't in the order, choose \"Not in the order\".",
+          "error": "Could not record the scan",
+          "buscar_producto": "Search product by name or code",
+          "aprobar_requiere": "There {n, plural, =1 {is # issue} other {are # issues}}: it can't be approved. Decide whether to dispatch anyway.",
+          "decidir": "There are issues: decide",
+          "no_despachar": "Send back to Warehouse",
+          "no_despachar_ayuda": "It goes back to Warehouse to fix it and assign the dispatch again. What was scanned is kept.",
+          "motivo": "Reason (required)",
+          "excel_seriales": "Serials Excel",
+          "ronda": "Check {n}",
+          "pistola_novedad_serial_sobra": "Serial {serial} is not in the picking of {producto}. Not counted: recorded as an issue.",
+          "pistola_novedad_serial_otra_orden": "Serial {serial} belongs to another order ({referencia}). Not counted: recorded as an issue.",
+          "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far).",
+          "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:",
+          "cancelar": "Not dispatched (cancelled)",
+          "cancelar_ayuda": "It never leaves (for example, the customer cancelled). It closes without dispatch, after rating.",
+          "faltan": "{n, plural, =1 {# left to scan} other {# left to scan}}"
+        },
+        "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
+        "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }
     }
   },

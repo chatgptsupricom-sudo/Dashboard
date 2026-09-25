@@ -717,7 +717,7 @@
       "captchaRequired": "Confirma que no eres un robot.",
       "rifLabel": "RIF o cédula del cliente",
       "rifPlaceholder": "Ej: J-31737690-0",
-      "rifHelp": "El del cliente que aparece en la factura. Con guiones o sin ellos, como prefieras.",
+      "rifHelp": "Elige el tipo y escribe el número del cliente que aparece en la factura, con guiones o sin ellos.",
       "searchCta": "Buscar mi factura",
       "searching": "Buscando...",
       "notFound": "No encontramos esa factura. Verifica el número; si estás seguro de que está bien, escríbenos y lo revisamos contigo.",
@@ -727,7 +727,7 @@
       "multipleTitle": "Encontramos más de una factura con ese número",
       "multipleHelp": "Elige la tuya para continuar.",
       "productTitle": "¿Qué producto presenta la falla?",
-      "productHelp": "Selecciona el equipo que se dañó. Si compraste varias unidades iguales, elige la del serial correspondiente.",
+      "productHelp": "Los productos de la factura están agrupados por marca. Elige el que se dañó y, si compraste varias unidades iguales, el serial de la que falla.",
       "client": "Cliente",
       "date": "Fecha",
       "serial": "Serial",
@@ -745,7 +745,47 @@
       "waitUploads": "Esperando que suban los archivos...",
       "sending": "Enviando...",
       "submit": "Enviar mi reporte",
-      "stepOf": "Paso {n} de {total}"
+      "stepOf": "Paso {n} de {total}",
+      "docLabelPa": "Cédula, RUC o pasaporte del cliente",
+      "docTypeLabel": "Tipo de documento",
+      "docNumberLabel": "Número de documento",
+      "docTipo": {
+        "VE": {
+          "V": "V · Venezolano",
+          "J": "J · Empresa",
+          "E": "E · Extranjero",
+          "P": "P · Pasaporte",
+          "G": "G · Gobierno"
+        },
+        "PA": {
+          "cedula": "Cédula",
+          "ruc": "RUC",
+          "pasaporte": "Pasaporte",
+          "E": "Cédula E",
+          "PE": "Cédula PE"
+        }
+      },
+      "docEjemplo": {
+        "VE": {
+          "V": "Ej: 12345678",
+          "J": "Ej: 31737690-0",
+          "E": "Ej: 82123456",
+          "P": "Ej: A1234567",
+          "G": "Ej: 20000000-0"
+        },
+        "PA": {
+          "cedula": "Ej: 8-123-456",
+          "ruc": "Ej: 155591597-2-2015",
+          "pasaporte": "Ej: PA1234567",
+          "E": "Ej: 8-12345",
+          "PE": "Ej: 8-1234"
+        }
+      },
+      "docSoloNumeros": "Para este tipo de documento escribe solo números (los guiones se aceptan).",
+      "docLargo": "El número no tiene el largo esperado para este tipo de documento. Revísalo.",
+      "otraMarca": "Otras marcas",
+      "productosN": "{n, plural, one {# producto} other {# productos}}",
+      "eligeSerial": "{n, plural, one {# unidad} other {# unidades}} · elige el serial del que falla"
     },
     "metaTitle": "Servicio Técnico | Supricom",
     "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",
@@ -2415,6 +2455,11 @@
       "top_almacenistas": "Top almacenistas del mes",
       "dias_en_taller": "{count}d en taller",
       "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
+      "origen": {
+        "rma": "RMA",
+        "picking": "Egreso: picking",
+        "despacho": "Egreso: despacho"
+      },
       "ver_todos": "Ver todos"
     },
     "foto_estado": {
@@ -2488,6 +2533,8 @@
       "nuevo": "Registrar",
       "buscar": "Buscar",
       "no_encontrada": "No encontramos ese documento en Odoo",
+      "orden_sin_facturar": "Esta orden todavía no está facturada",
+      "factura_venta": "Factura de venta",
       "cliente": "Cliente",
       "proveedor": "Proveedor",
       "almacenista": "Almacenista que carga",
@@ -2541,15 +2588,18 @@
         "kpi_promedio": "Calificación promedio",
         "kpi_total_calif": "{count, plural, =1 {# calificación este mes} other {# calificaciones este mes}}",
         "recientes": "Egresos recientes",
-        "top_almacenistas": "Mejor calificados",
+        "top_almacenistas": "Mejor calificados del mes",
+        "kpi_por_aspecto": "Picking {picking} · Despacho {despacho}",
+        "egresos_novedades": "{egresos, plural, =1 {# egreso} other {# egresos}} · {novedades, plural, =0 {sin novedades} =1 {# con novedades} other {# con novedades}}",
         "ver_todos": "Ver todos",
         "ver_ordenes": "Ver órdenes pendientes",
         "vacio": "Todavía no hay egresos registrados."
       },
       "ordenes": {
         "titulo": "Órdenes de despacho pendientes",
-        "subtitulo": "Listas en Odoo, todavía no procesadas como egreso",
-        "vacio": "No hay órdenes de despacho listas en Odoo.",
+        "subtitulo": "Listas y facturadas en Odoo, todavía no procesadas como egreso",
+        "vacio": "No hay órdenes de despacho listas y facturadas en Odoo.",
+        "sin_facturar": "{n, plural, one {# orden lista en Odoo todavía no está facturada} other {# órdenes listas en Odoo todavía no están facturadas}}: aparecen aquí cuando Caja las facture.",
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta orden"
@@ -2566,7 +2616,8 @@
         "nuevo_por_armar": "Nuevo egreso por armar",
         "listo_verificar": "Egreso listo para verificar en portón",
         "aprobado": "Seguridad aprobó y despachó",
-        "no_aprobado": "Seguridad no aprobó el egreso"
+        "no_aprobado": "Seguridad no aprobó el egreso",
+        "devuelto": "Seguridad no despachó un egreso: volvió a Almacén"
       },
       "personal_almacen": {
         "titulo": "Personal de Almacén",
@@ -2633,10 +2684,13 @@
         },
         "tipo_entrega": "Tipo de entrega",
         "entrega": {
-          "encomienda": "Encomienda",
-          "puerta": "Entrega en puerta"
+          "ruta": "Ruta",
+          "puerta": "Retira el cliente",
+          "encomienda": "Encomienda"
         },
-        "entrega_ayuda": "La encomienda pasa por empaquetado; la entrega en puerta va directo a despacho.",
+        "entrega_ayuda": "La encomienda pasa por empaquetado; ruta y retira el cliente van directo a despacho. En ruta, el chofer y la unidad se piden al asignar el despacho.",
+        "entrega_todas": "Todas las entregas",
+        "exportar_excel": "Exportar Excel",
         "almacenista_armado": "Almacenista del armado",
         "almacenista_despacho": "Almacenista de despacho",
         "recorrido": "Recorrido",
@@ -2656,6 +2710,12 @@
         "terminar_armado": "Terminar armado y pasar a pre-despacho",
         "verificar_armado": "Verificar armado",
         "armado_ayuda": "Cuenta cada producto armado. Solo pasa a despacho si todo coincide con la orden.",
+        "seriales_actualizar": "Actualizar seriales desde Odoo",
+        "seriales_leidos": "Leídos de Odoo: {hora}",
+        "seriales_sin_leer": "Los seriales todavía no se leyeron de Odoo.",
+        "seriales_conteo": "{cargados} de {esperados} seriales",
+        "seriales_faltan": "Faltan seriales en el picking de Odoo. Cárgalos allá y actualiza: no pasa a Seguridad hasta que estén todos.",
+        "seriales_mas": "+{n} más",
         "armado_diferencias": "No coincide con la orden: {dif} con diferencia y {sin} sin contar. Corrige y vuelve a verificar.",
         "empaquetar": "Empaquetado listo",
         "asignar_despacho": "Asignar y enviar a Seguridad",
@@ -2668,11 +2728,33 @@
         "no_despachar": "No despachar",
         "motivo_no_aprobado": "Motivo de no aprobar (obligatorio)",
         "confirmar_no_aprobado": "Registrar decisión",
+        "aspecto": {
+          "picking": "Picking",
+          "despacho": "Despacho"
+        },
+        "calificar_picking": "Picking — {name}",
+        "calificar_picking_ayuda": "Armó completo, sin faltas ni sobras, con los seriales correctos.",
+        "calificar_despacho": "Despacho — {name}",
+        "calificar_despacho_ayuda": "Entrega, empaquetado y orden en C4.",
+        "novedades_titulo": "Novedades de la verificación",
+        "novedad": {
+          "falta": "Faltó: {contado} de {esperado}",
+          "sobra": "Sobró: {contado} de {esperado}",
+          "no_salio": "No salió",
+          "serial_falta": "Serial {serial} no se pistoleó",
+          "serial_sobra": "Serial {serial} no está en el picking",
+          "serial_otra_orden": "Serial {serial} es de la orden {otra_orden}",
+          "producto_ajeno": "{contado, plural, =1 {No está en la orden} other {No está en la orden (×#)}}"
+        },
+        "no_aprobado_sin_renglones": "Seguridad no aprobó el egreso.",
+        "comentario_picking_obligatorio": "Hubo novedades: explica por qué el picking merece {n} estrellas.",
         "calificar_cerrar": "Calificar y cerrar",
         "resultado": {
           "aprobado": "Aprobado y despachado",
           "no_aprobado_despachado": "No aprobado — se despachó igual",
-          "no_despachado": "No aprobado — no se despachó"
+          "no_despachado": "No aprobado — no se despachó",
+          "devuelto": "No se despachó — volvió a Almacén",
+          "cancelado": "Cancelado: el pedido no salió"
         },
         "motivo": "Motivo",
         "filtro": {
@@ -2685,7 +2767,48 @@
         "en_curso": "Egresos en curso",
         "flujo_anterior": "Registro del flujo anterior",
         "cancelar": "Volver",
-        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón."
+        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón.",
+        "verificacion": {
+          "ayuda": "Pistolee lo que sale. Un serial del picking ya dice de qué producto es; los productos sin serial suman 1 con su código. Si una caja no tiene código, escriba la cantidad.",
+          "pistola_titulo": "Pistola de códigos",
+          "pistola_lista": "Lista: pistolee un código o serial…",
+          "pistola_tocar": "Toque aquí para pistolear",
+          "pistola_teclado": "Escribir un código con el teclado",
+          "pistola_activo": "Pistoleando seriales de",
+          "pistola_ayuda": "Pistolee cada serial o el código del producto. Lo que no esté en la orden queda como novedad.",
+          "pistola_repetido": "El serial {serial} ya estaba pistoleado. No se sumó.",
+          "pistola_conteo": "+1 {producto} · van {cantidad}",
+          "pistola_seleccionado": "{producto}: ahora pistolee sus seriales.",
+          "pistola_serial": "Serial {serial} · van {cantidad}",
+          "pistola_serial_en_otro": "Serial {serial} · van {cantidad}. Ojo: ese serial es de la orden {referencia}.",
+          "pistola_desconocido": "El código {codigo} no es de ningún producto de esta orden. ¿Qué es?",
+          "pistola_es_serial": "Es un serial",
+          "pistola_es_codigo": "Es su código",
+          "pistola_ignorar": "No es nada, ignorar",
+          "pistola_no_esta": "No está en la orden",
+          "pistola_van_de": "{recibido} de {esperado}",
+          "pistola_terminar": "Terminar",
+          "pistola_completo": "{producto}: completo ({cantidad} de {esperado}). Pistolee el siguiente producto.",
+          "pistola_parece_producto": "Parece el código del modelo (UPC/EAN), que es igual en todas las cajas, no un serial. Si es la caja de un producto que no está en la orden, elija \"No está en la orden\".",
+          "error": "No se pudo registrar la lectura",
+          "buscar_producto": "Buscar producto por nombre o código",
+          "aprobar_requiere": "Hay {n, plural, =1 {# novedad} other {# novedades}}: no se puede aprobar. Decide si se despacha igual.",
+          "decidir": "Hay novedades: decidir",
+          "no_despachar": "Devolver a Almacén",
+          "no_despachar_ayuda": "Vuelve a Almacén para corregir y asignar el despacho otra vez. Lo pistoleado se conserva.",
+          "motivo": "Motivo (obligatorio)",
+          "excel_seriales": "Excel de seriales",
+          "ronda": "Verificación {n}",
+          "pistola_novedad_serial_sobra": "El serial {serial} no está en el picking de {producto}. No se contó: queda como novedad.",
+          "pistola_novedad_serial_otra_orden": "El serial {serial} es de otra orden ({referencia}). No se contó: queda como novedad.",
+          "pistola_novedad_producto_ajeno": "{serial} no está en la orden: queda como novedad (van {cantidad}).",
+          "rondas_previas": "{n, plural, =1 {Seguridad lo devolvió una vez} other {Seguridad lo devolvió # veces}} antes de despacharlo:",
+          "cancelar": "No se despacha (cancelado)",
+          "cancelar_ayuda": "No sale nunca (por ejemplo, el cliente canceló). Se cierra sin despachar, después de calificar.",
+          "faltan": "{n, plural, =1 {Falta # por pistolear} other {Faltan # por pistolear}}"
+        },
+        "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
+        "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
     }
   },
