@@ -371,6 +371,7 @@ export type ResultadoEgreso =
   | "aprobado"
   | "no_aprobado_despachado"
   | "no_despachado"
+  | "cancelado"
   | "devuelto";
 
 /**
@@ -382,11 +383,34 @@ export function resultadoEgreso(m: {
   aprobado: number | string | null;
   despachado: number | string | null;
   etapa?: string | null;
+  decision_seguridad?: string | null;
 }): ResultadoEgreso | null {
   if (m.aprobado === null || m.aprobado === undefined) return null;
   if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
   if (Number(m.aprobado) === 1) return "aprobado";
+  // Cancelado (#316): no salio porque el pedido se cancelo, no por un
+  // problema del despacho. Sin la columna (migracion pendiente) no se
+  // distingue y queda como "no_despachado", igual que antes.
+  if (m.decision_seguridad === "cancelar") return "cancelado";
   return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
+}
+
+/**
+ * Seguridad no aprobo por algo del despacho: no aprobo y no fue un
+ * cancelado. Un pedido que el cliente cancelo no es una falla de quien lo
+ * armo ni de quien lo despacho, asi que no pide comentario al calificar ni
+ * cuenta "con novedades" en el ranking (salvo novedades reales en la lista).
+ */
+export function rechazoDeSeguridad(m: {
+  aprobado: number | string | null;
+  decision_seguridad?: string | null;
+}): boolean {
+  return (
+    m.aprobado !== null &&
+    m.aprobado !== undefined &&
+    Number(m.aprobado) === 0 &&
+    m.decision_seguridad !== "cancelar"
+  );
 }
 
 /**
@@ -398,6 +422,16 @@ export function resultadoEgreso(m: {
  */
 export function esAnormalEnVivo(n: Novedad): boolean {
   return n.tipo !== "falta" && n.tipo !== "serial_falta";
+}
+
+/**
+ * Las novedades que cuentan para un egreso. En un cancelado, lo que "falta"
+ * es todo lo que nunca iba a salir: no es una falla. Quedan solo las reales
+ * (algo de mas, de otra orden, que no esta en la orden, o marcado "No
+ * salio"). En cualquier otro caso, todas.
+ */
+export function novedadesQueCuentan(novedades: Novedad[], cancelado: boolean): Novedad[] {
+  return cancelado ? novedades.filter(esAnormalEnVivo) : novedades;
 }
 
 /** Unidades que faltan por pistolear, segun las faltas de la verificacion. */
