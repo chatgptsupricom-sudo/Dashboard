@@ -143,6 +143,115 @@ export function evaluarArmado(
   return { completo: sinContar === 0 && diferencias === 0, diferencias, sinContar };
 }
 
+/** Etapas en las que el egreso todavia esta en manos de Almacen. */
+export function enAlmacen(etapa: Etapa): boolean {
+  return RESPONSABLE[etapa] === "almacen";
+}
+
+export type FaltanteSeriales = {
+  item_id: number;
+  producto: string;
+  esperados: number;
+  cargados: number;
+};
+
+/**
+ * Compara, por renglon con serial, cuantos seriales tiene el picking de Odoo
+ * contra la cantidad que sale (issue #299).
+ *
+ * Los seriales no se conocen al registrar el egreso: en un picking "Listo"
+ * Odoo aparta la cantidad pero no que serial sale; el serial aparece cuando
+ * el almacenista procesa el picking. Por eso esto se evalua al leerlos, y un
+ * egreso con faltantes no pasa a Seguridad: no hay contra que pistolear.
+ *
+ * `lleva_serial` null = todavia no se le pregunto a Odoo: no cuenta como
+ * faltante, pero tampoco deja el egreso "completo".
+ */
+export function evaluarSeriales(
+  items: Array<{
+    id: number;
+    producto: string;
+    cantidad_cargada: number | string;
+    lleva_serial?: number | boolean | null;
+  }>,
+  seriales: Array<{ item_id: number }>,
+): { completo: boolean; sinLeer: boolean; faltantes: FaltanteSeriales[] } {
+  const porItem = new Map<number, number>();
+  for (const s of seriales) porItem.set(Number(s.item_id), (porItem.get(Number(s.item_id)) || 0) + 1);
+
+  const sinLeer = items.some((i) => i.lleva_serial === null || i.lleva_serial === undefined);
+  const faltantes = items
+    .filter((i) => Number(i.lleva_serial) === 1)
+    .map((i) => ({
+      item_id: Number(i.id),
+      producto: i.producto,
+      esperados: Number(i.cantidad_cargada),
+      cargados: porItem.get(Number(i.id)) || 0,
+    }))
+    .filter((f) => f.cargados !== f.esperados);
+
+  return { completo: !sinLeer && faltantes.length === 0, sinLeer, faltantes };
+}
+
+/**
+ * Las dos calificaciones de un egreso (issue #302): el picking va al que armo
+ * (`almacenista_armado`) y el despacho al que despacho (`almacenista_despacho`).
+ * Si es la misma persona, igual son dos notas.
+ *
+ * `null` en la tabla = calificacion de otra cosa (RMA) o de un egreso de
+ * antes de #302, que tenia una sola nota: esa cuenta como `despacho`.
+ */
+export const ASPECTOS = ["picking", "despacho"] as const;
+export type Aspecto = (typeof ASPECTOS)[number];
+
+export type Novedad = {
+  item_id: number;
+  producto: string;
+  tipo: "falta" | "sobra" | "no_salio";
+  esperado: number;
+  contado: number | null;
+};
+
+/**
+ * Novedades de la verificacion de Seguridad: lo que no salio como decia la
+ * orden. Hoy sale del conteo del porton (`cantidad_verificada` / `no_salio`);
+ * #301 le suma las de seriales (faltantes, sobrantes, de otra orden).
+ */
+export function novedadesVerificacion(
+  items: Array<{
+    id: number;
+    producto: string;
+    cantidad_cargada: number | string;
+    cantidad_verificada: number | string | null;
+    no_salio?: number | boolean | null;
+  }>,
+): Novedad[] {
+  const novedades: Novedad[] = [];
+  for (const i of items) {
+    const esperado = Number(i.cantidad_cargada);
+    if (Number(i.no_salio) === 1 || i.no_salio === true) {
+      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "no_salio", esperado, contado: null });
+      continue;
+    }
+    if (i.cantidad_verificada === null || i.cantidad_verificada === undefined || i.cantidad_verificada === "") continue;
+    const contado = Number(i.cantidad_verificada);
+    if (contado < esperado) {
+      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "falta", esperado, contado });
+    } else if (contado > esperado) {
+      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "sobra", esperado, contado });
+    }
+  }
+  return novedades;
+}
+
+/**
+ * Con novedades, una nota alta del picking pide explicacion: si faltaron o
+ * sobraron productos, un 4 o un 5 al que armo no se da a ciegas.
+ */
+export function pideComentarioPicking(estrellas: number, hayNovedades: boolean): boolean {
+  return hayNovedades && estrellas >= 4;
+}
+
 export type ResultadoEgreso = "aprobado" | "no_aprobado_despachado" | "no_despachado";
 
 /** Resultado del porton (null = Seguridad todavia no verifico). */

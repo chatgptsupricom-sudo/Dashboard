@@ -183,6 +183,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errores.join("; ") }, { status: 400 });
     }
 
+    // Quien arma tiene que estar en el personal de Almacen de la sucursal,
+    // igual que quien despacha (issue #302): se le califica el picking, y un
+    // nombre escrito a mano no se suma a su historial.
+    const armadoEnCatalogo = await query(
+      `SELECT id FROM seguridad_catalogo_almacenistas
+        WHERE nombre = ? ${cids !== null ? "AND cids = ?" : ""} LIMIT 1`,
+      cids !== null ? [almacenistaArmado, cids] : [almacenistaArmado],
+    );
+    if (armadoEnCatalogo.rows.length === 0) {
+      return NextResponse.json(
+        { error: "El almacenista del armado no esta en el personal de Almacen" },
+        { status: 400 },
+      );
+    }
+
     // La orden se relee de Odoo por su id en vez de creerle al navegador
     // (issue #298): de ahi salen el cliente, los renglones y la factura. Asi
     // no se registra una orden sin facturar aunque alguien arme el POST a
@@ -241,6 +256,7 @@ export async function POST(request: NextRequest) {
       producto: truncar(l.producto, MAX.producto) || "—",
       codigo: truncar(l.codigo, MAX.codigo),
       cantidad_cargada: l.cantidad_cargada,
+      lleva_serial: l.lleva_serial ? 1 : 0,
     }));
 
     const columnas = [
@@ -302,20 +318,31 @@ export async function POST(request: NextRequest) {
 
     // Los renglones en una sola sentencia: 300 INSERT sueltos en el porton,
     // con el camion esperando, se notan.
-    const valores: any[] = [];
-    const marcadores = renglones
-      .map((i: any) => {
-        valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
-        return "(?, ?, ?, ?, ?)";
-      })
-      .join(", ");
-
-    await query(
-      `INSERT INTO seguridad_mercancia_items
-        (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada)
-       VALUES ${marcadores}`,
-      valores,
-    );
+    // `lleva_serial` (issue #299) sale del tracking de Odoo. Sin la migracion
+    // (sql/egreso_seriales.sql) se registra igual, sin esa columna.
+    const insertarRenglones = (conSerial: boolean) => {
+      const valores: any[] = [];
+      const marcadores = renglones
+        .map((i: any) => {
+          valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
+          if (conSerial) valores.push(i.lleva_serial);
+          return conSerial ? "(?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?)";
+        })
+        .join(", ");
+      return query(
+        `INSERT INTO seguridad_mercancia_items
+          (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada${conSerial ? ", lleva_serial" : ""})
+         VALUES ${marcadores}`,
+        valores,
+      );
+    };
+    try {
+      await insertarRenglones(true);
+    } catch (e: any) {
+      if (!/Unknown column/i.test(e?.message || "")) throw e;
+      console.warn("[egreso] falta correr sql/egreso_seriales.sql: renglones sin lleva_serial");
+      await insertarRenglones(false);
+    }
 
     // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
     // preparar sin recargar la pantalla del porton.
