@@ -100,19 +100,21 @@ export async function leerProductos(caseId: number): Promise<ProductoEnvio[]> {
 }
 
 /**
- * Da de alta los productos de un envío recién creado. No hace nada sin la
- * tabla. Si falla, se loguea y se sigue: el caso ya quedó creado con los datos
- * del primer producto, y la conversión de la migración lo puede rehacer.
+ * Da de alta los productos de un envío recién creado y devuelve sus ids, en el
+ * mismo orden. No hace nada sin la tabla ([]). Si falla, se loguea y se sigue
+ * con los que se hayan creado: el caso ya quedó creado con los datos del
+ * primer producto, y la conversión de la migración lo puede rehacer.
  */
 export async function crearProductos(
   caseId: number,
   productos: ProductoNuevo[],
   conn?: Ejecutor,
-): Promise<void> {
-  if (!productos.length || !(await hayTablaProductos())) return;
+): Promise<number[]> {
+  const ids: number[] = [];
+  if (!productos.length || !(await hayTablaProductos())) return ids;
   try {
     for (const [i, p] of productos.entries()) {
-      await ejecutar(
+      const r = await ejecutar(
         conn,
         `INSERT INTO rma_case_items (
            case_id, orden, product_code, hardware, brand, model, serial,
@@ -135,9 +137,30 @@ export async function crearProductos(
           p.garantia_marca ?? null,
         ],
       );
+      if (r?.insertId) ids.push(r.insertId);
     }
   } catch (e: any) {
     console.error(`[rma_case_items] no se pudieron crear los productos del caso ${caseId}:`, e?.message);
+  }
+  return ids;
+}
+
+/**
+ * Lo que el cliente puede ver de cada producto en la consulta pública: sin
+ * diagnóstico ni notas, que son internos. [] sin la tabla o si falla.
+ */
+export async function productosPublicos(
+  caseId: number,
+): Promise<{ nombre: string; serial: string | null; status: EstadoProducto }[]> {
+  try {
+    return (await leerProductos(caseId)).map((p) => ({
+      nombre: p.model || p.hardware || "",
+      serial: p.serial || null,
+      status: p.status,
+    }));
+  } catch (e: any) {
+    console.error(`[rma_case_items] no se pudieron leer los productos del caso ${caseId}:`, e?.message);
+    return [];
   }
 }
 

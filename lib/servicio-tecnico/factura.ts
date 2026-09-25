@@ -5,6 +5,7 @@ import {
 } from "@/lib/garantia";
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { hayTablaProductos } from "@/lib/rma/items";
 
 /**
  * Búsqueda de una factura de cliente en Odoo y de los seriales que se le
@@ -460,10 +461,22 @@ async function casosExistentes(
 ): Promise<{ serial: string; productoId: number | null; caso: string }[]> {
   if (!facturaNombre) return [];
   try {
-    const { rows } = await query(
-      `SELECT serial, odoo_product_id, case_number FROM rma_cases WHERE invoice_number = ?`,
-      [facturaNombre],
-    );
+    // Con envíos de varios productos (issue #331) el caso solo guarda el
+    // primero: los demás están en rma_case_items. Se miran las dos tablas; un
+    // producto repetido entre ambas no molesta.
+    const { rows } = (await hayTablaProductos())
+      ? await query(
+          `SELECT serial, odoo_product_id, case_number FROM rma_cases WHERE invoice_number = ?
+           UNION ALL
+           SELECT i.serial, i.odoo_product_id, c.case_number
+             FROM rma_case_items i JOIN rma_cases c ON c.id = i.case_id
+            WHERE c.invoice_number = ?`,
+          [facturaNombre, facturaNombre],
+        )
+      : await query(
+          `SELECT serial, odoo_product_id, case_number FROM rma_cases WHERE invoice_number = ?`,
+          [facturaNombre],
+        );
     // Sin trim(): el serial de Odoo a veces trae espacios finales de verdad
     // (ver la corrección de item_id en app/api/servicio-tecnico/ticket/route.ts)
     // y se guarda tal cual en `rma_cases.serial`. item.serial tampoco se
