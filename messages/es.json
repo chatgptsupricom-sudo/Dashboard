@@ -2635,10 +2635,13 @@
         },
         "tipo_entrega": "Tipo de entrega",
         "entrega": {
-          "encomienda": "Encomienda",
-          "puerta": "Entrega en puerta"
+          "ruta": "Ruta",
+          "puerta": "Retira el cliente",
+          "encomienda": "Encomienda"
         },
-        "entrega_ayuda": "La encomienda pasa por empaquetado; la entrega en puerta va directo a despacho.",
+        "entrega_ayuda": "La encomienda pasa por empaquetado; ruta y retira el cliente van directo a despacho. En ruta, el chofer y la unidad se piden al asignar el despacho.",
+        "entrega_todas": "Todas las entregas",
+        "exportar_excel": "Exportar Excel",
         "almacenista_armado": "Almacenista del armado",
         "almacenista_despacho": "Almacenista de despacho",
         "recorrido": "Recorrido",
@@ -2687,7 +2690,9 @@
         "en_curso": "Egresos en curso",
         "flujo_anterior": "Registro del flujo anterior",
         "cancelar": "Volver",
-        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón."
+        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón.",
+        "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
+        "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
     }
   },

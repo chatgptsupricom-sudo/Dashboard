@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
@@ -27,6 +28,8 @@ import {
   esTipoEntrega,
   etapasDelRecorrido,
   indiceEtapa,
+  requiereVehiculo,
+  resultadoEgreso,
   type Accion,
   type Etapa,
   type TipoEntrega,
@@ -79,6 +82,8 @@ type Movimiento = {
   tipo_entrega: TipoEntrega | null;
   almacenista_armado: string | null;
   almacenista_despacho: string | null;
+  chofer_nombre: string | null;
+  placa_vehiculo: string | null;
   observaciones: string | null;
   estado: "pendiente" | "conforme" | "descuadre";
   created_at: string | null;
@@ -133,10 +138,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const tf = useTranslations("seguridad.mercancia.flujo");
   const tc = useTranslations("seguridad.calificacion");
   const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
+  const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
+  const tUni = useTranslations("seguridad.mercancia.unidades");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
   const rol = (user?.role || "").toLowerCase().trim();
+  // Choferes y unidades son de Almacen: solo Almacen ve "Gestionar".
+  const gestionaPersonal = rol === "almacen" || rol === "superadmin";
 
   const [mov, setMov] = useState<Movimiento | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -153,10 +162,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [noSalio, setNoSalio] = useState<Record<number, boolean>>({});
   const [motivos, setMotivos] = useState<Record<number, string>>({});
 
-  // Paso "asignar despacho": solo el almacenista. Sin chofer ni placa, porque
-  // hoy no se trabaja con rutas (ver TIPOS_ENTREGA en egresoFlujo).
+  // Paso "asignar despacho": el almacenista, y en ruta tambien el chofer y la
+  // unidad (placa), todos de sus catalogos.
   const [despacho, setDespacho] = useState("");
   const [almacenistasCat, setAlmacenistasCat] = useState<string[]>([]);
+  const [chofer, setChofer] = useState("");
+  const [placa, setPlaca] = useState("");
+  const [choferesCat, setChoferesCat] = useState<string[]>([]);
+  const [unidadesCat, setUnidadesCat] = useState<
+    { placa: string; descripcion: string | null }[]
+  >([]);
 
   // Decision de Seguridad cuando no aprueba.
   const [noAprobar, setNoAprobar] = useState(false);
@@ -210,20 +225,36 @@ export default function EgresoFlujo({ id }: { id: string }) {
     if (a.id === Number(id)) void cargar();
   });
 
-  // El catalogo solo hace falta en el paso de asignar despacho.
+  // Los catalogos solo hacen falta en el paso de asignar despacho; choferes y
+  // unidades, solo si sale por ruta.
+  const esRuta = requiereVehiculo(esTipoEntrega(mov?.tipo_entrega) ? mov!.tipo_entrega : null);
   useEffect(() => {
     if (mov?.etapa !== "por_asignar_despacho") return;
     (async () => {
       try {
-        const ra = await fetch("/api/seguridad/mercancia/catalogo/almacenistas");
+        const [ra, rc, ru] = await Promise.all([
+          fetch("/api/seguridad/mercancia/catalogo/almacenistas"),
+          esRuta ? fetch("/api/seguridad/mercancia/catalogo/choferes") : null,
+          esRuta ? fetch("/api/seguridad/mercancia/catalogo/unidades") : null,
+        ]);
         setAlmacenistasCat(
           ra.ok ? ((await ra.json()).almacenistas || []).map((x: any) => x.nombre) : [],
         );
+        if (rc?.ok) setChoferesCat(((await rc.json()).choferes || []).map((x: any) => x.nombre));
+        if (ru?.ok) setUnidadesCat((await ru.json()).unidades || []);
       } catch {
         // Sin catalogo el select queda vacio; el boton no avanza sin despacho.
       }
     })();
-  }, [mov?.etapa]);
+  }, [mov?.etapa, esRuta]);
+
+  // Un egreso por ruta que ya traia chofer y placa (registrado antes de que
+  // se pidieran al asignar) arranca con esos valores, no en blanco.
+  useEffect(() => {
+    if (mov?.etapa !== "por_asignar_despacho" || !esRuta) return;
+    if (mov.chofer_nombre) setChofer((v) => v || mov.chofer_nombre || "");
+    if (mov.placa_vehiculo) setPlaca((v) => v || mov.placa_vehiculo || "");
+  }, [mov?.etapa, esRuta, mov?.chofer_nombre, mov?.placa_vehiculo]);
 
   const accionar = async (accion: Accion, extra: Record<string, unknown> = {}) => {
     setError(null);
@@ -302,14 +333,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
     cerrado: hora(mov.cerrado_at),
   };
 
-  const resultado =
-    mov.aprobado === null
-      ? null
-      : Number(mov.aprobado) === 1
-        ? "aprobado"
-        : Number(mov.despachado) === 1
-          ? "no_aprobado_despachado"
-          : "no_despachado";
+  const resultado = resultadoEgreso(mov);
 
   // Conteo del porton en pantalla: aprobar exige todo contado y cuadrando
   // (la API lo vuelve a validar).
@@ -371,6 +395,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     etiqueta={tm("factura_venta")}
                     valor={`${mov.facturas_venta.join(", ")} · ${fechaCorta(mov.factura_venta_fecha)}`}
                   />
+                )}
+                {(esRuta || mov.chofer_nombre || mov.placa_vehiculo) && (
+                  <>
+                    <Dato etiqueta={tm("chofer")} valor={mov.chofer_nombre} />
+                    <Dato etiqueta={tm("placa")} valor={mov.placa_vehiculo} />
+                  </>
                 )}
               </dl>
               {mov.observaciones && (
@@ -541,9 +571,52 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         ))}
                       </select>
                     </div>
+                    {esRuta && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <EtiquetaCatalogo
+                            etiqueta={`${tm("chofer")} *`}
+                            vacio={choferesCat.length === 0}
+                            gestionar={gestionaPersonal ? { href: `/${locale}/seguridad/mercancia/personal`, texto: tCho("gestionar") } : null}
+                          />
+                          <select value={chofer} onChange={(e) => setChofer(e.target.value)} className={inputClases}>
+                            <option value="">{tCho("select_placeholder")}</option>
+                            {choferesCat.map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                          {choferesCat.length === 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700">{tf("catalogo_vacio_chofer")}</p>
+                          )}
+                        </div>
+                        <div>
+                          <EtiquetaCatalogo
+                            etiqueta={`${tm("placa")} *`}
+                            vacio={unidadesCat.length === 0}
+                            gestionar={gestionaPersonal ? { href: `/${locale}/seguridad/mercancia/unidades`, texto: tUni("gestionar") } : null}
+                          />
+                          <select value={placa} onChange={(e) => setPlaca(e.target.value)} className={inputClases}>
+                            <option value="">{tUni("select_placeholder")}</option>
+                            {unidadesCat.map((u) => (
+                              <option key={u.placa} value={u.placa}>
+                                {u.descripcion ? `${u.placa} — ${u.descripcion}` : u.placa}
+                              </option>
+                            ))}
+                          </select>
+                          {unidadesCat.length === 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700">{tf("catalogo_vacio_unidad")}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <BotonPrimario
-                      onClick={() => accionar("asignar_despacho", { almacenista_despacho: despacho })}
-                      disabled={enviando || !despacho}
+                      onClick={() =>
+                        accionar("asignar_despacho", {
+                          almacenista_despacho: despacho,
+                          ...(esRuta ? { chofer_nombre: chofer, placa_vehiculo: placa } : {}),
+                        })
+                      }
+                      disabled={enviando || !despacho || (esRuta && (!chofer || !placa))}
                       icon={Truck}
                       className="w-full h-12"
                     >
@@ -776,6 +849,33 @@ function EstadoActual({
 
 function PanelPaso({ children }: { children: React.ReactNode }) {
   return <Card className="space-y-3 border-violet-200">{children}</Card>;
+}
+
+/** Etiqueta de un select de catalogo, con "Gestionar" para quien lo administra. */
+function EtiquetaCatalogo({
+  etiqueta,
+  vacio,
+  gestionar,
+}: {
+  etiqueta: string;
+  vacio: boolean;
+  gestionar: { href: string; texto: string } | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-1.5">
+      <label className={`${labelClases} mb-0`}>{etiqueta}</label>
+      {gestionar && (
+        <Link
+          href={gestionar.href}
+          className={`text-[11px] font-semibold hover:opacity-75 shrink-0 ${
+            vacio ? "text-amber-700" : "text-[color:var(--portal-primary,#741DFE)]"
+          }`}
+        >
+          {gestionar.texto}
+        </Link>
+      )}
+    </div>
+  );
 }
 
 function Dato({ etiqueta, valor }: { etiqueta: string; valor: string | null | undefined }) {
