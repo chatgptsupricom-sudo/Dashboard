@@ -2487,6 +2487,8 @@
       "nuevo": "Registrar",
       "buscar": "Buscar",
       "no_encontrada": "No encontramos ese documento en Odoo",
+      "orden_sin_facturar": "Esta orden todavía no está facturada",
+      "factura_venta": "Factura de venta",
       "cliente": "Cliente",
       "proveedor": "Proveedor",
       "almacenista": "Almacenista que carga",
@@ -2547,8 +2549,9 @@
       },
       "ordenes": {
         "titulo": "Órdenes de despacho pendientes",
-        "subtitulo": "Listas en Odoo, todavía no procesadas como egreso",
-        "vacio": "No hay órdenes de despacho listas en Odoo.",
+        "subtitulo": "Listas y facturadas en Odoo, todavía no procesadas como egreso",
+        "vacio": "No hay órdenes de despacho listas y facturadas en Odoo.",
+        "sin_facturar": "{n, plural, one {# orden lista en Odoo todavía no está facturada} other {# órdenes listas en Odoo todavía no están facturadas}}: aparecen aquí cuando Caja las facture.",
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
         "registrar_egreso": "Registrar egreso con esta orden"

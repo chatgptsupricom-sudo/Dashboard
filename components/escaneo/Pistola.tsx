@@ -13,6 +13,11 @@ import { Keyboard, Loader2, ScanBarcode, Search } from "lucide-react";
  * la pantalla (inputMode="none"): con la pistola por Bluetooth o USB-OTG no
  * hace falta, y taparia la mitad de la pantalla. Con el boton del teclado se
  * puede escribir un codigo a mano.
+ *
+ * Sirve para cualquier conteo con pistola: la recepcion por packing list y la
+ * verificacion del egreso en C4. Cada uno le pasa su `endpoint`, que responde
+ * lo que decide lib/escaneo/procesar, y el espacio de textos (`textos`) con
+ * las claves `pistola_*`.
  */
 
 export type ItemPistola = {
@@ -32,7 +37,8 @@ export type ResultadoEscaneo =
       item_id: number;
       cantidad: number;
       serial: { id: number; item_id: number; serial: string; escaneado_por: string | null; created_at: string };
-      en_otro_packing_list: string | null;
+      /** Referencia del otro documento donde ya estaba ese serial (aviso, no bloquea). */
+      en_otro: string | null;
     };
 
 type Mensaje = { tipo: "ok" | "error" | "aviso"; texto: string };
@@ -59,20 +65,24 @@ function pitar(bien: boolean) {
 }
 
 export default function Pistola({
-  recepcionId,
+  endpoint,
+  textos = "recepcion",
   items,
   seleccionado,
   onResultado,
   onTerminar,
 }: {
-  recepcionId: number;
+  /** POST { codigo, item_id?, aprender_item_id?, forzar_serial? } */
+  endpoint: string;
+  /** Espacio de next-intl con las claves pistola_*, error y buscar_producto. */
+  textos?: string;
   items: ItemPistola[];
   seleccionado: number | null;
   onResultado: (r: ResultadoEscaneo) => void;
   /** Salir del modo seriales del producto seleccionado. */
   onTerminar: () => void;
 }) {
-  const t = useTranslations("recepcion");
+  const t = useTranslations(textos);
   const campo = useRef<HTMLInputElement>(null);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -101,7 +111,7 @@ export default function Pistola({
     if (!limpio) return;
     setEnviando(true);
     try {
-      const res = await fetch(`/api/recepcion/${recepcionId}/escaneo`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ codigo: limpio, item_id: seleccionado, ...extra }),
@@ -137,13 +147,13 @@ export default function Pistola({
         setMensaje({ tipo: "ok", texto: t("pistola_seleccionado", { producto: p?.producto || "" }) });
       } else if (j.resultado === "serial") {
         setMensaje(
-          j.en_otro_packing_list
+          j.en_otro
             ? {
                 tipo: "aviso",
                 texto: t("pistola_serial_en_otro", {
                   serial: j.serial.serial,
                   cantidad: j.cantidad,
-                  referencia: j.en_otro_packing_list,
+                  referencia: j.en_otro,
                 }),
               }
             : { tipo: "ok", texto: t("pistola_serial", { serial: j.serial.serial, cantidad: j.cantidad }) },
