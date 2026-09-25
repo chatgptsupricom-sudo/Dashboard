@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
+import { filtroMercancia } from "@/lib/seguridad/filtros";
 import { agruparLineas, parsearLista, serializarLista } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -40,27 +41,8 @@ export async function GET(request: NextRequest) {
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
-    const sp = new URL(request.url).searchParams;
-    const tipo = (sp.get("tipo") || "").trim();
-    const estado = (sp.get("estado") || "").trim();
-
-    let where = "WHERE 1=1";
-    const params: any[] = [];
-    if (tipo === "ingreso" || tipo === "egreso") {
-      where += " AND tipo = ?";
-      params.push(tipo);
-    }
-    if (["pendiente", "conforme", "descuadre"].includes(estado)) {
-      where += " AND estado = ?";
-      params.push(estado);
-    }
-    // null = superadmin, ve todas las sucursales. Las filas viejas sin cids
-    // (de antes de este filtro) quedan fuera para todos los demas — no se les
-    // asigna una sucursal adivinada.
-    if (cids !== null) {
-      where += " AND m.cids = ?";
-      params.push(cids);
-    }
+    // El mismo builder que usa el Excel: lo exportado es lo que se ve.
+    const { where, params } = filtroMercancia(new URL(request.url).searchParams, cids);
 
     const res = await query(
       `SELECT m.*,

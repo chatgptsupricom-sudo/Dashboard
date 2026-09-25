@@ -6,7 +6,8 @@
  *
  *   por_armar ─► armando ─► pre_despacho ─► (Almacen verifica el armado)
  *        ├─ encomienda ─► por_empaquetar ─► por_asignar_despacho
- *        └─ puerta ────────────────────────► por_asignar_despacho
+ *        ├─ puerta ────────────────────────► por_asignar_despacho
+ *        └─ ruta ──────────────────────────► por_asignar_despacho (+ chofer y unidad)
  *   por_asignar_despacho ─► por_verificar ─► (Seguridad verifica)
  *        ├─ aprueba            ─► despachado
  *        └─ no aprueba + motivo ─► Seguridad decide: despachado o no
@@ -29,10 +30,10 @@ export const ETAPAS = [
 ] as const;
 export type Etapa = (typeof ETAPAS)[number];
 
-// "ruta" (camion propio, con chofer y placa) esta en el diagrama pero hoy no
-// se trabaja con rutas: solo encomienda y entrega en puerta. Para activarla,
-// agregarla aqui y volver a pedir chofer/placa al asignar el despacho.
-export const TIPOS_ENTREGA = ["encomienda", "puerta"] as const;
+// Como sale la mercancia, segun lo que decida el cliente: por ruta (camion
+// propio, con chofer y unidad), retira el cliente ("puerta") o por encomienda.
+// El orden es el de los botones del formulario.
+export const TIPOS_ENTREGA = ["ruta", "puerta", "encomienda"] as const;
 export type TipoEntrega = (typeof TIPOS_ENTREGA)[number];
 
 export function esEtapa(v: unknown): v is Etapa {
@@ -93,8 +94,17 @@ export function puedeHacer(accion: Accion, rolSesion: string): boolean {
 }
 
 /**
+ * La ruta sale en camion propio: al asignar el despacho hay que decir que
+ * chofer y que unidad (placa) la llevan. Las otras dos no llevan vehiculo.
+ */
+export function requiereVehiculo(tipo: TipoEntrega | null): boolean {
+  return tipo === "ruta";
+}
+
+/**
  * Etapa siguiente a "Almacen verifico el armado". Solo la encomienda pasa
- * por empaquetado; la entrega en puerta va directo a asignar quien despacha.
+ * por empaquetado; puerta y ruta van directo a asignar quien despacha.
+ * (Ruta sin empaquetado es la propuesta del #300: confirmar con Almacen.)
  */
 export function etapaTrasArmado(tipo: TipoEntrega): Etapa {
   return tipo === "encomienda" ? "por_empaquetar" : "por_asignar_despacho";
@@ -102,7 +112,7 @@ export function etapaTrasArmado(tipo: TipoEntrega): Etapa {
 
 /**
  * Etapas que se muestran en la linea de tiempo de un registro. Empaquetado
- * solo aparece en una encomienda: en puerta no es un paso pendiente,
+ * solo aparece en una encomienda: en puerta y ruta no es un paso pendiente,
  * simplemente no existe.
  */
 export function etapasDelRecorrido(tipo: TipoEntrega | null): Etapa[] {

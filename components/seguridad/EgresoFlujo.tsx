@@ -27,6 +27,7 @@ import {
   esTipoEntrega,
   etapasDelRecorrido,
   indiceEtapa,
+  requiereVehiculo,
   type Accion,
   type Etapa,
   type TipoEntrega,
@@ -76,6 +77,8 @@ type Movimiento = {
   tipo_entrega: TipoEntrega | null;
   almacenista_armado: string | null;
   almacenista_despacho: string | null;
+  chofer_nombre: string | null;
+  placa_vehiculo: string | null;
   observaciones: string | null;
   estado: "pendiente" | "conforme" | "descuadre";
   created_at: string | null;
@@ -130,6 +133,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const tf = useTranslations("seguridad.mercancia.flujo");
   const tc = useTranslations("seguridad.calificacion");
   const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
+  const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
+  const tUni = useTranslations("seguridad.mercancia.unidades");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
@@ -150,10 +155,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [noSalio, setNoSalio] = useState<Record<number, boolean>>({});
   const [motivos, setMotivos] = useState<Record<number, string>>({});
 
-  // Paso "asignar despacho": solo el almacenista. Sin chofer ni placa, porque
-  // hoy no se trabaja con rutas (ver TIPOS_ENTREGA en egresoFlujo).
+  // Paso "asignar despacho": el almacenista, y en ruta tambien el chofer y la
+  // unidad (placa), todos de sus catalogos.
   const [despacho, setDespacho] = useState("");
   const [almacenistasCat, setAlmacenistasCat] = useState<string[]>([]);
+  const [chofer, setChofer] = useState("");
+  const [placa, setPlaca] = useState("");
+  const [choferesCat, setChoferesCat] = useState<string[]>([]);
+  const [unidadesCat, setUnidadesCat] = useState<
+    { placa: string; descripcion: string | null }[]
+  >([]);
 
   // Decision de Seguridad cuando no aprueba.
   const [noAprobar, setNoAprobar] = useState(false);
@@ -207,20 +218,28 @@ export default function EgresoFlujo({ id }: { id: string }) {
     if (a.id === Number(id)) void cargar();
   });
 
-  // El catalogo solo hace falta en el paso de asignar despacho.
+  // Los catalogos solo hacen falta en el paso de asignar despacho; choferes y
+  // unidades, solo si sale por ruta.
+  const esRuta = requiereVehiculo(esTipoEntrega(mov?.tipo_entrega) ? mov!.tipo_entrega : null);
   useEffect(() => {
     if (mov?.etapa !== "por_asignar_despacho") return;
     (async () => {
       try {
-        const ra = await fetch("/api/seguridad/mercancia/catalogo/almacenistas");
+        const [ra, rc, ru] = await Promise.all([
+          fetch("/api/seguridad/mercancia/catalogo/almacenistas"),
+          esRuta ? fetch("/api/seguridad/mercancia/catalogo/choferes") : null,
+          esRuta ? fetch("/api/seguridad/mercancia/catalogo/unidades") : null,
+        ]);
         setAlmacenistasCat(
           ra.ok ? ((await ra.json()).almacenistas || []).map((x: any) => x.nombre) : [],
         );
+        if (rc?.ok) setChoferesCat(((await rc.json()).choferes || []).map((x: any) => x.nombre));
+        if (ru?.ok) setUnidadesCat((await ru.json()).unidades || []);
       } catch {
         // Sin catalogo el select queda vacio; el boton no avanza sin despacho.
       }
     })();
-  }, [mov?.etapa]);
+  }, [mov?.etapa, esRuta]);
 
   const accionar = async (accion: Accion, extra: Record<string, unknown> = {}) => {
     setError(null);
@@ -363,6 +382,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 <Dato etiqueta={tf("almacenista_armado")} valor={mov.almacenista_armado} />
                 <Dato etiqueta={tf("almacenista_despacho")} valor={mov.almacenista_despacho} />
                 <Dato etiqueta={tm("factura")} valor={mov.facturas?.join(", ")} />
+                {(esRuta || mov.chofer_nombre || mov.placa_vehiculo) && (
+                  <>
+                    <Dato etiqueta={tm("chofer")} valor={mov.chofer_nombre} />
+                    <Dato etiqueta={tm("placa")} valor={mov.placa_vehiculo} />
+                  </>
+                )}
               </dl>
               {mov.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
@@ -532,9 +557,38 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         ))}
                       </select>
                     </div>
+                    {esRuta && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClases}>{tm("chofer")} *</label>
+                          <select value={chofer} onChange={(e) => setChofer(e.target.value)} className={inputClases}>
+                            <option value="">{tCho("select_placeholder")}</option>
+                            {choferesCat.map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClases}>{tm("placa")} *</label>
+                          <select value={placa} onChange={(e) => setPlaca(e.target.value)} className={inputClases}>
+                            <option value="">{tUni("select_placeholder")}</option>
+                            {unidadesCat.map((u) => (
+                              <option key={u.placa} value={u.placa}>
+                                {u.descripcion ? `${u.placa} — ${u.descripcion}` : u.placa}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                     <BotonPrimario
-                      onClick={() => accionar("asignar_despacho", { almacenista_despacho: despacho })}
-                      disabled={enviando || !despacho}
+                      onClick={() =>
+                        accionar("asignar_despacho", {
+                          almacenista_despacho: despacho,
+                          ...(esRuta ? { chofer_nombre: chofer, placa_vehiculo: placa } : {}),
+                        })
+                      }
+                      disabled={enviando || !despacho || (esRuta && (!chofer || !placa))}
                       icon={Truck}
                       className="w-full h-12"
                     >

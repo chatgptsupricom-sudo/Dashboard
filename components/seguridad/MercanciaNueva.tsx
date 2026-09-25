@@ -63,8 +63,8 @@ export default function MercanciaNueva({
   // uno por uno a una lista, en vez de un solo campo de texto.
   const [almacenistas, setAlmacenistas] = useState<string[]>([]);
   // Egreso por etapas: arranca con quien arma y como se entrega. El
-  // almacenista de despacho, el chofer y la placa se asignan mas adelante,
-  // cuando el armado ya esta verificado (ver EgresoFlujo).
+  // almacenista de despacho (y en ruta, el chofer y la unidad) se asignan mas
+  // adelante, cuando el armado ya esta verificado (ver EgresoFlujo).
   const [almacenistaArmado, setAlmacenistaArmado] = useState("");
   const [tipoEntrega, setTipoEntrega] = useState<TipoEntrega | "">("");
   const [chofer, setChofer] = useState("");
@@ -396,7 +396,7 @@ export default function MercanciaNueva({
               </div>
               <div>
                 <label className={labelClases}>{tf("tipo_entrega")} *</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {TIPOS_ENTREGA.map((t) => (
                     <button
                       key={t}

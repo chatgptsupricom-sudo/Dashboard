@@ -2632,10 +2632,13 @@
         },
         "tipo_entrega": "Tipo de entrega",
         "entrega": {
-          "encomienda": "Encomienda",
-          "puerta": "Entrega en puerta"
+          "ruta": "Ruta",
+          "puerta": "Retira el cliente",
+          "encomienda": "Encomienda"
         },
-        "entrega_ayuda": "La encomienda pasa por empaquetado; la entrega en puerta va directo a despacho.",
+        "entrega_ayuda": "La encomienda pasa por empaquetado; ruta y retira el cliente van directo a despacho. En ruta, el chofer y la unidad se piden al asignar el despacho.",
+        "entrega_todas": "Todas las entregas",
+        "exportar_excel": "Exportar Excel",
         "almacenista_armado": "Almacenista del armado",
         "almacenista_despacho": "Almacenista de despacho",
         "recorrido": "Recorrido",
