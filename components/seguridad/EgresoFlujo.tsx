@@ -571,7 +571,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
+        {/* Dos columnas recien desde lg: en md, con el menu lateral abierto, la
+            de renglones quedaba en ~270 px y el nombre del producto en "A." */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
           <div className="space-y-4 min-w-0">
             {/* Datos del egreso */}
             <Card>
@@ -1140,7 +1142,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
           </div>
 
           {/* Recorrido completo, con quien y cuando. */}
-          <Card className="md:sticky md:top-24">
+          <Card className="lg:sticky lg:top-24">
             <SectionTitle>{tf("recorrido")}</SectionTitle>
             <ol className="space-y-3">
               {recorrido.map((e, i) => {

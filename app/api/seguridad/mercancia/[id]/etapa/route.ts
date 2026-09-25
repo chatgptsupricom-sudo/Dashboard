@@ -346,12 +346,17 @@ async function ejecutar(
         try {
           const s = await sincronizarSeriales(id, Number(mov.odoo_picking_id));
           if (!s.completo) {
-            const detalle = s.faltantes
-              .map((f) => `${f.producto} (${f.cargados} de ${f.esperados})`)
-              .join("; ");
+            // Cuantos, no cuales: la pantalla ya marca cada renglon en ambar
+            // ("0 de 1 seriales"), y la lista con los nombres completos era un
+            // bloque rojo enorme. El detalle va igual en `seriales_estado`.
+            const n = s.faltantes.length;
+            const cuales =
+              n === 0
+                ? "todavía no se leyeron del picking"
+                : `faltan en ${n} producto${n === 1 ? "" : "s"} (marcado${n === 1 ? "" : "s"} en ámbar abajo)`;
             return NextResponse.json(
               {
-                error: `Faltan seriales en Odoo: ${detalle || "sin leer"}. Cargalos en el picking y vuelve a intentar.`,
+                error: `Seriales de Odoo: ${cuales}. Cárgalos en el picking y vuelve a intentar.`,
                 seriales_estado: s,
               },
               { status: 400 },
