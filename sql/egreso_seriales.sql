@@ -9,9 +9,11 @@
 --                                            0 = no; NULL = aun no se leyo.
 --   seguridad_mercancia.seriales_leidos_at   ultima vez que se leyeron los
 --                                            seriales del picking.
---   seguridad_mercancia_seriales             un serial esperado por fila. No
---                                            se repite dentro del mismo
---                                            egreso. verificado_at /
+--   seguridad_mercancia_seriales             un serial esperado por fila, ya
+--                                            normalizado (mayusculas, sin
+--                                            espacios, como lo lee la
+--                                            pistola). No se repite dentro
+--                                            del mismo egreso. verificado_at /
 --                                            verificado_por los llena
 --                                            Seguridad al pistolear (#301).
 --

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
+import { normalizarCodigo } from "@/lib/recepcion/flujo";
 import { evaluarSeriales } from "@/lib/seguridad/egresoFlujo";
 
 /**
@@ -16,10 +17,15 @@ import { evaluarSeriales } from "@/lib/seguridad/egresoFlujo";
  * con "Actualizar desde Odoo" mientras el egreso esta en Almacen, y a la
  * fuerza al asignar el despacho, que es el paso que lo manda a Seguridad.
  *
- * Una fila por serial en `seguridad_mercancia_seriales`. `verificado_at` /
- * `verificado_por` los llena Seguridad al pistolear en C4 (issue #301).
- * Mientras el egreso esta en Almacen nadie verifico nada, asi que releer
- * reemplaza la lista entera; una vez en Seguridad ya no se relee.
+ * Una fila por serial en `seguridad_mercancia_seriales`, ya normalizado con
+ * `normalizarCodigo` (mayusculas, sin espacios): es como llega de la pistola,
+ * y asi se compara sin convertir. `verificado_at` / `verificado_por` los llena
+ * Seguridad al pistolear en C4 (issue #301).
+ *
+ * Releer conserva la verificacion de los seriales que siguen en el picking y
+ * borra los que ya no estan. Solo se relee mientras el egreso esta en
+ * Almacen; si Seguridad no lo despacha y vuelve a Almacen (#301), lo ya
+ * pistoleado que sigue en el picking no se pierde.
  */
 
 export type SerialEgreso = {
@@ -86,17 +92,15 @@ export async function sincronizarSeriales(mercanciaId: number, pickingId: number
   for (const l of lineas) {
     const productoId = l.product_id?.[0];
     if (l.tracking === "serial" && productoId) conSerial.add(productoId);
-    const serial = String(l.lot_id?.[1] || l.lot_name || "").trim().slice(0, MAX_SERIAL);
+    const serial = normalizarCodigo(l.lot_id?.[1] || l.lot_name).slice(0, MAX_SERIAL);
     if (!serial || !productoId) continue;
     const item = itemPorProducto.get(productoId);
     if (!item) {
       ajenos++;
       continue;
     }
-    // La tabla compara sin mayusculas (collation _ci): se deduplica igual.
-    const clave = serial.toUpperCase();
-    if (vistos.has(clave)) continue;
-    vistos.add(clave);
+    if (vistos.has(serial)) continue;
+    vistos.add(serial);
     nuevos.push({ item_id: Number(item.id), serial, lot_id: l.lot_id?.[0] ?? null });
   }
 
@@ -107,10 +111,14 @@ export async function sincronizarSeriales(mercanciaId: number, pickingId: number
     await query("UPDATE seguridad_mercancia_items SET lleva_serial = ? WHERE id = ?", [valor, i.id]);
   }
 
-  // Solo lo que nadie verifico: lo que ya pistoleo Seguridad no se toca.
+  // Se borra lo que ya no esta en el picking (verificado o no: ya no se
+  // espera) y se inserta lo nuevo. Lo que sigue conserva su verificacion; si
+  // cambio de renglon en Odoo, se mueve.
   await query(
-    "DELETE FROM seguridad_mercancia_seriales WHERE mercancia_id = ? AND verificado_at IS NULL",
-    [mercanciaId],
+    `DELETE FROM seguridad_mercancia_seriales
+      WHERE mercancia_id = ?
+        ${nuevos.length > 0 ? `AND serial NOT IN (${nuevos.map(() => "?").join(", ")})` : ""}`,
+    [mercanciaId, ...nuevos.map((n) => n.serial)],
   );
   if (nuevos.length > 0) {
     const valores: unknown[] = [];
@@ -121,9 +129,10 @@ export async function sincronizarSeriales(mercanciaId: number, pickingId: number
       })
       .join(", ");
     await query(
-      `INSERT IGNORE INTO seguridad_mercancia_seriales
+      `INSERT INTO seguridad_mercancia_seriales
         (mercancia_id, item_id, serial, odoo_lot_id)
-       VALUES ${marcadores}`,
+       VALUES ${marcadores} AS nuevo
+       ON DUPLICATE KEY UPDATE item_id = nuevo.item_id, odoo_lot_id = nuevo.odoo_lot_id`,
       valores,
     );
   }
