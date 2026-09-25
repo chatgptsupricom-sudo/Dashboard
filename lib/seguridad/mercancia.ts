@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
+import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
 import { leerSerialesEgreso } from "@/lib/seguridad/seriales";
 
 /**
@@ -132,14 +133,9 @@ export async function cargarMovimiento(id: number) {
   );
   // Plural: puede haber mas de un almacenista por egreso (issue #43), y cada
   // uno se califica aparte. Antes se traia solo uno con LIMIT 1, que se
-  // quedaba con la primera calificacion y ocultaba el resto.
-  const calif = await query(
-    `SELECT id, almacenista_nombre, calificacion, comentario, calificado_por, created_at
-       FROM seguridad_calificaciones
-      WHERE relacionado_a = 'mercancia' AND relacionado_id = ?
-      ORDER BY id`,
-    [id],
-  ).catch(() => ({ rows: [] as any[] }));
+  // quedaba con la primera calificacion y ocultaba el resto. Cada una trae
+  // su aspecto, picking o despacho (issue #302).
+  const calif = { rows: await leerCalificacionesEgreso(id) };
 
   const fila = mov.rows[0] as any;
   const facturas = parsearLista(fila.facturas_json).length

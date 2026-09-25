@@ -2542,7 +2542,9 @@
         "kpi_promedio": "Calificación promedio",
         "kpi_total_calif": "{count, plural, =1 {# calificación este mes} other {# calificaciones este mes}}",
         "recientes": "Egresos recientes",
-        "top_almacenistas": "Mejor calificados",
+        "top_almacenistas": "Mejor calificados del mes",
+        "kpi_por_aspecto": "Picking {picking} · Despacho {despacho}",
+        "egresos_novedades": "{egresos, plural, =1 {# egreso} other {# egresos}} · {novedades, plural, =0 {sin novedades} =1 {# con novedades} other {# con novedades}}",
         "ver_todos": "Ver todos",
         "ver_ordenes": "Ver órdenes pendientes",
         "vacio": "Todavía no hay egresos registrados."
@@ -2676,6 +2678,22 @@
         "no_despachar": "No despachar",
         "motivo_no_aprobado": "Motivo de no aprobar (obligatorio)",
         "confirmar_no_aprobado": "Registrar decisión",
+        "aspecto": {
+          "picking": "Picking",
+          "despacho": "Despacho"
+        },
+        "calificar_picking": "Picking — {name}",
+        "calificar_picking_ayuda": "Armó completo, sin faltas ni sobras, con los seriales correctos.",
+        "calificar_despacho": "Despacho — {name}",
+        "calificar_despacho_ayuda": "Entrega, empaquetado y orden en C4.",
+        "novedades_titulo": "Novedades de la verificación",
+        "novedad": {
+          "falta": "Faltó: {contado} de {esperado}",
+          "sobra": "Sobró: {contado} de {esperado}",
+          "no_salio": "No salió"
+        },
+        "no_aprobado_sin_renglones": "Seguridad no aprobó el egreso.",
+        "comentario_picking_obligatorio": "Hubo novedades: explica por qué el picking merece {n} estrellas.",
         "calificar_cerrar": "Calificar y cerrar",
         "resultado": {
           "aprobado": "Aprobado y despachado",

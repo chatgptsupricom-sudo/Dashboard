@@ -23,11 +23,15 @@ import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import {
+  ASPECTOS,
   RESPONSABLE,
   enAlmacen,
   esEtapa,
   esTipoEntrega,
   evaluarSeriales,
+  novedadesVerificacion,
+  pideComentarioPicking,
+  type Aspecto,
   etapasDelRecorrido,
   indiceEtapa,
   type Accion,
@@ -92,6 +96,7 @@ type Movimiento = {
   factura_venta_fecha?: string | null;
   etapa: Etapa;
   tipo_entrega: TipoEntrega | null;
+  almacenista_nombre?: string | null;
   almacenista_armado: string | null;
   almacenista_despacho: string | null;
   observaciones: string | null;
@@ -119,7 +124,11 @@ type Calificacion = {
   calificacion: number | string;
   comentario: string | null;
   calificado_por: string | null;
+  /** picking o despacho (issue #302). Las de antes, sin aspecto, son del despacho. */
+  aspecto?: Aspecto | null;
 };
+
+type Nota = { estrellas: number; comentario: string };
 
 /** Hora de Caracas: es donde estan los almacenes, no donde este el navegador. */
 function hora(valor: string | null): string | null {
@@ -182,8 +191,13 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
 
   // Calificacion final.
-  const [estrellas, setEstrellas] = useState(0);
-  const [comentario, setComentario] = useState("");
+  // Dos notas al cerrar (issue #302): picking y despacho.
+  const [notas, setNotas] = useState<Record<Aspecto, Nota>>({
+    picking: { estrellas: 0, comentario: "" },
+    despacho: { estrellas: 0, comentario: "" },
+  });
+  const cambiarNota = (a: Aspecto, cambio: Partial<Nota>) =>
+    setNotas((p) => ({ ...p, [a]: { ...p[a], ...cambio } }));
 
   const aplicar = useCallback((json: any) => {
     const m = json.movimiento as Movimiento;
@@ -383,9 +397,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
       observacion: noSalio[it.id] ? (motivos[it.id] || "").trim() : null,
     }));
 
-  const calificacion = calificaciones.find(
-    (c) => c.almacenista_nombre === (mov.almacenista_despacho || ""),
-  );
+  // Una nota por aspecto; las de antes de #302 (sin aspecto) son del despacho.
+  const notaDe = (a: Aspecto) => calificaciones.find((c) => (c.aspecto || "despacho") === a);
+  const quienDe: Record<Aspecto, string | null> = {
+    picking: mov.almacenista_armado || mov.almacenista_nombre || null,
+    despacho: mov.almacenista_despacho || mov.almacenista_nombre || null,
+  };
+  // Lo que Seguridad encontro al verificar: se ve al calificar, para no
+  // calificar a ciegas (misma regla que la API).
+  const novedades = novedadesVerificacion(items);
+  const hayNovedades =
+    novedades.length > 0 || (mov.aprobado !== null && Number(mov.aprobado) === 0);
+  const faltaComentarioPicking =
+    pideComentarioPicking(notas.picking.estrellas, hayNovedades) && !notas.picking.comentario.trim();
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -570,14 +594,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     <span className="font-medium">{tf("motivo")}:</span> {mov.motivo_no_aprobado}
                   </p>
                 )}
-                {calificacion && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <StarRatingDisplay value={Number(calificacion.calificacion)} showValue />
-                    {calificacion.comentario && (
-                      <span className="text-xs text-slate-500">{calificacion.comentario}</span>
-                    )}
-                  </div>
-                )}
+                {ASPECTOS.map((a) => {
+                  const nota = notaDe(a);
+                  if (!nota) return null;
+                  return (
+                    <div key={a} className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-xs font-medium text-slate-600 w-full sm:w-auto">
+                        {tf(`aspecto.${a}`)} · {nota.almacenista_nombre}
+                      </span>
+                      <StarRatingDisplay value={Number(nota.calificacion)} showValue />
+                      {nota.comentario && <span className="text-xs text-slate-500">{nota.comentario}</span>}
+                    </div>
+                  );
+                })}
               </Card>
             )}
 
@@ -733,23 +762,65 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 )}
 
                 {mov.etapa === "por_calificar" && (
-                  <div className="space-y-3">
-                    <p className="text-[13px] font-semibold text-slate-900">
-                      {tc("rate_for", { name: mov.almacenista_despacho || "—" })}
-                    </p>
-                    <StarRating value={estrellas} onChange={setEstrellas} />
-                    <input
-                      type="text"
-                      value={comentario}
-                      onChange={(e) => setComentario(e.target.value.slice(0, 500))}
-                      placeholder={tc("comment_placeholder")}
-                      className={inputClases}
-                    />
+                  <div className="space-y-4">
+                    {hayNovedades && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
+                        <p className="font-semibold">{tf("novedades_titulo")}</p>
+                        {novedades.length === 0 ? (
+                          <p>{tf("no_aprobado_sin_renglones")}</p>
+                        ) : (
+                          novedades.map((n) => (
+                            <p key={n.item_id} className="truncate">
+                              {n.producto}: {tf(`novedad.${n.tipo}`, { contado: n.contado ?? 0, esperado: n.esperado })}
+                            </p>
+                          ))
+                        )}
+                      </div>
+                    )}
+                    {ASPECTOS.map((a) => (
+                      <div key={a} className="space-y-2">
+                        <div>
+                          <p className="text-[13px] font-semibold text-slate-900">
+                            {tf(`calificar_${a}`, { name: quienDe[a] || "—" })}
+                          </p>
+                          <p className="text-xs text-slate-500">{tf(`calificar_${a}_ayuda`)}</p>
+                        </div>
+                        <StarRating value={notas[a].estrellas} onChange={(v) => cambiarNota(a, { estrellas: v })} />
+                        <input
+                          type="text"
+                          value={notas[a].comentario}
+                          onChange={(e) => cambiarNota(a, { comentario: e.target.value.slice(0, 500) })}
+                          placeholder={tc("comment_placeholder")}
+                          className={`${inputClases} ${
+                            a === "picking" && faltaComentarioPicking ? "border-red-300 bg-red-50" : ""
+                          }`}
+                        />
+                        {a === "picking" && faltaComentarioPicking && (
+                          <p className="text-xs text-red-600">
+                            {tf("comentario_picking_obligatorio", { n: notas.picking.estrellas })}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                     <BotonPrimario
                       onClick={() =>
-                        accionar("calificar", { calificacion: estrellas, comentario: comentario.trim() || null })
+                        accionar("calificar", {
+                          picking: {
+                            calificacion: notas.picking.estrellas,
+                            comentario: notas.picking.comentario.trim() || null,
+                          },
+                          despacho: {
+                            calificacion: notas.despacho.estrellas,
+                            comentario: notas.despacho.comentario.trim() || null,
+                          },
+                        })
                       }
-                      disabled={enviando || estrellas < 1}
+                      disabled={
+                        enviando ||
+                        notas.picking.estrellas < 1 ||
+                        notas.despacho.estrellas < 1 ||
+                        faltaComentarioPicking
+                      }
                       className="w-full h-12"
                     >
                       {tf("calificar_cerrar")}

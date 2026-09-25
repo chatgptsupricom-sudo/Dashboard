@@ -154,14 +154,24 @@ export async function POST(request: NextRequest) {
     };
     const tabla = TABLA_POR_TIPO[relacionadoARaw];
     try {
-      const lookup = await query(`SELECT id, cids FROM ${tabla} WHERE id = ?`, [
-        relacionadoId,
-      ]);
+      const lookup = await query(
+        `SELECT id, cids${relacionadoARaw === "mercancia" ? ", tipo, etapa" : ""} FROM ${tabla} WHERE id = ?`,
+        [relacionadoId],
+      );
       const fila = lookup.rows[0] as any;
       if (!fila || (cids !== null && Number(fila.cids) !== cids)) {
         return NextResponse.json(
           { error: `relacionado_id no existe en ${tabla}` },
           { status: 400 },
+        );
+      }
+      // El egreso por etapas tiene dos notas (picking y despacho, issue #302)
+      // y se califica desde su pantalla, al cerrarlo. Por aca se podia
+      // calificar en cualquier etapa, sin aspecto y una sola vez por persona.
+      if (relacionadoARaw === "mercancia" && fila.tipo === "egreso" && fila.etapa) {
+        return NextResponse.json(
+          { error: "Este egreso se califica desde su pantalla, al cerrarlo" },
+          { status: 409 },
         );
       }
     } catch (e: any) {

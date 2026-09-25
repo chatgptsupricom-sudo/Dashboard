@@ -1,17 +1,22 @@
-import { query } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
+  ASPECTOS,
   ETAPA_DE_ACCION,
   esAccion,
   esTipoEntrega,
   etapaTrasArmado,
   evaluarArmado,
+  novedadesVerificacion,
+  pideComentarioPicking,
   puedeHacer,
   type Accion,
+  type Aspecto,
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { cargarMovimiento, evaluarDescuadre } from "@/lib/seguridad/mercancia";
+import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -439,34 +444,93 @@ async function ejecutar(
     }
 
     case "calificar": {
-      const estrellas = parseInt(String(body?.calificacion ?? ""), 10);
-      if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) {
+      // Dos notas (issue #302): el picking al que armo y el despacho al que
+      // despacho. Si es la misma persona, igual son dos.
+      const notas: Array<{ aspecto: Aspecto; almacenista: string; estrellas: number; comentario: string | null }> = [];
+      const quienes: Record<Aspecto, string | null> = {
+        picking: mov.almacenista_armado || mov.almacenista_nombre || null,
+        despacho: mov.almacenista_despacho || mov.almacenista_nombre || null,
+      };
+      for (const aspecto of ASPECTOS) {
+        const estrellas = parseInt(String(body?.[aspecto]?.calificacion ?? ""), 10);
+        if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) {
+          return NextResponse.json(
+            { error: `La calificacion del ${aspecto} va de 1 a 5 estrellas` },
+            { status: 400 },
+          );
+        }
+        const almacenista = quienes[aspecto];
+        if (!almacenista) {
+          return NextResponse.json(
+            { error: `Este egreso no tiene almacenista de ${aspecto}` },
+            { status: 409 },
+          );
+        }
+        notas.push({
+          aspecto,
+          almacenista,
+          estrellas,
+          comentario: texto(body?.[aspecto]?.comentario, MAX.comentario),
+        });
+      }
+
+      // Con novedades, un 4 o un 5 al picking no se da a ciegas.
+      const hayNovedades =
+        novedadesVerificacion(items).length > 0 ||
+        (mov.aprobado !== null && Number(mov.aprobado) === 0);
+      const picking = notas.find((n) => n.aspecto === "picking")!;
+      if (pideComentarioPicking(picking.estrellas, hayNovedades) && !picking.comentario) {
         return NextResponse.json(
-          { error: "La calificacion va de 1 a 5 estrellas" },
+          { error: "Hubo novedades: explica la nota del picking en el comentario" },
           { status: 400 },
         );
       }
-      const almacenista = mov.almacenista_despacho || mov.almacenista_nombre;
 
-      // Primero se cierra (con la guarda de etapa), despues se guarda la
-      // calificacion: asi un doble toque no deja dos calificaciones.
-      const ok = await avanzar(id, "por_calificar", "cerrado", "cerrado_at = NOW()", []);
-      if (!ok) return conflicto();
-
-      await query(
-        `INSERT INTO seguridad_calificaciones
-          (almacenista_nombre, calificacion, relacionado_a, relacionado_id,
-           comentario, calificado_por, cids)
-         VALUES (?, ?, 'mercancia', ?, ?, ?, ?)`,
-        [
-          almacenista,
-          estrellas,
-          id,
-          texto(body?.comentario, MAX.comentario),
-          quien,
-          Number(mov.cids) || null,
-        ],
-      );
+      // Cerrar y guardar las notas en una transaccion: con la guarda de
+      // etapa, un doble toque no deja dos juegos de notas, y si el INSERT
+      // falla el egreso no queda cerrado sin calificar.
+      const conAspecto = await hayColumnaAspecto();
+      const conn = await getConnection();
+      try {
+        await conn.beginTransaction();
+        const [cierre]: any = await conn.execute(
+          `UPDATE seguridad_mercancia SET etapa = 'cerrado', cerrado_at = NOW()
+            WHERE id = ? AND etapa = 'por_calificar'`,
+          [id],
+        );
+        if (Number(cierre?.affectedRows || 0) !== 1) {
+          await conn.rollback();
+          return conflicto();
+        }
+        // Sin la migracion (sql/egreso_calificaciones.sql) no hay donde
+        // distinguirlas: se guarda solo la del despacho, que es lo que se
+        // guardaba antes, en vez de dos notas que despues no se separan.
+        const aGuardar = conAspecto ? notas : notas.filter((n) => n.aspecto === "despacho");
+        const valores: Array<string | number | null> = [];
+        const marcadores = aGuardar
+          .map((n) => {
+            valores.push(n.almacenista, n.estrellas, id, n.comentario, quien, Number(mov.cids) || null);
+            if (conAspecto) valores.push(n.aspecto);
+            return conAspecto ? "(?, ?, 'mercancia', ?, ?, ?, ?, ?)" : "(?, ?, 'mercancia', ?, ?, ?, ?)";
+          })
+          .join(", ");
+        await conn.execute(
+          `INSERT INTO seguridad_calificaciones
+            (almacenista_nombre, calificacion, relacionado_a, relacionado_id,
+             comentario, calificado_por, cids${conAspecto ? ", aspecto" : ""})
+           VALUES ${marcadores}`,
+          valores,
+        );
+        await conn.commit();
+        if (!conAspecto) {
+          console.warn("[egreso] falta correr sql/egreso_calificaciones.sql: se guardo solo la nota del despacho");
+        }
+      } catch (e) {
+        await conn.rollback().catch(() => {});
+        throw e;
+      } finally {
+        conn.release();
+      }
       return { avanzo: true };
     }
   }
