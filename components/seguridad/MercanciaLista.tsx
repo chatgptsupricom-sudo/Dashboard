@@ -274,10 +274,11 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
                       ", ",
                     )}
                   </p>
-                  <div className="flex items-center gap-2 mt-2">
+                  {/* Las etiquetas bajan de linea antes que cortarse ("R" por "Ruta"). */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
                     {esEtapa(m.etapa) && (
                       <span
-                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${
                           meToca(m)
                             ? "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]"
                             : "bg-slate-50 text-slate-500"
@@ -287,7 +288,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
                       </span>
                     )}
                     {esTipoEntrega(m.tipo_entrega) && (
-                      <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md truncate">
+                      <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md whitespace-nowrap">
                         {tf(`entrega.${m.tipo_entrega}`)}
                       </span>
                     )}
