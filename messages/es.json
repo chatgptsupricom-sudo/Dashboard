@@ -2712,7 +2712,8 @@
           "aprobado": "Aprobado y despachado",
           "no_aprobado_despachado": "No aprobado — se despachó igual",
           "no_despachado": "No aprobado — no se despachó",
-          "devuelto": "No se despachó — volvió a Almacén"
+          "devuelto": "No se despachó — volvió a Almacén",
+          "cancelado": "Cancelado: el pedido no salió"
         },
         "motivo": "Motivo",
         "filtro": {

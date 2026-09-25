@@ -11,7 +11,9 @@ import {
   etapaTrasVerificacion,
   evaluarArmado,
   novedadesVerificacion,
+  novedadesQueCuentan,
   pideComentarioPicking,
+  rechazoDeSeguridad,
   puedeHacer,
   requiereVehiculo,
   type Accion,
@@ -24,6 +26,7 @@ import { cargarMovimiento } from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import {
   guardarNovedadesCierre,
+  hayColumnaDecision,
   hayColumnasVerificacion,
   novedadesDeEscaneo,
 } from "@/lib/seguridad/novedades";
@@ -406,7 +409,6 @@ async function ejecutar(
         seriales: datos.seriales,
         sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
       });
-      const estado = novedades.length > 0 ? "descuadre" : "conforme";
 
       const aprobado = body?.aprobado === true;
       // Aprobar exige cero novedades: con faltas o sobras, lo que corresponde
@@ -477,6 +479,15 @@ async function ejecutar(
       if (!conRonda) {
         console.warn("[egreso] falta correr sql/egreso_verificacion_c4.sql: se cierra sin ronda ni local");
       }
+      // Cancelado: lo que falta es lo que nunca iba a salir, no una falla. Se
+      // cierra solo con las novedades reales, y el estado sale de esas.
+      const novedadesCierre = novedadesQueCuentan(novedades, !aprobado && decision === "cancelar");
+      const estadoCierre = novedadesCierre.length > 0 ? "descuadre" : "conforme";
+
+      // La decision queda guardada (sql/egreso_decision_seguridad.sql): es lo
+      // que distingue un cancelado de un rechazo, que en el resto se ven
+      // iguales (aprobado = 0, despachado = 0).
+      const conDecision = await hayColumnaDecision();
       const ok = await avanzar(
         id,
         "por_verificar",
@@ -484,15 +495,15 @@ async function ejecutar(
         `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
            conRonda ? `, verificado_en = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}` : ""
-         }`,
-        [estado, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : [])],
+         }${conDecision ? ", decision_seguridad = ?" : ""}`,
+        [estadoCierre, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : []), ...(conDecision ? [aprobado ? "aprobar" : decision] : [])],
       );
       if (!ok) return conflicto();
 
       // La etapa ya cambio: si guardar las novedades falla, no se devuelve
       // error (la decision quedo registrada), pero queda en el log.
       try {
-        await guardarNovedadesCierre(id, ronda, novedades, quien);
+        await guardarNovedadesCierre(id, ronda, novedadesCierre, quien);
       } catch (e: any) {
         console.error(
           `[egreso ${id}] no se guardaron ${novedades.length} novedad(es) del cierre` +
@@ -551,13 +562,16 @@ async function ejecutar(
       // salir limpia, pero el picking igual fallo (Lino, #301).
       const ronda = Number(mov.ronda_verificacion || 1);
       const hayNovedades =
-        novedadesVerificacion(items, {
-          seriales: datos.seriales,
-          sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
-        }).length > 0 ||
+        novedadesQueCuentan(
+          novedadesVerificacion(items, {
+            seriales: datos.seriales,
+            sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
+          }),
+          mov.decision_seguridad === "cancelar",
+        ).length > 0 ||
         ronda > 1 ||
         datos.novedades.some((n) => n.origen === "cierre") ||
-        (mov.aprobado !== null && Number(mov.aprobado) === 0);
+        rechazoDeSeguridad(mov);
       const picking = notas.find((n) => n.aspecto === "picking")!;
       if (pideComentarioPicking(picking.estrellas, hayNovedades) && !picking.comentario) {
         return NextResponse.json(

@@ -55,6 +55,35 @@ export async function hayColumnasVerificacion(): Promise<boolean> {
   return hayRonda;
 }
 
+let hayDecision = false;
+
+/**
+ * Si ya se corrio sql/egreso_decision_seguridad.sql (columna
+ * `seguridad_mercancia.decision_seguridad`). Mismo criterio que
+ * `hayColumnasVerificacion`: se cachea solo el "si".
+ */
+export async function hayColumnaDecision(): Promise<boolean> {
+  if (hayDecision) return true;
+  try {
+    const r = await query("SHOW COLUMNS FROM seguridad_mercancia LIKE 'decision_seguridad'");
+    hayDecision = (r.rows as any[]).length > 0;
+  } catch {
+    hayDecision = false;
+  }
+  return hayDecision;
+}
+
+/**
+ * SQL de "Seguridad no aprobo por algo del despacho" (ver
+ * `rechazoDeSeguridad`): `aprobado = 0` sin contar los cancelados. Sin la
+ * columna, `aprobado = 0` como antes.
+ */
+export async function sqlRechazo(alias = "m"): Promise<string> {
+  return (await hayColumnaDecision())
+    ? `(${alias}.aprobado = 0 AND COALESCE(${alias}.decision_seguridad, '') <> 'cancelar')`
+    : `${alias}.aprobado = 0`;
+}
+
 /**
  * SQL de "el egreso volvio de Seguridad al menos una vez" (ronda > 1): tuvo
  * novedades en una ronda anterior aunque la ultima saliera limpia.

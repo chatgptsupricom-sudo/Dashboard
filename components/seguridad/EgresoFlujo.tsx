@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Box,
@@ -35,7 +35,9 @@ import {
   esTipoEntrega,
   evaluarSeriales,
   novedadesVerificacion,
+  novedadesQueCuentan,
   pideComentarioPicking,
+  rechazoDeSeguridad,
   type Aspecto,
   type DecisionSeguridad,
   etapasDelRecorrido,
@@ -139,6 +141,8 @@ type Movimiento = {
   seriales_leidos_at?: string | null;
   /** Suma 1 cada vez que Seguridad no despacha y vuelve a Almacen (#301). */
   ronda_verificacion?: number | null;
+  /** aprobar | despachar | devolver | cancelar (sql/egreso_decision_seguridad.sql). */
+  decision_seguridad?: string | null;
   verificado_en?: string | null;
 };
 
@@ -225,6 +229,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // Decision de Seguridad cuando no aprueba.
   const [noAprobar, setNoAprobar] = useState(false);
   const [decision, setDecision] = useState<DecisionSeguridad | null>(null);
+  // Etapa y ronda con las que se tomo la decision en curso (ver aplicar).
+  const claveDecision = useRef<string | null>(null);
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
 
   // Calificacion final.
@@ -238,6 +244,17 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   const aplicar = useCallback((json: any) => {
     const m = json.movimiento as Movimiento;
+    // Si cambio la etapa o la ronda (el egreso se devolvio y volvio al
+    // porton), la decision anterior no vale: sin esto la ronda 2 abria con
+    // "Devolver a Almacen" y el motivo viejo ya puestos, a un toque de
+    // devolverlo otra vez.
+    const clave = `${m?.etapa}|${m?.ronda_verificacion ?? 1}`;
+    if (claveDecision.current !== null && claveDecision.current !== clave) {
+      setNoAprobar(false);
+      setDecision(null);
+      setMotivoNoAprobado("");
+    }
+    claveDecision.current = clave;
     setMov(m);
     const its = (json.items || []) as Item[];
     setItems(its);
@@ -441,6 +458,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // En vivo, mientras se pistolea: solo lo anormal; las faltas, contadas. Al
   // decidir (o fuera del porton), la lista completa.
   const faltan = faltanPorPistolear(novedades);
+  const anormales = novedades.filter(esAnormalEnVivo).length;
   const novedadesEnVivo = noAprobar ? novedades : novedades.filter(esAnormalEnVivo);
   const porSerial = (it: Item) => verificaPorSerial(it, seriales);
   const verificadosDe = (itemId: number) =>
@@ -474,11 +492,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // anteriores: si Seguridad lo devolvio, el picking fallo aunque la ultima
   // verificacion saliera limpia.
   const novedadesPrevias = novedadesGuardadas.filter((n) => n.origen === "cierre" && n.ronda < ronda);
+  // En un cancelado, lo que falta es lo que nunca iba a salir (misma regla
+  // que la API).
+  const novedadesCalificar = novedadesQueCuentan(novedades, mov.decision_seguridad === "cancelar");
   const hayNovedades =
-    novedades.length > 0 ||
+    novedadesCalificar.length > 0 ||
     ronda > 1 ||
     novedadesPrevias.length > 0 ||
-    (mov.aprobado !== null && Number(mov.aprobado) === 0);
+    rechazoDeSeguridad(mov);
   const faltaComentarioPicking =
     pideComentarioPicking(notas.picking.estrellas, hayNovedades) && !notas.picking.comentario.trim();
 
@@ -887,11 +908,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         >
                           {tf("aprobar")}
                         </BotonPrimario>
+                        {/* Las mismas cuentas que la tarjeta: las novedades aparte de lo
+                            que todavia falta por pistolear. */}
                         {novedades.length > 0 && (
                           <p className="text-xs text-slate-500 text-center">
-                            {novedades.some(esAnormalEnVivo)
-                              ? tf("verificacion.aprobar_requiere", { n: novedades.length })
-                              : tf("verificacion.faltan", { n: faltan })}
+                            {[
+                              anormales > 0 ? tf("verificacion.aprobar_requiere", { n: anormales }) : null,
+                              faltan > 0 ? tf("verificacion.faltan", { n: faltan }) : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </p>
                         )}
                         <BotonSecundario onClick={() => setNoAprobar(true)} disabled={enviando} icon={XCircle} className="w-full">
@@ -964,10 +990,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {hayNovedades && (
                       <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
                         <p className="font-semibold">{tf("novedades_titulo")}</p>
-                        {novedades.length === 0 && novedadesPrevias.length === 0 ? (
+                        {novedadesCalificar.length === 0 && novedadesPrevias.length === 0 ? (
                           <p>{tf("no_aprobado_sin_renglones")}</p>
                         ) : (
-                          novedades.map((n) => (
+                          novedadesCalificar.map((n) => (
                             <p key={claveNovedad(n)} className="truncate">
                               {textoNovedad(n, tf)}
                             </p>
@@ -1105,6 +1131,9 @@ function EstadoActual({
   if (etapa === "cerrado") {
     const malo = resultado === "no_despachado";
     const regular = resultado === "no_aprobado_despachado";
+    // Cancelado: no salio porque se cancelo el pedido. No es un error del
+    // despacho, asi que ni rojo ni verde.
+    const cancelado = resultado === "cancelado";
     return (
       <div
         className={`rounded-2xl border p-4 flex items-center gap-3 ${
@@ -1112,11 +1141,15 @@ function EstadoActual({
             ? "border-red-200 bg-red-50"
             : regular
               ? "border-amber-200 bg-amber-50"
-              : "border-emerald-200 bg-emerald-50"
+              : cancelado
+                ? "border-slate-200 bg-slate-50"
+                : "border-emerald-200 bg-emerald-50"
         }`}
       >
         {malo ? (
           <XCircle className="w-5 h-5 text-red-600 shrink-0" />
+        ) : cancelado ? (
+          <Circle className="w-5 h-5 text-slate-400 shrink-0" />
         ) : regular ? (
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
         ) : (
