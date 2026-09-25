@@ -716,7 +716,7 @@
       "captchaRequired": "Confirma que no eres un robot.",
       "rifLabel": "RIF o cédula del cliente",
       "rifPlaceholder": "Ej: J-31737690-0",
-      "rifHelp": "El del cliente que aparece en la factura. Con guiones o sin ellos, como prefieras.",
+      "rifHelp": "Elige el tipo y escribe el número del cliente que aparece en la factura, con guiones o sin ellos.",
       "searchCta": "Buscar mi factura",
       "searching": "Buscando...",
       "notFound": "No encontramos esa factura. Verifica el número; si estás seguro de que está bien, escríbenos y lo revisamos contigo.",
@@ -726,7 +726,7 @@
       "multipleTitle": "Encontramos más de una factura con ese número",
       "multipleHelp": "Elige la tuya para continuar.",
       "productTitle": "¿Qué producto presenta la falla?",
-      "productHelp": "Selecciona el equipo que se dañó. Si compraste varias unidades iguales, elige la del serial correspondiente.",
+      "productHelp": "Los productos de la factura están agrupados por marca. Elige el que se dañó y, si compraste varias unidades iguales, el serial de la que falla.",
       "client": "Cliente",
       "date": "Fecha",
       "serial": "Serial",
@@ -744,7 +744,47 @@
       "waitUploads": "Esperando que suban los archivos...",
       "sending": "Enviando...",
       "submit": "Enviar mi reporte",
-      "stepOf": "Paso {n} de {total}"
+      "stepOf": "Paso {n} de {total}",
+      "docLabelPa": "Cédula, RUC o pasaporte del cliente",
+      "docTypeLabel": "Tipo de documento",
+      "docNumberLabel": "Número de documento",
+      "docTipo": {
+        "VE": {
+          "V": "V · Venezolano",
+          "J": "J · Empresa",
+          "E": "E · Extranjero",
+          "P": "P · Pasaporte",
+          "G": "G · Gobierno"
+        },
+        "PA": {
+          "cedula": "Cédula",
+          "ruc": "RUC",
+          "pasaporte": "Pasaporte",
+          "E": "Cédula E",
+          "PE": "Cédula PE"
+        }
+      },
+      "docEjemplo": {
+        "VE": {
+          "V": "Ej: 12345678",
+          "J": "Ej: 31737690-0",
+          "E": "Ej: 82123456",
+          "P": "Ej: A1234567",
+          "G": "Ej: 20000000-0"
+        },
+        "PA": {
+          "cedula": "Ej: 8-123-456",
+          "ruc": "Ej: 155591597-2-2015",
+          "pasaporte": "Ej: PA1234567",
+          "E": "Ej: 8-12345",
+          "PE": "Ej: 8-1234"
+        }
+      },
+      "docSoloNumeros": "Para este tipo de documento escribe solo números (los guiones se aceptan).",
+      "docLargo": "El número no tiene el largo esperado para este tipo de documento. Revísalo.",
+      "otraMarca": "Otras marcas",
+      "productosN": "{n, plural, one {# producto} other {# productos}}",
+      "eligeSerial": "{n, plural, one {# unidad} other {# unidades}} · elige el serial del que falla"
     },
     "metaTitle": "Servicio Técnico | Supricom",
     "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",

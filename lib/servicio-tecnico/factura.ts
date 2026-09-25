@@ -1,3 +1,4 @@
+import { documentoCoincide } from "@/lib/servicio-tecnico/documento";
 import {
   calcularGarantia,
   type ResultadoGarantia,
@@ -285,16 +286,9 @@ async function filtrarPorDocumento(
 
   const coincide = new Set(
     partners
-      .filter((p) => {
-        const guardado = normalizarDocumento(p.vat);
-        if (!guardado) return false;
-        if (guardado === buscado) return true;
-        // Algunos documentos traen sufijos que el cliente no escribe (los
-        // panameños tipo `...DV38`). Se acepta el prefijo, pero solo si lo
-        // que escribió es lo bastante largo para seguir siendo una
-        // verificación real y no un comodín.
-        return buscado.length >= 8 && guardado.startsWith(buscado);
-      })
+      // Exacto, sin la letra (clientes guardados solo con números) o con un
+      // sufijo que el cliente no escribe: ver documentoCoincide.
+      .filter((p) => documentoCoincide(buscado, normalizarDocumento(p.vat)))
       .map((p) => p.id),
   );
 
