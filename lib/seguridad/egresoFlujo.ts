@@ -6,7 +6,8 @@
  *
  *   por_armar ─► armando ─► pre_despacho ─► (Almacen verifica el armado)
  *        ├─ encomienda ─► por_empaquetar ─► por_asignar_despacho
- *        └─ puerta ────────────────────────► por_asignar_despacho
+ *        ├─ puerta ────────────────────────► por_asignar_despacho
+ *        └─ ruta ──────────────────────────► por_asignar_despacho (+ chofer y unidad)
  *   por_asignar_despacho ─► por_verificar ─► (Seguridad pistolea en C4)
  *        ├─ sin novedades, aprueba ─► despachado ─► por_calificar
  *        └─ con novedades (o no aprueba) + motivo, Seguridad decide:
@@ -31,10 +32,10 @@ export const ETAPAS = [
 ] as const;
 export type Etapa = (typeof ETAPAS)[number];
 
-// "ruta" (camion propio, con chofer y placa) esta en el diagrama pero hoy no
-// se trabaja con rutas: solo encomienda y entrega en puerta. Para activarla,
-// agregarla aqui y volver a pedir chofer/placa al asignar el despacho.
-export const TIPOS_ENTREGA = ["encomienda", "puerta"] as const;
+// Como sale la mercancia, segun lo que decida el cliente: por ruta (camion
+// propio, con chofer y unidad), retira el cliente ("puerta") o por encomienda.
+// El orden es el de los botones del formulario.
+export const TIPOS_ENTREGA = ["ruta", "puerta", "encomienda"] as const;
 export type TipoEntrega = (typeof TIPOS_ENTREGA)[number];
 
 export function esEtapa(v: unknown): v is Etapa {
@@ -95,8 +96,17 @@ export function puedeHacer(accion: Accion, rolSesion: string): boolean {
 }
 
 /**
+ * La ruta sale en camion propio: al asignar el despacho hay que decir que
+ * chofer y que unidad (placa) la llevan. Las otras dos no llevan vehiculo.
+ */
+export function requiereVehiculo(tipo: TipoEntrega | null): boolean {
+  return tipo === "ruta";
+}
+
+/**
  * Etapa siguiente a "Almacen verifico el armado". Solo la encomienda pasa
- * por empaquetado; la entrega en puerta va directo a asignar quien despacha.
+ * por empaquetado; puerta y ruta van directo a asignar quien despacha.
+ * (Ruta sin empaquetado es la propuesta del #300: confirmar con Almacen.)
  */
 export function etapaTrasArmado(tipo: TipoEntrega): Etapa {
   return tipo === "encomienda" ? "por_empaquetar" : "por_asignar_despacho";
@@ -104,7 +114,7 @@ export function etapaTrasArmado(tipo: TipoEntrega): Etapa {
 
 /**
  * Etapas que se muestran en la linea de tiempo de un registro. Empaquetado
- * solo aparece en una encomienda: en puerta no es un paso pendiente,
+ * solo aparece en una encomienda: en puerta y ruta no es un paso pendiente,
  * simplemente no existe.
  */
 export function etapasDelRecorrido(tipo: TipoEntrega | null): Etapa[] {
@@ -342,4 +352,26 @@ export const LOCAL_DESPACHO = "C4";
  */
 export function etapaTrasVerificacion(despachar: boolean): Etapa {
   return despachar ? "por_calificar" : "por_asignar_despacho";
+}
+
+export type ResultadoEgreso =
+  | "aprobado"
+  | "no_aprobado_despachado"
+  | "no_despachado"
+  | "devuelto";
+
+/**
+ * Resultado del porton (null = Seguridad todavia no verifico). Con `etapa`:
+ * si ya tiene resultado pero esta otra vez en Almacen (o en una verificacion
+ * nueva), es que Seguridad no lo despacho y volvio (#301): "devuelto".
+ */
+export function resultadoEgreso(m: {
+  aprobado: number | string | null;
+  despachado: number | string | null;
+  etapa?: string | null;
+}): ResultadoEgreso | null {
+  if (m.aprobado === null || m.aprobado === undefined) return null;
+  if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
+  if (Number(m.aprobado) === 1) return "aprobado";
+  return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
 }

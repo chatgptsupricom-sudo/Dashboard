@@ -2425,6 +2425,11 @@
       "top_almacenistas": "Top warehouse workers this month",
       "dias_en_taller": "{count}d in shop",
       "almacenista_stats": "{ingresos} intakes · {despachos} dispatches",
+      "origen": {
+        "rma": "RMA",
+        "picking": "Outbound: picking",
+        "despacho": "Outbound: dispatch"
+      },
       "ver_todos": "View all"
     },
     "foto_estado": {
@@ -2649,10 +2654,13 @@
         },
         "tipo_entrega": "Delivery type",
         "entrega": {
-          "encomienda": "Courier shipment",
-          "puerta": "Door delivery"
+          "ruta": "Route",
+          "puerta": "Customer pickup",
+          "encomienda": "Courier shipment"
         },
-        "entrega_ayuda": "Courier shipments go through packing; door delivery goes straight to dispatch.",
+        "entrega_ayuda": "Courier shipments go through packing; route and customer pickup go straight to dispatch. For a route, the driver and vehicle are set when assigning the dispatch.",
+        "entrega_todas": "All deliveries",
+        "exportar_excel": "Export Excel",
         "almacenista_armado": "Assembly worker",
         "almacenista_despacho": "Dispatch worker",
         "recorrido": "Progress",
@@ -2763,7 +2771,9 @@
           "pistola_novedad_serial_sobra": "Serial {serial} is not in the picking of {producto}. Not counted: recorded as an issue.",
           "pistola_novedad_serial_otra_orden": "Serial {serial} belongs to another order ({referencia}). Not counted: recorded as an issue.",
           "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far)."
-        }
+        },
+        "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
+        "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }
     }
   },

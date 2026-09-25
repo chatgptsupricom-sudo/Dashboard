@@ -2414,6 +2414,11 @@
       "top_almacenistas": "Top almacenistas del mes",
       "dias_en_taller": "{count}d en taller",
       "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
+      "origen": {
+        "rma": "RMA",
+        "picking": "Egreso: picking",
+        "despacho": "Egreso: despacho"
+      },
       "ver_todos": "Ver todos"
     },
     "foto_estado": {
@@ -2638,10 +2643,13 @@
         },
         "tipo_entrega": "Tipo de entrega",
         "entrega": {
-          "encomienda": "Encomienda",
-          "puerta": "Entrega en puerta"
+          "ruta": "Ruta",
+          "puerta": "Retira el cliente",
+          "encomienda": "Encomienda"
         },
-        "entrega_ayuda": "La encomienda pasa por empaquetado; la entrega en puerta va directo a despacho.",
+        "entrega_ayuda": "La encomienda pasa por empaquetado; ruta y retira el cliente van directo a despacho. En ruta, el chofer y la unidad se piden al asignar el despacho.",
+        "entrega_todas": "Todas las entregas",
+        "exportar_excel": "Exportar Excel",
         "almacenista_armado": "Almacenista del armado",
         "almacenista_despacho": "Almacenista de despacho",
         "recorrido": "Recorrido",
@@ -2752,7 +2760,9 @@
           "pistola_novedad_serial_sobra": "El serial {serial} no está en el picking de {producto}. No se contó: queda como novedad.",
           "pistola_novedad_serial_otra_orden": "El serial {serial} es de otra orden ({referencia}). No se contó: queda como novedad.",
           "pistola_novedad_producto_ajeno": "{serial} no está en la orden: queda como novedad (van {cantidad})."
-        }
+        },
+        "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
+        "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
     }
   },

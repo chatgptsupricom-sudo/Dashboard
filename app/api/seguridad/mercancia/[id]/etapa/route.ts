@@ -12,6 +12,7 @@ import {
   novedadesVerificacion,
   pideComentarioPicking,
   puedeHacer,
+  requiereVehiculo,
   type Accion,
   type Aspecto,
   type Etapa,
@@ -38,7 +39,7 @@ export const dynamic = "force-dynamic";
  * Sin esto, con todo en tiempo real, un doble toque avanzaria dos etapas.
  */
 
-const MAX = { nombre: 200, motivo: 500, comentario: 500, observacion: 300 };
+const MAX = { nombre: 200, placa: 50, motivo: 500, comentario: 500, observacion: 300 };
 
 function texto(v: unknown, max: number): string | null {
   if (v === undefined || v === null) return null;
@@ -241,8 +242,9 @@ async function ejecutar(
         return { avanzo: false, extra: { armado: evaluacion } };
       }
 
-      // Un tipo que ya no se ofrece (ej. "ruta" de antes) sigue como puerta:
-      // directo a despacho, sin empaquetado.
+      // Un tipo desconocido (o vacio, de antes) sigue como puerta: directo a
+      // despacho, sin empaquetado. Los "ruta" viejos ya son ruta, y siguen el
+      // mismo recorrido que tenian, asi que ninguno queda a medio camino.
       const tipo = esTipoEntrega(mov.tipo_entrega) ? mov.tipo_entrega : "puerta";
       const ok = await avanzar(
         id,
@@ -287,6 +289,46 @@ async function ejecutar(
         );
       }
 
+      // Ruta: chofer y unidad obligatorios, y del catalogo de la sucursal, con
+      // el mismo criterio que el almacenista. Seguridad tiene que saber en
+      // que camion y con quien sale la mercancia.
+      let chofer: string | null = null;
+      let placa: string | null = null;
+      if (requiereVehiculo(esTipoEntrega(mov.tipo_entrega) ? mov.tipo_entrega : null)) {
+        chofer = texto(body?.chofer_nombre, MAX.nombre);
+        placa = texto(body?.placa_vehiculo, MAX.placa)?.toUpperCase() ?? null;
+        if (!chofer || !placa) {
+          return NextResponse.json(
+            { error: "En ruta hay que indicar el chofer y la unidad" },
+            { status: 400 },
+          );
+        }
+        const [choferCat, unidadCat] = await Promise.all([
+          query(
+            `SELECT id FROM seguridad_catalogo_choferes
+              WHERE nombre = ? ${cids !== null ? "AND cids = ?" : ""} LIMIT 1`,
+            cids !== null ? [chofer, cids] : [chofer],
+          ),
+          query(
+            `SELECT id FROM seguridad_catalogo_unidades
+              WHERE placa = ? ${cids !== null ? "AND cids = ?" : ""} LIMIT 1`,
+            cids !== null ? [placa, cids] : [placa],
+          ),
+        ]);
+        if (choferCat.rows.length === 0) {
+          return NextResponse.json(
+            { error: "Ese chofer no esta en el catalogo de choferes" },
+            { status: 400 },
+          );
+        }
+        if (unidadCat.rows.length === 0) {
+          return NextResponse.json(
+            { error: "Esa unidad no esta en el catalogo de unidades" },
+            { status: 400 },
+          );
+        }
+      }
+
       // No pasa a Seguridad un picking serializable sin sus seriales (issue
       // #299): es contra lo que se pistolea en C4. Se releen de Odoo aca,
       // aunque Almacen ya haya pulsado "Actualizar", porque es la ultima vez
@@ -322,17 +364,20 @@ async function ejecutar(
 
       // El responsable del registro pasa a ser quien despacha (es a quien
       // Seguridad califica); el del armado queda aparte y en la lista.
-      // Sin chofer ni placa: hoy no se trabaja con rutas (ver TIPOS_ENTREGA).
       const equipo = Array.from(
         new Set([mov.almacenista_armado, despacho].filter(Boolean)),
       );
+      // Fuera de ruta se conserva lo que ya hubiera (egresos del flujo
+      // anterior que se registraron con chofer y placa).
       const ok = await avanzar(
         id,
         "por_asignar_despacho",
         "por_verificar",
         `almacenista_despacho = ?, almacenista_nombre = ?, almacenistas_json = ?,
+         chofer_nombre = COALESCE(?, chofer_nombre),
+         placa_vehiculo = COALESCE(?, placa_vehiculo),
          despacho_asignado_at = NOW()`,
-        [despacho, despacho, JSON.stringify(equipo)],
+        [despacho, despacho, JSON.stringify(equipo), chofer, placa],
       );
       return ok ? { avanzo: true } : conflicto();
     }

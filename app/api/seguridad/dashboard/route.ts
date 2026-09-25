@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { JOIN_MERCANCIA, columnasPorOrigen, sqlOrigen } from "@/lib/seguridad/calificaciones";
+import { ORIGENES, leerPorOrigen } from "@/lib/seguridad/origenes";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -52,6 +54,11 @@ export async function GET(request: NextRequest) {
       return resumen;
     }
 
+    // Las notas se agrupan por origen (RMA, picking y despacho del egreso) en
+    // vez de mezclarse en un solo promedio: son trabajos distintos, y desde
+    // #302 cada egreso trae dos notas.
+    const origen = await sqlOrigen();
+
     const [
       ingresosHoyRes,
       ingresosAyerRes,
@@ -96,10 +103,12 @@ export async function GET(request: NextRequest) {
         paramCids,
       ),
       query(
-        `SELECT AVG(calificacion) AS promedio
-         FROM seguridad_calificaciones
-         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-         ${cids !== null ? "AND cids = ?" : ""}`,
+        `SELECT AVG(c.calificacion) AS promedio,
+                ${columnasPorOrigen(origen)}
+         FROM seguridad_calificaciones c
+         ${JOIN_MERCANCIA}
+         WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND c.cids = ?" : ""}`,
         paramCids,
       ),
       query(
@@ -157,13 +166,13 @@ export async function GET(request: NextRequest) {
             (SELECT COUNT(*) FROM seguridad_despachos
              WHERE almacenista_nombre = c.almacenista_nombre
                AND fecha_despacho >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-               ${cids !== null ? "AND cids = ?" : ""}) AS despachos_mes
+               ${cids !== null ? "AND cids = ?" : ""}) AS despachos_mes,
+            ${columnasPorOrigen(origen)}
          FROM seguridad_calificaciones c
+         ${JOIN_MERCANCIA}
          WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
          ${cids !== null ? "AND c.cids = ?" : ""}
-         GROUP BY c.almacenista_nombre
-         ORDER BY promedio DESC, calificaciones DESC
-         LIMIT 10`,
+         GROUP BY c.almacenista_nombre`,
         cids !== null ? [cids, cids, cids] : [],
       ),
       query(
@@ -241,6 +250,7 @@ export async function GET(request: NextRequest) {
         en_taller_mas_7d: Number(enTallerRes.rows[0]?.total || 0),
         promedio_calificacion: promedioCalificacion,
         total_calificaciones_mes: Number(totalCalRes.rows[0]?.total || 0),
+        calificaciones_por_origen: leerPorOrigen(promedioCalRes.rows[0]),
         ingresos_pendientes_despacho: Number(
           ingresosPendientesCountRes.rows[0]?.total || 0,
         ),
@@ -248,16 +258,7 @@ export async function GET(request: NextRequest) {
       ingresos_recientes: ingresosRecientesRes.rows,
       despachos_recientes: despachosRecientesRes.rows,
       ingresos_pendientes: ingresosPendientesRes.rows,
-      top_almacenistas: topAlmacenistasRes.rows.map((r: any) => ({
-        nombre: r.nombre,
-        ingresos_mes: Number(r.ingresos_mes || 0),
-        despachos_mes: Number(r.despachos_mes || 0),
-        promedio:
-          r.promedio === null || r.promedio === undefined
-            ? null
-            : Math.round(Number(r.promedio) * 10) / 10,
-        calificaciones: Number(r.calificaciones || 0),
-      })),
+      top_almacenistas: rankingPorOrigen(topAlmacenistasRes.rows as any[]),
       alertas,
     });
 
@@ -272,4 +273,35 @@ export async function GET(request: NextRequest) {
     console.error("Error cargando dashboard de seguridad:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+/**
+ * Ranking de los 10 mejores del mes. Se ordena por el promedio de sus
+ * promedios por origen, cada origen con el mismo peso: quien tiene muchas
+ * notas de un tipo no queda arriba o abajo solo por eso, y un egreso con dos
+ * notas no pesa el doble que un despacho de RMA.
+ */
+function rankingPorOrigen(filas: any[]) {
+  return filas
+    .map((r) => {
+      const por_origen = leerPorOrigen(r);
+      const promedios = ORIGENES.map((o) => por_origen[o].promedio).filter(
+        (p): p is number => p !== null,
+      );
+      return {
+        nombre: r.nombre,
+        ingresos_mes: Number(r.ingresos_mes || 0),
+        despachos_mes: Number(r.despachos_mes || 0),
+        promedio: promedios.length
+          ? Math.round((promedios.reduce((a, b) => a + b, 0) / promedios.length) * 10) / 10
+          : null,
+        calificaciones: Number(r.calificaciones || 0),
+        por_origen,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (b.promedio ?? -1) - (a.promedio ?? -1) || b.calificaciones - a.calificaciones,
+    )
+    .slice(0, 10);
 }

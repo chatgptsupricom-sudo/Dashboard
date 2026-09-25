@@ -4,13 +4,28 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Package, Plus, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Download,
+  Package,
+  Plus,
+  XCircle,
+} from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { RESPONSABLE, esEtapa } from "@/lib/seguridad/egresoFlujo";
+import {
+  RESPONSABLE,
+  TIPOS_ENTREGA,
+  esEtapa,
+  esTipoEntrega,
+  type TipoEntrega,
+} from "@/lib/seguridad/egresoFlujo";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
 import AvisosMercancia from "./AvisosMercancia";
-import { PageHeader, EmptyState, BotonPrimario } from "./mercancia-ui";
+import { PageHeader, EmptyState, BotonPrimario, BotonSecundario } from "./mercancia-ui";
 
 /**
  * Listado de movimientos de mercancia, compartido por ingresos y egresos.
@@ -38,6 +53,7 @@ type Movimiento = {
   items_con_diferencia: number;
   /** Egreso por etapas; null en ingresos y egresos del flujo anterior. */
   etapa: string | null;
+  tipo_entrega: string | null;
   aprobado: number | null;
   despachado: number | null;
 };
@@ -59,10 +75,16 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
   // toque, y si no en "En proceso" (una pestaña vacia al entrar parece que
   // no hay nada).
   const [filtro, setFiltro] = useState<Filtro | null>(null);
+  // Filtro por tipo de entrega: va al servidor, asi el Excel sale con el
+  // mismo criterio que la lista.
+  const [entrega, setEntrega] = useState<TipoEntrega | "">("");
+  const [exportando, setExportando] = useState(false);
+  const [errorExcel, setErrorExcel] = useState<string | null>(null);
+  const consulta = new URLSearchParams({ tipo, ...(entrega ? { tipo_entrega: entrega } : {}) }).toString();
 
   const cargar = useCallback(async () => {
     try {
-      const res = await fetch(`/api/seguridad/mercancia?tipo=${tipo}`);
+      const res = await fetch(`/api/seguridad/mercancia?${consulta}`);
       if (!res.ok) return;
       const json = await res.json();
       setItems(json.movimientos || []);
@@ -71,7 +93,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
     } finally {
       setCargando(false);
     }
-  }, [tipo]);
+  }, [consulta]);
 
   useEffect(() => {
     void cargar();
@@ -110,6 +132,33 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               : true,
       );
 
+  // Se baja con fetch y no navegando: si el servidor falla, el error se ve
+  // aca y no se pierde la pantalla (ni el filtro elegido).
+  const exportarExcel = async () => {
+    setErrorExcel(null);
+    setExportando(true);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/export?${consulta}`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const nombre =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] ||
+        "egresos-mercancia.xlsx";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setErrorExcel(e?.message || tm("error"));
+    } finally {
+      setExportando(false);
+    }
+  };
+
   // El egreso lo inicia Almacen; Seguridad no ve "Registrar" (la API igual lo
   // rechazaria). El ingreso, al reves, es de Seguridad.
   // El ingreso ya no se registra aca: ahora es por packing list.
@@ -131,6 +180,35 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
       />
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {esEgreso && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <select
+              value={entrega}
+              onChange={(e) => setEntrega(esTipoEntrega(e.target.value) ? e.target.value : "")}
+              aria-label={tf("tipo_entrega")}
+              className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 focus:outline-none"
+            >
+              <option value="">{tf("entrega_todas")}</option>
+              {TIPOS_ENTREGA.map((t) => (
+                <option key={t} value={t}>{tf(`entrega.${t}`)}</option>
+              ))}
+            </select>
+            <BotonSecundario
+              onClick={() => void exportarExcel()}
+              disabled={exportando}
+              icon={Download}
+              className="ml-auto"
+            >
+              {tf("exportar_excel")}
+            </BotonSecundario>
+          </div>
+        )}
+        {esEgreso && errorExcel && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorExcel}
+          </div>
+        )}
+
         {esEgreso && !cargando && items.length > 0 && (
           <div className="flex gap-1.5 mb-5 overflow-x-auto -mx-1 px-1 pb-1" role="tablist">
             {(["para_mi", "en_proceso", "cerrados", "todos"] as Filtro[]).map((f) => (
@@ -163,7 +241,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
               <div key={i} className="h-24 rounded-2xl bg-white border border-slate-200/80 animate-pulse" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !entrega ? (
           <EmptyState icon={Package} texto={tm("vacio")} />
         ) : visibles.length === 0 ? (
           <EmptyState icon={Package} texto={tf("vacio_filtro")} />
@@ -201,6 +279,11 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
                         }`}
                       >
                         {tf(`etapa.${m.etapa}`)}
+                      </span>
+                    )}
+                    {esTipoEntrega(m.tipo_entrega) && (
+                      <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md truncate">
+                        {tf(`entrega.${m.tipo_entrega}`)}
                       </span>
                     )}
                     {m.placa_vehiculo && (
