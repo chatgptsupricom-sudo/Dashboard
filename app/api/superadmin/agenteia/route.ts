@@ -1,210 +1,69 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { requireRoles } from "@/lib/auth/roles";
+import { ejecutarCambio, responder, type MensajeChat } from "@/lib/agenteia/agente";
 import { NextRequest, NextResponse } from "next/server";
 
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL ?? "";
-const N8N_DELETE_WEBHOOK_URL = process.env.N8N_DELETE_WEBHOOK_URL ?? "";
+// Agente IA del SuperAdmin: Claude + MCP de Odoo + MySQL del panel
+// (lib/agenteia/agente.ts). Reemplaza el flujo de n8n.
+//
+//   POST { messages }   -> respuesta en texto plano, en streaming
+//   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
+//   POST { cancelar }   -> descarta un cambio preparado (solo responde el texto)
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const TIMEOUT_MS = 90_000; // 90 s por intento — n8n puede tardar con LLMs
-const MAX_RETRIES = 0; // sin reintentos automáticos para evitar llamadas duplicadas a n8n
-
-async function fetchN8n(
-  url: string,
-  body: string,
-  attempt = 0,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    // Reintenta si n8n devuelve 5xx (servicio arrancando)
-    if (!res.ok && res.status >= 500 && attempt < MAX_RETRIES) {
-      const delay = (attempt + 1) * 3_000; // 3 s, 6 s
-      console.warn(
-        `⚠️ n8n respondió ${res.status}, reintento ${attempt + 1} en ${delay / 1000}s…`,
-      );
-      await new Promise((r) => setTimeout(r, delay));
-      return fetchN8n(url, body, attempt + 1);
-    }
-
-    return res;
-  } catch (err: any) {
-    clearTimeout(timer);
-    if (err.name === "AbortError" && attempt < MAX_RETRIES) {
-      const delay = (attempt + 1) * 3_000;
-      console.warn(
-        `⚠️ n8n timeout (intento ${attempt + 1}), reintento en ${delay / 1000}s…`,
-      );
-      await new Promise((r) => setTimeout(r, delay));
-      return fetchN8n(url, body, attempt + 1);
-    }
-    throw err;
-  }
-}
-
-// ── N8N INTEGRATION ──────────────────────────────────────────────────────────
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin"]);
   if (auth.error) return auth.error;
+  const uid = String(auth.payload?.uid ?? auth.payload?.email ?? "");
 
+  let body: any;
   try {
-    const { messages, messageType, chatId } = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Formato no válido." }, { status: 400 });
+  }
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Formato no válido." },
-        { status: 400 },
-      );
-    }
+  if (typeof body?.confirmar === "string") {
+    return NextResponse.json({ texto: await ejecutarCambio(body.confirmar, uid) });
+  }
+  if (typeof body?.cancelar === "string") {
+    return NextResponse.json({ texto: "Cambio cancelado. No se modificó nada en Odoo." });
+  }
 
-    if (!N8N_WEBHOOK_URL) {
-      return NextResponse.json(
-        { error: "N8N_WEBHOOK_URL no está configurada." },
-        { status: 500 },
-      );
-    }
+  const messages: MensajeChat[] = body?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return NextResponse.json({ error: "Formato no válido." }, { status: 400 });
+  }
 
-    // userId/userName/userEmail/userRole se derivan del JWT verificado, NUNCA
-    // del body: n8n usa userRole para decidir que herramientas puede usar el
-    // agente, asi que confiar en lo que manda el cliente permitia
-    // autodeclararse superadmin ante ese flujo sin serlo de verdad.
-    const userId = auth.payload?.userId ?? auth.payload?.odooId;
-    const userName = auth.payload?.name;
-    const userEmail = auth.payload?.email;
-    const userRole = auth.payload?.role;
-
-    // Último mensaje del usuario
-    const lastUserMsg = [...messages]
-      .reverse()
-      .find((m: any) => m.role === "user");
-    const userText =
-      typeof lastUserMsg?.content === "string"
-        ? lastUserMsg.content
-        : (lastUserMsg?.content?.find?.((p: any) => p.type === "text")?.text ??
-          "");
-
-    const n8nBody = JSON.stringify({
-      chatId: chatId ?? null,
-      userId,
-      userName,
-      userEmail,
-      userRole,
-      message: userText,
-      messageType: messageType ?? "text",
-    });
-
-    let n8nResponse: Response;
-    try {
-      n8nResponse = await fetchN8n(N8N_WEBHOOK_URL, n8nBody);
-    } catch (err: any) {
-      const isTimeout = err.name === "AbortError";
-      console.error("❌ n8n no respondió:", err.message);
-      return NextResponse.json(
-        {
-          error: isTimeout
-            ? "El agente tardó demasiado en responder. Inténtalo de nuevo."
-            : "No se pudo conectar con el agente.",
-        },
-        { status: 503 },
-      );
-    }
-
-    if (!n8nResponse.ok) {
-      const errText = await n8nResponse.text();
-      console.error("❌ Error de n8n:", errText);
-      return NextResponse.json(
-        {
-          error:
-            "El agente no está disponible en este momento. Inténtalo de nuevo en unos segundos.",
-        },
-        { status: 502 },
-      );
-    }
-
-    // Intentar JSON primero, caer a texto plano si n8n no devuelve JSON
-    const rawText = await n8nResponse.text();
-    let replyText: string;
-    try {
-      const data = JSON.parse(rawText);
-      replyText =
-        typeof data === "string"
-          ? data
-          : (data?.output ??
-            data?.text ??
-            data?.message ??
-            data?.response ??
-            JSON.stringify(data));
-    } catch {
-      replyText = rawText;
-    }
-
-    // Devolvemos como stream para que el frontend lo procese igual que antes
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(replyText));
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emitir = (t: string) => controller.enqueue(encoder.encode(t));
+      try {
+        await responder(messages, uid, emitir);
+      } catch (e: any) {
+        console.error("❌ agenteia:", e);
+        const msg =
+          e instanceof Anthropic.RateLimitError
+            ? "El agente está saturado, intenta en un minuto."
+            : e instanceof Anthropic.APIError
+              ? `Error del modelo (${e.status}): ${e.message}`
+              : e?.message || "Error inesperado.";
+        emitir(`\n\n⚠️ ${msg}`);
+      } finally {
         controller.close();
-      },
-    });
+      }
+    },
+  });
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
-  } catch (error: any) {
-    console.error("❌ Error Crítico:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
-  if (auth.error) return auth.error;
-
-  try {
-    const { chatId } = await request.json();
-    if (!chatId) {
-      return NextResponse.json({ error: "chatId requerido" }, { status: 400 });
-    }
-
-    if (!N8N_DELETE_WEBHOOK_URL) {
-      return NextResponse.json(
-        { error: "N8N_DELETE_WEBHOOK_URL no está configurada." },
-        { status: 500 },
-      );
-    }
-
-    const n8nRes = await fetch(N8N_DELETE_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId }),
-    });
-
-    if (!n8nRes.ok) {
-      const errText = await n8nRes.text();
-      console.error("❌ Error eliminando historial en n8n:", errText);
-      return NextResponse.json(
-        { error: "Error en el flujo de eliminación." },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error("❌ Error en DELETE agenteia:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      // Evita que un proxy (nginx/EasyPanel) acumule la respuesta entera.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

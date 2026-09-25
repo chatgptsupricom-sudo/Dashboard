@@ -1027,3 +1027,15 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Respuestas del Agente IA (markdown: listas, tablas, código) */
+.agente-md > * + * { margin-top: 0.5rem; }
+.agente-md h1, .agente-md h2, .agente-md h3 { font-weight: 800; font-size: 0.95em; }
+.agente-md ul { list-style: disc; padding-left: 1.25rem; }
+.agente-md ol { list-style: decimal; padding-left: 1.25rem; }
+.agente-md strong { font-weight: 800; }
+.agente-md code { background: #f1f5f9; padding: 0 0.25rem; border-radius: 0.25rem; font-size: 0.9em; }
+.agente-md pre { background: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; overflow-x: auto; }
+.agente-md table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.85em; }
+.agente-md th, .agente-md td { border: 1px solid #e2e8f0; padding: 0.25rem 0.5rem; text-align: left; white-space: nowrap; }
+.agente-md th { background: #f8fafc; font-weight: 800; }

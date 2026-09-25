@@ -213,7 +213,6 @@ export const rolePermissions: RolePermissions = {
       "reports", // Reportes
       "MapaClientes", // Para Christian Rodriguez
       "inventory", // Stock publicitario
-      "agenteia", // Agente IA para pruebas internas
       "integraciondepago", // Integración De Pago,
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones

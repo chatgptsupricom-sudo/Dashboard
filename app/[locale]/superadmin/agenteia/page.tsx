@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface AttachedFile {
   name: string;
@@ -44,6 +46,25 @@ interface Chat {
   messages: Message[];
   createdAt: number;
 }
+
+// El backend marca cada cambio en Odoo que el agente preparó con
+// [[confirmar-odoo:<token>]]; aquí se vuelve un botón. El token lleva el
+// cambio en claro (firmado): se muestra tal cual para que el usuario vea
+// exactamente qué va a ejecutar, no solo el resumen del modelo.
+const MARCA_CAMBIO = /\n*\[\[confirmar-odoo:([A-Za-z0-9_.-]+)\]\]/g;
+
+function cambiosDe(content: string): { token: string; detalle: any }[] {
+  return [...content.matchAll(MARCA_CAMBIO)].map((m) => {
+    let detalle: any = null;
+    try {
+      const b64 = m[1].split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+      detalle = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } catch {}
+    return { token: m[1], detalle };
+  });
+}
+
+const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "");
 
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -162,20 +183,6 @@ export default function AgenteIAPage() {
       }
       return updated;
     });
-    // Best-effort: delete chat memory from n8n/PostgreSQL in the background
-    console.log("[agenteia] Eliminando historial del chat:", id);
-    fetch("/api/superadmin/agenteia", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId: id }),
-    })
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        console.log("[agenteia] Respuesta DELETE:", res.status, body);
-      })
-      .catch((err) => {
-        console.error("[agenteia] Error en fetch DELETE:", err);
-      });
   };
 
   const selectChat = (id: string) => {
@@ -403,15 +410,7 @@ export default function AgenteIAPage() {
       fetch("/api/superadmin/agenteia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: updatedMessages,
-          messageType,
-          chatId,
-          userId: (user as any)?.uid ?? null,
-          userName: user?.name ?? null,
-          userEmail: user?.email ?? null,
-          userRole: user?.role ?? null,
-        }),
+        body: JSON.stringify({ messages: updatedMessages }),
       });
 
     try {
@@ -433,7 +432,7 @@ export default function AgenteIAPage() {
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
-        accumulated += decoder.decode(value);
+        accumulated += decoder.decode(value, { stream: !d });
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
@@ -444,7 +443,7 @@ export default function AgenteIAPage() {
       }
 
       if (isConversationModeRef.current)
-        speakText(accumulated.replace(/\*/g, ""));
+        speakText(sinMarcas(accumulated).replace(/[*#|`]/g, ""));
     } catch (err: any) {
       const errorMsg =
         err?.message && err.message !== t("error_respuesta")
@@ -458,6 +457,28 @@ export default function AgenteIAPage() {
         return next;
       }, chatId);
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Confirma o cancela un cambio en Odoo preparado por el agente. La marca se
+  // quita del mensaje antes de llamar, así un doble clic no lo repite.
+  const resolverCambio = async (index: number, token: string, confirmar: boolean) => {
+    const chatId = activeChatId;
+    if (!chatId || isGenerating) return;
+    const marca = `[[confirmar-odoo:${token}]]`;
+    setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, content: m.content.replace(marca, "").trimEnd() } : m)), chatId);
+    setIsGenerating(true);
+    try {
+      const res = await fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(confirmar ? { confirmar: token } : { cancelar: token }),
+      });
+      const j = await res.json().catch(() => ({}));
+      const texto = j.texto || `⚠️ ${j.error || t("error_respuesta")}`;
+      setMessages((prev) => [...prev, { role: "assistant", content: texto }], chatId);
     } finally {
       setIsGenerating(false);
     }
@@ -832,9 +853,49 @@ export default function AgenteIAPage() {
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <p className="whitespace-pre-line">
-                                {msg.content}
-                              </p>
+                              {msg.role === "user" ? (
+                                <p className="whitespace-pre-line">{msg.content}</p>
+                              ) : (
+                                <div className="agente-md break-words">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{sinMarcas(msg.content)}</ReactMarkdown>
+                                </div>
+                              )}
+                              {msg.role === "assistant" &&
+                                cambiosDe(msg.content).map(({ token, detalle }) => (
+                                  <div key={token} className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                                    <div className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+                                      Cambio en Odoo pendiente
+                                    </div>
+                                    <div className="text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</div>
+                                    {detalle && (
+                                      <pre className="text-[10px] bg-white/70 rounded p-2 overflow-x-auto text-slate-600">
+                                        {JSON.stringify(
+                                          { operacion: detalle.operacion, model: detalle.model, ids: detalle.ids, method: detalle.method, values: detalle.values, args: detalle.args, kwargs: detalle.kwargs },
+                                          null,
+                                          2,
+                                        )}
+                                      </pre>
+                                    )}
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={isGenerating}
+                                        onClick={() => resolverCambio(index, token, true)}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                                      >
+                                        Confirmar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isGenerating}
+                                        onClick={() => resolverCambio(index, token, false)}
+                                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
                               {msg.files && (
                                 <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100/20">
                                   {msg.files.map((file, fIdx) => (
