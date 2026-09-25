@@ -743,8 +743,8 @@
       "emailInstead": "Email technical support",
       "multipleTitle": "We found more than one invoice with that number",
       "multipleHelp": "Pick yours to continue.",
-      "productTitle": "Which product has the problem?",
-      "productHelp": "The invoice's products are grouped by brand. Pick the one that failed and, if you bought several identical units, the serial of the faulty one.",
+      "productTitle": "Which products have the fault?",
+      "productHelp": "The invoice's products are grouped by brand. Check every one you're sending and, if you bought several identical units, the serial of each faulty one.",
       "client": "Customer",
       "date": "Date",
       "serial": "Serial",
@@ -802,7 +802,11 @@
       "docLargo": "The number doesn't have the expected length for this document type. Please check it.",
       "otraMarca": "Other brands",
       "productosN": "{n, plural, one {# product} other {# products}}",
-      "eligeSerial": "{n, plural, one {# unit} other {# units}} · pick the serial of the faulty one"
+      "eligeSerial": "{n, plural, one {# unit} other {# units}} · check the serials of the faulty ones",
+      "seleccionadosN": "{n, plural, one {# product in this shipment} other {# products in this shipment}}",
+      "maxProductos": "A shipment can include up to {n} products. If you have more, submit another report for the rest.",
+      "productoNdeM": "Product {n} of {total}",
+      "faultHelpMulti": "Tell us what's wrong with each product and attach at least one photo or video of each."
     },
     "metaTitle": "Technical Service | Supricom",
     "metaDescription": "Report a problem with your device or check the status of a report you already sent.",
@@ -922,7 +926,9 @@
     "entrega_confirmado_sucursal": "You chose to pick up your device at the branch.",
     "entrega_confirmado_ruta": "You chose delivery by route to {ciudad}.",
     "entrega_confirmado_agencia": "You chose courier delivery ({agencia}).",
-    "entrega_confirmado_nota": "If you need to change your choice, contact us."
+    "entrega_confirmado_nota": "If you need to change your choice, contact us.",
+    "productos": "Products",
+    "consultar_productos": "Products"
   },
   "vendedores": {
     "loading": "Loading Dashboard...",

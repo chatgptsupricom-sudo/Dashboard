@@ -93,10 +93,12 @@ async function ensureAdjuntosTable() {
 // Si el ticket no existe todavia, ticket_id queda NULL y se enlaza despues (#22).
 export async function POST(request: NextRequest) {
   // Este acepta escrituras anónimas en la base sin ninguna identificación: es
-  // almacenamiento gratis para quien lo encuentre. Con 5 archivos por ticket y
-  // 3 tickets por hora, 20 subidas/hora deja holgura para reintentos.
+  // almacenamiento gratis para quien lo encuentre. Un envío lleva hasta 10
+  // productos con 5 archivos cada uno (issue #331), así que 50 subidas/hora es
+  // lo justo para el envío más grande; antes, con un producto por ticket,
+  // eran 20.
   const bloqueo = aplicarLimites(request, "adjuntos-subir", [
-    { max: 20, ventanaSegundos: 3600 },
+    { max: 50, ventanaSegundos: 3600 },
   ]);
   if (bloqueo) return bloqueo;
 

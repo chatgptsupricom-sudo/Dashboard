@@ -13,7 +13,7 @@ import {
   respuesta429,
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
-import { crearProductos } from "@/lib/rma/items";
+import { crearProductos, productosPublicos } from "@/lib/rma/items";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -136,6 +136,19 @@ async function ensurePortalColumns(conn: any) {
   }
 }
 
+/** Lo que el cliente manda de cada producto del envío. */
+type PedidoProducto = {
+  itemId: string;
+  serialManual: string;
+  falla: string;
+  uploadToken: string;
+};
+
+// Productos por envío. Cada uno sube hasta 5 fotos, y el límite de subidas por
+// IP (app/api/servicio-tecnico/ticket/adjuntos) tiene que alcanzar para el
+// envío completo.
+const MAX_PRODUCTOS = 10;
+
 export async function POST(request: NextRequest) {
   // Dos límites distintos, y la diferencia importa.
   //
@@ -205,20 +218,61 @@ export async function POST(request: NextRequest) {
     // corría y los adjuntos se quedaban huérfanos con ticket_id NULL.
     const uploadToken = String(body.upload_token || body.ticket_id || "").trim();
 
+    // Un envío puede traer varios productos de la factura (issue #331), cada
+    // uno con su falla, su serial escrito a mano si hace falta y sus fotos
+    // (subidas con un token propio por producto). Sin `productos` se toma el
+    // formato de antes, un solo producto con los campos sueltos del cuerpo.
+    const conLista = Array.isArray(body.productos);
+    const pedidos: PedidoProducto[] = conLista
+      ? body.productos.slice(0, MAX_PRODUCTOS + 1).map((p: any) => ({
+          // Sin trim(), por lo mismo que clientItemId.
+          itemId: String(p?.item_id || ""),
+          serialManual: String(p?.serial_manual || "").trim().slice(0, 100),
+          falla: String(p?.reported_fault || "").trim(),
+          uploadToken: String(p?.upload_token || "").trim(),
+        }))
+      : [{ itemId: clientItemId, serialManual, falla: reportedFault, uploadToken }];
+
     if (!invoiceNumber || invoiceNumber.length > 100) {
       return NextResponse.json({ error: "Numero de factura invalido" }, { status: 400 });
     }
-    if (!reportedFault || reportedFault.length < 10) {
+    if (pedidos.length === 0) {
+      return NextResponse.json({ error: "Elige al menos un producto." }, { status: 400 });
+    }
+    if (pedidos.length > MAX_PRODUCTOS) {
       return NextResponse.json(
-        { error: "Describe la falla con al menos 10 caracteres" },
+        { error: `Un envío puede llevar hasta ${MAX_PRODUCTOS} productos.` },
         { status: 400 },
       );
     }
-    if (reportedFault.length > 5000) {
-      return NextResponse.json(
-        { error: "La descripcion no puede superar 5000 caracteres" },
-        { status: 400 },
-      );
+    for (const p of pedidos) {
+      if (!p.falla || p.falla.length < 10) {
+        return NextResponse.json(
+          { error: "Describe la falla con al menos 10 caracteres" },
+          { status: 400 },
+        );
+      }
+      if (p.falla.length > 5000) {
+        return NextResponse.json(
+          { error: "La descripcion no puede superar 5000 caracteres" },
+          { status: 400 },
+        );
+      }
+    }
+    // El mismo producto dos veces, o dos productos con el mismo token de
+    // fotos (el primero se llevaría las fotos de los dos).
+    if (conLista) {
+      const ids = pedidos.map((p) => p.itemId);
+      const tokens = pedidos.map((p) => p.uploadToken);
+      if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+        return NextResponse.json(
+          { error: "Hay un producto repetido o sin elegir. Vuelve a elegirlos." },
+          { status: 400 },
+        );
+      }
+      if (new Set(tokens).size !== tokens.length) {
+        return NextResponse.json({ error: "Peticion invalida" }, { status: 400 });
+      }
     }
     if (clientPhone && clientPhone.length > 50) {
       return NextResponse.json({ error: "Telefono demasiado largo" }, { status: 400 });
@@ -273,96 +327,112 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Paso 2: validar que el item reportado pertenece a la factura.
+    // Paso 2: validar que cada producto reportado pertenece a la factura.
     //
     // El identificador bueno es `item_id`, que la consulta ya devuelve por
     // item ("<linea>:<serial>"): es lo unico que distingue entre dos unidades
-    // del mismo producto con seriales distintos. Se aceptan tambien
-    // odoo_product_id / product_code + serial para no romper a quien ya
-    // estuviera llamando asi.
+    // del mismo producto con seriales distintos. En el formato viejo (un solo
+    // producto) se aceptan tambien odoo_product_id / product_code + serial
+    // para no romper a quien ya estuviera llamando asi.
     const items = resultado.items;
-    let matched: ItemFactura | null = null;
+    const elegidos: { matched: ItemFactura; pedido: PedidoProducto; serialFinal: string | null }[] = [];
 
-    if (clientItemId) {
-      matched = items.find((i) => i.id === clientItemId) || null;
-    } else {
-      const candidatos = clientOdooProductId
-        ? items.filter((i) => i.producto_id === clientOdooProductId)
-        : clientProductCode
-          ? items.filter(
-              (i) => i.codigo.toLowerCase() === clientProductCode.toLowerCase(),
-            )
-          : // Sin ningun identificador de producto solo se puede asumir el item
-            // cuando la factura trae uno solo.
-            items.length === 1
-            ? items
-            : [];
+    for (const pedido of pedidos) {
+      let matched: ItemFactura | null = null;
 
-      if (clientSerial) {
-        matched = candidatos.find((i) => i.serial === clientSerial) || null;
-      } else if (candidatos.length === 1) {
-        matched = candidatos[0];
-      } else if (candidatos.length > 1) {
-        // Varias unidades del mismo producto con seriales distintos: hay que
-        // saber cual fallo, no se puede elegir por el cliente.
+      if (pedido.itemId) {
+        matched = items.find((i) => i.id === pedido.itemId) || null;
+      } else if (!conLista) {
+        const candidatos = clientOdooProductId
+          ? items.filter((i) => i.producto_id === clientOdooProductId)
+          : clientProductCode
+            ? items.filter(
+                (i) => i.codigo.toLowerCase() === clientProductCode.toLowerCase(),
+              )
+            : // Sin ningun identificador de producto solo se puede asumir el
+              // item cuando la factura trae uno solo.
+              items.length === 1
+              ? items
+              : [];
+
+        if (clientSerial) {
+          matched = candidatos.find((i) => i.serial === clientSerial) || null;
+        } else if (candidatos.length === 1) {
+          matched = candidatos[0];
+        } else if (candidatos.length > 1) {
+          // Varias unidades del mismo producto con seriales distintos: hay
+          // que saber cual fallo, no se puede elegir por el cliente.
+          return NextResponse.json(
+            { error: "Indica el serial del equipo que presenta la falla." },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (!matched) {
         return NextResponse.json(
-          { error: "Indica el serial del equipo que presenta la falla." },
+          {
+            error:
+              "El producto no pertenece a esta factura. Verifica que seleccionaste el correcto.",
+          },
           { status: 400 },
         );
       }
-    }
 
-    if (!matched) {
-      return NextResponse.json(
-        {
-          error:
-            "El producto no pertenece a esta factura. Verifica que seleccionaste el correcto.",
-        },
-        { status: 400 },
+      // Si Odoo no tiene serial para esa línea, el cliente debe escribirlo. Se
+      // valida acá y no solo en el navegador: el formulario es sugerencia,
+      // esto es la regla.
+      //
+      // Solo se exige en productos que SÍ llevan serial de fábrica
+      // (tracking = 'serial' en Odoo). En consumibles y accesorios no existe
+      // ningún serial que escribir, y exigirlo los dejaría sin poder
+      // reportarse.
+      if (matched.lleva_serial && !matched.serial && !pedido.serialManual) {
+        return NextResponse.json(
+          { error: `Necesitamos el serial de ${matched.nombre} para identificarlo.` },
+          { status: 400 },
+        );
+      }
+
+      // Al menos un adjunto por producto. Se comprueba contra la base y no
+      // contra lo que diga el navegador: si el archivo no llegó al servidor,
+      // para el técnico no existe.
+      const sinFotos = { error: `Adjunta al menos una foto o un video de ${matched.nombre}.` };
+      if (!pedido.uploadToken) {
+        return NextResponse.json(sinFotos, { status: 400 });
+      }
+      const adjuntos = await query(
+        `SELECT COUNT(*) AS total FROM rma_ticket_adjuntos
+          WHERE tracking_token = ? AND ticket_id IS NULL`,
+        [pedido.uploadToken],
       );
+      if (Number((adjuntos.rows as any[])?.[0]?.total || 0) === 0) {
+        return NextResponse.json(sinFotos, { status: 400 });
+      }
+
+      elegidos.push({
+        matched,
+        pedido,
+        // El serial que se guarda: manda SIEMPRE el de Odoo si existe. El
+        // escrito a mano solo rellena el hueco, nunca sustituye al registrado
+        // — si no, cualquiera podría reportar un serial que no le corresponde.
+        serialFinal: matched.serial || pedido.serialManual || null,
+      });
     }
 
-    // Si Odoo no tiene serial para esa línea, el cliente debe escribirlo. Se
-    // valida acá y no solo en el navegador: el formulario es sugerencia, esto
-    // es la regla.
-    //
-    // Solo se exige en productos que SÍ llevan serial de fábrica
-    // (tracking = 'serial' en Odoo). En consumibles y accesorios no existe
-    // ningún serial que escribir, y exigirlo los dejaría sin poder reportarse.
-    if (matched.lleva_serial && !matched.serial && !serialManual) {
-      return NextResponse.json(
-        { error: "Necesitamos el serial del equipo para identificarlo." },
-        { status: 400 },
-      );
-    }
-
-    // El serial que se guarda: manda SIEMPRE el de Odoo si existe. El escrito
-    // a mano solo rellena el hueco, nunca sustituye al registrado — si no,
-    // cualquiera podría reportar un serial que no le corresponde.
-    const serialFinal = matched.serial || serialManual || null;
-
-    // Al menos un adjunto. Se comprueba contra la base y no contra lo que diga
-    // el navegador: si el archivo no llegó al servidor, para el técnico no
-    // existe.
-    if (!uploadToken) {
-      return NextResponse.json(
-        { error: "Adjunta al menos una foto o un video del equipo." },
-        { status: 400 },
-      );
-    }
-
-    const adjuntos = await query(
-      `SELECT COUNT(*) AS total FROM rma_ticket_adjuntos
-        WHERE tracking_token = ? AND ticket_id IS NULL`,
-      [uploadToken],
-    );
-    const totalAdjuntos = Number((adjuntos.rows as any[])?.[0]?.total || 0);
-    if (totalAdjuntos === 0) {
-      return NextResponse.json(
-        { error: "Adjunta al menos una foto o un video del equipo." },
-        { status: 400 },
-      );
-    }
+    // Los campos de producto del caso son los del primero (paso 1 de #331).
+    // La falla del caso, en cambio, junta la de todos: es lo que el técnico
+    // lee hoy en el panel, y ahí tiene que ver el envío completo.
+    const { matched, serialFinal } = elegidos[0];
+    const fallaCaso =
+      elegidos.length === 1
+        ? elegidos[0].pedido.falla
+        : elegidos
+            .map(
+              (e, i) =>
+                `${i + 1}. ${e.matched.nombre}${e.serialFinal ? ` (${e.serialFinal})` : ""}: ${e.pedido.falla}`,
+            )
+            .join("\n\n");
 
     // Paso 3: abrir conexion y asegurar schema.
     conn = await getConnection();
@@ -411,7 +481,7 @@ export async function POST(request: NextRequest) {
             // serial_quantity es el campo viejo (texto libre) que usa el
             // modulo interno para buscar. El serial real va aparte.
             serialFinal,
-            reportedFault,
+            fallaCaso,
             // La compania sale de la factura. Antes venia del body con 9 por
             // defecto, asi que un reporte de una factura de Caracas quedaba
             // guardado como Valencia. La columna es NOT NULL con default 9, asi
@@ -448,40 +518,46 @@ export async function POST(request: NextRequest) {
           [caseId, createdBy],
         );
 
-        // Enlazar los adjuntos que ya se subieron con el token temporal, y
-        // pasarlos al token definitivo del ticket (que es con el que después
-        // se sirven).
-        if (uploadToken && caseId) {
-          await conn.execute(
-            `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?
-              WHERE tracking_token = ? AND ticket_id IS NULL`,
-            [caseId, trackingToken, uploadToken],
-          );
-        }
-
-        // El producto del envío (issue #331). Por ahora el portal manda uno
-        // solo, el mismo que quedó en los campos del caso.
-        await crearProductos(
+        // Los productos del envío (issue #331), en el orden en que el cliente
+        // los eligió.
+        const idsProductos = await crearProductos(
           caseId,
-          [
-            {
-              product_code: matched.codigo || null,
-              hardware: matched.categoria || null,
-              brand: matched.marca || null,
-              model: matched.nombre || null,
-              serial: serialFinal,
-              odoo_product_id: matched.producto_id,
-              reported_fault: reportedFault,
-              garantia_estado: matched.garantia?.estado || null,
-              garantia_meses: matched.garantia?.meses_cubiertos ?? null,
-              garantia_vence: matched.garantia?.fecha_vencimiento
-                ? matched.garantia.fecha_vencimiento.slice(0, 10)
-                : null,
-              garantia_marca: matched.garantia?.marca_resuelta || null,
-            },
-          ],
+          elegidos.map((e, i) => ({
+            orden: i + 1,
+            product_code: e.matched.codigo || null,
+            hardware: e.matched.categoria || null,
+            brand: e.matched.marca || null,
+            model: e.matched.nombre || null,
+            serial: e.serialFinal,
+            odoo_product_id: e.matched.producto_id,
+            reported_fault: e.pedido.falla,
+            garantia_estado: e.matched.garantia?.estado || null,
+            garantia_meses: e.matched.garantia?.meses_cubiertos ?? null,
+            garantia_vence: e.matched.garantia?.fecha_vencimiento
+              ? e.matched.garantia.fecha_vencimiento.slice(0, 10)
+              : null,
+            garantia_marca: e.matched.garantia?.marca_resuelta || null,
+          })),
           conn,
         );
+
+        // Enlazar los adjuntos que ya se subieron con el token temporal de
+        // cada producto, y pasarlos al token definitivo del ticket (que es con
+        // el que después se sirven). Cada foto queda con su producto; sin la
+        // migración (no hay ids), solo con el caso.
+        for (const [i, e] of elegidos.entries()) {
+          const itemId = idsProductos.length === elegidos.length ? idsProductos[i] : null;
+          await conn.execute(
+            itemId
+              ? `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?, item_id = ?
+                  WHERE tracking_token = ? AND ticket_id IS NULL`
+              : `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?
+                  WHERE tracking_token = ? AND ticket_id IS NULL`,
+            itemId
+              ? [caseId, trackingToken, itemId, e.pedido.uploadToken]
+              : [caseId, trackingToken, e.pedido.uploadToken],
+          );
+        }
 
         break; // exito, salir del loop
       } catch (e: any) {
@@ -516,7 +592,9 @@ export async function POST(request: NextRequest) {
           case_id: caseId,
           case_number: caseNumber,
           client_name: resultado.cliente.nombre,
-          product: matched.nombre,
+          product:
+            elegidos.length > 1 ? `${matched.nombre} (+${elegidos.length - 1})` : matched.nombre,
+          productos: elegidos.length,
           invoice_number: invoiceNumber,
           origen: "portal",
           created_at: new Date().toISOString(),
@@ -544,7 +622,13 @@ export async function POST(request: NextRequest) {
             product_code: matched.codigo,
             product_name: matched.nombre,
             serial: matched.serial || null,
-            reported_fault: reportedFault,
+            reported_fault: fallaCaso,
+            productos: elegidos.map((e) => ({
+              product_code: e.matched.codigo,
+              product_name: e.matched.nombre,
+              serial: e.serialFinal,
+              reported_fault: e.pedido.falla,
+            })),
           },
         }),
       }).catch((err) => {
@@ -655,7 +739,7 @@ export async function GET(request: NextRequest) {
     // Validamos case_number + invoice_number en una sola consulta para evitar
     // race conditions / enumeration.
     const caseResult = await query(
-      `SELECT case_number, status, model, hardware, product_code, invoice_number,
+      `SELECT id, case_number, status, model, hardware, product_code, invoice_number,
               serial, created_at, client_phone, despachado_at,
               garantia_estado, garantia_meses, garantia_vence, garantia_marca
        FROM rma_cases
@@ -680,6 +764,10 @@ export async function GET(request: NextRequest) {
       [numero, factura],
     );
     const historyRows = (historyResult as any).rows ?? historyResult;
+
+    // Los productos del envío (issue #331), con el estado de cada uno. Sin
+    // diagnóstico ni notas: son internos.
+    const productos = await productosPublicos(row.id);
 
     return NextResponse.json({
       success: true,
@@ -710,6 +798,7 @@ export async function GET(request: NextRequest) {
         // —reparado, nota de credito— y esto dice que ademas ya se retiro.
         // Fecha de calendario, no instante: se manda YYYY-MM-DD.
         despachado_at: fechaISO(row.despachado_at),
+        productos,
         timeline: (Array.isArray(historyRows) ? historyRows : []).map(
           // Sin `changed_by`: en los cambios de estado posteriores es la
           // identidad del técnico que lo atendió, y esto es un endpoint
