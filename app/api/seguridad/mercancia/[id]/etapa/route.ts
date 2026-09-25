@@ -442,9 +442,12 @@ async function ejecutar(
       // la ronda: la verificacion no puede quedar trabada por una migracion.
       // Salvo devolverlo a Almacen: sin ronda no queda registrado que volvio,
       // y si la siguiente verificacion sale limpia, el picking se calificaria
-      // como si nada (ver `calificar`). Aprobar o despachar igual si se puede.
+      // como si nada (ver `calificar`). Aprobar, despachar igual o cancelar
+      // (#316: no sale y se cierra, no necesita ronda) si se pueden.
+      // `body.decision` y no una variable de #316 a proposito: asi vale antes
+      // y despues de que entre, sin importar el orden de los merges.
       const conRonda = await hayColumnasVerificacion();
-      if (!despachar && !conRonda) {
+      if (!despachar && body?.decision !== "cancelar" && !conRonda) {
         return NextResponse.json(
           {
             error:
