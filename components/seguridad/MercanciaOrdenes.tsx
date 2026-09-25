@@ -9,8 +9,10 @@ import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, EmptyState } from "./mercancia-ui";
 
 /**
- * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir, que
- * Almacen todavia no proceso como egreso.
+ * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir y con
+ * la orden de venta facturada, que Almacen todavia no proceso como egreso.
+ * Vienen ordenadas por fecha de factura, la mas vieja primero: es el orden en
+ * que le llegaron a Almacen (issue #298).
  *
  * Antes de esto, para registrar un egreso habia que saber de memoria el
  * numero exacto de la orden y escribirlo en el buscador. Esta pantalla
@@ -29,6 +31,7 @@ type Orden = {
   estado: string;
   origen: string | null;
   fecha: string | null;
+  facturas: { numero: string; fecha: string | null }[];
 };
 
 export default function MercanciaOrdenes() {
@@ -37,6 +40,7 @@ export default function MercanciaOrdenes() {
   const locale = (params?.locale as string) || "es";
 
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
+  const [sinFacturar, setSinFacturar] = useState(0);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +51,7 @@ export default function MercanciaOrdenes() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || "fetch failed");
       setOrdenes(json.ordenes || []);
+      setSinFacturar(Number(json.sin_facturar) || 0);
     } catch (e: any) {
       // El backend ya trae la causa concreta ([odoo]/[mysql] + el mensaje
       // real) — mostrarla en vez de un generico ayuda a diagnosticar sin
@@ -66,6 +71,13 @@ export default function MercanciaOrdenes() {
       <PageHeader icon={FileText} titulo={to("titulo")} subtitulo={to("subtitulo")} />
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Las listas sin facturar no se arman, pero Almacen tiene que saber que
+            existen: si no, "no la veo" parece un error del panel. */}
+        {!cargando && !error && sinFacturar > 0 && (
+          <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+            {to("sin_facturar", { n: sinFacturar })}
+          </p>
+        )}
         {cargando ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -100,8 +112,11 @@ export default function MercanciaOrdenes() {
                   <p className="text-xs text-slate-500 truncate mt-0.5">
                     {o.contraparte || "—"}
                   </p>
-                  {o.fecha && (
-                    <p className="text-[11px] text-slate-400 mt-1.5">{fechaCorta(o.fecha)}</p>
+                  {o.facturas[0] && (
+                    <p className="text-[11px] text-slate-500 mt-1.5 truncate">
+                      <span className="font-mono">{o.facturas.map((f) => f.numero).join(", ")}</span>
+                      <span className="text-slate-400"> · {fechaCorta(o.facturas[0].fecha)}</span>
+                    </p>
                   )}
                 </div>
               </Link>

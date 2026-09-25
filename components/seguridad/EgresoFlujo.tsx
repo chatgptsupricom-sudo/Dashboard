@@ -72,6 +72,9 @@ type Movimiento = {
   odoo_picking_name: string | null;
   contraparte: string | null;
   facturas: string[];
+  /** Facturas de venta traidas de Odoo al registrar (issue #298). */
+  facturas_venta?: string[];
+  factura_venta_fecha?: string | null;
   etapa: Etapa;
   tipo_entrega: TipoEntrega | null;
   almacenista_armado: string | null;
@@ -363,6 +366,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 <Dato etiqueta={tf("almacenista_armado")} valor={mov.almacenista_armado} />
                 <Dato etiqueta={tf("almacenista_despacho")} valor={mov.almacenista_despacho} />
                 <Dato etiqueta={tm("factura")} valor={mov.facturas?.join(", ")} />
+                {!!mov.facturas_venta?.length && (
+                  <Dato
+                    etiqueta={tm("factura_venta")}
+                    valor={`${mov.facturas_venta.join(", ")} · ${fechaCorta(mov.factura_venta_fecha)}`}
+                  />
+                )}
               </dl>
               {mov.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">

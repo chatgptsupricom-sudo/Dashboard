@@ -2498,6 +2498,8 @@
       "nuevo": "Register",
       "buscar": "Search",
       "no_encontrada": "We could not find that document in Odoo",
+      "orden_sin_facturar": "This order has not been invoiced yet",
+      "factura_venta": "Sales invoice",
       "cliente": "Customer",
       "proveedor": "Supplier",
       "almacenista": "Loading warehouse worker",
@@ -2558,8 +2560,9 @@
       },
       "ordenes": {
         "titulo": "Pending delivery orders",
-        "subtitulo": "Ready in Odoo, not yet processed as outbound",
-        "vacio": "No delivery orders ready in Odoo.",
+        "subtitulo": "Ready and invoiced in Odoo, not yet processed as outbound",
+        "vacio": "No delivery orders ready and invoiced in Odoo.",
+        "sin_facturar": "{n, plural, one {# order ready in Odoo is not invoiced yet} other {# orders ready in Odoo are not invoiced yet}}: they show up here once they are invoiced.",
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
         "registrar_egreso": "Register outbound with this order"
