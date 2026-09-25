@@ -132,3 +132,53 @@ export function evaluarArmado(
   ).length;
   return { completo: sinContar === 0 && diferencias === 0, diferencias, sinContar };
 }
+
+/** Etapas en las que el egreso todavia esta en manos de Almacen. */
+export function enAlmacen(etapa: Etapa): boolean {
+  return RESPONSABLE[etapa] === "almacen";
+}
+
+export type FaltanteSeriales = {
+  item_id: number;
+  producto: string;
+  esperados: number;
+  cargados: number;
+};
+
+/**
+ * Compara, por renglon con serial, cuantos seriales tiene el picking de Odoo
+ * contra la cantidad que sale (issue #299).
+ *
+ * Los seriales no se conocen al registrar el egreso: en un picking "Listo"
+ * Odoo aparta la cantidad pero no que serial sale; el serial aparece cuando
+ * el almacenista procesa el picking. Por eso esto se evalua al leerlos, y un
+ * egreso con faltantes no pasa a Seguridad: no hay contra que pistolear.
+ *
+ * `lleva_serial` null = todavia no se le pregunto a Odoo: no cuenta como
+ * faltante, pero tampoco deja el egreso "completo".
+ */
+export function evaluarSeriales(
+  items: Array<{
+    id: number;
+    producto: string;
+    cantidad_cargada: number | string;
+    lleva_serial?: number | boolean | null;
+  }>,
+  seriales: Array<{ item_id: number }>,
+): { completo: boolean; sinLeer: boolean; faltantes: FaltanteSeriales[] } {
+  const porItem = new Map<number, number>();
+  for (const s of seriales) porItem.set(Number(s.item_id), (porItem.get(Number(s.item_id)) || 0) + 1);
+
+  const sinLeer = items.some((i) => i.lleva_serial === null || i.lleva_serial === undefined);
+  const faltantes = items
+    .filter((i) => Number(i.lleva_serial) === 1)
+    .map((i) => ({
+      item_id: Number(i.id),
+      producto: i.producto,
+      esperados: Number(i.cantidad_cargada),
+      cargados: porItem.get(Number(i.id)) || 0,
+    }))
+    .filter((f) => f.cargados !== f.esperados);
+
+  return { completo: !sinLeer && faltantes.length === 0, sinLeer, faltantes };
+}

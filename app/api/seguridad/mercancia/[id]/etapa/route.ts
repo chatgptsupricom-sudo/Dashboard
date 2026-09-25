@@ -12,6 +12,7 @@ import {
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { cargarMovimiento, evaluarDescuadre } from "@/lib/seguridad/mercancia";
+import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -275,6 +276,39 @@ async function ejecutar(
           { error: "Ese almacenista no esta en el personal de Almacen" },
           { status: 400 },
         );
+      }
+
+      // No pasa a Seguridad un picking serializable sin sus seriales (issue
+      // #299): es contra lo que se pistolea en C4. Se releen de Odoo aca,
+      // aunque Almacen ya haya pulsado "Actualizar", porque es la ultima vez
+      // que se pueden leer: en Seguridad la lista queda fija.
+      if (mov.odoo_picking_id) {
+        try {
+          const s = await sincronizarSeriales(id, Number(mov.odoo_picking_id));
+          if (!s.completo) {
+            const detalle = s.faltantes
+              .map((f) => `${f.producto} (${f.cargados} de ${f.esperados})`)
+              .join("; ");
+            return NextResponse.json(
+              {
+                error: `Faltan seriales en Odoo: ${detalle || "sin leer"}. Cargalos en el picking y vuelve a intentar.`,
+                seriales_estado: s,
+              },
+              { status: 400 },
+            );
+          }
+        } catch (e: any) {
+          // Sin la migracion no hay donde guardarlos: se sigue como antes, para
+          // no frenar el despacho por una tabla. Si es Odoo, no se sigue.
+          if (!faltaMigracion(e)) {
+            console.error(`[egreso ${id}] no se pudieron leer los seriales:`, e?.message || e);
+            return NextResponse.json(
+              { error: "No se pudieron leer los seriales de Odoo. Intenta de nuevo." },
+              { status: 502 },
+            );
+          }
+          console.warn("[egreso] falta correr sql/egreso_seriales.sql: se asigna sin seriales");
+        }
       }
 
       // El responsable del registro pasa a ser quien despacha (es a quien
