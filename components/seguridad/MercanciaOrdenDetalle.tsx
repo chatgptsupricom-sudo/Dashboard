@@ -22,6 +22,7 @@ type Linea = {
 };
 
 type Picking = {
+  odoo_picking_id: number;
   odoo_picking_name: string;
   contraparte: string;
   estado: string;
@@ -41,10 +42,20 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
   // Texto del error; "sin_factura" tiene su propio mensaje (issue #298).
   const [error, setError] = useState<string | null>(null);
 
+  // Id del picking, cuando se llega desde la lista de pendientes: con nombres
+  // repetidos entre compañias, sin el se podria cargar la orden de otra. Se
+  // lee de `window` (como MercanciaNueva) para no pedir Suspense en build.
+  const [pickingId, setPickingId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    setPickingId(id && /^\d+$/.test(id) ? id : "");
+  }, []);
+
   const cargar = useCallback(async () => {
+    if (pickingId === null) return;
     try {
       const res = await fetch(
-        `/api/seguridad/mercancia/odoo/${encodeURIComponent(nombre)}?tipo=egreso`,
+        `/api/seguridad/mercancia/odoo/${encodeURIComponent(nombre)}?tipo=egreso${pickingId ? `&id=${pickingId}` : ""}`,
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -57,7 +68,7 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
     } finally {
       setCargando(false);
     }
-  }, [nombre, tm, to]);
+  }, [nombre, pickingId, tm, to]);
 
   useEffect(() => {
     void cargar();
@@ -139,7 +150,9 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-200/70 bg-white/90 backdrop-blur">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
             <BotonPrimario
-              href={`/${locale}/seguridad/mercancia/egreso/nuevo?factura=${encodeURIComponent(nombre)}`}
+              href={`/${locale}/seguridad/mercancia/egreso/nuevo?factura=${encodeURIComponent(nombre)}${
+                picking?.odoo_picking_id ? `&id=${picking.odoo_picking_id}` : ""
+              }`}
               icon={Send}
               className="w-full h-12"
             >

@@ -336,14 +336,21 @@ function compararFacturas(a: FacturaVenta, b: FacturaVenta): number {
  * el que no es. Un superadmin (`cids: null`) queda expuesto a esa ambiguedad;
  * en la practica quien busca aca siempre es Almacen o Seguridad, con su
  * sucursal ya resuelta. Por eso al registrar se relee por id
- * (`buscarPickingEgresoPorId`), que no es ambiguo.
+ * (`buscarPickingEgresoPorId`), que no es ambiguo, y la lista de pendientes
+ * pasa el id hasta aca (`id`). Solo por nombre, se prefiere el abierto.
  */
 export async function buscarPickingEgreso(
   numero: string,
   cids: number | null,
+  id?: number | null,
 ): Promise<PickingOdoo | null> {
   const limpio = String(numero || "").trim();
   if (!limpio || limpio.length > 100) return null;
+  // Con el id (viene de la lista de pendientes) no hay ambiguedad: el nombre
+  // se exige igual, para que un id cambiado a mano no traiga otra orden.
+  if (Number.isInteger(id) && Number(id) > 0) {
+    return leerPickingEgreso([["id", "=", Number(id)], ["name", "=", limpio]], cids);
+  }
   return leerPickingEgreso([["name", "=", limpio]], cids);
 }
 
@@ -362,14 +369,18 @@ async function leerPickingEgreso(
   const domain: any[] = [...filtro, ["picking_type_id.code", "=", "outgoing"]];
   if (cids !== null) domain.push(["company_id", "=", cids]);
 
+  // El nombre no es unico entre compañias (ver arriba): sin sucursal
+  // (superadmin) puede haber varios. Se prefiere el abierto y, entre ellos, el
+  // mas reciente: el de otra compañia suele ser uno viejo ya despachado.
   const pickings = await callOdooRPC<any[]>(
     "stock.picking",
     "search_read",
     [domain],
-    { fields: ["name", "partner_id", "state", "origin", "sale_id"], limit: 1 },
+    { fields: ["name", "partner_id", "state", "origin", "sale_id"], limit: 10, order: "id desc" },
   );
 
-  const p = pickings?.[0];
+  const abiertos = (pickings || []).filter((x) => x.state !== "done" && x.state !== "cancel");
+  const p = abiertos.find((x) => x.state === "assigned") || abiertos[0] || pickings?.[0];
   if (!p) return null;
 
   const lineas_raw = await callOdooRPC<any[]>(
