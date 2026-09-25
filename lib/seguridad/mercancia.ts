@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
+import { leerNovedades } from "@/lib/seguridad/novedades";
 import { leerSerialesEgreso } from "@/lib/seguridad/seriales";
 
 /**
@@ -151,12 +152,15 @@ export async function cargarMovimiento(id: number) {
   const facturas_venta = parsearLista(fila.facturas_venta_json);
   // Seriales esperados, leidos del picking de Odoo (issue #299).
   const seriales = fila.tipo === "egreso" ? await leerSerialesEgreso(id) : [];
+  // Novedades de la verificacion en C4, de todas las rondas (issue #301).
+  const novedades = fila.tipo === "egreso" ? await leerNovedades(id) : [];
 
   return {
     movimiento: { ...fila, facturas, almacenistas, facturas_venta },
     items: items.rows as any[],
     calificaciones: calif.rows as any[],
     seriales,
+    novedades,
   };
 }
 

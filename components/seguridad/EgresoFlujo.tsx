@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  Download,
   Loader2,
   Package,
   PackageCheck,
@@ -21,6 +22,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import Pistola from "@/components/escaneo/Pistola";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import {
   ASPECTOS,
@@ -34,7 +36,9 @@ import {
   type Aspecto,
   etapasDelRecorrido,
   indiceEtapa,
+  verificaPorSerial,
   type Accion,
+  type Novedad,
   type Etapa,
   type TipoEntrega,
 } from "@/lib/seguridad/egresoFlujo";
@@ -80,6 +84,15 @@ type Serial = {
   item_id: number;
   serial: string;
   verificado_at: string | null;
+  verificado_por?: string | null;
+};
+
+/** Novedad guardada (lib/seguridad/novedades), de cualquier ronda. */
+type NovedadGuardada = Novedad & {
+  id: number;
+  ronda: number;
+  origen: "escaneo" | "cierre";
+  created_at: string;
 };
 
 // Seriales que se ven de entrada por renglon; el resto, al desplegar.
@@ -116,6 +129,9 @@ type Movimiento = {
   motivo_no_aprobado: string | null;
   cerrado_at: string | null;
   seriales_leidos_at?: string | null;
+  /** Suma 1 cada vez que Seguridad no despacha y vuelve a Almacen (#301). */
+  ronda_verificacion?: number | null;
+  verificado_en?: string | null;
 };
 
 type Calificacion = {
@@ -167,6 +183,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [items, setItems] = useState<Item[]>([]);
   const [calificaciones, setCalificaciones] = useState<Calificacion[]>([]);
   const [seriales, setSeriales] = useState<Serial[]>([]);
+  const [novedadesGuardadas, setNovedadesGuardadas] = useState<NovedadGuardada[]>([]);
+  // Producto con serial elegido en la pistola (como en la recepcion).
+  const [pistolaItem, setPistolaItem] = useState<number | null>(null);
   const [leyendoSeriales, setLeyendoSeriales] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
@@ -206,6 +225,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setItems(its);
     setCalificaciones(json.calificaciones || []);
     setSeriales(json.seriales || []);
+    setNovedadesGuardadas(json.novedades || []);
     const a: Record<number, string> = {};
     const p: Record<number, string> = {};
     const ns: Record<number, boolean> = {};
@@ -314,6 +334,25 @@ export default function EgresoFlujo({ id }: { id: string }) {
     }
   };
 
+  // Verificacion en C4 (#301): lo que no se pistolea (cantidad escrita a mano,
+  // "No salio" y su motivo) se guarda al momento, como las lecturas.
+  const guardarPorton = async (itemId: number, datos: Record<string, unknown>) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/escaneo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: itemId, ...datos }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || tm("error"));
+      aplicar(json);
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+      await cargar();
+    }
+  };
+
   if (cargando) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-300">
@@ -360,17 +399,24 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const resultado =
     mov.aprobado === null
       ? null
-      : Number(mov.aprobado) === 1
+      : enAlmacen(mov.etapa) || mov.etapa === "por_verificar"
+        ? // Resultado de la ronda anterior: Seguridad no lo despacho y volvio.
+          "devuelto"
+        : Number(mov.aprobado) === 1
         ? "aprobado"
         : Number(mov.despachado) === 1
           ? "no_aprobado_despachado"
           : "no_despachado";
 
-  // Conteo del porton en pantalla: aprobar exige todo contado y cuadrando
-  // (la API lo vuelve a validar).
-  const portonCuadra = items.every(
-    (it) => !noSalio[it.id] && porton[it.id] !== "" && Number(porton[it.id]) === Number(it.cantidad_cargada),
-  );
+  // Novedades de la ronda en curso, calculadas igual que la API al cerrar.
+  const ronda = Number(mov.ronda_verificacion || 1);
+  const novedades = novedadesVerificacion(items, {
+    seriales,
+    sobrantes: novedadesGuardadas.filter((n) => n.ronda === ronda && n.origen === "escaneo"),
+  });
+  const porSerial = (it: Item) => verificaPorSerial(it, seriales);
+  const verificadosDe = (itemId: number) =>
+    seriales.filter((x) => Number(x.item_id) === itemId && x.verificado_at).length;
   const faltaMotivoRenglon = items.some((it) => noSalio[it.id] && !motivos[it.id]?.trim());
 
   // Seriales: los relee Almacen mientras el egreso es suyo; despues quedan
@@ -389,14 +435,6 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const contandoArmado = mov.etapa === "pre_despacho" && meToca;
   const contandoPorton = mov.etapa === "por_verificar" && meToca;
 
-  const cuerpoPorton = () =>
-    items.map((it) => ({
-      id: it.id,
-      cantidad_verificada: porton[it.id] === "" || porton[it.id] === undefined ? null : Number(porton[it.id]),
-      no_salio: !!noSalio[it.id],
-      observacion: noSalio[it.id] ? (motivos[it.id] || "").trim() : null,
-    }));
-
   // Una nota por aspecto; las de antes de #302 (sin aspecto) son del despacho.
   const notaDe = (a: Aspecto) => calificaciones.find((c) => (c.aspecto || "despacho") === a);
   const quienDe: Record<Aspecto, string | null> = {
@@ -405,7 +443,6 @@ export default function EgresoFlujo({ id }: { id: string }) {
   };
   // Lo que Seguridad encontro al verificar: se ve al calificar, para no
   // calificar a ciegas (misma regla que la API).
-  const novedades = novedadesVerificacion(items);
   const hayNovedades =
     novedades.length > 0 || (mov.aprobado !== null && Number(mov.aprobado) === 0);
   const faltaComentarioPicking =
@@ -464,7 +501,29 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 {tm("items")} ({items.length})
               </SectionTitle>
               {contandoArmado && <p className="text-xs text-slate-500 -mt-1 mb-3">{tf("armado_ayuda")}</p>}
-              {contandoPorton && <p className="text-xs text-slate-500 -mt-1 mb-3">{tf("verificar_ayuda")}</p>}
+              {contandoPorton && <p className="text-xs text-slate-500 -mt-1 mb-3">{tf("verificacion.ayuda")}</p>}
+              {contandoPorton && (
+                <Pistola
+                  endpoint={`/api/seguridad/mercancia/${id}/escaneo`}
+                  textos="seguridad.mercancia.flujo.verificacion"
+                  permitirSobrante
+                  items={items.map((it) => ({
+                    id: it.id,
+                    codigo: it.codigo,
+                    producto: it.producto,
+                    lleva_serial: porSerial(it),
+                    esperado: Number(it.cantidad_cargada),
+                    recibido: porSerial(it) ? verificadosDe(it.id) : Number(it.cantidad_verificada || 0),
+                  }))}
+                  seleccionado={pistolaItem}
+                  onResultado={(r) => {
+                    if (r.resultado === "seleccionado") setPistolaItem(r.item_id);
+                    void cargar();
+                  }}
+                  onNovedad={() => void cargar()}
+                  onTerminar={() => setPistolaItem(null)}
+                />
+              )}
 
               {/* Seriales del picking (issue #299): Almacen los trae de Odoo y
                   no pasa a Seguridad hasta que esten todos. */}
@@ -506,7 +565,11 @@ export default function EgresoFlujo({ id }: { id: string }) {
               {items.map((it) => {
                 const orden = Number(it.cantidad_cargada);
                 const vArm = armado[it.id] ?? "";
-                const vPor = porton[it.id] ?? "";
+                // Con serial, lo verificado son sus seriales pistoleados.
+                const vPor =
+                  porSerial(it) && (contandoPorton || mov.verificado_at)
+                    ? String(verificadosDe(it.id))
+                    : porton[it.id] ?? "";
                 const difArm = vArm !== "" && Number(vArm) !== orden;
                 const difPor = !noSalio[it.id] && vPor !== "" && Number(vPor) !== orden;
                 return (
@@ -538,15 +601,24 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         onChange={(v) => setArmado((p) => ({ ...p, [it.id]: v }))}
                       />
                       <Celda
-                        editable={contandoPorton}
+                        editable={contandoPorton && !porSerial(it) && !noSalio[it.id]}
                         valor={noSalio[it.id] ? "—" : vPor}
                         diferencia={difPor}
                         onChange={(v) => setPorton((p) => ({ ...p, [it.id]: v }))}
+                        onBlur={(v) => {
+                          const antes = num(it.cantidad_verificada);
+                          const ahora = v === "" ? null : Number(v);
+                          if (ahora !== antes) void guardarPorton(it.id, { cantidad: ahora });
+                        }}
                       />
                     </div>
 
                     {!!serialesPorItem.get(it.id)?.length && (
-                      <ListaSeriales seriales={serialesPorItem.get(it.id)!} tf={tf} />
+                      <ListaSeriales
+                        seriales={serialesPorItem.get(it.id)!}
+                        tf={tf}
+                        marcarVerificados={["por_verificar", "por_calificar", "cerrado"].includes(mov.etapa) || ronda > 1}
+                      />
                     )}
 
                     {/* "No salio" solo en el porton, que es donde se ve si salio. */}
@@ -557,7 +629,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             type="checkbox"
                             checked={!!noSalio[it.id]}
                             disabled={!contandoPorton}
-                            onChange={(e) => setNoSalio((p) => ({ ...p, [it.id]: e.target.checked }))}
+                            onChange={(e) => {
+                              const marcado = e.target.checked;
+                              setNoSalio((p) => ({ ...p, [it.id]: marcado }));
+                              void guardarPorton(it.id, {
+                                no_salio: marcado,
+                                observacion: (motivos[it.id] || "").trim(),
+                              });
+                            }}
                             className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-400 disabled:opacity-60"
                           />
                           {tm("no_salio_checkbox")}
@@ -570,6 +649,11 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             onChange={(e) =>
                               setMotivos((p) => ({ ...p, [it.id]: e.target.value.slice(0, 300) }))
                             }
+                            onBlur={(e) => {
+                              if (e.target.value.trim() !== (it.observacion || "")) {
+                                void guardarPorton(it.id, { no_salio: true, observacion: e.target.value.trim() });
+                              }
+                            }}
                             placeholder={tm("motivo_placeholder")}
                             className={`mt-1.5 w-full h-10 px-3 rounded-lg border text-sm disabled:opacity-60 disabled:bg-slate-50 focus:outline-none ${
                               contandoPorton && !motivos[it.id]?.trim()
@@ -584,6 +668,29 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 );
               })}
             </Card>
+
+            {/* Novedades de la verificacion en C4 (#301): las de la ronda en curso
+                mientras Seguridad pistolea, y el historial de las anteriores. */}
+            {(novedadesGuardadas.some((n) => n.origen === "cierre") ||
+              (contandoPorton && novedades.length > 0)) && (
+              <TarjetaNovedades
+                actuales={contandoPorton ? novedades : []}
+                guardadas={novedadesGuardadas.filter((n) => n.origen === "cierre")}
+                tf={tf}
+              />
+            )}
+            {seriales.length > 0 && (mov.verificado_at || contandoPorton) && (
+              <div className="flex justify-end">
+                <BotonSecundario
+                  onClick={() => {
+                    window.location.href = `/api/seguridad/mercancia/${id}/seriales/export`;
+                  }}
+                  icon={Download}
+                >
+                  {tf("verificacion.excel_seriales")}
+                </BotonSecundario>
+              </div>
+            )}
 
             {/* Resultado del porton, cuando ya lo hay */}
             {resultado && (
@@ -688,18 +795,20 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {!noAprobar ? (
                       <>
                         <BotonPrimario
-                          onClick={() => accionar("verificar_seguridad", { aprobado: true, items: cuerpoPorton() })}
-                          disabled={enviando || !portonCuadra}
+                          onClick={() => accionar("verificar_seguridad", { aprobado: true })}
+                          disabled={enviando || novedades.length > 0 || faltaMotivoRenglon}
                           icon={ShieldCheck}
                           className="w-full h-12"
                         >
                           {tf("aprobar")}
                         </BotonPrimario>
-                        {!portonCuadra && (
-                          <p className="text-xs text-slate-500 text-center">{tf("aprobar_requiere")}</p>
+                        {novedades.length > 0 && (
+                          <p className="text-xs text-slate-500 text-center">
+                            {tf("verificacion.aprobar_requiere", { n: novedades.length })}
+                          </p>
                         )}
                         <BotonSecundario onClick={() => setNoAprobar(true)} disabled={enviando} icon={XCircle} className="w-full">
-                          {tf("no_aprobar")}
+                          {novedades.length > 0 ? tf("verificacion.decidir") : tf("no_aprobar")}
                         </BotonSecundario>
                       </>
                     ) : (
@@ -719,14 +828,17 @@ export default function EgresoFlujo({ id }: { id: string }) {
                                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                               }`}
                             >
-                              {v ? tf("despachar_igual") : tf("no_despachar")}
+                              {v ? tf("despachar_igual") : tf("verificacion.no_despachar")}
                             </button>
                           ))}
                         </div>
+                        {despacharIgual === false && (
+                          <p className="text-xs text-slate-500">{tf("verificacion.no_despachar_ayuda")}</p>
+                        )}
                         <textarea
                           value={motivoNoAprobado}
                           onChange={(e) => setMotivoNoAprobado(e.target.value.slice(0, 500))}
-                          placeholder={tf("motivo_no_aprobado")}
+                          placeholder={tf("verificacion.motivo")}
                           className={`${inputClases} h-auto min-h-[80px] py-2.5`}
                         />
                         <div className="flex gap-2">
@@ -739,7 +851,6 @@ export default function EgresoFlujo({ id }: { id: string }) {
                                 aprobado: false,
                                 despachar: despacharIgual,
                                 motivo: motivoNoAprobado.trim(),
-                                items: cuerpoPorton(),
                               })
                             }
                             disabled={
@@ -769,9 +880,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         {novedades.length === 0 ? (
                           <p>{tf("no_aprobado_sin_renglones")}</p>
                         ) : (
-                          novedades.map((n) => (
-                            <p key={n.item_id} className="truncate">
-                              {n.producto}: {tf(`novedad.${n.tipo}`, { contado: n.contado ?? 0, esperado: n.esperado })}
+                          novedades.map((n, i) => (
+                            <p key={i} className="truncate">
+                              {textoNovedad(n, tf)}
                             </p>
                           ))
                         )}
@@ -947,12 +1058,82 @@ function EstadoActual({
   );
 }
 
+/**
+ * Una novedad en una linea: "Producto: Falto 2 de 5", "Producto: Serial X no
+ * se pistoleo"... Mismas claves (`flujo.novedad.<tipo>`) al verificar y al
+ * calificar. Sin renglon (producto que no esta en la orden, serial de otra
+ * orden) no lleva el nombre delante.
+ */
+function textoNovedad(n: Novedad, tf: ReturnType<typeof useTranslations>): string {
+  const texto = tf(`novedad.${n.tipo}`, {
+    contado: n.contado ?? 0,
+    esperado: n.esperado,
+    serial: n.serial || "",
+    otra_orden: n.otra_orden || "—",
+  });
+  return [n.producto ? `${n.producto}: ${texto}` : texto, n.detalle].filter(Boolean).join(" · ");
+}
+
+/**
+ * Novedades de la verificacion en C4. Arriba las de la ronda en curso (en
+ * vivo, mientras se pistolea); abajo las de rondas cerradas, que es lo que ve
+ * Almacen si Seguridad se lo devolvio.
+ */
+function TarjetaNovedades({
+  actuales,
+  guardadas,
+  tf,
+}: {
+  actuales: Novedad[];
+  guardadas: NovedadGuardada[];
+  tf: ReturnType<typeof useTranslations>;
+}) {
+  const rondas = [...new Set(guardadas.map((n) => n.ronda))].sort((a, b) => b - a);
+  const lista = (novedades: Novedad[]) => (
+    <ul className="divide-y divide-slate-100">
+      {novedades.map((n, i) => (
+        <li key={i} className="py-2 flex items-start gap-2 text-sm">
+          <span
+            className={`shrink-0 mt-1 w-1.5 h-1.5 rounded-full ${
+              n.tipo === "falta" || n.tipo === "no_salio" || n.tipo === "serial_falta"
+                ? "bg-red-500"
+                : "bg-amber-500"
+            }`}
+          />
+          <p className="min-w-0 flex-1 text-slate-800 break-words">{textoNovedad(n, tf)}</p>
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <Card>
+      <SectionTitle>{tf("novedades_titulo")}</SectionTitle>
+      {actuales.length > 0 && lista(actuales)}
+      {rondas.map((r) => (
+        <div key={r} className="mt-3 pt-3 border-t border-slate-100 first:mt-0 first:pt-0 first:border-0">
+          <p className="text-[11px] font-semibold text-slate-400 mb-1">{tf("verificacion.ronda", { n: r })}</p>
+          {lista(guardadas.filter((n) => n.ronda === r))}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 function PanelPaso({ children }: { children: React.ReactNode }) {
   return <Card className="space-y-3 border-violet-200">{children}</Card>;
 }
 
 /** Chips de seriales de un renglon; con muchos, los primeros y el resto al desplegar. */
-function ListaSeriales({ seriales, tf }: { seriales: Serial[]; tf: (k: string, v?: any) => string }) {
+function ListaSeriales({
+  seriales,
+  tf,
+  marcarVerificados = false,
+}: {
+  seriales: Serial[];
+  tf: (k: string, v?: any) => string;
+  /** En C4 y despues: verde lo pistoleado, rojo lo que falto (#301). */
+  marcarVerificados?: boolean;
+}) {
   const [abierto, setAbierto] = useState(false);
   const visibles = abierto ? seriales : seriales.slice(0, SERIALES_VISIBLES);
   const resto = seriales.length - visibles.length;
@@ -961,7 +1142,14 @@ function ListaSeriales({ seriales, tf }: { seriales: Serial[]; tf: (k: string, v
       {visibles.map((s) => (
         <span
           key={s.id}
-          className="px-1.5 py-0.5 rounded-md bg-slate-100 text-[11px] font-mono text-slate-600"
+          title={s.verificado_por ? `${s.verificado_por} · ${hora(s.verificado_at) || ""}` : undefined}
+          className={`px-1.5 py-0.5 rounded-md text-[11px] font-mono ${
+            !marcarVerificados
+              ? "bg-slate-100 text-slate-600"
+              : s.verificado_at
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-red-50 text-red-700"
+          }`}
         >
           {s.serial}
         </span>
@@ -993,11 +1181,14 @@ function Celda({
   valor,
   diferencia,
   onChange,
+  onBlur,
 }: {
   editable: boolean;
   valor: string;
   diferencia: boolean;
   onChange: (v: string) => void;
+  /** Al salir del campo (en C4 se guarda al momento). */
+  onBlur?: (v: string) => void;
 }) {
   if (!editable) {
     return (
@@ -1017,6 +1208,7 @@ function Celda({
       min={0}
       value={valor}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
       className={`w-full h-10 px-2 text-right rounded-lg border text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-violet-100 ${
         diferencia
           ? "border-red-300 bg-red-50 text-red-700 font-semibold"

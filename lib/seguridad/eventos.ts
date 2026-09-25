@@ -21,8 +21,9 @@ export type AvisoMercancia = {
   /**
    * `creado` y `verificado` son del flujo simple (ingreso y egresos viejos);
    * `etapa` es cada paso del egreso por etapas (ver lib/seguridad/egresoFlujo).
+   * `conteo` es una lectura de la pistola en C4: refresca pantallas, sin cartel.
    */
-  accion: "creado" | "verificado" | "etapa";
+  accion: "creado" | "verificado" | "etapa" | "conteo";
   id: number;
   tipo: "ingreso" | "egreso";
   estado?: "pendiente" | "conforme" | "descuadre";
