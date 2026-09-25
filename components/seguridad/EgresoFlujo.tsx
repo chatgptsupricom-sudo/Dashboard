@@ -409,9 +409,24 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // Verificacion en C4 (#301): lo que no se pistolea (cantidad escrita a mano,
   // "No salio" y su motivo) se guarda al momento, como las lecturas.
+  // Lo que hay escrito en pantalla ahora, para que la respuesta de un guardado
+  // sepa si se volvio a escribir mientras estaba en camino.
+  const enPantalla = useRef({ porton, noSalio, motivos });
+  enPantalla.current = { porton, noSalio, motivos };
+
   const guardarPorton = async (itemId: number, datos: Record<string, unknown>) => {
     setError(null);
-    // Lo que se manda deja de estar "sin guardar": la respuesta trae su valor.
+    // Lo que se manda deja de estar "sin guardar" cuando responde, salvo que
+    // se haya vuelto a escribir mientras tanto: eso sigue sin guardar y se
+    // guarda al salir del campo.
+    const sigueIgual: Record<string, () => boolean> = {
+      porton: () =>
+        String(enPantalla.current.porton[itemId] ?? "") ===
+        (datos.cantidad === null || datos.cantidad === undefined ? "" : String(datos.cantidad)),
+      no_salio: () => !!enPantalla.current.noSalio[itemId] === !!datos.no_salio,
+      motivo: () =>
+        (enPantalla.current.motivos[itemId] || "").trim() === String(datos.observacion ?? "").trim(),
+    };
     const campos = [
       ...("cantidad" in datos ? ["porton"] : []),
       ...("no_salio" in datos ? ["no_salio", "motivo"] : []),
@@ -423,7 +438,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
         body: JSON.stringify({ item_id: itemId, ...datos }),
       });
       const json = await res.json().catch(() => ({}));
-      campos.forEach((c) => guardado(c, itemId));
+      campos.forEach((c) => sigueIgual[c]() && guardado(c, itemId));
       if (!res.ok) throw new Error(json.error || tm("error"));
       aplicar(json);
     } catch (e: any) {
@@ -706,6 +721,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                           const antes = num(it.cantidad_verificada);
                           const ahora = v === "" ? null : Number(v);
                           if (ahora !== antes) void guardarPorton(it.id, { cantidad: ahora });
+                          else guardado("porton", it.id);
                         }}
                       />
                     </div>
@@ -753,6 +769,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             onBlur={(e) => {
                               if (e.target.value.trim() !== (it.observacion || "")) {
                                 void guardarPorton(it.id, { no_salio: true, observacion: e.target.value.trim() });
+                              } else {
+                                guardado("motivo", it.id);
                               }
                             }}
                             placeholder={tm("motivo_placeholder")}
