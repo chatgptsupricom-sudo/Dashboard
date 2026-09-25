@@ -396,6 +396,15 @@ export function resultadoEgreso(m: {
 }
 
 /**
+ * Que se califica al cerrar. Un cancelado, solo el picking: el despacho nunca
+ * ocurrio (decision de Almacen, #318). Sin la columna decision_seguridad no
+ * se lo reconoce y se piden las dos notas, como antes.
+ */
+export function aspectosACalificar(m: { decision_seguridad?: string | null }): readonly Aspecto[] {
+  return m.decision_seguridad === "cancelar" ? ["picking"] : ASPECTOS;
+}
+
+/**
  * Seguridad no aprobo por algo del despacho: no aprobo y no fue un
  * cancelado. Un pedido que el cliente cancelo no es una falla de quien lo
  * armo ni de quien lo despacho, asi que no pide comentario al calificar ni

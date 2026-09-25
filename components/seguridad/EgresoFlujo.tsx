@@ -38,6 +38,7 @@ import {
   novedadesQueCuentan,
   pideComentarioPicking,
   rechazoDeSeguridad,
+  aspectosACalificar,
   type Aspecto,
   type DecisionSeguridad,
   etapasDelRecorrido,
@@ -1011,7 +1012,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         )}
                       </div>
                     )}
-                    {ASPECTOS.map((a) => (
+                    {aspectosACalificar(mov).map((a) => (
                       <div key={a} className="space-y-2">
                         <div>
                           <p className="text-[13px] font-semibold text-slate-900">
@@ -1043,16 +1044,21 @@ export default function EgresoFlujo({ id }: { id: string }) {
                             calificacion: notas.picking.estrellas,
                             comentario: notas.picking.comentario.trim() || null,
                           },
-                          despacho: {
-                            calificacion: notas.despacho.estrellas,
-                            comentario: notas.despacho.comentario.trim() || null,
-                          },
+                          // Un cancelado no lleva nota de despacho.
+                          ...(aspectosACalificar(mov).includes("despacho")
+                            ? {
+                                despacho: {
+                                  calificacion: notas.despacho.estrellas,
+                                  comentario: notas.despacho.comentario.trim() || null,
+                                },
+                              }
+                            : {}),
                         })
                       }
                       disabled={
                         enviando ||
                         notas.picking.estrellas < 1 ||
-                        notas.despacho.estrellas < 1 ||
+                        (aspectosACalificar(mov).includes("despacho") && notas.despacho.estrellas < 1) ||
                         faltaComentarioPicking
                       }
                       className="w-full h-12"

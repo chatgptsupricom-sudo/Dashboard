@@ -1,7 +1,7 @@
 import { getConnection, query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
-  ASPECTOS,
+  aspectosACalificar,
   ETAPA_DE_ACCION,
   LOCAL_DESPACHO,
   esAccion,
@@ -532,7 +532,8 @@ async function ejecutar(
         picking: mov.almacenista_armado || mov.almacenista_nombre || null,
         despacho: mov.almacenista_despacho || mov.almacenista_nombre || null,
       };
-      for (const aspecto of ASPECTOS) {
+      // Un cancelado, solo el picking: el despacho nunca ocurrio.
+      for (const aspecto of aspectosACalificar(mov)) {
         const estrellas = parseInt(String(body?.[aspecto]?.calificacion ?? ""), 10);
         if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) {
           return NextResponse.json(
@@ -599,7 +600,10 @@ async function ejecutar(
         // Sin la migracion (sql/egreso_calificaciones.sql) no hay donde
         // distinguirlas: se guarda solo la del despacho, que es lo que se
         // guardaba antes, en vez de dos notas que despues no se separan.
-        const aGuardar = conAspecto ? notas : notas.filter((n) => n.aspecto === "despacho");
+        // Un cancelado no tiene nota de despacho: ahi va la del picking.
+        const aGuardar = conAspecto
+          ? notas
+          : [notas.find((n) => n.aspecto === "despacho") || notas[0]];
         const valores: Array<string | number | null> = [];
         const marcadores = aGuardar
           .map((n) => {
