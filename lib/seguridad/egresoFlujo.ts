@@ -305,8 +305,11 @@ export function novedadesVerificacion(
       }
       continue;
     }
-    if (i.cantidad_verificada === null || i.cantidad_verificada === undefined || i.cantidad_verificada === "") continue;
-    const contado = Number(i.cantidad_verificada);
+    // Sin contar = 0: con la pistola (#301), un renglon que nadie pistoleo es
+    // algo que no se vio salir. Si no, se podria aprobar sin contar nada.
+    const sinContar =
+      i.cantidad_verificada === null || i.cantidad_verificada === undefined || i.cantidad_verificada === "";
+    const contado = sinContar ? 0 : Number(i.cantidad_verificada);
     if (contado < esperado) {
       novedades.push({ item_id, producto: i.producto, tipo: "falta", esperado, contado });
     } else if (contado > esperado) {
