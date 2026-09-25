@@ -734,7 +734,7 @@
       "captchaRequired": "Please confirm you're not a robot.",
       "rifLabel": "Customer tax ID",
       "rifPlaceholder": "e.g. J-31737690-0",
-      "rifHelp": "The one for the customer shown on the invoice. With or without dashes, either works.",
+      "rifHelp": "Pick the type and enter the customer's number shown on the invoice, with or without dashes.",
       "searchCta": "Find my invoice",
       "searching": "Searching...",
       "notFound": "We couldn't find that invoice. Check the number; if you're sure it's right, get in touch and we'll look into it with you.",
@@ -744,7 +744,7 @@
       "multipleTitle": "We found more than one invoice with that number",
       "multipleHelp": "Pick yours to continue.",
       "productTitle": "Which product has the problem?",
-      "productHelp": "Select the device that failed. If you bought several identical units, pick the one with the matching serial.",
+      "productHelp": "The invoice's products are grouped by brand. Pick the one that failed and, if you bought several identical units, the serial of the faulty one.",
       "client": "Customer",
       "date": "Date",
       "serial": "Serial",
@@ -762,7 +762,47 @@
       "waitUploads": "Waiting for uploads to finish...",
       "sending": "Sending...",
       "submit": "Send my report",
-      "stepOf": "Step {n} of {total}"
+      "stepOf": "Step {n} of {total}",
+      "docLabelPa": "Customer's ID card, RUC or passport",
+      "docTypeLabel": "Document type",
+      "docNumberLabel": "Document number",
+      "docTipo": {
+        "VE": {
+          "V": "V · Venezuelan",
+          "J": "J · Company",
+          "E": "E · Foreigner",
+          "P": "P · Passport",
+          "G": "G · Government"
+        },
+        "PA": {
+          "cedula": "ID card (cédula)",
+          "ruc": "RUC",
+          "pasaporte": "Passport",
+          "E": "E ID card",
+          "PE": "PE ID card"
+        }
+      },
+      "docEjemplo": {
+        "VE": {
+          "V": "E.g. 12345678",
+          "J": "E.g. 31737690-0",
+          "E": "E.g. 82123456",
+          "P": "E.g. A1234567",
+          "G": "E.g. 20000000-0"
+        },
+        "PA": {
+          "cedula": "E.g. 8-123-456",
+          "ruc": "E.g. 155591597-2-2015",
+          "pasaporte": "E.g. PA1234567",
+          "E": "E.g. 8-12345",
+          "PE": "E.g. 8-1234"
+        }
+      },
+      "docSoloNumeros": "For this document type, enter numbers only (dashes are fine).",
+      "docLargo": "The number doesn't have the expected length for this document type. Please check it.",
+      "otraMarca": "Other brands",
+      "productosN": "{n, plural, one {# product} other {# products}}",
+      "eligeSerial": "{n, plural, one {# unit} other {# units}} · pick the serial of the faulty one"
     },
     "metaTitle": "Technical Service | Supricom",
     "metaDescription": "Report a problem with your device or check the status of a report you already sent.",

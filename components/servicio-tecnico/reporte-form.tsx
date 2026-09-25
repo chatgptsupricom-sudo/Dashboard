@@ -14,6 +14,13 @@ import {
   Mail,
   Search,
 } from "lucide-react";
+import {
+  componerDocumento,
+  paisDeSucursal,
+  tipoPorDefecto,
+  tiposDocumento,
+  validarDocumento,
+} from "@/lib/servicio-tecnico/documento";
 import { formatearFechaCalendario } from "@/lib/servicio-tecnico/fechas";
 import { RESUMEN_KEY } from "@/lib/servicio-tecnico/resumen";
 import { useTranslations } from "next-intl";
@@ -71,9 +78,13 @@ export function ReporteForm({
 
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
 
-  // Paso 1
+  // Paso 1. El documento es tipo (select) + número: los tipos dependen del
+  // país de la sucursal (lib/servicio-tecnico/documento).
+  const pais = paisDeSucursal(sucursalCid);
   const [numero, setNumero] = useState("");
+  const [tipoDoc, setTipoDoc] = useState(() => tipoPorDefecto(pais));
   const [rif, setRif] = useState("");
+  const documento = componerDocumento(pais, tipoDoc, rif);
   // Errores por campo. Los botones se dejan habilitados a propósito: uno
   // deshabilitado no explica por qué, y en móvil apenas se distingue. El
   // cliente toca, no pasa nada, y se queda sin saber qué le falta.
@@ -162,6 +173,11 @@ export function ReporteForm({
     [factura, itemId],
   );
 
+  // Paso 2: primero por marca, después por producto, y dentro del producto
+  // sus unidades (un serial cada una). Con 11 laptops iguales se ve un
+  // producto con 11 seriales, no 11 renglones sueltos.
+  const grupos = useMemo(() => agruparPorMarca(factura?.items ?? []), [factura]);
+
   const buscarFactura = useCallback(
     async (valor: string, documento: string) => {
       const consulta = valor.trim();
@@ -215,7 +231,7 @@ export function ReporteForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invoice_number: factura.factura.numero,
-          rif: rif.trim(),
+          rif: documento,
           sucursal: sucursalCid,
           serial_manual: serialManual.trim(),
           item_id: item.id,
@@ -306,13 +322,21 @@ export function ReporteForm({
               e.preventDefault();
               const faltan: Record<string, string> = {};
               if (!numero.trim()) faltan.numero = t("form.required");
-              if (!rif.trim()) faltan.rif = t("form.required");
+              const errDoc = validarDocumento(pais, tipoDoc, rif);
+              if (errDoc) {
+                faltan.rif =
+                  errDoc === "vacio"
+                    ? t("form.required")
+                    : errDoc === "caracteres"
+                      ? t("form.docSoloNumeros")
+                      : t("form.docLargo");
+              }
               setErrores(faltan);
               if (Object.keys(faltan).length) {
                 document.getElementById(Object.keys(faltan)[0])?.focus();
                 return;
               }
-              buscarFactura(numero, rif);
+              buscarFactura(numero, documento);
             }}
           >
             <label htmlFor="numero" className="pt-label">
@@ -336,22 +360,46 @@ export function ReporteForm({
             {errores.numero && <MensajeError id="numero-error" texto={errores.numero} />}
 
             <label htmlFor="rif" className="pt-label mt-5">
-              {t("form.rifLabel")}
+              {t(pais === "PA" ? "form.docLabelPa" : "form.rifLabel")}
             </label>
-            <input
-              id="rif"
-              className="pt-input"
-              value={rif}
-              onChange={(e) => {
-                setRif(e.target.value);
-                setErrores((p) => ({ ...p, rif: "" }));
-              }}
-              aria-invalid={!!errores.rif}
-              aria-describedby={errores.rif ? "rif-error" : undefined}
-              placeholder={t("form.rifPlaceholder")}
-              autoComplete="off"
-              enterKeyHint="search"
-            />
+            {/* Tipo + número: el tipo sale de un select para que no haya que
+                adivinar el formato; el número, con guiones o sin ellos. */}
+            {/* En el telefono uno debajo del otro: lado a lado, el select quedaba
+                en ~120 px y "V · Venezolano" se cortaba. */}
+            <div className="grid grid-cols-1 gap-x-2 sm:grid-cols-[minmax(10rem,42%)_minmax(0,1fr)]">
+              <select
+                id="tipoDoc"
+                className="pt-input"
+                aria-label={t("form.docTypeLabel")}
+                value={tipoDoc}
+                onChange={(e) => {
+                  setTipoDoc(e.target.value);
+                  setErrores((p) => ({ ...p, rif: "" }));
+                }}
+              >
+                {tiposDocumento(pais).map((d) => (
+                  <option key={d.codigo} value={d.codigo}>
+                    {t(`form.docTipo.${pais}.${d.codigo}`)}
+                  </option>
+                ))}
+              </select>
+              <input
+                id="rif"
+                className="pt-input"
+                value={rif}
+                onChange={(e) => {
+                  setRif(e.target.value);
+                  setErrores((p) => ({ ...p, rif: "" }));
+                }}
+                aria-invalid={!!errores.rif}
+                aria-describedby={errores.rif ? "rif-error" : undefined}
+                aria-label={t("form.docNumberLabel")}
+                placeholder={t(`form.docEjemplo.${pais}.${tipoDoc}`)}
+                inputMode={tiposDocumento(pais).find((d) => d.codigo === tipoDoc)?.alfanumerico ? "text" : "numeric"}
+                autoComplete="off"
+                enterKeyHint="search"
+              />
+            </div>
             {errores.rif && <MensajeError id="rif-error" texto={errores.rif} />}
             <p className="pt-hint">{t("form.rifHelp")}</p>
 
@@ -385,7 +433,7 @@ export function ReporteForm({
                       type="button"
                       onClick={() => {
                         setNumero(c.numero);
-                        buscarFactura(c.numero, rif);
+                        buscarFactura(c.numero, documento);
                       }}
                       className="w-full rounded-[11px] border border-[color:var(--portal-line-strong)] px-4 py-3 text-left transition-colors hover:border-[color:var(--portal-primary)] hover:bg-[color:var(--portal-primary-soft)]"
                     >
@@ -418,59 +466,98 @@ export function ReporteForm({
 
           <p className="pt-sub mt-6">{t("form.productHelp")}</p>
 
-          <ul className="mt-4 space-y-3">
-            {factura.items.map((i) => (
-              <li key={i.id}>
-                <label
-                  className={`pt-choice ${itemId === i.id ? "pt-choice--on" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="item"
-                    className="mt-1 accent-[color:var(--portal-primary)]"
-                    checked={itemId === i.id}
-                    onChange={() => setItemId(i.id)}
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-semibold">{i.nombre}</span>
-                    <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">
-                      {[i.marca, i.codigo].filter(Boolean).join(" · ")}
-                    </span>
-                    <span className="mt-2 flex flex-wrap gap-1.5">
-                      {i.garantia && (
-                        <GarantiaBadge
-                          compacto
-                          estado={textoGarantia(i.garantia).estado}
-                          etiqueta={textoGarantia(i.garantia).etiqueta}
-                        />
-                      )}
-                      {i.ya_reportado && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
-                          <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {t("form.duplicateBadge")}
-                        </span>
-                      )}
-                    </span>
-                    <span className="mt-1 block text-sm">
-                      {i.serial ? (
-                        <span className="font-mono text-[color:var(--portal-primary)]">
-                          {t("form.serial")}: {i.serial}
-                        </span>
-                      ) : i.lleva_serial ? (
-                        <span className="text-[color:var(--portal-muted)]">
-                          {t("form.serialMissing")}
-                        </span>
-                      ) : (
-                        <span className="text-[color:var(--portal-muted)]">
-                          {t("form.units", { n: i.cantidad })}
-                        </span>
-                      )}
-                    </span>
+          <div className="mt-4 space-y-6">
+            {grupos.map((g) => (
+              <section key={g.marca || "_"} aria-label={g.marca || t("form.otraMarca")}>
+                <h2 className="flex items-baseline justify-between gap-3 text-sm font-bold uppercase tracking-wide text-[color:var(--portal-muted)]">
+                  <span>{g.marca || t("form.otraMarca")}</span>
+                  <span className="text-xs font-semibold normal-case tracking-normal">
+                    {t("form.productosN", { n: g.productos.length })}
                   </span>
-                </label>
-              </li>
+                </h2>
+                <ul className="mt-2 space-y-3">
+                  {g.productos.map((prod) => {
+                    const primero = prod.unidades[0];
+                    const garantia = primero.garantia ? textoGarantia(primero.garantia) : null;
+                    // Una sola unidad sin serial: se elige el producto entero.
+                    const unaSinSerial = prod.unidades.length === 1 && !primero.serial;
+                    const cabecera = (
+                      <span className="min-w-0">
+                        <span className="block font-semibold">{prod.nombre}</span>
+                        {prod.codigo && (
+                          <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">{prod.codigo}</span>
+                        )}
+                        {(garantia || (unaSinSerial && primero.ya_reportado)) && (
+                          <span className="mt-2 flex flex-wrap gap-1.5">
+                            {garantia && <GarantiaBadge compacto estado={garantia.estado} etiqueta={garantia.etiqueta} />}
+                            {unaSinSerial && primero.ya_reportado && <BadgeReportado texto={t("form.duplicateBadge")} />}
+                          </span>
+                        )}
+                      </span>
+                    );
+                    if (unaSinSerial) {
+                      return (
+                        <li key={prod.clave}>
+                          <label className={`pt-choice ${itemId === primero.id ? "pt-choice--on" : ""}`}>
+                            <input
+                              type="radio"
+                              name="item"
+                              className="mt-1 accent-[color:var(--portal-primary)]"
+                              checked={itemId === primero.id}
+                              onChange={() => setItemId(primero.id)}
+                            />
+                            <span className="min-w-0">
+                              {cabecera}
+                              <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">
+                                {primero.lleva_serial ? t("form.serialMissing") : t("form.units", { n: primero.cantidad })}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={prod.clave} className="pt-panel">
+                        {cabecera}
+                        <p className="mt-3 text-xs font-semibold text-[color:var(--portal-muted)]">
+                          {t("form.eligeSerial", { n: prod.unidades.length })}
+                        </p>
+                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {prod.unidades.map((u) => (
+                            <li key={u.id}>
+                              <label className={`pt-choice py-2.5 ${itemId === u.id ? "pt-choice--on" : ""}`}>
+                                <input
+                                  type="radio"
+                                  name="item"
+                                  className="mt-1 accent-[color:var(--portal-primary)]"
+                                  checked={itemId === u.id}
+                                  onChange={() => setItemId(u.id)}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block break-all font-mono text-sm">
+                                    {u.serial
+                                      ? u.serial
+                                      : u.lleva_serial
+                                        ? t("form.serialMissing")
+                                        : t("form.units", { n: u.cantidad })}
+                                  </span>
+                                  {u.ya_reportado && (
+                                    <span className="mt-1.5 flex">
+                                      <BadgeReportado texto={t("form.duplicateBadge")} />
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
 
           <button
             type="button"
@@ -699,6 +786,40 @@ export function ReporteForm({
       </div>
       </div>
     </div>
+  );
+}
+
+type Producto = { clave: string; nombre: string; codigo: string; unidades: Item[] };
+
+/**
+ * Marca -> producto -> unidades. Las marcas en orden alfabético y las sin
+ * marca al final; los productos por nombre; las unidades, como vinieron.
+ */
+function agruparPorMarca(items: Item[]): { marca: string; productos: Producto[] }[] {
+  const porMarca = new Map<string, Map<string, Producto>>();
+  for (const i of items) {
+    const marca = (i.marca || "").trim();
+    const productos = porMarca.get(marca) ?? new Map<string, Producto>();
+    const clave = String(i.producto_id || i.codigo || i.nombre);
+    const prod = productos.get(clave) ?? { clave, nombre: i.nombre, codigo: i.codigo, unidades: [] };
+    prod.unidades.push(i);
+    productos.set(clave, prod);
+    porMarca.set(marca, productos);
+  }
+  return [...porMarca.entries()]
+    .sort(([a], [b]) => (!a ? 1 : !b ? -1 : a.localeCompare(b, "es")))
+    .map(([marca, productos]) => ({
+      marca,
+      productos: [...productos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+    }));
+}
+
+function BadgeReportado({ texto }: { texto: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+      <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {texto}
+    </span>
   );
 }
 
