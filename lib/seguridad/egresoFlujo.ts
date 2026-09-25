@@ -8,10 +8,12 @@
  *        ├─ encomienda ─► por_empaquetar ─► por_asignar_despacho
  *        ├─ puerta ────────────────────────► por_asignar_despacho
  *        └─ ruta ──────────────────────────► por_asignar_despacho (+ chofer y unidad)
- *   por_asignar_despacho ─► por_verificar ─► (Seguridad verifica)
- *        ├─ aprueba            ─► despachado
- *        └─ no aprueba + motivo ─► Seguridad decide: despachado o no
- *   ─► por_calificar ─► cerrado
+ *   por_asignar_despacho ─► por_verificar ─► (Seguridad pistolea en C4)
+ *        ├─ sin novedades, aprueba ─► despachado ─► por_calificar
+ *        └─ con novedades (o no aprueba) + motivo, Seguridad decide:
+ *             ├─ despachar igual ─► por_calificar
+ *             └─ no despachar ───► vuelve a por_asignar_despacho (#301)
+ *   por_calificar ─► cerrado
  *
  * Sin dependencias de servidor: lo usan la API (para validar cada paso) y las
  * pantallas (para saber que mostrar y a quien le toca). Si la regla de quien
@@ -204,44 +206,127 @@ export function evaluarSeriales(
 export const ASPECTOS = ["picking", "despacho"] as const;
 export type Aspecto = (typeof ASPECTOS)[number];
 
+/**
+ * Tipos de novedad. Los de conteo (#302) y los de la pistola en C4 (#301):
+ *  - serial_falta: un serial esperado que no se pistoleo.
+ *  - serial_sobra: un serial pistoleado que no esta en el picking.
+ *  - serial_otra_orden: un serial que es de otro egreso (`otra_orden`).
+ *  - producto_ajeno: un producto que no esta en la orden (`item_id` null;
+ *    `producto` es el codigo leido y `contado` cuantas veces se pistoleo).
+ * Un serial repetido no es novedad: la pistola avisa y no suma dos veces.
+ */
+export const TIPOS_NOVEDAD = [
+  "falta",
+  "sobra",
+  "no_salio",
+  "serial_falta",
+  "serial_sobra",
+  "serial_otra_orden",
+  "producto_ajeno",
+] as const;
+export type TipoNovedad = (typeof TIPOS_NOVEDAD)[number];
+
 export type Novedad = {
-  item_id: number;
+  /** null = producto que no esta en la orden. */
+  item_id: number | null;
   producto: string;
-  tipo: "falta" | "sobra" | "no_salio";
+  tipo: TipoNovedad;
   esperado: number;
   contado: number | null;
+  serial?: string | null;
+  otra_orden?: string | null;
+  /** En "no_salio": el motivo que escribio Seguridad. */
+  detalle?: string | null;
 };
+
+type ItemNovedad = {
+  id: number;
+  producto: string;
+  cantidad_cargada: number | string;
+  cantidad_verificada: number | string | null;
+  no_salio?: number | boolean | null;
+  observacion?: string | null;
+  lleva_serial?: number | boolean | null;
+};
+
+type SerialNovedad = { item_id: number; serial: string; verificado_at: string | null };
+
+/**
+ * Un renglon se verifica por serial si lleva serial en Odoo y tiene seriales
+ * esperados (#299). Si no los tiene (egresos de antes de #299, o la migracion
+ * sin correr) se cuenta como cualquier otro producto.
+ */
+export function verificaPorSerial(
+  item: { id: number; lleva_serial?: number | boolean | null },
+  seriales: Array<{ item_id: number }>,
+): boolean {
+  return (
+    Number(item.lleva_serial) === 1 &&
+    seriales.some((s) => Number(s.item_id) === Number(item.id))
+  );
+}
 
 /**
  * Novedades de la verificacion de Seguridad: lo que no salio como decia la
- * orden. Hoy sale del conteo del porton (`cantidad_verificada` / `no_salio`);
- * #301 le suma las de seriales (faltantes, sobrantes, de otra orden).
+ * orden.
+ *
+ * Sin `extra`, solo mira el conteo del porton (`cantidad_verificada` /
+ * `no_salio`). Con `extra` (#301):
+ *  - `seriales`: los esperados del picking (seguridad_mercancia_seriales).
+ *    Un renglon con seriales se verifica por serial: cada esperado sin
+ *    `verificado_at` es un `serial_falta`.
+ *  - `sobrantes`: lo que se registro al pistolear y no se puede deducir de
+ *    los renglones (serial_sobra, serial_otra_orden, producto_ajeno), de la
+ *    ronda en curso (lib/seguridad/novedades).
+ *
+ * Sin dependencias de servidor: la usan la API y la pantalla por igual.
  */
 export function novedadesVerificacion(
-  items: Array<{
-    id: number;
-    producto: string;
-    cantidad_cargada: number | string;
-    cantidad_verificada: number | string | null;
-    no_salio?: number | boolean | null;
-  }>,
+  items: ItemNovedad[],
+  extra: { seriales?: SerialNovedad[]; sobrantes?: Novedad[] } = {},
 ): Novedad[] {
+  const seriales = extra.seriales || [];
   const novedades: Novedad[] = [];
   for (const i of items) {
+    const item_id = Number(i.id);
     const esperado = Number(i.cantidad_cargada);
     if (Number(i.no_salio) === 1 || i.no_salio === true) {
-      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "no_salio", esperado, contado: null });
+      novedades.push({
+        item_id,
+        producto: i.producto,
+        tipo: "no_salio",
+        esperado,
+        contado: null,
+        detalle: i.observacion || null,
+      });
       continue;
     }
-    if (i.cantidad_verificada === null || i.cantidad_verificada === undefined || i.cantidad_verificada === "") continue;
-    const contado = Number(i.cantidad_verificada);
+    if (verificaPorSerial(i, seriales)) {
+      const propios = seriales.filter((s) => Number(s.item_id) === item_id);
+      for (const s of propios) {
+        if (!s.verificado_at) {
+          novedades.push({ item_id, producto: i.producto, tipo: "serial_falta", esperado: 1, contado: 0, serial: s.serial });
+        }
+      }
+      // Odoo con menos seriales que la cantidad (no deberia pasar: Almacen no
+      // puede asignar el despacho asi, ver #299).
+      if (propios.length < esperado) {
+        novedades.push({ item_id, producto: i.producto, tipo: "falta", esperado, contado: propios.length });
+      }
+      continue;
+    }
+    // Sin contar = 0: con la pistola (#301), un renglon que nadie pistoleo es
+    // algo que no se vio salir. Si no, se podria aprobar sin contar nada.
+    const sinContar =
+      i.cantidad_verificada === null || i.cantidad_verificada === undefined || i.cantidad_verificada === "";
+    const contado = sinContar ? 0 : Number(i.cantidad_verificada);
     if (contado < esperado) {
-      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "falta", esperado, contado });
+      novedades.push({ item_id, producto: i.producto, tipo: "falta", esperado, contado });
     } else if (contado > esperado) {
-      novedades.push({ item_id: Number(i.id), producto: i.producto, tipo: "sobra", esperado, contado });
+      novedades.push({ item_id, producto: i.producto, tipo: "sobra", esperado, contado });
     }
   }
-  return novedades;
+  return [...novedades, ...(extra.sobrantes || [])];
 }
 
 /**
@@ -252,14 +337,41 @@ export function pideComentarioPicking(estrellas: number, hayNovedades: boolean):
   return hayNovedades && estrellas >= 4;
 }
 
-export type ResultadoEgreso = "aprobado" | "no_aprobado_despachado" | "no_despachado";
+// ── Verificacion de Seguridad en C4 (issue #301) ─────────────────────────
 
-/** Resultado del porton (null = Seguridad todavia no verifico). */
+/**
+ * Donde verifica Seguridad. Hoy hay un solo local de despacho; si aparecen
+ * otros (u otra sucursal le dice distinto), esto pasa a ser un catalogo.
+ */
+export const LOCAL_DESPACHO = "C4";
+
+/**
+ * Etapa tras la verificacion de Seguridad. Si no se despacha, el egreso
+ * vuelve a Almacen a asignar despacho (no a armar de nuevo): Almacen corrige
+ * lo que falto o sobro y lo vuelve a mandar. Lo ya pistoleado se conserva.
+ */
+export function etapaTrasVerificacion(despachar: boolean): Etapa {
+  return despachar ? "por_calificar" : "por_asignar_despacho";
+}
+
+export type ResultadoEgreso =
+  | "aprobado"
+  | "no_aprobado_despachado"
+  | "no_despachado"
+  | "devuelto";
+
+/**
+ * Resultado del porton (null = Seguridad todavia no verifico). Con `etapa`:
+ * si ya tiene resultado pero esta otra vez en Almacen (o en una verificacion
+ * nueva), es que Seguridad no lo despacho y volvio (#301): "devuelto".
+ */
 export function resultadoEgreso(m: {
   aprobado: number | string | null;
   despachado: number | string | null;
+  etapa?: string | null;
 }): ResultadoEgreso | null {
   if (m.aprobado === null || m.aprobado === undefined) return null;
+  if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
   if (Number(m.aprobado) === 1) return "aprobado";
   return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
 }

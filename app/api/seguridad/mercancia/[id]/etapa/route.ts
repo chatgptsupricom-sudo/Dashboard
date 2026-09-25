@@ -3,9 +3,11 @@ import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/au
 import {
   ASPECTOS,
   ETAPA_DE_ACCION,
+  LOCAL_DESPACHO,
   esAccion,
   esTipoEntrega,
   etapaTrasArmado,
+  etapaTrasVerificacion,
   evaluarArmado,
   novedadesVerificacion,
   pideComentarioPicking,
@@ -16,8 +18,13 @@ import {
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { cargarMovimiento, evaluarDescuadre } from "@/lib/seguridad/mercancia";
+import { cargarMovimiento } from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
+import {
+  guardarNovedadesCierre,
+  hayColumnasVerificacion,
+  novedadesDeEscaneo,
+} from "@/lib/seguridad/novedades";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -116,7 +123,7 @@ export async function POST(
       MAX.nombre,
     );
 
-    const resultado = await ejecutar(accion, id, mov, datos.items, body, quien, cids);
+    const resultado = await ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
     if (resultado instanceof NextResponse) return resultado;
 
     const actualizado = await cargarMovimiento(id);
@@ -181,6 +188,7 @@ async function ejecutar(
   body: any,
   quien: string,
   cids: number | null,
+  datos: NonNullable<Awaited<ReturnType<typeof cargarMovimiento>>>,
 ): Promise<Resultado | NextResponse> {
   switch (accion) {
     // ── Almacen ──────────────────────────────────────────────────────────
@@ -380,112 +388,94 @@ async function ejecutar(
 
     // ── Seguridad ────────────────────────────────────────────────────────
     case "verificar_seguridad": {
-      const porId = new Map<number, any>(items.map((i) => [Number(i.id), i]));
-      const cambios: Array<{
-        item: any;
-        valor: number | null;
-        noSalio: boolean;
-        observacion: string | null;
-      }> = [];
-      for (const c of Array.isArray(body?.items) ? body.items : []) {
-        const item = porId.get(Number(c?.id));
-        if (!item) continue;
-        const valor = cantidad(c?.cantidad_verificada);
-        if (valor === "invalida") {
-          return NextResponse.json(
-            { error: `Cantidad invalida en "${item.producto}"` },
-            { status: 400 },
-          );
-        }
-        const noSalio = c?.no_salio === true;
-        const observacion = texto(c?.observacion, MAX.observacion);
-        if (noSalio && !observacion) {
-          return NextResponse.json(
-            { error: `El motivo es obligatorio para "${item.producto}" (no salio)` },
-            { status: 400 },
-          );
-        }
-        cambios.push({ item, valor, noSalio, observacion });
+      // Lo pistoleado ya esta en la base (POST/PATCH .../escaneo, issue #301):
+      // la verificacion se cierra con eso, no con lo que mande el navegador.
+      // Del body solo sale la decision de Seguridad.
+      const ronda = Number(mov.ronda_verificacion || 1);
+      const faltaMotivo = items.find((i) => Number(i.no_salio) === 1 && !String(i.observacion || "").trim());
+      if (faltaMotivo) {
+        return NextResponse.json(
+          { error: `El motivo es obligatorio para "${faltaMotivo.producto}" (no salio)` },
+          { status: 400 },
+        );
       }
 
-      // Se calcula antes de escribir nada: la decision de abajo depende de
-      // si el conteo cuadra, y un 400 no debe dejar renglones a medio guardar.
-      const proyectados = items.map((i) => {
-        const c = cambios.find((x) => x.item.id === i.id);
-        return {
-          cantidad_cargada: Number(i.cantidad_cargada),
-          cantidad_verificada: c
-            ? c.valor
-            : i.cantidad_verificada === null || i.cantidad_verificada === undefined
-              ? null
-              : Number(i.cantidad_verificada),
-          no_salio: c ? c.noSalio : Number(i.no_salio) === 1,
-        };
+      const novedades = novedadesVerificacion(items, {
+        seriales: datos.seriales,
+        sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
       });
-      const { estado, diferencias } = evaluarDescuadre(proyectados);
+      const estado = novedades.length > 0 ? "descuadre" : "conforme";
 
       const aprobado = body?.aprobado === true;
-      // Aprobar exige que todo cuadre: con diferencias, o sin terminar de
-      // contar, lo que corresponde es "No aprueba" + decidir + motivo.
-      if (aprobado && estado !== "conforme") {
+      // Aprobar exige cero novedades: con faltas o sobras, lo que corresponde
+      // es decidir si se despacha igual, con motivo.
+      if (aprobado && novedades.length > 0) {
         return NextResponse.json(
           {
-            error:
-              estado === "descuadre"
-                ? "Hay diferencias: no se puede aprobar. Marca No aprueba y decide."
-                : "Faltan renglones por contar para poder aprobar.",
+            error: `Hay ${novedades.length} novedad(es): no se puede aprobar. Decide si se despacha igual o no.`,
+            novedades,
           },
           { status: 400 },
         );
       }
 
-      let despachado = true;
+      let despachar = true;
       let motivo: string | null = null;
       if (!aprobado) {
         if (typeof body?.despachar !== "boolean") {
-          return NextResponse.json(
-            { error: "Decide si se despacha o no" },
-            { status: 400 },
-          );
+          return NextResponse.json({ error: "Decide si se despacha o no" }, { status: 400 });
         }
         motivo = texto(body?.motivo, MAX.motivo);
         if (!motivo) {
           return NextResponse.json(
-            { error: "El motivo de no aprobar es obligatorio" },
+            { error: "El motivo es obligatorio para despachar con novedades o no despachar" },
             { status: 400 },
           );
         }
-        despachado = body.despachar;
+        despachar = body.despachar;
       }
 
-      for (const { item, valor, noSalio, observacion } of cambios) {
-        await query(
-          `UPDATE seguridad_mercancia_items
-              SET cantidad_verificada = ?, observacion = ?, no_salio = ?
-            WHERE id = ? AND mercancia_id = ?`,
-          [valor, noSalio ? observacion : null, noSalio ? 1 : 0, item.id, id],
-        );
+      // No despachar: vuelve a Almacen a asignar despacho, en una ronda
+      // nueva. Lo pistoleado se conserva; aprobado/despachado = 0 quedan
+      // como el resultado de esta ronda hasta la siguiente verificacion.
+      // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
+      // la ronda: la verificacion no puede quedar trabada por una migracion.
+      const conRonda = await hayColumnasVerificacion();
+      if (!conRonda) {
+        console.warn("[egreso] falta correr sql/egreso_verificacion_c4.sql: se cierra sin ronda ni local");
       }
-
-      // "Aprueba -> el almacenista despacha": aprobado queda despachado de una
-      // vez, sin otro paso de Almacen (asi lo decidiste).
       const ok = await avanzar(
         id,
         "por_verificar",
-        "por_calificar",
+        etapaTrasVerificacion(despachar),
         `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
-         aprobado = ?, despachado = ?, motivo_no_aprobado = ?`,
-        [estado, quien, aprobado ? 1 : 0, despachado ? 1 : 0, motivo],
+         aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
+           conRonda ? `, verificado_en = ?${despachar ? "" : ", ronda_verificacion = ronda_verificacion + 1"}` : ""
+         }`,
+        [estado, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : [])],
       );
       if (!ok) return conflicto();
 
-      if (!aprobado) {
-        console.warn(
-          `[egreso ${id}] NO APROBADO por ${quien} (${diferencias} diferencia(s)). ` +
-            `${despachado ? "Se despacha igual" : "NO se despacha"}. Motivo: ${motivo}`,
+      // La etapa ya cambio: si guardar las novedades falla, no se devuelve
+      // error (la decision quedo registrada), pero queda en el log.
+      try {
+        await guardarNovedadesCierre(id, ronda, novedades, quien);
+      } catch (e: any) {
+        console.error(
+          `[egreso ${id}] no se guardaron ${novedades.length} novedad(es) del cierre` +
+            (faltaMigracion(e) ? ": falta correr sql/egreso_verificacion_c4.sql" : ""),
+          e?.message || e,
         );
       }
-      return { avanzo: true };
+
+      if (!aprobado) {
+        console.warn(
+          `[egreso ${id}] NO APROBADO por ${quien} en ${LOCAL_DESPACHO} (ronda ${ronda}, ` +
+            `${novedades.length} novedad(es)). ${despachar ? "Se despacha igual" : "NO se despacha: vuelve a Almacen"}. ` +
+            `Motivo: ${motivo}`,
+        );
+      }
+      return { avanzo: true, extra: { novedades } };
     }
 
     case "calificar": {
@@ -520,8 +510,18 @@ async function ejecutar(
       }
 
       // Con novedades, un 4 o un 5 al picking no se da a ciegas.
+      // Con los seriales y lo que sobro al pistolear en C4 (#301), de la
+      // ronda que termino en despacho. Y las de rondas anteriores: si la
+      // primera salio con faltas y Seguridad lo devolvio, la segunda puede
+      // salir limpia, pero el picking igual fallo (Lino, #301).
+      const ronda = Number(mov.ronda_verificacion || 1);
       const hayNovedades =
-        novedadesVerificacion(items).length > 0 ||
+        novedadesVerificacion(items, {
+          seriales: datos.seriales,
+          sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
+        }).length > 0 ||
+        ronda > 1 ||
+        datos.novedades.some((n) => n.origen === "cierre") ||
         (mov.aprobado !== null && Number(mov.aprobado) === 0);
       const picking = notas.find((n) => n.aspecto === "picking")!;
       if (pideComentarioPicking(picking.estrellas, hayNovedades) && !picking.comentario) {

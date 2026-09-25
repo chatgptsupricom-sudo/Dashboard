@@ -2586,7 +2586,8 @@
         "nuevo_por_armar": "New outbound to assemble",
         "listo_verificar": "Outbound ready to verify at the gate",
         "aprobado": "Security approved and dispatched",
-        "no_aprobado": "Security did not approve the outbound"
+        "no_aprobado": "Security did not approve the outbound",
+        "devuelto": "Security didn't dispatch an outbound: it's back in Warehouse"
       },
       "personal_almacen": {
         "titulo": "Warehouse staff",
@@ -2709,7 +2710,11 @@
         "novedad": {
           "falta": "Missing: {contado} of {esperado}",
           "sobra": "Extra: {contado} of {esperado}",
-          "no_salio": "Did not leave"
+          "no_salio": "Did not leave",
+          "serial_falta": "Serial {serial} was not scanned",
+          "serial_sobra": "Serial {serial} is not in the picking",
+          "serial_otra_orden": "Serial {serial} belongs to order {otra_orden}",
+          "producto_ajeno": "{contado, plural, =1 {Not in the order} other {Not in the order (×#)}}"
         },
         "no_aprobado_sin_renglones": "Security did not approve this outbound.",
         "comentario_picking_obligatorio": "There were issues: explain why picking deserves {n} stars.",
@@ -2717,7 +2722,8 @@
         "resultado": {
           "aprobado": "Approved and dispatched",
           "no_aprobado_despachado": "Not approved — dispatched anyway",
-          "no_despachado": "Not approved — not dispatched"
+          "no_despachado": "Not approved — not dispatched",
+          "devuelto": "Not dispatched — sent back to Warehouse"
         },
         "motivo": "Reason",
         "filtro": {
@@ -2731,6 +2737,42 @@
         "flujo_anterior": "Record from the previous flow",
         "cancelar": "Back",
         "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate.",
+        "verificacion": {
+          "ayuda": "Scan what goes out. A serial from the picking already tells which product it is; products without serial add 1 with their code. If a box has no code, type the quantity.",
+          "pistola_titulo": "Barcode scanner",
+          "pistola_lista": "Ready: scan a code or serial…",
+          "pistola_tocar": "Tap here to scan",
+          "pistola_teclado": "Type a code with the keyboard",
+          "pistola_activo": "Scanning serials of",
+          "pistola_ayuda": "Scan each serial or the product code. Anything not in the order is recorded as an issue.",
+          "pistola_repetido": "Serial {serial} was already scanned. Not counted again.",
+          "pistola_conteo": "+1 {producto} · {cantidad} so far",
+          "pistola_seleccionado": "{producto}: now scan its serials.",
+          "pistola_serial": "Serial {serial} · {cantidad} so far",
+          "pistola_serial_en_otro": "Serial {serial} · {cantidad} so far. Note: this serial belongs to order {referencia}.",
+          "pistola_desconocido": "Code {codigo} is not from any product in this order. What is it?",
+          "pistola_es_serial": "It's a serial",
+          "pistola_es_codigo": "It's its code",
+          "pistola_ignorar": "Nothing, ignore",
+          "pistola_no_esta": "Not in the order",
+          "pistola_van_de": "{recibido} of {esperado}",
+          "pistola_terminar": "Done",
+          "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
+          "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it's the box code, choose \"It's its code\".",
+          "error": "Could not record the scan",
+          "buscar_producto": "Search product by name or code",
+          "aprobar_requiere": "There {n, plural, =1 {is # issue} other {are # issues}}: it can't be approved. Decide whether to dispatch anyway.",
+          "decidir": "There are issues: decide",
+          "no_despachar": "Don't dispatch",
+          "no_despachar_ayuda": "It goes back to Warehouse to fix it and assign the dispatch again. What was scanned is kept.",
+          "motivo": "Reason (required)",
+          "excel_seriales": "Serials Excel",
+          "ronda": "Check {n}",
+          "pistola_novedad_serial_sobra": "Serial {serial} is not in the picking of {producto}. Not counted: recorded as an issue.",
+          "pistola_novedad_serial_otra_orden": "Serial {serial} belongs to another order ({referencia}). Not counted: recorded as an issue.",
+          "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far).",
+          "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:"
+        },
         "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
         "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }

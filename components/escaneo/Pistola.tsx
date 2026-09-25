@@ -41,6 +41,21 @@ export type ResultadoEscaneo =
       en_otro: string | null;
     };
 
+/**
+ * Lectura que quedo como novedad (egreso, #301): un serial que no esta en el
+ * picking, un serial de otra orden o un producto que no esta en la orden. No
+ * suma: se avisa en rojo y la pantalla recarga sus novedades.
+ */
+export type NovedadEscaneo = {
+  resultado: "novedad";
+  novedad: "serial_sobra" | "serial_otra_orden" | "producto_ajeno";
+  item_id: number | null;
+  serial?: string;
+  codigo?: string;
+  referencia?: string | null;
+  cantidad?: number;
+};
+
 type Mensaje = { tipo: "ok" | "error" | "aviso"; texto: string };
 
 /** Pitido corto: agudo si salio bien, grave si no (en el patio no se mira la pantalla). */
@@ -71,6 +86,8 @@ export default function Pistola({
   seleccionado,
   onResultado,
   onTerminar,
+  onNovedad,
+  permitirSobrante = false,
 }: {
   /** POST { codigo, item_id?, aprender_item_id?, forzar_serial? } */
   endpoint: string;
@@ -81,6 +98,13 @@ export default function Pistola({
   onResultado: (r: ResultadoEscaneo) => void;
   /** Salir del modo seriales del producto seleccionado. */
   onTerminar: () => void;
+  /** Una lectura quedo como novedad (solo en endpoints que las registran). */
+  onNovedad?: (n: NovedadEscaneo) => void;
+  /**
+   * Ante un codigo desconocido, ofrecer "No esta en la orden" (manda
+   * `sobrante: true`). En la recepcion no aplica: ahi se aprende el codigo.
+   */
+  permitirSobrante?: boolean;
 }) {
   const t = useTranslations(textos);
   const campo = useRef<HTMLInputElement>(null);
@@ -128,6 +152,21 @@ export default function Pistola({
       if (!res.ok) {
         pitar(false);
         setMensaje({ tipo: "error", texto: j.error || t("error") });
+        return;
+      }
+      if (j.resultado === "novedad") {
+        pitar(false);
+        const p = producto(j.item_id);
+        setMensaje({
+          tipo: "error",
+          texto: t(`pistola_novedad_${j.novedad}`, {
+            serial: j.serial || j.codigo || "",
+            producto: p?.producto || "",
+            referencia: j.referencia || "",
+            cantidad: j.cantidad ?? 1,
+          }),
+        });
+        onNovedad?.(j as NovedadEscaneo);
         return;
       }
       if (j.resultado === "desconocido") {
@@ -338,16 +377,31 @@ export default function Pistola({
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setDesconocido(null);
-              enfocar();
-            }}
-            className="text-xs font-semibold text-slate-500 hover:underline"
-          >
-            {t("pistola_ignorar")}
-          </button>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {permitirSobrante && (
+              <button
+                type="button"
+                onClick={() => {
+                  const codigo = desconocido;
+                  setDesconocido(null);
+                  if (codigo) void enviar(codigo, { sobrante: true });
+                }}
+                className="h-8 px-2.5 rounded-md border border-red-200 bg-red-50 text-xs font-semibold text-red-700"
+              >
+                {t("pistola_no_esta")}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setDesconocido(null);
+                enfocar();
+              }}
+              className="text-xs font-semibold text-slate-500 hover:underline"
+            >
+              {t("pistola_ignorar")}
+            </button>
+          </div>
         </div>
       )}
     </div>
