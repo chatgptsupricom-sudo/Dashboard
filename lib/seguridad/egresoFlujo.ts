@@ -12,7 +12,8 @@
  *        ├─ sin novedades, aprueba ─► despachado ─► por_calificar
  *        └─ con novedades (o no aprueba) + motivo, Seguridad decide:
  *             ├─ despachar igual ─► por_calificar
- *             └─ no despachar ───► vuelve a por_asignar_despacho (#301)
+ *             ├─ devolver ───────► vuelve a por_asignar_despacho (#301)
+ *             └─ cancelar ───────► por_calificar, sin despachar (no sale)
  *   por_calificar ─► cerrado
  *
  * Sin dependencias de servidor: lo usan la API (para validar cada paso) y las
@@ -346,12 +347,24 @@ export function pideComentarioPicking(estrellas: number, hayNovedades: boolean):
 export const LOCAL_DESPACHO = "C4";
 
 /**
- * Etapa tras la verificacion de Seguridad. Si no se despacha, el egreso
- * vuelve a Almacen a asignar despacho (no a armar de nuevo): Almacen corrige
- * lo que falto o sobro y lo vuelve a mandar. Lo ya pistoleado se conserva.
+ * Lo que decide Seguridad cuando no aprueba (hay novedades, o no aprueba por
+ * otra razon):
+ *  - despachar: sale igual.
+ *  - devolver: vuelve a Almacen a asignar despacho (no a armar de nuevo),
+ *    para corregir y mandarlo otra vez. Lo ya pistoleado se conserva.
+ *  - cancelar: no sale nunca (el cliente cancelo, por ejemplo). Se cierra
+ *    sin despachar, pasando por calificar como cualquier otro.
  */
-export function etapaTrasVerificacion(despachar: boolean): Etapa {
-  return despachar ? "por_calificar" : "por_asignar_despacho";
+export const DECISIONES = ["despachar", "devolver", "cancelar"] as const;
+export type DecisionSeguridad = (typeof DECISIONES)[number];
+
+export function esDecision(v: unknown): v is DecisionSeguridad {
+  return typeof v === "string" && (DECISIONES as readonly string[]).includes(v);
+}
+
+/** Etapa tras la verificacion de Seguridad. Aprobar cuenta como "despachar". */
+export function etapaTrasVerificacion(decision: DecisionSeguridad): Etapa {
+  return decision === "devolver" ? "por_asignar_despacho" : "por_calificar";
 }
 
 export type ResultadoEgreso =
@@ -374,4 +387,25 @@ export function resultadoEgreso(m: {
   if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
   if (Number(m.aprobado) === 1) return "aprobado";
   return Number(m.despachado) === 1 ? "no_aprobado_despachado" : "no_despachado";
+}
+
+/**
+ * Mientras Seguridad pistolea, las faltas son lo normal: todavia no se conto.
+ * En vivo solo se muestra lo que ya es anormal (algo de mas, de otra orden,
+ * que no esta en la orden, o marcado "No salio"); las faltas van en un
+ * contador. La lista completa, al decidir. La regla de novedadesVerificacion
+ * no cambia: es solo que se pinta (Lino, #314).
+ */
+export function esAnormalEnVivo(n: Novedad): boolean {
+  return n.tipo !== "falta" && n.tipo !== "serial_falta";
+}
+
+/** Unidades que faltan por pistolear, segun las faltas de la verificacion. */
+export function faltanPorPistolear(novedades: Novedad[]): number {
+  let n = 0;
+  for (const x of novedades) {
+    if (x.tipo === "serial_falta") n += 1;
+    else if (x.tipo === "falta") n += Math.max(0, x.esperado - (x.contado ?? 0));
+  }
+  return n;
 }

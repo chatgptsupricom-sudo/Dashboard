@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 /**
  * Verificacion de Seguridad en C4 con pistola (issue #301).
  *
- * POST  { codigo, item_id?, aprender_item_id?, forzar_serial?, sobrante? }
+ * POST  { codigo, item_id?, forzar_serial?, sobrante? }
+ *   (sin `aprender_item_id`: en C4 no se aprenden codigos de caja).
  *   Una lectura de la pistola. Que es lo decide lib/escaneo/procesar (el
  *   mismo de la recepcion); aca va lo propio del egreso:
  *    - Un serial esperado (del picking de Odoo, #299) ya dice de que renglon
@@ -122,6 +123,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (ctx instanceof NextResponse) return ctx;
     const { id, mov, seriales, quien } = ctx;
     const ronda = Number(mov.ronda_verificacion || 1);
+    // Sucursal del egreso (no de la sesion: superadmin no tiene): "serial de
+    // otra orden" solo mira egresos de la misma.
+    const cidsEgreso = mov.cids === null || mov.cids === undefined ? null : Number(mov.cids);
 
     let body: any;
     try {
@@ -137,6 +141,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       lleva_serial: verificaPorSerial(i, seriales) ? 1 : 0,
     }));
     const esperado = new Map(seriales.map((s) => [s.serial, s]));
+
+    // En C4 no se aprenden codigos de caja: el alias es global (recepcion y
+    // todos los egresos), y aca es justo donde se buscan sobrantes. Una caja
+    // asociada por apuro al producto equivocado quedaria contando como ese
+    // producto para siempre y esconderia sobrantes reales (Lino, #314).
+    if (body?.aprender_item_id !== undefined) {
+      return NextResponse.json(
+        { error: "En C4 no se asocian codigos de caja: marca No esta en la orden o escribe la cantidad" },
+        { status: 400 },
+      );
+    }
 
     // Producto que no esta en la orden: lo dice Seguridad al no reconocerlo.
     if (body?.sobrante === true) {
@@ -201,7 +216,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           };
         }
         // No esta en el picking: no cuenta, queda como novedad.
-        const otra = await serialDeOtroEgreso(serial, id);
+        const otra = await serialDeOtroEgreso(serial, id, cidsEgreso);
         const n = await registrarNovedadEscaneo(
           id,
           ronda,
@@ -234,7 +249,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // orden, eso ya es la novedad, sin preguntar de que producto es.
     if (r.body.resultado === "desconocido" && !r.body.pista) {
       const codigo = String(r.body.codigo || "");
-      const otra = codigo ? await serialDeOtroEgreso(codigo, id) : null;
+      const otra = codigo ? await serialDeOtroEgreso(codigo, id, cidsEgreso) : null;
       if (otra) {
         const n = await registrarNovedadEscaneo(
           id,

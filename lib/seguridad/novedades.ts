@@ -181,15 +181,26 @@ export async function guardarNovedadesCierre(
 /**
  * Orden a la que pertenece un serial esperado de OTRO egreso, o null. Usa el
  * indice por `serial` de seguridad_mercancia_seriales.
+ *
+ * Solo de la misma sucursal (lo de otra no se muestra, como en el resto del
+ * modulo) y solo egresos abiertos: un serial de un egreso cerrado hace meses
+ * es una unidad que se devolvio y se revendio, no una confusion de orden.
+ * `cids` null = egreso sin sucursal (filas viejas): no se busca en ninguna.
  */
-export async function serialDeOtroEgreso(serial: string, mercanciaId: number): Promise<string | null> {
+export async function serialDeOtroEgreso(
+  serial: string,
+  mercanciaId: number,
+  cids: number | null,
+): Promise<string | null> {
+  if (cids === null) return null;
   const r = await query(
     `SELECT m.odoo_picking_name, m.id
        FROM seguridad_mercancia_seriales s
        JOIN seguridad_mercancia m ON m.id = s.mercancia_id
       WHERE s.serial = ? AND s.mercancia_id <> ?
+        AND m.cids = ? AND m.etapa IS NOT NULL AND m.etapa <> 'cerrado'
       ORDER BY s.id DESC LIMIT 1`,
-    [serial, mercanciaId],
+    [serial, mercanciaId, cids],
   );
   const fila = (r.rows as any[])[0];
   return fila ? String(fila.odoo_picking_name || `#${fila.id}`) : null;

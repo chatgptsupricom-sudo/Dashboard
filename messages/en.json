@@ -2758,12 +2758,12 @@
           "pistola_van_de": "{recibido} of {esperado}",
           "pistola_terminar": "Done",
           "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
-          "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it's the box code, choose \"It's its code\".",
+          "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it's the box of a product that isn't in the order, choose \"Not in the order\".",
           "error": "Could not record the scan",
           "buscar_producto": "Search product by name or code",
           "aprobar_requiere": "There {n, plural, =1 {is # issue} other {are # issues}}: it can't be approved. Decide whether to dispatch anyway.",
           "decidir": "There are issues: decide",
-          "no_despachar": "Don't dispatch",
+          "no_despachar": "Send back to Warehouse",
           "no_despachar_ayuda": "It goes back to Warehouse to fix it and assign the dispatch again. What was scanned is kept.",
           "motivo": "Reason (required)",
           "excel_seriales": "Serials Excel",
@@ -2771,7 +2771,10 @@
           "pistola_novedad_serial_sobra": "Serial {serial} is not in the picking of {producto}. Not counted: recorded as an issue.",
           "pistola_novedad_serial_otra_orden": "Serial {serial} belongs to another order ({referencia}). Not counted: recorded as an issue.",
           "pistola_novedad_producto_ajeno": "{serial} is not in the order: recorded as an issue ({cantidad} so far).",
-          "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:"
+          "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:",
+          "cancelar": "Not dispatched (cancelled)",
+          "cancelar_ayuda": "It never leaves (for example, the customer cancelled). It closes without dispatch, after rating.",
+          "faltan": "{n, plural, =1 {# left to scan} other {# left to scan}}"
         },
         "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
         "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
