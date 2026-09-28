@@ -31,11 +31,13 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
         <div className="text-sm text-slate-600 leading-relaxed space-y-3">
           {kpiId === "efectividad_cobranza" && (
             <>
-              <p><strong>{t("info_que_mide")}</strong> Si la cobranza del mes acompaña el ritmo de facturación: todo lo que se cobró en el mes contra lo que se facturó en el mes.</p>
-              <p><strong>{t("info_formula")}</strong> Cobrado del mes ÷ Facturado del mes × 100 (ambos con IVA)</p>
-              <p><strong>Facturado del mes:</strong> Facturas menos notas de crédito emitidas en el período.</p>
-              <p><strong>Cobrado del mes:</strong> Dinero que entró por banco o caja en el período, por la fecha de confirmación del pago, de cualquier factura (también de meses anteriores). Retenciones y notas de crédito no son cobro. Puede pasar de 100% si se cobró deuda vieja por encima de lo facturado.</p>
-              <p><strong>{t("info_semaforo")}</strong> Verde ≥95% | Amarillo 85%–94.99% | Rojo &lt;85%</p>
+              <p><strong>{t("info_que_mide")}</strong> Índice de Efectividad de Cobranza (CEI): qué parte de lo que se podía cobrar en el mes se cobró.</p>
+              <p><strong>{t("info_formula")}</strong> (CxC inicial + Ventas a crédito − CxC final) ÷ (CxC inicial + Ventas a crédito − CxC final no vencida) × 100</p>
+              <p><strong>Solo crédito:</strong> Facturas cuyo plazo de pago tiene días (7, 15, 30…); las de contado quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</p>
+              <p><strong>Numerador (recuperado):</strong> Lo que salió de la cartera en el mes: pagos, retenciones y descuentos aplicados. Los anticipos que todavía no se aplicaron a una factura no cuentan, así que no pasa de 100%.</p>
+              <p><strong>CxC inicial / final no vencida:</strong> Lo que los clientes debían al empezar el mes, y lo que deben al cierre (o hoy, en el mes en curso) que todavía no vence y por eso no era exigible.</p>
+              <p><strong>Ventas a crédito:</strong> Facturas a crédito menos sus notas de crédito emitidas en el período, con IVA.</p>
+              <p><strong>{t("info_semaforo")}</strong> Verde ≥85% | Amarillo 75%–84.99% | Rojo &lt;75%</p>
             </>
           )}
           {kpiId === "cartera_vencida" && (
@@ -58,10 +60,11 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
           )}
           {kpiId === "dso" && (
             <>
-              <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
-              <p><strong>{t("info_formula")}</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
-              <p><strong>Ventas netas a crédito:</strong> Total de facturas tipo "out_invoice" (excluyendo notas de crédito) de los últimos 90 días.</p>
-              <p><strong>Período:</strong> Se usa ventana móvil de 90 días para reducir volatilidad.</p>
+              <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda, en promedio, cada cliente en pagar lo que se le factura.</p>
+              <p><strong>{t("info_formula")}</strong> DSO cliente = (Saldo abierto ÷ Ventas netas) × Días del período</p>
+              <p><strong>Ventas netas:</strong> Facturado menos notas de crédito del cliente desde su primera factura.</p>
+              <p><strong>Período:</strong> Días desde la primera factura del cliente hasta hoy.</p>
+              <p><strong>DSO global:</strong> Promedio de los DSO por cliente ponderado por su saldo abierto (los que más deben pesan más).</p>
               <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
             </>
           )}

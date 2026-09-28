@@ -7,6 +7,7 @@ import {
   ArrowUpFromLine,
   Download,
   Loader2,
+  Printer,
   Search,
   SlidersHorizontal,
 } from "lucide-react";
@@ -256,6 +257,25 @@ export function HistoryTab({ onGoToCatalog }: { onGoToCatalog: () => void }) {
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {m.client_name || m.destination || "—"}
+                      {/* Reimprimir la nota de una salida a cliente ya
+                          registrada, sin tener que volver a cargarla. */}
+                      {m.type === "exit" &&
+                        m.reason_type === "cliente" &&
+                        m.movement_group_id && (
+                          <button
+                            type="button"
+                            title="Nota de entrega"
+                            onClick={() =>
+                              window.open(
+                                `/api/adminleads/material-pop/movements/nota?group=${m.movement_group_id}`,
+                                "_blank",
+                              )
+                            }
+                            className="ml-2 align-middle text-slate-400 hover:text-violet-700"
+                          >
+                            <Printer className="inline h-3.5 w-3.5" />
+                          </button>
+                        )}
                     </td>
                   </tr>
                 );

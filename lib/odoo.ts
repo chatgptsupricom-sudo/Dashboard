@@ -83,6 +83,7 @@ async function callOdooRPCInternal<T>(
   args: any[],
   kwargs: Record<string, any>,
   httpsAgent: https.Agent | undefined,
+  estricto = false,
 ): Promise<T | null> {
   try {
     const payload = {
@@ -115,8 +116,13 @@ async function callOdooRPCInternal<T>(
       { headers: { "Content-Type": "application/json" }, httpsAgent },
     );
 
+    if (estricto && response.data.error) {
+      const e = response.data.error;
+      throw new Error(e.data?.message || e.message || "Odoo rechazó la operación");
+    }
     return response.data.result as T;
   } catch (error: any) {
+    if (estricto) throw error;
     console.error("❌ Error RPC:", error.message);
     // axios solo pone `error.response` cuando el servidor SÍ contestó (con un
     // error HTTP). Si no hay `response`, la solicitud nunca llegó a destino
@@ -136,6 +142,20 @@ export async function callOdooRPC<T>(
   kwargs: Record<string, any> = {}, // Aquí llegan { fields, limit, context }
 ): Promise<T | null> {
   return callOdooRPCInternal<T>(model, method, args, kwargs, undefined);
+}
+
+/**
+ * Igual que callOdooRPC, pero un error de Odoo (JSON-RPC `error`, o la red)
+ * se lanza con el mensaje de Odoo en vez de devolver null/undefined. Para
+ * escrituras, donde el usuario necesita saber por qué no se hizo.
+ */
+export async function callOdooRPCEstricto<T>(
+  model: string,
+  method: string,
+  args: any[] = [],
+  kwargs: Record<string, any> = {},
+): Promise<T | null> {
+  return callOdooRPCInternal<T>(model, method, args, kwargs, undefined, true);
 }
 
 /**

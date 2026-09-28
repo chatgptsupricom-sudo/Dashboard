@@ -3,8 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2, TrendingUp } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2, TrendingUp, X, Image as ImageIcon, MoveRight } from "lucide-react";
 import { CATEGORIAS_DISENO, etiquetaCategoria } from "@/lib/disenos/categorias";
+
+interface DisenoDelDia {
+  id: number;
+  title: string;
+  category: string | null;
+  created_by: string;
+  image_path: string;
+  design_date: string | null;
+}
 
 interface Kpis {
   mes: string;
@@ -47,13 +56,27 @@ function tono(n: number, max: number): string {
  * importar el mes que se esté viendo en el calendario: son el pulso del día, no
  * del mes navegado.
  */
-export default function KpiDisenos({ refreshKey = 0 }: { refreshKey?: number }) {
+export default function KpiDisenos({
+  refreshKey = 0,
+  onCambio,
+}: {
+  refreshKey?: number;
+  /** Se llama al mover un diseño de día, para refrescar el catálogo de la página. */
+  onCambio?: () => void;
+}) {
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [mes, setMes] = useState(hoy.getMonth() + 1);
   const [data, setData] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Detalle del día: se abre al hacer clic en una celda del calendario.
+  const [diaSel, setDiaSel] = useState<string | null>(null);
+  const [delDia, setDelDia] = useState<DisenoDelDia[]>([]);
+  const [cargandoDia, setCargandoDia] = useState(false);
+  const [arrastrando, setArrastrando] = useState<DisenoDelDia | null>(null);
+  const [encima, setEncima] = useState<string | null>(null);
+  const [moviendo, setMoviendo] = useState(false);
 
   const fetchKpis = useCallback(async () => {
     try {
@@ -76,6 +99,53 @@ export default function KpiDisenos({ refreshKey = 0 }: { refreshKey?: number }) 
   }, [anio, mes]);
 
   useEffect(() => { fetchKpis(); }, [fetchKpis, refreshKey]);
+
+  const fetchDia = useCallback(async (fecha: string) => {
+    setCargandoDia(true);
+    try {
+      const res = await fetch(`/api/disenador/disenos?dia=${fecha}&limit=60`);
+      const json = await res.json();
+      setDelDia(json.success ? json.designs || [] : []);
+    } catch {
+      setDelDia([]);
+    } finally {
+      setCargandoDia(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (diaSel) fetchDia(diaSel);
+    else setDelDia([]);
+  }, [diaSel, fetchDia, refreshKey]);
+
+  // Al cambiar de mes, el día abierto ya no pertenece a la vista.
+  useEffect(() => { setDiaSel(null); }, [anio, mes]);
+
+  /** Arrastrar un diseño a otro día: cambia su fecha (la que cuenta para el KPI). */
+  const moverDia = async (diseno: DisenoDelDia, destino: string) => {
+    if (!destino || destino === (diseno.design_date || diaSel)) return;
+    setMoviendo(true);
+    try {
+      const res = await fetch("/api/disenador/disenos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: diseno.id, design_date: destino }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      setDelDia((prev) => prev.filter((d) => d.id !== diseno.id));
+      await fetchKpis();
+      onCambio?.();
+    } catch (e: any) {
+      alert("No se pudo mover el diseño: " + e.message);
+    } finally {
+      setMoviendo(false);
+      setArrastrando(null);
+      setEncima(null);
+    }
+  };
 
   const celdas = useMemo(() => {
     const primero = new Date(anio, mes - 1, 1);
@@ -175,20 +245,88 @@ export default function KpiDisenos({ refreshKey = 0 }: { refreshKey?: number }) 
                 const fecha = iso(anio, mes, dia);
                 const n = data?.dias?.[fecha] || 0;
                 const esHoy = fecha === hoyIso;
+                const abierto = fecha === diaSel;
+                const destino = encima === fecha && arrastrando;
                 return (
-                  <div
+                  <button
                     key={i}
-                    title={`${dia}/${mes}: ${n} diseño${n === 1 ? "" : "s"}`}
-                    className={`aspect-square rounded-xl flex flex-col items-center justify-center ${tono(n, maxDia)} ${
+                    type="button"
+                    title={`${dia}/${mes}: ${n} diseño${n === 1 ? "" : "s"}${n ? " — clic para verlos" : ""}`}
+                    onClick={() => setDiaSel(abierto ? null : fecha)}
+                    // Soltar un diseño acá lo mueve a este día.
+                    onDragOver={(e) => { if (arrastrando) { e.preventDefault(); setEncima(fecha); } }}
+                    onDragLeave={() => setEncima((f) => (f === fecha ? null : f))}
+                    onDrop={(e) => { e.preventDefault(); if (arrastrando) moverDia(arrastrando, fecha); }}
+                    className={`aspect-square rounded-xl flex flex-col items-center justify-center transition ${tono(n, maxDia)} ${
                       esHoy ? "ring-2 ring-slate-900 ring-offset-1" : ""
-                    }`}
+                    } ${abierto ? "ring-2 ring-fuchsia-600 ring-offset-1" : ""} ${
+                      destino ? "outline outline-2 outline-dashed outline-fuchsia-500 scale-105" : ""
+                    } hover:brightness-95`}
                   >
                     <span className="text-[10px] opacity-70 leading-none">{dia}</span>
                     <span className="text-sm font-bold tabular-nums leading-tight">{n || ""}</span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
+
+            {/* Detalle del día: sus diseños, arrastrables a otro día */}
+            {diaSel && (
+              <div className="mt-4 rounded-2xl border border-slate-200 p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {(() => {
+                      const [y, m, d] = diaSel.split("-").map(Number);
+                      return `${d} de ${MESES[m - 1]} ${y}`;
+                    })()}
+                    <span className="ml-2 text-xs font-normal text-slate-500">
+                      {cargandoDia ? "cargando…" : `${delDia.length} diseño${delDia.length === 1 ? "" : "s"}`}
+                    </span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {moviendo && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+                    <button
+                      type="button"
+                      onClick={() => setDiaSel(null)}
+                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
+                      aria-label="Cerrar"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                {delDia.length > 0 && (
+                  <p className="text-[11px] text-slate-400 mb-2 flex items-center gap-1">
+                    <MoveRight className="w-3 h-3" /> Arrastrá un diseño a otro día del calendario para cambiarle la fecha.
+                  </p>
+                )}
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-64 overflow-y-auto pr-1">
+                  {delDia.map((d) => (
+                    <div
+                      key={d.id}
+                      draggable
+                      onDragStart={() => setArrastrando(d)}
+                      onDragEnd={() => { setArrastrando(null); setEncima(null); }}
+                      title={`${d.title} — ${d.created_by}`}
+                      className={`rounded-lg overflow-hidden border bg-white cursor-grab active:cursor-grabbing ${
+                        arrastrando?.id === d.id ? "opacity-50 border-fuchsia-400" : "border-slate-200"
+                      }`}
+                    >
+                      <div className="aspect-square bg-slate-100">
+                        <img src={d.image_path} alt={d.title} className="w-full h-full object-cover pointer-events-none" />
+                      </div>
+                      <p className="px-1.5 py-1 text-[10px] text-slate-600 truncate">{d.title}</p>
+                    </div>
+                  ))}
+                  {!cargandoDia && delDia.length === 0 && (
+                    <p className="col-span-full py-6 text-center text-sm text-slate-400 flex flex-col items-center gap-2">
+                      <ImageIcon className="w-6 h-6 text-slate-300" />
+                      Sin diseños ese día
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Semanas y categorías del mes */}
