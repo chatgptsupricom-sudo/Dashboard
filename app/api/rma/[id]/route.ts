@@ -11,6 +11,7 @@ import {
   marcarProductosDespachados,
   sincronizarEnvio,
 } from "@/lib/rma/items";
+import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 
 export async function GET(
   request: NextRequest,
@@ -132,7 +133,7 @@ export async function PUT(
 
     const existing = await query(
       `SELECT id, status, case_number, origen, company_id, odoo_partner_id,
-              tracking_token, model, hardware, client_name
+              tracking_token, model, hardware, client_name, diagnosis, notes
        FROM rma_cases WHERE id = ?`,
       [id],
     );
@@ -280,6 +281,26 @@ export async function PUT(
         },
         getPublicOrigin(request),
       );
+    } else {
+      // Cualquier otro avance (cambio de estado, o diagnóstico/notas nuevos):
+      // aviso al cliente de cómo va su servicio técnico. Reparado ya tiene su
+      // propio correo, arriba.
+      const cambiaEstado = !!status && status !== oldStatus;
+      const cambiaInfo = ([["diagnosis", diagnosis], ["notes", notes]] as const).some(
+        ([c, v]) => v !== undefined && String(v ?? "").trim() !== "" && String(v ?? "").trim() !== String(casoActual[c] ?? "").trim(),
+      );
+      if (cambiaEstado || cambiaInfo) {
+        enviarCorreoActualizacion(
+          casoActual.id,
+          {
+            producto: (model !== undefined ? model : casoActual.model) || casoActual.hardware || "",
+            estado_anterior: cambiaEstado ? oldStatus : null,
+            estado_nuevo: cambiaEstado ? status : oldStatus,
+            tipo: cambiaEstado ? "estado" : "informacion",
+          },
+          getPublicOrigin(request),
+        );
+      }
     }
 
     return NextResponse.json({ success: true });

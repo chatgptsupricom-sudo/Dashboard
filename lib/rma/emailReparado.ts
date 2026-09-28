@@ -1,14 +1,14 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
  * Aviso de "tu equipo esta reparado" (issue #119), con el link a la pagina
  * donde el cliente elige como recibirlo (issue #121). Se manda por webhook
  * a n8n -- mismo patron fire-and-forget que ya usa
  * app/api/servicio-tecnico/ticket/route.ts para notificar tickets nuevos
- * (reusa N8N_LEAD_WEBHOOK_URL con un `evento` distinto, en vez de un env
- * var nuevo, para no duplicar configuracion).
+ * (al webhook de RMA de lib/rma/webhook.ts, con un `evento` distinto).
  *
  * n8n es quien arma y manda el correo de verdad del lado de alla -- este
  * modulo solo junta los datos y dispara el webhook.
@@ -38,7 +38,7 @@ export type CasoParaCorreo = {
  * Si no esta configurado, se cae al origen de la propia peticion -- correcto
  * solo si panel y portal viven en el mismo dominio.
  */
-function origenPortal(origenPeticion: string): string {
+export function origenPortal(origenPeticion: string): string {
   return process.env.NEXT_PUBLIC_SERVICIO_TECNICO_URL || origenPeticion;
 }
 
@@ -62,8 +62,8 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
     return;
   }
 
-  if (!process.env.N8N_LEAD_WEBHOOK_URL) {
-    console.warn("[rma/emailReparado] N8N_LEAD_WEBHOOK_URL no configurado, se omite el correo");
+  if (!urlWebhookRma()) {
+    console.warn("[rma/emailReparado] N8N_RMA_WEBHOOK_URL no configurado, se omite el correo");
     return;
   }
 
@@ -90,7 +90,7 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
 
   const link = `${origenPortal(origenPeticion)}/es/servicio-tecnico/${sucursalSlug}/entrega/${caso.tracking_token}`;
 
-  await fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+  await fetch(urlWebhookRma()!, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -128,7 +128,7 @@ export async function emailDeContacto(caseId: number): Promise<string | null> {
 }
 
 /** Email real (sin enmascarar) del partner en Odoo -- solo para uso interno/envio, nunca para exponer en una API publica. */
-async function resolverEmailCliente(partnerId: number | null): Promise<string | null> {
+export async function resolverEmailCliente(partnerId: number | null): Promise<string | null> {
   if (!partnerId) return null;
   try {
     const partners = await callOdooRPC<any[]>(

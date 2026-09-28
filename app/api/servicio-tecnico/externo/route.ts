@@ -32,6 +32,7 @@ import {
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { NextRequest, NextResponse } from "next/server";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -320,8 +321,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (process.env.N8N_LEAD_WEBHOOK_URL) {
-      fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+    if (urlWebhookRma()) {
+      fetch(urlWebhookRma()!, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

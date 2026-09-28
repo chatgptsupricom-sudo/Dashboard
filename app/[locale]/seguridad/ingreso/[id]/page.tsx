@@ -344,6 +344,11 @@ export default function IngresoDetailPage() {
           }}
           readOnly={esRma || esSuperadmin}
           permitirRehacer={esSuperadmin}
+          // La firma de Almacén es opcional en el ingreso y el despacho.
+          opcionales={["almacen"]}
+          // Seguridad firma la suya y, si el cliente retira en persona, la del
+          // cliente en esta computadora. RMA y Almacén firman en su panel.
+          puedeFirmar={["seguridad", "cliente"]}
         />
 
         <ProductosEnvioLista

@@ -12,7 +12,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import FileUploadField from "@/components/seguridad/FileUploadField";
 
 function todayISO() {
   const d = new Date();
@@ -115,9 +114,6 @@ export default function NuevoIngresoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [foto, setFoto] = useState<File | null>(null);
-  const [fotoError, setFotoError] = useState<string | null>(null);
-  const [uploadingFoto, setUploadingFoto] = useState(false);
 
   // Catálogos de personal para los selects "Recibió por Seguridad / RMA" (#50).
   useEffect(() => {
@@ -135,6 +131,29 @@ export default function NuevoIngresoPage() {
     };
     void cargar("seguridad").then(setPersonalSeguridad);
     void cargar("rma").then(setPersonalRma);
+  }, []);
+
+  // Tickets que todavía no tienen ingreso, para elegirlos de una lista en vez
+  // de teclear el número: cada opción dice el número y la empresa del
+  // cliente. Los últimos 180 días (los del portal que siguen por llegar).
+  const [ticketsDisponibles, setTicketsDisponibles] = useState<
+    { case_number: string; cliente: string; producto: string }[]
+  >([]);
+  const [cargandoTickets, setCargandoTickets] = useState(true);
+  useEffect(() => {
+    fetch("/api/seguridad/tickets-sin-ingreso?dias=180")
+      .then((r) => (r.ok ? r.json() : { tickets: [] }))
+      .then((j) =>
+        setTicketsDisponibles(
+          (j.tickets || []).map((x: any) => ({
+            case_number: String(x.case_number),
+            cliente: x.cliente || "",
+            producto: x.producto || "",
+          })),
+        ),
+      )
+      .catch(() => setTicketsDisponibles([]))
+      .finally(() => setCargandoTickets(false));
   }, []);
 
   // El panel de equipos por llegar manda aqui con ?ticket=0042 ya buscado,
@@ -254,7 +273,6 @@ export default function NuevoIngresoPage() {
     setSubmitting(true);
 
     const payload: Record<string, unknown> = {
-      nd_numero: form.nd_numero.trim() || undefined,
       fecha_entrega: form.fecha_entrega,
       factura_numero: form.factura_numero.trim() || undefined,
       cliente_nombre: form.cliente_nombre.trim().slice(0, MAX.cliente_nombre),
@@ -297,25 +315,6 @@ export default function NuevoIngresoPage() {
       if (!data?.id) {
         router.push(`${base}/ingreso`);
         return;
-      }
-
-      if (foto) {
-        setUploadingFoto(true);
-        const formData = new FormData();
-        formData.append("foto", foto);
-        try {
-          const fotoRes = await fetch(`/api/seguridad/ingreso/${data.id}/foto`, {
-            method: "POST",
-            body: formData,
-          });
-          if (!fotoRes.ok) {
-            setFotoError(t("foto_estado.upload_error"));
-          }
-        } catch {
-          setFotoError(t("foto_estado.upload_error"));
-        } finally {
-          setUploadingFoto(false);
-        }
       }
 
       router.push(`${base}/ingreso/${data.id}`);
@@ -362,35 +361,43 @@ export default function NuevoIngresoPage() {
             <p className="text-xs text-slate-500 mb-4">
               {t("module_subtitle")}
             </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
+            {/* Se elige de la lista de tickets sin ingreso: número y empresa
+                del cliente. Ya no se teclea el número. */}
+            <div className="flex items-center gap-2">
+              <select
                 value={ticketQuery}
-                onChange={(e) => setTicketQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    searchTicket();
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTicketQuery(v);
+                  if (v) searchTicket(v);
+                  else {
+                    setTicket(null);
+                    setProductos([]);
+                    setTicketError(null);
                   }
                 }}
-                placeholder={tf("search_ticket_placeholder")}
-                className="flex-1 h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                inputMode="numeric"
-              />
-              <button
-                type="button"
-                onClick={() => searchTicket()}
-                disabled={searchingTicket || !ticketQuery.trim()}
-                className="h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
-                style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+                disabled={cargandoTickets || searchingTicket}
+                aria-label={tf("section_ticket")}
+                className="flex-1 min-w-0 h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
               >
-                {searchingTicket ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4" />
+                <option value="">
+                  {cargandoTickets
+                    ? tf("searching")
+                    : ticketsDisponibles.length
+                      ? tf("ticket_elegir")
+                      : tf("ticket_sin_pendientes")}
+                </option>
+                {/* Si llegó por ?ticket= y no está en la lista, igual se muestra. */}
+                {ticketQuery && !ticketsDisponibles.some((x) => x.case_number === ticketQuery) && (
+                  <option value={ticketQuery}>#{ticketQuery}</option>
                 )}
-                {searchingTicket ? tf("searching") : tf("search_ticket")}
-              </button>
+                {ticketsDisponibles.map((x) => (
+                  <option key={x.case_number} value={x.case_number}>
+                    #{x.case_number} · {x.cliente}
+                  </option>
+                ))}
+              </select>
+              {searchingTicket && <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />}
             </div>
 
             {ticketError && (
@@ -523,24 +530,11 @@ export default function NuevoIngresoPage() {
               {tf("section_data")}
             </h2>
 
-            {/* Numero ND del encabezado de la planilla. Es el correlativo que
-                el almacen lleva a mano en el papel, y sirve para cruzar un
-                acta del sistema con la carpeta de papeles viejos. */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_nd")}
-              </label>
-              <input
-                type="text"
-                value={form.nd_numero}
-                onChange={(e) =>
-                  update("nd_numero", e.target.value.slice(0, MAX.nd_numero))
-                }
-                placeholder={tf("field_nd_placeholder")}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.nd_numero}
-              />
-            </div>
+            {/* Número de guía: lo asigna el sistema al guardar (antes "N.º ND",
+                que el almacén escribía a mano). */}
+            <p className="rounded-[10px] bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+              {tf("guia_automatica")}
+            </p>
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
@@ -664,25 +658,6 @@ export default function NuevoIngresoPage() {
             </div>
           </section>
 
-          {/* Section C2: Foto del estado (opcional) */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-3">
-              {t("foto_estado.title")}
-            </h2>
-            <div>
-              <FileUploadField
-                value={foto}
-                onChange={(file) => {
-                  setFoto(file);
-                  setFotoError(null);
-                }}
-                label={t("foto_estado.label")}
-                hint={t("foto_estado.hint")}
-                error={fotoError}
-                disabled={uploadingFoto}
-              />
-            </div>
-          </section>
 
           {/* Section D: Received by — dos firmantes, uno por lado del
               mostrador (#50). Salen de los catálogos de personal. */}

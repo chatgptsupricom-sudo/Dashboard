@@ -45,6 +45,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
 import ProductosEnvio, { type ProductoEnvio } from "@/components/rma/ProductosEnvio";
+import ActasPorFirmar from "@/components/seguridad/ActasPorFirmar";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 
 const statusColors: Record<string, string> = {
@@ -822,6 +823,20 @@ export default function RmaCasoDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Firma de RMA en las actas de Seguridad (ingreso y despacho) de
+              este caso: cada rol firma la suya desde su panel. */}
+          <Card className="rounded-3xl border-none shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-slate-900">Firmas de las actas</CardTitle>
+              <p className="text-xs text-slate-500">
+                Firma de RMA en el ingreso y el despacho de Seguridad. Elige quién de RMA firma.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <ActasPorFirmar rol="tecnico" rmaCaseId={caseData.id} compacto />
+            </CardContent>
+          </Card>
 
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader>

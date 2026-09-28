@@ -26,7 +26,7 @@ Panel administrativo SUPRICOM. Next.js 16 (App Router) + TypeScript + MySQL + Od
 
 ## Variables de entorno (`.env.local`)
 
-`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` (MySQL) · `NEXT_PUBLIC_ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` · `JWT_SECRET`, `JWT_EXPIRATION` · `CRON_SECRET` · `WEBHOOK_SECRET` · `N8N_LEAD_WEBHOOK_URL`, `N8N_REASSIGN_WEBHOOK_URL` · `OPENAI_API_KEY` / `OPENROUTER_API_KEY` (agente IA y reportes) · `NEXT_PUBLIC_SOCKET_URL`.
+`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` (MySQL) · `NEXT_PUBLIC_ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` · `JWT_SECRET`, `JWT_EXPIRATION` · `CRON_SECRET` · `WEBHOOK_SECRET` · `N8N_LEAD_WEBHOOK_URL`, `N8N_REASSIGN_WEBHOOK_URL`, `N8N_RMA_WEBHOOK_URL` (avisos de servicio técnico al flujo "RMA - Correos al cliente"; sin ella usan la de leads) · `OPENAI_API_KEY` / `OPENROUTER_API_KEY` (agente IA y reportes) · `NEXT_PUBLIC_SOCKET_URL`.
 
 Gotchas:
 - `JWT_SECRET`/`ODOO_API_KEY` no tienen fallback hardcodeado: `lib/secretos.ts` falla cerrado (secreto aleatorio de un solo uso / string vacío) si la env var falta, y loguea el error. No reintroducir un fallback fijo — es lo que este archivo reemplazó.

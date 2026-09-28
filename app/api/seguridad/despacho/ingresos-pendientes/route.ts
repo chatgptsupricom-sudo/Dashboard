@@ -33,6 +33,17 @@ export async function GET(request: NextRequest) {
       : "WHERE d.id IS NULL";
     const params: any[] = [];
 
+    // Listos para despachar: RMA ya terminó el caso (reparado, nota de
+    // crédito o no procesado). Es lo que Seguridad tiene que devolver.
+    if (searchParams.get("listos") === "1") {
+      where += " AND rc.status IN ('reparado','nota_credito','no_procesado')";
+    }
+    const ingresoId = parseInt(searchParams.get("ingreso_id") || "", 10);
+    if (ingresoId > 0) {
+      where += " AND i.id = ?";
+      params.push(ingresoId);
+    }
+
     if (search) {
       where += " AND (i.cliente_nombre LIKE ? OR i.serial LIKE ? OR i.factura_numero LIKE ?)";
       const s = `%${search}%`;
@@ -47,11 +58,13 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await query(
-      `SELECT i.*
+      `SELECT i.*, rc.status AS rma_status, rc.case_number AS rma_case_number
        FROM seguridad_ingresos i
+       LEFT JOIN rma_cases rc ON rc.id = i.rma_case_id
        ${porProducto ? "" : "LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id"}
        ${where}
-       ORDER BY i.fecha_entrega DESC
+       -- Primero lo que RMA ya terminó: es lo que hay que despachar.
+       ORDER BY (rc.status IN ('reparado','nota_credito','no_procesado')) DESC, i.fecha_entrega DESC
        LIMIT ${limit}`,
       params,
     );
