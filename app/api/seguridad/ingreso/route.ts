@@ -11,6 +11,10 @@ import {
 } from "@/lib/seguridad/productosEnvio";
 import { leerProductos } from "@/lib/rma/items";
 import { siguienteGuia } from "@/lib/seguridad/guia";
+import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
+
+/** Tope de cada firma (PNG en base64), igual que /api/seguridad/firmas. */
+const MAX_FIRMA_BYTES = 1024 * 1024;
 
 
 
@@ -137,9 +141,6 @@ export async function POST(request: NextRequest) {
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaEntrega))
       errors.push("fecha_entrega debe tener formato YYYY-MM-DD");
 
-    const clienteNombre = truncate(body.cliente_nombre, MAX.cliente_nombre);
-    if (!clienteNombre) errors.push("cliente_nombre es obligatorio");
-
     // #50: quién recibió, por cada lado del mostrador. `recibido_por` (viejo,
     // texto único) se sigue guardando para la calificación y los KPIs — es el
     // de Seguridad. Se acepta que el cliente lo mande directo (cola offline con
@@ -155,30 +156,51 @@ export async function POST(request: NextRequest) {
     if (!recibidoRma) errors.push("recibido_rma_nombre es obligatorio");
     if (!recibidoPor) errors.push("recibido_por es obligatorio");
 
-    const descripcionFalla = truncate(body.descripcion_falla, MAX.descripcion_falla);
-    if (descripcionFalla !== null && descripcionFalla.trim().length > 0 && descripcionFalla.trim().length < 10) {
-      errors.push("descripcion_falla debe tener al menos 10 caracteres");
-    }
-
+    // Todo ingreso sale de un ticket del portal: no llega un equipo sin
+    // ticket. Los datos del acta (cliente, factura, equipo, serial, falla)
+    // salen del ticket y Seguridad no los edita; lo que mande la pantalla en
+    // esos campos se ignora.
     let rmaCaseId: number | null = null;
-    if (body.rma_case_id !== undefined && body.rma_case_id !== null && body.rma_case_id !== "") {
-      const parsed = parseInt(String(body.rma_case_id), 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        errors.push("rma_case_id invalido");
-      } else {
-        rmaCaseId = parsed;
+    const parsedCase = parseInt(String(body.rma_case_id ?? ""), 10);
+    if (!parsedCase || parsedCase <= 0) {
+      errors.push("Elige el ticket del portal: todo ingreso sale de un ticket");
+    } else {
+      rmaCaseId = parsedCase;
+    }
+
+    let caso: any = null;
+    if (rmaCaseId !== null) {
+      const r = await query("SELECT * FROM rma_cases WHERE id = ?", [rmaCaseId]);
+      caso = (r.rows as any[])[0] ?? null;
+      // 404 y no 403 para otra sucursal: no confirmar que el ticket existe.
+      if (!caso || (cids !== null && Number(caso.company_id) !== cids)) {
+        return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
+      }
+      const ya = await query("SELECT id FROM seguridad_ingresos WHERE rma_case_id = ? LIMIT 1", [rmaCaseId]);
+      if ((ya.rows as any[]).length && !body.idempotency_key) {
+        return NextResponse.json(
+          { error: "Ese ticket ya tiene un ingreso registrado", id: (ya.rows as any[])[0].id },
+          { status: 409 },
+        );
       }
     }
 
-    if (rmaCaseId !== null) {
-      try {
-        const exists = await query("SELECT id FROM rma_cases WHERE id = ?", [rmaCaseId]);
-        if (exists.rows.length === 0) {
-          errors.push("rma_case_id no existe");
-        }
-      } catch (e: any) {
-        console.warn("rma_cases no disponible:", e?.message);
+    // Firmas de quien recibe, por cada lado del mostrador: Seguridad y RMA
+    // firman en el mismo formulario, al recibir el equipo.
+    const firmas: { rol: "seguridad" | "tecnico"; nombre: string | null; png: { buffer: Buffer; mime: string } | null }[] = [
+      { rol: "seguridad", nombre: recibidoSeguridad, png: null },
+      { rol: "tecnico", nombre: recibidoRma, png: null },
+    ];
+    for (const f of firmas) {
+      const dataUrl = f.rol === "seguridad" ? body.firma_seguridad : body.firma_rma;
+      const quien = f.rol === "seguridad" ? "Seguridad" : "RMA";
+      if (typeof dataUrl !== "string" || !dataUrl) {
+        errors.push(`Falta la firma de ${quien}`);
+        continue;
       }
+      f.png = decodificarFirmaPng(dataUrl);
+      if (!f.png) errors.push(`La firma de ${quien} no es válida`);
+      else if (f.png.buffer.length > MAX_FIRMA_BYTES) errors.push(`La firma de ${quien} es demasiado grande`);
     }
 
     // Los checks de estado de la planilla son OBLIGATORIOS y hay que
@@ -215,8 +237,8 @@ export async function POST(request: NextRequest) {
     // están las tablas; con uno solo, el ingreso de siempre.
     let productosIngreso: ProductoIngreso[] = [];
     if (errors.length === 0 && rmaCaseId !== null && (await hayTablasSeguridad())) {
-      const delEnvio = await leerProductos(rmaCaseId);
-      if (delEnvio.length > 1 || body.productos !== undefined) {
+      const productosCaso = await leerProductos(rmaCaseId);
+      if (productosCaso.length > 1 || body.productos !== undefined) {
         const v = await validarProductosIngreso(rmaCaseId, body.productos);
         if ("error" in v) errors.push(v.error);
         else productosIngreso = v.filas;
@@ -256,6 +278,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Datos del acta, tal cual el ticket. Con varios productos (issue #331),
+    // "hardware" y "serial" resumen el envío; el detalle va en los productos.
+    const delEnvio = await leerProductos(rmaCaseId!);
+    const varios = delEnvio.length > 1;
+    const clienteNombre = truncate(caso.client_name || "", MAX.cliente_nombre) || "—";
+    const hardware = varios
+      ? delEnvio.map((x) => x.model || x.hardware || "").join(", ")
+      : caso.model || caso.hardware || "";
+    const serial = varios
+      ? delEnvio.map((x) => x.serial).filter(Boolean).join(", ")
+      : caso.serial || caso.serial_quantity || "";
+    // Equipo externo: sin factura de Supricom (la pantalla dice "Producto externo").
+    const facturaNumero = Number(caso.producto_externo) === 1 ? null : caso.invoice_number || null;
+    const descripcionFalla = truncate(caso.reported_fault, MAX.descripcion_falla);
+
     await asegurarColumnasGarantiaNullables();
     // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
     // base todavía no las tiene (#50).
@@ -272,10 +309,10 @@ export async function POST(request: NextRequest) {
       [
         rmaCaseId,
         fechaEntrega,
-        truncate(body.factura_numero, MAX.factura_numero),
+        truncate(facturaNumero, MAX.factura_numero),
         clienteNombre,
-        truncate(body.hardware, MAX.hardware),
-        truncate(body.serial, MAX.serial),
+        truncate(hardware, MAX.hardware),
+        truncate(serial, MAX.serial),
         descripcionFalla,
         body.accesorios_integros ? 1 : 0,
         body.sin_manipulacion ? 1 : 0,
@@ -294,6 +331,25 @@ export async function POST(request: NextRequest) {
     const insertId = (result.rows as any)?.insertId;
     if (insertId && productosIngreso.length) {
       await guardarProductosIngreso(insertId, productosIngreso);
+    }
+    // Las dos firmas del acta de recepción (seguridad_firmas, como las que se
+    // hacen después desde el detalle). Si alguna no se guarda, el ingreso ya
+    // quedó: se puede firmar desde su detalle.
+    if (insertId) {
+      for (const f of firmas) {
+        try {
+          await query(
+            `INSERT INTO seguridad_firmas
+               (acta_tipo, acta_id, rol, firmante_nombre, firma_data, firma_mime, cids)
+             VALUES ('ingreso', ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE firmante_nombre = VALUES(firmante_nombre),
+               firma_data = VALUES(firma_data), firma_mime = VALUES(firma_mime)`,
+            [insertId, f.rol, f.nombre, f.png!.buffer, f.png!.mime, cids],
+          );
+        } catch (e: any) {
+          console.error(`No se pudo guardar la firma ${f.rol} del ingreso ${insertId}:`, e?.message);
+        }
+      }
     }
     return NextResponse.json({ success: true, id: insertId }, { status: 201 });
   } catch (error: any) {

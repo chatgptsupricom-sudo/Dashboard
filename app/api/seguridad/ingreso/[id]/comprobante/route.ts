@@ -113,11 +113,8 @@ export async function GET(
   let garantia: any = null;
   if (i.rma_case_id) {
     try {
-      const gres = await query(
-        `SELECT garantia_estado, garantia_meses, garantia_vence, garantia_marca
-         FROM rma_cases WHERE id = ?`,
-        [i.rma_case_id],
-      );
+      // `SELECT *`: `producto_externo` puede no existir todavía en esta base.
+      const gres = await query(`SELECT * FROM rma_cases WHERE id = ?`, [i.rma_case_id]);
       garantia = gres.rows[0] ?? null;
     } catch (e: any) {
       console.warn("rma_cases sin columnas de garantia:", e?.message);
@@ -128,10 +125,13 @@ export async function GET(
     vencida: "Vencida",
     vida_util: "Vida &uacute;til",
     indeterminada: "Sin determinar",
+    no_aplica: "No aplica (equipo externo)",
   };
+  // Equipo que no se compró en Supricom: sin factura ni garantía nuestra.
+  const externo = Number(garantia?.producto_externo) === 1;
   const garantiaTexto = garantia
     ? [
-        GARANTIA_LABEL[garantia.garantia_estado] || "Sin determinar",
+        GARANTIA_LABEL[externo ? "no_aplica" : garantia.garantia_estado] || "Sin determinar",
         garantia.garantia_marca ? esc(garantia.garantia_marca) : "",
         garantia.garantia_vence
           ? `vence ${fechaLarga(garantia.garantia_vence)}`
@@ -297,7 +297,7 @@ export async function GET(
 
     <table>
       <tr><th>Fecha de entrega (almac&eacute;n)</th><td>${fechaLarga(i.fecha_entrega)}</td></tr>
-      <tr><th>N.&ordm; factura de venta</th><td>${esc(i.factura_numero) || "&mdash;"}</td></tr>
+      <tr><th>N.&ordm; factura de venta</th><td>${externo ? "Producto externo" : esc(i.factura_numero) || "&mdash;"}</td></tr>
       <tr><th>Cliente</th><td>${esc(i.cliente_nombre)}</td></tr>
       <tr><th>Hardware</th><td>${esc(i.hardware) || "&mdash;"}</td></tr>
       <tr><th>N&uacute;mero de serie o c&oacute;digo</th><td>${esc(i.serial) || "&mdash;"}</td></tr>
