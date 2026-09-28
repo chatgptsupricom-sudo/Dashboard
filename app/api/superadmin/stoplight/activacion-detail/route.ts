@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fechaLocal } from "@/lib/stoplight/margen";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinIntercompania } from "@/lib/intercompania";
 
 function normalize(str: string): string {
   return str
@@ -107,6 +108,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Sin intercompañía (lib/intercompania), igual que la grilla: la otra
+    // sede estaba en la cartera de un vendedor de Panamá y contaba como activa.
+    const noIC = await sinIntercompania();
+
     // Fetch clients for each seller
     for (const seller of sellers) {
       if (!seller.user_id) {
@@ -123,6 +128,7 @@ export async function GET(request: NextRequest) {
               ["user_id", "=", seller.user_id],
               ["customer_rank", ">", 0],
               ["active", "=", true],
+              noIC,
             ],
           ],
           {
@@ -154,6 +160,7 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
           ["invoice_user_id", "!=", false],
+          noIC,
         ],
       ],
       {

@@ -8,6 +8,7 @@ import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
+import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -129,6 +130,8 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
           ["invoice_user_id", "=", uid],
+          // Sin intercompañía, igual que el Stoplight de superadmin (lib/intercompania).
+          await sinIntercompania(),
         ],
       ],
       {
@@ -344,6 +347,7 @@ export async function GET(request: NextRequest) {
             ["user_id", "=", uid],
             ["customer_rank", ">", 0],
             ["active", "=", true],
+            await sinIntercompania(),
           ],
         ],
         { fields: ["id"], limit: 10000 }

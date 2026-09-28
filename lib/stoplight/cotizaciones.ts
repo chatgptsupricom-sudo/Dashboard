@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { fechaLocalDeDatetime } from "@/lib/stoplight/margen";
+import { sinIntercompania } from "@/lib/intercompania";
 
 /**
  * Cotizaciones de venta para el KPI "Tasa de efectividad de cierre de
@@ -15,6 +16,9 @@ import { fechaLocalDeDatetime } from "@/lib/stoplight/margen";
  *   perdido). Pendiente: `draft`/`sent` (todavía abierta).
  * - Antes el KPI era facturadas ÷ órdenes ya confirmadas: medía facturación
  *   de pedidos, no cierre de cotizaciones.
+ * - Sin cotizaciones intercompañía (`lib/intercompania`): los pedidos entre
+ *   sedes (Valencia→Caracas, Panamá→Supricom USA/LLC) no son negocio que
+ *   cerrar y casi siempre se confirman, así que subían la efectividad.
  *
  * Lo usan la grilla y el detalle (superadmin y vendedor), así los números
  * coinciden.
@@ -48,6 +52,7 @@ export async function obtenerCotizaciones(
   dominioExtra: any[] = [],
 ): Promise<Cotizacion[]> {
   const out: Cotizacion[] = [];
+  const noIC = await sinIntercompania("partner_id.commercial_partner_id");
   for (let offset = 0; ; offset += 5000) {
     const page = (await callOdooRPC<any[]>(
       "sale.order",
@@ -57,6 +62,7 @@ export async function obtenerCotizaciones(
         ["create_date", ">=", limiteUTC(fechaInicio, false)],
         ["create_date", "<=", limiteUTC(fechaFin, true)],
         ["user_id", "!=", false],
+        noIC,
         ...dominioExtra,
       ]],
       { fields: ["id", "user_id", "state", "create_date", "amount_untaxed"], order: "id asc", limit: 5000, offset },

@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinIntercompania } from "@/lib/intercompania";
 
 function normalize(str: string): string {
   return str
@@ -68,6 +69,8 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
           ["invoice_user_id", "!=", false],
+          // La otra sede no es un cliente nuevo (lib/intercompania).
+          await sinIntercompania(),
         ],
       ],
       {

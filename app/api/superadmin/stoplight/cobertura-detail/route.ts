@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { fechaLocal, margenPct } from "@/lib/stoplight/margen";
+import { sinIntercompania } from "@/lib/intercompania";
 
 export async function GET(request: NextRequest) {
   try {
@@ -78,6 +79,8 @@ export async function GET(request: NextRequest) {
     })();
 
     // 1. Fetch invoices for the period
+    // Sin intercompañía, igual que la grilla (lib/stoplight/margen).
+    const noIC = await sinIntercompania();
     const invoices = await callOdooRPC<any[]>(
       "account.move",
       "search_read",
@@ -88,6 +91,7 @@ export async function GET(request: NextRequest) {
           ["company_id", "=", companyId],
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
+          noIC,
         ],
       ],
       {
