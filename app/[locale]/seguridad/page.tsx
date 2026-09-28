@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { fechaCorta, promedioTexto } from "@/lib/seguridad/formato";
-import { ORIGENES, type Origen, type ResumenOrigen } from "@/lib/seguridad/origenes";
+import { type Origen, type ResumenOrigen } from "@/lib/seguridad/origenes";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -12,10 +12,10 @@ import {
   ChevronRight,
   ClipboardList,
   LogOut,
-  Package,
   Send,
   ShieldCheck,
   Star,
+  Truck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -69,6 +69,8 @@ type DashboardData = {
     calificaciones: number;
     por_origen?: Record<Origen, ResumenOrigen>;
   }>;
+  /** Dashboard de Seguridad: métricas del mes (lib/seguridad/dashboardMes.ts). */
+  mes: Mes | null;
   alertas: Array<{
     tipo: string;
     cantidad: number;
@@ -76,6 +78,57 @@ type DashboardData = {
     severidad: "warning" | "info" | "error";
     mensaje: string;
   }>;
+};
+
+type ItemRma = {
+  id: number;
+  fecha_entrega: string;
+  cliente_nombre: string;
+  hardware: string;
+  serial: string;
+  dias_en_taller: number;
+  case_number: string | null;
+  rma_status: string | null;
+};
+
+type Mes = {
+  egresos_mes: number;
+  rma_ingresos_mes: number;
+  rma_despachos_mes: number;
+  calificacion: {
+    promedio: number | null;
+    total: number;
+    picking: { promedio: number | null; total: number };
+    despacho: { promedio: number | null; total: number };
+  };
+  ranking_mercancia: Array<{
+    nombre: string;
+    promedio: number | null;
+    calificaciones: number;
+    egresos: number;
+    picking: number | null;
+    despacho: number | null;
+  }>;
+  rma_mas_7d: { total: number; items: ItemRma[] };
+  rma_por_despachar: { total: number; items: ItemRma[] };
+  rma_por_llegar: {
+    total: number;
+    items: Array<{
+      id: number;
+      case_number: string;
+      client_name: string;
+      model: string | null;
+      hardware: string | null;
+      created_at: string;
+      dias: number;
+    }>;
+  };
+};
+
+const ESTADO_RMA: Record<string, string> = {
+  reparado: "Reparado",
+  nota_credito: "Nota de crédito",
+  no_procesado: "No procesado",
 };
 
 export default function SeguridadDashboard() {
@@ -187,223 +240,25 @@ export default function SeguridadDashboard() {
           </div>
         ) : (
           <>
-            {/* KPIs */}
-            <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <KPI
-                label={t("dashboard.kpi.ingresos_hoy")}
-                value={data.kpis.ingresos_hoy}
-                delta={data.kpis.ingresos_hoy_delta}
-                icon={<ClipboardList className="w-4 h-4" />}
-                accent="violet"
-              />
-              <KPI
-                label={t("dashboard.kpi.despachos_hoy")}
-                value={data.kpis.despachos_hoy}
-                delta={data.kpis.despachos_hoy_delta}
-                icon={<Send className="w-4 h-4" />}
-                accent="emerald"
-              />
-              <KPI
-                label={t("dashboard.kpi.en_taller")}
-                value={data.kpis.en_taller_mas_7d}
-                icon={<Package className="w-4 h-4" />}
-                accent={data.kpis.en_taller_mas_7d > 0 ? "amber" : "slate"}
-                warning={data.kpis.en_taller_mas_7d > 0}
-              />
-              {data.kpis.calificaciones_por_origen ? (
-                <KPIPorOrigen
-                  label={t("dashboard.kpi.promedio")}
-                  porOrigen={data.kpis.calificaciones_por_origen}
-                  etiqueta={(o) => t(`dashboard.origen.${o}`)}
-                />
-              ) : (
-                <KPI
-                  label={t("dashboard.kpi.promedio")}
-                  value={promedioTexto(data.kpis.promedio_calificacion)}
-                  icon={<Star className="w-4 h-4" />}
-                  accent="violet"
-                  subtitle={t("dashboard.kpi.total_calif", {
-                    count: data.kpis.total_calificaciones_mes,
-                  })}
-                />
-              )}
-            </section>
-
-            {/* Alertas */}
-            {data.alertas.length > 0 && (
-              <section className="space-y-2">
-                {data.alertas.map((a, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 rounded-2xl border p-4 ${
-                      a.severidad === "warning"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-blue-200 bg-blue-50 text-blue-800"
-                    }`}
-                  >
-                    <AlertTriangle className="w-5 h-5 shrink-0" />
-                    <p className="text-sm font-medium flex-1">{a.mensaje}</p>
-                  </div>
-                ))}
-              </section>
+            {data.mes ? (
+              <PanelDelMes mes={data.mes} base={base} t={t} />
+            ) : (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+                <AlertTriangle className="w-5 h-5 inline mr-2" />
+                {t("dashboard.error")}
+              </div>
             )}
 
-            {/* Ingresos pendientes (los más urgentes primero) */}
-            {data.ingresos_pendientes.length > 0 && (
-              <Card
-                title={t("dashboard.ingresos_pendientes")}
-                cta={t("dashboard.ver_todos")}
-                href={`${base}/ingreso`}
+            {/* Otras alertas (la de más de 7 días ya tiene su lista arriba). */}
+            {data.alertas.filter((a) => a.tipo !== "ingresos_sin_despacho").map((a, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-800"
               >
-                <div className="divide-y divide-slate-100">
-                  {data.ingresos_pendientes.slice(0, 5).map((i) => (
-                    <Link
-                      key={i.id}
-                      href={`${base}/ingreso/${i.id}`}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="text-xs text-slate-500 w-16">
-                        {fechaCorta(i.fecha_entrega)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">
-                          {i.cliente_nombre}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {i.hardware} {i.serial && `· ${i.serial}`}
-                        </p>
-                      </div>
-                      <Badge tone="warning">
-                        {t("dashboard.dias_en_taller", { count: i.dias_en_taller })}
-                      </Badge>
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
-                    </Link>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* Top almacenistas */}
-            {data.top_almacenistas.length > 0 && (
-              <Card
-                title={t("dashboard.top_almacenistas")}
-                cta={t("dashboard.ver_todos")}
-                href={`${base}/almacenista`}
-              >
-                <div className="divide-y divide-slate-100">
-                  {data.top_almacenistas.slice(0, 5).map((a) => (
-                    <Link
-                      key={a.nombre}
-                      href={`${base}/almacenista/${encodeURIComponent(a.nombre)}`}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">
-                          {a.nombre}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {t("dashboard.almacenista_stats", {
-                            ingresos: a.ingresos_mes,
-                            despachos: a.despachos_mes,
-                          })}
-                        </p>
-                        {/* Cada origen por separado: un egreso trae dos notas
-                            (picking y despacho) y no se mezclan con RMA. */}
-                        {a.por_origen && (
-                          <p className="text-[11px] text-slate-400 truncate">
-                            {ORIGENES.filter((o) => a.por_origen![o].total > 0)
-                              .map(
-                                (o) =>
-                                  `${t(`dashboard.origen.${o}`)} ${promedioTexto(a.por_origen![o].promedio)} (${a.por_origen![o].total})`,
-                              )
-                              .join(" · ")}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
-                        <span className="font-bold text-violet-700 tabular-nums">
-                          {promedioTexto(a.promedio)}
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-400 w-12 text-right tabular-nums">
-                        ({a.calificaciones})
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
-                    </Link>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* Movimientos recientes */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card
-                title={t("dashboard.ingresos_recientes")}
-                cta={t("dashboard.ver_todos")}
-                href={`${base}/ingreso`}
-                compact
-              >
-                {data.ingresos_recientes.length === 0 ? (
-                  <Empty t={t} />
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {data.ingresos_recientes.slice(0, 5).map((i) => (
-                      <Link
-                        key={i.id}
-                        href={`${base}/ingreso/${i.id}`}
-                        className="block px-4 py-3 hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900 truncate flex-1">
-                            {i.cliente_nombre}
-                          </p>
-                          <span className="text-xs text-slate-400 tabular-nums">
-                            {fechaCorta(i.fecha_entrega)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {i.hardware}
-                        </p>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </Card>
-
-              <Card
-                title={t("dashboard.despachos_recientes")}
-                cta={t("dashboard.ver_todos")}
-                href={`${base}/despacho`}
-                compact
-              >
-                {data.despachos_recientes.length === 0 ? (
-                  <Empty t={t} />
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {data.despachos_recientes.slice(0, 5).map((d) => (
-                      <Link
-                        key={d.id}
-                        href={`${base}/despacho/${d.id}`}
-                        className="block px-4 py-3 hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900 truncate flex-1">
-                            {d.almacenista_nombre}
-                          </p>
-                          <span className="text-xs text-slate-400 tabular-nums">
-                            {fechaCorta(d.fecha_despacho)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {d.cliente_retira || "—"}
-                        </p>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            </div>
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <p className="text-sm font-medium flex-1">{a.mensaje}</p>
+              </div>
+            ))}
           </>
         )}
       </main>
@@ -411,38 +266,182 @@ export default function SeguridadDashboard() {
   );
 }
 
-/** Tarjeta del promedio del mes: un renglon por origen en vez de un solo numero mezclado. */
-function KPIPorOrigen({
-  label,
-  porOrigen,
-  etiqueta,
-}: {
-  label: string;
-  porOrigen: Record<Origen, ResumenOrigen>;
-  etiqueta: (o: Origen) => string;
-}) {
-  return (
-    <div className="rounded-2xl border bg-gradient-to-br p-4 from-violet-50 to-violet-100/50 border-violet-100">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
-        <span className="p-1 rounded bg-violet-100 text-violet-600">
-          <Star className="w-4 h-4" />
-        </span>
-      </div>
-      <dl className="space-y-1">
-        {ORIGENES.map((o) => (
-          <div key={o} className="flex items-baseline justify-between gap-2">
-            <dt className="text-xs text-slate-600 truncate">{etiqueta(o)}</dt>
-            <dd className="flex items-baseline gap-1.5">
-              <span className="text-lg font-black text-slate-900 tabular-nums">
-                {promedioTexto(porOrigen[o].promedio)}
-              </span>
-              <span className="text-[11px] text-slate-400 tabular-nums">({porOrigen[o].total})</span>
-            </dd>
+/**
+ * Lo del mes: despachos de mercancía, RMA recibidos y devueltos, la nota de
+ * los almacenistas en el despacho de mercancía, y los RMA que Seguridad tiene
+ * que mover (más de 7 días, por despachar, por llegar).
+ */
+function PanelDelMes({ mes, base, t }: { mes: Mes; base: string; t: any }) {
+  const listaRma = (items: ItemRma[], tono: "warning" | "ok") => (
+    <div className="divide-y divide-slate-100">
+      {items.map((i) => (
+        <Link
+          key={i.id}
+          href={tono === "ok" ? `${base}/despacho/nuevo?ingreso=${i.id}` : `${base}/ingreso/${i.id}`}
+          className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
+        >
+          <div className="text-xs text-slate-500 w-16">{fechaCorta(i.fecha_entrega)}</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 truncate">{i.cliente_nombre}</p>
+            <p className="text-xs text-slate-500 truncate">
+              {i.case_number ? `RMA ${i.case_number} · ` : ""}
+              {i.hardware} {i.serial && `· ${i.serial}`}
+            </p>
           </div>
-        ))}
-      </dl>
+          {tono === "ok" && i.rma_status ? (
+            <Badge tone="ok">{ESTADO_RMA[i.rma_status] || i.rma_status}</Badge>
+          ) : (
+            <Badge tone="warning">{t("dashboard.dias_en_taller", { count: i.dias_en_taller })}</Badge>
+          )}
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </Link>
+      ))}
     </div>
+  );
+
+  return (
+    <>
+      {/* Este mes */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KPI
+          label={t("dashboard.mes.egresos")}
+          value={mes.egresos_mes}
+          icon={<Truck className="w-4 h-4" />}
+          accent="violet"
+          subtitle={t("dashboard.mes.egresos_desc")}
+        />
+        <KPI
+          label={t("dashboard.mes.rma_ingresos")}
+          value={mes.rma_ingresos_mes}
+          icon={<ClipboardList className="w-4 h-4" />}
+          accent="slate"
+        />
+        <KPI
+          label={t("dashboard.mes.rma_despachos")}
+          value={mes.rma_despachos_mes}
+          icon={<Send className="w-4 h-4" />}
+          accent="emerald"
+        />
+        <div className="rounded-2xl border bg-gradient-to-br p-4 from-amber-50 to-amber-100/50 border-amber-200">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              {t("dashboard.mes.calificacion")}
+            </span>
+            <span className="p-1 rounded bg-amber-100 text-amber-700">
+              <Star className="w-4 h-4" />
+            </span>
+          </div>
+          <p className="text-3xl sm:text-4xl font-black text-slate-900 tabular-nums">
+            {promedioTexto(mes.calificacion.promedio)}
+          </p>
+          <dl className="mt-1 space-y-0.5 text-xs text-slate-600">
+            {(["picking", "despacho"] as const).map((o) => (
+              <div key={o} className="flex justify-between gap-2">
+                <dt>{t(`dashboard.origen.${o}`)}</dt>
+                <dd className="tabular-nums">
+                  {promedioTexto(mes.calificacion[o].promedio)}{" "}
+                  <span className="text-slate-400">({mes.calificacion[o].total})</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* RMA con más de 7 días sin despachar */}
+        <Card
+          title={`${t("dashboard.mes.mas_7d")} (${mes.rma_mas_7d.total})`}
+          cta={t("dashboard.ver_todos")}
+          href={`${base}/ingreso`}
+          alerta={mes.rma_mas_7d.total > 0}
+        >
+          {mes.rma_mas_7d.items.length === 0 ? (
+            <Empty t={t} texto={t("dashboard.mes.mas_7d_vacio")} />
+          ) : (
+            listaRma(mes.rma_mas_7d.items, "warning")
+          )}
+        </Card>
+
+        {/* RMA por despachar: el taller ya terminó */}
+        <Card
+          title={`${t("dashboard.mes.por_despachar")} (${mes.rma_por_despachar.total})`}
+          cta={t("actions.despacho.title")}
+          href={`${base}/despacho/nuevo`}
+        >
+          {mes.rma_por_despachar.items.length === 0 ? (
+            <Empty t={t} texto={t("dashboard.mes.por_despachar_vacio")} />
+          ) : (
+            listaRma(mes.rma_por_despachar.items, "ok")
+          )}
+        </Card>
+
+        {/* RMA por llegar: tickets del portal sin ingreso */}
+        <Card
+          title={`${t("dashboard.mes.por_llegar")} (${mes.rma_por_llegar.total})`}
+          cta={t("dashboard.ver_todos")}
+          href={`${base}/por-llegar`}
+        >
+          {mes.rma_por_llegar.items.length === 0 ? (
+            <Empty t={t} texto={t("dashboard.mes.por_llegar_vacio")} />
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {mes.rma_por_llegar.items.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`${base}/por-llegar`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="text-xs text-slate-500 w-16">{fechaCorta(c.created_at)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{c.client_name}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      RMA {c.case_number} · {c.model || c.hardware || "—"}
+                    </p>
+                  </div>
+                  <Badge tone="neutral">{t("dashboard.mes.hace_dias", { count: c.dias })}</Badge>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Calificación de almacenistas en el despacho de mercancía */}
+        <Card title={t("dashboard.mes.ranking")} cta={t("dashboard.ver_todos")} href={`${base}/almacenista`}>
+          {mes.ranking_mercancia.length === 0 ? (
+            <Empty t={t} texto={t("dashboard.mes.ranking_vacio")} />
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {mes.ranking_mercancia.map((a) => (
+                <Link
+                  key={a.nombre}
+                  href={`${base}/almacenista/${encodeURIComponent(a.nombre)}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{a.nombre}</p>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {t("dashboard.mes.ranking_detalle", {
+                        egresos: a.egresos,
+                        picking: promedioTexto(a.picking),
+                        despacho: promedioTexto(a.despacho),
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
+                    <span className="font-bold text-violet-700 tabular-nums">{promedioTexto(a.promedio)}</span>
+                  </div>
+                  <span className="text-xs text-slate-400 w-10 text-right tabular-nums">({a.calificaciones})</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+    </>
   );
 }
 
@@ -522,15 +521,18 @@ function Card({
   href,
   children,
   compact,
+  alerta,
 }: {
   title: string;
   cta?: string;
   href?: string;
   children: React.ReactNode;
   compact?: boolean;
+  /** Borde ámbar: hay algo atrasado. */
+  alerta?: boolean;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white">
+    <section className={`rounded-2xl border bg-white ${alerta ? "border-amber-300" : "border-slate-200"}`}>
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
           {title}
@@ -570,10 +572,10 @@ function Badge({
   );
 }
 
-function Empty({ t }: { t: any }) {
+function Empty({ t, texto }: { t: any; texto?: string }) {
   return (
     <div className="px-4 py-8 text-center text-sm text-slate-400">
-      {t("dashboard.empty")}
+      {texto || t("dashboard.empty")}
     </div>
   );
 }

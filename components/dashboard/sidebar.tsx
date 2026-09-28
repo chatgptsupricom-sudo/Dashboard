@@ -362,6 +362,9 @@ export function Sidebar({
         return `/${locale}/compras`;
       case "rma":
         return `/${locale}/rma`;
+      // Su Dashboard es el de Seguridad (/seguridad), no el general.
+      case "seguridad":
+        return `/${locale}/seguridad`;
       case "cuentas por cobrar":
         return `/${locale}/cuentas-por-cobrar`;
       case "diseñador":
@@ -816,7 +819,8 @@ export function Sidebar({
                         : [
                             { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
                             { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
-                            { label: t("seg_estadisticas"), href: `/${locale}/seguridad` },
+                            // Sin "Estadísticas de RMA": /seguridad es el Dashboard
+                            // de Seguridad y ya está en el item "Dashboard".
                             { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
                           ]
                       ).map((sub, index) => {
@@ -884,6 +888,7 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
+                        { label: t("seg_dashboard"), href: `/${locale}/seguridad` },
                         { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
                         { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
                       ].map((sub, index) => {

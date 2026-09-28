@@ -219,6 +219,7 @@
     "seg_grupo_almacen": "Warehouse",
     "seg_ingreso": "Intake",
     "seg_egreso": "Dispatch",
+    "seg_dashboard": "Security dashboard",
     "seg_estadisticas": "RMA statistics",
     "seg_personal": "Staff",
     "rma_inventario_supricom": "Supricom RMA inventory",
@@ -2606,6 +2607,23 @@
         "rma": "RMA",
         "picking": "Dispatch: picking",
         "despacho": "Dispatch: gate exit"
+      },
+      "mes": {
+        "egresos": "Goods dispatches this month",
+        "egresos_desc": "Outbound shipments recorded this month",
+        "rma_ingresos": "RMA received this month",
+        "rma_despachos": "RMA dispatched this month",
+        "calificacion": "Goods dispatch rating",
+        "mas_7d": "RMA over 7 days without dispatch",
+        "mas_7d_vacio": "No RMA has been waiting more than 7 days.",
+        "por_despachar": "RMA to dispatch",
+        "por_despachar_vacio": "No finished RMA waiting for dispatch.",
+        "por_llegar": "RMA on the way",
+        "por_llegar_vacio": "No portal-reported equipment pending arrival.",
+        "hace_dias": "{count}d ago",
+        "ranking": "Warehouse staff rating · goods dispatch (month)",
+        "ranking_vacio": "No goods dispatch ratings yet this month.",
+        "ranking_detalle": "{egresos} shipments · picking {picking} · gate {despacho}"
       },
       "ver_todos": "View all"
     },
