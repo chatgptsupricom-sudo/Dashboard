@@ -3,15 +3,11 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  ClipboardList,
-  Loader2,
-  Search,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, ClipboardList, Loader2, Lock, PenLine, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GarantiaBadge, GarantiaIngreso } from "@/components/seguridad/GarantiaIngreso";
+import { SignaturePad } from "@/components/seguridad/SignaturePad";
+import { fechaCorta } from "@/lib/seguridad/formato";
 
 function todayISO() {
   const d = new Date();
@@ -21,7 +17,14 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-type Ticket = {
+type Garantia = {
+  garantia_estado: string | null;
+  garantia_meses: number | null;
+  garantia_vence: string | null;
+  garantia_marca: string | null;
+};
+
+type Ticket = Garantia & {
   id: number;
   case_number: string;
   client_name: string;
@@ -29,76 +32,53 @@ type Ticket = {
   serial: string;
   invoice_number: string;
   reported_fault: string;
+  created_at: string | null;
+  /** No se compró en Supricom: sin factura nuestra ni garantía. */
+  producto_externo: boolean;
   // Productos del envío (issue #331); con más de uno, el ingreso lleva la
   // lista para marcar cuáles llegaron.
-  items?: { id: number; producto: string; serial: string | null }[];
+  items?: (Garantia & { id: number; producto: string; serial: string | null; reported_fault: string | null })[];
 };
 
 /** Lo que Seguridad marca de cada producto del envío en el mostrador. */
 type ProductoMostrador = {
   id: number;
   producto: string;
-  serialEsperado: string | null;
+  serial: string | null;
+  garantia_estado: string | null;
   // null = sin responder: se exige responder uno por uno, igual que los
   // checks de estado.
   recibido: boolean | null;
-  serial: string;
   observacion: string;
-};
-
-type FormState = {
-  nd_numero: string;
-  fecha_entrega: string;
-  factura_numero: string;
-  cliente_nombre: string;
-  hardware: string;
-  serial: string;
-  descripcion_falla: string;
-  accesorios_integros: boolean | null;
-  sin_manipulacion: boolean | null;
-  // Quién recibió el equipo, por cada lado del mostrador (#50). Se eligen de
-  // los catálogos de personal; ya no es texto libre.
-  recibido_seguridad_nombre: string;
-  recibido_rma_nombre: string;
 };
 
 type Persona = { id: number; nombre: string };
 
-const MAX = {
-  nd_numero: 50,
-  factura_numero: 100,
-  cliente_nombre: 200,
-  hardware: 200,
-  serial: 200,
-  descripcion_falla: 5000,
-};
-
+/**
+ * Acta de recepción de un equipo de RMA en el mostrador.
+ *
+ * Todo ingreso sale de un ticket del portal. Los datos del equipo vienen del
+ * ticket y son de solo lectura: Seguridad verifica (llegó / accesorios /
+ * manipulación) y firma, no corrige lo que reportó el cliente. Quien recibe
+ * por Seguridad y por RMA firma en esta misma pantalla.
+ */
 export default function NuevoIngresoPage() {
   const t = useTranslations("seguridad");
   const tf = useTranslations("seguridad.ingreso.form");
-  const tl = useTranslations("seguridad.ingreso.list");
   const td = useTranslations("seguridad.ingreso.detail");
   const params = useParams();
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
-
   const base = `/${locale}/seguridad`;
-  const ticketInputUrl = (caseNumber: string) =>
-    `/api/seguridad/buscar-ticket/${encodeURIComponent(caseNumber.trim())}`;
 
-  const [form, setForm] = useState<FormState>({
-    nd_numero: "",
-    fecha_entrega: todayISO(),
-    factura_numero: "",
-    cliente_nombre: "",
-    hardware: "",
-    serial: "",
-    descripcion_falla: "",
-    accesorios_integros: null,
-    sin_manipulacion: null,
-    recibido_seguridad_nombre: "",
-    recibido_rma_nombre: "",
-  });
+  const [fechaEntrega] = useState(todayISO());
+  const [accesorios, setAccesorios] = useState<boolean | null>(null);
+  const [sinManipulacion, setSinManipulacion] = useState<boolean | null>(null);
+  // Quién recibió, por cada lado del mostrador (#50), y su firma.
+  const [recibidoSeguridad, setRecibidoSeguridad] = useState("");
+  const [recibidoRma, setRecibidoRma] = useState("");
+  const [firmaSeguridad, setFirmaSeguridad] = useState<string | null>(null);
+  const [firmaRma, setFirmaRma] = useState<string | null>(null);
 
   const [personalSeguridad, setPersonalSeguridad] = useState<Persona[]>([]);
   const [personalRma, setPersonalRma] = useState<Persona[]>([]);
@@ -114,14 +94,11 @@ export default function NuevoIngresoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-
-  // Catálogos de personal para los selects "Recibió por Seguridad / RMA" (#50).
+  // Catálogos de personal para "Recibió por Seguridad / RMA" (#50).
   useEffect(() => {
     const cargar = async (rol: "seguridad" | "rma") => {
       try {
-        const res = await fetch(
-          `/api/seguridad/catalogo/personal?rol=${rol}`,
-        );
+        const res = await fetch(`/api/seguridad/catalogo/personal?rol=${rol}`);
         if (!res.ok) return [];
         const json = await res.json();
         return (json.personal || []) as Persona[];
@@ -133,9 +110,7 @@ export default function NuevoIngresoPage() {
     void cargar("rma").then(setPersonalRma);
   }, []);
 
-  // Tickets que todavía no tienen ingreso, para elegirlos de una lista en vez
-  // de teclear el número: cada opción dice el número y la empresa del
-  // cliente. Los últimos 180 días (los del portal que siguen por llegar).
+  // Tickets del portal que todavía no tienen ingreso (últimos 180 días).
   const [ticketsDisponibles, setTicketsDisponibles] = useState<
     { case_number: string; cliente: string; producto: string }[]
   >([]);
@@ -156,71 +131,44 @@ export default function NuevoIngresoPage() {
       .finally(() => setCargandoTickets(false));
   }, []);
 
-  // El panel de equipos por llegar manda aqui con ?ticket=0042 ya buscado,
-  // para no teclear el numero dos veces. Se lee de window y no con
-  // useSearchParams para no arrastrar el Suspense que este pide en build.
+  // El panel de equipos por llegar manda aqui con ?ticket=0042. Se lee de
+  // window y no con useSearchParams para no arrastrar el Suspense del build.
   useEffect(() => {
-    const desdeUrl = new URLSearchParams(window.location.search)
-      .get("ticket")
-      ?.trim();
+    const desdeUrl = new URLSearchParams(window.location.search).get("ticket")?.trim();
     if (!desdeUrl) return;
     setTicketQuery(desdeUrl);
-    searchTicket(desdeUrl);
+    buscarTicket(desdeUrl);
   }, []);
 
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const searchTicket = async (valor?: string) => {
-    const value = (valor ?? ticketQuery).trim();
+  const buscarTicket = async (valor: string) => {
+    const value = valor.trim();
     if (!value) return;
     setSearchingTicket(true);
     setTicketError(null);
     setTicket(null);
     setProductos([]);
     try {
-      const res = await fetch(ticketInputUrl(value));
-      if (res.status === 404) {
+      const res = await fetch(`/api/seguridad/buscar-ticket/${encodeURIComponent(value)}`);
+      const data = res.ok ? await res.json() : null;
+      if (!data?.success || !data.case) {
         setTicketError(tf("ticket_not_found"));
         return;
       }
-      if (!res.ok) {
-        setTicketError(tf("ticket_not_found"));
-        return;
-      }
-      const data = await res.json();
-      if (data.success && data.case) {
-        const c = data.case;
-        setTicket(c);
-        const items: NonNullable<Ticket["items"]> = c.items || [];
-        const varios = items.length > 1;
-        setProductos(
-          varios
-            ? items.map((x) => ({
-                id: x.id,
-                producto: x.producto,
-                serialEsperado: x.serial,
-                recibido: null,
-                serial: x.serial || "",
-                observacion: "",
-              }))
-            : [],
-        );
-        // Con varios productos, "hardware" y "serial" del acta resumen el
-        // envío; el detalle va en la lista de productos.
-        const resumenHardware = varios ? items.map((x) => x.producto).join(", ") : c.hardware || "";
-        const resumenSerial = varios ? items.map((x) => x.serial).filter(Boolean).join(", ") : c.serial || "";
-        setForm((prev) => ({
-          ...prev,
-          cliente_nombre: prev.cliente_nombre || c.client_name || "",
-          hardware: prev.hardware || resumenHardware.slice(0, MAX.hardware),
-          serial: prev.serial || resumenSerial.slice(0, MAX.serial),
-          descripcion_falla:
-            prev.descripcion_falla || c.reported_fault || "",
-          factura_numero: prev.factura_numero || c.invoice_number || "",
-        }));
-      }
+      const c = data.case as Ticket;
+      setTicket(c);
+      const items = c.items || [];
+      setProductos(
+        items.length > 1
+          ? items.map((x) => ({
+              id: x.id,
+              producto: x.producto,
+              serial: x.serial,
+              garantia_estado: x.garantia_estado,
+              recibido: null,
+              observacion: "",
+            }))
+          : [],
+      );
     } catch {
       setTicketError(tf("ticket_not_found"));
     } finally {
@@ -228,37 +176,16 @@ export default function NuevoIngresoPage() {
     }
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async () => {
     setSubmitError(null);
-
-    if (
-      !form.cliente_nombre.trim() ||
-      !form.recibido_seguridad_nombre.trim() ||
-      !form.recibido_rma_nombre.trim()
-    ) {
-      setSubmitError(tf("error_required"));
+    if (!ticket) {
+      setSubmitError(tf("error_sin_ticket"));
       return;
     }
-
-    // Los checks de estado de la planilla exigen respuesta explícita. Antes
-    // venían pre-marcados en "sí", así que se podía enviar el ingreso sin
-    // haber revisado nada y quedaba registrado que el equipo llegó completo.
-    //
-    // "Dentro de la fecha de garantía" y "Falla cubierta por garantía" ya no
-    // se preguntan acá (#48): esa evaluación viene resuelta y congelada en el
-    // ticket de RMA y se muestra en el detalle, no es algo que Seguridad
-    // decida en el mostrador.
-    const sinResponder = [
-      form.accesorios_integros,
-      form.sin_manipulacion,
-    ].some((v) => v === null);
-
-    if (sinResponder) {
+    if (accesorios === null || sinManipulacion === null) {
       setSubmitError(tf("error_checks_requeridos"));
       return;
     }
-
     if (productos.length) {
       if (productos.some((x) => x.recibido === null)) {
         setSubmitError(t("productos_envio.error_sin_responder"));
@@ -269,32 +196,35 @@ export default function NuevoIngresoPage() {
         return;
       }
     }
+    if (!recibidoSeguridad || !recibidoRma) {
+      setSubmitError(tf("error_required"));
+      return;
+    }
+    if (!firmaSeguridad || !firmaRma) {
+      setSubmitError(tf("error_firmas"));
+      return;
+    }
 
     setSubmitting(true);
-
+    // Solo lo que Seguridad decide en el mostrador: los datos del equipo los
+    // toma el servidor del ticket.
     const payload: Record<string, unknown> = {
-      fecha_entrega: form.fecha_entrega,
-      factura_numero: form.factura_numero.trim() || undefined,
-      cliente_nombre: form.cliente_nombre.trim().slice(0, MAX.cliente_nombre),
-      hardware: form.hardware.trim() || undefined,
-      serial: form.serial.trim() || undefined,
-      descripcion_falla: form.descripcion_falla.trim() || undefined,
-      accesorios_integros: form.accesorios_integros,
-      sin_manipulacion: form.sin_manipulacion,
-      recibido_seguridad_nombre: form.recibido_seguridad_nombre.trim().slice(0, 200),
-      recibido_rma_nombre: form.recibido_rma_nombre.trim().slice(0, 200),
-      // `recibido_por` se conserva por el sistema de calificación y los KPIs
-      // que ya dependen de él: es el de Seguridad, que es quien se califica.
-      recibido_por: form.recibido_seguridad_nombre.trim().slice(0, 200),
+      rma_case_id: ticket.id,
+      fecha_entrega: fechaEntrega,
+      accesorios_integros: accesorios,
+      sin_manipulacion: sinManipulacion,
+      recibido_seguridad_nombre: recibidoSeguridad,
+      recibido_rma_nombre: recibidoRma,
+      // `recibido_por` se conserva por la calificación y los KPIs: es el de Seguridad.
+      recibido_por: recibidoSeguridad,
+      firma_seguridad: firmaSeguridad,
+      firma_rma: firmaRma,
     };
-    if (ticket?.id) {
-      payload.rma_case_id = ticket.id;
-    }
     if (productos.length) {
       payload.productos = productos.map((x) => ({
         rma_item_id: x.id,
         recibido: x.recibido,
-        serial: x.serial.trim().slice(0, 200),
+        serial: (x.serial || "").slice(0, 200),
         observacion: x.observacion.trim().slice(0, 500),
       }));
     }
@@ -305,24 +235,16 @@ export default function NuevoIngresoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || tf("error_generic"));
-      }
-
-      const data = await res.json();
-      if (!data?.id) {
-        router.push(`${base}/ingreso`);
-        return;
-      }
-
-      router.push(`${base}/ingreso/${data.id}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || tf("error_generic"));
+      router.push(data?.id ? `${base}/ingreso/${data.id}` : `${base}/ingreso`);
     } catch (err: any) {
       setSubmitError(err?.message || tf("error_generic"));
       setSubmitting(false);
     }
   };
+
+  const varios = productos.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
@@ -340,383 +262,294 @@ export default function NuevoIngresoPage() {
               <ClipboardList className="w-5 h-5 text-violet-600" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-                {tf("title")}
-              </h1>
-              <p className="text-xs text-slate-500 truncate">
-                {tf("subtitle")}
-              </p>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">{tf("title")}</h1>
+              <p className="text-xs text-slate-500 truncate">{tf("subtitle")}</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-32">
-        <form onSubmit={onSubmit} className="space-y-5">
-          {/* Section A: Ticket search */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-1">
-              {tf("section_ticket")}
-            </h2>
-            <p className="text-xs text-slate-500 mb-4">
-              {t("module_subtitle")}
-            </p>
-            {/* Se elige de la lista de tickets sin ingreso: número y empresa
-                del cliente. Ya no se teclea el número. */}
-            <div className="flex items-center gap-2">
-              <select
-                value={ticketQuery}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setTicketQuery(v);
-                  if (v) searchTicket(v);
-                  else {
-                    setTicket(null);
-                    setProductos([]);
-                    setTicketError(null);
-                  }
-                }}
-                disabled={cargandoTickets || searchingTicket}
-                aria-label={tf("section_ticket")}
-                className="flex-1 min-w-0 h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-              >
-                <option value="">
-                  {cargandoTickets
-                    ? tf("searching")
-                    : ticketsDisponibles.length
-                      ? tf("ticket_elegir")
-                      : tf("ticket_sin_pendientes")}
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        {/* 1. Ticket (obligatorio) */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-1">
+            {tf("section_ticket")} <span className="text-red-500">*</span>
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">{tf("ticket_obligatorio")}</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={ticketQuery}
+              onChange={(e) => {
+                const v = e.target.value;
+                setTicketQuery(v);
+                if (v) buscarTicket(v);
+                else {
+                  setTicket(null);
+                  setProductos([]);
+                  setTicketError(null);
+                }
+              }}
+              disabled={cargandoTickets || searchingTicket}
+              aria-label={tf("section_ticket")}
+              className="flex-1 min-w-0 h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="">
+                {cargandoTickets
+                  ? tf("searching")
+                  : ticketsDisponibles.length
+                    ? tf("ticket_elegir")
+                    : tf("ticket_sin_pendientes")}
+              </option>
+              {/* Si llegó por ?ticket= y no está en la lista, igual se muestra. */}
+              {ticketQuery && !ticketsDisponibles.some((x) => x.case_number === ticketQuery) && (
+                <option value={ticketQuery}>#{ticketQuery}</option>
+              )}
+              {ticketsDisponibles.map((x) => (
+                <option key={x.case_number} value={x.case_number}>
+                  #{x.case_number} · {x.cliente}
+                  {x.producto ? ` · ${x.producto}` : ""}
                 </option>
-                {/* Si llegó por ?ticket= y no está en la lista, igual se muestra. */}
-                {ticketQuery && !ticketsDisponibles.some((x) => x.case_number === ticketQuery) && (
-                  <option value={ticketQuery}>#{ticketQuery}</option>
-                )}
-                {ticketsDisponibles.map((x) => (
-                  <option key={x.case_number} value={x.case_number}>
-                    #{x.case_number} · {x.cliente}
-                  </option>
-                ))}
-              </select>
-              {searchingTicket && <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />}
-            </div>
-
-            {ticketError && (
-              <p className="mt-3 text-sm text-red-600 flex items-center gap-2">
-                <XCircle className="w-4 h-4" />
-                {ticketError}
-              </p>
-            )}
-
-            {ticket && (
-              <div className="mt-4 rounded-[10px] border border-violet-200 bg-violet-50/60 p-4 space-y-2">
-                <div className="flex items-center gap-2 text-violet-700">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">
-                    {tf("ticket_found")}
-                  </span>
-                  <span className="ml-auto text-xs font-mono text-violet-900 bg-white border border-violet-200 px-2 py-0.5 rounded">
-                    {tf("case_number")} {ticket.case_number}
-                  </span>
-                </div>
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {td("label_cliente")}
-                    </dt>
-                    <dd className="text-slate-800">{ticket.client_name}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {td("label_hardware")}
-                    </dt>
-                    <dd className="text-slate-800">{ticket.hardware || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {td("label_serial")}
-                    </dt>
-                    <dd className="text-slate-800 font-mono">
-                      {ticket.serial || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {td("label_factura")}
-                    </dt>
-                    <dd className="text-slate-800">
-                      {ticket.invoice_number || "—"}
-                    </dd>
-                  </div>
-                  {ticket.reported_fault && (
-                    <div className="sm:col-span-2">
-                      <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                        {td("label_descripcion")}
-                      </dt>
-                      <dd className="text-slate-800 whitespace-pre-wrap">
-                        {ticket.reported_fault}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
-            )}
-          </section>
-
-          {/* Section A2: productos del envío (issue #331). Uno por uno: el acta
-              tiene que decir qué llegó y con qué serial. */}
-          {productos.length > 0 && (
-            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  {t("productos_envio.titulo", { n: productos.length })}
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">{t("productos_envio.ayuda")}</p>
-              </div>
-              {productos.map((x, idx) => (
-                <div
-                  key={x.id}
-                  className={`rounded-[10px] border p-3 space-y-2 ${
-                    x.recibido === null ? "border-amber-300 bg-amber-50/40" : "border-slate-200"
-                  }`}
-                >
-                  <CheckRow
-                    label={`${idx + 1}. ${x.producto}`}
-                    value={x.recibido}
-                    onChange={(v) => actualizarProducto(x.id, { recibido: v })}
-                    yes={t("productos_envio.llego")}
-                    no={t("productos_envio.no_llego")}
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                        {t("productos_envio.serial_etiqueta")}
-                        {x.serialEsperado && (
-                          <span className="font-normal text-slate-400">
-                            {" "}
-                            · {t("productos_envio.esperado")}: <span className="font-mono">{x.serialEsperado}</span>
-                          </span>
-                        )}
-                      </label>
-                      <input
-                        type="text"
-                        value={x.serial}
-                        onChange={(e) => actualizarProducto(x.id, { serial: e.target.value.slice(0, 200) })}
-                        className="w-full h-10 px-3 border border-slate-200 rounded-[10px] text-sm font-mono focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                        {t("productos_envio.observacion")}
-                      </label>
-                      <input
-                        type="text"
-                        value={x.observacion}
-                        onChange={(e) => actualizarProducto(x.id, { observacion: e.target.value.slice(0, 500) })}
-                        className="w-full h-10 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                      />
-                    </div>
-                  </div>
-                  {x.serialEsperado && x.serial.trim() && x.serial.trim() !== x.serialEsperado && (
-                    <p className="text-xs font-semibold text-amber-700">{t("productos_envio.serial_distinto")}</p>
-                  )}
-                </div>
               ))}
-            </section>
-          )}
-
-          {/* Section B: Data */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">
-              {tf("section_data")}
-            </h2>
-
-            {/* Número de guía: lo asigna el sistema al guardar (antes "N.º ND",
-                que el almacén escribía a mano). */}
-            <p className="rounded-[10px] bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
-              {tf("guia_automatica")}
+            </select>
+            {searchingTicket && <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />}
+          </div>
+          {ticketError && (
+            <p className="mt-3 text-sm text-red-600 flex items-center gap-2">
+              <XCircle className="w-4 h-4" />
+              {ticketError}
             </p>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_fecha")} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                value={form.fecha_entrega}
-                onChange={(e) => update("fecha_entrega", e.target.value)}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_factura")}{" "}
-                <span className="text-slate-400 font-normal">
-                  ({tf("opcional")})
-                </span>
-              </label>
-              <input
-                type="text"
-                value={form.factura_numero}
-                onChange={(e) =>
-                  update("factura_numero", e.target.value.slice(0, MAX.factura_numero))
-                }
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.factura_numero}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_cliente")} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={form.cliente_nombre}
-                onChange={(e) =>
-                  update("cliente_nombre", e.target.value.slice(0, MAX.cliente_nombre))
-                }
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                required
-                maxLength={MAX.cliente_nombre}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  {tf("field_hardware")}
-                </label>
-                <input
-                  type="text"
-                  value={form.hardware}
-                  onChange={(e) =>
-                    update("hardware", e.target.value.slice(0, MAX.hardware))
-                  }
-                  className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                  maxLength={MAX.hardware}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  {tf("field_serial")}
-                </label>
-                <input
-                  type="text"
-                  value={form.serial}
-                  onChange={(e) =>
-                    update("serial", e.target.value.slice(0, MAX.serial))
-                  }
-                  className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 font-mono"
-                  maxLength={MAX.serial}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_descripcion")}
-              </label>
-              <textarea
-                value={form.descripcion_falla}
-                onChange={(e) =>
-                  update(
-                    "descripcion_falla",
-                    e.target.value.slice(0, MAX.descripcion_falla),
-                  )
-                }
-                className="w-full min-h-[110px] px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.descripcion_falla}
-              />
-              <p className="text-[11px] text-slate-400 mt-1 text-right">
-                {form.descripcion_falla.length} / {MAX.descripcion_falla}
-              </p>
-            </div>
-          </section>
-
-          {/* Section C: checks de estado */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-4">
-              {tf("section_checks")}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CheckRow
-                label={tf("check_accesorios")}
-                value={form.accesorios_integros}
-                onChange={(v) => update("accesorios_integros", v)}
-                yes={tf("yes")}
-                no={tf("no")}
-              />
-              <CheckRow
-                label={tf("check_manipulacion")}
-                value={form.sin_manipulacion}
-                onChange={(v) => update("sin_manipulacion", v)}
-                yes={tf("yes")}
-                no={tf("no")}
-              />
-            </div>
-          </section>
-
-
-          {/* Section D: Received by — dos firmantes, uno por lado del
-              mostrador (#50). Salen de los catálogos de personal. */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">
-              {tf("section_received_by")}
-            </h2>
-
-            <PersonaSelect
-              label={tf("recibido_seguridad")}
-              value={form.recibido_seguridad_nombre}
-              onChange={(v) => update("recibido_seguridad_nombre", v)}
-              opciones={personalSeguridad}
-              placeholder={tf("recibido_placeholder")}
-              vacio={tf("recibido_sin_catalogo")}
-              gestionarHref={`/${locale}/seguridad/config/personal`}
-              gestionarLabel={tf("recibido_gestionar")}
-            />
-            <PersonaSelect
-              label={tf("recibido_rma")}
-              value={form.recibido_rma_nombre}
-              onChange={(v) => update("recibido_rma_nombre", v)}
-              opciones={personalRma}
-              placeholder={tf("recibido_placeholder")}
-              // Al personal de RMA lo registra RMA, no Seguridad: sin enlace.
-              vacio={tf("recibido_sin_catalogo_rma")}
-            />
-          </section>
-
-          {submitError && (
-            <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
-              <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{submitError}</span>
-            </div>
           )}
-        </form>
-      </main>
+        </section>
 
-      {/* Sticky submit bar (mobile-first) */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+        {!ticket ? (
+          <p className="rounded-[10px] border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            {tf("elige_ticket_primero")}
+          </p>
+        ) : (
+          <>
+            {/* 2. ¿Entra por garantía? */}
+            <GarantiaIngreso
+              estado={ticket.garantia_estado}
+              externo={ticket.producto_externo}
+              marca={ticket.garantia_marca}
+              meses={ticket.garantia_meses}
+              vence={ticket.garantia_vence}
+            />
+
+            {/* 3. Datos del ingreso: del ticket, solo lectura */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold text-slate-900">{tf("section_data")}</h2>
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                  <Lock className="w-3 h-3" />
+                  {tf("solo_lectura")}
+                </span>
+              </div>
+              <p className="rounded-[10px] bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+                {tf("guia_automatica")}
+              </p>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                <Dato etiqueta={tf("case_number")} valor={ticket.case_number} mono />
+                <Dato etiqueta={tf("field_fecha")} valor={fechaCorta(fechaEntrega)} />
+                <Dato
+                  etiqueta={tf("field_factura")}
+                  valor={
+                    ticket.producto_externo ? (
+                      <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        {tf("producto_externo")}
+                      </span>
+                    ) : (
+                      ticket.invoice_number || "—"
+                    )
+                  }
+                />
+                <Dato etiqueta={tf("field_cliente")} valor={ticket.client_name || "—"} />
+                {!varios && (
+                  <>
+                    <Dato etiqueta={tf("field_hardware")} valor={ticket.hardware || "—"} />
+                    <Dato etiqueta={tf("field_serial")} valor={ticket.serial || "—"} mono />
+                  </>
+                )}
+                <div className="sm:col-span-2">
+                  <Dato etiqueta={tf("field_descripcion")} valor={ticket.reported_fault || "—"} multilinea />
+                </div>
+              </dl>
+            </section>
+
+            {/* 3b. Productos del envío (issue #331): qué llegó de cada uno. */}
+            {varios && (
+              <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    {t("productos_envio.titulo", { n: productos.length })}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">{t("productos_envio.ayuda")}</p>
+                </div>
+                {productos.map((x, idx) => (
+                  <div
+                    key={x.id}
+                    className={`rounded-[10px] border p-3 space-y-2 ${
+                      x.recibido === null ? "border-amber-300 bg-amber-50/40" : "border-slate-200"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      {x.serial && <span className="font-mono">{x.serial}</span>}
+                      <GarantiaBadge estado={ticket.producto_externo ? "no_aplica" : x.garantia_estado} />
+                    </div>
+                    <CheckRow
+                      label={`${idx + 1}. ${x.producto}`}
+                      value={x.recibido}
+                      onChange={(v) => actualizarProducto(x.id, { recibido: v })}
+                      yes={t("productos_envio.llego")}
+                      no={t("productos_envio.no_llego")}
+                    />
+                    <input
+                      type="text"
+                      value={x.observacion}
+                      placeholder={t("productos_envio.observacion")}
+                      onChange={(e) => actualizarProducto(x.id, { observacion: e.target.value.slice(0, 500) })}
+                      className="w-full h-10 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                    />
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {/* 4. Verificación de estado */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+              <h2 className="text-sm font-bold text-slate-900 mb-4">{tf("section_checks")}</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CheckRow
+                  label={tf("check_accesorios")}
+                  value={accesorios}
+                  onChange={setAccesorios}
+                  yes={tf("yes")}
+                  no={tf("no")}
+                />
+                <CheckRow
+                  label={tf("check_manipulacion")}
+                  value={sinManipulacion}
+                  onChange={setSinManipulacion}
+                  yes={tf("yes")}
+                  no={tf("no")}
+                />
+              </div>
+            </section>
+
+            {/* 5. Recibido por y firmas: Seguridad y RMA firman aquí. */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">{tf("section_received_by")}</h2>
+                <p className="text-xs text-slate-500 mt-1">{tf("firmas_ayuda")}</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3 rounded-[10px] border border-slate-200 p-4">
+                  <PersonaSelect
+                    label={tf("recibido_seguridad")}
+                    value={recibidoSeguridad}
+                    onChange={setRecibidoSeguridad}
+                    opciones={personalSeguridad}
+                    placeholder={tf("recibido_placeholder")}
+                    vacio={tf("recibido_sin_catalogo")}
+                    gestionarHref={`/${locale}/seguridad/config/personal`}
+                    gestionarLabel={tf("recibido_gestionar")}
+                  />
+                  <FirmaCampo etiqueta={tf("firma_seguridad")} firmada={!!firmaSeguridad}>
+                    <SignaturePad onChange={setFirmaSeguridad} height={140} />
+                  </FirmaCampo>
+                </div>
+                <div className="space-y-3 rounded-[10px] border border-slate-200 p-4">
+                  <PersonaSelect
+                    label={tf("recibido_rma")}
+                    value={recibidoRma}
+                    onChange={setRecibidoRma}
+                    opciones={personalRma}
+                    placeholder={tf("recibido_placeholder")}
+                    // Al personal de RMA lo registra RMA, no Seguridad: sin enlace.
+                    vacio={tf("recibido_sin_catalogo_rma")}
+                  />
+                  <FirmaCampo etiqueta={tf("firma_rma")} firmada={!!firmaRma}>
+                    <SignaturePad onChange={setFirmaRma} height={140} />
+                  </FirmaCampo>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {submitError && (
+          <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+            <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+        )}
+
+        {/* Acciones al final del formulario, alineadas con el contenido. */}
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-slate-200 pt-5 pb-8">
           <Link
             href={`${base}/ingreso`}
-            className="h-11 px-4 inline-flex items-center justify-center rounded-[10px] text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+            className="h-11 px-6 inline-flex items-center justify-center rounded-[10px] text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             {t("back")}
           </Link>
           <button
             type="button"
             onClick={onSubmit}
-            disabled={submitting}
-            className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+            disabled={submitting || !ticket}
+            className="h-11 px-8 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
             style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {submitting ? tf("submitting") : tf("submit")}
           </button>
         </div>
-      </div>
+      </main>
+    </div>
+  );
+}
+
+/** Un dato del ticket, de solo lectura. */
+function Dato({
+  etiqueta,
+  valor,
+  mono,
+  multilinea,
+}: {
+  etiqueta: string;
+  valor: React.ReactNode;
+  mono?: boolean;
+  multilinea?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">{etiqueta}</dt>
+      <dd
+        className={`rounded-[10px] bg-slate-50 border border-slate-100 px-3 py-2.5 text-sm text-slate-800 ${
+          mono ? "font-mono" : ""
+        } ${multilinea ? "whitespace-pre-wrap min-h-[60px]" : ""}`}
+      >
+        {valor}
+      </dd>
+    </div>
+  );
+}
+
+function FirmaCampo({
+  etiqueta,
+  firmada,
+  children,
+}: {
+  etiqueta: string;
+  firmada: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1.5">
+        <PenLine className="w-3.5 h-3.5" />
+        {etiqueta} <span className="text-red-500">*</span>
+      </label>
+      <div className={`rounded-[10px] ${firmada ? "" : "ring-1 ring-amber-300"}`}>{children}</div>
     </div>
   );
 }
@@ -765,30 +598,20 @@ function PersonaSelect({
           )}
         </p>
       ) : (
-        <>
-          <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            required
-            className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-          >
-            <option value="">{placeholder}</option>
-            {faltaValor && <option value={value}>{value}</option>}
-            {opciones.map((o) => (
-              <option key={o.id} value={o.nombre}>
-                {o.nombre}
-              </option>
-            ))}
-          </select>
-          {gestionarHref && (
-            <Link
-              href={gestionarHref}
-              className="inline-block mt-1 text-[11px] font-semibold text-slate-400 hover:text-[color:var(--portal-primary,#741DFE)]"
-            >
-              {gestionarLabel}
-            </Link>
-          )}
-        </>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required
+          className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+        >
+          <option value="">{placeholder}</option>
+          {faltaValor && <option value={value}>{value}</option>}
+          {opciones.map((o) => (
+            <option key={o.id} value={o.nombre}>
+              {o.nombre}
+            </option>
+          ))}
+        </select>
       )}
     </div>
   );
@@ -825,9 +648,7 @@ function CheckRow({
           onClick={() => onChange(true)}
           aria-pressed={value === true}
           className={`min-w-[56px] px-4 h-12 transition-colors ${
-            value === true
-              ? "bg-emerald-500 text-white"
-              : "bg-white text-slate-500 hover:bg-slate-50"
+            value === true ? "bg-emerald-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
           }`}
         >
           {yes}
@@ -839,9 +660,7 @@ function CheckRow({
           className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
             // `value === false`, no `!value`: con null ninguno va resaltado, que
             // es la señal de que falta responder.
-            value === false
-              ? "bg-red-500 text-white"
-              : "bg-white text-slate-500 hover:bg-slate-50"
+            value === false ? "bg-red-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
           }`}
         >
           {no}

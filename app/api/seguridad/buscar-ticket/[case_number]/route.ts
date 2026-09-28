@@ -32,13 +32,11 @@ export async function GET(
       //
       // `company_id` en vez de `cids`: `rma_cases` no tiene columna `cids`,
       // usa `company_id` en el mismo espacio numerico (9/10/7).
-      rmaResult = await query(
-        `SELECT id, case_number, client_name, model, hardware, serial,
-                invoice_number, reported_fault, company_id
-         FROM rma_cases
-         WHERE case_number = ?`,
-        [case_number],
-      );
+      //
+      // `SELECT *` y no una lista: `producto_externo` y las columnas de
+      // garantía las crea el portal la primera vez, y una base que todavía no
+      // las tiene no debe tumbar la búsqueda.
+      rmaResult = await query(`SELECT * FROM rma_cases WHERE case_number = ?`, [case_number]);
     } catch (e: any) {
       console.error("Error buscando caso RMA:", e?.message);
       return NextResponse.json({ error: "Error al buscar el ticket" }, { status: 500 });
@@ -70,17 +68,36 @@ export async function GET(
         reported_fault: p.reported_fault,
         status: p.status,
         despachado_at: p.despachado_at,
+        garantia_estado: p.garantia_estado,
+        garantia_meses: p.garantia_meses,
+        garantia_vence: p.garantia_vence,
+        garantia_marca: p.garantia_marca,
       }));
     } catch (e: any) {
       console.warn("rma_case_items no disponible:", e?.message);
     }
 
+    // Solo lo que Seguridad necesita ver en el mostrador (no el token de
+    // seguimiento, datos de entrega, notas internas...).
     return NextResponse.json({
       success: true,
       case: {
-        ...caso,
+        id: caso.id,
+        case_number: caso.case_number,
+        client_name: caso.client_name,
+        serial: caso.serial,
+        invoice_number: caso.invoice_number,
+        reported_fault: caso.reported_fault,
+        company_id: caso.company_id,
+        created_at: caso.created_at,
         hardware: caso.model || caso.hardware || "",
         categoria: caso.hardware || null,
+        // Equipo que no se compró en Supricom: sin factura nuestra ni garantía.
+        producto_externo: Number(caso.producto_externo) === 1,
+        garantia_estado: caso.garantia_estado ?? null,
+        garantia_meses: caso.garantia_meses ?? null,
+        garantia_vence: caso.garantia_vence ?? null,
+        garantia_marca: caso.garantia_marca ?? null,
         items,
       },
     });

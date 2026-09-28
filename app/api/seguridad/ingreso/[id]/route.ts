@@ -52,14 +52,27 @@ export async function GET(
           // RMA, el acta siga mostrando el viejo. Aqui hace falta para poder
           // llamar al cliente cuando el equipo lleva dias sin retirar, sin
           // tener que salir del modulo a buscarlo.
-          `SELECT id, case_number, status, invoice_number, client_phone,
-                  garantia_estado, garantia_meses, garantia_vence, garantia_marca
-           FROM rma_cases
-           WHERE id = ?`,
+          //
+          // `SELECT *` y se elige despues: `producto_externo` la crea el portal
+          // la primera vez y una base sin ella no debe tumbar el detalle.
+          `SELECT * FROM rma_cases WHERE id = ?`,
           [ingreso.rma_case_id],
         );
         if (rmaResult.rows.length > 0) {
-          rmaCase = rmaResult.rows[0];
+          const c = rmaResult.rows[0] as any;
+          rmaCase = {
+            id: c.id,
+            case_number: c.case_number,
+            status: c.status,
+            invoice_number: c.invoice_number,
+            client_phone: c.client_phone,
+            garantia_estado: c.garantia_estado ?? null,
+            garantia_meses: c.garantia_meses ?? null,
+            garantia_vence: c.garantia_vence ?? null,
+            garantia_marca: c.garantia_marca ?? null,
+            // Equipo que no se compro en Supricom: sin factura ni garantia nuestra.
+            producto_externo: Number(c.producto_externo) === 1,
+          };
         }
       } catch (e: any) {
         console.warn("rma_cases no disponible para join:", e?.message);
