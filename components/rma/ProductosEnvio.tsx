@@ -36,6 +36,7 @@ export const statusColors: Record<string, string> = {
   nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
 };
 
 export const statusLabels: Record<string, string> = {
@@ -44,9 +45,11 @@ export const statusLabels: Record<string, string> = {
   nota_credito: "Nota de Crédito",
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
+  nc_revision: "NC en revisión",
 };
 
-const PENDIENTES = ["recibido", "reingresado"];
+// nc_revision: nota de crédito esperando al Super Admin, el equipo sigue en el taller.
+const PENDIENTES = ["recibido", "reingresado", "nc_revision"];
 
 const garantiaColores: Record<string, string> = {
   en_garantia: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -139,20 +142,20 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
 
   async function guardarEstado() {
     if (!estadoDe || !nuevoEstado) return;
+    // La nota de crédito no se pone a mano: se solicita y la aprueba el Super
+    // Admin (lib/rma/notaCredito.ts).
+    if (nuevoEstado === "nota_credito") {
+      router.push(`/${locale}/rma/nota-credito/solicitar?case=${caseNumber}&item=${estadoDe.id}`);
+      return;
+    }
     const ok = await llamar(`/api/rma/${caseId}/items/${estadoDe.id}`, "PUT", {
       status: nuevoEstado,
       change_notes: notasCambio,
     });
     if (!ok) return;
-    const item = estadoDe;
     setEstadoDe(null);
     setNuevoEstado("");
     setNotasCambio("");
-    // Igual que con el caso completo: la nota de crédito se arma aparte.
-    if (nuevoEstado === "nota_credito") {
-      router.push(`/${locale}/rma/nota-credito?case=${caseNumber}&item=${item.id}`);
-      return;
-    }
     onCambio();
   }
 
@@ -338,6 +341,11 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
               )}
 
               <div className="flex flex-wrap gap-2 pt-1">
+                {item.status === "nc_revision" ? (
+                  <Badge className="bg-orange-50 text-orange-700 border-orange-200 border self-center">
+                    Nota de crédito esperando al Super Admin
+                  </Badge>
+                ) : (
                 <Button
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -346,6 +354,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
                   <CheckCircle2 className="w-4 h-4 mr-1" />
                   Cambiar estado
                 </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -369,7 +378,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => router.push(`/${locale}/rma/nota-credito?case=${caseNumber}&item=${item.id}`)}
+                    onClick={() => router.push(`/${locale}/rma/nota-credito`)}
                   >
                     <Printer className="w-4 h-4 mr-1" />
                     Nota de crédito
@@ -402,8 +411,10 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {Object.entries(statusLabels)
-                .filter(([k]) => k !== estadoDe?.status)
+                .filter(([k]) => k !== estadoDe?.status && k !== "nc_revision")
                 .filter(([k]) => !(sinNotaCredito && k === "nota_credito"))
+                // Solo se pide de un equipo que sigue en revisión.
+                .filter(([k]) => k !== "nota_credito" || ["recibido", "reingresado"].includes(estadoDe?.status || ""))
                 .map(([k, label]) => (
                   <Button
                     key={k}
@@ -411,7 +422,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
                     className={nuevoEstado === k ? "bg-blue-600 text-white" : ""}
                     onClick={() => setNuevoEstado(k)}
                   >
-                    {label}
+                    {k === "nota_credito" ? "Solicitar nota de crédito" : label}
                   </Button>
                 ))}
             </div>

@@ -150,6 +150,21 @@ export function Sidebar({
   // en una env NO pública) para no depender del bundle del cliente.
   const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
 
+  // Notas de crédito de RMA esperando al Super Admin (contador del menú RMA).
+  // Se refresca al decidir una (evento de SolicitudesNotaCredito).
+  const [ncPendientes, setNcPendientes] = useState(0);
+  useEffect(() => {
+    if (user?.role !== "superAdmin") return;
+    const cargar = () =>
+      fetch("/api/rma/nota-credito?conteo=1")
+        .then((r) => r.json())
+        .then((j) => setNcPendientes(Number(j?.pendientes) || 0))
+        .catch(() => {});
+    cargar();
+    window.addEventListener("rma-nc-decidida", cargar);
+    return () => window.removeEventListener("rma-nc-decidida", cargar);
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     fetch("/api/reportes-comerciales/acceso")
@@ -267,6 +282,9 @@ export function Sidebar({
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
+    // Inventario de RMA separado por procedencia del equipo.
+    { id: "rma_inventario_supricom", label: t("rma_inventario_supricom"), icon: PackageCheck, slug: "/rma/inventario/supricom", absoluteHref: true },
+    { id: "rma_inventario_externo", label: t("rma_inventario_externo"), icon: Globe, slug: "/rma/inventario/externo", absoluteHref: true },
     // Personal de RMA: lo registra RMA ("Recibio por RMA" del ingreso), no Seguridad.
     { id: "rma_personal", label: t("seg_personal"), icon: Users, slug: "/rma/personal", absoluteHref: true },
     // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
@@ -783,6 +801,14 @@ export function Sidebar({
                             // Estadisticas/Por-llegar (operacion de almacen) se mudaron
                             // al desplegable "Seguridad" aparte, mas abajo.
                             { label: t("rma"), href: `/${locale}/rma` },
+                            { label: t("rma_inventario_supricom"), href: `/${locale}/rma/inventario/supricom` },
+                            { label: t("rma_inventario_externo"), href: `/${locale}/rma/inventario/externo` },
+                            { label: t("nota_credito"), href: `/${locale}/rma/nota-credito` },
+                            // Las notas de crédito que pide RMA las aprueba superAdmin.
+                            {
+                              label: `${t("rma_aprobar_nc")}${ncPendientes ? ` (${ncPendientes})` : ""}`,
+                              href: `/${locale}/superadmin/rma-notas-credito`,
+                            },
                             // Personal de RMA: lo administra RMA en su propia
                             // seccion; superAdmin llega desde aca.
                             { label: t("seg_personal_rma"), href: `/${locale}/rma/personal` },
@@ -795,9 +821,10 @@ export function Sidebar({
                           ]
                       ).map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
-                        // registro siga marcando su seccion. El panel se
-                        // compara exacto o marcaria siempre.
-                        const esPanel = sub.href.endsWith("/seguridad");
+                        // registro siga marcando su seccion. El panel (y el
+                        // Dashboard de RMA, que es prefijo de sus inventarios)
+                        // se compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad") || sub.href.endsWith("/rma");
                         const isSubActive = esPanel
                           ? pathname === sub.href
                           : pathname.startsWith(sub.href);
@@ -948,9 +975,10 @@ export function Sidebar({
                         // lo tiene en su grupo "Almacen" (este grupo no se le muestra).
                       ].map((sub, index) => {
                         // Coincidencia por prefijo para que el detalle de un
-                        // registro siga marcando su seccion. El panel se
-                        // compara exacto o marcaria siempre.
-                        const esPanel = sub.href.endsWith("/seguridad");
+                        // registro siga marcando su seccion. El panel (y el
+                        // Dashboard de RMA, que es prefijo de sus inventarios)
+                        // se compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad") || sub.href.endsWith("/rma");
                         const isSubActive = esPanel
                           ? pathname === sub.href
                           : pathname.startsWith(sub.href);

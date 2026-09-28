@@ -54,6 +54,7 @@ const statusColors: Record<string, string> = {
   nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
 };
 
 const statusLabels: Record<string, string> = {
@@ -62,6 +63,7 @@ const statusLabels: Record<string, string> = {
   nota_credito: "Nota de Crédito",
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
+  nc_revision: "NC en revisión",
 };
 
 // Metodo de entrega que el cliente eligio en el portal publico (issue
@@ -138,31 +140,12 @@ export default function RmaCasoDetailPage() {
   const handleStatusChange = async () => {
     if (!newStatus) return;
 
-    // If nota_credito, change status and redirect to nota-credito form
+    // La nota de crédito no se pone a mano: se solicita (caso, producto y
+    // por qué) y la aprueba el Super Admin (lib/rma/notaCredito.ts).
     if (newStatus === "nota_credito") {
-      try {
-        setSaving(true);
-        const res = await fetch(`/api/rma/${caseId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: newStatus,
-            changed_by: "Usuario Actual",
-            change_notes: changeNotes,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          setStatusDialogOpen(false);
-          setNewStatus("");
-          setChangeNotes("");
-          router.push(`/${locale}/rma/nota-credito?case=${caseData.case_number}`);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-      } finally {
-        setSaving(false);
-      }
+      setStatusDialogOpen(false);
+      setNewStatus("");
+      router.push(`/${locale}/rma/nota-credito/solicitar?case=${caseData.case_number}`);
       return;
     }
 
@@ -244,7 +227,7 @@ export default function RmaCasoDetailPage() {
       const res = await fetch(`/api/rma/${caseId}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        router.push(`/${locale}/rma/casos`);
+        router.push(inventario);
       }
     } catch (error) {
       console.error("Error:", error);
@@ -286,6 +269,8 @@ export default function RmaCasoDetailPage() {
   };
 
   const varios = items.length > 1;
+  // Volver al inventario del que es el caso (Supricom o externos).
+  const inventario = `/${locale}/rma/inventario/${Number(caseData?.producto_externo) === 1 ? "externo" : "supricom"}`;
   const nombreProducto = (id: number | null) => {
     const i = items.find((x) => x.id === id);
     return i ? i.model || i.hardware || "" : "";
@@ -303,7 +288,7 @@ export default function RmaCasoDetailPage() {
     return (
       <div className="p-8 text-center text-slate-500">
         <p>{t("case_not_found")}</p>
-        <Button variant="outline" onClick={() => router.push(`/${locale}/rma/casos`)} className="mt-4">
+        <Button variant="outline" onClick={() => router.push(inventario)} className="mt-4">
           {t("back_to_list")}
         </Button>
       </div>
@@ -319,7 +304,7 @@ export default function RmaCasoDetailPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => router.push(`/${locale}/rma/casos`)}>
+          <Button variant="ghost" size="sm" onClick={() => router.push(inventario)}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-3">
@@ -359,7 +344,12 @@ export default function RmaCasoDetailPage() {
               Envío: {statusLabels[caseData.status]}
             </Badge>
           )}
-          {!varios && (
+          {!varios && caseData.status === "nc_revision" && (
+            <Badge className="bg-orange-50 text-orange-700 border-orange-200 border self-center">
+              {t("nc_esperando_admin")}
+            </Badge>
+          )}
+          {!varios && caseData.status !== "nc_revision" && (
           <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -377,9 +367,11 @@ export default function RmaCasoDetailPage() {
                     <Label className="mb-2 block">{t("new_status")}</Label>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(statusLabels)
-                        .filter(([key]) => key !== caseData.status)
+                        .filter(([key]) => key !== caseData.status && key !== "nc_revision")
                         // Un equipo que Supricom no vendió no tiene nada que acreditar.
                         .filter(([key]) => !(esExterno && key === "nota_credito"))
+                        // Solo se pide de un equipo que sigue en revisión.
+                        .filter(([key]) => key !== "nota_credito" || ["recibido", "reingresado"].includes(caseData.status))
                         .map(([key, label]) => (
                         <Button
                           key={key}
@@ -387,7 +379,7 @@ export default function RmaCasoDetailPage() {
                           onClick={() => setNewStatus(key)}
                           className={`px-4 py-2 ${newStatus === key ? "bg-blue-600 text-white" : ""}`}
                         >
-                          {label}
+                          {key === "nota_credito" ? t("nc_solicitar") : label}
                         </Button>
                       ))}
                     </div>
@@ -413,7 +405,7 @@ export default function RmaCasoDetailPage() {
             </Dialog>
           )}
           {!varios && caseData.status === "nota_credito" && (
-            <Button variant="outline" onClick={() => router.push(`/${locale}/rma/nota-credito?case=${caseData.case_number}`)}>
+            <Button variant="outline" onClick={() => router.push(`/${locale}/rma/nota-credito`)}>
               <Printer className="w-4 h-4 mr-2" />
               {t("print_pdf")}
             </Button>

@@ -53,6 +53,7 @@ const STATUS_LABELS: Record<string, string> = {
   nota_credito: "status_nota_credito",
   no_procesado: "status_no_procesado",
   reingresado: "status_reingresado",
+  nc_revision: "status_nc_revision",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -61,6 +62,7 @@ const STATUS_COLORS: Record<string, string> = {
   nota_credito: "bg-violet-100 text-violet-700 border-violet-200",
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  nc_revision: "bg-blue-100 text-blue-700 border-blue-200",
 };
 
 export default function ConsultarPage() {
