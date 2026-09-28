@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { emailDeContacto, origenPortal, resolverEmailCliente } from "@/lib/rma/emailReparado";
 import { SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
  * Aviso al cliente cada vez que RMA cambia el estado de un producto o le
@@ -38,7 +39,7 @@ export function enviarCorreoActualizacion(caseId: number, cambio: CambioRma, ori
 }
 
 async function procesar(caseId: number, cambio: CambioRma, origenPeticion: string): Promise<void> {
-  if (!process.env.N8N_LEAD_WEBHOOK_URL) return;
+  if (!urlWebhookRma()) return;
 
   const r = await query(
     `SELECT id, case_number, origen, company_id, odoo_partner_id, tracking_token, client_name,
@@ -79,7 +80,7 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
 
   const link = `${origenPortal(origenPeticion)}/es/servicio-tecnico/${slug}/consultar?token=${caso.tracking_token}`;
 
-  await fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+  await fetch(urlWebhookRma()!, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

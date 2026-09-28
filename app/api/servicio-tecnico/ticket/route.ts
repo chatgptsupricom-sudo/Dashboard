@@ -24,6 +24,7 @@ import {
   siguienteNumeroCaso,
 } from "@/lib/servicio-tecnico/casos";
 import { NextRequest, NextResponse } from "next/server";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -517,9 +518,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (process.env.N8N_LEAD_WEBHOOK_URL) {
+    if (urlWebhookRma()) {
       // No bloqueamos la respuesta. Si falla, el ticket ya se guardó.
-      fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+      fetch(urlWebhookRma()!, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
