@@ -204,7 +204,15 @@ export function MetasMarcaVentas() {
               </p>
             </>
           ) : (
-            <EditorMetas data={data} companyId={data.editable ? Number(sede) : null} onGuardado={() => recargar()} />
+            // key: al cambiar de sede o mes se descartan los cambios sin guardar
+            // (si no, se podían guardar en la otra sede). La sede sale de `data`,
+            // no del selector, que cambia antes de que lleguen los datos nuevos.
+            <EditorMetas
+              key={`${data.sedes.map((s) => s.id).join(",")}|${data.mes}`}
+              data={data}
+              companyId={data.editable ? data.sedes[0]?.id ?? null : null}
+              onGuardado={() => recargar()}
+            />
           )}
         </div>
       ) : null}
