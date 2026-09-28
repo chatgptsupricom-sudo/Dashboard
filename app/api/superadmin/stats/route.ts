@@ -220,7 +220,9 @@
 // }
 import { callOdooRPC } from "@/lib/odoo";
 import {
+  crecimientoVsMesAnterior,
   desdeOdoo,
+  HISTORIA_DESDE,
   mensualSmartbit,
   mezclarClientes,
   mezclarLineasProducto,
@@ -276,15 +278,15 @@ export async function GET(request: NextRequest) {
       lastDayOfMonth = `${ld.getFullYear()}-${String(ld.getMonth() + 1).padStart(2, "0")}-${String(ld.getDate()).padStart(2, "0")}`;
     }
 
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
-      .toISOString()
-      .split("T")[0];
+    // Historial completo: la gráfica elige el rango en el navegador. Odoo se
+    // consulta igual solo desde el corte, así que no cuesta más.
+    const historiaDesde = HISTORIA_DESDE;
     const today = now.toISOString().split("T")[0];
 
     // Antes del corte las ventas salen de Smartbit (lib/smartbit.ts); Odoo
     // solo tiene ahí facturas migradas sueltas, así que se consulta desde el corte.
     const odooDesdeMes = desdeOdoo(firstDayOfMonth);
-    const odooDesdeHistoria = desdeOdoo(twelveMonthsAgo);
+    const odooDesdeHistoria = desdeOdoo(historiaDesde);
 
     // FILTROS BASE
     const baseFilters = [
@@ -319,7 +321,7 @@ export async function GET(request: NextRequest) {
         "price_subtotal desc",
       ]),
       resumenSmartbit(cids, firstDayOfMonth, lastDayOfMonth),
-      mensualSmartbit(cids, twelveMonthsAgo, today, sellerExclusions),
+      mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
     ]);
     const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
 
@@ -509,11 +511,7 @@ export async function GET(request: NextRequest) {
     const monthlyGrowth = Object.entries(monthlyGrowthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, total]) => ({ month, total }));
-    const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
-    const growthPercent = (
-      ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
-      100
-    ).toFixed(1);
+    const growthRate = crecimientoVsMesAnterior(monthlyGrowthMap, firstDayOfMonth.slice(0, 7), currentMonthTotal);
 
     return NextResponse.json({
       // 👇 CAMBIO 4: Quitamos .map((p) => ({ name: p.name })) en topProducts y bottomProducts
@@ -546,7 +544,7 @@ export async function GET(request: NextRequest) {
         totalMonth: currentMonthTotal,
         activeClientsCount: (allClientsCount || []).length,
         topProductName: processedItems[0]?.name || "N/A",
-        growthRate: `${parseFloat(growthPercent) > 0 ? "+" : ""}${growthPercent}%`,
+        growthRate,
       },
     });
   } catch (error: any) {

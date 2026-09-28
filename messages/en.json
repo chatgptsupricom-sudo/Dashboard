@@ -3296,5 +3296,10 @@
     "dia_sin_coincidencias": "No products on this day match the search.",
     "sin_fecha": "On the way, no estimated date",
     "sin_fecha_nota": "Purchasing hasn't entered the estimated arrival date yet."
+  },
+  "salesHistory": {
+    "last12": "12 months",
+    "last24": "24 months",
+    "all": "All"
   }
 }
