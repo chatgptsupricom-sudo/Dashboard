@@ -307,16 +307,18 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
-            // CEI: pagos registrados ÷ (CxC inicial + facturado − CxC final
-            // no vencida) (lib/cxc/efectividad.ts → calcularCEI).
+            // CEI estándar, solo crédito: (CxC inicial + ventas crédito − CxC
+            // final) ÷ (CxC inicial + ventas crédito − CxC final no vencida)
+            // (lib/cxc/efectividad.ts → calcularCEI).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 85,
-            cobrado: efectividadCalc.cobrado,
-            facturado: efectividadCalc.facturado,
+            recuperado: efectividadCalc.recuperado,
+            ventasCredito: efectividadCalc.ventasCredito,
             carteraInicial: efectividadCalc.carteraInicial,
             carteraFinal: efectividadCalc.carteraFinal,
             carteraFinalNoVencida: efectividadCalc.carteraFinalNoVencida,
             exigible: efectividadCalc.exigible,
+            pagosRegistrados: efectividadCalc.pagosRegistrados,
             pagos: efectividadCalc.pagos,
             facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
