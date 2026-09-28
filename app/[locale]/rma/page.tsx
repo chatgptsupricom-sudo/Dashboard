@@ -29,7 +29,7 @@ type Metricas = {
   pendientesMes: number;
   pendientes: number;
   noProcede: number;
-  ncRevision: number;
+  ncSolicitadas: number;
   notaCredito: number;
 };
 
@@ -45,11 +45,13 @@ interface KpiCardProps {
   filtro?: Filtro;
   /** Solo aplica a equipos de Supricom (notas de crédito). */
   soloSupricom?: boolean;
+  /** A dónde lleva el desglose en vez del inventario. */
+  enlace?: string;
   locale: string;
   t: (key: string, values?: any) => string;
 }
 
-function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, locale, t }: KpiCardProps) {
+function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, enlace: destino, locale, t }: KpiCardProps) {
   const router = useRouter();
   const [hovered, setHovered] = useState(false);
   const [cases, setCases] = useState<any[] | null>(null);
@@ -85,7 +87,7 @@ function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, loc
 
   useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
 
-  const enlace = (p: "supricom" | "externo") => `/${locale}/rma/inventario/${p}${q ? `?${q}` : ""}`;
+  const enlace = (p: "supricom" | "externo") => destino || `/${locale}/rma/inventario/${p}${q ? `?${q}` : ""}`;
 
   return (
     <div className="relative" onMouseEnter={abrir} onMouseLeave={() => cerrar(150)}>
@@ -252,8 +254,10 @@ export default function RmaDashboardPage() {
           icon={icono("bg-amber-50", Hourglass, "text-amber-600")} filtro={{ grupo: "pendientes" }} />
         <KpiCard {...comun} label={t("no_procede")} metrica="noProcede" color="text-red-600"
           icon={icono("bg-red-100", Ban, "text-red-500")} filtro={{ status: "no_procesado" }} />
-        <KpiCard {...comun} label={t("nc_en_revision")} metrica="ncRevision" color="text-orange-600" soloSupricom
-          icon={icono("bg-orange-100", FileClock, "text-orange-500")} filtro={{ status: "nc_revision" }} />
+        {/* Solicitudes de nota de crédito: el caso no cambia de estado, así
+            que no hay lista de casos que mostrar; se ven en su sección. */}
+        <KpiCard {...comun} label={t("nc_solicitadas")} metrica="ncSolicitadas" color="text-orange-600" soloSupricom
+          icon={icono("bg-orange-100", FileClock, "text-orange-500")} enlace={`/${locale}/rma/nota-credito`} />
         <KpiCard {...comun} label={t("status_nota_credito")} metrica="notaCredito" color="text-indigo-600" soloSupricom
           icon={icono("bg-indigo-100", FileText, "text-indigo-500")} filtro={{ status: "nota_credito" }} />
       </div>

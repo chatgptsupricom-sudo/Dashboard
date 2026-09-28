@@ -4,7 +4,7 @@ import { SolicitudesNotaCredito } from "@/components/rma/SolicitudesNotaCredito"
 import { FileCheck2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
-/** El Super Admin aprueba o rechaza las notas de crédito que pide RMA. */
+/** Las solicitudes de nota de crédito que envía RMA, para que el Super Admin las vea. */
 export default function SuperAdminNotasCreditoRmaPage() {
   const t = useTranslations("rma");
 
@@ -20,7 +20,7 @@ export default function SuperAdminNotasCreditoRmaPage() {
         </div>
       </div>
 
-      <SolicitudesNotaCredito modo="superadmin" />
+      <SolicitudesNotaCredito />
     </div>
   );
 }
