@@ -178,6 +178,43 @@ export default function EstadoCuentaCxCPage() {
     [filtrados],
   );
 
+  // Clientes que coinciden con el filtro pero no están en el listado porque
+  // no tienen documentos abiertos (al día). Se buscan en Odoo al escribir 3+
+  // letras, para poder sacarles el estado de cuenta igual.
+  const [sinSaldo, setSinSaldo] = useState<Cliente[]>([]);
+  const [buscandoOdoo, setBuscandoOdoo] = useState(false);
+  useEffect(() => {
+    const q = filtro.trim();
+    if (q.length < 3) {
+      setSinSaldo([]);
+      return;
+    }
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      setBuscandoOdoo(true);
+      try {
+        const qs = new URLSearchParams({ buscar: q });
+        if (empresa) qs.set("empresa", empresa);
+        const res = await fetch(`${API}?${qs}`);
+        const json = await res.json();
+        if (cancelado) return;
+        const listados = new Set(clientes.map((c) => c.partnerId));
+        setSinSaldo(
+          json.success
+            ? (json.clientes || []).filter((c: Cliente) => !listados.has(c.partnerId))
+            : [],
+        );
+      } catch {
+        if (!cancelado) setSinSaldo([]);
+      }
+      if (!cancelado) setBuscandoOdoo(false);
+    }, 400);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [filtro, empresa, clientes]);
+
   // ── Detalle de un cliente ──
   if (seleccionado) {
     return (
@@ -529,13 +566,50 @@ export default function EstadoCuentaCxCPage() {
                     </td>
                   </tr>
                 ))}
-                {filtrados.length === 0 && (
+                {filtrados.length === 0 && sinSaldo.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                      Sin clientes con saldo para este filtro.
+                      {buscandoOdoo
+                        ? "Buscando en Odoo clientes sin saldo…"
+                        : "Sin clientes con saldo para este filtro."}
                     </td>
                   </tr>
                 )}
+                {sinSaldo.length > 0 && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={7} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Fuera del listado · clientes con movimiento en Odoo y sin documentos abiertos en cartera
+                    </td>
+                  </tr>
+                )}
+                {sinSaldo.map((c) => (
+                  <tr
+                    key={`s-${c.partnerId}-${c.sede}`}
+                    onClick={() => abrir(c)}
+                    className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-slate-700">
+                      {c.nombre}
+                      {c.saldo === 0 ? (
+                        <span className="ml-2 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700">
+                          Sin saldo
+                        </span>
+                      ) : (
+                        <span className="ml-2 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-700">
+                          Excluido de seguimiento
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{c.vendedor}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{c.sede}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">—</td>
+                    <td className="px-4 py-2.5 text-right text-emerald-600">—</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">0</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-800">
+                      {monto(c.saldo)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
