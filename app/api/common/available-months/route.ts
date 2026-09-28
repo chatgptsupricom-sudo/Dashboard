@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { CORTE_ODOO, mesesSmartbit } from "@/lib/smartbit";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/roles";
 
@@ -10,11 +11,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get("company_id");
 
+    // Antes del corte los meses salen del histórico de Smartbit (lib/smartbit.ts).
     const domain: any[] = [
       ["state", "=", "posted"],
       ["move_type", "=", "out_invoice"],
+      ["invoice_date", ">=", CORTE_ODOO],
     ];
 
+    const cids = companyId && companyId !== "all" ? [parseInt(companyId)] : [9, 10, 7];
     if (companyId && companyId !== "all") {
       domain.push(["company_id", "=", parseInt(companyId)]);
     }
@@ -26,7 +30,7 @@ export async function GET(request: NextRequest) {
       { fields: ["invoice_date"], limit: 10000 },
     )) || [];
 
-    const monthsSet = new Set<string>();
+    const monthsSet = new Set<string>(await mesesSmartbit(cids));
     records.forEach((r: any) => {
       if (r.invoice_date) {
         monthsSet.add(r.invoice_date.substring(0, 7));
