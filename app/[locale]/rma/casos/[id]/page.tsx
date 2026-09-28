@@ -455,6 +455,7 @@ export default function RmaCasoDetailPage() {
               items={items}
               adjuntos={caseData.adjuntos || []}
               onCambio={fetchCase}
+              sinNotaCredito={esExterno}
             />
           )}
 
