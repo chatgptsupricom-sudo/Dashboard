@@ -383,10 +383,10 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
             </div>
 
-            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">10%</span>
@@ -396,9 +396,9 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.dso.meta} días</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cartera: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
+                <span>Saldo clientes: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Crédito 90d: {formatCurrency(data.kpis.dso.ventasCredito90d)}</div>
+              <div className="text-xs text-slate-500 mt-1">Ventas netas: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.clientes} clientes</div>
             </div>
           </div>
 
@@ -495,6 +495,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                       <th className="w-8"></th>
                     </tr>
@@ -513,6 +514,9 @@ export default function CxcDashboardPage() {
                         </td>
                         <td className="py-2.5 text-right">
                           <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>{d.oldest}</span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={d.dso == null ? "text-slate-400" : d.dso > 60 ? "text-red-600 font-medium" : d.dso > 45 ? "text-amber-600" : "text-emerald-600"}>{d.dso == null ? "—" : Math.round(d.dso)}</span>
                         </td>
                         <td className="py-2.5 text-right text-slate-500">{d.count}</td>
                         <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
@@ -1274,48 +1278,53 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Crédito 90d</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasCredito90d)}</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Netas</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
-                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso} días</span>
-                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} clientes</span>
                   </div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
                   <p className="text-xs text-slate-600">
-                    DSO = (Cartera Abierta ÷ Ventas Crédito 90 días) × 90 = ({formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasCredito90d)}) × 90 = <strong>{kpiData.summary.dso} días</strong>
+                    DSO cliente = (Saldo abierto ÷ Ventas netas) × Días desde su primera factura. Ventas netas = facturado − notas de crédito desde esa primera factura.
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    DSO global = promedio de los DSO por cliente ponderado por saldo = <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
                   </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-slate-50/80">
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
-                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">1ª factura</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Facturado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Notas crédito</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas netas</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
-                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
-                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
-                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDate)}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.paymentState === "partial" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-                              {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                      {kpiData.clientes.map((c: any) => (
+                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[200px] truncate">{c.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(c.primeraFactura)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-500">{c.dias}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.facturado)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.notasCredito)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(c.saldo)}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className={c.dso == null ? "text-slate-400" : c.dso > 60 ? "text-red-600 font-bold" : c.dso > 45 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                              {c.dso == null ? "—" : c.dso.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
-                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -59,10 +59,11 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
           )}
           {kpiId === "dso" && (
             <>
-              <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda la empresa en convertir sus ventas a crédito en efectivo.</p>
-              <p><strong>{t("info_formula")}</strong> Cartera abierta a la fecha de corte ÷ Ventas netas a crédito del período × Días del período</p>
-              <p><strong>Ventas netas a crédito:</strong> Total de facturas tipo "out_invoice" (excluyendo notas de crédito) de los últimos 90 días.</p>
-              <p><strong>Período:</strong> Se usa ventana móvil de 90 días para reducir volatilidad.</p>
+              <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda, en promedio, cada cliente en pagar lo que se le factura.</p>
+              <p><strong>{t("info_formula")}</strong> DSO cliente = (Saldo abierto ÷ Ventas netas) × Días del período</p>
+              <p><strong>Ventas netas:</strong> Facturado menos notas de crédito del cliente desde su primera factura.</p>
+              <p><strong>Período:</strong> Días desde la primera factura del cliente hasta hoy.</p>
+              <p><strong>DSO global:</strong> Promedio de los DSO por cliente ponderado por su saldo abierto (los que más deben pesan más).</p>
               <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
             </>
           )}
