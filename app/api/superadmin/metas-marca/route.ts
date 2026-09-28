@@ -123,7 +123,14 @@ export async function POST(request: NextRequest) {
     if (body.accion === "guardar" && Array.isArray(body.metas)) {
       if (body.metas.length > 500) return NextResponse.json({ error: "Demasiadas metas" }, { status: 400 });
       const conUnidades = body.metas.some((x: any) => Number(x?.meta_unidades) > 0);
-      const inventario = conUnidades ? (await inventarioSede(companyId)).porMarca : null;
+      // Si Odoo no da el inventario, se guarda igual con el $ que mandó el
+      // editor (sin foto del stock); una meta solo en unidades se rechaza.
+      const inventario = conUnidades
+        ? await inventarioSede(companyId).then((inv) => inv.porMarca).catch((e) => {
+            console.error("Error en metas-marca POST inventario:", e?.message);
+            return null;
+          })
+        : null;
       let guardadas = 0;
       const rechazadas: string[] = [];
       for (const x of body.metas) {
@@ -133,8 +140,10 @@ export async function POST(request: NextRequest) {
         const inv = unidades != null ? inventario?.get(clave) : undefined;
         let meta = Number(x?.meta);
         if (unidades != null && !(meta > 0)) meta = metaDesdeUnidades(unidades, inv) ?? 0;
+        // Unidades que no se pudieron pasar a $ (sin inventario) no pueden
+        // quedar en meta 0: eso borraría la meta que ya tenía la marca.
         if (!marca || clave === SIN_MARCA || !Number.isFinite(meta) || meta < 0 || meta > 1e10
-          || (unidades != null && (!Number.isFinite(unidades) || unidades > 1e9))) {
+          || (unidades != null && (!Number.isFinite(unidades) || unidades > 1e9 || !(meta > 0)))) {
           rechazadas.push(marca || "(sin nombre)");
           continue;
         }

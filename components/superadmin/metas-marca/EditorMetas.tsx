@@ -129,7 +129,12 @@ export function EditorMetas({ data, companyId, onGuardado }: { data: DatosMetas;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accion: "guardar", company_id: companyId, mes: data.mes,
-          metas: pendientes.map((f) => ({ marca: f.marca, meta: numero(valorDe(f)), meta_unidades: numero(valorU(f)) })),
+          // $ vacío = quitar la meta entera (si se mandaran las unidades, el
+          // servidor recalcularía el $ desde ellas y la meta no se borraría).
+          metas: pendientes.map((f) => {
+            const meta = numero(valorDe(f));
+            return { marca: f.marca, meta, meta_unidades: meta > 0 ? numero(valorU(f)) : 0 };
+          }),
         }),
       });
       const j = await r.json().catch(() => null);
