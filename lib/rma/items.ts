@@ -385,3 +385,18 @@ export async function espejarPrimeroEnCaso(caseId: number): Promise<void> {
     ],
   );
 }
+
+/**
+ * Nombre del envío para mostrarle al cliente o en un aviso: con varios
+ * productos, todos ("Laptop X, Impresora Y"); con uno, el de siempre
+ * (`fallback`, los campos del caso). No falla: ante un error, `fallback`.
+ */
+export async function nombreDelEnvio(caseId: number, fallback: string): Promise<string> {
+  try {
+    const productos = await leerProductos(caseId);
+    if (productos.length > 1) return productos.map((p) => p.model || p.hardware || "").join(", ");
+  } catch (e: any) {
+    console.error(`[rma_case_items] no se pudo leer el envío ${caseId}:`, e?.message);
+  }
+  return fallback;
+}

@@ -3,6 +3,7 @@ import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { JOIN_MERCANCIA, columnasPorOrigen, sqlOrigen } from "@/lib/seguridad/calificaciones";
 import { ORIGENES, leerPorOrigen } from "@/lib/seguridad/origenes";
 import { NextRequest, NextResponse } from "next/server";
+import { hayTablaProductos } from "@/lib/rma/items";
 
 export async function GET(request: NextRequest) {
   try {
@@ -192,11 +193,16 @@ export async function GET(request: NextRequest) {
     // columnas de garantía del portal, el resto del panel no debe caerse.
     let garantiasDenegadasRes: any = { rows: [{ total: 0 }] };
     try {
+      // Con envíos de varios productos (issue #331) la garantía es de cada
+      // producto: cuenta el ingreso si alguno llegó vencido.
+      const porProducto = await hayTablaProductos();
       garantiasDenegadasRes = await query(
         `SELECT COUNT(*) AS total
          FROM seguridad_ingresos i
          JOIN rma_cases rc ON rc.id = i.rma_case_id
-         WHERE rc.garantia_estado = 'vencida'
+         WHERE (rc.garantia_estado = 'vencida'${porProducto ? `
+                OR EXISTS (SELECT 1 FROM rma_case_items ci
+                            WHERE ci.case_id = rc.id AND ci.garantia_estado = 'vencida')` : ""})
            AND i.fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
            ${cids !== null ? "AND i.cids = ?" : ""}`,
         paramCids,

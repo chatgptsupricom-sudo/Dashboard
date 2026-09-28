@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { matchCiudadARuta } from "@/lib/rma/rutasEnvio";
+import { nombreDelEnvio } from "@/lib/rma/items";
 
 /**
  * Elección del cliente de cómo recibir su equipo reparado (issue #121).
@@ -75,7 +76,8 @@ export async function obtenerCasoPorToken(token: string): Promise<CasoEntrega | 
     id: row.id,
     case_number: row.case_number,
     status: row.status,
-    product_name: row.model || row.hardware || "",
+    // Con varios productos, el envío completo (issue #331).
+    product_name: await nombreDelEnvio(row.id, row.model || row.hardware || ""),
     company_id: row.company_id,
     entrega_metodo: row.entrega_metodo,
     entrega_ciudad: row.entrega_ciudad,
