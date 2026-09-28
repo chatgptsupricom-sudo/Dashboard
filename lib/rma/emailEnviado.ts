@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { nombreDelEnvio } from "@/lib/rma/items";
 
 /**
  * Aviso de "ya enviamos tu equipo reparado" cuando el metodo de entrega es
@@ -50,7 +51,8 @@ async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<voi
       correo: {
         destinatario: email,
         nombre_cliente: caso.client_name || "",
-        producto: caso.model || caso.hardware || "",
+        // Con varios productos, el envío completo (issue #331).
+        producto: await nombreDelEnvio(caso.id, caso.model || caso.hardware || ""),
         case_number: caso.case_number,
         agencia: caso.entrega_agencia || "",
         // n8n tiene que buscar esta URL (publica, sin sesion) para poder

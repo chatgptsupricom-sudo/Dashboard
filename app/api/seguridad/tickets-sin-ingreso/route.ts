@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { hayTablaProductos } from "@/lib/rma/items";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +44,13 @@ export async function GET(request: NextRequest) {
       params.push(cids);
     }
 
+    const conProductos = await hayTablaProductos();
     const result = await query(
       `SELECT c.id, c.case_number, c.client_name, c.client_phone,
               c.model, c.hardware, c.brand, c.serial, c.invoice_number,
               c.status, c.created_at,
               c.garantia_estado
+              ${conProductos ? ", (SELECT COUNT(*) FROM rma_case_items ci WHERE ci.case_id = c.id) AS productos_count" : ""}
          FROM rma_cases c
     LEFT JOIN seguridad_ingresos i ON i.rma_case_id = c.id
         WHERE c.origen = 'portal'
@@ -71,7 +74,12 @@ export async function GET(request: NextRequest) {
         telefono: r.client_phone || null,
         // `model` es el nombre del producto y `hardware` la categoría, según
         // la convención del módulo interno.
-        producto: r.model || r.hardware || "",
+        // Con varios productos (issue #331), el primero y cuántos más trae el
+        // envío: es lo que Seguridad va a recibir en el mostrador.
+        producto:
+          (r.model || r.hardware || "") +
+          (Number(r.productos_count) > 1 ? ` (+${Number(r.productos_count) - 1})` : ""),
+        productos: Number(r.productos_count) || 1,
         marca: r.brand || "",
         serial: r.serial || null,
         factura: r.invoice_number || "",
