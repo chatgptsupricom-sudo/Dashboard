@@ -320,10 +320,10 @@ export default function CxcDashboardPage() {
       {data && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
+            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">35%</span>
@@ -333,18 +333,17 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
+                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
+                Exigible: {formatCurrency(data.kpis.efectividad.exigible)}
               </div>
-              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
-                </div>
-              )}
+              <div className="text-[11px] text-slate-500 mt-0.5">Recuperado ÷ exigible (solo crédito) · clic para ver el detalle</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                CxC inicial {formatCurrency(data.kpis.efectividad.carteraInicial)} + ventas crédito {formatCurrency(data.kpis.efectividad.ventasCredito)} − CxC final {formatCurrency(data.kpis.efectividad.carteraFinal)}
+              </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
             </div>
 
@@ -384,10 +383,10 @@ export default function CxcDashboardPage() {
               <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
             </div>
 
-            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">10%</span>
@@ -397,9 +396,9 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.dso.meta} días</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cartera: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
+                <span>Saldo clientes: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Crédito 90d: {formatCurrency(data.kpis.dso.ventasCredito90d)}</div>
+              <div className="text-xs text-slate-500 mt-1">Ventas netas: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.clientes} clientes</div>
             </div>
           </div>
 
@@ -496,6 +495,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                       <th className="w-8"></th>
                     </tr>
@@ -514,6 +514,9 @@ export default function CxcDashboardPage() {
                         </td>
                         <td className="py-2.5 text-right">
                           <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>{d.oldest}</span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={d.dso == null ? "text-slate-400" : d.dso > 60 ? "text-red-600 font-medium" : d.dso > 45 ? "text-amber-600" : "text-emerald-600"}>{d.dso == null ? "—" : Math.round(d.dso)}</span>
                         </td>
                         <td className="py-2.5 text-right text-slate-500">{d.count}</td>
                         <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
@@ -1045,39 +1048,60 @@ export default function CxcDashboardPage() {
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Facturado del mes</span>
-                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.facturado)}</span>
-                    <span className="text-[10px] text-blue-500/80 block">{kpiData.summary.facturas} facturas · con IVA</span>
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible del mes</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.exigible)}</span>
+                    <span className="text-[10px] text-blue-500/80 block">CxC inicial + ventas crédito − CxC final no vencida</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Cobrado del mes</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.cobrado)}</span>
-                    <span className="text-[10px] text-emerald-500/80 block">banco y caja · con IVA</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Recuperado del mes</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.recuperado)}</span>
+                    <span className="text-[10px] text-emerald-500/80 block">CxC inicial + ventas crédito − CxC final</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">De lo cobrado</span>
-                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeFacturasDelMes)} de facturas del mes</span>
-                    <span className="text-xs font-semibold text-slate-700 block">{formatCurrency(kpiData.summary.cobradoDeAnteriores)} de meses anteriores</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Componentes</span>
+                    <span className="text-xs font-semibold text-slate-700 block">CxC inicial {formatCurrency(kpiData.summary.carteraInicial)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">+ Ventas crédito {formatCurrency(kpiData.summary.ventasCredito)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">CxC final {formatCurrency(kpiData.summary.carteraFinal)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">· no vencida {formatCurrency(kpiData.summary.carteraFinalNoVencida)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad (CEI)</span>
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</span>
-                    <span className="text-[10px] text-slate-400 block">cobrado ÷ facturado</span>
+                    <span className="text-[10px] text-slate-400 block">recuperado ÷ exigible</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500 -mt-2">
-                  Todo el dinero que entró en el mes (de cualquier factura) contra lo facturado en el mes. Puede pasar de 100% si se cobró deuda vieja por encima de lo facturado.
-                  {kpiData.summary.parcial ? " Mes en curso: los dos van al día de hoy." : ""}
-                </p>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-[11px] text-slate-600 space-y-2">
+                  <div className="text-xs font-bold text-slate-700">¿Cómo se calcula?</div>
+                  <div className="font-mono text-slate-700 bg-white border border-slate-100 rounded-lg p-2 overflow-x-auto">
+                    CEI = (CxC inicial + Ventas crédito − CxC final) ÷ (CxC inicial + Ventas crédito − CxC final no vencida) × 100
+                    <br />
+                    = ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinal)}) ÷ ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinalNoVencida)})
+                    {" "}= <strong>{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</strong>
+                  </div>
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li><strong>Solo crédito:</strong> se toman las facturas cuyo plazo de pago tiene días (7, 15, 30…). Las de contado (&quot;Immediate Payment&quot;) quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</li>
+                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes.</li>
+                    <li><strong>Ventas crédito:</strong> facturas a crédito del mes menos sus notas de crédito, con IVA.</li>
+                    <li><strong>CxC final:</strong> lo que deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"}. La parte <strong>no vencida</strong> se resta del denominador porque todavía no se podía exigir.</li>
+                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos, retenciones y descuentos aplicados. Los anticipos que todavía no se aplicaron a una factura no cuentan.</li>
+                  </ul>
+                  <p className="text-slate-500">
+                    Odoo solo guarda el saldo de hoy. La CxC de una fecha pasada se calcula así: saldo de hoy de cada factura + los pagos que recibió después de esa fecha. Es el mismo cálculo que usa Cartera Vencida.
+                  </p>
+                  <p className="text-slate-500">
+                    100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
+                    {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}
+                  </p>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-slate-50/80">
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vendedor</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Facturado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cobrado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cobrado ÷ facturado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos registrados</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos ÷ ventas</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1255,48 +1279,53 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Crédito 90d</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasCredito90d)}</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Netas</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
-                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso} días</span>
-                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} clientes</span>
                   </div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
                   <p className="text-xs text-slate-600">
-                    DSO = (Cartera Abierta ÷ Ventas Crédito 90 días) × 90 = ({formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasCredito90d)}) × 90 = <strong>{kpiData.summary.dso} días</strong>
+                    DSO cliente = (Saldo abierto ÷ Ventas netas) × Días desde su primera factura. Ventas netas = facturado − notas de crédito desde esa primera factura.
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    DSO global = promedio de los DSO por cliente ponderado por saldo = <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
                   </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-slate-50/80">
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
-                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">1ª factura</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Facturado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Notas crédito</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas netas</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
-                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
-                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
-                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDate)}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.paymentState === "partial" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-                              {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                      {kpiData.clientes.map((c: any) => (
+                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[200px] truncate">{c.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(c.primeraFactura)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-500">{c.dias}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.facturado)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.notasCredito)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(c.saldo)}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className={c.dso == null ? "text-slate-400" : c.dso > 60 ? "text-red-600 font-bold" : c.dso > 45 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                              {c.dso == null ? "—" : c.dso.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
-                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
                         </tr>
                       ))}
                     </tbody>

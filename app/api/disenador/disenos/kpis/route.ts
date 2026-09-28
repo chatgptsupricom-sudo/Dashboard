@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO } from "@/lib/disenos/categorias";
+import { COLUMNA_FECHA_SIN_ALIAS as FECHA, aISO } from "@/lib/disenos/fecha";
 import { NextRequest, NextResponse } from "next/server";
 
 const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
@@ -9,9 +10,11 @@ const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
 /**
  * KPIs de diseños: cuántos se subieron por día, por semana y en el mes.
  *
- * Todas las cuentas salen de `created_at` (cuándo se subió el diseño) y se
- * agrupan en MySQL, no en JS: el catálogo guarda las imágenes en la misma
- * tabla, así que traer filas para contarlas movería los LONGBLOB.
+ * Todas las cuentas salen de la FECHA DEL DISEÑO (`design_date`, con respaldo
+ * en el día de subida para las filas viejas) y se agrupan en MySQL, no en JS:
+ * el catálogo guarda las imágenes en la misma tabla, así que traer filas para
+ * contarlas movería los LONGBLOB. Antes se contaba por `created_at` y un lote
+ * subido de una vez caía entero en el día de la subida.
  *
  * Los diseños en la papelera (deleted_at) no cuentan.
  *
@@ -43,16 +46,16 @@ export async function GET(request: NextRequest) {
     const [porDia, porCategoria, totales] = await Promise.all([
       // Un renglón por día con diseños: el calendario rellena los días vacíos.
       query(
-        `SELECT DATE(created_at) AS dia, COUNT(*) AS n
+        `SELECT ${FECHA} AS dia, COUNT(*) AS n
          FROM designer_designs
-         WHERE deleted_at IS NULL AND DATE(created_at) BETWEEN ? AND ?${filtroCreador}
+         WHERE deleted_at IS NULL AND ${FECHA} BETWEEN ? AND ?${filtroCreador}
          GROUP BY dia ORDER BY dia ASC`,
         [desde, hasta, ...pCreador]
       ),
       query(
         `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
          FROM designer_designs
-         WHERE deleted_at IS NULL AND DATE(created_at) BETWEEN ? AND ?${filtroCreador}
+         WHERE deleted_at IS NULL AND ${FECHA} BETWEEN ? AND ?${filtroCreador}
          GROUP BY categoria`,
         [desde, hasta, ...pCreador]
       ),
@@ -60,9 +63,9 @@ export async function GET(request: NextRequest) {
       // números de arriba y NO dependen del mes que se esté viendo.
       query(
         `SELECT
-           SUM(DATE(created_at) = CURDATE()) AS hoy,
-           SUM(YEARWEEK(created_at, 1) = YEARWEEK(CURDATE(), 1)) AS semana,
-           SUM(YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())) AS mesEnCurso,
+           SUM(${FECHA} = CURDATE()) AS hoy,
+           SUM(YEARWEEK(${FECHA}, 1) = YEARWEEK(CURDATE(), 1)) AS semana,
+           SUM(YEAR(${FECHA}) = YEAR(CURDATE()) AND MONTH(${FECHA}) = MONTH(CURDATE())) AS mesEnCurso,
            COUNT(*) AS total
          FROM designer_designs
          WHERE deleted_at IS NULL${filtroCreador}`,
@@ -73,10 +76,8 @@ export async function GET(request: NextRequest) {
     const dias: Record<string, number> = {};
     for (const r of porDia.rows || []) {
       // DATE() vuelve como Date o string según el driver.
-      const d = r.dia instanceof Date
-        ? `${r.dia.getFullYear()}-${String(r.dia.getMonth() + 1).padStart(2, "0")}-${String(r.dia.getDate()).padStart(2, "0")}`
-        : String(r.dia).slice(0, 10);
-      dias[d] = Number(r.n) || 0;
+      const d = aISO(r.dia);
+      if (d) dias[d] = Number(r.n) || 0;
     }
 
     // Semanas del mes, de lunes a domingo, recortadas al mes que se ve.

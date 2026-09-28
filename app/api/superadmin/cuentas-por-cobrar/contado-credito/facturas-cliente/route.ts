@@ -65,11 +65,16 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 // Abonos del cliente en el periodo (fecha de confirmacion del pago, no fecha
 // de factura) -- misma fuente que contado-credito/route.ts (lib/cxc/cobros.ts),
 // acotada al partner en el dominio de Odoo.
-async function cobrosDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined, bancoId: number | undefined): Promise<Factura[]> {
+async function cobrosDelMes(
+  companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
+  vendedorId: number | undefined, bancoId: number | undefined, excluirRetenciones: boolean, excluirIva25: boolean,
+): Promise<Factura[]> {
   const cobros = await obtenerCobros(companyIds, {
     desde: monthStart.toISOString().split("T")[0],
     hasta: monthEnd.toISOString().split("T")[0],
     dominioFactura: [["partner_id", "=", partnerId]],
+    excluirRetenciones,
+    excluirIva25,
   });
 
   const filtrados = cobros.filter((c) => {
@@ -127,6 +132,9 @@ export async function GET(request: NextRequest) {
     // default historico de cada modo (Facturado si excluia, Cobrado no).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
     const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    // Mismos checks que contado-credito/route.ts (solo en Cobrado).
+    const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
+    const excluirIva25 = searchParams.get("excluirIva25") !== "false";
     // Filtros globales de la pantalla (los mismos que contado-credito/
     // route.ts): vendedor puntual y banco/diario puntual, independientes
     // de la card de la que salio el drill-down.
@@ -163,7 +171,7 @@ export async function GET(request: NextRequest) {
         : [7, 9, 10];
 
     let facturas = modo === "cobrado"
-      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId)
+      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId, excluirRetenciones, excluirIva25)
       : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId);
 
     if (journalIdParam) {

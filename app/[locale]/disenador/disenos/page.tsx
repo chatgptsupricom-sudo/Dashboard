@@ -41,6 +41,8 @@ interface Design {
   deleted_by?: string | null;
   created_by: string;
   created_at: string;
+  /** Día del diseño (el que cuenta para el KPI); puede diferir del de subida. */
+  design_date?: string | null;
   image_path: string;
 }
 
@@ -51,7 +53,16 @@ interface StagedFile {
   folder: string;
   /** Categoría de diseño: obligatoria para poder guardar (ver lib/disenos/categorias.ts). */
   category: string;
+  /** Día del diseño (YYYY-MM-DD): es el que cuenta para los KPIs, no el de la
+   *  subida. Un lote puede traer flyers de varios días. */
+  date: string;
 }
+
+/** Hoy en formato YYYY-MM-DD, en la zona horaria del navegador. */
+const hoyISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const LIMIT = 24;
 const UPLOAD_BATCH = 8;
@@ -137,6 +148,7 @@ export default function DisenosCatalogoPage() {
   // Categoría que se aplica a todo lo que se está subiendo (se puede cambiar
   // archivo por archivo después).
   const [categoriaLote, setCategoriaLote] = useState("");
+  const [fechaLote, setFechaLote] = useState(hoyISO);
   const [kpiRefresh, setKpiRefresh] = useState(0);
   const [folders, setFolders] = useState<string[]>([]);
   const [page, setPage] = useState(1);
@@ -163,6 +175,7 @@ export default function DisenosCatalogoPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editFolder, setEditFolder] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editDate, setEditDate] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Design | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -238,6 +251,7 @@ export default function DisenosCatalogoPage() {
           title: f.name.replace(/\.[^.]+$/, ""),
           folder: folderFromPath(rel),
           category: categoriaLote,
+          date: fechaLote || hoyISO(),
         });
       }
       setStaged((prev) => [...prev, ...prepared]);
@@ -284,6 +298,7 @@ export default function DisenosCatalogoPage() {
         fd.append("titles", JSON.stringify(chunk.map((s) => s.title || s.file.name)));
         fd.append("folders", JSON.stringify(chunk.map((s) => s.folder || "")));
         fd.append("categories", JSON.stringify(chunk.map((s) => s.category)));
+        fd.append("dates", JSON.stringify(chunk.map((s) => s.date || hoyISO())));
         chunk.forEach((s) => fd.append("images", s.file));
         const res = await fetch("/api/disenador/disenos", { method: "POST", body: fd });
         if (!res.ok) {
@@ -375,6 +390,7 @@ export default function DisenosCatalogoPage() {
     setEditTitle(d.title);
     setEditFolder(d.folder || "");
     setEditCategory(d.category || "");
+    setEditDate((d.design_date || d.created_at || "").slice(0, 10));
   };
   const saveEdit = async () => {
     if (!editing) return;
@@ -388,6 +404,7 @@ export default function DisenosCatalogoPage() {
           title: editTitle,
           folder: editFolder,
           ...(editCategory ? { category: editCategory } : {}),
+          ...(editDate ? { design_date: editDate } : {}),
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -498,7 +515,7 @@ export default function DisenosCatalogoPage() {
         </div>
       </div>
 
-      <KpiDisenos refreshKey={kpiRefresh} />
+      <KpiDisenos refreshKey={kpiRefresh} onCambio={() => fetchDesigns()} />
 
       {/* Carga */}
       <Card className="rounded-3xl border-none shadow-sm">
@@ -570,6 +587,25 @@ export default function DisenosCatalogoPage() {
             </select>
             <span className="text-xs text-slate-400">
               Obligatoria. Se aplica a toda la carga y se puede cambiar diseño por diseño.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-sm font-medium text-slate-700">Fecha del diseño</Label>
+            <input
+              type="date"
+              value={fechaLote}
+              max={hoyISO()}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFechaLote(v);
+                // Igual que la categoría: se aplica a lo que ya está en cola.
+                if (v) setStaged((prev) => prev.map((s) => ({ ...s, date: v })));
+              }}
+              disabled={uploading}
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+            />
+            <span className="text-xs text-slate-400">
+              Es el día que cuenta para el KPI, no el de la subida. Se puede cambiar diseño por diseño.
             </span>
           </div>
           <p className="text-xs text-slate-400">
@@ -644,6 +680,15 @@ export default function DisenosCatalogoPage() {
                         disabled={uploading}
                         className="w-full text-[11px] px-1.5 py-1 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fuchsia-500"
                         placeholder="Colección"
+                      />
+                      <input
+                        type="date"
+                        value={s.date}
+                        max={hoyISO()}
+                        onChange={(e) => updateStaged(idx, { date: e.target.value })}
+                        disabled={uploading}
+                        title="Fecha del diseño"
+                        className="w-full text-[11px] px-1.5 py-1 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fuchsia-500"
                       />
                       <select
                         value={s.category}
@@ -821,6 +866,14 @@ export default function DisenosCatalogoPage() {
                         {etiquetaCategoria(d.category)}
                       </p>
                       {d.folder && <p className="text-[10px] text-slate-400 truncate">{d.folder}</p>}
+                      {(d.design_date || d.created_at) && !verPapelera && (
+                        <p className="text-[10px] text-slate-400" title="Fecha del diseño">
+                          {(() => {
+                            const f = (d.design_date || d.created_at).slice(0, 10).split("-");
+                            return `${f[2]}/${f[1]}/${f[0]}`;
+                          })()}
+                        </p>
+                      )}
                       {verPapelera && d.deleted_at && (
                         <p className="text-[10px] text-red-500 truncate" title={`Borrado por ${d.deleted_by || "—"}`}>
                           En papelera · {new Date(d.deleted_at).toLocaleDateString("es-VE")}
@@ -940,6 +993,19 @@ export default function DisenosCatalogoPage() {
             <div>
               <Label className="text-sm font-medium text-slate-700">Colección</Label>
               <Input value={editFolder} onChange={(e) => setEditFolder(e.target.value)} className="mt-1" placeholder="Opcional" />
+            </div>
+            <div>
+              <Label className="text-sm">Fecha del diseño</Label>
+              <Input
+                type="date"
+                value={editDate}
+                max={hoyISO()}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Es el día que cuenta para el KPI, no el de la subida.
+              </p>
             </div>
           </div>
           <DialogFooter>

@@ -44,12 +44,17 @@ async function crearOMigrar(): Promise<void> {
       image_mime VARCHAR(100) NULL,
       created_by VARCHAR(255) NOT NULL DEFAULT '',
       category VARCHAR(80) NULL,
+      -- Fecha del diseño: la que cuenta para los KPIs. Es distinta de
+      -- created_at (cuándo se subió): un lote que se sube todo junto puede
+      -- corresponder a flyers hechos en días distintos.
+      design_date DATE NULL,
       deleted_at TIMESTAMP NULL DEFAULT NULL,
       deleted_by VARCHAR(255) NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_folder (folder),
       INDEX idx_category (category),
       INDEX idx_deleted_at (deleted_at),
+      INDEX idx_design_date (design_date),
       INDEX idx_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
@@ -76,5 +81,15 @@ async function crearOMigrar(): Promise<void> {
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL`);
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN deleted_by VARCHAR(255) NULL`);
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_deleted_at (deleted_at)`);
+  }
+
+  // `design_date` (fecha del diseño) se agregó después: antes todo se contaba
+  // por `created_at`, así que un lote subido de una vez quedaba entero en el
+  // día de la subida. Lo ya cargado se rellena con el día en que se subió,
+  // que es la mejor aproximación que hay.
+  if (!tiene.has("design_date")) {
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN design_date DATE NULL`);
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_design_date (design_date)`);
+    await query(`UPDATE designer_designs SET design_date = DATE(created_at) WHERE design_date IS NULL`);
   }
 }

@@ -169,10 +169,10 @@ export default function CxcDashboardPage() {
           {/* 4 KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Efectividad */}
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`}>
+            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">35%</span>
@@ -182,18 +182,16 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
+                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
+                Ventas a crédito: {formatCurrency(data.kpis.efectividad.ventasCredito)}
               </div>
-              {data.kpis.efectividad.cobradoDeAnteriores > 0 && (
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  De lo cobrado, {formatCurrency(data.kpis.efectividad.cobradoDeFacturasDelMes)} es de facturas del mes y {formatCurrency(data.kpis.efectividad.cobradoDeAnteriores)} de meses anteriores
-                </div>
-              )}
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Exigible {formatCurrency(data.kpis.efectividad.exigible)} (CxC inicial + ventas crédito − CxC final no vencida)
+              </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: facturado y cobrado al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
             </div>
 
@@ -236,10 +234,10 @@ export default function CxcDashboardPage() {
             </div>
 
             {/* DSO */}
-            <div className={`rounded-xl border p-5 ${getTrafficBg(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`}>
+            <div className={`rounded-xl border p-5 ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.dso.value ?? 0, { green: 45, yellow: 60 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">10%</span>
@@ -249,9 +247,9 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.dso.meta} días</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cartera: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
+                <span>Saldo clientes: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Crédito 90d: {formatCurrency(data.kpis.dso.ventasCredito90d)}</div>
+              <div className="text-xs text-slate-500 mt-1">Ventas netas: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.clientes} clientes</div>
             </div>
           </div>
 
@@ -350,6 +348,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                     </tr>
                   </thead>
@@ -363,6 +362,9 @@ export default function CxcDashboardPage() {
                         </td>
                         <td className="py-2.5 text-right">
                           <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>{d.oldest}</span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={d.dso == null ? "text-slate-400" : d.dso > 60 ? "text-red-600 font-medium" : d.dso > 45 ? "text-amber-600" : "text-emerald-600"}>{d.dso == null ? "—" : Math.round(d.dso)}</span>
                         </td>
                         <td className="py-2.5 text-right text-slate-500">{d.count}</td>
                       </tr>

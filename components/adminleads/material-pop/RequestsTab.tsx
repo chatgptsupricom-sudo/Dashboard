@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Loader2, PackageCheck, Undo2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, PackageCheck, Printer, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -172,7 +172,14 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
         revertir: "Entrega revertida: el material volvió al stock",
       };
       toast({ title: titulos[action] });
-      setAbierta(null);
+      // Tras aprobar, la solicitud sale del filtro "Pendientes" y con ella el
+      // botón de la nota de entrega, que es justo lo que hace falta en ese
+      // momento. Se salta a Aprobadas con la solicitud abierta.
+      if (action === "aprobar") {
+        setFiltro("aprobada");
+      } else {
+        setAbierta(null);
+      }
       await cargar();
       // Entregar y revertir mueven stock; cancelar libera la reserva. Los tres
       // cambian lo que muestra el catálogo.
@@ -317,7 +324,6 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                                 <Input
                                   type="number"
                                   min="0"
-                                  max={it.quantity}
                                   value={aprobadas[it.productId] ?? ""}
                                   onChange={(e) =>
                                     setAprobadas((prev) => ({
@@ -432,6 +438,22 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                         <PackageCheck className="h-4 w-4" />
                         Registrar entrega
                       </Button>
+                      {/* La nota de entrega sale con la ubicación elegida
+                          arriba: es el papel que respalda el traslado. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() =>
+                          window.open(
+                            `/api/adminleads/material-pop/requests/${r.id}/nota?origen=${ubicacion}`,
+                            "_blank",
+                          )
+                        }
+                      >
+                        <Printer className="h-4 w-4" />
+                        Nota de entrega
+                      </Button>
                       {/* Cancelar una aprobada no toca stock: solo libera la
                           reserva, que es derivada. */}
                       <Button
@@ -462,24 +484,40 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                           className="mt-1"
                         />
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        disabled={enviando}
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "¿Revertir la entrega? El material vuelve al stock con un movimiento de entrada y la solicitud queda aprobada otra vez.",
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          onClick={() =>
+                            window.open(
+                              `/api/adminleads/material-pop/requests/${r.id}/nota`,
+                              "_blank",
                             )
-                          ) {
-                            accion(r.id, "revertir");
                           }
-                        }}
-                      >
-                        <Undo2 className="h-4 w-4" />
-                        Revertir entrega
-                      </Button>
+                        >
+                          <Printer className="h-4 w-4" />
+                          Nota de entrega
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          disabled={enviando}
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "¿Revertir la entrega? El material vuelve al stock con un movimiento de entrada y la solicitud queda aprobada otra vez.",
+                              )
+                            ) {
+                              accion(r.id, "revertir");
+                            }
+                          }}
+                        >
+                          <Undo2 className="h-4 w-4" />
+                          Revertir entrega
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

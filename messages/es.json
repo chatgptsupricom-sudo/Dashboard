@@ -166,6 +166,7 @@
     "reporte_diario": "Reporte Diario",
     "reporte_ventas": "Reporte de Ventas",
     "metas_marca": "Metas por Marca",
+    "opiniones": "Opiniones",
     "reportes_comerciales": "Reportes Comerciales",
     "sugerencia_compras": "Sugerencia de compras",
     "menor_rotacion": "Menor Rotación",
@@ -1423,7 +1424,7 @@
     "dso": "DSO (Días de Cobro)",
     "dias": "días",
     "cartera": "Cartera",
-    "credito_90d": "Crédito 90d",
+    "ventas_netas": "Ventas netas",
     "resumen_cartera": "Resumen Cartera",
     "cartera_total_abierta": "Cartera total abierta",
     "cartera_vencida_label": "Cartera vencida",
@@ -1444,7 +1445,9 @@
     "facturas": "Facturas",
     "descripcion": "Dashboard de Cuentas por Cobrar - KPIs de cartera",
     "cobrado_mes": "Cobrado del mes",
-    "facturado_mes": "Facturado del mes"
+    "facturado_mes": "Facturado del mes",
+    "recuperado_mes": "Recuperado del mes",
+    "ventas_credito_mes": "Ventas a crédito"
   },
   "ui": {
     "months": [

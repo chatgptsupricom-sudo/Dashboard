@@ -1,9 +1,10 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { calcularEfectividadFacturado } from "@/lib/cxc/efectividad";
+import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
+import { calcularDSO } from "@/lib/cxc/dso";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -254,33 +255,22 @@ export async function GET(request: NextRequest) {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // FUENTE 2: account.move — Efectividad, Recuperación, DSO
+    // FUENTE 2: account.move — Efectividad, Recuperación, DSO, Cartera Vencida
     // Mismas consultas y fórmulas que /kpi-detail para que la tarjeta y su
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const d90 = new Date(today);
-    d90.setDate(d90.getDate() - 90);
-
-    const [recuperacionCalc, creditSalesRaw] = await Promise.all([
+    const [recuperacionCalc, dsoCalc] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
       // puede leer directo de `amount_residual` (issue #189).
       calcularRecuperacion(companyIds, monthStart, monthEnd),
-      fetchPaginated(
-        "account.move",
-        [
-          ["move_type", "=", "out_invoice"],
-          ["state", "=", "posted"],
-          ["company_id", "in", companyIds],
-          ["invoice_date", ">=", d90.toISOString().split("T")[0]],
-        ],
-        ["id", "amount_total", "invoice_payment_term_id"],
-      ),
+      // DSO por cliente y global ponderado por saldo (lib/cxc/dso.ts).
+      calcularDSO(companyIds, today),
     ]);
 
-    // ── Efectividad y su fila semanal: cobrado ÷ facturado del mes ──
+    // ── Efectividad (CEI) y su fila semanal ──
     // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
     // helper) para que la fila quede alineada con los encabezados
     // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
@@ -293,10 +283,10 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    const [seriesCxc, efectividadCalc] = await Promise.all([
-      calcularSeriesCxC(companyIds, semanasCxc, today),
-      calcularEfectividadFacturado(companyIds, monthStart, monthEnd, semanasCxc, today),
-    ]);
+    // El CEI usa la cartera reconstruida al inicio y al final del mes, así
+    // que va después de las series.
+    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraEn);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -305,42 +295,9 @@ export async function GET(request: NextRequest) {
     // ── Recuperación Vencidos: ya calculado arriba por calcularRecuperacion() ──
     const recuperacion = recuperacionCalc.value;
 
-    // ── DSO: (cartera abierta ÷ ventas a crédito de 90 días) × 90 ──
-    // `totalReceivable` (numerador) sale de digiflex.cxc.report y viene con
-    // impuestos; antes el denominador usaba `amount_untaxed` (sin impuestos),
-    // una base fiscal distinta a cada lado (issue #190). Se unifica a
-    // `amount_total` en los dos lados.
-    // Además, el denominador traía TODAS las ventas de 90 días, contado
-    // incluido, y el comentario decía "a crédito" -- se filtran las de
-    // contado con el mismo criterio que ya usa contado-credito/route.ts: sin
-    // plazo de pago, o un plazo cuyo nombre no tiene ningún número de días
-    // (ej. "Contado"), es venta de contado.
-    const creditTermIds = [...new Set(
-      creditSalesRaw
-        .map((inv: any) => inv.invoice_payment_term_id?.[0])
-        .filter((id: any): id is number => Boolean(id))
-    )];
-    let creditTermNames: Record<number, string> = {};
-    if (creditTermIds.length > 0) {
-      try {
-        const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
-        (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
-      } catch (_) {}
-    }
-    const esVentaACredito = (inv: any) => {
-      const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
-      return /\d/.test(termName);
-    };
-    // Nota: `totalReceivable` (digiflex.cxc.report) y estas ventas de 90 días
-    // (account.move) son fuentes distintas que en la práctica difieren en
-    // torno a un 3% (granularidad y alcance distintos, ver issue #190) -- el
-    // DSO las combina asumiendo que esa diferencia es aceptable.
-    const totalCreditSales90d = creditSalesRaw
-      .filter(esVentaACredito)
-      .reduce((s, inv: any) => s + Math.abs(inv.amount_total || 0), 0);
-    const dso = totalCreditSales90d > 0
-      ? Math.round((totalReceivable / totalCreditSales90d) * 90)
-      : null;
+    // ── DSO: ya calculado arriba por calcularDSO() ──
+    const dsoPorCliente = new Map(dsoCalc.clientes.map((c) => [c.partnerId, c.dso]));
+    const topDebtorsConDso = topDebtors.map((d) => ({ ...d, dso: dsoPorCliente.get(d.partnerId) ?? null }));
 
     // ═══════════════════════════════════════════════════════════════════
     // Respuesta
@@ -350,14 +307,19 @@ export async function GET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
-            // Cobrado del mes ÷ facturado del mes, ambos con IVA
-            // (lib/cxc/efectividad.ts → calcularEfectividadFacturado).
+            // CEI estándar, solo crédito: (CxC inicial + ventas crédito − CxC
+            // final) ÷ (CxC inicial + ventas crédito − CxC final no vencida)
+            // (lib/cxc/efectividad.ts → calcularCEI).
             value: efectividad,
-            meta: cxcMetas["efectividad_cobranza"] || 95,
-            cobrado: efectividadCalc.cobrado,
-            facturado: efectividadCalc.facturado,
-            cobradoDeFacturasDelMes: efectividadCalc.cobradoDeFacturasDelMes,
-            cobradoDeAnteriores: efectividadCalc.cobradoDeAnteriores,
+            meta: cxcMetas["efectividad_cobranza"] || 85,
+            recuperado: efectividadCalc.recuperado,
+            ventasCredito: efectividadCalc.ventasCredito,
+            carteraInicial: efectividadCalc.carteraInicial,
+            carteraFinal: efectividadCalc.carteraFinal,
+            carteraFinalNoVencida: efectividadCalc.carteraFinalNoVencida,
+            exigible: efectividadCalc.exigible,
+            pagosRegistrados: efectividadCalc.pagosRegistrados,
+            pagos: efectividadCalc.pagos,
             facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
           },
@@ -388,10 +350,11 @@ export async function GET(request: NextRequest) {
             facturasConSaldo: recuperacionCalc.facturasConSaldo,
           },
           dso: {
-            value: dso,
+            value: dsoCalc.value,
             meta: cxcMetas["dso"] || 45,
-            carteraAbierta: Math.round(totalReceivable * 100) / 100,
-            ventasCredito90d: Math.round(totalCreditSales90d * 100) / 100,
+            carteraAbierta: dsoCalc.carteraAbierta,
+            ventasNetas: dsoCalc.ventasNetas,
+            clientes: dsoCalc.clientesIncluidos,
           },
         },
         semanaEfectividad,
@@ -400,7 +363,7 @@ export async function GET(request: NextRequest) {
         pesos: cxcPesos,
         agingDistribution,
         byCompany,
-        topDebtors,
+        topDebtors: topDebtorsConDso,
         bySalesperson,
         summary: {
           totalReceivable: Math.round(totalReceivable * 100) / 100,

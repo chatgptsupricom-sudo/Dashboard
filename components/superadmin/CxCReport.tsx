@@ -30,14 +30,15 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // Cobrado del mes ÷ facturado del mes (lib/cxc/efectividad.ts).
+  // CEI estándar, solo crédito: recuperado ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
   efectividad: {
-    value: number | null; meta: number; cobrado: number; facturado: number;
-    cobradoDeFacturasDelMes: number; cobradoDeAnteriores: number; facturas: number; parcial: boolean;
+    value: number | null; meta: number; recuperado: number; ventasCredito: number;
+    carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
+    pagosRegistrados: number; pagos: number; facturas: number; parcial: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
-  dso: { value: number; meta: number; carteraAbierta: number; ventasCredito90d: number };
+  dso: { value: number | null; meta: number; carteraAbierta: number; ventasNetas: number; clientes: number };
 }
 
 interface CompanyData {
@@ -60,6 +61,8 @@ interface Debtor {
   overdue: number;
   oldest: number;
   count: number;
+  /** DSO del cliente (lib/cxc/dso.ts); null si no es calculable. */
+  dso: number | null;
 }
 
 interface Salesperson {
@@ -252,10 +255,10 @@ export default function CxCReport() {
               value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("cobrado_mes")}: ${formatCurrency(data.kpis.efectividad.cobrado)} / ${t("facturado_mes")}: ${formatCurrency(data.kpis.efectividad.facturado)}`
+                `${t("recuperado_mes")}: ${formatCurrency(data.kpis.efectividad.recuperado)} / ${t("ventas_credito_mes")}: ${formatCurrency(data.kpis.efectividad.ventasCredito)}`
               }
-              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
-              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 95, yellow: 85 })}
+              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
+              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
               icon={<TrendingUp size={20} />}
               weight="35%"
             />
@@ -281,11 +284,11 @@ export default function CxCReport() {
             />
             <KPICard
               title={t("dso")}
-              value={`${data.kpis.dso.value} ${t("dias")}`}
+              value={data.kpis.dso.value !== null ? `${data.kpis.dso.value} ${t("dias")}` : "N/A"}
               meta={`${t("meta")}: ≤${data.kpis.dso.meta} ${t("dias")}`}
-              subtitle={`${t("cartera")}: ${formatCurrency(data.kpis.dso.carteraAbierta)} / ${t("credito_90d")}: ${formatCurrency(data.kpis.dso.ventasCredito90d)}`}
-              color={getTrafficLight(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
-              dot={getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
+              subtitle={`${t("cartera")}: ${formatCurrency(data.kpis.dso.carteraAbierta)} / ${t("ventas_netas")}: ${formatCurrency(data.kpis.dso.ventasNetas)}`}
+              color={data.kpis.dso.value === null ? "bg-slate-100 text-slate-600 border-slate-300" : getTrafficLight(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
+              dot={data.kpis.dso.value === null ? "bg-slate-400" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
               icon={<Clock size={20} />}
               weight="10%"
             />
@@ -383,6 +386,7 @@ export default function CxCReport() {
                       <th className="text-right py-2 text-slate-500 font-medium">{t("total")}</th>
                       <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
                       <th className="text-right py-2 text-slate-500 font-medium">{t("dias_col")}</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">{t("fact")}</th>
                     </tr>
                   </thead>
@@ -402,6 +406,9 @@ export default function CxCReport() {
                           <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>
                             {d.oldest}
                           </span>
+                        </td>
+                        <td className="py-2 text-right">
+                          <span className={d.dso == null ? "text-slate-400" : d.dso > 60 ? "text-red-600 font-medium" : d.dso > 45 ? "text-amber-600" : "text-emerald-600"}>{d.dso == null ? "—" : Math.round(d.dso)}</span>
                         </td>
                         <td className="py-2 text-right text-slate-500">{d.count}</td>
                       </tr>

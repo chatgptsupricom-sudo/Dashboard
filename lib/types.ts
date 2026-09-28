@@ -72,6 +72,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
+      "opiniones", // Opiniones de clientes (encuesta pública de ventas y RMA)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "cxc_pago_clientes", // Pago de Clientes
       "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
@@ -181,7 +182,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -213,7 +214,6 @@ export const rolePermissions: RolePermissions = {
       "reports", // Reportes
       "MapaClientes", // Para Christian Rodriguez
       "inventory", // Stock publicitario
-      "agenteia", // Agente IA para pruebas internas
       "integraciondepago", // Integración De Pago,
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones
