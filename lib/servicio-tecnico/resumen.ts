@@ -10,7 +10,10 @@ export const RESUMEN_KEY = "servicio-tecnico:resumen";
 
 export type ResumenReporte = {
   factura?: string;
+  // Formato de antes de los envíos con varios productos: uno solo.
   producto?: string;
   serial?: string;
   telefono?: string;
+  /** Los productos del envío (issue #331). */
+  productos?: { nombre: string; serial: string }[];
 };

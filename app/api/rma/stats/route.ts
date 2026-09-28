@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { hayTablaProductos } from "@/lib/rma/items";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -43,8 +44,11 @@ export async function GET(request: NextRequest) {
     );
 
     // Last 10 cases
+    // Cuántos productos trae cada envío (issue #331), para el "+N".
+    const conProductos = await hayTablaProductos();
     const recentResult = await query(
       `SELECT id, case_number, client_name, model, product_code, hardware, status, created_at
+              ${conProductos ? ", (SELECT COUNT(*) FROM rma_case_items ci WHERE ci.case_id = rma_cases.id) AS productos_count" : ""}
        FROM rma_cases WHERE 1=1 ${companyFilter}
        ORDER BY created_at DESC LIMIT 10`,
       params

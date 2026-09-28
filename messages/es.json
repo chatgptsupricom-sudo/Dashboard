@@ -365,7 +365,8 @@
     "portal_source": "Origen del reporte",
     "ver_en_odoo": "Ver en Odoo",
     "copy_id": "Copiar ID",
-    "id_copied": "ID copiado"
+    "id_copied": "ID copiado",
+    "sin_adjuntos": "Sin fotos ni videos adjuntos."
   },
   "stoplight": {
     "page_title": "Stoplight Reports",
@@ -726,8 +727,8 @@
       "emailInstead": "Escribir a soporte técnico",
       "multipleTitle": "Encontramos más de una factura con ese número",
       "multipleHelp": "Elige la tuya para continuar.",
-      "productTitle": "¿Qué producto presenta la falla?",
-      "productHelp": "Los productos de la factura están agrupados por marca. Elige el que se dañó y, si compraste varias unidades iguales, el serial de la que falla.",
+      "productTitle": "¿Qué productos presentan la falla?",
+      "productHelp": "Los productos de la factura están agrupados por marca. Marca todos los que vas a enviar y, si compraste varias unidades iguales, el serial de cada una que falla.",
       "client": "Cliente",
       "date": "Fecha",
       "serial": "Serial",
@@ -785,7 +786,11 @@
       "docLargo": "El número no tiene el largo esperado para este tipo de documento. Revísalo.",
       "otraMarca": "Otras marcas",
       "productosN": "{n, plural, one {# producto} other {# productos}}",
-      "eligeSerial": "{n, plural, one {# unidad} other {# unidades}} · elige el serial del que falla"
+      "eligeSerial": "{n, plural, one {# unidad} other {# unidades}} · marca el serial de las que fallan",
+      "seleccionadosN": "{n, plural, one {# producto en este envío} other {# productos en este envío}}",
+      "maxProductos": "Un envío puede llevar hasta {n} productos. Si tienes más, haz otro reporte para el resto.",
+      "productoNdeM": "Producto {n} de {total}",
+      "faultHelpMulti": "Cuéntanos qué le pasa a cada producto y adjunta al menos una foto o un video de cada uno."
     },
     "metaTitle": "Servicio Técnico | Supricom",
     "metaDescription": "Reporta una falla de tu equipo o consulta el estatus de un reporte ya creado.",
@@ -905,7 +910,9 @@
     "entrega_confirmado_sucursal": "Elegiste retirar tu equipo en sucursal.",
     "entrega_confirmado_ruta": "Elegiste envío por ruta a {ciudad}.",
     "entrega_confirmado_agencia": "Elegiste envío por agencia ({agencia}).",
-    "entrega_confirmado_nota": "Si necesitas cambiar tu elección, contáctanos."
+    "entrega_confirmado_nota": "Si necesitas cambiar tu elección, contáctanos.",
+    "productos": "Productos",
+    "consultar_productos": "Productos"
   },
   "vendedores": {
     "loading": "Cargando Dashboard...",
@@ -2810,6 +2817,24 @@
         "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
         "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
+    },
+    "productos_envio": {
+      "titulo": "Productos del envío ({n})",
+      "ayuda": "Marca uno por uno si llegó y confirma el serial de la etiqueta. Lo que no llegó queda registrado en el acta.",
+      "llego": "Llegó",
+      "no_llego": "No llegó",
+      "no_llego_etiqueta": "No llegó al mostrador",
+      "serial_etiqueta": "Serial en la etiqueta",
+      "esperado": "esperado",
+      "serial_distinto": "El serial no coincide con el del reporte. Revísalo antes de guardar.",
+      "observacion": "Observación",
+      "error_sin_responder": "Falta indicar si llegó cada producto del envío.",
+      "error_ninguno": "No se marcó ningún producto como recibido.",
+      "salen_titulo": "Productos que salen",
+      "salen_ayuda": "Marca los que se entregan en este despacho. Los demás siguen pendientes hasta el próximo.",
+      "error_salen": "Elige al menos un producto que salga en este despacho.",
+      "ya_salio": "Ya salió el {fecha}",
+      "salieron_titulo": "Productos que salieron ({n})"
     }
   },
   "recepcion": {

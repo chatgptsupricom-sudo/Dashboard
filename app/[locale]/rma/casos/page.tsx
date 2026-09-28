@@ -223,7 +223,15 @@ export default function RmaCasosPage() {
                         </div>
                       </td>
                       <td className="p-4 text-slate-700">{c.client_name}</td>
-                      <td className="p-4 text-slate-700">{c.model || c.product_code || "—"}</td>
+                      <td className="p-4 text-slate-700">
+                        {c.model || c.product_code || "—"}
+                        {/* Envío con varios productos (issue #331) */}
+                        {Number(c.productos_count) > 1 && (
+                          <Badge className="ml-2 bg-slate-100 text-slate-600 border-slate-200 border text-[11px]">
+                            +{Number(c.productos_count) - 1}
+                          </Badge>
+                        )}
+                      </td>
                       <td className="p-4 text-slate-500 font-mono text-xs">{c.serial_quantity || "—"}</td>
                       <td className="p-4">
                         <Badge className={`${statusColors[c.status]} border text-[11px]`}>

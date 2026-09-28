@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoEnviadoAgencia } from "@/lib/rma/emailEnviado";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import { marcarProductosDespachados } from "@/lib/rma/items";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +128,7 @@ export async function POST(
       `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
       [id],
     );
+    await marcarProductosDespachados(caso.id);
 
     if (trackingToken && guiaId) {
       const guiaUrl = `${getPublicOrigin(request)}/api/servicio-tecnico/ticket/adjuntos/${trackingToken}/${guiaId}`;

@@ -19,6 +19,9 @@ type TicketData = {
   // Es independiente de `status`: un caso resuelto con nota de credito
   // tambien se entrega.
   despachado_at: string | null;
+  // Productos del envío con el estado de cada uno (issue #331). Puede faltar
+  // o venir vacío si el servidor todavía no tiene la migración.
+  productos?: Array<{ nombre: string; serial: string | null; status: string }>;
   timeline: Array<{
     from_status: string | null;
     to_status: string;
@@ -286,7 +289,31 @@ export default function ConsultarPage() {
                 {t("consultar_datos_reporte")}
               </p>
               <dl className="mt-3">
-                {ticket.product_name && (
+                {(ticket.productos?.length ?? 0) > 1 && (
+                  <div className="pt-summary__row">
+                    <dt>{t("consultar_productos")}</dt>
+                    <dd>
+                      <ul className="space-y-2">
+                        {ticket.productos!.map((p, i) => (
+                          <li key={i} className="break-words">
+                            {p.nombre}
+                            {p.serial && (
+                              <span className="block font-mono text-xs text-[color:var(--portal-muted)]">{p.serial}</span>
+                            )}
+                            <span
+                              className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                                STATUS_COLORS[p.status] || "bg-slate-100 text-slate-700 border-slate-200"
+                              }`}
+                            >
+                              {t(STATUS_LABELS[p.status] || "status_recibido")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </dd>
+                  </div>
+                )}
+                {(ticket.productos?.length ?? 0) <= 1 && ticket.product_name && (
                   <div className="pt-summary__row">
                     <dt>{t("consultar_producto")}</dt>
                     <dd className="break-words">{ticket.product_name}</dd>
@@ -298,7 +325,7 @@ export default function ConsultarPage() {
                     <dd className="font-mono">{ticket.invoice_number}</dd>
                   </div>
                 )}
-                {ticket.serial && (
+                {(ticket.productos?.length ?? 0) <= 1 && ticket.serial && (
                   <div className="pt-summary__row">
                     <dt>Serial</dt>
                     <dd className="font-mono">{ticket.serial}</dd>

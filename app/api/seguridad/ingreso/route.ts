@@ -3,6 +3,13 @@ import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { asegurarEsquemaPersonal } from "@/lib/seguridad/catalogoPersonal";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  guardarProductosIngreso,
+  hayTablasSeguridad,
+  validarProductosIngreso,
+  type ProductoIngreso,
+} from "@/lib/seguridad/productosEnvio";
+import { leerProductos } from "@/lib/rma/items";
 
 
 
@@ -202,6 +209,19 @@ export async function POST(request: NextRequest) {
       errors.push("idempotency_key invalido");
     }
 
+    // Envío con varios productos (issue #331): un solo ingreso, con lo que
+    // pasó con cada producto. Se exige cuando el envío trae más de uno y ya
+    // están las tablas; con uno solo, el ingreso de siempre.
+    let productosIngreso: ProductoIngreso[] = [];
+    if (errors.length === 0 && rmaCaseId !== null && (await hayTablasSeguridad())) {
+      const delEnvio = await leerProductos(rmaCaseId);
+      if (delEnvio.length > 1 || body.productos !== undefined) {
+        const v = await validarProductosIngreso(rmaCaseId, body.productos);
+        if ("error" in v) errors.push(v.error);
+        else productosIngreso = v.filas;
+      }
+    }
+
     if (errors.length > 0) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
@@ -270,6 +290,9 @@ export async function POST(request: NextRequest) {
     );
 
     const insertId = (result.rows as any)?.insertId;
+    if (insertId && productosIngreso.length) {
+      await guardarProductosIngreso(insertId, productosIngreso);
+    }
     return NextResponse.json({ success: true, id: insertId }, { status: 201 });
   } catch (error: any) {
     console.error("Error creando ingreso:", error);

@@ -19,6 +19,7 @@ import {
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import ProductosEnvioLista, { type FilaProducto } from "@/components/seguridad/ProductosEnvioLista";
 
 type Ingreso = {
   id: number;
@@ -124,6 +125,7 @@ export default function IngresoDetailPage() {
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
+  const [productos, setProductos] = useState<FilaProducto[]>([]);
   const [loading, setLoading] = useState(true);
   // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
   // no del codigo, para no tener que desplegar el dia que cambie.
@@ -156,6 +158,7 @@ export default function IngresoDetailPage() {
         }
         setIngreso(data.ingreso);
         setRmaCase(data.rma_case);
+        setProductos(data.productos ?? []);
 
         if (data.ingreso?.rma_case_id) {
           const adjRes = await fetch(`/api/seguridad/ingreso/${id}/adjuntos`);
@@ -341,6 +344,12 @@ export default function IngresoDetailPage() {
           }}
           readOnly={esRma || esSuperadmin}
           permitirRehacer={esSuperadmin}
+        />
+
+        <ProductosEnvioLista
+          productos={productos}
+          titulo={t("productos_envio.titulo", { n: productos.length })}
+          conRecibido
         />
 
         {/* Checks card */}
