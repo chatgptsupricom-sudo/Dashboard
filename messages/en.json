@@ -1844,7 +1844,7 @@
     "dso": "DSO (Days Sales Outstanding)",
     "dias": "days",
     "cartera": "Portfolio",
-    "credito_90d": "Credit 90d",
+    "ventas_netas": "Net sales",
     "resumen_cartera": "Portfolio Summary",
     "cartera_total_abierta": "Total open portfolio",
     "cartera_vencida_label": "Overdue portfolio",

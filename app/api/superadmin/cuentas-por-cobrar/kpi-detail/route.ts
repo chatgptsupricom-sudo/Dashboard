@@ -5,6 +5,7 @@ import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
+import { calcularDSO } from "@/lib/cxc/dso";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -245,85 +246,14 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "dso") {
-      // Ventas crédito últimos 90 días + cartera abierta
-      const d90 = new Date(today);
-      d90.setDate(d90.getDate() - 90);
-
-      const [creditSales, receivableData] = await Promise.all([
-        fetchPaginated(
-          "account.move",
-          [
-            ["move_type", "=", "out_invoice"],
-            ["state", "=", "posted"],
-            ["company_id", "in", companyIds],
-            ["invoice_date", ">=", d90.toISOString().split("T")[0]],
-          ],
-          ["id", "name", "partner_id", "company_id",
-           "invoice_date", "invoice_date_due", "payment_state",
-           "amount_total", "amount_residual", "invoice_payment_term_id"],
-        ),
-        fetchPaginated(
-          "digiflex.cxc.report",
-          // != 0: misma correccion que en "cartera" arriba — las notas de
-          // credito abiertas traen amount_residual negativo en este modelo.
-          [["company_id", "in", companyIds], ["amount_residual", "!=", 0]],
-          ["amount_residual", "partner_name"],
-        ),
-      ]);
-
-      const totalReceivable = receivableData
-        .filter((r: any) => !["supricom"].some(s => (r.partner_name || "").toLowerCase().includes(s)))
-        .reduce((s, r) => s + (r.amount_residual || 0), 0);
-
-      // Solo ventas a crédito cuentan para el DSO -- mismo criterio que
-      // contado-credito/route.ts: sin plazo de pago, o un plazo cuyo nombre
-      // no tiene ningún número de días (ej. "Contado"), es venta de contado
-      // (issue #190). Antes el denominador traía también las de contado.
-      const creditTermIds = [...new Set(
-        creditSales.map((inv: any) => inv.invoice_payment_term_id?.[0]).filter((id: any): id is number => Boolean(id))
-      )];
-      let creditTermNames: Record<number, string> = {};
-      if (creditTermIds.length > 0) {
-        try {
-          const terms = await callOdooRPC<any[]>("account.payment.term", "read", [creditTermIds], { fields: ["id", "name"] });
-          (terms || []).forEach((t: any) => { creditTermNames[t.id] = t.name; });
-        } catch (_) {}
-      }
-      const esVentaACredito = (inv: any) => {
-        const termName = creditTermNames[inv.invoice_payment_term_id?.[0] ?? -1] || "Contado";
-        return /\d/.test(termName);
-      };
-
-      const sales = creditSales.filter(esVentaACredito).map((inv: any) => ({
-        id: inv.id,
-        name: inv.name || "",
-        partnerName: inv.partner_id?.[1] || "Sin cliente",
-        partnerId: inv.partner_id?.[0] || 0,
-        companyName: inv.company_id?.[1] || "",
-        invoiceDate: inv.invoice_date || null,
-        invoiceDateDue: inv.invoice_date_due || null,
-        paymentState: inv.payment_state || "not_paid",
-        amountTotal: Math.round(Math.abs(inv.amount_total || 0) * 100) / 100,
-        amountResidual: Math.round(Math.abs(inv.amount_residual || 0) * 100) / 100,
-      }));
-
-      // Misma base fiscal que `totalReceivable` (digiflex.cxc.report, con
-      // impuestos): antes se sumaba `amount_untaxed` (sin impuestos) contra
-      // un numerador con impuestos (issue #190).
-      const totalCreditSales = sales.reduce((s, i) => s + i.amountTotal, 0);
-      const dso = totalCreditSales > 0 ? Math.round((totalReceivable / totalCreditSales) * 90) : 0;
-
+      // Mismo helper que la tarjeta (lib/cxc/dso.ts) para que nunca discrepen.
+      const { value, carteraAbierta, ventasNetas, clientesIncluidos, clientes } = await calcularDSO(companyIds, today);
       return NextResponse.json({
         success: true,
         data: {
           type: "dso",
-          summary: {
-            carteraAbierta: Math.round(totalReceivable * 100) / 100,
-            ventasCredito90d: Math.round(totalCreditSales * 100) / 100,
-            dso,
-            count: sales.length,
-          },
-          invoices: sales.sort((a, b) => (a.invoiceDate || "").localeCompare(b.invoiceDate || "")),
+          summary: { dso: value, carteraAbierta, ventasNetas, count: clientesIncluidos },
+          clientes,
         },
       });
     }
