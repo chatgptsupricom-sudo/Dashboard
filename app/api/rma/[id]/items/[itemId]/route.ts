@@ -4,6 +4,7 @@ import { espejarPrimeroEnCaso, leerProductos, sincronizarEnvio, type EstadoProdu
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
+import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
 
 const ESTADOS: EstadoProducto[] = ["recibido", "reparado", "nota_credito", "no_procesado", "reingresado"];
 
@@ -59,6 +60,8 @@ export async function PUT(
     if (status !== undefined && !ESTADOS.includes(status)) {
       return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
     }
+    const errorNota = errorEstadoNotaCredito(producto.status, status);
+    if (errorNota) return NextResponse.json({ error: errorNota }, { status: 400 });
     const cambiaEstado = !!status && status !== producto.status;
     if (cambiaEstado) {
       sets.push("status = ?");

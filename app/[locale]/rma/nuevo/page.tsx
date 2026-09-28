@@ -413,7 +413,6 @@ export default function RmaNuevoPage() {
                   <SelectContent>
                     <SelectItem value="recibido">{t("status_recibido")}</SelectItem>
                     <SelectItem value="reparado">{t("status_reparado")}</SelectItem>
-                    <SelectItem value="nota_credito">{t("status_nota_credito")}</SelectItem>
                     <SelectItem value="no_procesado">{t("status_no_procesado")}</SelectItem>
                     <SelectItem value="reingresado">{t("status_reingresado")}</SelectItem>
                   </SelectContent>

@@ -106,6 +106,7 @@ const statusLabels: Record<string, string> = {
   nota_credito: "Nota de Crédito",
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
+  nc_revision: "NC en revisión",
 };
 
 const statusColors: Record<string, string> = {
@@ -115,6 +116,7 @@ const statusColors: Record<string, string> = {
   nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
 };
 
 export default function DespachoDetailPage() {
