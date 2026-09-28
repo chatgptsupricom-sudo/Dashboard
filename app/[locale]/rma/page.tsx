@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { SelectorProcedencia, type ProcedenciaFiltro } from "@/components/rma/SelectorProcedencia";
 
 const statusColors: Record<string, string> = {
   recibido: "bg-blue-100 text-blue-700 border-blue-200",
@@ -60,11 +61,12 @@ interface KpiCardProps {
   color: string;
   icon: React.ReactNode;
   status?: string;
+  procedencia: ProcedenciaFiltro;
   locale: string;
   t: (key: string) => string;
 }
 
-function KpiCard({ label, value, color, icon, status, locale, t }: KpiCardProps) {
+function KpiCard({ label, value, color, icon, status, procedencia, locale, t }: KpiCardProps) {
   const router = useRouter();
   const [hovered, setHovered] = useState(false);
   const [cases, setCases] = useState<any[]>([]);
@@ -77,6 +79,7 @@ function KpiCard({ label, value, color, icon, status, locale, t }: KpiCardProps)
     try {
       setLoadingCases(true);
       const params = new URLSearchParams({ status, limit: "10" });
+      if (procedencia) params.set("procedencia", procedencia);
       const res = await fetch(`/api/rma?${params}`);
       const data = await res.json();
       if (data.success) setCases(data.cases);
@@ -84,7 +87,7 @@ function KpiCard({ label, value, color, icon, status, locale, t }: KpiCardProps)
     } finally {
       setLoadingCases(false);
     }
-  }, [status]);
+  }, [status, procedencia]);
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -167,7 +170,12 @@ function KpiCard({ label, value, color, icon, status, locale, t }: KpiCardProps)
             )}
           </div>
           {value > 10 && (
-            <Link href={`/${locale}/rma/casos${status ? `?status=${status}` : ""}`}>
+            <Link
+              href={`/${locale}/rma/casos?${new URLSearchParams({
+                ...(status ? { status } : {}),
+                procedencia: procedencia || "todos",
+              })}`}
+            >
               <div className="px-3 py-2 text-center text-xs text-blue-600 hover:bg-blue-50 border-t font-medium">
                 {t("view_all")} →
               </div>
@@ -186,13 +194,15 @@ export default function RmaDashboardPage() {
 
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // Inventario separado: equipos vendidos por Supricom y equipos externos.
+  const [procedencia, setProcedencia] = useState<ProcedenciaFiltro>("supricom");
 
-  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => { fetchStats(); }, [procedencia]);
 
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/rma/stats");
+      const res = await fetch(`/api/rma/stats${procedencia ? `?procedencia=${procedencia}` : ""}`);
       const data = await res.json();
       if (data.success) setStats(data);
     } catch (error) {
@@ -202,7 +212,7 @@ export default function RmaDashboardPage() {
     }
   };
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -234,13 +244,16 @@ export default function RmaDashboardPage() {
         </Link>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <SelectorProcedencia value={procedencia} onChange={setProcedencia} conteos={stats?.porProcedencia} />
+
+      {/* KPI Cards (key: al cambiar de procedencia se descarta la lista cacheada del popover) */}
+      <div key={`kpi-${procedencia}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label={t("total_cases")}
           value={s?.total || 0}
           color="text-slate-900"
           icon={<div className="p-3 bg-slate-100 rounded-2xl"><Wrench className="w-5 h-5 text-slate-500" /></div>}
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
@@ -250,6 +263,7 @@ export default function RmaDashboardPage() {
           color="text-amber-600"
           icon={<div className="p-3 bg-amber-100 rounded-2xl"><Loader2 className="w-5 h-5 text-amber-500" /></div>}
           status="recibido"
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
@@ -259,19 +273,21 @@ export default function RmaDashboardPage() {
           color="text-green-600"
           icon={<div className="p-3 bg-green-100 rounded-2xl"><Loader2 className="w-5 h-5 text-green-500" /></div>}
           status="reparado"
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
       </div>
 
       {/* Second row: specific statuses */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div key={`estados-${procedencia}`} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <KpiCard
           label={t("status_nota_credito")}
           value={s?.notaCredito || 0}
           color="text-indigo-600"
           icon={<div className="p-3 bg-indigo-100 rounded-2xl"><Loader2 className="w-5 h-5 text-indigo-500" /></div>}
           status="nota_credito"
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
@@ -281,6 +297,7 @@ export default function RmaDashboardPage() {
           color="text-red-600"
           icon={<div className="p-3 bg-red-100 rounded-2xl"><Loader2 className="w-5 h-5 text-red-500" /></div>}
           status="no_procesado"
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
@@ -290,6 +307,7 @@ export default function RmaDashboardPage() {
           color="text-teal-600"
           icon={<div className="p-3 bg-teal-100 rounded-2xl"><Loader2 className="w-5 h-5 text-teal-500" /></div>}
           status="reingresado"
+          procedencia={procedencia}
           locale={locale}
           t={t}
         />
@@ -305,9 +323,10 @@ export default function RmaDashboardPage() {
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 tabular-nums">
               {recent.length}
             </span>
+            {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           </div>
           <Link
-            href={`/${locale}/rma/casos`}
+            href={`/${locale}/rma/casos?procedencia=${procedencia || "todos"}`}
             className="group inline-flex items-center gap-1 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700"
           >
             {t("view_all")}
