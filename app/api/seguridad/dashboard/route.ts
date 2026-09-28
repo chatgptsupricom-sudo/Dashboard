@@ -4,6 +4,7 @@ import { JOIN_MERCANCIA, columnasPorOrigen, sqlOrigen } from "@/lib/seguridad/ca
 import { ORIGENES, leerPorOrigen } from "@/lib/seguridad/origenes";
 import { NextRequest, NextResponse } from "next/server";
 import { hayTablaProductos } from "@/lib/rma/items";
+import { metricasDelMes } from "@/lib/seguridad/dashboardMes";
 
 export async function GET(request: NextRequest) {
   try {
@@ -211,6 +212,16 @@ export async function GET(request: NextRequest) {
       console.warn("garantías denegadas no disponible:", e?.message);
     }
 
+    // Métricas del mes del Dashboard de Seguridad. Con su propio catch: si
+    // alguna tabla (egresos de mercancía) no existe en esta base, el resto del
+    // panel sigue.
+    let mes: Awaited<ReturnType<typeof metricasDelMes>> | null = null;
+    try {
+      mes = await metricasDelMes(cids);
+    } catch (e: any) {
+      console.warn("métricas del mes de seguridad no disponibles:", e?.message);
+    }
+
     const ingresosHoy = Number(ingresosHoyRes.rows[0]?.total || 0);
     const ingresosAyer = Number(ingresosAyerRes.rows[0]?.total || 0);
     const despachosHoy = Number(despachosHoyRes.rows[0]?.total || 0);
@@ -265,6 +276,7 @@ export async function GET(request: NextRequest) {
       despachos_recientes: despachosRecientesRes.rows,
       ingresos_pendientes: ingresosPendientesRes.rows,
       top_almacenistas: rankingPorOrigen(topAlmacenistasRes.rows as any[]),
+      mes,
       alertas,
     });
 
