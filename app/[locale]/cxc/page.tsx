@@ -182,13 +182,13 @@ export default function CxcDashboardPage() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Cobrado del mes: {formatCurrency(data.kpis.efectividad.cobrado)}</span>
+                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Facturado del mes: {formatCurrency(data.kpis.efectividad.facturado)}
+                Ventas a crédito: {formatCurrency(data.kpis.efectividad.ventasCredito)}
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                Exigible {formatCurrency(data.kpis.efectividad.exigible)} (CxC inicial + facturado − CxC final no vencida)
+                Exigible {formatCurrency(data.kpis.efectividad.exigible)} (CxC inicial + ventas crédito − CxC final no vencida)
               </div>
               {data.kpis.efectividad.parcial && (
                 <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>

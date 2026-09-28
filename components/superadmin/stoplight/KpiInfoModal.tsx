@@ -32,10 +32,11 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
           {kpiId === "efectividad_cobranza" && (
             <>
               <p><strong>{t("info_que_mide")}</strong> Índice de Efectividad de Cobranza (CEI): qué parte de lo que se podía cobrar en el mes se cobró.</p>
-              <p><strong>{t("info_formula")}</strong> Cobrado ÷ (CxC inicial + Facturado − CxC final no vencida) × 100</p>
-              <p><strong>Cobrado:</strong> Pagos de clientes registrados y confirmados en Odoo en el mes (por fecha de confirmación), en banco o caja. Retenciones no son cobro. Puede pasar de 100% por anticipos aún no aplicados a facturas.</p>
+              <p><strong>{t("info_formula")}</strong> (CxC inicial + Ventas a crédito − CxC final) ÷ (CxC inicial + Ventas a crédito − CxC final no vencida) × 100</p>
+              <p><strong>Solo crédito:</strong> Facturas cuyo plazo de pago tiene días (7, 15, 30…); las de contado quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</p>
+              <p><strong>Numerador (recuperado):</strong> Lo que salió de la cartera en el mes: pagos, retenciones y descuentos aplicados. Los anticipos que todavía no se aplicaron a una factura no cuentan, así que no pasa de 100%.</p>
               <p><strong>CxC inicial / final no vencida:</strong> Lo que los clientes debían al empezar el mes, y lo que deben al cierre (o hoy, en el mes en curso) que todavía no vence y por eso no era exigible.</p>
-              <p><strong>Facturado:</strong> Facturas menos notas de crédito emitidas en el período, con IVA.</p>
+              <p><strong>Ventas a crédito:</strong> Facturas a crédito menos sus notas de crédito emitidas en el período, con IVA.</p>
               <p><strong>{t("info_semaforo")}</strong> Verde ≥85% | Amarillo 75%–84.99% | Rojo &lt;75%</p>
             </>
           )}

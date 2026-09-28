@@ -1,6 +1,7 @@
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { callOdooRPC } from "@/lib/odoo";
 import { fechaDePago } from "@/lib/cxc/fechaConfirmacion";
+import { idsACredito } from "@/lib/cxc/credito";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
@@ -173,27 +174,28 @@ export async function calcularEfectividad(
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Efectividad de cobranza = Índice de Efectividad de Cobranza (CEI) (2026-09-24)
+// Efectividad de cobranza = Índice de Efectividad de Cobranza (CEI) estándar
 // ═══════════════════════════════════════════════════════════════════════════
 //
-//              cobrado del período
-//   CEI = ─────────────────────────────────────────────────────────── × 100
-//         CxC al inicio + facturado del período − CxC final NO vencida
+//         CxC inicial + ventas a crédito − CxC final
+//   CEI = ──────────────────────────────────────────────────── × 100
+//         CxC inicial + ventas a crédito − CxC final NO vencida
 //
-// El denominador es lo que se PODÍA cobrar en el período: toda la cartera que
-// había al empezar más lo facturado, menos lo que al cerrar todavía no vencía
-// (eso no era exigible). 100% = se cobró todo lo exigible. Reemplaza a
-// "cobrado ÷ facturado", que dependía de cuánto se facturó en el mes (un mes de
-// mucha facturación bajaba el % aunque la cobranza fuera igual de buena).
+// Numerador: lo que salió de la cartera en el período (recuperado). Incluye
+// pagos, retenciones y descuentos aplicados, que también bajan el saldo; los
+// anticipos todavía no aplicados a una factura no cuentan, así que el CEI no
+// pasa de 100%. Denominador: lo que se PODÍA cobrar: la cartera al empezar
+// más lo vendido a crédito, menos lo que al cerrar todavía no vencía.
 //
-//  - Cobrado: PAGOS REGISTRADOS en Odoo (`account.payment` de cliente,
-//    confirmados), fechados por la confirmación (`payment_registration_date`,
-//    ver lib/cxc/fechaConfirmacion.ts), en diarios de banco/caja sin
-//    "retenido", sin los pagos del 25% de IVA ("25%" en la descripción).
-//    Es el "Recibido" de la pestaña Cobros de Pago de Clientes:
-//    incluye anticipos aún no aplicados a facturas, así que puede pasar de 100%.
-//  - Facturado: facturas − notas de crédito con `invoice_date` en el período
-//    (`amount_total_signed`, con IVA).
+// Hasta 2026-09-28 el numerador eran los pagos registrados en banco/caja; se
+// pasó al CEI estándar a pedido de CxC. Los pagos siguen como dato
+// (`pagosRegistrados`, lib/cxc/cobros.ts), fuera de la fórmula.
+//
+//  - Solo CRÉDITO en los tres términos (lib/cxc/credito.ts). Ventas a
+//    crédito = facturas − notas de crédito a crédito con `invoice_date` en el
+//    período (`amount_total_signed`, con IVA); CxC inicial y final solo de
+//    facturas a crédito. Si la cartera incluyera contado y las ventas no, una
+//    factura de contado sin cobrar al cierre restaría como "cobro negativo".
 //  - CxC al inicio / al final: cartera reconstruida en el corte
 //    (lib/cxc/seriesSemanales.ts → carteraEn), mismo método que Cartera Vencida.
 //  - Mes en curso: el corte final es hoy.
@@ -205,25 +207,28 @@ export async function calcularEfectividad(
 export interface CEIResultado {
   /** CEI en %. `null` si no había nada exigible. */
   value: number | null;
-  /** Pagos registrados en el período. */
-  cobrado: number;
-  facturado: number;
+  /** Numerador: carteraInicial + ventasCredito − carteraFinal. */
+  recuperado: number;
+  /** Facturas − notas de crédito a crédito del período. */
+  ventasCredito: number;
   carteraInicial: number;
   carteraFinal: number;
   /** Parte de la cartera final que todavía no vencía en el corte. */
   carteraFinalNoVencida: number;
-  /** Denominador: carteraInicial + facturado − carteraFinalNoVencida. */
+  /** Denominador: carteraInicial + ventasCredito − carteraFinalNoVencida. */
   exigible: number;
+  /** Dinero que entró a banco/caja en el período (informativo). */
+  pagosRegistrados: number;
   /** Cantidad de pagos registrados. */
   pagos: number;
-  /** Cantidad de facturas (sin notas de crédito) del período. */
+  /** Cantidad de facturas a crédito (sin notas de crédito) del período. */
   facturas: number;
   /** true mientras el mes no cierra: el corte final es hoy. */
   parcial: boolean;
   semana: (string | null)[];
 }
 
-type CarteraEn = (corte: Date) => { total: number; vencido: number };
+type CarteraEn = (corte: Date, soloCredito?: boolean) => { total: number; vencido: number };
 
 const esSupricom = (nombre: string) => nombre.toLowerCase().includes("supricom");
 
@@ -240,12 +245,15 @@ async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: st
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
       ]],
-      { fields: ["id", "name", "partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed"], order: "id asc", limit: 5000, offset },
+      { fields: ["id", "name", "partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
     )) || [];
     out.push(...page);
     if (page.length < 5000) break;
   }
-  return out.filter((f) => f.partner_id && !esSupricom(f.partner_id[1] || ""));
+  // Solo ventas a crédito (lib/cxc/credito.ts).
+  const propias = out.filter((f) => f.partner_id && !esSupricom(f.partner_id[1] || ""));
+  const aCredito = await idsACredito(propias);
+  return propias.filter((f) => aCredito.has(f.id));
 }
 
 /** Pagos de cliente confirmados en banco/caja, con su fecha de confirmación. */
@@ -292,9 +300,10 @@ async function pagosRegistrados(companyIds: number[], desde: string, hasta: stri
 const antesDe = (d: Date) => new Date(d.getTime() - 1);
 
 /** CEI con sus componentes. Exportado para probarlo sin Odoo. */
-export function cei(cobrado: number, carteraInicial: number, facturado: number, finalNoVencida: number) {
-  const exigible = carteraInicial + facturado - finalNoVencida;
-  return { exigible, value: exigible > 0 ? Math.round((cobrado / exigible) * 10000) / 100 : null };
+export function cei(carteraInicial: number, ventasCredito: number, carteraFinal: number, finalNoVencida: number) {
+  const recuperado = carteraInicial + ventasCredito - carteraFinal;
+  const exigible = carteraInicial + ventasCredito - finalNoVencida;
+  return { recuperado, exigible, value: exigible > 0 ? Math.round((recuperado / exigible) * 10000) / 100 : null };
 }
 
 export interface DetalleCEI {
@@ -336,19 +345,19 @@ export async function detalleCEI(
     .filter((p) => p.fecha >= a && p.fecha <= b)
     .reduce((s, p) => s + p.monto, 0);
 
-  const cobrado = sumaPagos(desde, hasta);
-  const facturado = sumaFacturado(desde, hasta);
-  const inicial = carteraEn(antesDe(monthStart));
-  const final = carteraEn(hoy < monthEnd ? hoy : monthEnd);
+  const montoPagos = sumaPagos(desde, hasta);
+  const ventasCredito = sumaFacturado(desde, hasta);
+  const inicial = carteraEn(antesDe(monthStart), true);
+  const final = carteraEn(hoy < monthEnd ? hoy : monthEnd, true);
   const finalNoVencida = final.total - final.vencido;
-  const { exigible, value } = cei(cobrado, inicial.total, facturado, finalNoVencida);
+  const { recuperado, exigible, value } = cei(inicial.total, ventasCredito, final.total, finalNoVencida);
 
   // Fila semanal: el mismo CEI con la semana como período.
   const semana: (string | null)[] = semanas.map((s) => {
     if (s.inicio > hoy) return null;
     const a = iso(s.inicio), b = iso(s.fin);
-    const fin = carteraEn(hoy < s.fin ? hoy : s.fin);
-    const r = cei(sumaPagos(a, b), carteraEn(antesDe(s.inicio)).total, sumaFacturado(a, b), fin.total - fin.vencido);
+    const fin = carteraEn(hoy < s.fin ? hoy : s.fin, true);
+    const r = cei(carteraEn(antesDe(s.inicio), true).total, sumaFacturado(a, b), fin.total, fin.total - fin.vencido);
     return r.value === null ? null : `${Math.round(r.value)}%`;
   });
 
@@ -367,12 +376,13 @@ export async function detalleCEI(
   return {
     resumen: {
       value,
-      cobrado: r2(cobrado),
-      facturado: r2(facturado),
+      recuperado: r2(recuperado),
+      ventasCredito: r2(ventasCredito),
       carteraInicial: r2(inicial.total),
       carteraFinal: r2(final.total),
       carteraFinalNoVencida: r2(finalNoVencida),
       exigible: r2(exigible),
+      pagosRegistrados: r2(montoPagos),
       pagos: pagos.length,
       facturas: facturas.filter((f) => f.move_type === "out_invoice").length,
       parcial: hoy <= monthEnd,

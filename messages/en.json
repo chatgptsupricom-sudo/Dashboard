@@ -1864,7 +1864,9 @@
     "cartera_total_label": "Total portfolio",
     "facturas": "Invoices",
     "cobrado_mes": "Collected this month",
-    "facturado_mes": "Invoiced this month"
+    "facturado_mes": "Invoiced this month",
+    "recuperado_mes": "Recovered this month",
+    "ventas_credito_mes": "Credit sales"
   },
   "ui": {
     "months": [

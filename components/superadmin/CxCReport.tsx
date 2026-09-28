@@ -30,11 +30,11 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // CEI: pagos registrados ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
+  // CEI estándar, solo crédito: recuperado ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
   efectividad: {
-    value: number | null; meta: number; cobrado: number; facturado: number;
+    value: number | null; meta: number; recuperado: number; ventasCredito: number;
     carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
-    pagos: number; facturas: number; parcial: boolean;
+    pagosRegistrados: number; pagos: number; facturas: number; parcial: boolean;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
@@ -255,7 +255,7 @@ export default function CxCReport() {
               value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("cobrado_mes")}: ${formatCurrency(data.kpis.efectividad.cobrado)} / ${t("facturado_mes")}: ${formatCurrency(data.kpis.efectividad.facturado)}`
+                `${t("recuperado_mes")}: ${formatCurrency(data.kpis.efectividad.recuperado)} / ${t("ventas_credito_mes")}: ${formatCurrency(data.kpis.efectividad.ventasCredito)}`
               }
               color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
               dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
