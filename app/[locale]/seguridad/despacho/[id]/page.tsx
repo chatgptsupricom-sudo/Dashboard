@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import ProductosEnvioLista, { type FilaProducto } from "@/components/seguridad/ProductosEnvioLista";
 
 type Despacho = {
   id: number;
@@ -135,6 +136,7 @@ export default function DespachoDetailPage() {
   const [despacho, setDespacho] = useState<Despacho | null>(null);
   const [ingreso, setIngreso] = useState<Ingreso | null>(null);
   const [rmaCase, setRmaCase] = useState<RmaCase>(null);
+  const [productos, setProductos] = useState<FilaProducto[]>([]);
   const [calificacion, setCalificacion] = useState<Calificacion>(null);
   const [loading, setLoading] = useState(true);
   // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
@@ -172,6 +174,7 @@ export default function DespachoDetailPage() {
         setDespacho(data.despacho);
         setIngreso(data.ingreso);
         setRmaCase(data.rma_case);
+        setProductos(data.productos ?? []);
         setCalificacion(data.calificacion ?? null);
       } catch {
         if (!cancel) setError(td("not_found"));
@@ -390,6 +393,12 @@ export default function DespachoDetailPage() {
           permitirRehacer={
             (user?.role || "").toLowerCase().trim() === "superadmin"
           }
+        />
+
+        <ProductosEnvioLista
+          productos={productos}
+          titulo={t("productos_envio.salieron_titulo", { n: productos.length })}
+          conRecibido={false}
         />
 
         {/* Facturas card */}

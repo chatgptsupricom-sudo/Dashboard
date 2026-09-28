@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { hayTablaProductos } from "@/lib/rma/items";
+import { hayTablasSeguridad } from "@/lib/seguridad/productosEnvio";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +16,21 @@ export async function GET(request: NextRequest) {
     const search = (searchParams.get("search") || "").trim();
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
 
-    let where = "WHERE d.id IS NULL";
+    // Pendiente = sin despacho. Con envíos de varios productos (issue #331)
+    // también el que ya tuvo un despacho parcial: sigue hasta que sale el
+    // último producto del envío.
+    const porProducto = (await hayTablaProductos()) && (await hayTablasSeguridad());
+    let where = porProducto
+      ? `WHERE (NOT EXISTS (SELECT 1 FROM seguridad_despachos d WHERE d.ingreso_id = i.id)
+                OR (i.rma_case_id IS NOT NULL AND EXISTS (
+                      SELECT 1 FROM rma_case_items ci
+                       WHERE ci.case_id = i.rma_case_id AND ci.despachado_at IS NULL
+                         -- Lo que el ingreso marcó como no recibido nunca
+                         -- va a salir: no lo deja pendiente.
+                         AND NOT EXISTS (
+                           SELECT 1 FROM seguridad_ingreso_items ii
+                            WHERE ii.ingreso_id = i.id AND ii.rma_item_id = ci.id AND ii.recibido = 0))))`
+      : "WHERE d.id IS NULL";
     const params: any[] = [];
 
     if (search) {
@@ -33,7 +49,7 @@ export async function GET(request: NextRequest) {
     const result = await query(
       `SELECT i.*
        FROM seguridad_ingresos i
-       LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+       ${porProducto ? "" : "LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id"}
        ${where}
        ORDER BY i.fecha_entrega DESC
        LIMIT ${limit}`,

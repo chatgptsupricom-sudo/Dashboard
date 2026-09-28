@@ -2827,6 +2827,24 @@
         "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",
         "catalogo_vacio_unidad": "There are no vehicles set up for this branch yet."
       }
+    },
+    "productos_envio": {
+      "titulo": "Products in the shipment ({n})",
+      "ayuda": "Mark each one as arrived or not and confirm the serial on its label. Anything missing is recorded on the receipt.",
+      "llego": "Arrived",
+      "no_llego": "Missing",
+      "no_llego_etiqueta": "Did not arrive at the counter",
+      "serial_etiqueta": "Serial on the label",
+      "esperado": "expected",
+      "serial_distinto": "The serial doesn't match the report. Check it before saving.",
+      "observacion": "Note",
+      "error_sin_responder": "Indicate whether each product in the shipment arrived.",
+      "error_ninguno": "No product was marked as received.",
+      "salen_titulo": "Products leaving",
+      "salen_ayuda": "Check the ones handed over in this dispatch. The rest stay pending for the next one.",
+      "error_salen": "Choose at least one product for this dispatch.",
+      "ya_salio": "Left on {fecha}",
+      "salieron_titulo": "Products dispatched ({n})"
     }
   },
   "recepcion": {

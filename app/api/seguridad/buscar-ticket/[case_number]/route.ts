@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { leerProductos } from "@/lib/rma/items";
 
 export async function GET(
   request: NextRequest,
@@ -58,12 +59,29 @@ export async function GET(
     // `hardware` sale ya resuelto al nombre del producto, para que quien lo
     // consuma no tenga que repetir esta decision. La categoria queda aparte
     // por si alguna pantalla la necesita.
+    // Productos del envío (issue #331): con más de uno, el ingreso lleva la
+    // lista para marcar cuáles llegaron. [] sin la migración.
+    let items: any[] = [];
+    try {
+      items = (await leerProductos(caso.id)).map((p) => ({
+        id: p.id,
+        producto: p.model || p.hardware || "",
+        serial: p.serial,
+        reported_fault: p.reported_fault,
+        status: p.status,
+        despachado_at: p.despachado_at,
+      }));
+    } catch (e: any) {
+      console.warn("rma_case_items no disponible:", e?.message);
+    }
+
     return NextResponse.json({
       success: true,
       case: {
         ...caso,
         hardware: caso.model || caso.hardware || "",
         categoria: caso.hardware || null,
+        items,
       },
     });
   } catch (error: any) {

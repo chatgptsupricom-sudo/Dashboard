@@ -36,6 +36,15 @@ type Ingreso = {
   serial: string | null;
 };
 
+/** Producto del envío tal como quedó en el ingreso (issue #331). */
+type ProductoIngreso = {
+  rma_item_id: number | null;
+  producto: string;
+  serial: string | null;
+  recibido: boolean;
+  despachado_at: string | null;
+};
+
 type FormState = {
   nd_numero: string;
   fecha_despacho: string;
@@ -82,6 +91,10 @@ export default function NuevoDespachoPage() {
   const [ingresoQuery, setIngresoQuery] = useState("");
   const [ingresoResults, setIngresoResults] = useState<Ingreso[]>([]);
   const [selectedIngreso, setSelectedIngreso] = useState<Ingreso | null>(null);
+  // Envío con varios productos: cuáles salen en este despacho. Por defecto,
+  // todos los que llegaron y siguen en el taller.
+  const [productosIngreso, setProductosIngreso] = useState<ProductoIngreso[]>([]);
+  const [salen, setSalen] = useState<number[]>([]);
   const [searchingIngreso, setSearchingIngreso] = useState(false);
   const [ingresoError, setIngresoError] = useState<string | null>(null);
   const [ingresoSearched, setIngresoSearched] = useState(false);
@@ -133,8 +146,30 @@ export default function NuevoDespachoPage() {
     }
   };
 
+  const cargarProductos = async (ing: Ingreso) => {
+    setProductosIngreso([]);
+    setSalen([]);
+    if (!ing.rma_case_id) return;
+    try {
+      const res = await fetch(`/api/seguridad/ingreso/${ing.id}`);
+      const data = await res.json();
+      const lista: ProductoIngreso[] = data?.productos || [];
+      if (lista.length > 1) {
+        setProductosIngreso(lista);
+        setSalen(
+          lista
+            .filter((x) => x.recibido && !x.despachado_at && x.rma_item_id)
+            .map((x) => x.rma_item_id as number),
+        );
+      }
+    } catch {
+      // Sin la lista, el despacho sale como siempre: el envío entero.
+    }
+  };
+
   const selectIngreso = (ing: Ingreso) => {
     setSelectedIngreso(ing);
+    cargarProductos(ing);
     setIngresoResults([]);
     setIngresoQuery("");
     setIngresoError(null);
@@ -147,6 +182,8 @@ export default function NuevoDespachoPage() {
 
   const skipIngreso = () => {
     setSelectedIngreso(null);
+    setProductosIngreso([]);
+    setSalen([]);
     setIngresoResults([]);
     setIngresoQuery("");
     setIngresoError(null);
@@ -176,6 +213,10 @@ export default function NuevoDespachoPage() {
       setSubmitError(tf("error_required"));
       return;
     }
+    if (productosIngreso.length > 0 && salen.length === 0) {
+      setSubmitError(t("productos_envio.error_salen"));
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -201,6 +242,7 @@ export default function NuevoDespachoPage() {
         if (selectedIngreso.rma_case_id) {
           payload.rma_case_id = selectedIngreso.rma_case_id;
         }
+        if (productosIngreso.length > 0) payload.item_ids = salen;
       }
 
       const res = await fetch("/api/seguridad/despacho", {
@@ -413,6 +455,50 @@ export default function NuevoDespachoPage() {
               </>
             )}
           </section>
+
+          {/* Section A2: qué productos del envío salen (issue #331) */}
+          {productosIngreso.length > 0 && (
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">{t("productos_envio.salen_titulo")}</h2>
+                <p className="text-xs text-slate-500 mt-1">{t("productos_envio.salen_ayuda")}</p>
+              </div>
+              {productosIngreso.map((x, idx) => {
+                const id = x.rma_item_id;
+                const disponible = !!id && x.recibido && !x.despachado_at;
+                return (
+                  <label
+                    key={`${id}-${idx}`}
+                    className={`flex items-start gap-3 rounded-[10px] border px-3 py-2.5 ${
+                      disponible ? "border-slate-200 cursor-pointer" : "border-slate-100 bg-slate-50 text-slate-400"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-5 w-5"
+                      disabled={!disponible}
+                      checked={!!id && salen.includes(id)}
+                      onChange={(e) =>
+                        id && setSalen((prev) => (e.target.checked ? [...prev, id] : prev.filter((v) => v !== id)))
+                      }
+                    />
+                    <span className="min-w-0 text-sm">
+                      <span className="font-medium break-words">{x.producto}</span>
+                      {x.serial && <span className="block font-mono text-xs">{x.serial}</span>}
+                      {!x.recibido && (
+                        <span className="block text-xs font-semibold text-red-600">{t("productos_envio.no_llego_etiqueta")}</span>
+                      )}
+                      {x.despachado_at && (
+                        <span className="block text-xs font-semibold text-emerald-700">
+                          {t("productos_envio.ya_salio", { fecha: String(x.despachado_at).slice(0, 10) })}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </section>
+          )}
 
           {/* Section B: Datos del despacho */}
           <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
