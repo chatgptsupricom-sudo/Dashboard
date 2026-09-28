@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { hayTablaProductos, leerProductos } from "@/lib/rma/items";
+import { hayTablaProductos, leerProductos, productoPendiente } from "@/lib/rma/items";
 
 /**
  * Productos de un envío de servicio técnico en Seguridad (issue #331, paso 4).
@@ -145,8 +145,12 @@ export async function productosParaDespacho(
     noLlegaron = new Set((r.rows as any[]).map((x) => Number(x.rma_item_id)));
   }
   const disponibles = productos.filter((p) => !noLlegaron.has(p.id));
+  // Solo sale lo que RMA ya terminó (reparado, nota de crédito, no
+  // procesado): lo que sigue en revisión o esperando una nota de crédito se
+  // queda en el taller.
+  const terminados = disponibles.filter((p) => !productoPendiente(p.status));
 
-  let elegidos = disponibles;
+  let elegidos = terminados;
   if (itemIds) {
     const porId = new Map(disponibles.map((p) => [p.id, p]));
     if (!itemIds.length) return { error: "Elige qué productos salen" };
@@ -155,7 +159,11 @@ export async function productosParaDespacho(
     if (itemIds.some((id) => !porId.has(id))) {
       return { error: "Hay un producto que no es de este envío o ya salió" };
     }
+    const enTaller = itemIds.map((id) => porId.get(id)!).find((p) => productoPendiente(p.status));
+    if (enTaller) return { error: `${nombre(enTaller)} sigue en revisión en RMA: todavía no puede salir` };
     elegidos = itemIds.map((id) => porId.get(id)!);
+  } else if (disponibles.length && !terminados.length) {
+    return { error: "RMA todavía no terminó ningún producto de este envío" };
   }
 
   return {

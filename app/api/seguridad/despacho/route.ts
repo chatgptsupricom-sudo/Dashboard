@@ -2,7 +2,9 @@ import { query } from "@/lib/db";
 import { filtroDespachos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { hayTablaProductos, marcarProductosDespachados, sincronizarEnvio } from "@/lib/rma/items";
+import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
+import { firmasRequeridasDespacho } from "@/lib/seguridad/despachoFirmas";
+import { hayTablaProductos, leerProductos, marcarProductosDespachados, sincronizarEnvio } from "@/lib/rma/items";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
   guardarProductosDespacho,
@@ -132,6 +134,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/** Tope de cada firma (PNG en base64), igual que /api/seguridad/firmas. */
+const MAX_FIRMA_BYTES = 1024 * 1024;
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
@@ -154,74 +159,79 @@ export async function POST(request: NextRequest) {
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaDespacho))
       errors.push("fecha_despacho debe tener formato YYYY-MM-DD");
 
-    const payloadName = (auth.payload?.name as string) || (auth.payload?.username as string) || "";
-    const almacenistaNombre = truncate(body.almacenista_nombre, MAX.almacenista_nombre)
-      || truncate(payloadName, MAX.almacenista_nombre);
-    if (!almacenistaNombre) errors.push("almacenista_nombre es obligatorio");
-
-    let ingresoId: number | null = null;
-    if (body.ingreso_id !== undefined && body.ingreso_id !== null && body.ingreso_id !== "") {
-      const parsed = parseInt(String(body.ingreso_id), 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        errors.push("ingreso_id invalido");
-      } else {
-        ingresoId = parsed;
-      }
+    // Todo despacho devuelve un ingreso: se elige de "RMA por despachar".
+    // El ticket, los datos del equipo y las facturas salen del ingreso y del
+    // caso en el servidor; lo que mande la pantalla en esos campos se ignora.
+    const ingresoId = parseInt(String(body.ingreso_id ?? ""), 10) || null;
+    if (!ingresoId) {
+      return NextResponse.json(
+        { error: "Elige el RMA por despachar: todo despacho devuelve un ingreso" },
+        { status: 400 },
+      );
     }
-
-    let rmaCaseId: number | null = null;
-    if (body.rma_case_id !== undefined && body.rma_case_id !== null && body.rma_case_id !== "") {
-      const parsed = parseInt(String(body.rma_case_id), 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        errors.push("rma_case_id invalido");
-      } else {
-        rmaCaseId = parsed;
-      }
+    const ir = await query("SELECT * FROM seguridad_ingresos WHERE id = ?", [ingresoId]);
+    const ingreso = (ir.rows as any[])[0];
+    // 404 y no 403 para otra sucursal: no confirmar que existe.
+    if (!ingreso || (cids !== null && Number(ingreso.cids) !== cids)) {
+      return NextResponse.json({ error: "Ingreso no encontrado" }, { status: 404 });
     }
-
-    if (ingresoId !== null) {
-      try {
-        const ingresoLookup = await query(
-          "SELECT id, rma_case_id FROM seguridad_ingresos WHERE id = ?",
-          [ingresoId],
-        );
-        if (ingresoLookup.rows.length === 0) {
-          errors.push("ingreso_id no existe");
-        } else if (rmaCaseId === null) {
-          const linked = ingresoLookup.rows[0]?.rma_case_id;
-          if (linked !== null && linked !== undefined) {
-            rmaCaseId = parseInt(String(linked), 10) || null;
-          }
-        }
-      } catch (e: any) {
-        console.warn("seguridad_ingresos no disponible:", e?.message);
-      }
-    }
-
+    const rmaCaseId: number | null = ingreso.rma_case_id ? Number(ingreso.rma_case_id) : null;
+    let caso: any = null;
     if (rmaCaseId !== null) {
-      try {
-        const exists = await query("SELECT id FROM rma_cases WHERE id = ?", [rmaCaseId]);
-        if (exists.rows.length === 0) {
-          errors.push("rma_case_id no existe");
-        }
-      } catch (e: any) {
-        console.warn("rma_cases no disponible:", e?.message);
+      const cr = await query("SELECT * FROM rma_cases WHERE id = ?", [rmaCaseId]);
+      caso = (cr.rows as any[])[0] ?? null;
+    }
+
+    // Lo único que escribe Seguridad en los datos del despacho: quién retira.
+    const clienteRetira = truncate(body.cliente_retira, MAX.cliente_retira);
+    if (!clienteRetira?.trim()) {
+      errors.push("Escribe el nombre del cliente que retira");
+    }
+
+    if (typeof body.accesorios_integros !== "boolean") {
+      errors.push("accesorios_integros es obligatorio (true o false)");
+    }
+
+    // Firmas del acta, todas obligatorias: cliente que retira, RMA y
+    // Seguridad (retiro físico o por ruta / encomienda, igual).
+    const firmas: { rol: string; nombre: string; png: { buffer: Buffer; mime: string } }[] = [];
+    for (const req of firmasRequeridasDespacho()) {
+      const f = body.firmas?.[req.rol];
+      const nombre = req.rol === "cliente" ? clienteRetira : truncate(f?.nombre, MAX.almacenista_nombre);
+      if (!nombre?.trim()) {
+        errors.push(`Falta el nombre de ${req.etiqueta}`);
+        continue;
+      }
+      const png = typeof f?.data === "string" ? decodificarFirmaPng(f.data) : null;
+      if (!png) errors.push(`Falta la firma de ${req.etiqueta}`);
+      else if (png.buffer.length > MAX_FIRMA_BYTES) errors.push(`La firma de ${req.etiqueta} es demasiado grande`);
+      else firmas.push({ rol: req.rol, nombre: nombre.trim(), png });
+    }
+
+    // Quien entrega por Seguridad: es el que se califica en el despacho.
+    const almacenistaNombre =
+      truncate(body.firmas?.seguridad?.nombre, MAX.almacenista_nombre) ||
+      truncate((auth.payload?.name as string) || "", MAX.almacenista_nombre);
+    if (!almacenistaNombre) errors.push("Elige quién entrega por Seguridad");
+
+    // Con un solo producto (o sin la tabla de productos), el caso tiene que
+    // estar terminado por RMA y el ingreso sin despachar.
+    const productosCaso = rmaCaseId !== null ? await leerProductos(rmaCaseId) : [];
+    if (productosCaso.length <= 1) {
+      const estado = productosCaso[0]?.status ?? caso?.status ?? null;
+      if (caso && !["reparado", "nota_credito", "no_procesado"].includes(estado)) {
+        errors.push("RMA todavía no terminó este caso: no se puede despachar");
+      }
+      const ya = await query("SELECT id FROM seguridad_despachos WHERE ingreso_id = ? LIMIT 1", [ingresoId]);
+      if ((ya.rows as any[]).length) {
+        return NextResponse.json({ error: "Este equipo ya se despachó", id: (ya.rows as any[])[0].id }, { status: 409 });
       }
     }
 
-    let facturasJson: string | null = null;
-    if (body.facturas !== undefined && body.facturas !== null) {
-      if (!Array.isArray(body.facturas)) {
-        errors.push("facturas debe ser un array");
-      } else if (body.facturas.length > MAX.max_facturas) {
-        errors.push(`facturas maximo ${MAX.max_facturas} items`);
-      } else {
-        const cleaned = body.facturas
-          .map((f: any) => truncate(f, MAX.factura))
-          .filter((f: string | null): f is string => f !== null && f.trim().length > 0);
-        if (cleaned.length > 0) facturasJson = JSON.stringify(cleaned);
-      }
-    }
+    // Facturas: las del ticket. Equipo externo: sin factura de Supricom.
+    const externo = Number(caso?.producto_externo) === 1;
+    const factura = externo ? null : caso?.invoice_number || ingreso.factura_numero || null;
+    const facturasJson: string | null = factura ? JSON.stringify([String(factura).slice(0, MAX.factura)]) : null;
 
     // Devolución total o parcial de un envío (issue #331). Sin `item_ids`,
     // salen todos los productos que siguen en el taller; con ellos, esos.
@@ -235,6 +245,7 @@ export async function POST(request: NextRequest) {
       if (errors.length === 0) {
         const sel = await productosParaDespacho(rmaCaseId, itemIds, ingresoId);
         if ("error" in sel) errors.push(sel.error);
+        else if (productosCaso.length > 1 && !sel.ids.length) errors.push("Ya salieron todos los productos de este envío");
         else salen = sel;
       }
     }
@@ -254,10 +265,10 @@ export async function POST(request: NextRequest) {
         fechaDespacho,
         almacenistaNombre,
         facturasJson,
-        truncate(body.cliente_retira, MAX.cliente_retira),
-        body.accesorios_integros === false ? 0 : 1,
+        clienteRetira,
+        body.accesorios_integros ? 1 : 0,
         truncate(body.observaciones, MAX.observaciones),
-        truncate(body.firma_url, MAX.firma_url),
+        null,
         // Número de guía: el del ingreso que se devuelve (recepción y
         // despacho son una sola hoja); sin ingreso, el siguiente de la
         // sucursal. Ya no se escribe a mano.
@@ -267,6 +278,26 @@ export async function POST(request: NextRequest) {
     );
 
     const insertId = (result.rows as any)?.insertId;
+
+    // Las firmas del acta de despacho (seguridad_firmas, las mismas que
+    // muestran el detalle y el comprobante). Si alguna no se guarda, el
+    // despacho ya quedó: se puede firmar desde su detalle.
+    if (insertId) {
+      for (const f of firmas) {
+        try {
+          await query(
+            `INSERT INTO seguridad_firmas
+               (acta_tipo, acta_id, rol, firmante_nombre, firma_data, firma_mime, cids)
+             VALUES ('despacho', ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE firmante_nombre = VALUES(firmante_nombre),
+               firma_data = VALUES(firma_data), firma_mime = VALUES(firma_mime)`,
+            [insertId, f.rol, f.nombre, f.png.buffer, f.png.mime, cids],
+          );
+        } catch (e: any) {
+          console.error(`No se pudo guardar la firma ${f.rol} del despacho ${insertId}:`, e?.message);
+        }
+      }
+    }
 
     // Marcar en el ticket del portal que el equipo ya se entrego (issue #32).
     //
