@@ -40,6 +40,15 @@ export default async function ServicioTecnicoLanding({
               </Link>
             </div>
 
+            {/* Equipos que no se compraron en Supricom: no tienen factura
+                que buscar, van por su propio formulario. */}
+            <div>
+              <Link href={`${base}/externo`} className="pt-secondary pt-secondary--otro">
+                <span>{t("externo.enlaceLanding")}</span>
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </div>
+
             <p className="pt-help">
               {t("help.text")}{" "}
               <a href="mailto:soporte.tecnico@supricom.com.ve">
