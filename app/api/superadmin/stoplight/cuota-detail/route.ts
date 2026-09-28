@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { esDiaUtil, contarDiasUtiles, esFeriado } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinIntercompania } from "@/lib/intercompania";
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,6 +49,8 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
           ["invoice_user_id", "!=", false],
+          // Sin intercompañía, igual que la fila de Cuota (lib/intercompania).
+          await sinIntercompania(),
         ],
       ],
       {
