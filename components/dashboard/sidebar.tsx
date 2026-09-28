@@ -282,6 +282,8 @@ export function Sidebar({
     // su propia gente, en su propia seccion "Personal".
     { id: "almacen_personal", label: t("seg_personal"), icon: IdCard, slug: "/seguridad/mercancia/personal", absoluteHref: true },
     { id: "almacen_unidades", label: t("almacen_unidades"), icon: Car, slug: "/seguridad/mercancia/unidades", absoluteHref: true },
+    // Almacén firma su parte (opcional) de las actas de RMA desde su panel.
+    { id: "almacen_actas_rma", label: t("almacen_actas_rma"), icon: FileText, slug: "/seguridad/mercancia/actas-rma", absoluteHref: true },
     // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
     // llega desde el panel en vez de por un subdominio propio.
     { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
@@ -1009,6 +1011,7 @@ export function Sidebar({
                         { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
                         { label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` },
                         { label: t("almacen_unidades"), href: `/${locale}/seguridad/mercancia/unidades` },
+                        { label: t("almacen_actas_rma"), href: `/${locale}/seguridad/mercancia/actas-rma` },
                       ].map((sub, index) => {
                         const isSubActive = pathname.startsWith(sub.href);
                         return (

@@ -1,13 +1,14 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { emailDeContacto } from "@/lib/rma/emailReparado";
 import { nombreDelEnvio } from "@/lib/rma/items";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
  * Aviso de "ya enviamos tu equipo reparado" cuando el metodo de entrega es
  * agencia, disparado al subir la foto de la guia (issue: "cuando se
  * pise Marcar como entregado si es por agencia se debe adjuntar la guia").
  * Mismo mecanismo que lib/rma/emailReparado.ts: webhook a n8n,
- * fire-and-forget, reusando N8N_LEAD_WEBHOOK_URL con un `evento` distinto.
+ * fire-and-forget, al webhook de RMA (lib/rma/webhook.ts) con un `evento` distinto.
  */
 
 export type CasoParaCorreoEnvio = {
@@ -30,8 +31,8 @@ export function enviarCorreoEnviadoAgencia(caso: CasoParaCorreoEnvio, guiaUrl: s
 }
 
 async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<void> {
-  if (!process.env.N8N_LEAD_WEBHOOK_URL) {
-    console.warn("[rma/emailEnviado] N8N_LEAD_WEBHOOK_URL no configurado, se omite el correo");
+  if (!urlWebhookRma()) {
+    console.warn("[rma/emailEnviado] N8N_RMA_WEBHOOK_URL no configurado, se omite el correo");
     return;
   }
 
@@ -48,7 +49,7 @@ async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<voi
     return;
   }
 
-  await fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+  await fetch(urlWebhookRma()!, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

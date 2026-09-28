@@ -377,6 +377,7 @@ export const rolePermissions: RolePermissions = {
       "almacen_recepcion", // Recepción de contenedores por packing list
       "almacen_personal", // Almacenistas y choferes: solo Almacen los registra
       "almacen_unidades",
+      "almacen_actas_rma",
     ],
   },
 };

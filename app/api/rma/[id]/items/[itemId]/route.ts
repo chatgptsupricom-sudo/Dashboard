@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { espejarPrimeroEnCaso, leerProductos, sincronizarEnvio, type EstadoProducto } from "@/lib/rma/items";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
+import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 
 const ESTADOS: EstadoProducto[] = ["recibido", "reparado", "nota_credito", "no_procesado", "reingresado"];
 
@@ -83,6 +84,26 @@ export async function PUT(
     await espejarPrimeroEnCaso(caseId);
 
     const envio = await sincronizarEnvio(caseId, { changedBy, origenPeticion: getPublicOrigin(request) });
+
+    // Aviso al cliente de cada avance: cambio de estado, o diagnóstico/notas
+    // nuevos. Si con este cambio el envío terminó reparado, ya sale el correo
+    // de "reparado" (sincronizarEnvio): no se manda otro encima.
+    const cambiaInfo = (["diagnosis", "notes"] as const).some(
+      (c) => body[c] !== undefined && String(body[c] ?? "").trim() !== String(producto[c] ?? "").trim() && String(body[c] ?? "").trim() !== "",
+    );
+    const terminoReparado = !!envio && envio.despues === "reparado" && envio.antes !== "reparado";
+    if ((cambiaEstado || cambiaInfo) && !terminoReparado) {
+      enviarCorreoActualizacion(
+        caseId,
+        {
+          producto: producto.model || producto.hardware || "",
+          estado_anterior: cambiaEstado ? producto.status : null,
+          estado_nuevo: cambiaEstado ? (status as string) : producto.status,
+          tipo: cambiaEstado ? "estado" : "informacion",
+        },
+        getPublicOrigin(request),
+      );
+    }
 
     return NextResponse.json({ success: true, envio });
   } catch (error: any) {

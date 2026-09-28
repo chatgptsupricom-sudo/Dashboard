@@ -224,13 +224,14 @@
     "seg_personal_almacen": "Warehouse staff",
     "seg_personal_seguridad": "Security staff",
     "seg_merc_ingresos": "Inbound",
-    "seg_merc_egresos": "Outbound",
-    "almacen_egresos": "Merchandise outbound",
+    "seg_merc_egresos": "Dispatches",
+    "almacen_egresos": "Merchandise dispatches",
     "almacen_ordenes": "Pending orders",
     "almacen_unidades": "Manage Vehicles",
     "almacen_recepcion": "Reception (packing list)",
     "recepcion_packing": "Packing lists",
-    "llegadas": "Packing List"
+    "llegadas": "Packing List",
+    "almacen_actas_rma": "RMA receipt signatures"
   },
   "rma": {
     "portal_warranty": "Warranty when reported",
@@ -2294,8 +2295,11 @@
         "encolado_titulo": "Saved on this phone, not sent yet",
         "encolado_desc": "No connection. The intake will be sent as soon as the signal is back. Do not log out or clear browser data until it is sent.",
         "encolado_volver": "Back to the counter",
-        "field_nd": "ND no. (paper form)",
-        "field_nd_placeholder": "e.g. 1234"
+        "field_nd": "Waybill no.",
+        "field_nd_placeholder": "e.g. 1234",
+        "guia_automatica": "The waybill number is assigned by the system when saving.",
+        "ticket_elegir": "Choose the ticket…",
+        "ticket_sin_pendientes": "No tickets waiting for intake"
       },
       "list": {
         "search_placeholder": "Search customer, serial or invoice...",
@@ -2360,7 +2364,7 @@
         "adjunto_imagen": "Image",
         "adjunto_video": "Video",
         "print": "Print record",
-        "label_nd": "ND no.",
+        "label_nd": "Waybill no.",
         "section_garantia": "Warranty",
         "garantia_desde_ticket": "From the RMA ticket, frozen at report time",
         "garantia_vence": "Expires on",
@@ -2375,7 +2379,7 @@
     "despacho": {
       "form": {
         "title": "Register dispatch",
-        "subtitle": "Repaired equipment exit from the workshop",
+        "subtitle": "Dispatch of repaired equipment from the workshop",
         "section_ingreso": "Prior intake (optional)",
         "section_data": "Dispatch data",
         "section_facturas": "Included invoices",
@@ -2410,8 +2414,9 @@
         "error_required": "Fill in the required fields",
         "error_one_factura": "Add at least one invoice",
         "error_generic": "Could not register the dispatch",
-        "field_nd": "ND no. (paper form)",
-        "field_nd_placeholder": "e.g. 1234"
+        "field_nd": "Waybill no.",
+        "field_nd_placeholder": "e.g. 1234",
+        "guia_automatica": "The waybill number is set by the system: the same as the intake being returned."
       },
       "list": {
         "search_placeholder": "Search client, operator or invoice...",
@@ -2477,7 +2482,18 @@
         "print_header": "Supricom — Dispatch receipt",
         "print_signature_cliente": "Client signature",
         "print_signature_almacenista": "Warehouse operator signature",
-        "label_nd": "ND no."
+        "label_nd": "Waybill no."
+      },
+      "listos": {
+        "titulo": "Ready to dispatch ({n})",
+        "ayuda": "RMA already finished these cases: the equipment is ready to go back to the customer.",
+        "despachar": "Dispatch",
+        "badge": "Ready",
+        "estado": {
+          "reparado": "Repaired",
+          "nota_credito": "Credit note",
+          "no_procesado": "Not processed"
+        }
       }
     },
     "almacenista": {
@@ -2527,8 +2543,8 @@
       "almacenista_stats": "{ingresos} intakes · {despachos} dispatches",
       "origen": {
         "rma": "RMA",
-        "picking": "Outbound: picking",
-        "despacho": "Outbound: dispatch"
+        "picking": "Dispatch: picking",
+        "despacho": "Dispatch: gate exit"
       },
       "ver_todos": "View all"
     },
@@ -2549,7 +2565,7 @@
     "back": "Back",
     "firmas": {
       "titulo": "Record signatures",
-      "ayuda": "All four sign, one after another on this same phone. Each signature is saved as soon as it is finished and cannot be changed.",
+      "ayuda": "Each one signs their own from their panel: Security here, RMA in the case and Warehouse (optional) in theirs. If the customer picks up in person, they sign on this computer. A saved signature can't be changed.",
       "ayuda_una": "Signed by whoever attests to what left. Saved as soon as it is finished and cannot be changed.",
       "ayuda_una_ingreso": "Signed by whoever attests to what arrived. Saved as soon as it is finished and cannot be changed.",
       "completa": "Complete",
@@ -2571,6 +2587,14 @@
         "almacen": "Warehouse",
         "seguridad": "OSC Security",
         "cliente": "Receives / Delivers"
+      },
+      "opcional": "optional",
+      "elegir_persona": "Choose who signs…",
+      "se_firma_en": {
+        "tecnico": "RMA signs it from the case",
+        "almacen": "Warehouse signs it from its panel",
+        "seguridad": "Security signs it from the receipt",
+        "cliente": "The customer signs it on Security's computer"
       }
     },
     "nav": {
@@ -2582,7 +2606,7 @@
       "despachos": "Dispatches",
       "por_llegar": "Devices on the way",
       "mercancia_ingresos": "Inbound",
-      "mercancia_egresos": "Outbound",
+      "mercancia_egresos": "Dispatches",
       "almacenistas": "Warehouse staff",
       "abrir_menu": "Open menu",
       "cerrar_menu": "Close menu"
@@ -2597,7 +2621,7 @@
     },
     "mercancia": {
       "ingreso_titulo": "Inbound merchandise",
-      "egreso_titulo": "Outbound merchandise",
+      "egreso_titulo": "Merchandise dispatches",
       "ingreso_sub": "Merchandise arriving at the warehouse",
       "egreso_sub": "Load leaving on a truck",
       "nuevo": "Register",
@@ -2648,46 +2672,46 @@
       "no_llego_resumen": "{count, plural, =1 {# product marked \"Did not arrive\"} other {# products marked \"Did not arrive\"}}",
       "diferencia_cantidad_resumen": "{count, plural, =1 {# line with a quantity mismatch} other {# lines with a quantity mismatch}}",
       "dashboard": {
-        "titulo": "Merchandise outbound",
+        "titulo": "Merchandise dispatches",
         "subtitulo": "Your branch at a glance",
         "loading": "Loading…",
         "error": "Could not load the summary. Try reloading the page.",
-        "kpi_egresos_hoy": "Outbound today",
+        "kpi_egresos_hoy": "Dispatches today",
         "kpi_pendientes": "Pending verification",
         "kpi_descuadres": "Mismatches (30 days)",
         "kpi_promedio": "Average rating",
         "kpi_total_calif": "{count, plural, =1 {# rating this month} other {# ratings this month}}",
-        "recientes": "Recent outbound",
+        "recientes": "Recent dispatches",
         "top_almacenistas": "Top rated this month",
         "kpi_por_aspecto": "Picking {picking} · Dispatch {despacho}",
-        "egresos_novedades": "{egresos, plural, =1 {# outbound} other {# outbounds}} · {novedades, plural, =0 {no issues} other {# with issues}}",
+        "egresos_novedades": "{egresos, plural, =1 {# dispatch} other {# dispatches}} · {novedades, plural, =0 {no issues} other {# with issues}}",
         "ver_todos": "View all",
         "ver_ordenes": "View pending orders",
-        "vacio": "No outbound movements registered yet."
+        "vacio": "No dispatches registered yet."
       },
       "ordenes": {
         "titulo": "Pending delivery orders",
-        "subtitulo": "Ready and invoiced in Odoo, not yet processed as outbound",
+        "subtitulo": "Ready and invoiced in Odoo, not yet processed as a dispatch",
         "vacio": "No delivery orders ready and invoiced in Odoo.",
         "sin_facturar": "{n, plural, one {# order ready in Odoo is not invoiced yet} other {# orders ready in Odoo are not invoiced yet}}: they show up here once they are invoiced.",
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
-        "registrar_egreso": "Register outbound with this order"
+        "registrar_egreso": "Register dispatch with this order"
       },
       "aviso": {
-        "nuevo_egreso": "A new outbound just came in",
+        "nuevo_egreso": "A new dispatch just came in",
         "nuevo_ingreso": "A new inbound just came in",
-        "un_egreso": "The outbound",
+        "un_egreso": "The dispatch",
         "un_ingreso": "The inbound",
         "verificado_conforme": "{tipo} was verified: all matches",
         "verificado_descuadre": "{tipo} was verified: mismatch",
         "ver": "Open",
         "cerrar": "Dismiss",
-        "nuevo_por_armar": "New outbound to assemble",
-        "listo_verificar": "Outbound ready to verify at the gate",
+        "nuevo_por_armar": "New dispatch to assemble",
+        "listo_verificar": "Dispatch ready to verify at the gate",
         "aprobado": "Security approved and dispatched",
-        "no_aprobado": "Security did not approve the outbound",
-        "devuelto": "Security didn't dispatch an outbound: it's back in Warehouse"
+        "no_aprobado": "Security did not approve the dispatch",
+        "devuelto": "Security didn't dispatch the order: it's back in Warehouse"
       },
       "personal_almacen": {
         "titulo": "Warehouse staff",
@@ -2816,7 +2840,7 @@
           "serial_otra_orden": "Serial {serial} belongs to order {otra_orden}",
           "producto_ajeno": "{contado, plural, =1 {Not in the order} other {Not in the order (×#)}}"
         },
-        "no_aprobado_sin_renglones": "Security did not approve this outbound.",
+        "no_aprobado_sin_renglones": "Security did not approve this dispatch.",
         "comentario_picking_obligatorio": "There were issues: explain why picking deserves {n} stars.",
         "calificar_cerrar": "Rate and close",
         "resultado": {
@@ -2834,10 +2858,10 @@
           "todos": "All"
         },
         "vacio_filtro": "Nothing here.",
-        "en_curso": "Outbound in progress",
+        "en_curso": "Dispatches in progress",
         "flujo_anterior": "Record from the previous flow",
         "cancelar": "Back",
-        "solo_almacen_egreso": "Outbound goods are started by Warehouse. Security steps in at the end, at the gate.",
+        "solo_almacen_egreso": "Merchandise dispatches are started by Warehouse. Security steps in at the end, at the gate.",
         "verificacion": {
           "ayuda": "Scan what goes out. A serial from the picking already tells which product it is; products without serial add 1 with their code. If a box has no code, type the quantity.",
           "pistola_titulo": "Barcode scanner",
@@ -2898,6 +2922,23 @@
       "error_salen": "Choose at least one product for this dispatch.",
       "ya_salio": "Left on {fecha}",
       "salieron_titulo": "Products dispatched ({n})"
+    },
+    "actas_firmar": {
+      "titulo_almacen": "RMA receipt signatures",
+      "subtitulo_almacen": "Warehouse signature on RMA intakes and dispatches (optional)",
+      "ayuda": {
+        "almacen": "RMA intakes and dispatches from the last 45 days. Open one, choose who from Warehouse signs, and sign. It's optional.",
+        "tecnico": "Receipts for this case. Open one, choose who from RMA signs, and sign."
+      },
+      "vacio": "No receipts to sign.",
+      "tipo": {
+        "ingreso": "Intake",
+        "despacho": "Dispatch"
+      },
+      "guia": "Waybill {n}",
+      "firmada": "Signed",
+      "por_firmar": "To sign",
+      "actualizar": "Refresh list"
     }
   },
   "recepcion": {

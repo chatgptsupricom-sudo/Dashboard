@@ -28,6 +28,16 @@ type Rol = (typeof TODOS_LOS_ROLES)[number];
 
 type Firma = { rol: Rol; firmante_nombre: string; created_at: string };
 
+/**
+ * De dónde sale la lista de personas que pueden firmar por cada rol: se elige
+ * de ahí, no se escribe. El cliente escribe su nombre.
+ */
+const CATALOGO: Partial<Record<Rol, { url: string; campo: string }>> = {
+  tecnico: { url: "/api/seguridad/catalogo/personal?rol=rma", campo: "personal" },
+  seguridad: { url: "/api/seguridad/catalogo/personal?rol=seguridad", campo: "personal" },
+  almacen: { url: "/api/seguridad/mercancia/catalogo/almacenistas", campo: "almacenistas" },
+};
+
 export default function FirmasActa({
   tipo,
   actaId,
@@ -36,6 +46,8 @@ export default function FirmasActa({
   readOnly = false,
   permitirRehacer = false,
   ayudaUna = "ayuda_una",
+  opcionales = [],
+  puedeFirmar,
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -67,6 +79,17 @@ export default function FirmasActa({
    * (#49): para el resto una firma guardada es definitiva.
    */
   permitirRehacer?: boolean;
+  /**
+   * Firmas que se pueden dejar sin hacer: no cuentan para "Faltan N" y se
+   * marcan "(opcional)". En el acta de RMA, la de Almacén.
+   */
+  opcionales?: Rol[];
+  /**
+   * Las firmas que este usuario puede hacer desde esta pantalla: cada rol
+   * firma solo la suya, en su panel. Las demás se ven (firmada o no) pero sin
+   * botón. Sin esto, todas las de `roles` (si no es readOnly).
+   */
+  puedeFirmar?: Rol[];
 }) {
   const t = useTranslations("seguridad.firmas");
 
@@ -77,8 +100,12 @@ export default function FirmasActa({
   const [trazo, setTrazo] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Personas del catálogo del rol que se está firmando (null = no se pudo
+  // cargar o está vacío: se escribe el nombre).
+  const [personas, setPersonas] = useState<string[] | null>(null);
 
   const url = `/api/seguridad/firmas/${tipo}/${actaId}`;
+  const firmable = (rol: Rol) => !readOnly && (puedeFirmar ?? roles).includes(rol);
 
   const cargar = useCallback(async () => {
     try {
@@ -101,9 +128,30 @@ export default function FirmasActa({
 
   const abrir = (rol: Rol) => {
     setAbierta(rol);
-    setNombre(firmaDe(rol)?.firmante_nombre || nombresSugeridos[rol] || "");
     setTrazo(null);
     setError(null);
+    setPersonas(null);
+    const cat = CATALOGO[rol];
+    const sugerido = firmaDe(rol)?.firmante_nombre || nombresSugeridos[rol] || "";
+    if (!cat) {
+      setNombre(sugerido);
+      return;
+    }
+    // Se elige de la lista: el sugerido solo si está en ella.
+    setNombre("");
+    fetch(cat.url)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j: any) => {
+        const lista: string[] = ((j?.[cat.campo] as any[]) || [])
+          .filter((x) => x.activo === undefined || x.activo === 1 || x.activo === true)
+          .map((x) => String(x.nombre));
+        setPersonas(lista.length ? lista : null);
+        setNombre(lista.length ? (lista.includes(sugerido) ? sugerido : "") : sugerido);
+      })
+      .catch(() => {
+        setPersonas(null);
+        setNombre(sugerido);
+      });
   };
 
   const guardar = async () => {
@@ -143,7 +191,7 @@ export default function FirmasActa({
   };
 
   const ROLES = roles;
-  const faltan = ROLES.filter((r) => !firmaDe(r)).length;
+  const faltan = ROLES.filter((r) => !opcionales.includes(r) && !firmaDe(r)).length;
 
   return (
     <section className="bg-white border border-slate-200 rounded-[10px] p-5">
@@ -177,6 +225,11 @@ export default function FirmasActa({
             >
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {t(`rol.${rol}`)}
+                {opcionales.includes(rol) && (
+                  <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">
+                    ({t("opcional")})
+                  </span>
+                )}
               </p>
               {firmada ? (
                 <>
@@ -188,7 +241,7 @@ export default function FirmasActa({
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       {t("firmado")}
                     </span>
-                    {!readOnly && permitirRehacer && (
+                    {firmable(rol) && permitirRehacer && (
                       <>
                         <button
                           type="button"
@@ -207,7 +260,7 @@ export default function FirmasActa({
                         </button>
                       </>
                     )}
-                    {!readOnly && !permitirRehacer && (
+                    {firmable(rol) && !permitirRehacer && (
                       <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
                         <Lock className="w-3 h-3" />
                         {t("bloqueada")}
@@ -220,9 +273,12 @@ export default function FirmasActa({
                   <p className="text-sm text-slate-500 mt-1 truncate">
                     {nombresSugeridos[rol] || t("sin_nombre")}
                   </p>
-                  {readOnly ? (
-                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                  {!firmable(rol) ? (
+                    <span className="mt-2 block text-[11px] font-semibold text-amber-700">
                       {t("sin_firmar")}
+                      {!readOnly && (
+                        <span className="block font-normal text-slate-500">{t(`se_firma_en.${rol}`)}</span>
+                      )}
                     </span>
                   ) : (
                     <button
@@ -258,13 +314,28 @@ export default function FirmasActa({
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 {t("nombre")}
               </label>
-              <input
-                type="text"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value.slice(0, 200))}
-                className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={200}
-              />
+              {personas ? (
+                <select
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                >
+                  <option value="">{t("elegir_persona")}</option>
+                  {personas.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value.slice(0, 200))}
+                  className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                  maxLength={200}
+                />
+              )}
             </div>
 
             <SignaturePad onChange={setTrazo} label={t("trazo")} />

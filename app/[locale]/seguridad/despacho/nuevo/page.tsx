@@ -30,6 +30,7 @@ function todayISO() {
 type Ingreso = {
   id: number;
   rma_case_id: number | null;
+  rma_status?: string | null;
   fecha_entrega: string;
   cliente_nombre: string;
   hardware: string | null;
@@ -180,6 +181,20 @@ export default function NuevoDespachoPage() {
     }));
   };
 
+  // Desde "Listos para despachar" se llega con ?ingreso=ID: se abre ya elegido.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("ingreso");
+    if (!id) return;
+    fetch(`/api/seguridad/despacho/ingresos-pendientes?ingreso_id=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : { ingresos: [] }))
+      .then((j) => {
+        const ing = (j.ingresos || [])[0];
+        if (ing) selectIngreso(ing);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const skipIngreso = () => {
     setSelectedIngreso(null);
     setProductosIngreso([]);
@@ -225,7 +240,6 @@ export default function NuevoDespachoPage() {
         .filter((f) => f.length > 0);
 
       const payload: Record<string, unknown> = {
-        nd_numero: form.nd_numero.trim() || undefined,
         fecha_despacho: form.fecha_despacho,
         almacenista_nombre: form.almacenista_nombre
           .trim()
@@ -233,8 +247,8 @@ export default function NuevoDespachoPage() {
         cliente_retira: form.cliente_retira.trim().slice(0, MAX.cliente_retira) || undefined,
         accesorios_integros: form.accesorios_integros,
         observaciones: form.observaciones.trim().slice(0, MAX.observaciones) || undefined,
-        firma_cliente_nombre:
-          form.firma_cliente_nombre.trim().slice(0, MAX.firma_cliente_nombre) || undefined,
+        // Quien firma es el mismo cliente que retira: antes se pedía dos veces.
+        firma_cliente_nombre: form.cliente_retira.trim().slice(0, MAX.cliente_retira) || undefined,
         facturas: cleanFacturas,
       };
       if (selectedIngreso) {
@@ -427,6 +441,11 @@ export default function NuevoDespachoPage() {
                             <p className="text-sm font-medium text-slate-800 truncate">
                               {ing.cliente_nombre}
                             </p>
+                            {["reparado", "nota_credito", "no_procesado"].includes(ing.rma_status || "") && (
+                              <span className="inline-block mb-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5">
+                                {t("despacho.listos.badge")}
+                              </span>
+                            )}
                             <p className="text-[11px] text-slate-500 truncate">
                               {ing.hardware || "—"}
                               {ing.serial ? ` · ${ing.serial}` : ""}
@@ -506,23 +525,11 @@ export default function NuevoDespachoPage() {
               {tf("section_data")}
             </h2>
 
-            {/* Numero ND del encabezado de la planilla: el correlativo que
-                el almacen lleva a mano en el papel. */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_nd")}
-              </label>
-              <input
-                type="text"
-                value={form.nd_numero}
-                onChange={(e) =>
-                  update("nd_numero", e.target.value.slice(0, MAX.nd_numero))
-                }
-                placeholder={tf("field_nd_placeholder")}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.nd_numero}
-              />
-            </div>
+            {/* Número de guía: lo asigna el sistema al guardar (antes "N.º ND",
+                que el almacén escribía a mano). */}
+            <p className="rounded-[10px] bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+              {tf("guia_automatica")}
+            </p>
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
@@ -682,24 +689,6 @@ export default function NuevoDespachoPage() {
               </p>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_firma_nombre")}
-              </label>
-              <input
-                type="text"
-                value={form.firma_cliente_nombre}
-                onChange={(e) =>
-                  update(
-                    "firma_cliente_nombre",
-                    e.target.value.slice(0, MAX.firma_cliente_nombre),
-                  )
-                }
-                placeholder={tf("firma_nombre_placeholder")}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.firma_cliente_nombre}
-              />
-            </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">

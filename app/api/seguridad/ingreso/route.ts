@@ -10,6 +10,7 @@ import {
   type ProductoIngreso,
 } from "@/lib/seguridad/productosEnvio";
 import { leerProductos } from "@/lib/rma/items";
+import { siguienteGuia } from "@/lib/seguridad/guia";
 
 
 
@@ -283,8 +284,9 @@ export async function POST(request: NextRequest) {
         recibidoRma,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
-        // Correlativo que el almacen lleva a mano en la planilla de papel.
-        truncate(body.nd_numero, MAX.nd_numero),
+        // Número de guía: lo asigna el sistema (el siguiente de la sucursal),
+        // ya no se escribe a mano. Se ignora el que mande el cliente.
+        await siguienteGuia(cids),
         cids,
       ],
     );

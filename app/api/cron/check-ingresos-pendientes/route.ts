@@ -5,6 +5,7 @@ import {
   ingresosPendientes,
 } from "@/lib/seguridad/pendientes";
 import { NextResponse } from "next/server";
+import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
  * Aviso proactivo al equipo técnico de los equipos que llevan demasiado tiempo
@@ -109,7 +110,7 @@ export async function GET(request: Request) {
         oldest_days: oldestDays,
         diagnostico: await conteosDiagnostico(),
         socket_disponible: Boolean((global as any).io),
-        n8n_configurado: Boolean(process.env.N8N_LEAD_WEBHOOK_URL),
+        n8n_configurado: Boolean(urlWebhookRma()),
         destinatarios: tecnicos,
         payload,
       });
@@ -132,8 +133,8 @@ export async function GET(request: Request) {
 
     // Fire-and-forget, igual que el ticket del portal: si n8n falla, los datos
     // ya están y el socket ya salió. El aviso no puede tumbar la operación.
-    if (process.env.N8N_LEAD_WEBHOOK_URL) {
-      fetch(process.env.N8N_LEAD_WEBHOOK_URL, {
+    if (urlWebhookRma()) {
+      fetch(urlWebhookRma()!, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

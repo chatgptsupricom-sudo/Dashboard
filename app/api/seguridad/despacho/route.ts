@@ -9,6 +9,7 @@ import {
   productosParaDespacho,
   type ProductoDespacho,
 } from "@/lib/seguridad/productosEnvio";
+import { guiaDeIngreso, siguienteGuia } from "@/lib/seguridad/guia";
 
 
 
@@ -257,8 +258,10 @@ export async function POST(request: NextRequest) {
         body.accesorios_integros === false ? 0 : 1,
         truncate(body.observaciones, MAX.observaciones),
         truncate(body.firma_url, MAX.firma_url),
-        // Correlativo que el almacen lleva a mano en la planilla de papel.
-        truncate(body.nd_numero, MAX.nd_numero),
+        // Número de guía: el del ingreso que se devuelve (recepción y
+        // despacho son una sola hoja); sin ingreso, el siguiente de la
+        // sucursal. Ya no se escribe a mano.
+        (ingresoId !== null ? await guiaDeIngreso(ingresoId) : null) || (await siguienteGuia(cids)),
         cids,
       ],
     );

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
-import { requireRmaOSeguridad, requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRoles } from "@/lib/auth/roles";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import {
   decodificarFirmaPng,
   esRolValido,
@@ -44,6 +45,59 @@ async function actaVisible(
 
 const MAX_FIRMA_BYTES = 1024 * 1024; // 1 MB: un trazo de canvas pesa unos pocos KB
 
+/**
+ * Quién firma qué: cada rol firma SOLO la suya, desde su propio panel.
+ * Seguridad da fe en el mostrador y, si el cliente retira en persona, le pasa
+ * su computadora para que firme él. RMA firma la del técnico y Almacén la
+ * suya (opcional). superadmin puede todas, como vía de corrección.
+ */
+const FIRMA_DEL_ROL: Record<string, string[]> = {
+  seguridad: ["seguridad", "cliente"],
+  rma: ["tecnico"],
+  almacen: ["almacen"],
+};
+const PANEL_DE_FIRMA: Record<string, string> = {
+  tecnico: "RMA",
+  almacen: "Almacén",
+  seguridad: "Seguridad",
+  cliente: "Seguridad",
+};
+
+function rolDeSesion(payload: any): string {
+  return String(payload?.role || "").toLowerCase().trim();
+}
+
+/**
+ * El nombre de quien firma sale del catálogo de personal de su rol (se elige
+ * de una lista en el panel). Si el catálogo está vacío o no existe en esta
+ * base, no se bloquea: se acepta el nombre escrito.
+ */
+async function nombreDelCatalogo(rol: string, nombre: string, cids: number | null): Promise<boolean> {
+  try {
+    let lista: any[] = [];
+    if (rol === "tecnico" || rol === "seguridad") {
+      const r = await query(
+        `SELECT nombre FROM seguridad_catalogo_personal WHERE rol = ? AND activo = 1`,
+        [rol === "tecnico" ? "rma" : "seguridad"],
+      );
+      lista = r.rows as any[];
+    } else if (rol === "almacen") {
+      const r = await query(
+        `SELECT nombre FROM seguridad_catalogo_almacenistas ${cids !== null ? "WHERE cids = ?" : ""}`,
+        cids !== null ? [cids] : [],
+      );
+      lista = r.rows as any[];
+    } else {
+      return true; // el cliente escribe su nombre
+    }
+    if (!lista.length) return true;
+    const buscado = nombre.trim().toLowerCase();
+    return lista.some((x) => String(x.nombre).trim().toLowerCase() === buscado);
+  } catch {
+    return true;
+  }
+}
+
 function parsearParams(tipo: string, id: string) {
   if (!esTipoValido(tipo)) return { error: "tipo de acta invalido" };
   const actaId = parseInt(id, 10);
@@ -77,9 +131,11 @@ export async function GET(
     // Solo el ingreso se abre a RMA (verifica que el acta tenga las 4
     // firmas antes de intervenir el equipo). Despacho y mercancia son cosa
     // de Almacen/Seguridad y siguen exclusivos.
-    const auth = tipo === "ingreso"
-      ? await requireRmaOSeguridad(request)
-      : await requireSeguridad(request);
+    // Las actas de RMA las ven los tres roles que firman: Seguridad, RMA y
+    // Almacén. La de mercancía sigue siendo de Seguridad.
+    const auth = tipo === "mercancia"
+      ? await requireSeguridad(request)
+      : await requireRoles(request, ["seguridad", "rma", "almacen"]);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
@@ -107,13 +163,15 @@ export async function POST(
   { params }: { params: Promise<{ tipo: string; id: string }> },
 ) {
   try {
-    const auth = await requireSeguridad(request);
+    const { tipo, id } = await params;
+    const auth = tipo === "mercancia"
+      ? await requireSeguridad(request)
+      : await requireRoles(request, ["seguridad", "rma", "almacen"]);
     if (auth.error) return auth.error;
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
-    const { tipo, id } = await params;
     const p = parsearParams(tipo, id);
     if (p.error) return NextResponse.json({ error: p.error }, { status: 400 });
 
@@ -128,6 +186,15 @@ export async function POST(
       return NextResponse.json(
         { error: "rol invalido: tecnico, almacen, seguridad o cliente" },
         { status: 400 },
+      );
+    }
+
+    // Cada rol firma solo la suya (ver FIRMA_DEL_ROL).
+    const sesion = rolDeSesion(auth.payload);
+    if (sesion !== "superadmin" && !(FIRMA_DEL_ROL[sesion] || []).includes(body.rol)) {
+      return NextResponse.json(
+        { error: `Esa firma se hace desde el panel de ${PANEL_DE_FIRMA[body.rol] || "su rol"}.` },
+        { status: 403 },
       );
     }
 
@@ -152,6 +219,13 @@ export async function POST(
     }
     if (decodificada.buffer.length > MAX_FIRMA_BYTES) {
       return NextResponse.json({ error: "Firma demasiado grande" }, { status: 400 });
+    }
+
+    if (!(await nombreDelCatalogo(body.rol, nombre, cids))) {
+      return NextResponse.json(
+        { error: "Elige de la lista a la persona que firma." },
+        { status: 400 },
+      );
     }
 
     // Que el acta exista Y sea de la sucursal de la sesion antes de colgarle
