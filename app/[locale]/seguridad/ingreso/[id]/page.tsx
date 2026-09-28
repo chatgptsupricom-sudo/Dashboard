@@ -19,6 +19,7 @@ import {
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import { GarantiaBadge } from "@/components/seguridad/GarantiaIngreso";
 import ProductosEnvioLista, { type FilaProducto } from "@/components/seguridad/ProductosEnvioLista";
 
 type Ingreso = {
@@ -54,6 +55,7 @@ type RmaCase = {
   garantia_meses: number | null;
   garantia_vence: string | null;
   garantia_marca: string | null;
+  producto_externo?: boolean;
 } | null;
 
 type Adjunto = {
@@ -296,7 +298,11 @@ export default function IngresoDetailPage() {
             />
             <DataField
               label={td("label_factura")}
-              value={ingreso.factura_numero || td("no_value")}
+              value={
+                rmaCase?.producto_externo
+                  ? tf("producto_externo")
+                  : ingreso.factura_numero || td("no_value")
+              }
             />
             <DataField
               label={td("label_cliente")}
@@ -339,9 +345,11 @@ export default function IngresoDetailPage() {
           tipo="ingreso"
           actaId={ingreso.id}
           nombresSugeridos={{
-            tecnico: tecnico?.nombre,
+            // Quien recibio por cada lado en el formulario (#50); antes se
+            // sugeria el usuario de la sesion y el tecnico de la config.
+            tecnico: ingreso.recibido_rma_nombre || tecnico?.nombre,
             almacen: ingreso.recibido_por,
-            seguridad: user?.name,
+            seguridad: ingreso.recibido_seguridad_nombre || user?.name,
             cliente: ingreso.cliente_nombre,
           }}
           readOnly={esRma || esSuperadmin}
@@ -397,7 +405,7 @@ export default function IngresoDetailPage() {
           </div>
           {ingreso.rma_case_id && rmaCase ? (
             <div className="flex flex-wrap items-center gap-2">
-              <GarantiaBadge estado={rmaCase.garantia_estado} />
+              <GarantiaBadge estado={rmaCase.producto_externo ? "no_aplica" : rmaCase.garantia_estado} />
               {rmaCase.garantia_marca && (
                 <span className="text-xs text-slate-500">
                   {rmaCase.garantia_marca}
@@ -681,25 +689,6 @@ function RecibidoPor({ label, nombre }: { label: string; nombre: string }) {
   );
 }
 
-function GarantiaBadge({ estado }: { estado: string | null }) {
-  const td = useTranslations("seguridad.ingreso.detail");
-  const key = estado || "indeterminada";
-  const clase =
-    key === "en_garantia"
-      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-      : key === "vida_util"
-        ? "bg-violet-100 text-violet-700 border-violet-200"
-        : key === "vencida"
-          ? "bg-amber-100 text-amber-800 border-amber-200"
-          : "bg-slate-100 text-slate-600 border-slate-200";
-  return (
-    <span
-      className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md border ${clase}`}
-    >
-      {td(`warranty_${key}`)}
-    </span>
-  );
-}
 
 function CheckField({
   label,
