@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { hayTablaProductos } from "@/lib/rma/items";
+import { filtroProcedencia, hayColumnaExterno, leerProcedencia } from "@/lib/rma/procedencia";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -18,6 +19,27 @@ export async function GET(request: NextRequest) {
       companyFilter = "AND company_id = ?";
       params.push(parseInt(companyId, 10));
     }
+
+    // Cuántos casos hay de cada procedencia (para las pestañas), antes de
+    // filtrar por una.
+    const conColumna = await hayColumnaExterno();
+    const procedenciaResult = await query(
+      conColumna
+        ? `SELECT SUM(producto_externo = 0) AS supricom, SUM(producto_externo = 1) AS externo
+             FROM rma_cases WHERE 1=1 ${companyFilter}`
+        : `SELECT COUNT(*) AS supricom, 0 AS externo FROM rma_cases WHERE 1=1 ${companyFilter}`,
+      params
+    );
+    const porProcedencia = {
+      supricom: Number(procedenciaResult.rows[0]?.supricom) || 0,
+      externo: Number(procedenciaResult.rows[0]?.externo) || 0,
+    };
+
+    // supricom = vendido por Supricom, externo = no comprado en Supricom.
+    companyFilter += filtroProcedencia(
+      leerProcedencia(searchParams.get("procedencia")),
+      conColumna
+    );
 
     // Total cases
     const totalResult = await query(
@@ -80,6 +102,7 @@ export async function GET(request: NextRequest) {
         reingresado: statusMap.reingresado || 0,
         byStatus: statusMap,
       },
+      porProcedencia,
       recent: recentResult.rows,
     });
   } catch (error: any) {

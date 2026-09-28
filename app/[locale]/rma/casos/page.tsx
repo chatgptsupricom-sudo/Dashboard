@@ -1,6 +1,11 @@
 "use client";
 
 import { AlertaIngresosPendientes } from "@/components/rma/AlertaIngresosPendientes";
+import {
+  leerProcedenciaFiltro,
+  SelectorProcedencia,
+  type ProcedenciaFiltro,
+} from "@/components/rma/SelectorProcedencia";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,8 +27,8 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Plus, Search, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 
 const statusColors: Record<string, string> = {
@@ -42,16 +47,45 @@ const statusLabels: Record<string, string> = {
   reingresado: "Reingresado",
 };
 
+const ESTADOS = ["recibido", "reparado", "nota_credito", "no_procesado", "reingresado"];
+
+// useSearchParams necesita un Suspense alrededor para el build.
 export default function RmaCasosPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+        </div>
+      }
+    >
+      <RmaCasos />
+    </Suspense>
+  );
+}
+
+function RmaCasos() {
   const t = useTranslations("rma");
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const locale = (params?.locale as string) || "es";
 
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // ?status= llega desde las tarjetas del tablero de RMA.
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const s = searchParams?.get("status") || "";
+    return ESTADOS.includes(s) ? s : "";
+  });
+  // Inventario separado por procedencia; sin ?procedencia= se abre en los
+  // vendidos por Supricom, igual que el tablero. "todos" = sin filtro.
+  const [procedencia, setProcedencia] = useState<ProcedenciaFiltro>(() => {
+    const p = searchParams?.get("procedencia");
+    return p === "todos" ? "" : p ? leerProcedenciaFiltro(p) : "supricom";
+  });
+  const [conteos, setConteos] = useState<{ supricom: number; externo: number }>();
   const [origenFilter, setOrigenFilter] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -61,7 +95,25 @@ export default function RmaCasosPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [page, statusFilter, origenFilter]);
+  }, [page, statusFilter, origenFilter, procedencia]);
+
+  useEffect(() => {
+    fetch("/api/rma/stats")
+      .then((r) => r.json())
+      .then((d) => d.success && setConteos(d.porProcedencia))
+      .catch(() => {});
+  }, []);
+
+  const cambiarProcedencia = (v: ProcedenciaFiltro) => {
+    setProcedencia(v);
+    setPage(1);
+    // Que el enlace y el "atrás" del navegador recuerden la pestaña.
+    const q = new URLSearchParams({
+      ...(statusFilter ? { status: statusFilter } : {}),
+      procedencia: v || "todos",
+    });
+    router.replace(`/${locale}/rma/casos?${q}`, { scroll: false });
+  };
 
   const fetchCases = async () => {
     try {
@@ -73,6 +125,7 @@ export default function RmaCasosPage() {
       if (search) params.set("search", search);
       if (statusFilter) params.set("status", statusFilter);
       if (origenFilter) params.set("origen", origenFilter);
+      if (procedencia) params.set("procedencia", procedencia);
 
       const res = await fetch(`/api/rma?${params}`);
       const data = await res.json();
@@ -137,6 +190,8 @@ export default function RmaCasosPage() {
       </div>
 
       <AlertaIngresosPendientes />
+
+      <SelectorProcedencia value={procedencia} onChange={cambiarProcedencia} conteos={conteos} />
 
       {/* Filters */}
       <Card className="rounded-3xl border-none shadow-sm">
