@@ -126,6 +126,54 @@ export async function GET(request: NextRequest) {
 
     const partnerIdParam = searchParams.get("partner_id");
 
+    // ── Búsqueda por nombre, con o sin saldo ──
+    // El listado solo trae clientes con documentos abiertos, así que un
+    // cliente al día (caso ACRONIS 2022: todo cobrado en Valencia y Caracas)
+    // no aparece y no hay cómo sacarle un estado de cuenta "a paz y salvo".
+    // Esto busca en el mayor de cuentas por cobrar a cualquier cliente con
+    // movimiento, agrupado por cliente y sede.
+    const buscar = (searchParams.get("buscar") || "").trim();
+    if (!partnerIdParam && buscar) {
+      if (buscar.length < 3) return NextResponse.json({ success: true, clientes: [] });
+      const grupos = (await callOdooRPC<any[]>(
+        "account.move.line", "read_group",
+        [
+          [
+            ["partner_id.name", "ilike", buscar],
+            ["account_id.account_type", "=", "asset_receivable"],
+            ["parent_state", "=", "posted"],
+            ["company_id", "in", companyIds],
+          ],
+          ["amount_residual:sum"],
+          ["partner_id", "company_id"],
+        ],
+        { lazy: false, limit: 30, orderby: "partner_id" },
+      )) || [];
+
+      const partnerIds = [...new Set(grupos.map((g: any) => g.partner_id?.[0]).filter(Boolean))];
+      const partners = partnerIds.length
+        ? (await callOdooRPC<any[]>(
+            "res.partner", "read", [partnerIds], { fields: ["user_id"] },
+          )) || []
+        : [];
+      const vendedorDe: Record<number, string> = {};
+      partners.forEach((p: any) => { vendedorDe[p.id] = p.user_id?.[1] || "Sin asignar"; });
+
+      const clientes = grupos
+        .filter((g: any) => g.partner_id?.[0])
+        .map((g: any) => ({
+          partnerId: g.partner_id[0],
+          nombre: g.partner_id[1] || "Sin cliente",
+          vendedor: vendedorDe[g.partner_id[0]] || "Sin asignar",
+          sede: g.company_id?.[1] || "",
+          saldo: redondear(g.amount_residual || 0),
+          vencido: 0,
+          documentos: g.__count || 0,
+          diasMax: 0,
+        }));
+      return NextResponse.json({ success: true, clientes });
+    }
+
     // ── Listado de clientes con saldo ──
     if (!partnerIdParam) {
       const registros = await fetchPaginated(
