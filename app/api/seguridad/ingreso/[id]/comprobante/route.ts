@@ -293,7 +293,7 @@ export async function GET(
     </div>
 
     <h1>Recepci&oacute;n y Despacho de RMA</h1>
-    <div class="nd">ND - ${esc(ndParaImprimir(i.nd_numero)) || "&nbsp;"}</div>
+    <div class="nd">Gu&iacute;a N.&ordm; ${esc(ndParaImprimir(i.nd_numero)) || "&nbsp;"}</div>
 
     <table>
       <tr><th>Fecha de entrega (almac&eacute;n)</th><td>${fechaLarga(i.fecha_entrega)}</td></tr>
@@ -340,7 +340,7 @@ export async function GET(
       ${bloquesFirma}
     </div>
 
-    <p class="footer-note">Supricom Venezuela &middot; Documento generado por el sistema &middot; ND ${esc(ndParaImprimir(i.nd_numero)) || String(ingresoId)}</p>
+    <p class="footer-note">Supricom Venezuela &middot; Documento generado por el sistema &middot; Gu&iacute;a N.&ordm; ${esc(ndParaImprimir(i.nd_numero)) || String(ingresoId)}</p>
   </div>
 </body>
 </html>`;

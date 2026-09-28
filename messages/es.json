@@ -198,20 +198,21 @@
     "seg_grupo_mercancia": "Mercancía",
     "seg_grupo_almacen": "Almacén",
     "seg_ingreso": "Ingreso",
-    "seg_egreso": "Egreso",
+    "seg_egreso": "Despacho",
     "seg_estadisticas": "Estadísticas de RMA",
     "seg_personal": "Personal",
     "seg_personal_rma": "Personal RMA",
     "seg_personal_almacen": "Personal Almacén",
     "seg_personal_seguridad": "Personal Seguridad",
     "seg_merc_ingresos": "Ingresos",
-    "seg_merc_egresos": "Egresos",
-    "almacen_egresos": "Egresos de mercancía",
+    "seg_merc_egresos": "Despachos",
+    "almacen_egresos": "Despachos de mercancía",
     "almacen_ordenes": "Órdenes pendientes",
     "almacen_unidades": "Gestionar Unidades",
     "almacen_recepcion": "Recepción (packing list)",
     "recepcion_packing": "Packing lists",
-    "llegadas": "Packing List"
+    "llegadas": "Packing List",
+    "almacen_actas_rma": "Firmas de actas RMA"
   },
   "rma": {
     "portal_warranty": "Garantía al reportar",
@@ -2280,8 +2281,11 @@
         "encolado_titulo": "Guardado en este teléfono, todavía sin enviar",
         "encolado_desc": "No hay conexión. El ingreso sale solo en cuanto vuelva la señal. No cierres sesión ni borres los datos del navegador hasta que salga.",
         "encolado_volver": "Volver al mostrador",
-        "field_nd": "N.º ND (planilla)",
-        "field_nd_placeholder": "Ej: 1234"
+        "field_nd": "N.º de guía",
+        "field_nd_placeholder": "Ej: 1234",
+        "guia_automatica": "El número de guía lo asigna el sistema al guardar.",
+        "ticket_elegir": "Elige el ticket…",
+        "ticket_sin_pendientes": "No hay tickets pendientes de ingreso"
       },
       "list": {
         "search_placeholder": "Buscar cliente, serial o factura...",
@@ -2346,7 +2350,7 @@
         "adjunto_imagen": "Imagen",
         "adjunto_video": "Video",
         "print": "Imprimir acta",
-        "label_nd": "N.º ND",
+        "label_nd": "N.º de guía",
         "section_garantia": "Garantía",
         "garantia_desde_ticket": "Del ticket de RMA, congelada al momento del reporte",
         "garantia_vence": "Vence el",
@@ -2361,7 +2365,7 @@
     "despacho": {
       "form": {
         "title": "Registrar despacho",
-        "subtitle": "Egreso de equipo reparado del taller",
+        "subtitle": "Despacho de equipo reparado del taller",
         "section_ingreso": "Ingreso previo (opcional)",
         "section_data": "Datos del despacho",
         "section_facturas": "Facturas incluidas",
@@ -2396,8 +2400,9 @@
         "error_required": "Completa los campos obligatorios",
         "error_one_factura": "Agrega al menos una factura",
         "error_generic": "No se pudo registrar el despacho",
-        "field_nd": "N.º ND (planilla)",
-        "field_nd_placeholder": "Ej: 1234"
+        "field_nd": "N.º de guía",
+        "field_nd_placeholder": "Ej: 1234",
+        "guia_automatica": "El número de guía lo pone el sistema: el mismo del ingreso que se devuelve."
       },
       "list": {
         "search_placeholder": "Buscar cliente, almacenista o factura...",
@@ -2463,7 +2468,18 @@
         "print_header": "Supricom — Comprobante de despacho",
         "print_signature_cliente": "Firma del cliente",
         "print_signature_almacenista": "Firma del almacenista",
-        "label_nd": "N.º ND"
+        "label_nd": "N.º de guía"
+      },
+      "listos": {
+        "titulo": "Listos para despachar ({n})",
+        "ayuda": "RMA ya terminó estos casos: el equipo está listo para devolverse al cliente.",
+        "despachar": "Despachar",
+        "badge": "Listo",
+        "estado": {
+          "reparado": "Reparado",
+          "nota_credito": "Nota de crédito",
+          "no_procesado": "No procesado"
+        }
       }
     },
     "almacenista": {
@@ -2513,8 +2529,8 @@
       "almacenista_stats": "{ingresos} ingresos · {despachos} despachos",
       "origen": {
         "rma": "RMA",
-        "picking": "Egreso: picking",
-        "despacho": "Egreso: despacho"
+        "picking": "Despacho: picking",
+        "despacho": "Despacho: salida en portón"
       },
       "ver_todos": "Ver todos"
     },
@@ -2535,7 +2551,7 @@
     "back": "Volver",
     "firmas": {
       "titulo": "Firmas del acta",
-      "ayuda": "Firman los cuatro, uno detrás de otro en este mismo teléfono. Cada firma se guarda al terminarla y no se puede modificar.",
+      "ayuda": "Cada uno firma la suya desde su panel: Seguridad aquí, RMA en el caso y Almacén (opcional) en el suyo. Si el cliente retira en persona, firma en esta computadora. Una firma guardada no se puede modificar.",
       "ayuda_una": "Firma quien da fe de lo que salió. Se guarda al terminarla y no se puede modificar.",
       "ayuda_una_ingreso": "Firma quien da fe de lo que llegó. Se guarda al terminarla y no se puede modificar.",
       "completa": "Completa",
@@ -2557,6 +2573,14 @@
         "almacen": "Almacén",
         "seguridad": "Seguridad de OSC",
         "cliente": "Recibe / Entrega"
+      },
+      "opcional": "opcional",
+      "elegir_persona": "Elige quién firma…",
+      "se_firma_en": {
+        "tecnico": "La firma RMA desde el caso",
+        "almacen": "La firma Almacén desde su panel",
+        "seguridad": "La firma Seguridad desde el acta",
+        "cliente": "La firma el cliente en la computadora de Seguridad"
       }
     },
     "nav": {
@@ -2568,7 +2592,7 @@
       "despachos": "Despachos",
       "por_llegar": "Equipos por llegar",
       "mercancia_ingresos": "Ingresos",
-      "mercancia_egresos": "Egresos",
+      "mercancia_egresos": "Despachos",
       "almacenistas": "Almacenistas",
       "abrir_menu": "Abrir menú",
       "cerrar_menu": "Cerrar menú"
@@ -2583,7 +2607,7 @@
     },
     "mercancia": {
       "ingreso_titulo": "Ingresos de mercancía",
-      "egreso_titulo": "Egresos de mercancía",
+      "egreso_titulo": "Despachos de mercancía",
       "ingreso_sub": "Mercancía que entra al almacén",
       "egreso_sub": "Carga que sale en camión",
       "nuevo": "Registrar",
@@ -2634,46 +2658,46 @@
       "no_llego_resumen": "{count, plural, =1 {# producto marcado como \"No llegó\"} other {# productos marcados como \"No llegó\"}}",
       "diferencia_cantidad_resumen": "{count, plural, =1 {# renglón con diferencia de cantidad} other {# renglones con diferencia de cantidad}}",
       "dashboard": {
-        "titulo": "Egresos de mercancía",
+        "titulo": "Despachos de mercancía",
         "subtitulo": "Resumen de tu sucursal",
         "loading": "Cargando…",
         "error": "No se pudo cargar el resumen. Intenta recargar la página.",
-        "kpi_egresos_hoy": "Egresos hoy",
+        "kpi_egresos_hoy": "Despachos hoy",
         "kpi_pendientes": "Pendientes de verificar",
         "kpi_descuadres": "Descuadres (30 días)",
         "kpi_promedio": "Calificación promedio",
         "kpi_total_calif": "{count, plural, =1 {# calificación este mes} other {# calificaciones este mes}}",
-        "recientes": "Egresos recientes",
+        "recientes": "Despachos recientes",
         "top_almacenistas": "Mejor calificados del mes",
         "kpi_por_aspecto": "Picking {picking} · Despacho {despacho}",
-        "egresos_novedades": "{egresos, plural, =1 {# egreso} other {# egresos}} · {novedades, plural, =0 {sin novedades} =1 {# con novedades} other {# con novedades}}",
+        "egresos_novedades": "{egresos, plural, =1 {# despacho} other {# despachos}} · {novedades, plural, =0 {sin novedades} =1 {# con novedades} other {# con novedades}}",
         "ver_todos": "Ver todos",
         "ver_ordenes": "Ver órdenes pendientes",
-        "vacio": "Todavía no hay egresos registrados."
+        "vacio": "Todavía no hay despachos registrados."
       },
       "ordenes": {
         "titulo": "Órdenes de despacho pendientes",
-        "subtitulo": "Listas y facturadas en Odoo, todavía no procesadas como egreso",
+        "subtitulo": "Listas y facturadas en Odoo, todavía no procesadas como despacho",
         "vacio": "No hay órdenes de despacho listas y facturadas en Odoo.",
         "sin_facturar": "{n, plural, one {# orden lista en Odoo todavía no está facturada} other {# órdenes listas en Odoo todavía no están facturadas}}: aparecen aquí cuando Caja las facture.",
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
-        "registrar_egreso": "Registrar egreso con esta orden"
+        "registrar_egreso": "Registrar despacho con esta orden"
       },
       "aviso": {
-        "nuevo_egreso": "Llegó un egreso nuevo",
+        "nuevo_egreso": "Llegó un despacho nuevo",
         "nuevo_ingreso": "Llegó un ingreso nuevo",
-        "un_egreso": "El egreso",
+        "un_egreso": "El despacho",
         "un_ingreso": "El ingreso",
         "verificado_conforme": "{tipo} se verificó: conforme",
         "verificado_descuadre": "{tipo} se verificó: descuadre",
         "ver": "Ver",
         "cerrar": "Cerrar aviso",
-        "nuevo_por_armar": "Nuevo egreso por armar",
-        "listo_verificar": "Egreso listo para verificar en portón",
+        "nuevo_por_armar": "Nuevo despacho por armar",
+        "listo_verificar": "Despacho listo para verificar en portón",
         "aprobado": "Seguridad aprobó y despachó",
-        "no_aprobado": "Seguridad no aprobó el egreso",
-        "devuelto": "Seguridad no despachó un egreso: volvió a Almacén"
+        "no_aprobado": "Seguridad no aprobó el despacho",
+        "devuelto": "Seguridad no despachó la orden: volvió a Almacén"
       },
       "personal_almacen": {
         "titulo": "Personal de Almacén",
@@ -2802,7 +2826,7 @@
           "serial_otra_orden": "Serial {serial} es de la orden {otra_orden}",
           "producto_ajeno": "{contado, plural, =1 {No está en la orden} other {No está en la orden (×#)}}"
         },
-        "no_aprobado_sin_renglones": "Seguridad no aprobó el egreso.",
+        "no_aprobado_sin_renglones": "Seguridad no aprobó el despacho.",
         "comentario_picking_obligatorio": "Hubo novedades: explica por qué el picking merece {n} estrellas.",
         "calificar_cerrar": "Calificar y cerrar",
         "resultado": {
@@ -2820,10 +2844,10 @@
           "todos": "Todos"
         },
         "vacio_filtro": "Nada por aquí.",
-        "en_curso": "Egresos en curso",
+        "en_curso": "Despachos en curso",
         "flujo_anterior": "Registro del flujo anterior",
         "cancelar": "Volver",
-        "solo_almacen_egreso": "El egreso de mercancía lo inicia Almacén. Seguridad entra al final, en el portón.",
+        "solo_almacen_egreso": "El despacho de mercancía lo inicia Almacén. Seguridad entra al final, en el portón.",
         "verificacion": {
           "ayuda": "Pistolee lo que sale. Un serial del picking ya dice de qué producto es; los productos sin serial suman 1 con su código. Si una caja no tiene código, escriba la cantidad.",
           "pistola_titulo": "Pistola de códigos",
@@ -2884,6 +2908,23 @@
       "error_salen": "Elige al menos un producto que salga en este despacho.",
       "ya_salio": "Ya salió el {fecha}",
       "salieron_titulo": "Productos que salieron ({n})"
+    },
+    "actas_firmar": {
+      "titulo_almacen": "Firmas de actas RMA",
+      "subtitulo_almacen": "Firma de Almacén en los ingresos y despachos de RMA (opcional)",
+      "ayuda": {
+        "almacen": "Ingresos y despachos de RMA de los últimos 45 días. Abre uno, elige quién de Almacén firma y firma. Es opcional.",
+        "tecnico": "Actas de este caso. Abre una, elige quién de RMA firma y firma."
+      },
+      "vacio": "No hay actas para firmar.",
+      "tipo": {
+        "ingreso": "Ingreso",
+        "despacho": "Despacho"
+      },
+      "guia": "Guía {n}",
+      "firmada": "Firmada",
+      "por_firmar": "Por firmar",
+      "actualizar": "Actualizar lista"
     }
   },
   "recepcion": {

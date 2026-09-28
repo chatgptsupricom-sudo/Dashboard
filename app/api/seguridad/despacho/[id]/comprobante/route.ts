@@ -306,7 +306,7 @@ export async function GET(
   </div>
 
   <h1>Comprobante de Despacho</h1>
-  <div class="nd">ND - ${esc(ndParaImprimir(ndNumero)) || "&nbsp;"}</div>
+  <div class="nd">Gu&iacute;a N.&ordm; ${esc(ndParaImprimir(ndNumero)) || "&nbsp;"}</div>
   <div class="sub">Despacho #${esc(d.id)} &middot; Generado ${esc(new Date().toLocaleString("es-VE"))}</div>
 
   <div class="grid">

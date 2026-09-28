@@ -393,6 +393,11 @@ export default function DespachoDetailPage() {
           permitirRehacer={
             (user?.role || "").toLowerCase().trim() === "superadmin"
           }
+          // La firma de Almacén es opcional en el ingreso y el despacho.
+          opcionales={["almacen"]}
+          // Seguridad firma la suya y, si el cliente retira en persona, la del
+          // cliente en esta computadora. RMA y Almacén firman en su panel.
+          puedeFirmar={["seguridad", "cliente"]}
         />
 
         <ProductosEnvioLista
@@ -440,109 +445,7 @@ export default function DespachoDetailPage() {
           </div>
         </section>
 
-        {/* Calificación card */}
-        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
-              <StarIcon className="w-4 h-4 text-[color:var(--portal-primary,#741DFE)]" />
-              {tc("despacho_title")}
-            </h2>
-            <span className="text-xs text-slate-400 hidden sm:inline">
-              {despacho.almacenista_nombre}
-            </span>
-          </div>
-
-          {calificacion ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                <StarRatingDisplay
-                  value={calificacion.calificacion}
-                  size="md"
-                  showValue
-                />
-                <span className="text-[11px] text-slate-500 ml-auto whitespace-nowrap">
-                  {tc("already_rated", {
-                    date: fmtDateTime(calificacion.created_at),
-                  })}
-                </span>
-              </div>
-              {calificacion.comentario && (
-                <div className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1 inline-flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3" />
-                    {tc("comment_label")}
-                  </p>
-                  <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {calificacion.comentario}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-slate-500">
-                {tc("calificado_por")}:{" "}
-                <span className="font-semibold text-slate-700">
-                  {calificacion.calificado_por || "—"}
-                </span>
-              </p>
-            </div>
-          ) : isReadOnly ? (
-            <p className="text-sm text-slate-500">{tc("not_rated")}</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50/40 px-3 py-4">
-                <StarRating
-                  value={draftRating}
-                  onChange={(v) => {
-                    setDraftRating(v);
-                    setRatingError(null);
-                    setRatingSaved(false);
-                  }}
-                  size="lg"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">
-                  {tc("comment_label")}
-                </label>
-                <textarea
-                  value={draftComment}
-                  onChange={(e) => setDraftComment(e.target.value)}
-                  placeholder={tc("comment_placeholder")}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 resize-none"
-                />
-              </div>
-              {ratingError && (
-                <p className="text-xs font-semibold text-red-600">
-                  {ratingError}
-                </p>
-              )}
-              {ratingSaved && (
-                <p className="text-xs font-semibold text-emerald-600">
-                  {tc("saved")}
-                </p>
-              )}
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <p className="text-[11px] text-slate-500 truncate">
-                  {tc("rate_for", { name: despacho.almacenista_nombre })}
-                </p>
-                <button
-                  type="button"
-                  onClick={submitCalificacion}
-                  disabled={savingRating || draftRating < 1}
-                  className="h-10 px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-                >
-                  {savingRating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <SendIcon className="w-4 h-4" />
-                  )}
-                  {savingRating ? tc("saving") : tc("save")}
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
+        {/* La calificación del almacenista salió del despacho de RMA. */}
 
         {/* Firma card */}
         {(despacho.firma_url || despacho.firma_cliente_nombre) && (

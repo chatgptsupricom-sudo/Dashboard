@@ -38,7 +38,7 @@ export type CasoParaCorreo = {
  * Si no esta configurado, se cae al origen de la propia peticion -- correcto
  * solo si panel y portal viven en el mismo dominio.
  */
-function origenPortal(origenPeticion: string): string {
+export function origenPortal(origenPeticion: string): string {
   return process.env.NEXT_PUBLIC_SERVICIO_TECNICO_URL || origenPeticion;
 }
 
@@ -128,7 +128,7 @@ export async function emailDeContacto(caseId: number): Promise<string | null> {
 }
 
 /** Email real (sin enmascarar) del partner en Odoo -- solo para uso interno/envio, nunca para exponer en una API publica. */
-async function resolverEmailCliente(partnerId: number | null): Promise<string | null> {
+export async function resolverEmailCliente(partnerId: number | null): Promise<string | null> {
   if (!partnerId) return null;
   try {
     const partners = await callOdooRPC<any[]>(
