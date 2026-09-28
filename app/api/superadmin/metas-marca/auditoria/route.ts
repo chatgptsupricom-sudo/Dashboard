@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { auditarSede } from "@/lib/metas-marca/auditoria";
+import { inventarioSede } from "@/lib/metas-marca/inventario";
 import { leerMetas } from "@/lib/metas-marca/metas";
+import { partnersIntercompania } from "@/lib/intercompania";
 import { mesActual, mesValido, sedesDe, ventasDelMes } from "@/lib/metas-marca/servicio";
 
 export const maxDuration = 60;
@@ -22,20 +24,31 @@ export async function GET(request: NextRequest) {
   const mes = mesValido(sp.get("mes")) || mesActual();
 
   try {
-    const ventas = await Promise.all(sedes.map((s) => ventasDelMes(s, mes, sp.get("refrescar") === "1")));
+    // La auditoría relee Odoo siempre: contra la caché de 3 min, una factura
+    // publicada entretanto salía como "Error" de conteo y de cuadre. El Excel
+    // (lineas=1) sí usa la caché, para bajar exactamente lo que se auditó.
+    const exportar = sp.get("lineas") === "1";
+    const fresco = !exportar || sp.get("refrescar") === "1";
+    if (fresco && sp.get("refrescar") === "1") await partnersIntercompania(true);
+    const ventas = await Promise.all(sedes.map((s) => ventasDelMes(s, mes, fresco)));
 
-    if (sp.get("lineas") === "1") {
+    if (exportar) {
       const lineas = ventas.flatMap((v) => v.lineas.map((l) => ({ ...l, companyId: v.companyId })));
       const facturas = new Map(ventas.flatMap((v) => v.facturas).map((f) => [f.id, f.numero]));
+      const inventarios = await Promise.all(sedes.map((s) => inventarioSede(s)));
       return NextResponse.json({
         success: true,
         data: lineas.map((l) => ({ ...l, factura: facturas.get(l.facturaId) || "" })),
+        inventario: inventarios.flatMap((inv) => inv.productos.map((p) => ({ ...p, companyId: inv.companyId, ubicacion: inv.ubicacion }))),
       });
     }
 
     const auditorias = await Promise.all(ventas.map(async (v) => {
-      const metas = await leerMetas([v.companyId], mes);
-      return auditarSede(v, metas);
+      const [metas, inventario] = await Promise.all([
+        leerMetas([v.companyId], mes),
+        inventarioSede(v.companyId, sp.get("refrescar") === "1"),
+      ]);
+      return auditarSede(v, metas, inventario);
     }));
     return NextResponse.json({ success: true, data: { mes, auditorias } });
   } catch (error: any) {

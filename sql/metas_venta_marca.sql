@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS supricom_panel.metas_venta_marca (
   marca_clave VARCHAR(150) NOT NULL,
   marca VARCHAR(255) NOT NULL,
   meta DECIMAL(14,2) NOT NULL DEFAULT 0,
+  meta_unidades DECIMAL(14,2) NULL,
+  stock_base DECIMAL(14,2) NULL,
+  valor_stock DECIMAL(14,2) NULL,
   updated_by VARCHAR(255) NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_meta_venta_marca (company_id, mes, marca_clave)

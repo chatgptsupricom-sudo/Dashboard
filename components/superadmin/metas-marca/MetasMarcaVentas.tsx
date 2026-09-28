@@ -10,7 +10,7 @@
  * de las del KPI Cobertura de marcas del Stoplight.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Download, MapPin, RefreshCw, Target } from "lucide-react";
 import { AuditoriaPanel } from "./AuditoriaPanel";
@@ -30,8 +30,10 @@ const SEDES = [
 ];
 
 const mesDe = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const MES_VALIDO = /^\d{4}-(0[1-9]|1[0-2])$/;
 const mover = (mes: string, delta: number) => {
   const [y, m] = mes.split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return mes;
   return mesDe(new Date(y, m - 1 + delta, 1));
 };
 
@@ -43,9 +45,18 @@ export function MetasMarcaVentas() {
   const [data, setData] = useState<DatosMetas | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [recarga, setRecarga] = useState<{ n: number; forzar: boolean }>({ n: 0, forzar: false });
+  const [recarga, setRecarga] = useState(0);
+  // "Actualizar desde Odoo" fuerza solo la siguiente lectura; antes quedaba
+  // pegado y cada cambio de mes o sede se saltaba la caché.
+  const forzar = useRef(false);
   const [filtroEstado, setFiltroEstado] = useState<EstadoMarca | "todas">("todas");
-  const [detalle, setDetalle] = useState<FilaMarca | null>(null);
+  // Se guarda la clave y la fila se busca en los datos actuales: al recargar,
+  // el detalle abierto muestra los números nuevos.
+  const [detalleClave, setDetalleClave] = useState<string | null>(null);
+  const detalle: FilaMarca | null = (detalleClave && data?.marcas.find((m) => m.clave === detalleClave)) || null;
+
+  // Un filtro de estado de otro mes (ej. "En ritmo" en un mes cerrado) dejaba la tabla vacía.
+  useEffect(() => { setFiltroEstado("todas"); }, [sede, mes]);
 
   useEffect(() => {
     let cancelado = false;
@@ -53,7 +64,7 @@ export function MetasMarcaVentas() {
     setError(null);
     const qs = new URLSearchParams({ company_id: sede, mes });
     if (ic) qs.set("ic", "1");
-    if (recarga.forzar) qs.set("refrescar", "1");
+    if (forzar.current) { qs.set("refrescar", "1"); forzar.current = false; }
     fetch(`/api/superadmin/metas-marca?${qs}`)
       .then(async (r) => {
         const j = await r.json().catch(() => null);
@@ -66,7 +77,10 @@ export function MetasMarcaVentas() {
     return () => { cancelado = true; };
   }, [sede, mes, ic, recarga]);
 
-  const recargar = useCallback((forzar = false) => setRecarga((x) => ({ n: x.n + 1, forzar })), []);
+  const recargar = useCallback((desdeOdoo = false) => {
+    if (desdeOdoo) forzar.current = true;
+    setRecarga((n) => n + 1);
+  }, []);
 
   const exportar = () => {
     if (!data) return;
@@ -80,6 +94,11 @@ export function MetasMarcaVentas() {
         "% Meta": m.cumplimiento ?? "",
         ...(enCurso ? { "Meta al día": m.metaAlDia ?? "", "% Al día": m.cumplimientoAlDia ?? "", Proyección: m.proyeccion ?? "", "% Proyección": m.proyeccionPct ?? "" } : {}),
         Falta: m.falta ?? "",
+        "Unidades vendidas": m.unidades,
+        "Meta unidades": m.metaUnidades ?? "",
+        "% Unidades": m.cumplimientoUnidades ?? "",
+        "Stock disponible hoy (u)": data.inventario?.[m.clave]?.unidades ?? "",
+        "Valor del stock (USD)": data.inventario?.[m.clave]?.valor ?? "",
         "% de la venta": m.participacion,
         Estado: ESTADO_UI[m.estado].label,
         "Prom. 3 meses": m.promedio3m,
@@ -110,7 +129,7 @@ export function MetasMarcaVentas() {
             <MapPin size={16} className="text-slate-400 ml-2" />
             <select
               value={sede}
-              onChange={(e) => { setSede(e.target.value); setDetalle(null); }}
+              onChange={(e) => { setSede(e.target.value); setDetalleClave(null); }}
               className="text-sm border-none focus:ring-0 font-bold text-slate-700 bg-transparent cursor-pointer outline-none pr-2"
             >
               {SEDES.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -120,7 +139,14 @@ export function MetasMarcaVentas() {
             <button onClick={() => setMes(mover(mes, -1))} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="Mes anterior"><ChevronLeft size={16} /></button>
             <label className="flex items-center gap-2 px-2 text-sm font-bold text-slate-700 cursor-pointer">
               <CalendarDays size={15} className="text-slate-400" />
-              <input type="month" value={mes} onChange={(e) => e.target.value && setMes(e.target.value)} className="bg-transparent outline-none cursor-pointer" />
+              <input
+                type="month"
+                value={mes}
+                aria-label="Mes"
+                // Safari muestra un campo de texto: solo se acepta AAAA-MM completo.
+                onChange={(e) => { if (MES_VALIDO.test(e.target.value)) setMes(e.target.value); }}
+                className="bg-transparent outline-none cursor-pointer"
+              />
             </label>
             <button onClick={() => setMes(mover(mes, 1))} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="Mes siguiente"><ChevronRight size={16} /></button>
           </div>
@@ -196,7 +222,7 @@ export function MetasMarcaVentas() {
           {tab === "cumplimiento" ? (
             <>
               <ResumenMetas data={data} onFiltrarEstado={(e) => setFiltroEstado(e)} />
-              <TablaMarcas data={data} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} onAbrir={setDetalle} />
+              <TablaMarcas data={data} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} onAbrir={(f) => setDetalleClave(f.clave)} />
               <p className="text-[11px] leading-relaxed text-slate-400">
                 Venta = facturas y notas de crédito de cliente publicadas en Odoo, por fecha de factura, sin IVA, en dólares. Se excluyen las ventas a empresas del grupo
                 {data.incluyeIntercompania ? " (ahora incluidas por el filtro)" : ` (${dinero(data.intercompania)} este mes)`}. Las facturas sin vendedor sí cuentan.
@@ -217,7 +243,7 @@ export function MetasMarcaVentas() {
         </div>
       ) : null}
 
-      {data && <DetalleMarca data={data} fila={detalle} onClose={() => setDetalle(null)} />}
+      {data && <DetalleMarca data={data} fila={detalle} onClose={() => setDetalleClave(null)} />}
     </div>
   );
 }

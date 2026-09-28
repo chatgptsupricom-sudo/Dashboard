@@ -2,7 +2,7 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ArrowDownRight, ArrowUpRight, Flag, Gauge, Rocket, Target, Wallet } from "lucide-react";
-import { ESTADO_UI, colorPct, dinero, dineroCorto, porcentaje, type DatosMetas, type EstadoMarca, type FilaMarca } from "./formato";
+import { ESTADO_UI, colorPct, dinero, dineroCorto, porcentaje, unidadesFmt, type DatosMetas, type EstadoMarca, type FilaMarca } from "./formato";
 
 const COLOR_VENDIDO = "#2563eb"; // blue-600
 const COLOR_META = "#cbd5e1"; // slate-300
@@ -109,7 +109,14 @@ export function ResumenMetas({ data, onFiltrarEstado }: { data: DatosMetas; onFi
             titulo="Cumplimiento"
             acento="bg-blue-50 text-blue-600"
             valor={<span className={colorPct(t.cumplimiento)}>{porcentaje(t.cumplimiento, 1)}</span>}
-            pie={<>{dinero(t.vendidoConMeta)} de {dinero(t.metaTotal)} en {t.marcasConMeta} marcas. Sin compensar entre marcas: <b>{porcentaje(t.cumplimientoSinCompensar, 1)}</b></>}
+            pie={<>
+              {dinero(t.vendidoConMeta)} de {dinero(t.metaTotal)} en {t.marcasConMeta} marcas. Sin compensar entre marcas: <b>{porcentaje(t.cumplimientoSinCompensar, 1)}</b>
+              {t.marcasConMetaUnidades > 0 && (
+                <span className="block mt-1">
+                  En unidades: {unidadesFmt(t.unidadesVendidasConMeta)} de {unidadesFmt(t.metaUnidades)} ({t.marcasConMetaUnidades} {t.marcasConMetaUnidades === 1 ? "marca" : "marcas"}) · <b className={colorPct(t.cumplimientoUnidades)}>{porcentaje(t.cumplimientoUnidades, 1)}</b>
+                </span>
+              )}
+            </>}
           />
           <Tarjeta
             icono={Gauge}
@@ -163,10 +170,11 @@ export function ResumenMetas({ data, onFiltrarEstado }: { data: DatosMetas; onFi
           </div>
           {!sinMetas && (
             <div className="grid grid-cols-2 gap-2">
-              {(["cumplida", "en_ritmo", "atencion", "riesgo"] as EstadoMarca[]).map((e) => {
+              {(["cumplida", "en_ritmo", "atencion", "riesgo", "pendiente"] as EstadoMarca[]).map((e) => {
                 const ui = ESTADO_UI[e];
                 const Icono = ui.icono;
                 if (e === "en_ritmo" && !enCurso) return null;
+                if (e === "pendiente" && !t.conteo.pendiente) return null;
                 return (
                   <button
                     key={e}

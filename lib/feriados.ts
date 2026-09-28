@@ -52,6 +52,23 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
     "2026-12-25", // Navidad
     "2026-12-31", // Fin de año
   ],
+  // Carnaval y Semana Santa calculados desde la Pascua (28-mar-2027).
+  2027: [
+    "2027-01-01", // Año Nuevo
+    "2027-02-08", // Carnaval
+    "2027-02-09", // Carnaval
+    "2027-03-25", // Jueves Santo
+    "2027-03-26", // Viernes Santo
+    "2027-04-19", // Declaración de Independencia
+    "2027-05-01", // Día del Trabajador
+    "2027-06-24", // Batalla de Carabobo
+    "2027-07-05", // Día de la Independencia
+    "2027-07-24", // Natalicio del Libertador
+    "2027-10-12", // Día de la Resistencia Indígena
+    "2027-12-24", // Nochebuena
+    "2027-12-25", // Navidad
+    "2027-12-31", // Fin de año
+  ],
 };
 
 export function esFeriado(fecha: Date): boolean {

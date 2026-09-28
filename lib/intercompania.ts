@@ -17,7 +17,14 @@ import { callOdooRPC } from "@/lib/odoo";
  * secciones no diverjan.
  */
 
-let cacheIC: { vence: number; mapa: Map<number, string> } | null = null;
+/**
+ * Se cachea la promesa (no el resultado): las consultas que llegan mientras la
+ * primera sigue en vuelo la comparten (el Stoplight llama a sinIntercompania()
+ * varias veces por request y Metas por marca ~18 veces en frío con todas las
+ * sedes × 6 meses). Si la lectura falla, la entrada se borra para no cachear
+ * el error.
+ */
+let cacheIC: { vence: number; valor: Promise<Map<number, string>> } | null = null;
 
 /**
  * Contactos (empresa comercial) que son del grupo: las propias empresas del
@@ -33,8 +40,16 @@ let cacheIC: { vence: number; mapa: Map<number, string> } | null = null;
  * Los RIF van sin guiones y recortados: en Odoo están escritos de varias
  * formas ("87-1576706", "J-31163115-1", "RUC155595002").
  */
-export async function partnersIntercompania(): Promise<Map<number, string>> {
-  if (cacheIC && cacheIC.vence > Date.now()) return cacheIC.mapa;
+export function partnersIntercompania(refrescar = false): Promise<Map<number, string>> {
+  if (!refrescar && cacheIC && cacheIC.vence > Date.now()) return cacheIC.valor;
+  const valor = leerIntercompania();
+  const entrada = { vence: Date.now() + 30 * 60 * 1000, valor };
+  cacheIC = entrada;
+  valor.catch(() => { if (cacheIC === entrada) cacheIC = null; });
+  return valor;
+}
+
+async function leerIntercompania(): Promise<Map<number, string>> {
   const [partners, empresas] = await Promise.all([
     callOdooRPC<any[]>("res.partner", "search_read", [[
       "|", "|", "|", "|", "|", "|",
@@ -52,7 +67,6 @@ export async function partnersIntercompania(): Promise<Map<number, string>> {
   const mapa = new Map<number, string>();
   for (const p of partners) mapa.set(p.id, p.name || "");
   for (const e of empresas) if (e.partner_id) mapa.set(e.partner_id[0], e.partner_id[1] || "");
-  cacheIC = { vence: Date.now() + 30 * 60 * 1000, mapa };
   return mapa;
 }
 

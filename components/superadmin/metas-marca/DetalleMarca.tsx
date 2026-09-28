@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { GraficoSemanas } from "./ResumenMetas";
 import { BarraProgreso, ChipEstado } from "./TablaMarcas";
-import { colorPct, dinero, dineroCorto, nombreMes, porcentaje, type DatosMetas, type FilaMarca } from "./formato";
+import { colorPct, dinero, dineroCorto, nombreMes, porcentaje, unidadesFmt, type DatosMetas, type FilaMarca } from "./formato";
 
 function Dato({ label, valor, sub }: { label: string; valor: React.ReactNode; sub?: React.ReactNode }) {
   return (
@@ -45,6 +45,7 @@ function Top({ titulo, filas, conUnidades }: { titulo: string; filas: FilaMarca[
 
 export function DetalleMarca({ data, fila, onClose }: { data: DatosMetas; fila: FilaMarca | null; onClose: () => void }) {
   const enCurso = data.periodo.estado === "en_curso";
+  const inv = fila ? data.inventario?.[fila.clave] : undefined;
   const historia = fila
     ? [
         ...data.historialMeses.map((mes, i) => ({ mes: nombreMes(mes, true), valor: fila.historial[i], actual: false })),
@@ -83,6 +84,20 @@ export function DetalleMarca({ data, fila, onClose }: { data: DatosMetas; fila: 
                 {enCurso && <Dato label="Meta al día" valor={dinero(fila.metaAlDia)} sub={<span className={colorPct(fila.cumplimientoAlDia)}>{porcentaje(fila.cumplimientoAlDia)} logrado</span>} />}
                 {enCurso && <Dato label="Proyección" valor={dinero(fila.proyeccion)} sub={<span className={colorPct(fila.proyeccionPct)}>{porcentaje(fila.proyeccionPct)} de la meta</span>} />}
                 {enCurso && <Dato label="Ritmo actual" valor={dinero(fila.ritmoActual)} sub="por día hábil" />}
+                <Dato
+                  label="Unidades"
+                  valor={fila.metaUnidades != null ? `${unidadesFmt(fila.unidades)} / ${unidadesFmt(fila.metaUnidades)}` : unidadesFmt(fila.unidades)}
+                  sub={fila.metaUnidades != null
+                    ? <span className={colorPct(fila.cumplimientoUnidades)}>{porcentaje(fila.cumplimientoUnidades)} de la meta en unidades{fila.stockBase != null ? ` (de ${unidadesFmt(fila.stockBase)} en stock al cargarla)` : ""}</span>
+                    : `vendidas · prom. ${unidadesFmt(fila.promedioUnidades3m)}/mes`}
+                />
+                {inv && inv.unidades > 0 && (
+                  <Dato
+                    label="Stock disponible hoy"
+                    valor={`${unidadesFmt(inv.unidades)} u`}
+                    sub={<>{dinero(inv.valor)} a precio de venta · {inv.productos} productos{inv.valorAlCosto > 0 ? ` (${dinero(inv.valorAlCosto)} al costo)` : ""}</>}
+                  />
+                )}
                 <Dato label="Promedio 3 meses" valor={dinero(fila.promedio3m)} sub={fila.variacionVsPromedio != null ? <span className={fila.variacionVsPromedio >= 0 ? "text-emerald-600" : "text-red-600"}>{fila.variacionVsPromedio >= 0 ? "+" : ""}{porcentaje(fila.variacionVsPromedio)} {enCurso ? "proyectado" : "este mes"}</span> : undefined} />
               </div>
 

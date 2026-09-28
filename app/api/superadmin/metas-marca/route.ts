@@ -3,9 +3,11 @@ import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError, callOdooRPC } from "@/lib/odoo";
 import { calcularMetasMarca } from "@/lib/metas-marca/calculo";
 import { claveMarca, esMarcaGenerica, SIN_MARCA } from "@/lib/metas-marca/marcas";
+import { inventarioPorMarca, inventarioSede, metaDesdeUnidades, type InventarioMarca } from "@/lib/metas-marca/inventario";
 import { guardarMeta, leerMetas } from "@/lib/metas-marca/metas";
+import { partnersIntercompania } from "@/lib/intercompania";
 import { esSedeValida, nombreSede } from "@/lib/metas-marca/odoo";
-import { historialMarcas, mesActual, mesValido, moverMes, sedesDe, ventasDelMes } from "@/lib/metas-marca/servicio";
+import { historialMarcas, hoyCaracas, mesActual, mesValido, moverMes, sedesDe, ventasDelMes } from "@/lib/metas-marca/servicio";
 
 export const maxDuration = 60;
 
@@ -15,6 +17,8 @@ export const maxDuration = 60;
  * lib/metas-marca/calculo.ts; lectura de Odoo en lib/metas-marca/odoo.ts.
  *
  * GET ?company_id=9|10|7|todas&mes=YYYY-MM&ic=1&refrescar=1
+ * Incluye el inventario disponible hoy por marca (lib/metas-marca/inventario)
+ * para la meta en unidades. Si el inventario falla, la página sigue sin él.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, []);
@@ -28,16 +32,25 @@ export async function GET(request: NextRequest) {
   const refrescar = sp.get("refrescar") === "1";
 
   try {
-    const [ventas, historial, metas, metasAnterior, marcasOdoo] = await Promise.all([
+    // Refrescar también relee la lista de intercompañía (una sola vez, antes
+    // de que la usen las demás lecturas) y el historial.
+    if (refrescar) await partnersIntercompania(true);
+    let inventarioError: string | null = null;
+    const [ventas, historial, metas, metasAnterior, marcasOdoo, inventario] = await Promise.all([
       Promise.all(sedes.map((s) => ventasDelMes(s, mes, refrescar))),
-      historialMarcas(sedes, mes, 6, incluirIC),
+      historialMarcas(sedes, mes, 6, incluirIC, refrescar),
       leerMetas(sedes, mes),
       leerMetas(sedes, moverMes(mes, -1)),
       callOdooRPC<any[]>("spiff.brand", "search_read", [[]], { fields: ["name"], limit: 0 }),
+      inventarioPorMarca(sedes, refrescar).catch((e) => {
+        console.error("Error en metas-marca inventario:", e?.message);
+        inventarioError = "No se pudo leer el inventario de Odoo";
+        return null;
+      }),
     ]);
 
     const lineas = ventas.flatMap((v) => v.lineas).filter((l) => incluirIC || !l.intercompania);
-    const resumen = calcularMetasMarca(mes, metas, lineas, historial);
+    const resumen = calcularMetasMarca(mes, metas, lineas, historial, hoyCaracas());
 
     const montoIC = ventas.flatMap((v) => v.lineas).filter((l) => l.intercompania).reduce((s, l) => s + l.ingreso, 0);
     const actualizado = metas.reduce<{ por: string | null; fecha: string | null }>(
@@ -63,6 +76,8 @@ export async function GET(request: NextRequest) {
         metasMesAnterior: metasAnterior.length,
         actualizado,
         catalogo: [...catalogo.entries()].map(([clave, marca]) => ({ clave, marca })).sort((a, b) => a.marca.localeCompare(b.marca)),
+        inventario: inventario ? Object.fromEntries(inventario) as Record<string, InventarioMarca> : null,
+        inventarioError,
         generado: new Date().toISOString(),
       },
     });
@@ -75,7 +90,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST (solo superadmin):
- *  { accion: "guardar", company_id, mes, metas: [{ marca, meta }] }  meta 0 borra
+ *  { accion: "guardar", company_id, mes, metas: [{ marca, meta, meta_unidades? }] }  meta 0 borra
+ *     Con meta_unidades, el stock y su valor se toman del inventario de Odoo
+ *     en el servidor (foto al guardar). Si meta viene vacía, se calcula de las
+ *     unidades; si viene, se respeta (el usuario pudo redondearla).
  *  { accion: "copiar", company_id, mes }  copia las metas del mes anterior a las marcas sin meta
  */
 export async function POST(request: NextRequest) {
@@ -94,22 +112,38 @@ export async function POST(request: NextRequest) {
       const [anteriores, actuales] = await Promise.all([leerMetas([companyId], moverMes(mes, -1)), leerMetas([companyId], mes)]);
       const ya = new Set(actuales.map((m) => m.clave));
       const nuevas = anteriores.filter((m) => !ya.has(m.clave));
-      for (const m of nuevas) await guardarMeta(companyId, mes, m.clave, m.marca, m.meta, usuario);
+      for (const m of nuevas) {
+        await guardarMeta(companyId, mes, m.clave, m.marca, m.meta, usuario, {
+          metaUnidades: m.metaUnidades, stockBase: m.stockBase, valorStock: m.valorStock,
+        });
+      }
       return NextResponse.json({ success: true, copiadas: nuevas.length });
     }
 
     if (body.accion === "guardar" && Array.isArray(body.metas)) {
       if (body.metas.length > 500) return NextResponse.json({ error: "Demasiadas metas" }, { status: 400 });
+      const conUnidades = body.metas.some((x: any) => Number(x?.meta_unidades) > 0);
+      const inventario = conUnidades ? (await inventarioSede(companyId)).porMarca : null;
       let guardadas = 0;
+      const rechazadas: string[] = [];
       for (const x of body.metas) {
         const marca = String(x?.marca ?? "").trim().slice(0, 255);
         const clave = claveMarca(marca);
-        const meta = Number(x?.meta);
-        if (!marca || clave === SIN_MARCA || !Number.isFinite(meta) || meta < 0 || meta > 1e10) continue;
-        await guardarMeta(companyId, mes, clave.slice(0, 150), marca, meta, usuario);
+        const unidades = Number(x?.meta_unidades) > 0 ? Number(x.meta_unidades) : null;
+        const inv = unidades != null ? inventario?.get(clave) : undefined;
+        let meta = Number(x?.meta);
+        if (unidades != null && !(meta > 0)) meta = metaDesdeUnidades(unidades, inv) ?? 0;
+        if (!marca || clave === SIN_MARCA || !Number.isFinite(meta) || meta < 0 || meta > 1e10
+          || (unidades != null && (!Number.isFinite(unidades) || unidades > 1e9))) {
+          rechazadas.push(marca || "(sin nombre)");
+          continue;
+        }
+        await guardarMeta(companyId, mes, clave.slice(0, 150), marca, meta, usuario, unidades != null && meta > 0
+          ? { metaUnidades: unidades, stockBase: inv?.unidades ?? null, valorStock: inv?.valor ?? null }
+          : undefined);
         guardadas++;
       }
-      return NextResponse.json({ success: true, guardadas });
+      return NextResponse.json({ success: true, guardadas, rechazadas });
     }
 
     return NextResponse.json({ error: "Acción inválida" }, { status: 400 });
