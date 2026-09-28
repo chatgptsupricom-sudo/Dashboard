@@ -3285,5 +3285,10 @@
     "dia_sin_coincidencias": "Este día no tiene productos que coincidan con la búsqueda.",
     "sin_fecha": "En camino, sin fecha estimada",
     "sin_fecha_nota": "Compras todavía no cargó la fecha estimada de llegada."
+  },
+  "salesHistory": {
+    "last12": "12 meses",
+    "last24": "24 meses",
+    "all": "Todo"
   }
 }

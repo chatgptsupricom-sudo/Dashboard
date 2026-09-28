@@ -21,6 +21,23 @@ import { getConnection, query } from "@/lib/db";
 
 export const CORTE_ODOO = process.env.SMARTBIT_CORTE || "2026-04-01";
 
+/** Primer dia del historial de facturacion (Smartbit no tiene ventas antes). */
+export const HISTORIA_DESDE = "2018-01-01";
+
+/**
+ * "+12.3%" de `total` contra el mes anterior a `mes` ("YYYY-MM") en la serie
+ * mensual; "—" si ese mes no tiene ventas. Antes se comparaba contra el
+ * penultimo punto de la serie, que solo coincide si `mes` es el actual.
+ */
+export function crecimientoVsMesAnterior(serie: Record<string, number>, mes: string, total: number): string {
+  const [y, m] = mes.split("-").map(Number);
+  const anterior = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, "0")}`;
+  const base = serie[anterior];
+  if (!base) return "—";
+  const pct = ((total - base) / Math.abs(base)) * 100;
+  return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
 const BASE_URL = (process.env.SMARTBIT_URL || "").replace(/\/+$/, "");
 const POR_PAGINA = 500;
 

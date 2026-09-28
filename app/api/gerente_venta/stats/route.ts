@@ -1,6 +1,8 @@
 import { callOdooRPC } from "@/lib/odoo";
 import {
+  crecimientoVsMesAnterior,
   desdeOdoo,
+  HISTORIA_DESDE,
   mensualSmartbit,
   mezclarClientes,
   mezclarLineasProducto,
@@ -99,9 +101,9 @@ export async function GET(request: NextRequest) {
     ];
 
     const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
-      .toISOString()
-      .split("T")[0];
+    // Historial completo: la gráfica elige el rango en el navegador. Odoo se
+    // consulta igual solo desde el corte, así que no cuesta más.
+    const historiaDesde = HISTORIA_DESDE;
     const today = now.toISOString().split("T")[0];
 
     const [odooLines, sbResumen, sbMensual] = await Promise.all([
@@ -118,7 +120,7 @@ export async function GET(request: NextRequest) {
       resumenSmartbit(cids, start, end, sellerExcludeRules.length > 0
         ? { [sellerExcludeCompanyId as number]: sellerExcludeRules }
         : undefined),
-      mensualSmartbit(cids, twelveMonthsAgo, today, sellerExclusions),
+      mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
     ]);
     const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
 
@@ -221,7 +223,7 @@ export async function GET(request: NextRequest) {
     const historyDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", desdeOdoo(twelveMonthsAgo)],
+      ["invoice_date", ">=", desdeOdoo(historiaDesde)],
       ["invoice_date", "<=", today],
       companyFilter,
     ];
@@ -284,11 +286,7 @@ export async function GET(request: NextRequest) {
     const monthlyGrowth = Object.entries(monthlyGrowthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, total]) => ({ month, total }));
-    const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
-    const growthPercent = (
-      ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
-      100
-    ).toFixed(1);
+    const growthRate = crecimientoVsMesAnterior(monthlyGrowthMap, start.slice(0, 7), currentMonthTotal);
 
     return NextResponse.json({
       topProducts: processedItems.slice(0, 5),
@@ -319,7 +317,7 @@ export async function GET(request: NextRequest) {
         totalMonth: currentMonthTotal,
         activeClientsCount: (allClientsCount || []).length,
         topProductName: processedItems[0]?.name || "N/A",
-        growthRate: `${parseFloat(growthPercent) > 0 ? "+" : ""}${growthPercent}%`,
+        growthRate,
       },
     });
   } catch (error: any) {
