@@ -150,8 +150,8 @@ export function Sidebar({
   // en una env NO pública) para no depender del bundle del cliente.
   const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
 
-  // Notas de crédito de RMA esperando al Super Admin (contador del menú RMA).
-  // Se refresca al decidir una (evento de SolicitudesNotaCredito).
+  // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
+  // del menú RMA).
   const [ncPendientes, setNcPendientes] = useState(0);
   useEffect(() => {
     if (user?.role !== "superAdmin") return;
@@ -161,8 +161,6 @@ export function Sidebar({
         .then((j) => setNcPendientes(Number(j?.pendientes) || 0))
         .catch(() => {});
     cargar();
-    window.addEventListener("rma-nc-decidida", cargar);
-    return () => window.removeEventListener("rma-nc-decidida", cargar);
   }, [user]);
 
   useEffect(() => {
@@ -813,7 +811,7 @@ export function Sidebar({
                             { label: t("rma_inventario_supricom"), href: `/${locale}/rma/inventario/supricom` },
                             { label: t("rma_inventario_externo"), href: `/${locale}/rma/inventario/externo` },
                             { label: t("nota_credito"), href: `/${locale}/rma/nota-credito` },
-                            // Las notas de crédito que pide RMA las aprueba superAdmin.
+                            // Las solicitudes de nota de crédito de RMA le llegan a superAdmin.
                             {
                               label: `${t("rma_aprobar_nc")}${ncPendientes ? ` (${ncPendientes})` : ""}`,
                               href: `/${locale}/superadmin/rma-notas-credito`,

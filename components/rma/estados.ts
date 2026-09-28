@@ -21,13 +21,13 @@ export const colorEstado: Record<string, string> = {
 
 /** Estado de una solicitud de nota de crédito. */
 export const etiquetaSolicitud: Record<string, string> = {
-  pendiente: "Esperando al Super Admin",
+  pendiente: "Enviada al Super Admin",
   aprobada: "Aprobada",
   rechazada: "Rechazada",
 };
 
 export const colorSolicitud: Record<string, string> = {
-  pendiente: "bg-orange-100 text-orange-700 border-orange-200",
+  pendiente: "bg-blue-100 text-blue-700 border-blue-200",
   aprobada: "bg-emerald-100 text-emerald-700 border-emerald-200",
   rechazada: "bg-rose-100 text-rose-700 border-rose-200",
 };

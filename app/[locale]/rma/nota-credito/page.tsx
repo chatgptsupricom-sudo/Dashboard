@@ -9,7 +9,7 @@ import { useTranslations } from "next-intl";
 
 /**
  * Sección Nota de Crédito de RMA: solicitar una (caso, producto y por qué) y
- * seguir las que ya se pidieron. Las aprueba o rechaza el Super Admin
+ * ver las que ya se pidieron. Le llegan al Super Admin
  * (/superadmin/rma-notas-credito).
  */
 export default function RmaNotaCreditoPage() {
@@ -37,7 +37,7 @@ export default function RmaNotaCreditoPage() {
         </Link>
       </div>
 
-      <SolicitudesNotaCredito modo="rma" />
+      <SolicitudesNotaCredito />
     </div>
   );
 }

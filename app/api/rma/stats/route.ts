@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { hayTablaProductos } from "@/lib/rma/items";
 import { hayColumnaExterno } from "@/lib/rma/procedencia";
+import { hayColumnasAprobacion } from "@/lib/rma/notaCredito";
 
 /**
  * Métricas del Dashboard de RMA, en total y separadas por procedencia
@@ -14,7 +15,8 @@ import { hayColumnaExterno } from "@/lib/rma/procedencia";
  *  - pendientesMes: los que entraron este mes y siguen sin resolver.
  *  - pendientes: todos los que siguen sin resolver, de cualquier mes.
  *  - noProcede: casos "no procesado" (el técnico dice que no se repara).
- *  - ncRevision: notas de crédito esperando al Super Admin.
+ *  - ncSolicitadas: solicitudes de nota de crédito enviadas al Super Admin
+ *    (lib/rma/notaCredito.ts; el caso no cambia de estado al pedirla).
  *  - topProductos: los productos que más entran a RMA.
  */
 const PENDIENTES = "('recibido','reingresado','nc_revision')";
@@ -28,7 +30,7 @@ type Metricas = {
   pendientesMes: number;
   pendientes: number;
   noProcede: number;
-  ncRevision: number;
+  ncSolicitadas: number;
   notaCredito: number;
   reparado: number;
 };
@@ -40,7 +42,7 @@ const vacio = (): Metricas => ({
   pendientesMes: 0,
   pendientes: 0,
   noProcede: 0,
-  ncRevision: 0,
+  ncSolicitadas: 0,
   notaCredito: 0,
   reparado: 0,
 });
@@ -69,7 +71,6 @@ export async function GET(request: NextRequest) {
               SUM(c.status IN ${PENDIENTES} AND c.created_at >= ${INICIO_MES}) AS pendientesMes,
               SUM(c.status IN ${PENDIENTES}) AS pendientes,
               SUM(c.status = 'no_procesado') AS noProcede,
-              SUM(c.status = 'nc_revision') AS ncRevision,
               SUM(c.status = 'nota_credito') AS notaCredito,
               SUM(c.status = 'reparado') AS reparado
          FROM rma_cases c
@@ -83,6 +84,20 @@ export async function GET(request: NextRequest) {
       const destino = Number(fila.externo) === 1 ? porProcedencia.externo : porProcedencia.supricom;
       for (const k of Object.keys(destino) as (keyof Metricas)[]) destino[k] = Number(fila[k]) || 0;
     }
+    // Solicitudes de nota de crédito pendientes (solo equipos de Supricom).
+    try {
+      if (await hayColumnasAprobacion()) {
+        const nc = await query(
+          `SELECT COUNT(*) AS n FROM rma_notas_credito nc JOIN rma_cases c ON c.id = nc.case_id
+            WHERE nc.estado = 'pendiente' ${filtroSede}`,
+          params,
+        );
+        porProcedencia.supricom.ncSolicitadas = Number((nc.rows as any[])[0]?.n) || 0;
+      }
+    } catch (e: any) {
+      console.warn("rma_notas_credito no disponible:", e?.message);
+    }
+
     const stats = vacio();
     for (const k of Object.keys(stats) as (keyof Metricas)[]) {
       stats[k] = porProcedencia.supricom[k] + porProcedencia.externo[k];
