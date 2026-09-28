@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
+import { filtroProcedencia, hayColumnaExterno, leerProcedencia } from "@/lib/rma/procedencia";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -14,6 +15,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || "";
     const companyId = searchParams.get("company_id") || "";
     const origen = searchParams.get("origen") || "";
+    // supricom = vendido por Supricom, externo = no comprado en Supricom.
+    const procedencia = leerProcedencia(searchParams.get("procedencia"));
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const offset = (page - 1) * limit;
@@ -50,6 +53,8 @@ export async function GET(request: NextRequest) {
       where += " AND c.origen = ?";
       params.push(origen);
     }
+
+    where += filtroProcedencia(procedencia, await hayColumnaExterno(), "c");
 
     const countResult = await query(`SELECT COUNT(*) as total FROM rma_cases c ${where}`, params);
     const total = countResult.rows[0]?.total || 0;
