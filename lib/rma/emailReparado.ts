@@ -24,6 +24,12 @@ export type CasoParaCorreo = {
   model: string | null;
   hardware: string | null;
   client_name: string | null;
+  /**
+   * Resultado de cada producto de un envío con varios (issue #331). El
+   * correo sale una sola vez, al terminar el envío; sin esto, el de un solo
+   * producto de siempre.
+   */
+  productos?: { producto: string; serial: string | null; estado: string }[];
 };
 
 /**
@@ -89,9 +95,14 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
       correo: {
         destinatario: email,
         nombre_cliente: caso.client_name || "",
-        producto: caso.model || caso.hardware || "",
+        producto:
+          caso.productos && caso.productos.length > 1
+            ? caso.productos.map((p) => p.producto).join(", ")
+            : caso.model || caso.hardware || "",
         case_number: caso.case_number,
         link_entrega: link,
+        // Para que la plantilla de n8n pueda listar qué pasó con cada uno.
+        productos: caso.productos ?? [],
       },
     }),
   });

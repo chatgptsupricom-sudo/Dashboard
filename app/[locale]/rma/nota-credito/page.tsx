@@ -50,8 +50,29 @@ export default function RmaNotaCreditoPage() {
       const res = await fetch(`/api/rma/${num.trim()}`);
       const data = await res.json();
       if (data.success) {
-        setCaseData(data.case);
-        const ncRes = await fetch(`/api/rma/nota-credito?case_id=${data.case.id}`);
+        // En un envío con varios productos la nota es de uno (issue #331):
+        // llega con ?item= desde su tarjeta, y el documento muestra los datos
+        // de ese producto en vez de los del caso.
+        const itemParam = searchParams.get("item");
+        const item = itemParam ? (data.items || []).find((i: any) => String(i.id) === itemParam) : null;
+        setCaseData(
+          item
+            ? {
+                ...data.case,
+                hardware: item.hardware,
+                brand: item.brand,
+                model: item.model,
+                serial_quantity: item.serial,
+                reported_fault: item.reported_fault,
+                diagnosis: item.diagnosis,
+                status: item.status,
+                item_id: item.id,
+              }
+            : data.case,
+        );
+        const ncRes = await fetch(
+          `/api/rma/nota-credito?case_id=${data.case.id}${item ? `&item_id=${item.id}` : ""}`,
+        );
         const ncData = await ncRes.json();
         if (ncData.success && ncData.nota) {
           setObservations(ncData.nota.observations || "");
@@ -131,6 +152,7 @@ export default function RmaNotaCreditoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           case_id: caseData.id,
+          item_id: caseData.item_id ?? null,
           detail: caseData.reported_fault || "",
           observations,
           images,

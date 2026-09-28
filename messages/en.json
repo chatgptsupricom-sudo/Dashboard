@@ -382,7 +382,8 @@
     "portal_source": "Report source",
     "ver_en_odoo": "View in Odoo",
     "copy_id": "Copy ID",
-    "id_copied": "ID copied"
+    "id_copied": "ID copied",
+    "sin_adjuntos": "No photos or videos attached."
   },
   "stoplight": {
     "page_title": "Stoplight Reports",

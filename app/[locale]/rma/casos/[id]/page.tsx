@@ -44,6 +44,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
+import ProductosEnvio, { type ProductoEnvio } from "@/components/rma/ProductosEnvio";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 
 const statusColors: Record<string, string> = {
@@ -85,6 +86,9 @@ export default function RmaCasoDetailPage() {
 
   const [caseData, setCaseData] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  // Productos del envío (issue #331). Con más de uno, cada producto se
+  // atiende en su tarjeta y el estado del caso lo calcula el servidor.
+  const [items, setItems] = useState<ProductoEnvio[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -120,6 +124,7 @@ export default function RmaCasoDetailPage() {
         // cliente sí hubiera subido fotos.
         setCaseData({ ...data.case, adjuntos: data.adjuntos ?? [] });
         setHistory(data.history);
+        setItems(data.items ?? []);
         setEditForm(data.case);
       }
     } catch (error) {
@@ -279,6 +284,12 @@ export default function RmaCasoDetailPage() {
     }
   };
 
+  const varios = items.length > 1;
+  const nombreProducto = (id: number | null) => {
+    const i = items.find((x) => x.id === id);
+    return i ? i.model || i.hardware || "" : "";
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -325,11 +336,20 @@ export default function RmaCasoDetailPage() {
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-slate-500">{caseData.client_name} — {caseData.model || caseData.hardware || ""}</p>
+              <p className="text-sm text-slate-500">
+                {caseData.client_name} — {caseData.model || caseData.hardware || ""}
+                {varios && ` (+${items.length - 1} productos)`}
+              </p>
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {varios && (
+            <Badge className={`${statusColors[caseData.status]} border text-xs self-center`}>
+              Envío: {statusLabels[caseData.status]}
+            </Badge>
+          )}
+          {!varios && (
           <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -377,7 +397,8 @@ export default function RmaCasoDetailPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          {caseData.status === "nota_credito" && (
+          )}
+          {!varios && caseData.status === "nota_credito" && (
             <Button variant="outline" onClick={() => router.push(`/${locale}/rma/nota-credito?case=${caseData.case_number}`)}>
               <Printer className="w-4 h-4 mr-2" />
               {t("print_pdf")}
@@ -413,13 +434,38 @@ export default function RmaCasoDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Info principal */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Producto */}
+          {varios && (
+            <ProductosEnvio
+              caseId={caseData.id}
+              caseNumber={caseData.case_number}
+              locale={locale}
+              items={items}
+              adjuntos={caseData.adjuntos || []}
+              onCambio={fetchCase}
+            />
+          )}
+
+          {/* Producto (envío de un solo producto: la pantalla de siempre) */}
+          {!varios && (
           <Card className="rounded-3xl border-none shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-lg font-semibold text-slate-900">{t("product_info")}</CardTitle>
-              <Badge className={`${statusColors[caseData.status]} border text-[11px]`}>
-                {statusLabels[caseData.status]}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {items.length === 1 && (
+                  <ProductosEnvio
+                    soloAgregar
+                    caseId={caseData.id}
+                    caseNumber={caseData.case_number}
+                    locale={locale}
+                    items={items}
+                    adjuntos={[]}
+                    onCambio={fetchCase}
+                  />
+                )}
+                <Badge className={`${statusColors[caseData.status]} border text-[11px]`}>
+                  {statusLabels[caseData.status]}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -443,6 +489,7 @@ export default function RmaCasoDetailPage() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* Entrega -- metodo que el cliente eligio en el portal (issue #121)
               y confirmacion de que ya se llevo el equipo (issue #122). Solo
@@ -565,7 +612,17 @@ export default function RmaCasoDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Falla y diagnóstico */}
+          {/* Falla y diagnóstico (con varios productos, va en cada uno; lo que
+              queda acá es solo el botón de guardar la edición del cliente) */}
+          {varios && editing && (
+            <div className="flex justify-end">
+              <Button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                {t("save_changes")}
+              </Button>
+            </div>
+          )}
+          {!varios && (
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg font-semibold text-slate-900">{t("fault_info")}</CardTitle>
@@ -611,15 +668,22 @@ export default function RmaCasoDetailPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Adjuntos */}
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-semibold text-slate-900">{t("adjuntos")}</CardTitle>
-              <span className="text-xs text-slate-400">{t("adjuntos_count", { count: caseData.adjuntos?.length || 0 })}</span>
+              <span className="text-xs text-slate-400">
+                {t("adjuntos_count", {
+                  count: (varios ? (caseData.adjuntos || []).filter((a: any) => !a.item_id) : caseData.adjuntos || []).length,
+                })}
+              </span>
             </CardHeader>
             <CardContent>
-              <AdjuntosGaleria adjuntos={caseData.adjuntos || []} />
+              <AdjuntosGaleria
+                adjuntos={varios ? (caseData.adjuntos || []).filter((a: any) => !a.item_id) : caseData.adjuntos || []}
+              />
             </CardContent>
           </Card>
         </div>
@@ -640,10 +704,12 @@ export default function RmaCasoDetailPage() {
                     </Badge>
                   </div>
                 </div>
+                {!varios && (
                 <div>
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_serial")}</Label>
                   <p className="text-sm text-slate-700 mt-1 font-mono">{caseData.serial || "—"}</p>
                 </div>
+                )}
                 <div>
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_contact_phone")}</Label>
                   <p className="text-sm text-slate-700 mt-1">{caseData.client_phone || "—"}</p>
@@ -651,6 +717,7 @@ export default function RmaCasoDetailPage() {
                 {/* Garantía CONGELADA del momento del reporte, no recalculada
                     al abrir esta pantalla. Si el técnico ve un número distinto
                     al que vio el cliente, no hay conversación posible. */}
+                {!varios && (
                 <div>
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_warranty")}</Label>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -687,6 +754,7 @@ export default function RmaCasoDetailPage() {
                     </p>
                   )}
                 </div>
+                )}
                 <div className="pt-3 border-t border-slate-100">
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("odoo_refs")}</Label>
                   <div className="mt-2 space-y-2">
@@ -749,6 +817,9 @@ export default function RmaCasoDetailPage() {
                             <Clock className="w-4 h-4 text-blue-500" />
                           )}
                           <span className="text-sm font-medium text-slate-700">
+                            {varios && h.item_id && (
+                              <span className="block text-xs font-semibold text-slate-500">{nombreProducto(h.item_id)}</span>
+                            )}
                             {h.from_status ? `${statusLabels[h.from_status] || h.from_status} → ${statusLabels[h.to_status] || h.to_status}` : statusLabels[h.to_status] || h.to_status}
                           </span>
                         </div>
