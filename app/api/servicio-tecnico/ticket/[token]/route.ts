@@ -20,6 +20,8 @@ interface TicketPublic {
   product_name: string;
   product_code: string;
   invoice_number: string;
+  /** Equipo que no se compró en Supricom (sin factura ni garantía). */
+  externo: boolean;
   serial: string | null;
   created_at: string;
   /** Productos del envío (issue #331); [] sin la migración. */
@@ -85,11 +87,12 @@ export async function GET(
 
     // Buscar el caso por tracking_token. Solo Origen='portal' — los tickets
     // internos del panel no deben ser accesibles publicamente.
+    //
+    // `SELECT *`: `producto_externo` la crea el primer reporte de un equipo
+    // externo (o la migración), y nombrarla acá rompería esta consulta en una
+    // base que todavía no la tiene. Solo sale lo que se arma abajo.
     const caseResult = await query(
-      `SELECT id, case_number, status, model, hardware, product_code, invoice_number,
-              serial, created_at, origen,
-              garantia_estado, garantia_meses, garantia_vence, garantia_marca
-       FROM rma_cases
+      `SELECT * FROM rma_cases
        WHERE tracking_token = ? AND origen = 'portal'
        LIMIT 1`,
       [token],
@@ -106,9 +109,9 @@ export async function GET(
     const historyResult = await query(
       `SELECT from_status, to_status, created_at
        FROM rma_history
-       WHERE case_id = (SELECT id FROM rma_cases WHERE tracking_token = ? LIMIT 1)
+       WHERE case_id = ?
        ORDER BY created_at ASC`,
-      [token],
+      [row.id],
     );
 
     const ticket: TicketPublic = {
@@ -119,6 +122,7 @@ export async function GET(
       product_name: row.model || row.hardware || "",
       product_code: row.product_code || "",
       invoice_number: row.invoice_number || "",
+      externo: Number(row.producto_externo) === 1,
       serial: row.serial || null,
       created_at: row.created_at,
       productos: await productosPublicos(row.id),

@@ -179,6 +179,13 @@ export default function ConfirmacionPage() {
           <p className="mt-2 text-sm text-[color:var(--portal-ink)]">
             {t("tiempo_respuesta")}
           </p>
+          {/* Equipo externo: se repite lo del costo, que es lo que más
+              sorprende si se olvidó entre el formulario y la llamada. */}
+          {resumen.externo && (
+            <p className="mt-3 text-sm text-[color:var(--portal-ink)]">
+              {t("externo.confirmacionCosto")}
+            </p>
+          )}
           <p className="mt-4 text-xs text-[color:var(--portal-muted)]">
             {t("contacto_whatsapp")}
           </p>
