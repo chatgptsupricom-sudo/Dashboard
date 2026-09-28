@@ -201,6 +201,7 @@
     "seg_grupo_almacen": "Almacén",
     "seg_ingreso": "Ingreso",
     "seg_egreso": "Despacho",
+    "seg_dashboard": "Dashboard de Seguridad",
     "seg_estadisticas": "Estadísticas de RMA",
     "seg_personal": "Personal",
     "rma_inventario_supricom": "Inventario RMA Supricom",
@@ -2595,6 +2596,23 @@
         "rma": "RMA",
         "picking": "Despacho: picking",
         "despacho": "Despacho: salida en portón"
+      },
+      "mes": {
+        "egresos": "Despachos de mercancía del mes",
+        "egresos_desc": "Egresos registrados este mes",
+        "rma_ingresos": "RMA ingresados del mes",
+        "rma_despachos": "RMA despachados del mes",
+        "calificacion": "Calificación despacho de mercancía",
+        "mas_7d": "RMA con más de 7 días sin despachar",
+        "mas_7d_vacio": "Ningún RMA lleva más de 7 días sin despachar.",
+        "por_despachar": "RMA por despachar",
+        "por_despachar_vacio": "No hay RMA terminados esperando despacho.",
+        "por_llegar": "RMA por llegar",
+        "por_llegar_vacio": "No hay equipos reportados en el portal pendientes de llegar.",
+        "hace_dias": "hace {count}d",
+        "ranking": "Calificación de almacenistas · despacho de mercancía (mes)",
+        "ranking_vacio": "Aún no hay calificaciones de despacho de mercancía este mes.",
+        "ranking_detalle": "{egresos} egresos · picking {picking} · portón {despacho}"
       },
       "ver_todos": "Ver todos"
     },
