@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { enviarCorreoReparado } from "@/lib/rma/emailReparado";
 
 /**
  * Productos de un envío de servicio técnico (tabla `rma_case_items`, issue
@@ -208,18 +209,24 @@ export async function espejarEnProductoUnico(
 }
 
 /**
- * El envío salió entero (Seguridad lo despachó, o RMA subió la guía / lo
- * marcó entregado): todos sus productos que no habían salido salen con esa
- * fecha. Mismo criterio `IS NULL` que en rma_cases, para no mover la fecha de
- * una entrega anterior.
+ * Productos que salen del taller. Sin `itemIds`, el envío entero (Seguridad lo
+ * despachó completo, o RMA subió la guía / lo marcó entregado); con ellos,
+ * una devolución parcial. Mismo criterio `IS NULL` que en rma_cases, para no
+ * mover la fecha de una entrega anterior.
  */
-export async function marcarProductosDespachados(caseId: number, fecha?: string | Date): Promise<void> {
+export async function marcarProductosDespachados(
+  caseId: number,
+  fecha?: string | Date,
+  itemIds?: number[],
+): Promise<void> {
   if (!(await hayTablaProductos())) return;
+  if (itemIds && !itemIds.length) return;
   try {
+    const filtro = itemIds ? ` AND id IN (${itemIds.map(() => "?").join(",")})` : "";
     await query(
       `UPDATE rma_case_items SET despachado_at = ${fecha ? "?" : "CURDATE()"}
-        WHERE case_id = ? AND despachado_at IS NULL`,
-      fecha ? [fecha, caseId] : [caseId],
+        WHERE case_id = ? AND despachado_at IS NULL${filtro}`,
+      [...(fecha ? [fecha] : []), caseId, ...(itemIds ?? [])],
     );
   } catch (e: any) {
     console.error(`[rma_case_items] no se pudo marcar el despacho del caso ${caseId}:`, e?.message);
@@ -234,4 +241,147 @@ export async function limpiarDespachoProductos(caseId: number): Promise<void> {
   } catch (e: any) {
     console.error(`[rma_case_items] no se pudo deshacer el despacho del caso ${caseId}:`, e?.message);
   }
+}
+
+/** Estados en los que el producto sigue en el taller, esperando a RMA. */
+const PENDIENTES: EstadoProducto[] = ["recibido", "reingresado"];
+
+export function productoPendiente(estado: EstadoProducto): boolean {
+  return PENDIENTES.includes(estado);
+}
+
+/**
+ * Estado general del envío a partir de sus productos, para la lista, los
+ * filtros y la consulta del cliente:
+ *  - mientras quede alguno por atender, "reingresado" si alguno volvió y
+ *    "recibido" si no;
+ *  - cuando todos terminaron, "reparado" si se reparó al menos uno (hay algo
+ *    que devolverle al cliente arreglado), si no "nota_credito" si hubo
+ *    alguna, y si no "no_procesado".
+ */
+export function estadoDelEnvio(estados: EstadoProducto[]): EstadoProducto {
+  if (!estados.length) return "recibido";
+  if (estados.some(productoPendiente)) {
+    return estados.includes("reingresado") ? "reingresado" : "recibido";
+  }
+  if (estados.includes("reparado")) return "reparado";
+  if (estados.includes("nota_credito")) return "nota_credito";
+  return "no_procesado";
+}
+
+/**
+ * Recalcula el caso a partir de sus productos después de tocar uno:
+ *  - `status` = estadoDelEnvio(...). Si cambia, queda en el historial del
+ *    caso (sin item_id) y, si el envío terminó reparado, sale el correo al
+ *    cliente con el resultado de cada producto (uno solo, al terminar).
+ *  - `despachado_at` del caso = cuando salió el último producto; mientras
+ *    quede alguno en el taller, vacío.
+ * Con un solo producto el caso ya lo actualiza su propio PUT: esto no hace
+ * nada nuevo, pero tampoco molesta.
+ */
+export async function sincronizarEnvio(
+  caseId: number,
+  opciones: { changedBy: string; origenPeticion: string },
+): Promise<{ antes: EstadoProducto; despues: EstadoProducto } | null> {
+  const productos = await leerProductos(caseId);
+  if (!productos.length) return null;
+
+  const r = await query(
+    `SELECT id, case_number, status, origen, company_id, odoo_partner_id, tracking_token,
+            model, hardware, client_name, despachado_at
+       FROM rma_cases WHERE id = ?`,
+    [caseId],
+  );
+  const caso = (r.rows as any[])[0];
+  if (!caso) return null;
+
+  const antes = caso.status as EstadoProducto;
+  const despues = estadoDelEnvio(productos.map((p) => p.status));
+
+  if (despues !== antes) {
+    await query(`UPDATE rma_cases SET status = ? WHERE id = ?`, [despues, caseId]);
+    await query(
+      `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        caseId,
+        antes,
+        despues,
+        opciones.changedBy,
+        productoPendiente(despues) ? "Estado del envío" : "Envío terminado: todos sus productos fueron atendidos",
+      ],
+    );
+    if (despues === "reparado" && productoPendiente(antes)) {
+      enviarCorreoReparado(
+        {
+          id: caso.id,
+          case_number: caso.case_number,
+          origen: caso.origen,
+          company_id: caso.company_id,
+          odoo_partner_id: caso.odoo_partner_id,
+          tracking_token: caso.tracking_token,
+          model: caso.model,
+          hardware: caso.hardware,
+          client_name: caso.client_name,
+          productos: productos.map((p) => ({
+            producto: p.model || p.hardware || "",
+            serial: p.serial,
+            estado: p.status,
+          })),
+        },
+        opciones.origenPeticion,
+      );
+    }
+  }
+
+  // Fecha de entrega del envío: la del último producto que salió.
+  const salieron = productos.filter((p) => p.despachado_at);
+  if (salieron.length === productos.length) {
+    if (!caso.despachado_at) {
+      const ultima = salieron
+        .map((p) => fechaSQL(p.despachado_at))
+        .sort()
+        .pop();
+      await query(`UPDATE rma_cases SET despachado_at = ? WHERE id = ? AND despachado_at IS NULL`, [ultima, caseId]);
+    }
+  } else if (caso.despachado_at) {
+    await query(`UPDATE rma_cases SET despachado_at = NULL WHERE id = ?`, [caseId]);
+  }
+
+  return { antes, despues };
+}
+
+/** YYYY-MM-DD de una columna DATE (mysql2 la devuelve como Date en UTC). */
+function fechaSQL(valor: unknown): string {
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  return String(valor).slice(0, 10);
+}
+
+/**
+ * Los campos de producto del caso son los del primer producto del envío
+ * (paso 1 de #331): la lista, la búsqueda, Seguridad y los correos de siempre
+ * los leen de ahí. Se vuelven a copiar después de editar o quitar productos.
+ * La falla solo con un producto: con varios, la del caso junta la de todos.
+ */
+export async function espejarPrimeroEnCaso(caseId: number): Promise<void> {
+  const productos = await leerProductos(caseId);
+  const primero = productos[0];
+  if (!primero) return;
+  const conFalla = productos.length === 1;
+  await query(
+    `UPDATE rma_cases SET product_code = ?, hardware = ?, brand = ?, model = ?,
+            serial_quantity = ?, diagnosis = ?, notes = ?${conFalla ? ", reported_fault = COALESCE(?, reported_fault)" : ""}
+      WHERE id = ?`,
+    [
+      primero.product_code,
+      primero.hardware,
+      primero.brand,
+      primero.model,
+      primero.serial,
+      primero.diagnosis,
+      primero.notes,
+      ...(conFalla ? [primero.reported_fault] : []),
+      caseId,
+    ],
+  );
 }

@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { crearProductos } from "@/lib/rma/items";
+import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -20,11 +20,20 @@ export async function GET(request: NextRequest) {
 
     let where = "WHERE 1=1";
     const params: any[] = [];
+    // Envíos con varios productos (issue #331): la búsqueda mira también los
+    // productos que no son el primero, y la lista dice cuántos trae.
+    const conProductos = await hayTablaProductos();
 
     if (search) {
-      where += " AND (c.case_number LIKE ? OR c.client_name LIKE ? OR c.product_code LIKE ? OR c.hardware LIKE ? OR c.brand LIKE ? OR c.model LIKE ? OR c.serial_quantity LIKE ?)";
       const s = `%${search}%`;
+      where += " AND (c.case_number LIKE ? OR c.client_name LIKE ? OR c.product_code LIKE ? OR c.hardware LIKE ? OR c.brand LIKE ? OR c.model LIKE ? OR c.serial_quantity LIKE ?";
       params.push(s, s, s, s, s, s, s);
+      if (conProductos) {
+        where += ` OR EXISTS (SELECT 1 FROM rma_case_items i WHERE i.case_id = c.id
+                    AND (i.product_code LIKE ? OR i.hardware LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.serial LIKE ?))`;
+        params.push(s, s, s, s, s);
+      }
+      where += ")";
     }
 
     if (status) {
@@ -46,7 +55,8 @@ export async function GET(request: NextRequest) {
     const total = countResult.rows[0]?.total || 0;
 
     const casesResult = await query(
-      `SELECT c.* FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT c.*${conProductos ? ", (SELECT COUNT(*) FROM rma_case_items i WHERE i.case_id = c.id) AS productos_count" : ""}
+         FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 
