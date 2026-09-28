@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AlertTriangle, ChevronDown, Download, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { CONTROL_UI, dinero, nombreMes, porcentaje, type AuditoriaSede, type EstadoControl } from "./formato";
@@ -69,6 +69,8 @@ export function AuditoriaPanel({ companyParam, mes }: { companyParam: string; me
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
+  // "Volver a auditar" relee también intercompañía e inventario, solo esa vez.
+  const forzar = useRef(false);
   const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export function AuditoriaPanel({ companyParam, mes }: { companyParam: string; me
     setCargando(true);
     setError(null);
     const qs = new URLSearchParams({ company_id: companyParam, mes });
-    if (recarga > 0) qs.set("refrescar", "1");
+    if (forzar.current) { qs.set("refrescar", "1"); forzar.current = false; }
     fetch(`/api/superadmin/metas-marca/auditoria?${qs}`)
       .then(async (r) => {
         const j = await r.json().catch(() => null);
@@ -102,9 +104,18 @@ export function AuditoriaPanel({ companyParam, mes }: { companyParam: string; me
         "Venta sin IVA (USD)": Math.round(l.ingreso * 100) / 100, "Subtotal moneda factura": Math.round(l.subtotalFirmado * 100) / 100,
         Intercompañía: l.intercompania ? "Sí" : "No", "Producto archivado": l.productoActivo ? "No" : "Sí",
       }));
+      const FUENTE: Record<string, string> = {
+        venta_3m: "Vendido 3 meses", venta_12m: "Vendido 12 meses", costo: "Costo", sin_precio: "Sin precio",
+      };
+      const inventario = ((j.inventario || []) as any[]).map((p) => ({
+        Empresa: p.companyId, Ubicación: p.ubicacion, Código: p.codigo, Producto: p.producto,
+        "Marca Odoo": p.marcaOdoo || "(sin marca)", "Marca panel": p.clave, Cantidad: p.cantidad, Reservado: p.reservado,
+        Disponible: p.disponible, "Precio usado (USD)": p.precio, "Precio de": FUENTE[p.fuente] || p.fuente, "Valor (USD)": p.valor,
+      }));
       const ws = XLSX.utils.json_to_sheet(filas);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Líneas Odoo");
+      if (inventario.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventario), "Inventario");
       XLSX.writeFile(wb, `lineas-odoo-metas-marca-${companyParam}-${mes}.xlsx`);
     } catch {
       setError("No se pudo generar el Excel de líneas");
@@ -128,9 +139,9 @@ export function AuditoriaPanel({ companyParam, mes }: { companyParam: string; me
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportar} disabled={exportando} className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            {exportando ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Líneas de Odoo (Excel)
+            {exportando ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Líneas e inventario de Odoo (Excel)
           </button>
-          <button onClick={() => setRecarga((n) => n + 1)} disabled={cargando} className="inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+          <button onClick={() => { forzar.current = true; setRecarga((n) => n + 1); }} disabled={cargando} className="inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
             <RefreshCw size={14} className={cargando ? "animate-spin" : ""} /> Volver a auditar
           </button>
         </div>

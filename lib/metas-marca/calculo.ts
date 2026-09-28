@@ -15,6 +15,10 @@ import { SIN_MARCA, esMarcaGenerica } from "./marcas";
  * - Proyección = vendido ÷ días hábiles transcurridos × días hábiles del mes.
  * - Ritmo necesario = lo que falta ÷ días hábiles que quedan (sin hoy).
  *
+ * Meta en unidades (opcional, lib/metas-marca/inventario.ts): la meta en $
+ * sale de la proporción del inventario y es la que manda en el estado; las
+ * unidades vendidas se comparan aparte contra la meta en unidades.
+ *
  * Global (solo marcas con meta):
  * - Cumplimiento = Σ vendido ÷ Σ meta (lo que una marca vende de más compensa
  *   a otra).
@@ -25,8 +29,14 @@ import { SIN_MARCA, esMarcaGenerica } from "./marcas";
 
 export type EstadoMarca = "cumplida" | "en_ritmo" | "atencion" | "riesgo" | "sin_meta" | "pendiente";
 
-export interface MetaEntrada { clave: string; marca: string; meta: number }
-export interface HistorialMes { mes: string; porMarca: Map<string, number> }
+export interface MetaEntrada {
+  clave: string;
+  marca: string;
+  meta: number;
+  metaUnidades?: number | null;
+  stockBase?: number | null;
+}
+export interface HistorialMes { mes: string; porMarca: Map<string, number>; unidades?: Map<string, number> }
 
 export interface TopItem { nombre: string; ingreso: number; detalle?: number }
 
@@ -54,7 +64,13 @@ export interface FilaMarca {
   variacionVsPromedio: number | null;
   facturas: number;
   clientes: number;
+  /** Unidades netas vendidas en el mes (facturas − notas de crédito). */
   unidades: number;
+  metaUnidades: number | null;
+  /** Unidades disponibles cuando se cargó la meta en unidades. */
+  stockBase: number | null;
+  cumplimientoUnidades: number | null;
+  promedioUnidades3m: number;
   semanas: { vendido: number; meta: number | null }[];
   topClientes: TopItem[];
   topVendedores: TopItem[];
@@ -87,6 +103,11 @@ export interface ResumenMetasMarca {
     falta: number | null;
     ritmoNecesario: number | null;
     marcasConMeta: number;
+    /** Marcas con meta en unidades, y sus unidades vendidas vs meta. */
+    marcasConMetaUnidades: number;
+    unidadesVendidasConMeta: number;
+    metaUnidades: number;
+    cumplimientoUnidades: number | null;
     marcasVendidas: number;
     conteo: Record<EstadoMarca, number>;
   };
@@ -117,6 +138,9 @@ export function estadoMarca(
   if (!meta || meta <= 0) return "sin_meta";
   if (periodo === "futuro") return "pendiente";
   if (vendido >= meta) return "cumplida";
+  // Mes en curso sin ningún día hábil transcurrido (el 1 cae en fin de semana
+  // o feriado): todavía no se esperaba vender nada.
+  if (periodo === "en_curso" && alDia == null) return "pendiente";
   const base = periodo === "cerrado" ? (vendido / meta) * 100 : alDia ?? 0;
   if (periodo === "en_curso" && base >= 100) return "en_ritmo";
   if (base >= 70) return "atencion";
@@ -174,10 +198,14 @@ export function calcularMetasMarca(
     sumar(a.prod, l.codigo ? `[${l.codigo}] ${l.producto}` : l.producto, l.ingreso, l.cantidad);
   }
 
+  // Con varias sedes, las metas de la misma marca se suman ($ y unidades).
   const metaPorClave = new Map<string, MetaEntrada>();
   for (const m of metas) {
     const x = metaPorClave.get(m.clave);
-    metaPorClave.set(m.clave, x ? { ...x, meta: x.meta + m.meta } : { ...m });
+    if (!x) { metaPorClave.set(m.clave, { ...m }); continue; }
+    x.meta += m.meta;
+    if (m.metaUnidades) x.metaUnidades = (x.metaUnidades || 0) + m.metaUnidades;
+    if (m.stockBase) x.stockBase = (x.stockBase || 0) + m.stockBase;
   }
 
   const claves = new Set<string>([...acum.keys(), ...metaPorClave.keys()]);
@@ -195,7 +223,11 @@ export function calcularMetasMarca(
     const hist = historial.map((h) => r2(h.porMarca.get(clave) || 0));
     const ult3 = hist.slice(-3);
     const promedio3m = ult3.length ? ult3.reduce((s, x) => s + x, 0) / ult3.length : 0;
-    const comparable = estadoPeriodo === "en_curso" ? proyeccion : vendido;
+    const ult3u = historial.slice(-3).map((h) => h.unidades?.get(clave) || 0);
+    const promedioUnidades3m = ult3u.length ? ult3u.reduce((s, x) => s + x, 0) / ult3u.length : 0;
+    // Mes futuro: todavía no hay venta que comparar (antes daba -100% en todas).
+    const comparable = estadoPeriodo === "futuro" ? null : estadoPeriodo === "en_curso" ? proyeccion : vendido;
+    const metaUnidades = m?.metaUnidades && m.metaUnidades > 0 ? m.metaUnidades : null;
 
     marcas.push({
       clave,
@@ -219,6 +251,10 @@ export function calcularMetasMarca(
       facturas: a.facturas.size,
       clientes: a.clientes.size,
       unidades: r2(a.unidades),
+      metaUnidades: metaUnidades != null ? r2(metaUnidades) : null,
+      stockBase: metaUnidades != null && m?.stockBase ? r2(m.stockBase) : null,
+      cumplimientoUnidades: metaUnidades != null ? pct(a.unidades, metaUnidades) : null,
+      promedioUnidades3m: r2(promedioUnidades3m),
       semanas: a.semanas.map((v, i) => ({
         vendido: r2(v),
         meta: meta != null ? r2((meta * semanasMes[i].diasUtiles) / duMes) : null,
@@ -237,6 +273,9 @@ export function calcularMetasMarca(
   const metaAlDiaTotal = metaTotal > 0 ? metaTotal * avance : null;
   const proyeccionTotal = estadoPeriodo === "futuro" ? null : estadoPeriodo === "cerrado" ? vendidoConMeta : duTrans > 0 ? (vendidoConMeta / duTrans) * duMes : null;
   const faltaTotal = metaTotal > 0 ? conMeta.reduce((s, x) => s + (x.falta || 0), 0) : null;
+  const conMetaU = marcas.filter((x) => x.metaUnidades != null);
+  const metaUnidadesTotal = conMetaU.reduce((s, x) => s + (x.metaUnidades || 0), 0);
+  const unidadesConMetaU = conMetaU.reduce((s, x) => s + x.unidades, 0);
 
   const conteo: Record<EstadoMarca, number> = { cumplida: 0, en_ritmo: 0, atencion: 0, riesgo: 0, sin_meta: 0, pendiente: 0 };
   for (const x of marcas) if (x.meta != null || x.vendido !== 0) conteo[x.estado]++;
@@ -269,6 +308,10 @@ export function calcularMetasMarca(
       falta: faltaTotal != null ? r2(faltaTotal) : null,
       ritmoNecesario: faltaTotal && duRest > 0 ? r2(faltaTotal / duRest) : null,
       marcasConMeta: conMeta.length,
+      marcasConMetaUnidades: conMetaU.length,
+      unidadesVendidasConMeta: r2(unidadesConMetaU),
+      metaUnidades: r2(metaUnidadesTotal),
+      cumplimientoUnidades: pct(unidadesConMetaU, metaUnidadesTotal),
       marcasVendidas: marcas.filter((x) => x.vendido > 0).length,
       conteo,
     },

@@ -1,8 +1,9 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, Clock, TrendingUp, XCircle } from "lucide-react";
 import type { EstadoMarca, FilaMarca, ResumenMetasMarca } from "@/lib/metas-marca/calculo";
 import type { AuditoriaSede, EstadoControl } from "@/lib/metas-marca/auditoria";
+import type { InventarioMarca } from "@/lib/metas-marca/inventario";
 
-export type { EstadoMarca, FilaMarca, AuditoriaSede, EstadoControl };
+export type { EstadoMarca, FilaMarca, AuditoriaSede, EstadoControl, InventarioMarca };
 
 export interface DatosMetas extends ResumenMetasMarca {
   sedes: { id: number; nombre: string }[];
@@ -12,6 +13,9 @@ export interface DatosMetas extends ResumenMetasMarca {
   metasMesAnterior: number;
   actualizado: { por: string | null; fecha: string | null };
   catalogo: { clave: string; marca: string }[];
+  /** Stock disponible hoy por marca (clave), en el almacén principal. null si no se pudo leer. */
+  inventario: Record<string, InventarioMarca> | null;
+  inventarioError: string | null;
   generado: string;
 }
 
@@ -28,6 +32,9 @@ export const dineroCorto = (n: number | null | undefined) => {
   if (a >= 1e4) return `$${(n / 1e3).toLocaleString("en-US", { maximumFractionDigits: 1 })}K`;
   return dinero(n);
 };
+
+export const unidadesFmt = (n: number | null | undefined) =>
+  n == null ? "–" : n.toLocaleString("es-VE", { maximumFractionDigits: 0 });
 
 export const porcentaje = (n: number | null | undefined, decimales = 0) =>
   n == null ? "–" : `${n.toLocaleString("es-VE", { minimumFractionDigits: decimales, maximumFractionDigits: decimales })}%`;

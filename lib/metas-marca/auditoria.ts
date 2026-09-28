@@ -2,6 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { claveMarca, esMarcaGenerica, parecenLaMisma, SIN_MARCA } from "./marcas";
 import { dominioLineas, nombreSede, type VentasSede } from "./odoo";
 import type { MetaEntrada } from "./calculo";
+import type { FuentePrecio, InventarioSede } from "./inventario";
+import { hoyCaracas, isoDia } from "./servicio";
 
 /**
  * Auditoría de los datos de Odoo que usa Metas por marca.
@@ -40,7 +42,9 @@ const usd = (n: number) => `$${n.toLocaleString("es-VE", { minimumFractionDigits
 const pctDe = (a: number, b: number) => (b !== 0 ? Math.round((a / b) * 1000) / 10 : 0);
 const TOLERANCIA = 1; // $1 de redondeo
 
-export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new Date()): Promise<AuditoriaSede> {
+export async function auditarSede(
+  v: VentasSede, metas: MetaEntrada[], inventario: InventarioSede | null, hoy = hoyCaracas(),
+): Promise<AuditoriaSede> {
   const controles: Control[] = [];
   const { companyId, desde, hasta, facturas, lineas } = v;
   const lineasSinIC = lineas.filter((l) => !l.intercompania);
@@ -62,6 +66,12 @@ export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new
     callOdooRPC<any[]>("account.move.line", "read_group", [[...domLin, ["move_id.commercial_partner_id", "not in", icIds]], ["balance:sum"], ["move_type"]], { lazy: false }),
     callOdooRPC<any[]>("spiff.brand", "search_read", [[]], { fields: ["id", "name"], limit: 0, context: { active_test: false } }),
   ]);
+  // Si Odoo no contestó alguna, no se puede auditar: mejor un error claro que
+  // "diferencias de $3.4M" o "Odoo cuenta undefined facturas" inventados.
+  if (typeof nFact !== "number" || typeof nLin !== "number" || !Array.isArray(grupoFact) || !Array.isArray(grupoLin)
+    || !Array.isArray(grupoLinSinIC) || !Array.isArray(marcasOdoo)) {
+    throw new Error("Odoo no respondió una de las consultas de verificación");
+  }
 
   // 1. Registros completos
   {
@@ -277,7 +287,8 @@ export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new
         [...domLin, ["move_id.commercial_partner_id", "not in", icIds], ["product_id.spiff_brand_id", "in", ids]],
         ["balance:sum"], ["move_type"],
       ], { lazy: false });
-      return { m, servidor: Array.isArray(g) ? -g.reduce((s, x) => s + (Number(x.balance) || 0), 0) : null };
+      if (!Array.isArray(g)) throw new Error("Odoo no respondió la verificación por marca");
+      return { m, servidor: -g.reduce((s, x) => s + (Number(x.balance) || 0), 0) };
     }));
     for (const { m, servidor } of resultados) {
       const panel = lineasSinIC.filter((l) => l.clave === m.clave).reduce((s, l) => s + l.ingreso, 0);
@@ -328,7 +339,7 @@ export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new
     const montoNC = ncs.reduce((s, f) => s + f.baseFirmada, 0);
     const cero = lineasSinIC.filter((l) => l.ingreso === 0 && l.cantidad !== 0);
     const archivados = lineasSinIC.filter((l) => !l.productoActivo);
-    const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+    const hoyIso = isoDia(hoy); // hoy en Caracas, no en la zona del servidor
     const futuras = facturas.filter((f) => f.fecha > hoyIso);
     const montoSinVend = fSinVend.reduce((s, f) => s + f.baseFirmada, 0);
     controles.push({
@@ -369,7 +380,136 @@ export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new
     });
   }
 
+  if (inventario) controles.push(...(await auditarInventario(inventario, metas)));
+
   const conteo: Record<EstadoControl, number> = { ok: 0, aviso: 0, error: 0, info: 0 };
   for (const c of controles) conteo[c.estado]++;
   return { companyId, sede: nombreSede(companyId), desde, hasta, generado: new Date().toISOString(), controles, conteo };
+}
+
+const FUENTE_LABEL: Record<FuentePrecio, string> = {
+  venta_3m: "Precio promedio vendido, últimos 3 meses",
+  venta_12m: "Precio promedio vendido, últimos 12 meses",
+  costo: "Costo (sin venta en 12 meses)",
+  sin_precio: "Sin precio (sin venta y costo $0)",
+};
+
+/**
+ * Controles del inventario que usa la meta en unidades: que el stock por marca
+ * cuadre con Odoo filtrando por marca en el dominio, de dónde sale el precio
+ * con que se valora, y avisos (stock sin marca, cantidades negativas, metas en
+ * unidades mayores que el stock).
+ */
+async function auditarInventario(inv: InventarioSede, metas: MetaEntrada[]): Promise<Control[]> {
+  const controles: Control[] = [];
+  const total = inv.productos.reduce((s, p) => s + p.valor, 0);
+  const unidades = inv.productos.reduce((s, p) => s + p.disponible, 0);
+
+  // A. Stock por marca recalculado en Odoo, con la marca en el dominio.
+  const conMetaU = metas.filter((m) => (m.metaUnidades || 0) > 0).map((m) => m.clave);
+  const claves = conMetaU.length
+    ? conMetaU
+    : [...inv.porMarca.values()].filter((m) => m.clave !== SIN_MARCA).sort((a, b) => b.valor - a.valor).slice(0, 8).map((m) => m.clave);
+  const marcas = await callOdooRPC<any[]>("spiff.brand", "search_read", [[]], { fields: ["id", "name"], limit: 0, context: { active_test: false } });
+  if (!Array.isArray(marcas)) throw new Error("Odoo no respondió spiff.brand");
+  const idsPorClave = new Map<string, number[]>();
+  for (const b of marcas) {
+    const c = claveMarca(b.name);
+    idsPorClave.set(c, [...(idsPorClave.get(c) || []), b.id]);
+  }
+  const dominioBase: any[] = [["company_id", "=", inv.companyId]];
+  dominioBase.push(inv.ubicacionId ? ["location_id", "child_of", [inv.ubicacionId]] : ["location_id.usage", "=", "internal"]);
+  let fallas = 0;
+  const filas: Record<string, string | number | null>[] = [];
+  for (const clave of claves) {
+    const ids = idsPorClave.get(clave) || [];
+    const panel = inv.porMarca.get(clave)?.unidades ?? 0;
+    let odoo: number | null = null;
+    if (ids.length) {
+      const g = await callOdooRPC<any[]>("stock.quant", "read_group", [
+        [...dominioBase, ["product_id.spiff_brand_id", "in", ids]], ["quantity:sum", "reserved_quantity:sum"], ["product_id"],
+      ], { lazy: false });
+      if (!Array.isArray(g)) throw new Error("Odoo no respondió la verificación de stock por marca");
+      odoo = g.reduce((s, x) => s + Math.max(0, (Number(x.quantity) || 0) - (Number(x.reserved_quantity) || 0)), 0);
+    }
+    const dif = odoo == null ? null : r2(panel - odoo);
+    if (dif == null || Math.abs(dif) > 0.01) fallas++;
+    filas.push({ marca: inv.porMarca.get(clave)?.marca || clave, panel: r2(panel), odoo: odoo == null ? null : r2(odoo), diferencia: dif });
+  }
+  controles.push({
+    id: "inventario_marcas",
+    titulo: conMetaU.length ? "Stock de las marcas con meta en unidades, recalculado en Odoo" : "Stock de las marcas principales, recalculado en Odoo",
+    estado: !claves.length ? "info" : fallas ? "error" : "ok",
+    resumen: !claves.length
+      ? "No hay stock disponible en el almacén principal."
+      : fallas
+        ? `${fallas} de ${claves.length} marcas no cuadran con el stock de Odoo.`
+        : `${claves.length} marcas: el stock disponible cuadra con Odoo. Almacén ${inv.ubicacion || "(sin almacén principal)"}: ${Math.round(unidades).toLocaleString("es-VE")} unidades disponibles, ${usd(total)} a precio de venta.`,
+    explicacion: "Stock disponible = cantidad − reservado en el almacén principal de la sede (el mismo que usa Compras) y sus sububicaciones, al día de hoy. Odoo lo suma en el servidor filtrando por la marca en el dominio y se compara con el del panel. Exhibición, Mal estado, Demo, RMA y Tránsito no cuentan.",
+    columnas: [
+      { key: "marca", label: "Marca" }, { key: "panel", label: "Unidades panel", tipo: "numero" },
+      { key: "odoo", label: "Unidades Odoo", tipo: "numero" }, { key: "diferencia", label: "Diferencia", tipo: "numero" },
+    ],
+    filas,
+  });
+
+  // B. De dónde sale el precio con que se valora el stock.
+  {
+    const porFuente = new Map<FuentePrecio, { productos: number; unidades: number; valor: number }>();
+    for (const p of inv.productos) {
+      const x = porFuente.get(p.fuente) ?? { productos: 0, unidades: 0, valor: 0 };
+      x.productos++; x.unidades += p.disponible; x.valor += p.valor;
+      porFuente.set(p.fuente, x);
+    }
+    const debil = (porFuente.get("costo")?.valor || 0);
+    const sinPrecio = porFuente.get("sin_precio")?.productos || 0;
+    const pDebil = pctDe(debil, total);
+    // Evidencia de por qué no se usa el precio de lista.
+    const muestra = inv.productos.slice(0, 2000).map((p) => p.productoId);
+    const lista = muestra.length
+      ? await callOdooRPC<any[]>("product.product", "search_read", [[["id", "in", muestra]]], { fields: ["id", "lst_price"], limit: 0, context: { allowed_company_ids: [inv.companyId], active_test: false } })
+      : [];
+    if (!Array.isArray(lista)) throw new Error("Odoo no respondió el precio de lista");
+    const listaEn1 = lista.filter((p) => (Number(p.lst_price) || 0) <= 1).length;
+    controles.push({
+      id: "inventario_precio",
+      titulo: "Precio con que se valora el inventario",
+      estado: pDebil >= 20 || sinPrecio > 0 ? "aviso" : "ok",
+      resumen: `${pctDe(total - debil, total)}% del valor sale del precio real vendido. ${pDebil}% se valora al costo (productos sin venta en 12 meses)${sinPrecio ? ` y ${sinPrecio} productos quedan en $0 (sin venta ni costo)` : ""}. El precio de lista de Odoo está en $1 o menos en ${listaEn1} de ${lista.length} productos con stock, por eso no se usa.`,
+      explicacion: "Cada producto se valora al precio promedio al que se vendió (venta sin IVA ÷ unidades, solo facturas, sin intercompañía) en los últimos 3 meses; si no se vendió, en los últimos 12; si tampoco, al costo de la sede. Lo valorado al costo subestima la meta en $ de esa marca.",
+      columnas: [
+        { key: "fuente", label: "Precio usado" }, { key: "productos", label: "Productos", tipo: "numero" },
+        { key: "unidades", label: "Unidades", tipo: "numero" }, { key: "valor", label: "Valor", tipo: "dinero" },
+      ],
+      filas: (["venta_3m", "venta_12m", "costo", "sin_precio"] as FuentePrecio[]).map((f) => ({
+        fuente: FUENTE_LABEL[f], productos: porFuente.get(f)?.productos || 0,
+        unidades: r2(porFuente.get(f)?.unidades || 0), valor: r2(porFuente.get(f)?.valor || 0),
+      })),
+    });
+  }
+
+  // C. Avisos: stock sin marca, cantidades negativas, metas en unidades > stock.
+  {
+    const sin = inv.porMarca.get(SIN_MARCA);
+    const excedidas = metas.filter((m) => (m.metaUnidades || 0) > (inv.porMarca.get(m.clave)?.unidades ?? 0));
+    const filas: Record<string, string | number | null>[] = [
+      { concepto: "Stock sin marca (SPIFF)", cantidad: sin?.productos || 0, detalle: `${Math.round(sin?.unidades || 0).toLocaleString("es-VE")} u · ${usd(sin?.valor || 0)}` },
+      { concepto: "Productos con cantidad negativa (se toman como 0)", cantidad: inv.negativos, detalle: inv.negativos ? "Error de inventario en Odoo: revisar ajustes" : "" },
+      ...excedidas.map((m) => ({
+        concepto: `Meta en unidades mayor que el stock: ${m.marca}`,
+        cantidad: m.metaUnidades || 0,
+        detalle: `Hay ${Math.round(inv.porMarca.get(m.clave)?.unidades ?? 0).toLocaleString("es-VE")} u disponibles hoy`,
+      })),
+    ];
+    controles.push({
+      id: "inventario_avisos",
+      titulo: "Inventario: datos a revisar",
+      estado: inv.negativos || excedidas.length || (sin?.valor || 0) > 0 ? "aviso" : "ok",
+      resumen: `Stock sin marca: ${sin?.productos || 0} productos. Cantidades negativas: ${inv.negativos}. Metas en unidades mayores que el stock actual: ${excedidas.length}.`,
+      explicacion: "El stock sin marca no entra en ninguna marca. Una meta en unidades mayor que el stock solo se cumple si llega mercancía en el mes; el stock cambia a diario y la meta guarda la foto del día en que se cargó.",
+      columnas: [{ key: "concepto", label: "Concepto" }, { key: "cantidad", label: "Cantidad", tipo: "numero" }, { key: "detalle", label: "Detalle" }],
+      filas,
+    });
+  }
+  return controles;
 }

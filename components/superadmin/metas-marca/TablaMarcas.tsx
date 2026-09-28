@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, Search } from "lucide-react";
-import { ESTADO_UI, colorPct, dinero, porcentaje, type DatosMetas, type EstadoMarca, type FilaMarca } from "./formato";
+import { ESTADO_UI, colorPct, dinero, porcentaje, unidadesFmt, type DatosMetas, type EstadoMarca, type FilaMarca } from "./formato";
 
-type Orden = "meta" | "vendido" | "cumplimiento" | "cumplimientoAlDia" | "proyeccionPct" | "falta" | "participacion" | "marca";
+type Orden = "meta" | "vendido" | "cumplimiento" | "cumplimientoAlDia" | "proyeccionPct" | "falta" | "participacion" | "cumplimientoUnidades" | "marca";
 
 /** Barra de progreso contra la meta, con una marca donde se debería ir hoy. */
 export function BarraProgreso({ fila, avance, enCurso }: { fila: FilaMarca; avance: number; enCurso: boolean }) {
@@ -42,12 +42,20 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
   const enCurso = data.periodo.estado === "en_curso";
   const hayMetas = data.totales.marcasConMeta > 0;
   const [soloConMeta, setSoloConMeta] = useState(true);
+  const conUnidades = data.totales.marcasConMetaUnidades > 0;
+
+  const estados: (EstadoMarca | "todas")[] = [
+    "todas", "cumplida", ...(enCurso ? ["en_ritmo" as const] : []), "atencion", "riesgo",
+    ...(data.totales.conteo.pendiente > 0 ? ["pendiente" as const] : []), "sin_meta",
+  ];
+  // Un estado que este mes no existe (ej. "En ritmo" en un mes cerrado) cuenta como "Todas".
+  const filtro = estados.includes(filtroEstado) ? filtroEstado : "todas";
 
   const filas = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     let xs = data.marcas.filter((m) => m.meta != null || m.vendido !== 0);
-    if (hayMetas && soloConMeta && filtroEstado === "todas") xs = xs.filter((m) => m.meta != null);
-    if (filtroEstado !== "todas") xs = xs.filter((m) => m.estado === filtroEstado);
+    if (hayMetas && soloConMeta && filtro === "todas") xs = xs.filter((m) => m.meta != null);
+    if (filtro !== "todas") xs = xs.filter((m) => m.estado === filtro);
     if (q) xs = xs.filter((m) => m.marca.toLowerCase().includes(q));
     const val = (m: FilaMarca) => (orden === "marca" ? m.marca : (m[orden] as number | null) ?? -Infinity);
     return [...xs].sort((a, b) => {
@@ -55,7 +63,7 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
       const c = typeof va === "string" ? va.localeCompare(vb as string) : (va as number) - (vb as number);
       return asc ? c : -c;
     });
-  }, [data.marcas, busqueda, orden, asc, filtroEstado, soloConMeta, hayMetas]);
+  }, [data.marcas, busqueda, orden, asc, filtro, soloConMeta, hayMetas]);
 
   const th = (key: Orden, label: string, align = "text-right") => (
     <th className={`px-3 py-2.5 ${align} whitespace-nowrap`}>
@@ -69,8 +77,6 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
     </th>
   );
 
-  const estados: (EstadoMarca | "todas")[] = ["todas", "cumplida", ...(enCurso ? ["en_ritmo" as const] : []), "atencion", "riesgo", "sin_meta"];
-
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-slate-100">
@@ -79,7 +85,7 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
             <button
               key={e}
               onClick={() => setFiltroEstado(e)}
-              className={`h-8 px-3 rounded-lg text-xs font-semibold transition ${filtroEstado === e ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+              className={`h-8 px-3 rounded-lg text-xs font-semibold transition ${filtro === e ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
               {e === "todas" ? "Todas" : ESTADO_UI[e].label}
               {e !== "todas" && <span className="ml-1.5 opacity-70 tabular-nums">{data.totales.conteo[e]}</span>}
@@ -87,7 +93,7 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
           ))}
         </div>
         <div className="flex items-center gap-3">
-          {hayMetas && filtroEstado === "todas" && (
+          {hayMetas && filtro === "todas" && (
             <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
               <input type="checkbox" checked={!soloConMeta} onChange={(e) => setSoloConMeta(!e.target.checked)} className="rounded border-slate-300" />
               Ver también marcas sin meta
@@ -118,6 +124,7 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
               {enCurso && th("proyeccionPct", "Proyección")}
               {th("falta", "Falta")}
               {enCurso && <th className="px-3 py-2.5 text-right uppercase whitespace-nowrap">Necesario/día</th>}
+              {conUnidades && th("cumplimientoUnidades", "Unidades")}
               {th("participacion", "% Venta")}
               <th className="px-3 py-2.5 text-left uppercase">Estado</th>
               <th className="w-8" />
@@ -127,7 +134,14 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
             {filas.map((m) => (
               <tr key={m.clave} onClick={() => onAbrir(m)} className="cursor-pointer hover:bg-slate-50/80 transition-colors">
                 <td className="px-3 py-2.5">
-                  <p className="font-semibold text-slate-800">{m.marca}</p>
+                  {/* Botón para abrir el detalle también con el teclado (la fila solo respondía al mouse). */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onAbrir(m); }}
+                    className="font-semibold text-slate-800 text-left hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  >
+                    {m.marca}
+                  </button>
                   <p className="text-[11px] text-slate-400">{m.facturas} facturas · {m.clientes} clientes{m.generica && " · genérica"}</p>
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{dinero(m.meta)}</td>
@@ -143,13 +157,23 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
                 )}
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{m.falta ? dinero(m.falta) : m.meta != null ? "✓" : "–"}</td>
                 {enCurso && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{dinero(m.ritmoNecesario)}</td>}
+                {conUnidades && (
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {m.metaUnidades != null ? (
+                      <>
+                        <p className="text-slate-700">{unidadesFmt(m.unidades)} / {unidadesFmt(m.metaUnidades)}</p>
+                        <p className={`text-[11px] font-semibold ${colorPct(m.cumplimientoUnidades)}`}>{porcentaje(m.cumplimientoUnidades)}</p>
+                      </>
+                    ) : <span className="text-slate-400">{unidadesFmt(m.unidades)}</span>}
+                  </td>
+                )}
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{porcentaje(m.participacion, 1)}</td>
                 <td className="px-3 py-2.5"><ChipEstado estado={m.estado} /></td>
                 <td className="pr-3 text-slate-300"><ChevronRight size={16} /></td>
               </tr>
             ))}
             {filas.length === 0 && (
-              <tr><td colSpan={12} className="py-12 text-center text-sm text-slate-400">No hay marcas para este filtro.</td></tr>
+              <tr><td colSpan={13} className="py-12 text-center text-sm text-slate-400">No hay marcas para este filtro.</td></tr>
             )}
           </tbody>
         </table>
@@ -158,6 +182,7 @@ export function TablaMarcas({ data, filtroEstado, setFiltroEstado, onAbrir }: {
         <p className="px-4 py-3 border-t border-slate-100 text-[11px] text-slate-400">
           La línea oscura en la barra marca dónde debería ir cada marca hoy ({porcentaje(data.periodo.avance)} de los días hábiles del mes).
           % Al día = vendido ÷ meta prorrateada a hoy. Proyección = ritmo diario actual × días hábiles del mes.
+          {conUnidades && " Unidades = vendidas en el mes (netas de devoluciones) / meta en unidades; el estado lo marca la meta en $."}
         </p>
       )}
     </div>
