@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { partnersIntercompania } from "@/lib/intercompania";
 import { claveMarca, SIN_MARCA } from "./marcas";
 
 /**
@@ -10,13 +11,14 @@ import { claveMarca, SIN_MARCA } from "./marcas";
  * factura en otra moneda, la venta sigue en dólares. Las notas de crédito
  * restan.
  *
- * A diferencia de Cobertura de marcas del Stoplight:
- * - Se incluyen las facturas sin vendedor: la meta es de la marca en la sede,
- *   no de un vendedor.
- * - Se excluyen las ventas intercompañía (Valencia le factura a Caracas, etc.):
- *   en sep-2026 Valencia le facturó $1,56M a SUPRICOM CCS 21 (~45% de su
- *   facturación). Contarlas inflaba la marca en la sede que vende y la volvía
- *   a contar cuando la otra sede le vende al cliente final.
+ * - A diferencia de Cobertura de marcas del Stoplight, se incluyen las
+ *   facturas sin vendedor: la meta es de la marca en la sede, no de un
+ *   vendedor.
+ * - Se excluyen las ventas intercompañía (Valencia le factura a Caracas, etc.),
+ *   igual que en el Stoplight (`lib/intercompania`): en sep-2026 Valencia le
+ *   facturó $1,56M a SUPRICOM CCS 21 (~45% de su facturación). Contarlas
+ *   inflaba la marca en la sede que vende y la volvía a contar cuando la otra
+ *   sede le vende al cliente final.
  */
 
 export const SEDES = [
@@ -106,45 +108,6 @@ async function leerTodo(model: string, domain: any[], fields: string[], context?
     todo.push(...r);
     if (r.length < pagina) return todo;
   }
-}
-
-let cacheIC: { vence: number; mapa: Map<number, string> } | null = null;
-
-/**
- * Contactos (empresa comercial) que son del grupo: las propias empresas del
- * Odoo y los clientes creados con su nombre o RIF en cada sede (en Odoo hay un
- * "SUPRICOM CCS 21, C.A." distinto por empresa, ninguno es el partner de la
- * compañía). Se compara contra `commercial_partner_id`, así los contactos
- * hijos también quedan fuera.
- *
- * Incluye SUPRICOM USA, LLC y SUPRICOM, LLC (EE. UU.), que no son empresas en
- * este Odoo pero sí del grupo (confirmado 2026-09-28): son el grueso de lo
- * que factura Panamá (62% en sep-2026).
- *
- * Los RIF van sin guiones y recortados: en Odoo están escritos de varias
- * formas ("87-1576706", "J-31163115-1", "RUC155595002").
- */
-export async function partnersIntercompania(): Promise<Map<number, string>> {
-  if (cacheIC && cacheIC.vence > Date.now()) return cacheIC.mapa;
-  const [partners, empresas] = await Promise.all([
-    callOdooRPC<any[]>("res.partner", "search_read", [[
-      "|", "|", "|", "|", "|", "|",
-      ["name", "ilike", "supricom"],
-      ["name", "ilike", "office solutions center"],
-      ["name", "ilike", "ofimaster"],
-      ["vat", "ilike", "501193738"],
-      ["vat", "ilike", "31163115"],
-      ["vat", "ilike", "155595002"],
-      ["vat", "ilike", "1576706"],
-    ]], { fields: ["id", "name"], limit: 0, context: { active_test: false } }),
-    callOdooRPC<any[]>("res.company", "search_read", [[]], { fields: ["partner_id"], limit: 0 }),
-  ]);
-  if (!Array.isArray(partners) || !Array.isArray(empresas)) throw new Error("Odoo no respondió los contactos intercompañía");
-  const mapa = new Map<number, string>();
-  for (const p of partners) mapa.set(p.id, p.name || "");
-  for (const e of empresas) if (e.partner_id) mapa.set(e.partner_id[0], e.partner_id[1] || "");
-  cacheIC = { vence: Date.now() + 30 * 60 * 1000, mapa };
-  return mapa;
 }
 
 interface InfoProducto { nombre: string; codigo: string; activo: boolean; marcaId: number | null; marca: string }

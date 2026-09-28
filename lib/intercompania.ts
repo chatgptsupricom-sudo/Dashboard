@@ -12,8 +12,9 @@ import { callOdooRPC } from "@/lib/odoo";
  * Panamá salen a nombre de un vendedor (Hercilio Camacho), así que filtrar por
  * vendedor no alcanza.
  *
- * Misma detección que Metas por marca (`lib/metas-marca/odoo.ts`, PR #344):
- * hay una copia allá hasta que se unifiquen.
+ * La usan el Stoplight (`lib/stoplight/*`, grilla y modales) y Metas por
+ * marca (`lib/metas-marca/odoo.ts`): una sola detección para que las dos
+ * secciones no diverjan.
  */
 
 let cacheIC: { vence: number; mapa: Map<number, string> } | null = null;
@@ -24,6 +25,13 @@ let cacheIC: { vence: number; mapa: Map<number, string> } | null = null;
  * "SUPRICOM CCS 21, C.A." distinto por empresa, ninguno es el partner de la
  * compañía). Se compara contra `commercial_partner_id`, así los contactos
  * hijos también quedan fuera.
+ *
+ * Incluye SUPRICOM USA, LLC y SUPRICOM, LLC (EE. UU.), que no son empresas en
+ * este Odoo pero sí del grupo (confirmado 2026-09-28): son el grueso de lo
+ * que factura Panamá (62% en sep-2026).
+ *
+ * Los RIF van sin guiones y recortados: en Odoo están escritos de varias
+ * formas ("87-1576706", "J-31163115-1", "RUC155595002").
  */
 export async function partnersIntercompania(): Promise<Map<number, string>> {
   if (cacheIC && cacheIC.vence > Date.now()) return cacheIC.mapa;
@@ -36,7 +44,7 @@ export async function partnersIntercompania(): Promise<Map<number, string>> {
       ["vat", "ilike", "501193738"],
       ["vat", "ilike", "31163115"],
       ["vat", "ilike", "155595002"],
-      ["vat", "ilike", "871576706"],
+      ["vat", "ilike", "1576706"],
     ]], { fields: ["id", "name"], limit: 0, context: { active_test: false } }),
     callOdooRPC<any[]>("res.company", "search_read", [[]], { fields: ["partner_id"], limit: 0 }),
   ]);
