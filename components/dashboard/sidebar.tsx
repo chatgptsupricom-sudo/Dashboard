@@ -250,6 +250,7 @@ export function Sidebar({
     { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
     { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
     // Packing lists: Compras los carga y Almacen los recibe (antes iban por correo).
@@ -379,7 +380,7 @@ export function Sidebar({
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes"];
@@ -1183,6 +1184,14 @@ export function Sidebar({
                           href: `${basePath}/cuota`,
                           permission: "cuota",
                         },
+                        // Solo existe en /superadmin (el gerente de operaciones comparte este menú).
+                        ...(isSuperAdminRole
+                          ? [{
+                              label: t("metas_marca"),
+                              href: `${basePath}/metas-marca`,
+                              permission: "metas_marca",
+                            }]
+                          : []),
                         {
                           label: t("mapa_de_clientes"),
                           href: isGerenteOperaciones ? `${basePath}/mapa_clientes` : `${basePath}/vendedores`,
