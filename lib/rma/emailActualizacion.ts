@@ -30,6 +30,8 @@ const ESTADOS: Record<string, string> = {
   nota_credito: "Nota de crédito",
   no_procesado: "No procesado",
   reingresado: "Reingresado",
+  // Para el cliente sigue en revisión: la solicitud de nota de crédito es interna.
+  nc_revision: "En revisión",
 };
 
 export function enviarCorreoActualizacion(caseId: number, cambio: CambioRma, origenPeticion: string): void {

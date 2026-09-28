@@ -1,40 +1,50 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  contarPendientes,
+  ErrorNota,
+  hayColumnaItemNota,
+  listarNotas,
+  solicitarNotaCredito,
+  type EstadoNota,
+} from "@/lib/rma/notaCredito";
 
-let hayItemId = false;
+const ESTADOS: EstadoNota[] = ["pendiente", "aprobada", "rechazada"];
 
 /**
- * Si ya se corrió sql/rma_notas_credito_item.sql (nota de crédito por
- * producto, issue #331). Se cachea solo el "sí".
+ * GET
+ *  ?conteo=1                 solicitudes esperando al Super Admin (sidebar).
+ *  ?lista=1[&estado=...]     solicitudes con su caso y producto.
+ *  ?case_id=[&item_id=]      la última nota de ese caso / producto.
  */
-async function hayColumnaItem(): Promise<boolean> {
-  if (hayItemId) return true;
-  try {
-    const r = await query("SHOW COLUMNS FROM rma_notas_credito LIKE 'item_id'");
-    hayItemId = (r.rows as any[]).length > 0;
-  } catch {
-    hayItemId = false;
-  }
-  return hayItemId;
-}
-
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
   if (auth.error) return auth.error;
 
   try {
     const { searchParams } = new URL(request.url);
+
+    if (searchParams.get("conteo") === "1") {
+      return NextResponse.json({ success: true, pendientes: await contarPendientes() });
+    }
+
+    if (searchParams.get("lista") === "1") {
+      const estado = searchParams.get("estado") as EstadoNota | null;
+      const notas = await listarNotas(estado && ESTADOS.includes(estado) ? estado : null);
+      return NextResponse.json({ success: true, notas });
+    }
+
     const caseId = searchParams.get("case_id");
     const itemId = parseInt(searchParams.get("item_id") || "", 10) || null;
-
     if (!caseId) {
       return NextResponse.json({ error: "case_id required" }, { status: 400 });
     }
 
-    // Con producto: la nota de ese producto. Sin él, la del caso completo
-    // (las de antes de #331, y las de envíos de un producto).
-    const porItem = await hayColumnaItem();
+    // Con producto: la nota de ese producto. Sin él, la última del caso
+    // (envíos de un producto: las nuevas llevan su item_id, las viejas no).
+    const porItem = await hayColumnaItemNota();
     if (itemId && !porItem) {
       return NextResponse.json({ success: true, nota: null });
     }
@@ -43,7 +53,7 @@ export async function GET(request: NextRequest) {
               c.client_name, c.serial_quantity, c.reported_fault, c.diagnosis, c.status
        FROM rma_notas_credito nc
        JOIN rma_cases c ON c.id = nc.case_id
-       WHERE nc.case_id = ?${porItem ? (itemId ? " AND nc.item_id = ?" : " AND nc.item_id IS NULL") : ""}
+       WHERE nc.case_id = ?${porItem ? (itemId ? " AND nc.item_id = ?" : "") : ""}
        ORDER BY nc.id DESC`,
       porItem && itemId ? [parseInt(caseId, 10), itemId] : [parseInt(caseId, 10)]
     );
@@ -55,49 +65,45 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * POST: RMA solicita una nota de crédito (caso, producto y motivo). Queda
+ * pendiente hasta que el Super Admin la decida (PUT /api/rma/nota-credito/[id]).
+ */
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
   if (auth.error) return auth.error;
 
   try {
-    const body = await request.json();
-    const { case_id, detail, observations, images, created_by } = body;
-    const itemId = parseInt(String(body.item_id ?? ""), 10) || null;
-
-    if (!case_id) {
+    const body = await request.json().catch(() => ({}));
+    const caseId = parseInt(String(body.case_id ?? ""), 10);
+    if (!caseId) {
       return NextResponse.json({ error: "case_id required" }, { status: 400 });
     }
 
-    const imagesJson = images ? JSON.stringify(images) : null;
-    const autor = auth.payload?.name || created_by || "Usuario Actual";
+    const images = Array.isArray(body.images)
+      ? body.images
+          .filter((i: any) => i && typeof i.url === "string" && i.url.startsWith("data:image/"))
+          .slice(0, 10)
+          .map((i: any) => ({ name: String(i.name || "imagen").slice(0, 200), url: i.url }))
+      : [];
 
-    if (itemId) {
-      if (!(await hayColumnaItem())) {
-        return NextResponse.json(
-          { error: "Falta correr la migración sql/rma_notas_credito_item.sql" },
-          { status: 409 },
-        );
-      }
-      const item = await query(`SELECT id FROM rma_case_items WHERE id = ? AND case_id = ?`, [itemId, case_id]);
-      if (!(item.rows as any[]).length) {
-        return NextResponse.json({ error: "Producto no encontrado en este caso" }, { status: 404 });
-      }
-    }
+    const { id } = await solicitarNotaCredito({
+      caseId,
+      itemId: parseInt(String(body.item_id ?? ""), 10) || null,
+      motivo: String(body.motivo ?? ""),
+      observations: body.observations ? String(body.observations) : null,
+      images: images.length ? images : null,
+      opciones: {
+        autor: auth.payload?.name || auth.payload?.email || "RMA",
+        origenPeticion: getPublicOrigin(request),
+      },
+    });
 
-    const result = itemId
-      ? await query(
-          `INSERT INTO rma_notas_credito (case_id, item_id, detail, observations, images, created_by)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [case_id, itemId, detail || null, observations || null, imagesJson, autor]
-        )
-      : await query(
-          `INSERT INTO rma_notas_credito (case_id, detail, observations, images, created_by)
-           VALUES (?, ?, ?, ?, ?)`,
-          [case_id, detail || null, observations || null, imagesJson, autor]
-        );
-
-    return NextResponse.json({ success: true, id: result.rows.insertId });
+    return NextResponse.json({ success: true, id });
   } catch (error: any) {
+    if (error instanceof ErrorNota) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("POST /api/rma/nota-credito error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -56,6 +56,20 @@ export async function GET(request: NextRequest) {
 
     where += filtroProcedencia(procedencia, await hayColumnaExterno(), "c");
 
+    // Grupos de las tarjetas del Dashboard de RMA (app/api/rma/stats).
+    const grupo = searchParams.get("grupo") || "";
+    if (grupo === "pendientes") {
+      where += " AND c.status IN ('recibido','reingresado','nc_revision')";
+    } else if (grupo === "completados_mes") {
+      where += ` AND c.status IN ('reparado','nota_credito','no_procesado') AND EXISTS (
+                   SELECT 1 FROM rma_history h
+                    WHERE h.case_id = c.id AND h.to_status = c.status
+                      AND h.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01'))`;
+    }
+    if (searchParams.get("mes") === "1") {
+      where += " AND c.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')";
+    }
+
     const countResult = await query(`SELECT COUNT(*) as total FROM rma_cases c ${where}`, params);
     const total = countResult.rows[0]?.total || 0;
 
