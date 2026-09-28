@@ -72,6 +72,15 @@ export async function GET(
             garantia_marca: c.garantia_marca ?? null,
             // Equipo que no se compro en Supricom: sin factura ni garantia nuestra.
             producto_externo: Number(c.producto_externo) === 1,
+            // Como eligio el cliente recibir el equipo (portal): define quien
+            // firma el despacho. null = no eligio (retira en sucursal).
+            entrega_metodo: c.entrega_metodo ?? null,
+            entrega_ciudad: c.entrega_ciudad ?? null,
+            entrega_agencia: c.entrega_agencia ?? null,
+            client_name: c.client_name ?? null,
+            model: c.model ?? null,
+            hardware: c.hardware ?? null,
+            serial: c.serial ?? c.serial_quantity ?? null,
           };
         }
       } catch (e: any) {

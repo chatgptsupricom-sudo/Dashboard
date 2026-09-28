@@ -3,21 +3,17 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  Package,
-  Plus,
-  Search,
-  Send,
-  ShieldCheck,
-  X,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, Loader2, Lock, MapPin, Package, Send, Store, Truck, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuthStore } from "@/lib/stores/auth.store";
-import SignaturePad from "@/components/seguridad/SignaturePad";
+import { GarantiaBadge } from "@/components/seguridad/GarantiaIngreso";
+import { SignaturePad } from "@/components/seguridad/SignaturePad";
+import { CheckRow, Dato, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
+import {
+  firmasRequeridasDespacho,
+  type MetodoEntrega,
+  type RolFirmaDespacho,
+} from "@/lib/seguridad/despachoFirmas";
+import { fechaCorta } from "@/lib/seguridad/formato";
 
 function todayISO() {
   const d = new Date();
@@ -27,271 +23,227 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-type Ingreso = {
+/** Fila de "RMA por despachar" (/api/seguridad/despacho/ingresos-pendientes?listos=1). */
+type Pendiente = {
   id: number;
-  rma_case_id: number | null;
-  rma_status?: string | null;
-  fecha_entrega: string;
   cliente_nombre: string;
   hardware: string | null;
-  serial: string | null;
+  fecha_entrega: string;
+  rma_status: string | null;
+  rma_case_number: string | null;
 };
 
-/** Producto del envío tal como quedó en el ingreso (issue #331). */
-type ProductoIngreso = {
-  rma_item_id: number | null;
-  producto: string;
-  serial: string | null;
-  recibido: boolean;
-  despachado_at: string | null;
+type Detalle = {
+  ingreso: {
+    id: number;
+    rma_case_id: number | null;
+    nd_numero: string | null;
+    cliente_nombre: string;
+    hardware: string | null;
+    serial: string | null;
+    factura_numero: string | null;
+    fecha_entrega: string;
+  };
+  rma_case: {
+    case_number: string;
+    status: string;
+    invoice_number: string | null;
+    garantia_estado: string | null;
+    producto_externo?: boolean;
+    entrega_metodo: MetodoEntrega | null;
+    entrega_ciudad: string | null;
+    entrega_agencia: string | null;
+  } | null;
+  productos: {
+    rma_item_id: number | null;
+    producto: string;
+    serial: string | null;
+    recibido: boolean;
+    despachado_at: string | null;
+    status: string | null;
+  }[];
 };
 
-type FormState = {
-  nd_numero: string;
-  fecha_despacho: string;
-  almacenista_nombre: string;
-  cliente_retira: string;
-  accesorios_integros: boolean;
-  observaciones: string;
-  firma_cliente_nombre: string;
+type Firma = { nombre: string; data: string | null };
+
+const TERMINADOS = ["reparado", "nota_credito", "no_procesado"];
+const ESTADO: Record<string, { texto: string; clase: string }> = {
+  reparado: { texto: "Reparado", clase: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  nota_credito: { texto: "Nota de crédito", clase: "bg-violet-100 text-violet-700 border-violet-200" },
+  no_procesado: { texto: "No procesado", clase: "bg-rose-100 text-rose-700 border-rose-200" },
 };
 
-const MAX = {
-  nd_numero: 50,
-  almacenista_nombre: 200,
-  cliente_retira: 200,
-  observaciones: 5000,
-  firma_cliente_nombre: 200,
-  factura: 100,
-};
-const MAX_FACTURAS = 50;
-
+/**
+ * Acta de despacho: devolver al cliente un equipo que RMA ya terminó.
+ *
+ * Se elige de "RMA por despachar" (obligatorio). Los datos del equipo, la
+ * factura y el resultado de RMA salen del ingreso y del ticket, de solo
+ * lectura; Seguridad solo escribe quién retira y su observación. Firman el
+ * cliente que retira, RMA y Seguridad (retiro físico o ruta / encomienda).
+ */
 export default function NuevoDespachoPage() {
   const t = useTranslations("seguridad");
   const tf = useTranslations("seguridad.despacho.form");
-  const td = useTranslations("seguridad.despacho.detail");
-  const tfl = useTranslations("seguridad.ingreso.form");
-  const tdl = useTranslations("seguridad.ingreso.detail");
+  const tfi = useTranslations("seguridad.ingreso.form");
   const params = useParams();
   const router = useRouter();
   const locale = (params?.locale as string) || "es";
-  const { user } = useAuthStore();
-
   const base = `/${locale}/seguridad`;
 
-  const [form, setForm] = useState<FormState>({
-    nd_numero: "",
-    fecha_despacho: todayISO(),
-    almacenista_nombre: user?.name || "",
-    cliente_retira: "",
-    accesorios_integros: true,
-    observaciones: "",
-    firma_cliente_nombre: "",
+  const [fechaDespacho] = useState(todayISO());
+  const [pendientes, setPendientes] = useState<Pendiente[]>([]);
+  const [cargandoPendientes, setCargandoPendientes] = useState(true);
+  const [elegido, setElegido] = useState("");
+  const [detalle, setDetalle] = useState<Detalle | null>(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+
+  const [salen, setSalen] = useState<number[]>([]);
+  const [accesorios, setAccesorios] = useState<boolean | null>(null);
+  const [observaciones, setObservaciones] = useState("");
+  const [clienteRetira, setClienteRetira] = useState("");
+  const [firmas, setFirmas] = useState<Partial<Record<RolFirmaDespacho, Firma>>>({});
+  const setFirma = (rol: RolFirmaDespacho, cambios: Partial<Firma>) =>
+    setFirmas((prev) => ({ ...prev, [rol]: { nombre: "", data: null, ...prev[rol], ...cambios } }));
+
+  const [personal, setPersonal] = useState<Record<"seguridad" | "tecnico", Persona[]>>({
+    seguridad: [],
+    tecnico: [],
   });
 
-  const [ingresoQuery, setIngresoQuery] = useState("");
-  const [ingresoResults, setIngresoResults] = useState<Ingreso[]>([]);
-  const [selectedIngreso, setSelectedIngreso] = useState<Ingreso | null>(null);
-  // Envío con varios productos: cuáles salen en este despacho. Por defecto,
-  // todos los que llegaron y siguen en el taller.
-  const [productosIngreso, setProductosIngreso] = useState<ProductoIngreso[]>([]);
-  const [salen, setSalen] = useState<number[]>([]);
-  const [searchingIngreso, setSearchingIngreso] = useState(false);
-  const [ingresoError, setIngresoError] = useState<string | null>(null);
-  const [ingresoSearched, setIngresoSearched] = useState(false);
-
-  const [facturas, setFacturas] = useState<string[]>([]);
-
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [firmaDataUrl, setFirmaDataUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  // Catálogos de quienes firman.
   useEffect(() => {
-    if (user?.name && !form.almacenista_nombre) {
-      setForm((prev) => ({ ...prev, almacenista_nombre: user.name }));
-    }
-  }, [user?.name]);
+    const cargar = async (url: string, clave: string) => {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) return [];
+        const j = await r.json();
+        return (j[clave] || []) as Persona[];
+      } catch {
+        return [];
+      }
+    };
+    void Promise.all([
+      cargar("/api/seguridad/catalogo/personal?rol=seguridad", "personal"),
+      cargar("/api/seguridad/catalogo/personal?rol=rma", "personal"),
+    ]).then(([seguridad, tecnico]) => setPersonal({ seguridad, tecnico }));
+  }, []);
 
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
+  // RMA por despachar: lo que el taller ya terminó y falta devolver.
+  useEffect(() => {
+    fetch("/api/seguridad/despacho/ingresos-pendientes?listos=1&limit=100")
+      .then((r) => (r.ok ? r.json() : { ingresos: [] }))
+      .then((j) => setPendientes(j.ingresos || []))
+      .catch(() => setPendientes([]))
+      .finally(() => setCargandoPendientes(false));
+  }, []);
 
-  const searchIngreso = async () => {
-    const value = ingresoQuery.trim();
-    if (!value) return;
-    setSearchingIngreso(true);
-    setIngresoError(null);
-    setIngresoResults([]);
-    setIngresoSearched(true);
+  // Desde el Dashboard o "Listos para despachar" se llega con ?ingreso=ID.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("ingreso");
+    if (id) elegir(id);
+  }, []);
+
+  const elegir = async (id: string) => {
+    setElegido(id);
+    setDetalle(null);
+    setSalen([]);
+    setFirmas({});
+    setClienteRetira("");
+    setError(null);
+    if (!id) return;
+    setCargandoDetalle(true);
     try {
-      const res = await fetch(
-        `/api/seguridad/despacho/ingresos-pendientes?search=${encodeURIComponent(value)}`,
-      );
-      if (!res.ok) {
-        setIngresoError(tf("ingreso_not_found"));
+      const r = await fetch(`/api/seguridad/ingreso/${encodeURIComponent(id)}`);
+      const j = r.ok ? await r.json() : null;
+      if (!j?.ingreso) {
+        setError(tf("ingreso_not_found"));
         return;
       }
-      const data = await res.json();
-      if (data.success) {
-        setIngresoResults(data.ingresos || []);
-        if ((data.ingresos || []).length === 0) {
-          setIngresoError(tf("ingreso_not_found"));
-        }
-      } else {
-        setIngresoError(tf("ingreso_not_found"));
-      }
-    } catch {
-      setIngresoError(tf("ingreso_not_found"));
-    } finally {
-      setSearchingIngreso(false);
-    }
-  };
-
-  const cargarProductos = async (ing: Ingreso) => {
-    setProductosIngreso([]);
-    setSalen([]);
-    if (!ing.rma_case_id) return;
-    try {
-      const res = await fetch(`/api/seguridad/ingreso/${ing.id}`);
-      const data = await res.json();
-      const lista: ProductoIngreso[] = data?.productos || [];
-      if (lista.length > 1) {
-        setProductosIngreso(lista);
+      const d: Detalle = { ingreso: j.ingreso, rma_case: j.rma_case || null, productos: j.productos || [] };
+      setDetalle(d);
+      // Salen por defecto todos los que llegaron, RMA terminó y siguen aquí.
+      if (d.productos.length > 1) {
         setSalen(
-          lista
-            .filter((x) => x.recibido && !x.despachado_at && x.rma_item_id)
+          d.productos
+            .filter((x) => x.recibido && !x.despachado_at && x.rma_item_id && TERMINADOS.includes(x.status || ""))
             .map((x) => x.rma_item_id as number),
         );
       }
     } catch {
-      // Sin la lista, el despacho sale como siempre: el envío entero.
+      setError(tf("ingreso_not_found"));
+    } finally {
+      setCargandoDetalle(false);
     }
   };
 
-  const selectIngreso = (ing: Ingreso) => {
-    setSelectedIngreso(ing);
-    cargarProductos(ing);
-    setIngresoResults([]);
-    setIngresoQuery("");
-    setIngresoError(null);
-    setIngresoSearched(false);
-    setForm((prev) => ({
-      ...prev,
-      cliente_retira: prev.cliente_retira || ing.cliente_nombre || "",
-    }));
-  };
+  const metodo: MetodoEntrega = detalle?.rma_case?.entrega_metodo || "sucursal";
+  const requeridas = firmasRequeridasDespacho();
+  const varios = (detalle?.productos.length || 0) > 1;
+  const externo = !!detalle?.rma_case?.producto_externo;
 
-  // Desde "Listos para despachar" se llega con ?ingreso=ID: se abre ya elegido.
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("ingreso");
-    if (!id) return;
-    fetch(`/api/seguridad/despacho/ingresos-pendientes?ingreso_id=${encodeURIComponent(id)}`)
-      .then((r) => (r.ok ? r.json() : { ingresos: [] }))
-      .then((j) => {
-        const ing = (j.ingresos || [])[0];
-        if (ing) selectIngreso(ing);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const skipIngreso = () => {
-    setSelectedIngreso(null);
-    setProductosIngreso([]);
-    setSalen([]);
-    setIngresoResults([]);
-    setIngresoQuery("");
-    setIngresoError(null);
-    setIngresoSearched(false);
-  };
-
-  const addFactura = () => {
-    if (facturas.length >= MAX_FACTURAS) return;
-    setFacturas((prev) => [...prev, ""]);
-  };
-
-  const updateFactura = (idx: number, value: string) => {
-    setFacturas((prev) =>
-      prev.map((f, i) => (i === idx ? value.slice(0, MAX.factura) : f)),
-    );
-  };
-
-  const removeFactura = (idx: number) => {
-    setFacturas((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitError(null);
-
-    if (!form.almacenista_nombre.trim()) {
-      setSubmitError(tf("error_required"));
+  const onSubmit = async () => {
+    setError(null);
+    if (!detalle) {
+      setError(tf("error_sin_ingreso"));
       return;
     }
-    if (productosIngreso.length > 0 && salen.length === 0) {
-      setSubmitError(t("productos_envio.error_salen"));
+    if (varios && !salen.length) {
+      setError(t("productos_envio.error_salen"));
+      return;
+    }
+    if (accesorios === null) {
+      setError(tf("error_accesorios"));
+      return;
+    }
+    if (!clienteRetira.trim()) {
+      setError(tf("error_cliente_retira"));
+      return;
+    }
+    const faltan = requeridas.filter((r) => {
+      const f = firmas[r.rol];
+      return !f?.data || (r.rol !== "cliente" && !f.nombre);
+    });
+    if (faltan.length) {
+      setError(tf("error_firmas", { quienes: faltan.map((r) => tf(`firma_${r.rol}`)).join(", ") }));
       return;
     }
 
     setSubmitting(true);
+    const payload: Record<string, unknown> = {
+      ingreso_id: detalle.ingreso.id,
+      fecha_despacho: fechaDespacho,
+      accesorios_integros: accesorios,
+      observaciones: observaciones.trim().slice(0, 5000) || undefined,
+      cliente_retira: clienteRetira.trim().slice(0, 200),
+      firmas: Object.fromEntries(
+        requeridas.map((r) => [
+          r.rol,
+          { nombre: r.rol === "cliente" ? clienteRetira.trim() : firmas[r.rol]?.nombre, data: firmas[r.rol]?.data },
+        ]),
+      ),
+    };
+    if (varios) payload.item_ids = salen;
+
     try {
-      const cleanFacturas = facturas
-        .map((f) => f.trim())
-        .filter((f) => f.length > 0);
-
-      const payload: Record<string, unknown> = {
-        fecha_despacho: form.fecha_despacho,
-        almacenista_nombre: form.almacenista_nombre
-          .trim()
-          .slice(0, MAX.almacenista_nombre),
-        cliente_retira: form.cliente_retira.trim().slice(0, MAX.cliente_retira) || undefined,
-        accesorios_integros: form.accesorios_integros,
-        observaciones: form.observaciones.trim().slice(0, MAX.observaciones) || undefined,
-        // Quien firma es el mismo cliente que retira: antes se pedía dos veces.
-        firma_cliente_nombre: form.cliente_retira.trim().slice(0, MAX.cliente_retira) || undefined,
-        facturas: cleanFacturas,
-      };
-      if (selectedIngreso) {
-        payload.ingreso_id = selectedIngreso.id;
-        if (selectedIngreso.rma_case_id) {
-          payload.rma_case_id = selectedIngreso.rma_case_id;
-        }
-        if (productosIngreso.length > 0) payload.item_ids = salen;
-      }
-
       const res = await fetch("/api/seguridad/despacho", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || tf("error_generic"));
-      }
-
-      const data = await res.json();
-      if (data?.id && firmaDataUrl) {
-        try {
-          await fetch(`/api/seguridad/despacho/${data.id}/firma`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ firma_data_url: firmaDataUrl }),
-          });
-        } catch {
-          // non-fatal
-        }
-      }
-      if (data?.id) {
-        router.push(`${base}/despacho/${data.id}`);
-      } else {
-        router.push(`${base}/despacho`);
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || tf("error_generic"));
+      router.push(data?.id ? `${base}/despacho/${data.id}` : `${base}/despacho`);
     } catch (err: any) {
-      setSubmitError(err?.message || tf("error_generic"));
+      setError(err?.message || tf("error_generic"));
       setSubmitting(false);
     }
   };
+
+  const estado = detalle?.rma_case ? ESTADO[detalle.rma_case.status] : null;
+  const IconoEntrega = metodo === "ruta" ? Truck : metodo === "agencia" ? Package : Store;
 
   return (
     <div className="min-h-screen bg-slate-50/50 font-sans">
@@ -309,428 +261,284 @@ export default function NuevoDespachoPage() {
               <Send className="w-5 h-5 text-violet-600" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-                {tf("title")}
-              </h1>
-              <p className="text-xs text-slate-500 truncate">
-                {tf("subtitle")}
-              </p>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">{tf("title")}</h1>
+              <p className="text-xs text-slate-500 truncate">{tf("subtitle")}</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-32">
-        <form onSubmit={onSubmit} className="space-y-5">
-          {/* Section A: Ingreso vinculado */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-1">
-              {tf("section_ingreso")}
-            </h2>
-            <p className="text-xs text-slate-500 mb-4">
-              {t("module_subtitle")}
-            </p>
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        {/* 1. RMA por despachar (obligatorio) */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-1">
+            {tf("section_ingreso")} <span className="text-red-500">*</span>
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">{tf("ingreso_obligatorio")}</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={elegido}
+              onChange={(e) => elegir(e.target.value)}
+              disabled={cargandoPendientes || cargandoDetalle}
+              aria-label={tf("section_ingreso")}
+              className="flex-1 min-w-0 h-11 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="">
+                {cargandoPendientes ? tf("searching") : pendientes.length ? tf("elegir") : tf("sin_pendientes")}
+              </option>
+              {/* Si llegó por ?ingreso= y no está en la lista, igual se muestra. */}
+              {elegido && !pendientes.some((x) => String(x.id) === elegido) && (
+                <option value={elegido}>#{elegido}</option>
+              )}
+              {pendientes.map((x) => (
+                <option key={x.id} value={String(x.id)}>
+                  {x.rma_case_number ? `RMA ${x.rma_case_number}` : `#${x.id}`} · {x.cliente_nombre}
+                  {x.hardware ? ` · ${x.hardware}` : ""}
+                  {x.rma_status && ESTADO[x.rma_status] ? ` · ${ESTADO[x.rma_status].texto}` : ""}
+                </option>
+              ))}
+            </select>
+            {cargandoDetalle && <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />}
+          </div>
+        </section>
 
-            {selectedIngreso ? (
-              <div className="rounded-[10px] border border-violet-200 bg-violet-50/60 p-4 space-y-3">
-                <div className="flex items-center gap-2 text-violet-700">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">
-                    {tf("ingreso_found")}
+        {!detalle ? (
+          <p className="rounded-[10px] border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            {tf("elige_primero")}
+          </p>
+        ) : (
+          <>
+            {/* 2. Resultado de RMA y cómo lo recibe el cliente */}
+            <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-[10px] border-2 border-slate-200 bg-white p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{tf("resultado_rma")}</p>
+                {estado ? (
+                  <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm font-bold ${estado.clase}`}>
+                    {estado.texto}
                   </span>
-                  <span className="ml-auto text-xs font-mono text-violet-900 bg-white border border-violet-200 px-2 py-0.5 rounded">
-                    #{selectedIngreso.id}
-                  </span>
-                </div>
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {tdl("label_cliente")}
-                    </dt>
-                    <dd className="text-slate-800">{selectedIngreso.cliente_nombre}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {tdl("label_hardware")}
-                    </dt>
-                    <dd className="text-slate-800">{selectedIngreso.hardware || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {tdl("label_serial")}
-                    </dt>
-                    <dd className="text-slate-800 font-mono">
-                      {selectedIngreso.serial || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
-                      {tdl("label_fecha")}
-                    </dt>
-                    <dd className="text-slate-800">
-                      {selectedIngreso.fecha_entrega?.slice(0, 10) || "—"}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="flex items-center gap-2 pt-2 border-t border-violet-200/60">
-                  <Link
-                    href={`${base}/ingreso/${selectedIngreso.id}`}
-                    className="text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
-                  >
-                    {td("open_ingreso")} →
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={skipIngreso}
-                    className="ml-auto text-xs font-semibold text-slate-600 hover:text-slate-900"
-                  >
-                    {tf("factura_remove")}
-                  </button>
-                </div>
+                ) : (
+                  <span className="text-sm text-slate-500">—</span>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={ingresoQuery}
-                    onChange={(e) => setIngresoQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        searchIngreso();
-                      }
-                    }}
-                    placeholder={tf("search_ingreso_placeholder")}
-                    className="flex-1 h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                  />
-                  <button
-                    type="button"
-                    onClick={searchIngreso}
-                    disabled={searchingIngreso || !ingresoQuery.trim()}
-                    className="h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
-                    style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
-                  >
-                    {searchingIngreso ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
-                    {searchingIngreso ? tf("searching") : tf("search_ingreso")}
-                  </button>
-                </div>
-
-                {ingresoError && (
-                  <p className="mt-3 text-sm text-red-600 flex items-center gap-2">
-                    <XCircle className="w-4 h-4" />
-                    {ingresoError}
+              <div className="rounded-[10px] border-2 border-violet-200 bg-violet-50/60 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700/70 mb-2">{tf("entrega")}</p>
+                <p className="flex items-center gap-2 text-sm font-bold text-violet-900">
+                  <IconoEntrega className="w-5 h-5" />
+                  {tf(`entrega_${metodo}`)}
+                </p>
+                {metodo === "ruta" && detalle.rma_case?.entrega_ciudad && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-violet-800">
+                    <MapPin className="w-3 h-3" />
+                    {detalle.rma_case.entrega_ciudad}
                   </p>
                 )}
-
-                {ingresoResults.length > 0 && (
-                  <ul className="mt-3 divide-y divide-slate-100 border border-slate-200 rounded-[10px] overflow-hidden">
-                    {ingresoResults.map((ing) => (
-                      <li key={ing.id}>
-                        <button
-                          type="button"
-                          onClick={() => selectIngreso(ing)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-slate-50 transition-colors flex items-center gap-3"
-                        >
-                          <Package className="w-4 h-4 text-slate-400 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">
-                              {ing.cliente_nombre}
-                            </p>
-                            {["reparado", "nota_credito", "no_procesado"].includes(ing.rma_status || "") && (
-                              <span className="inline-block mb-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5">
-                                {t("despacho.listos.badge")}
-                              </span>
-                            )}
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {ing.hardware || "—"}
-                              {ing.serial ? ` · ${ing.serial}` : ""}
-                              {" · "}
-                              {ing.fecha_entrega?.slice(0, 10)}
-                            </p>
-                          </div>
-                          <span className="text-xs font-mono text-slate-500">
-                            #{ing.id}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                {metodo === "agencia" && detalle.rma_case?.entrega_agencia && (
+                  <p className="mt-1 text-xs text-violet-800">{detalle.rma_case.entrega_agencia}</p>
                 )}
-
-                {ingresoSearched && !searchingIngreso && (
-                  <button
-                    type="button"
-                    onClick={skipIngreso}
-                    className="mt-3 w-full h-10 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
-                  >
-                    {tf("toggle_direct")}
-                  </button>
+                {!detalle.rma_case?.entrega_metodo && (
+                  <p className="mt-1 text-xs text-violet-800">{tf("entrega_sin_elegir")}</p>
                 )}
-              </>
-            )}
-          </section>
-
-          {/* Section A2: qué productos del envío salen (issue #331) */}
-          {productosIngreso.length > 0 && (
-            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">{t("productos_envio.salen_titulo")}</h2>
-                <p className="text-xs text-slate-500 mt-1">{t("productos_envio.salen_ayuda")}</p>
               </div>
-              {productosIngreso.map((x, idx) => {
-                const id = x.rma_item_id;
-                const disponible = !!id && x.recibido && !x.despachado_at;
-                return (
-                  <label
-                    key={`${id}-${idx}`}
-                    className={`flex items-start gap-3 rounded-[10px] border px-3 py-2.5 ${
-                      disponible ? "border-slate-200 cursor-pointer" : "border-slate-100 bg-slate-50 text-slate-400"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-5 w-5"
-                      disabled={!disponible}
-                      checked={!!id && salen.includes(id)}
-                      onChange={(e) =>
-                        id && setSalen((prev) => (e.target.checked ? [...prev, id] : prev.filter((v) => v !== id)))
-                      }
-                    />
-                    <span className="min-w-0 text-sm">
-                      <span className="font-medium break-words">{x.producto}</span>
-                      {x.serial && <span className="block font-mono text-xs">{x.serial}</span>}
-                      {!x.recibido && (
-                        <span className="block text-xs font-semibold text-red-600">{t("productos_envio.no_llego_etiqueta")}</span>
-                      )}
-                      {x.despachado_at && (
-                        <span className="block text-xs font-semibold text-emerald-700">
-                          {t("productos_envio.ya_salio", { fecha: String(x.despachado_at).slice(0, 10) })}
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                );
-              })}
             </section>
-          )}
 
-          {/* Section B: Datos del despacho */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">
-              {tf("section_data")}
-            </h2>
-
-            {/* Número de guía: lo asigna el sistema al guardar (antes "N.º ND",
-                que el almacén escribía a mano). */}
-            <p className="rounded-[10px] bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
-              {tf("guia_automatica")}
-            </p>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_fecha")} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                value={form.fecha_despacho}
-                onChange={(e) => update("fecha_despacho", e.target.value)}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_almacenista")} <span className="text-red-500">*</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-violet-100 shrink-0">
-                  <ShieldCheck className="w-4 h-4 text-violet-600" />
-                </div>
-                <div className="flex-1">
+            {/* 3. Datos del despacho: del ingreso y del ticket, solo lectura */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold text-slate-900">{tf("section_data")}</h2>
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                  <Lock className="w-3 h-3" />
+                  {tf("solo_lectura")}
+                </span>
+              </div>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                <Dato etiqueta={tfi("case_number")} valor={detalle.rma_case?.case_number || "—"} mono />
+                <Dato etiqueta={tf("field_nd")} valor={detalle.ingreso.nd_numero || "—"} mono />
+                <Dato etiqueta={tf("field_fecha")} valor={fechaCorta(fechaDespacho)} />
+                <Dato etiqueta={tf("fecha_ingreso")} valor={fechaCorta(detalle.ingreso.fecha_entrega)} />
+                <Dato etiqueta={tfi("field_cliente")} valor={detalle.ingreso.cliente_nombre || "—"} />
+                <Dato
+                  etiqueta={tf("section_facturas")}
+                  valor={
+                    externo ? (
+                      <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        {tfi("producto_externo")}
+                      </span>
+                    ) : (
+                      detalle.rma_case?.invoice_number || detalle.ingreso.factura_numero || "—"
+                    )
+                  }
+                />
+                {!varios && (
+                  <>
+                    <Dato etiqueta={tfi("field_hardware")} valor={detalle.ingreso.hardware || "—"} />
+                    <Dato etiqueta={tfi("field_serial")} valor={detalle.ingreso.serial || "—"} mono />
+                  </>
+                )}
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">
+                    {tf("field_cliente_retira")} <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
-                    value={form.almacenista_nombre}
-                    onChange={(e) =>
-                      update(
-                        "almacenista_nombre",
-                        e.target.value.slice(0, MAX.almacenista_nombre),
-                      )
-                    }
-                    className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                    required
-                    maxLength={MAX.almacenista_nombre}
+                    value={clienteRetira}
+                    onChange={(e) => setClienteRetira(e.target.value.slice(0, 200))}
+                    placeholder={tf("cliente_retira_placeholder")}
+                    className="w-full h-11 px-3 border border-violet-300 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {tf("almacenista_help")}
-                  </p>
                 </div>
-              </div>
-            </div>
+                <div>
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">{tf("garantia")}</dt>
+                  <dd>
+                    {externo ? (
+                      <span className="text-sm text-slate-700">{tfi("garantia_externo")}</span>
+                    ) : (
+                      <GarantiaBadge estado={detalle.rma_case?.garantia_estado} />
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </section>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_facturas")}
-              </label>
-              <div className="space-y-2">
-                {facturas.map((fact, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={fact}
-                      onChange={(e) => updateFactura(idx, e.target.value)}
-                      placeholder={tf("factura_placeholder")}
-                      className="flex-1 h-10 px-3 border border-slate-200 rounded-[10px] text-sm font-mono focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                      maxLength={MAX.factura}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeFactura(idx)}
-                      className="h-10 w-10 inline-flex items-center justify-center rounded-[10px] text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition-colors"
-                      title={tf("factura_remove")}
-                      aria-label={tf("factura_remove")}
+            {/* 3b. Envío con varios productos: cuáles salen (issue #331). */}
+            {varios && (
+              <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">{t("productos_envio.salen_titulo")}</h2>
+                  <p className="text-xs text-slate-500 mt-1">{t("productos_envio.salen_ayuda")}</p>
+                </div>
+                {detalle.productos.map((x, idx) => {
+                  const id = x.rma_item_id;
+                  const terminado = TERMINADOS.includes(x.status || "");
+                  const puede = !!id && x.recibido && !x.despachado_at && terminado;
+                  const motivo = !x.recibido
+                    ? t("productos_envio.no_llego_etiqueta")
+                    : x.despachado_at
+                      ? t("productos_envio.ya_salio")
+                      : !terminado
+                        ? tf("producto_en_taller")
+                        : null;
+                  return (
+                    <label
+                      key={`${id}-${idx}`}
+                      className={`flex items-start gap-3 rounded-[10px] border p-3 ${puede ? "cursor-pointer border-slate-200" : "border-slate-100 bg-slate-50 opacity-70"}`}
                     >
-                      <X className="w-4 h-4" />
-                    </button>
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4"
+                        disabled={!puede}
+                        checked={!!id && salen.includes(id)}
+                        onChange={(e) =>
+                          id && setSalen((prev) => (e.target.checked ? [...prev, id] : prev.filter((v) => v !== id)))
+                        }
+                      />
+                      <div className="min-w-0 flex-1 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-slate-800">
+                            {idx + 1}. {x.producto}
+                          </span>
+                          {x.status && ESTADO[x.status] && (
+                            <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${ESTADO[x.status].clase}`}>
+                              {ESTADO[x.status].texto}
+                            </span>
+                          )}
+                        </div>
+                        {x.serial && <p className="font-mono text-xs text-slate-500">{x.serial}</p>}
+                        {motivo && <p className="text-xs text-slate-400">{motivo}</p>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </section>
+            )}
+
+            {/* 4. Verificación y observaciones */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+              <h2 className="text-sm font-bold text-slate-900">{tfi("section_checks")}</h2>
+              <CheckRow
+                label={tf("field_accesorios")}
+                value={accesorios}
+                onChange={setAccesorios}
+                yes={tf("yes")}
+                no={tf("no")}
+              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  {tf("field_observaciones")} <span className="text-slate-400 font-normal">({tfi("opcional")})</span>
+                </label>
+                <textarea
+                  value={observaciones}
+                  onChange={(e) => setObservaciones(e.target.value.slice(0, 5000))}
+                  placeholder={tf("observaciones_placeholder")}
+                  className="w-full min-h-[90px] px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                />
+              </div>
+            </section>
+
+            {/* 5. Entrega y firmas: dependen de cómo lo recibe el cliente. */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">{tf("section_firmas")}</h2>
+                <p className="text-xs text-slate-500 mt-1">{tf("firmas_ayuda")}</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {requeridas.map((r) => (
+                  <div key={r.rol} className="space-y-3 rounded-[10px] border border-slate-200 p-4">
+                    {r.rol === "cliente" ? (
+                      <div>
+                        <p className="block text-xs font-semibold text-slate-600 mb-1.5">{tf("field_cliente_retira")}</p>
+                        <p className="h-11 px-3 flex items-center rounded-[10px] bg-slate-50 border border-slate-100 text-sm text-slate-800 truncate">
+                          {clienteRetira.trim() || <span className="text-slate-400">{tf("cliente_retira_arriba")}</span>}
+                        </p>
+                      </div>
+                    ) : (
+                      <PersonaSelect
+                        label={tf(`quien_${r.rol}`)}
+                        value={firmas[r.rol]?.nombre || ""}
+                        onChange={(v) => setFirma(r.rol, { nombre: v })}
+                        opciones={personal[r.rol as "seguridad" | "tecnico"]}
+                        placeholder={tfi("recibido_placeholder")}
+                        vacio={tfi(r.rol === "seguridad" ? "recibido_sin_catalogo" : "recibido_sin_catalogo_rma")}
+                        gestionarHref={r.rol === "seguridad" ? `/${locale}/seguridad/config/personal` : undefined}
+                        gestionarLabel={tfi("recibido_gestionar")}
+                      />
+                    )}
+                    <FirmaCampo etiqueta={tf(`firma_${r.rol}`)} firmada={!!firmas[r.rol]?.data}>
+                      <SignaturePad onChange={(d) => setFirma(r.rol, { data: d })} height={130} />
+                    </FirmaCampo>
                   </div>
                 ))}
-                {facturas.length < MAX_FACTURAS && (
-                  <button
-                    type="button"
-                    onClick={addFactura}
-                    className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-slate-700 border border-dashed border-slate-300 hover:bg-slate-50 hover:border-violet-300 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {tf("factura_add")}
-                  </button>
-                )}
               </div>
-            </div>
+            </section>
+          </>
+        )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_cliente_retira")}
-              </label>
-              <input
-                type="text"
-                value={form.cliente_retira}
-                onChange={(e) =>
-                  update("cliente_retira", e.target.value.slice(0, MAX.cliente_retira))
-                }
-                placeholder={tf("cliente_retira_placeholder")}
-                className="w-full h-11 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.cliente_retira}
-              />
-            </div>
+        {error && (
+          <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+            <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
-            <div className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
-              <span className="text-sm font-medium text-slate-700">
-                {tf("field_accesorios")}
-              </span>
-              {/* h-12: mismo criterio de 48px que el formulario de ingreso. */}
-              <div
-                role="group"
-                className="inline-flex shrink-0 rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold"
-              >
-                <button
-                  type="button"
-                  onClick={() => update("accesorios_integros", true)}
-                  aria-pressed={form.accesorios_integros === true}
-                  className={`min-w-[56px] px-4 h-12 transition-colors ${
-                    form.accesorios_integros
-                      ? "bg-emerald-500 text-white"
-                      : "bg-white text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  {tf("yes")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => update("accesorios_integros", false)}
-                  aria-pressed={form.accesorios_integros === false}
-                  className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
-                    !form.accesorios_integros
-                      ? "bg-red-500 text-white"
-                      : "bg-white text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  {tf("no")}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {/* Section C: Observaciones y firma */}
-          <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">
-              {tf("section_observations")}
-            </h2>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {tf("field_observaciones")}
-              </label>
-              <textarea
-                value={form.observaciones}
-                onChange={(e) =>
-                  update("observaciones", e.target.value.slice(0, MAX.observaciones))
-                }
-                placeholder={tf("observaciones_placeholder")}
-                className="w-full min-h-[110px] px-3 py-2 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                maxLength={MAX.observaciones}
-              />
-              <p className="text-[11px] text-slate-400 mt-1 text-right">
-                {form.observaciones.length} / {MAX.observaciones}
-              </p>
-            </div>
-
-
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                {t("firma_digital.label")}
-              </label>
-              <SignaturePad
-                onChange={setFirmaDataUrl}
-                label={t("firma_digital.label")}
-              />
-            </div>
-          </section>
-
-          {submitError && (
-            <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
-              <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{submitError}</span>
-            </div>
-          )}
-        </form>
-      </main>
-
-      {/* Sticky submit bar (mobile-first) */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+        {/* Acciones al final del formulario, alineadas con el contenido. */}
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-slate-200 pt-5 pb-8">
           <Link
             href={`${base}/despacho`}
-            className="h-11 px-4 inline-flex items-center justify-center rounded-[10px] text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+            className="h-11 px-6 inline-flex items-center justify-center rounded-[10px] text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             {t("back")}
           </Link>
           <button
             type="button"
             onClick={onSubmit}
-            disabled={submitting}
-            className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+            disabled={submitting || !detalle}
+            className="h-11 px-8 inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50 transition-colors"
             style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {submitting ? tf("submitting") : tf("submit")}
           </button>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
