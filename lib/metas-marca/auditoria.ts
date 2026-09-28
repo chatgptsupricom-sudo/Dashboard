@@ -349,20 +349,20 @@ export async function auditarSede(v: VentasSede, metas: MetaEntrada[], hoy = new
   }
 
   // 11. Diferencia con Cobertura de marcas del Stoplight
+  // El Stoplight también excluye la intercompañía (misma detección,
+  // lib/intercompania): la única diferencia de universo es que exige vendedor.
   {
-    const stoplight = lineas.filter((l) => l.vendedorId).reduce((s, l) => s + l.ingreso, 0);
-    const icConVend = lineas.filter((l) => l.intercompania && l.vendedorId).reduce((s, l) => s + l.ingreso, 0);
     const sinVend = lineasSinIC.filter((l) => !l.vendedorId).reduce((s, l) => s + l.ingreso, 0);
+    const stoplight = totalSinIC - sinVend;
     controles.push({
       id: "vs_stoplight",
       titulo: "Por qué no coincide con Cobertura de marcas del Stoplight",
-      estado: icConVend !== 0 ? "aviso" : "info",
+      estado: "info",
       resumen: `Stoplight: ${usd(stoplight)} · Esta sección: ${usd(totalSinIC)}. Diferencia: ${usd(stoplight - totalSinIC)}.`,
-      explicacion: "El Stoplight toma solo facturas con vendedor e incluye las ventas intercompañía (se facturan con el usuario \"Asistente de Ventas\"), lo que infla la venta por marca de la sede que le vende a otra. Esta sección hace lo contrario. Las metas también son independientes.",
+      explicacion: "Las dos secciones excluyen las ventas intercompañía, pero el Stoplight toma solo facturas con vendedor. Además, el Stoplight suma price_subtotal (moneda de la factura) y esta sección el balance en moneda de la empresa: solo cambia si hay facturas en otra moneda. Las metas también son independientes.",
       columnas: [{ key: "concepto", label: "Concepto" }, { key: "monto", label: "Monto", tipo: "dinero" }],
       filas: [
         { concepto: "Venta por marca de esta sección", monto: r2(totalSinIC) },
-        { concepto: "+ Intercompañía con vendedor (el Stoplight la cuenta)", monto: r2(icConVend) },
         { concepto: "− Facturas sin vendedor (el Stoplight no las cuenta)", monto: r2(sinVend) },
         { concepto: "= Base del Stoplight", monto: r2(stoplight) },
       ],

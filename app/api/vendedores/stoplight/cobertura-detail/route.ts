@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -91,6 +92,8 @@ export async function GET(request: NextRequest) {
         ["invoice_date", ">=", fechaInicio],
         ["invoice_date", "<=", fechaFin],
         ["invoice_user_id", "=", uid],
+        // Sin intercompañía, igual que el Stoplight de superadmin (lib/intercompania).
+        await sinIntercompania(),
       ]],
       { fields: ["id", "invoice_date", "move_type"], limit: 50000 }
     );

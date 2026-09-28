@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { fechaLocal } from "@/lib/stoplight/margen";
+import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 
     const allClients = (await callOdooRPC<any[]>(
       "res.partner", "search_read",
-      [[["user_id", "=", uid], ["customer_rank", ">", 0], ["active", "=", true]]],
+      [[["user_id", "=", uid], ["customer_rank", ">", 0], ["active", "=", true], await sinIntercompania()]],
       { fields: ["id"], limit: 10000 }
     )) || [];
     const clientIds = allClients.map((c: any) => c.id);
@@ -72,6 +73,8 @@ export async function GET(request: NextRequest) {
         ["invoice_date", ">=", fechaInicio],
         ["invoice_date", "<=", fechaFin],
         ["invoice_user_id", "=", uid],
+        // Sin intercompañía, igual que el Stoplight de superadmin (lib/intercompania).
+        await sinIntercompania(),
       ]],
       { fields: ["id", "partner_id", "invoice_date"], limit: 10000 }
     );

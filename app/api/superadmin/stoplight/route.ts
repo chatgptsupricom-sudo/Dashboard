@@ -10,6 +10,7 @@ import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplig
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
+import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -125,6 +126,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Fetch invoices for the date range
+    // Sin intercompañía (lib/intercompania): en Panamá se emiten a nombre de un
+    // vendedor y le sumaban ~$950k a su cuota en sep-2026; además la otra sede
+    // aparecía como cliente nuevo o activo. Mismo filtro en Margen, Cobertura,
+    // Efectividad y Ciclo de reposición, y en los modales de detalle.
+    const noIC = await sinIntercompania();
 
     const invoices = await callOdooRPC<any[]>(
       "account.move",
@@ -137,6 +143,7 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", fechaInicio],
           ["invoice_date", "<=", fechaFin],
           ["invoice_user_id", "!=", false],
+          noIC,
         ],
       ],
       {
@@ -510,6 +517,7 @@ export async function GET(request: NextRequest) {
               ["user_id", "=", seller.user_id],
               ["customer_rank", ">", 0],
               ["active", "=", true],
+              noIC,
             ],
           ],
           { fields: ["id"], limit: 10000 }
@@ -608,6 +616,7 @@ export async function GET(request: NextRequest) {
             ["invoice_date", ">=", fechaInicioLookbackStr],
             ["invoice_date", "<=", fechaFin],
             ["partner_id", "!=", false],
+            noIC,
           ],
         ],
         { fields: ["partner_id", "invoice_date"], limit: 50000 }

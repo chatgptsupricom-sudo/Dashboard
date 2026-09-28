@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { sinIntercompania } from "@/lib/intercompania";
 
 /**
  * Líneas de venta con su costo, para el KPI "Margen bruto" del Stoplight.
@@ -17,6 +18,10 @@ import { callOdooRPC } from "@/lib/odoo";
  *   Valencia (ago-2026: Panamá daba 42% de margen cuando el real era 10%).
  * - Se incluyen productos archivados (`active_test: false`): si no, su costo
  *   quedaba en 0 y el margen salía inflado.
+ * - Sin ventas intercompañía (`lib/intercompania`): pasaban el filtro de
+ *   vendedor porque se emiten con "Asistente de Ventas" (o un vendedor, en
+ *   Panamá) y eran ~45% de Valencia y ~62% de Panamá en sep-2026. Inflaban
+ *   Margen bruto y Cobertura de marcas.
  */
 export interface LineaMargen {
   vendedorId: number;
@@ -60,6 +65,7 @@ export async function obtenerLineasMargen(
   fechaFin: string,
 ): Promise<LineaMargen[]> {
   const context = { allowed_company_ids: [companyId], active_test: false };
+  const noIC = await sinIntercompania();
 
   const facturas = (await callOdooRPC<any[]>(
     "account.move",
@@ -71,6 +77,7 @@ export async function obtenerLineasMargen(
       ["invoice_date", ">=", fechaInicio],
       ["invoice_date", "<=", fechaFin],
       ["invoice_user_id", "!=", false],
+      noIC,
     ]],
     { fields: ["id", "invoice_user_id", "invoice_date", "move_type"], limit: 10000 },
   )) || [];

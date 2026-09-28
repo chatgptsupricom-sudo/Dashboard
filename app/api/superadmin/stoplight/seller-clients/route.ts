@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinIntercompania } from "@/lib/intercompania";
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
     console.log(`[SellerClients] company=${companyId}, seller_user_id=${userId}`);
 
     const clientSet = new Map<number, string>();
+    // Misma cartera que Activación: sin la otra sede (lib/intercompania).
+    const noIC = await sinIntercompania();
 
     const byUser = (await callOdooRPC<any[]>(
       "res.partner",
@@ -39,6 +42,7 @@ export async function GET(request: NextRequest) {
           ["user_id", "=", userId],
           ["customer_rank", ">", 0],
           ["active", "=", true],
+          noIC,
         ],
       ],
       {
@@ -63,6 +67,7 @@ export async function GET(request: NextRequest) {
             ["invoice_user_id", "=", userId],
             ["move_type", "=", "out_invoice"],
             ["state", "in", ["posted", "draft"]],
+            noIC,
           ],
         ],
         {

@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -63,6 +64,8 @@ export async function GET(request: NextRequest) {
         ["invoice_date", ">=", fechaInicio],
         ["invoice_date", "<=", fechaFin],
         ["invoice_user_id", "=", uid],
+        // Sin intercompañía, igual que el Stoplight de superadmin (lib/intercompania).
+        await sinIntercompania(),
       ]],
       { fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date", "move_type"], limit: 10000 }
     );
