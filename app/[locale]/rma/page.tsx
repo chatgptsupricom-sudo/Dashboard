@@ -353,6 +353,8 @@ export default function RmaDashboardPage() {
                       <td className="px-4 py-3.5 font-medium text-slate-700">{c.client_name}</td>
                       <td className="max-w-[180px] truncate px-4 py-3.5 text-slate-500">
                         {c.model || c.product_code || "—"}
+                        {/* Envío con varios productos (issue #331) */}
+                        {Number(c.productos_count) > 1 && ` +${Number(c.productos_count) - 1}`}
                       </td>
                       <td className="px-4 py-3.5">
                         <StatusPill status={c.status} />

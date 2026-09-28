@@ -13,6 +13,11 @@ import { Keyboard, Loader2, ScanBarcode, Search } from "lucide-react";
  * la pantalla (inputMode="none"): con la pistola por Bluetooth o USB-OTG no
  * hace falta, y taparia la mitad de la pantalla. Con el boton del teclado se
  * puede escribir un codigo a mano.
+ *
+ * Sirve para cualquier conteo con pistola: la recepcion por packing list y la
+ * verificacion del egreso en C4. Cada uno le pasa su `endpoint`, que responde
+ * lo que decide lib/escaneo/procesar, y el espacio de textos (`textos`) con
+ * las claves `pistola_*`.
  */
 
 export type ItemPistola = {
@@ -32,8 +37,24 @@ export type ResultadoEscaneo =
       item_id: number;
       cantidad: number;
       serial: { id: number; item_id: number; serial: string; escaneado_por: string | null; created_at: string };
-      en_otro_packing_list: string | null;
+      /** Referencia del otro documento donde ya estaba ese serial (aviso, no bloquea). */
+      en_otro: string | null;
     };
+
+/**
+ * Lectura que quedo como novedad (egreso, #301): un serial que no esta en el
+ * picking, un serial de otra orden o un producto que no esta en la orden. No
+ * suma: se avisa en rojo y la pantalla recarga sus novedades.
+ */
+export type NovedadEscaneo = {
+  resultado: "novedad";
+  novedad: "serial_sobra" | "serial_otra_orden" | "producto_ajeno";
+  item_id: number | null;
+  serial?: string;
+  codigo?: string;
+  referencia?: string | null;
+  cantidad?: number;
+};
 
 type Mensaje = { tipo: "ok" | "error" | "aviso"; texto: string };
 
@@ -59,20 +80,39 @@ function pitar(bien: boolean) {
 }
 
 export default function Pistola({
-  recepcionId,
+  endpoint,
+  textos = "recepcion",
   items,
   seleccionado,
   onResultado,
   onTerminar,
+  onNovedad,
+  permitirSobrante = false,
+  permitirAprender = true,
 }: {
-  recepcionId: number;
+  /** POST { codigo, item_id?, aprender_item_id?, forzar_serial? } */
+  endpoint: string;
+  /** Espacio de next-intl con las claves pistola_*, error y buscar_producto. */
+  textos?: string;
   items: ItemPistola[];
   seleccionado: number | null;
   onResultado: (r: ResultadoEscaneo) => void;
   /** Salir del modo seriales del producto seleccionado. */
   onTerminar: () => void;
+  /** Una lectura quedo como novedad (solo en endpoints que las registran). */
+  onNovedad?: (n: NovedadEscaneo) => void;
+  /**
+   * Ante un codigo desconocido, ofrecer "No esta en la orden" (manda
+   * `sobrante: true`). En la recepcion no aplica: ahi se aprende el codigo.
+   */
+  permitirSobrante?: boolean;
+  /**
+   * Ofrecer "Es su codigo" (aprender el codigo de caja, que queda para
+   * siempre). En la verificacion del egreso no: ahi se buscan sobrantes.
+   */
+  permitirAprender?: boolean;
 }) {
-  const t = useTranslations("recepcion");
+  const t = useTranslations(textos);
   const campo = useRef<HTMLInputElement>(null);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -101,7 +141,7 @@ export default function Pistola({
     if (!limpio) return;
     setEnviando(true);
     try {
-      const res = await fetch(`/api/recepcion/${recepcionId}/escaneo`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ codigo: limpio, item_id: seleccionado, ...extra }),
@@ -118,6 +158,21 @@ export default function Pistola({
       if (!res.ok) {
         pitar(false);
         setMensaje({ tipo: "error", texto: j.error || t("error") });
+        return;
+      }
+      if (j.resultado === "novedad") {
+        pitar(false);
+        const p = producto(j.item_id);
+        setMensaje({
+          tipo: "error",
+          texto: t(`pistola_novedad_${j.novedad}`, {
+            serial: j.serial || j.codigo || "",
+            producto: p?.producto || "",
+            referencia: j.referencia || "",
+            cantidad: j.cantidad ?? 1,
+          }),
+        });
+        onNovedad?.(j as NovedadEscaneo);
         return;
       }
       if (j.resultado === "desconocido") {
@@ -137,13 +192,13 @@ export default function Pistola({
         setMensaje({ tipo: "ok", texto: t("pistola_seleccionado", { producto: p?.producto || "" }) });
       } else if (j.resultado === "serial") {
         setMensaje(
-          j.en_otro_packing_list
+          j.en_otro
             ? {
                 tipo: "aviso",
                 texto: t("pistola_serial_en_otro", {
                   serial: j.serial.serial,
                   cantidad: j.cantidad,
-                  referencia: j.en_otro_packing_list,
+                  referencia: j.en_otro,
                 }),
               }
             : { tipo: "ok", texto: t("pistola_serial", { serial: j.serial.serial, cantidad: j.cantidad }) },
@@ -296,6 +351,8 @@ export default function Pistola({
           )}
           <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
             {items
+              // Sin "Es su codigo", un producto sin serial no tiene boton: no se lista.
+              .filter((i) => permitirAprender || i.lleva_serial)
               .filter(
                 (i) =>
                   !busca.trim() ||
@@ -316,7 +373,7 @@ export default function Pistola({
                     {t("pistola_es_serial")}
                   </button>
                 )}
-                {i.codigo && (
+                {i.codigo && permitirAprender && (
                   <button
                     type="button"
                     onClick={() => void asignar(i, false)}
@@ -328,16 +385,31 @@ export default function Pistola({
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setDesconocido(null);
-              enfocar();
-            }}
-            className="text-xs font-semibold text-slate-500 hover:underline"
-          >
-            {t("pistola_ignorar")}
-          </button>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {permitirSobrante && (
+              <button
+                type="button"
+                onClick={() => {
+                  const codigo = desconocido;
+                  setDesconocido(null);
+                  if (codigo) void enviar(codigo, { sobrante: true });
+                }}
+                className="h-8 px-2.5 rounded-md border border-red-200 bg-red-50 text-xs font-semibold text-red-700"
+              >
+                {t("pistola_no_esta")}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setDesconocido(null);
+                enfocar();
+              }}
+              className="text-xs font-semibold text-slate-500 hover:underline"
+            >
+              {t("pistola_ignorar")}
+            </button>
+          </div>
         </div>
       )}
     </div>

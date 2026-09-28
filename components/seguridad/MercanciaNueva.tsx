@@ -55,6 +55,7 @@ export default function MercanciaNueva({
     odoo_picking_id: number;
     odoo_picking_name: string;
     contraparte: string;
+    facturas: { numero: string; fecha: string | null }[];
   } | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
 
@@ -63,8 +64,8 @@ export default function MercanciaNueva({
   // uno por uno a una lista, en vez de un solo campo de texto.
   const [almacenistas, setAlmacenistas] = useState<string[]>([]);
   // Egreso por etapas: arranca con quien arma y como se entrega. El
-  // almacenista de despacho, el chofer y la placa se asignan mas adelante,
-  // cuando el armado ya esta verificado (ver EgresoFlujo).
+  // almacenista de despacho (y en ruta, el chofer y la unidad) se asignan mas
+  // adelante, cuando el armado ya esta verificado (ver EgresoFlujo).
   const [almacenistaArmado, setAlmacenistaArmado] = useState("");
   const [tipoEntrega, setTipoEntrega] = useState<TipoEntrega | "">("");
   const [chofer, setChofer] = useState("");
@@ -143,17 +144,22 @@ export default function MercanciaNueva({
   const quitarFactura = (v: string) =>
     setFacturas((p) => p.filter((x) => x !== v));
 
-  const buscarOrden = async (valor?: string) => {
+  // `id`: solo para la orden que llega prellenada desde la lista de
+  // pendientes. Escrita a mano se busca por nombre.
+  const buscarOrden = async (valor?: string, id?: string | null) => {
     const v = (valor ?? orden).trim();
     if (!v) return;
     setBuscando(true);
     setErrorOrden(null);
     try {
       const res = await fetch(
-        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}`,
+        `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}${id ? `&id=${id}` : ""}`,
       );
       if (!res.ok) {
-        setErrorOrden(tm("no_encontrada"));
+        // Encontrada pero sin facturar: no se deja registrar (issue #298), y
+        // el mensaje tiene que decir por que, no "no la encontramos".
+        const json = await res.json().catch(() => ({}));
+        setErrorOrden(json?.codigo === "sin_factura" ? tm("orden_sin_facturar") : tm("no_encontrada"));
         setPicking(null);
         setLineas([]);
         return;
@@ -164,6 +170,7 @@ export default function MercanciaNueva({
         odoo_picking_id: p.odoo_picking_id,
         odoo_picking_name: p.odoo_picking_name,
         contraparte: p.contraparte,
+        facturas: p.facturas || [],
       });
       setLineas(p.lineas || []);
       // La orden buscada es una de las que salen en el camion: se agrega
@@ -188,10 +195,12 @@ export default function MercanciaNueva({
   // este pide en build (mismo criterio que ingreso/nuevo/page.tsx).
   useEffect(() => {
     if (tipo !== "egreso") return;
-    const pre = new URLSearchParams(window.location.search).get("factura")?.trim();
+    const sp = new URLSearchParams(window.location.search);
+    const pre = sp.get("factura")?.trim();
     if (!pre) return;
+    const id = sp.get("id");
     setOrden(pre);
-    void buscarOrden(pre);
+    void buscarOrden(pre, id && /^\d+$/.test(id) ? id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -309,6 +318,14 @@ export default function MercanciaNueva({
                 {tm(tipo === "ingreso" ? "proveedor" : "cliente")}:{" "}
                 {picking.contraparte || "—"}
               </p>
+              {picking.facturas.length > 0 && (
+                <p className="text-xs text-violet-700/80 mt-0.5">
+                  {tm("factura_venta")}:{" "}
+                  <span className="font-mono">
+                    {picking.facturas.map((f) => f.numero).join(", ")}
+                  </span>
+                </p>
+              )}
             </div>
           )}
         </Card>
@@ -396,7 +413,7 @@ export default function MercanciaNueva({
               </div>
               <div>
                 <label className={labelClases}>{tf("tipo_entrega")} *</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {TIPOS_ENTREGA.map((t) => (
                     <button
                       key={t}

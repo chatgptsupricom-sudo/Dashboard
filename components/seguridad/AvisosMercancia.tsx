@@ -47,7 +47,8 @@ const TONO: Record<Tono, string> = {
  *
  * En el egreso por etapas no se avisa de cada paso a todos: eso seria ruido
  * cada pocos minutos. Solo lo que le cambia el trabajo a quien lo ve:
- *  - Almacen: llego un egreso nuevo por armar, y el resultado del porton.
+ *  - Almacen: llego un egreso nuevo por armar, el resultado del porton, y
+ *    un egreso que Seguridad no despacho y le devolvio.
  *  - Seguridad: un egreso quedo listo para verificar en el porton.
  * Los demas pasos igual refrescan listado y detalle, sin cartel.
  */
@@ -59,7 +60,14 @@ function cartelPara(
   const esAlmacen = rolSesion === "almacen" || rolSesion === "superadmin";
   const esSeguridad = rolSesion === "seguridad" || rolSesion === "superadmin";
 
+  // Cada lectura de la pistola en C4 refresca las pantallas, sin cartel.
+  if (aviso.accion === "conteo") return null;
+
   if (aviso.etapa) {
+    // Seguridad no lo despacho: vuelve a Almacen (issue #301).
+    if (aviso.etapa === "por_asignar_despacho" && aviso.despachado === false) {
+      return esAlmacen ? { texto: tm("devuelto"), tono: "mal" } : null;
+    }
     if (aviso.accion === "creado" && aviso.etapa === "por_armar") {
       return esAlmacen ? { texto: tm("nuevo_por_armar"), tono: "nuevo" } : null;
     }

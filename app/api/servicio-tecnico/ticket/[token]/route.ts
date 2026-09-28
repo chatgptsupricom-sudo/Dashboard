@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
+import { productosPublicos } from "@/lib/rma/items";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ interface TicketPublic {
   invoice_number: string;
   serial: string | null;
   created_at: string;
+  /** Productos del envío (issue #331); [] sin la migración. */
+  productos: Awaited<ReturnType<typeof productosPublicos>>;
   garantia: {
     estado: string;
     meses: number | null;
@@ -83,7 +86,7 @@ export async function GET(
     // Buscar el caso por tracking_token. Solo Origen='portal' — los tickets
     // internos del panel no deben ser accesibles publicamente.
     const caseResult = await query(
-      `SELECT case_number, status, model, hardware, product_code, invoice_number,
+      `SELECT id, case_number, status, model, hardware, product_code, invoice_number,
               serial, created_at, origen,
               garantia_estado, garantia_meses, garantia_vence, garantia_marca
        FROM rma_cases
@@ -118,6 +121,7 @@ export async function GET(
       invoice_number: row.invoice_number || "",
       serial: row.serial || null,
       created_at: row.created_at,
+      productos: await productosPublicos(row.id),
       // Congelada, ver el comentario del otro endpoint.
       garantia: {
         estado: row.garantia_estado || "indeterminada",

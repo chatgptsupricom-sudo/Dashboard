@@ -7,8 +7,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/seguridad/mercancia/pendientes
  *
- * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir, que
- * Almacen todavia no proceso como egreso — para que las navegue ANTES de
+ * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir y con
+ * la orden de venta facturada (issue #298), que Almacen todavia no proceso
+ * como egreso — para que las navegue ANTES de
  * registrar, en vez de tener que saber de memoria el numero exacto (unica
  * forma que habia hasta ahora, via /api/seguridad/mercancia/odoo/[nombre]).
  */
@@ -20,8 +21,8 @@ export async function GET(request: NextRequest) {
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
-    const ordenes = await listarPickingsEgresoPendientes(cids);
-    return NextResponse.json({ success: true, ordenes });
+    const { ordenes, sin_facturar } = await listarPickingsEgresoPendientes(cids);
+    return NextResponse.json({ success: true, ordenes, sin_facturar });
   } catch (error: any) {
     console.error("Error listando ordenes de despacho pendientes:", error);
     // El mensaje trae [odoo]/[mysql] al frente (ver listarPickingsEgresoPendientes)

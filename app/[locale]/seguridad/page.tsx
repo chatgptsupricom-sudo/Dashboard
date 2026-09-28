@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { fechaCorta, promedioTexto } from "@/lib/seguridad/formato";
+import { ORIGENES, type Origen, type ResumenOrigen } from "@/lib/seguridad/origenes";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -30,6 +31,8 @@ type DashboardData = {
     // devuelve NULL y el endpoint lo pasa tal cual.
     promedio_calificacion: number | null;
     total_calificaciones_mes: number;
+    /** Por origen: RMA, picking y despacho del egreso (no se mezclan). */
+    calificaciones_por_origen?: Record<Origen, ResumenOrigen>;
     ingresos_pendientes_despacho: number;
   };
   ingresos_recientes: Array<{
@@ -64,6 +67,7 @@ type DashboardData = {
     despachos_mes: number;
     promedio: number;
     calificaciones: number;
+    por_origen?: Record<Origen, ResumenOrigen>;
   }>;
   alertas: Array<{
     tipo: string;
@@ -206,15 +210,23 @@ export default function SeguridadDashboard() {
                 accent={data.kpis.en_taller_mas_7d > 0 ? "amber" : "slate"}
                 warning={data.kpis.en_taller_mas_7d > 0}
               />
-              <KPI
-                label={t("dashboard.kpi.promedio")}
-                value={promedioTexto(data.kpis.promedio_calificacion)}
-                icon={<Star className="w-4 h-4" />}
-                accent="violet"
-                subtitle={t("dashboard.kpi.total_calif", {
-                  count: data.kpis.total_calificaciones_mes,
-                })}
-              />
+              {data.kpis.calificaciones_por_origen ? (
+                <KPIPorOrigen
+                  label={t("dashboard.kpi.promedio")}
+                  porOrigen={data.kpis.calificaciones_por_origen}
+                  etiqueta={(o) => t(`dashboard.origen.${o}`)}
+                />
+              ) : (
+                <KPI
+                  label={t("dashboard.kpi.promedio")}
+                  value={promedioTexto(data.kpis.promedio_calificacion)}
+                  icon={<Star className="w-4 h-4" />}
+                  accent="violet"
+                  subtitle={t("dashboard.kpi.total_calif", {
+                    count: data.kpis.total_calificaciones_mes,
+                  })}
+                />
+              )}
             </section>
 
             {/* Alertas */}
@@ -295,6 +307,18 @@ export default function SeguridadDashboard() {
                             despachos: a.despachos_mes,
                           })}
                         </p>
+                        {/* Cada origen por separado: un egreso trae dos notas
+                            (picking y despacho) y no se mezclan con RMA. */}
+                        {a.por_origen && (
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {ORIGENES.filter((o) => a.por_origen![o].total > 0)
+                              .map(
+                                (o) =>
+                                  `${t(`dashboard.origen.${o}`)} ${promedioTexto(a.por_origen![o].promedio)} (${a.por_origen![o].total})`,
+                              )
+                              .join(" · ")}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 text-violet-600 fill-violet-600" />
@@ -383,6 +407,41 @@ export default function SeguridadDashboard() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+/** Tarjeta del promedio del mes: un renglon por origen en vez de un solo numero mezclado. */
+function KPIPorOrigen({
+  label,
+  porOrigen,
+  etiqueta,
+}: {
+  label: string;
+  porOrigen: Record<Origen, ResumenOrigen>;
+  etiqueta: (o: Origen) => string;
+}) {
+  return (
+    <div className="rounded-2xl border bg-gradient-to-br p-4 from-violet-50 to-violet-100/50 border-violet-100">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <span className="p-1 rounded bg-violet-100 text-violet-600">
+          <Star className="w-4 h-4" />
+        </span>
+      </div>
+      <dl className="space-y-1">
+        {ORIGENES.map((o) => (
+          <div key={o} className="flex items-baseline justify-between gap-2">
+            <dt className="text-xs text-slate-600 truncate">{etiqueta(o)}</dt>
+            <dd className="flex items-baseline gap-1.5">
+              <span className="text-lg font-black text-slate-900 tabular-nums">
+                {promedioTexto(porOrigen[o].promedio)}
+              </span>
+              <span className="text-[11px] text-slate-400 tabular-nums">({porOrigen[o].total})</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

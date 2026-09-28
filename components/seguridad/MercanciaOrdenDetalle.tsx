@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, FileText, Loader2, Package, Send } from "lucide-react";
+import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, Card, SectionTitle, BotonPrimario } from "./mercancia-ui";
 
 /**
@@ -21,11 +22,13 @@ type Linea = {
 };
 
 type Picking = {
+  odoo_picking_id: number;
   odoo_picking_name: string;
   contraparte: string;
   estado: string;
   origen: string | null;
   lineas: Linea[];
+  facturas?: { numero: string; fecha: string | null }[];
 };
 
 export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
@@ -36,22 +39,36 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
 
   const [picking, setPicking] = useState<Picking | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(false);
+  // Texto del error; "sin_factura" tiene su propio mensaje (issue #298).
+  const [error, setError] = useState<string | null>(null);
+
+  // Id del picking, cuando se llega desde la lista de pendientes: con nombres
+  // repetidos entre compañias, sin el se podria cargar la orden de otra. Se
+  // lee de `window` (como MercanciaNueva) para no pedir Suspense en build.
+  const [pickingId, setPickingId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    setPickingId(id && /^\d+$/.test(id) ? id : "");
+  }, []);
 
   const cargar = useCallback(async () => {
+    if (pickingId === null) return;
     try {
       const res = await fetch(
-        `/api/seguridad/mercancia/odoo/${encodeURIComponent(nombre)}?tipo=egreso`,
+        `/api/seguridad/mercancia/odoo/${encodeURIComponent(nombre)}?tipo=egreso${pickingId ? `&id=${pickingId}` : ""}`,
       );
-      if (!res.ok) throw new Error("fetch failed");
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json?.codigo === "sin_factura" ? tm("orden_sin_facturar") : to("error"));
+        return;
+      }
       setPicking(json.picking);
     } catch {
-      setError(true);
+      setError(to("error"));
     } finally {
       setCargando(false);
     }
-  }, [nombre]);
+  }, [nombre, pickingId, tm, to]);
 
   useEffect(() => {
     void cargar();
@@ -73,7 +90,7 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
         ) : error || !picking ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 flex items-center gap-2.5">
             <AlertTriangle className="w-5 h-5 shrink-0" />
-            {to("error")}
+            {error || to("error")}
           </div>
         ) : (
           <>
@@ -86,6 +103,19 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
               </p>
               {picking.origen && (
                 <p className="text-xs text-slate-400 mt-1">{picking.origen}</p>
+              )}
+              {!!picking.facturas?.length && (
+                <>
+                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mt-3">
+                    {tm("factura_venta")}
+                  </p>
+                  <p className="text-sm text-slate-800 mt-0.5">
+                    <span className="font-mono">
+                      {picking.facturas.map((f) => f.numero).join(", ")}
+                    </span>
+                    <span className="text-slate-400"> · {fechaCorta(picking.facturas[0].fecha)}</span>
+                  </p>
+                </>
               )}
             </Card>
 
@@ -120,7 +150,9 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-200/70 bg-white/90 backdrop-blur">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
             <BotonPrimario
-              href={`/${locale}/seguridad/mercancia/egreso/nuevo?factura=${encodeURIComponent(nombre)}`}
+              href={`/${locale}/seguridad/mercancia/egreso/nuevo?factura=${encodeURIComponent(nombre)}${
+                picking?.odoo_picking_id ? `&id=${picking.odoo_picking_id}` : ""
+              }`}
               icon={Send}
               className="w-full h-12"
             >

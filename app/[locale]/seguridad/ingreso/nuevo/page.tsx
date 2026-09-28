@@ -30,6 +30,21 @@ type Ticket = {
   serial: string;
   invoice_number: string;
   reported_fault: string;
+  // Productos del envío (issue #331); con más de uno, el ingreso lleva la
+  // lista para marcar cuáles llegaron.
+  items?: { id: number; producto: string; serial: string | null }[];
+};
+
+/** Lo que Seguridad marca de cada producto del envío en el mostrador. */
+type ProductoMostrador = {
+  id: number;
+  producto: string;
+  serialEsperado: string | null;
+  // null = sin responder: se exige responder uno por uno, igual que los
+  // checks de estado.
+  recibido: boolean | null;
+  serial: string;
+  observacion: string;
 };
 
 type FormState = {
@@ -91,6 +106,9 @@ export default function NuevoIngresoPage() {
 
   const [ticketQuery, setTicketQuery] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [productos, setProductos] = useState<ProductoMostrador[]>([]);
+  const actualizarProducto = (id: number, cambios: Partial<ProductoMostrador>) =>
+    setProductos((prev) => prev.map((x) => (x.id === id ? { ...x, ...cambios } : x)));
   const [searchingTicket, setSearchingTicket] = useState(false);
   const [ticketError, setTicketError] = useState<string | null>(null);
 
@@ -141,6 +159,7 @@ export default function NuevoIngresoPage() {
     setSearchingTicket(true);
     setTicketError(null);
     setTicket(null);
+    setProductos([]);
     try {
       const res = await fetch(ticketInputUrl(value));
       if (res.status === 404) {
@@ -155,11 +174,29 @@ export default function NuevoIngresoPage() {
       if (data.success && data.case) {
         const c = data.case;
         setTicket(c);
+        const items: NonNullable<Ticket["items"]> = c.items || [];
+        const varios = items.length > 1;
+        setProductos(
+          varios
+            ? items.map((x) => ({
+                id: x.id,
+                producto: x.producto,
+                serialEsperado: x.serial,
+                recibido: null,
+                serial: x.serial || "",
+                observacion: "",
+              }))
+            : [],
+        );
+        // Con varios productos, "hardware" y "serial" del acta resumen el
+        // envío; el detalle va en la lista de productos.
+        const resumenHardware = varios ? items.map((x) => x.producto).join(", ") : c.hardware || "";
+        const resumenSerial = varios ? items.map((x) => x.serial).filter(Boolean).join(", ") : c.serial || "";
         setForm((prev) => ({
           ...prev,
           cliente_nombre: prev.cliente_nombre || c.client_name || "",
-          hardware: prev.hardware || c.hardware || "",
-          serial: prev.serial || c.serial || "",
+          hardware: prev.hardware || resumenHardware.slice(0, MAX.hardware),
+          serial: prev.serial || resumenSerial.slice(0, MAX.serial),
           descripcion_falla:
             prev.descripcion_falla || c.reported_fault || "",
           factura_numero: prev.factura_numero || c.invoice_number || "",
@@ -203,6 +240,17 @@ export default function NuevoIngresoPage() {
       return;
     }
 
+    if (productos.length) {
+      if (productos.some((x) => x.recibido === null)) {
+        setSubmitError(t("productos_envio.error_sin_responder"));
+        return;
+      }
+      if (!productos.some((x) => x.recibido)) {
+        setSubmitError(t("productos_envio.error_ninguno"));
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     const payload: Record<string, unknown> = {
@@ -223,6 +271,14 @@ export default function NuevoIngresoPage() {
     };
     if (ticket?.id) {
       payload.rma_case_id = ticket.id;
+    }
+    if (productos.length) {
+      payload.productos = productos.map((x) => ({
+        rma_item_id: x.id,
+        recibido: x.recibido,
+        serial: x.serial.trim().slice(0, 200),
+        observacion: x.observacion.trim().slice(0, 500),
+      }));
     }
 
     try {
@@ -398,6 +454,68 @@ export default function NuevoIngresoPage() {
               </div>
             )}
           </section>
+
+          {/* Section A2: productos del envío (issue #331). Uno por uno: el acta
+              tiene que decir qué llegó y con qué serial. */}
+          {productos.length > 0 && (
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  {t("productos_envio.titulo", { n: productos.length })}
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">{t("productos_envio.ayuda")}</p>
+              </div>
+              {productos.map((x, idx) => (
+                <div
+                  key={x.id}
+                  className={`rounded-[10px] border p-3 space-y-2 ${
+                    x.recibido === null ? "border-amber-300 bg-amber-50/40" : "border-slate-200"
+                  }`}
+                >
+                  <CheckRow
+                    label={`${idx + 1}. ${x.producto}`}
+                    value={x.recibido}
+                    onChange={(v) => actualizarProducto(x.id, { recibido: v })}
+                    yes={t("productos_envio.llego")}
+                    no={t("productos_envio.no_llego")}
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        {t("productos_envio.serial_etiqueta")}
+                        {x.serialEsperado && (
+                          <span className="font-normal text-slate-400">
+                            {" "}
+                            · {t("productos_envio.esperado")}: <span className="font-mono">{x.serialEsperado}</span>
+                          </span>
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        value={x.serial}
+                        onChange={(e) => actualizarProducto(x.id, { serial: e.target.value.slice(0, 200) })}
+                        className="w-full h-10 px-3 border border-slate-200 rounded-[10px] text-sm font-mono focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        {t("productos_envio.observacion")}
+                      </label>
+                      <input
+                        type="text"
+                        value={x.observacion}
+                        onChange={(e) => actualizarProducto(x.id, { observacion: e.target.value.slice(0, 500) })}
+                        className="w-full h-10 px-3 border border-slate-200 rounded-[10px] text-sm focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                      />
+                    </div>
+                  </div>
+                  {x.serialEsperado && x.serial.trim() && x.serial.trim() !== x.serialEsperado && (
+                    <p className="text-xs font-semibold text-amber-700">{t("productos_envio.serial_distinto")}</p>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
 
           {/* Section B: Data */}
           <section className="bg-white border border-slate-200 rounded-[10px] p-5 space-y-4">

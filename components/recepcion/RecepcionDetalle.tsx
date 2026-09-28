@@ -42,7 +42,7 @@ import {
 } from "@/lib/recepcion/flujo";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
 import * as XLSX from "xlsx";
-import Pistola, { type ResultadoEscaneo } from "@/components/recepcion/Pistola";
+import Pistola, { type ResultadoEscaneo } from "@/components/escaneo/Pistola";
 import {
   PageHeader,
   Card,
@@ -827,7 +827,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               {contando && <p className="text-xs text-slate-500 -mt-1 mb-3">{t("conteo_ayuda")}</p>}
               {contando && (
                 <Pistola
-                  recepcionId={rec.id}
+                  endpoint={`/api/recepcion/${rec.id}/escaneo`}
                   items={items.map((i) => ({
                     id: i.id,
                     codigo: i.codigo,

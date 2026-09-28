@@ -8,6 +8,8 @@
  * sin que nada falle de forma visible.
  */
 
+import { esTipoEntrega } from "./egresoFlujo";
+
 export interface Filtro {
   where: string;
   params: any[];
@@ -121,6 +123,44 @@ export function filtroDespachos(sp: URLSearchParams, cids: number | null): Filtr
 
   if (cids !== null) {
     where += " AND d.cids = ?";
+    params.push(cids);
+  }
+
+  return { where, params };
+}
+
+/**
+ * Movimientos de mercancia (`seguridad_mercancia m`): el listado y su Excel.
+ * `tipo_entrega` solo filtra egresos por etapas; los del flujo anterior no
+ * tienen tipo y quedan fuera cuando se elige uno.
+ */
+export function filtroMercancia(sp: URLSearchParams, cids: number | null): Filtro {
+  let where = "WHERE 1=1";
+  const params: any[] = [];
+
+  const tipo = texto(sp, "tipo");
+  if (tipo === "ingreso" || tipo === "egreso") {
+    where += " AND m.tipo = ?";
+    params.push(tipo);
+  }
+
+  const estado = texto(sp, "estado");
+  if (["pendiente", "conforme", "descuadre"].includes(estado)) {
+    where += " AND m.estado = ?";
+    params.push(estado);
+  }
+
+  const tipoEntrega = texto(sp, "tipo_entrega");
+  if (esTipoEntrega(tipoEntrega)) {
+    where += " AND m.tipo_entrega = ?";
+    params.push(tipoEntrega);
+  }
+
+  // null = superadmin, ve todas las sucursales. Las filas viejas sin cids
+  // (de antes de este filtro) quedan fuera para todos los demas — no se les
+  // asigna una sucursal adivinada.
+  if (cids !== null) {
+    where += " AND m.cids = ?";
     params.push(cids);
   }
 

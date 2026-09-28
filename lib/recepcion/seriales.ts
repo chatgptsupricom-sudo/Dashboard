@@ -81,18 +81,6 @@ export async function leerSeriales(recepcionId: number): Promise<SerialLeido[]> 
   }
 }
 
-/** Codigo de producto al que apunta un codigo de caja aprendido, o null. */
-export async function buscarAlias(codigoNormalizado: string): Promise<string | null> {
-  try {
-    const r = await query("SELECT producto_codigo FROM recepcion_codigos_alias WHERE codigo = ?", [
-      codigoNormalizado,
-    ]);
-    return (r.rows as any[])[0]?.producto_codigo ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** Cuenta los seriales de un renglon y la deja como su cantidad recibida. */
 export async function recontarSeriales(itemId: number): Promise<number> {
   const r = await query("SELECT COUNT(*) AS n FROM recepcion_packing_seriales WHERE item_id = ?", [itemId]);

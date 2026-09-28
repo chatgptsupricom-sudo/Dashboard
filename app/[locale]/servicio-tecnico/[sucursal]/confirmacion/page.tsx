@@ -32,8 +32,12 @@ export default function ConfirmacionPage() {
   }, []);
 
   const invoice = resumen.factura || params.get("factura") || "";
-  const product = resumen.producto || params.get("producto") || "";
-  const serial = resumen.serial || params.get("serial") || "";
+  // Con un solo producto se muestra como siempre (producto + serial); con
+  // varios, la lista del envío.
+  const productos = resumen.productos ?? [];
+  const varios = productos.length > 1;
+  const product = (productos.length === 1 ? productos[0].nombre : resumen.producto) || params.get("producto") || "";
+  const serial = (productos.length === 1 ? productos[0].serial : resumen.serial) || params.get("serial") || "";
   const phone = resumen.telefono || params.get("telefono") || "";
 
   const [copiedTicket, setCopiedTicket] = useState(false);
@@ -120,17 +124,34 @@ export default function ConfirmacionPage() {
         {/* Resumen del reporte. Sólo si hay algo que mostrar: sin
             sessionStorage (modo privado, enlace viejo) quedaría una tarjeta
             vacía. */}
-        {(product || serial || invoice || phone) && (
+        {(varios || product || serial || invoice || phone) && (
         <div className="pt-panel mt-4">
           <p className="pt-panel__eyebrow">{t("resumen")}</p>
           <dl className="mt-3">
-            {product && (
+            {varios && (
+              <div className="pt-summary__row">
+                <dt>{t("productos")}</dt>
+                <dd>
+                  <ul className="space-y-1.5">
+                    {productos.map((p, i) => (
+                      <li key={i} className="break-words">
+                        {p.nombre}
+                        {p.serial && (
+                          <span className="block font-mono text-xs text-[color:var(--portal-muted)]">{p.serial}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
+            {!varios && product && (
               <div className="pt-summary__row">
                 <dt>{t("producto")}</dt>
                 <dd className="break-words">{product}</dd>
               </div>
             )}
-            {serial && (
+            {!varios && serial && (
               <div className="pt-summary__row">
                 <dt>{t("serial")}</dt>
                 <dd className="font-mono break-words">{serial}</dd>

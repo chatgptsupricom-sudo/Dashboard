@@ -44,6 +44,9 @@ type Dashboard = {
     descuadres_30d: number;
     promedio_calificacion: number | null;
     total_calificaciones_mes: number;
+    /** Promedio del mes por aspecto (issue #302). */
+    promedio_picking?: number | null;
+    promedio_despacho?: number | null;
   };
   egresos_recientes: Array<{
     id: number;
@@ -62,8 +65,16 @@ type Dashboard = {
     egresos: number;
     promedio: number;
     calificaciones: number;
+    promedio_picking?: number | null;
+    n_picking?: number;
+    promedio_despacho?: number | null;
+    n_despacho?: number;
+    con_novedades?: number;
   }>;
 };
+
+const unDecimal = (v: number | null | undefined) =>
+  v === null || v === undefined ? "—" : v.toFixed(1);
 
 export default function MercanciaDashboard() {
   const tm = useTranslations("seguridad.mercancia");
@@ -172,7 +183,10 @@ export default function MercanciaDashboard() {
                     ? data.kpis.promedio_calificacion.toFixed(1)
                     : "—"
                 }
-                subtitle={td("kpi_total_calif", { count: data.kpis.total_calificaciones_mes })}
+                subtitle={`${td("kpi_por_aspecto", {
+                  picking: unDecimal(data.kpis.promedio_picking),
+                  despacho: unDecimal(data.kpis.promedio_despacho),
+                })} · ${td("kpi_total_calif", { count: data.kpis.total_calificaciones_mes })}`}
               />
             </section>
 
@@ -261,7 +275,17 @@ export default function MercanciaDashboard() {
                       <div key={a.nombre} className="flex items-center gap-3 px-5 py-3.5">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-slate-900 truncate">{a.nombre}</p>
-                          <p className="text-xs text-slate-500">{a.egresos} egresos</p>
+                          {/* Picking y despacho por separado (issue #302). */}
+                          <p className="text-xs text-slate-500 truncate">
+                            {tf("aspecto.picking")} {unDecimal(a.promedio_picking)}
+                            <span className="text-slate-400"> ({a.n_picking || 0})</span>
+                            {" · "}
+                            {tf("aspecto.despacho")} {unDecimal(a.promedio_despacho)}
+                            <span className="text-slate-400"> ({a.n_despacho || 0})</span>
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            {td("egresos_novedades", { egresos: a.egresos, novedades: a.con_novedades || 0 })}
+                          </p>
                         </div>
                         <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                         <span className="text-sm font-semibold text-slate-800 tabular-nums">

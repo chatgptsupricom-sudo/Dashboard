@@ -3,6 +3,14 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoReparado } from "@/lib/rma/emailReparado";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import {
+  espejarEnProductoUnico,
+  hayTablaProductos,
+  leerProductos,
+  limpiarDespachoProductos,
+  marcarProductosDespachados,
+  sincronizarEnvio,
+} from "@/lib/rma/items";
 
 export async function GET(
   request: NextRequest,
@@ -42,8 +50,11 @@ export async function GET(
         if (!e.message?.includes("Duplicate") && !e.message?.includes("exists")) throw e;
       });
 
+      // item_id (de qué producto es la foto) llega con la misma migración que
+      // rma_case_items: sin ella, la columna no existe.
+      const conProducto = await hayTablaProductos();
       const adjuntosResult = await query(
-        `SELECT id, filename, mime, size, created_at, tracking_token, tipo
+        `SELECT id, filename, mime, size, created_at, tracking_token, tipo${conProducto ? ", item_id" : ""}
          FROM rma_ticket_adjuntos
          WHERE ticket_id = ?
          ORDER BY created_at ASC`,
@@ -59,6 +70,7 @@ export async function GET(
         // "reporte" (foto que el cliente subio al reportar la falla), que
         // es lo unico que existia antes de que hubiera guias de agencia.
         tipo: row.tipo || "reporte",
+        item_id: row.item_id ?? null,
         url: row.tracking_token
           ? `/api/servicio-tecnico/ticket/adjuntos/${row.tracking_token}/${row.id}`
           : null,
@@ -68,11 +80,21 @@ export async function GET(
       adjuntos = [];
     }
 
+    // Productos del envío (issue #331). Aditivo: el panel todavía lee los
+    // campos del caso; [] si no se corrió la migración.
+    let items: any[] = [];
+    try {
+      items = await leerProductos(caseData.id);
+    } catch (e: any) {
+      console.warn("rma_case_items no disponible:", e?.message);
+    }
+
     return NextResponse.json({
       success: true,
       case: caseData,
       history: historyResult.rows,
       adjuntos,
+      items,
     });
   } catch (error: any) {
     console.error("Error fetching RMA case:", error);
@@ -128,11 +150,27 @@ export async function PUT(
     // "entrega"), asi que esto NO toca status. `IS NULL` evita que un
     // segundo click mueva la fecha de la primera entrega. Peticion
     // aparte de la edicion general de campos: no se mezcla con `updates`.
+    if (body.marcar_entregado === true && Array.isArray(body.item_ids)) {
+      // Devolución parcial (issue #331): salen solo esos productos. El caso
+      // queda entregado cuando sale el último.
+      const ids = body.item_ids.map((x: unknown) => parseInt(String(x), 10)).filter((n: number) => n > 0);
+      if (!ids.length) {
+        return NextResponse.json({ error: "Elige qué productos se entregan" }, { status: 400 });
+      }
+      await marcarProductosDespachados(casoActual.id, undefined, ids);
+      await sincronizarEnvio(casoActual.id, {
+        changedBy: auth.payload?.name || "Sistema",
+        origenPeticion: getPublicOrigin(request),
+      });
+      return NextResponse.json({ success: true });
+    }
+
     if (body.marcar_entregado === true) {
       await query(
         `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
         [id],
       );
+      await marcarProductosDespachados(casoActual.id);
       return NextResponse.json({ success: true });
     }
 
@@ -157,7 +195,21 @@ export async function PUT(
          WHERE id = ?`,
         [id],
       );
+      await limpiarDespachoProductos(casoActual.id);
       return NextResponse.json({ success: true });
+    }
+
+    // Con varios productos, cada uno tiene su estado y el del caso se calcula
+    // (PUT /api/rma/[id]/items/[itemId]). Cambiarlo acá lo dejaría
+    // contradiciendo a sus productos.
+    if (status && status !== oldStatus) {
+      const productos = await leerProductos(casoActual.id);
+      if (productos.length > 1) {
+        return NextResponse.json(
+          { error: "Este envío tiene varios productos: cambia el estado de cada uno." },
+          { status: 400 },
+        );
+      }
     }
 
     const updates: string[] = [];
@@ -193,6 +245,20 @@ export async function PUT(
 
     values.push(id);
     await query(`UPDATE rma_cases SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    // Con un solo producto en el envío, el caso y el producto son lo mismo:
+    // lo editado se copia al producto (issue #331).
+    await espejarEnProductoUnico(casoActual.id, {
+      product_code,
+      hardware,
+      brand,
+      model,
+      serial_quantity,
+      reported_fault,
+      status: status && status !== oldStatus ? status : undefined,
+      diagnosis,
+      notes,
+    });
 
     // Aviso al cliente de "tu equipo esta reparado" (issue #119). Solo en
     // la TRANSICION hacia reparado -- si el caso ya estaba reparado (ej. se

@@ -1,5 +1,8 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
+import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
+import { leerNovedades } from "@/lib/seguridad/novedades";
+import { leerSerialesEgreso } from "@/lib/seguridad/seriales";
 
 /**
  * Documentos de Odoo para la seccion Mercancia.
@@ -14,7 +17,9 @@ import { callOdooRPC } from "@/lib/odoo";
  * pasa a "Listo" (`assigned`) recien cuando el inventario esta apartado y
  * listo para cargar. Antes esto tambien se seguia por factura de venta; se
  * volvio a picking porque la factura no reflejaba si el despacho estaba
- * realmente listo.
+ * realmente listo. La factura no se descarta: es la que dispara el trabajo
+ * de Almacen (issue #298), asi que el egreso pide las dos — picking listo y
+ * orden de venta facturada.
  *
  * La lista de renglones sale de Odoo, no de lo que alguien escriba a mano: si
  * el papel lo llena el mismo que carga, verificar contra el no prueba nada.
@@ -25,6 +30,17 @@ export type LineaPicking = {
   producto: string;
   codigo: string | null;
   cantidad_cargada: number;
+  /** Solo egreso: el producto lleva serial en Odoo (`tracking = 'serial'`). */
+  lleva_serial?: boolean;
+};
+
+/** Factura de cliente publicada de la orden de venta de un picking (issue #298). */
+export type FacturaVenta = {
+  numero: string;
+  /** `invoice_date` de Odoo: solo fecha. Odoo no guarda la hora de publicacion. */
+  fecha: string | null;
+  /** `create_date`: desempata dos facturas del mismo dia. */
+  creada: string | null;
 };
 
 export type PickingOdoo = {
@@ -35,6 +51,8 @@ export type PickingOdoo = {
   estado: string;
   origen: string | null;
   lineas: LineaPicking[];
+  /** Solo egreso: facturas vigentes de la orden de venta. Vacio = sin facturar. */
+  facturas?: FacturaVenta[];
 };
 
 export type PickingResumen = {
@@ -44,6 +62,7 @@ export type PickingResumen = {
   estado: string;
   origen: string | null;
   fecha: string | null;
+  facturas: FacturaVenta[];
 };
 
 /**
@@ -115,14 +134,9 @@ export async function cargarMovimiento(id: number) {
   );
   // Plural: puede haber mas de un almacenista por egreso (issue #43), y cada
   // uno se califica aparte. Antes se traia solo uno con LIMIT 1, que se
-  // quedaba con la primera calificacion y ocultaba el resto.
-  const calif = await query(
-    `SELECT id, almacenista_nombre, calificacion, comentario, calificado_por, created_at
-       FROM seguridad_calificaciones
-      WHERE relacionado_a = 'mercancia' AND relacionado_id = ?
-      ORDER BY id`,
-    [id],
-  ).catch(() => ({ rows: [] as any[] }));
+  // quedaba con la primera calificacion y ocultaba el resto. Cada una trae
+  // su aspecto, picking o despacho (issue #302).
+  const calif = { rows: await leerCalificacionesEgreso(id) };
 
   const fila = mov.rows[0] as any;
   const facturas = parsearLista(fila.facturas_json).length
@@ -133,11 +147,20 @@ export async function cargarMovimiento(id: number) {
   const almacenistas = parsearLista(fila.almacenistas_json).length
     ? parsearLista(fila.almacenistas_json)
     : [fila.almacenista_nombre];
+  // Facturas de venta traidas de Odoo al registrar (issue #298). Aparte de
+  // `facturas`, que en el egreso son las ordenes de despacho del camion.
+  const facturas_venta = parsearLista(fila.facturas_venta_json);
+  // Seriales esperados, leidos del picking de Odoo (issue #299).
+  const seriales = fila.tipo === "egreso" ? await leerSerialesEgreso(id) : [];
+  // Novedades de la verificacion en C4, de todas las rondas (issue #301).
+  const novedades = fila.tipo === "egreso" ? await leerNovedades(id) : [];
 
   return {
-    movimiento: { ...fila, facturas, almacenistas },
+    movimiento: { ...fila, facturas, almacenistas, facturas_venta },
     items: items.rows as any[],
     calificaciones: calif.rows as any[],
+    seriales,
+    novedades,
   };
 }
 
@@ -234,8 +257,77 @@ export async function buscarFacturaCompra(
 }
 
 /**
+ * Facturas de cliente vigentes de cada orden de venta (issue #298): la
+ * factura es la que dispara el trabajo de Almacen, una orden sin facturar no
+ * se arma.
+ *
+ * Se llega por `sale.order.invoice_ids` y no por `invoice_origin`: hay
+ * ordenes de compañias distintas con el mismo nombre (ver
+ * lib/servicio-tecnico/factura.ts).
+ *
+ * Vigente = `out_invoice` publicada y no revertida. Quedan fuera:
+ *  - el borrador: Odoo ya marca la orden como `invoiced` con la factura en
+ *    borrador, por eso no sirve mirar `invoice_status`;
+ *  - la cancelada;
+ *  - la revertida por completo con una nota de credito (`payment_state =
+ *    'reversed'`): la orden vuelve a estar por facturar.
+ *
+ * Si Odoo no responde lanza en vez de devolver vacio: "nadie facturo nada"
+ * y "no se pudo preguntar" tienen que verse distinto en la pantalla.
+ */
+async function facturasDeVentas(saleIds: number[]): Promise<Map<number, FacturaVenta[]>> {
+  const porVenta = new Map<number, FacturaVenta[]>();
+  if (saleIds.length === 0) return porVenta;
+
+  const ventas = await callOdooRPC<any[]>("sale.order", "read", [saleIds, ["invoice_ids"]]);
+  if (!ventas) throw new Error("no se pudieron leer las ordenes de venta");
+
+  const invoiceIds = [...new Set(ventas.flatMap((v: any) => v.invoice_ids || []))];
+  const vigentes = new Map<number, FacturaVenta>();
+  if (invoiceIds.length > 0) {
+    const facturas = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [
+        [
+          ["id", "in", invoiceIds],
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["payment_state", "!=", "reversed"],
+        ],
+      ],
+      { fields: ["name", "invoice_date", "create_date"] },
+    );
+    if (!facturas) throw new Error("no se pudieron leer las facturas");
+    for (const f of facturas) {
+      vigentes.set(f.id, {
+        numero: f.name,
+        fecha: f.invoice_date || null,
+        creada: f.create_date || null,
+      });
+    }
+  }
+
+  for (const v of ventas) {
+    const lista = (v.invoice_ids || [])
+      .map((id: number) => vigentes.get(id))
+      .filter(Boolean) as FacturaVenta[];
+    porVenta.set(v.id, lista.sort(compararFacturas));
+  }
+  return porVenta;
+}
+
+function compararFacturas(a: FacturaVenta, b: FacturaVenta): number {
+  return (
+    String(a.fecha || "").localeCompare(String(b.fecha || "")) ||
+    String(a.creada || "").localeCompare(String(b.creada || ""))
+  );
+}
+
+/**
  * Orden de despacho (stock.picking, tipo "entrega"/outgoing) — el documento
- * con el que sale la mercancia (egreso).
+ * con el que sale la mercancia (egreso). Trae tambien las facturas vigentes
+ * de su orden de venta (`facturas`, vacio = todavia no facturada).
  *
  * El `name` de un picking (ej. "CENT1/OUT/06321") NO es unico entre
  * compañias: el mismo prefijo de almacen se reutiliza en mas de una, asi que
@@ -243,38 +335,63 @@ export async function buscarFacturaCompra(
  * distintos con el mismo nombre son ambiguos y `search_read` puede devolver
  * el que no es. Un superadmin (`cids: null`) queda expuesto a esa ambiguedad;
  * en la practica quien busca aca siempre es Almacen o Seguridad, con su
- * sucursal ya resuelta.
+ * sucursal ya resuelta. Por eso al registrar se relee por id
+ * (`buscarPickingEgresoPorId`), que no es ambiguo, y la lista de pendientes
+ * pasa el id hasta aca (`id`). Solo por nombre, se prefiere el abierto.
  */
 export async function buscarPickingEgreso(
   numero: string,
   cids: number | null,
+  id?: number | null,
 ): Promise<PickingOdoo | null> {
   const limpio = String(numero || "").trim();
   if (!limpio || limpio.length > 100) return null;
+  // Con el id (viene de la lista de pendientes) no hay ambiguedad: el nombre
+  // se exige igual, para que un id cambiado a mano no traiga otra orden.
+  if (Number.isInteger(id) && Number(id) > 0) {
+    return leerPickingEgreso([["id", "=", Number(id)], ["name", "=", limpio]], cids);
+  }
+  return leerPickingEgreso([["name", "=", limpio]], cids);
+}
 
-  const domain: any[] = [
-    ["name", "=", limpio],
-    ["picking_type_id.code", "=", "outgoing"],
-  ];
+export async function buscarPickingEgresoPorId(
+  id: number,
+  cids: number | null,
+): Promise<PickingOdoo | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return leerPickingEgreso([["id", "=", id]], cids);
+}
+
+async function leerPickingEgreso(
+  filtro: any[],
+  cids: number | null,
+): Promise<PickingOdoo | null> {
+  const domain: any[] = [...filtro, ["picking_type_id.code", "=", "outgoing"]];
   if (cids !== null) domain.push(["company_id", "=", cids]);
 
+  // El nombre no es unico entre compañias (ver arriba): sin sucursal
+  // (superadmin) puede haber varios. Se prefiere el abierto y, entre ellos, el
+  // mas reciente: el de otra compañia suele ser uno viejo ya despachado.
   const pickings = await callOdooRPC<any[]>(
     "stock.picking",
     "search_read",
     [domain],
-    { fields: ["name", "partner_id", "state", "origin"], limit: 1 },
+    { fields: ["name", "partner_id", "state", "origin", "sale_id"], limit: 10, order: "id desc" },
   );
 
-  const p = pickings?.[0];
+  const abiertos = (pickings || []).filter((x) => x.state !== "done" && x.state !== "cancel");
+  const p = abiertos.find((x) => x.state === "assigned") || abiertos[0] || pickings?.[0];
   if (!p) return null;
 
   const lineas_raw = await callOdooRPC<any[]>(
     "stock.move.line",
     "search_read",
     [[["picking_id", "=", p.id]]],
-    { fields: ["product_id", "quantity"], limit: 500 },
+    { fields: ["product_id", "quantity", "tracking"], limit: 500 },
   );
 
+  // Los seriales NO se leen aca: en un picking "Listo" todavia no estan (ver
+  // lib/seguridad/seriales.ts). Solo se anota que producto los lleva.
   const lineas: LineaPicking[] = agruparLineas(
     (lineas_raw || []).map((l: any) => {
       const etiqueta = l.product_id?.[1] || "";
@@ -284,9 +401,15 @@ export async function buscarPickingEgreso(
         producto,
         codigo,
         cantidad_cargada: Number(l.quantity || 0),
+        lleva_serial: l.tracking === "serial",
       };
     }),
   );
+
+  // Sin orden de venta (ej. una devolucion a proveedor) no hay factura de
+  // cliente: queda como no facturada.
+  const saleId = p.sale_id?.[0] ?? null;
+  const facturas = saleId ? (await facturasDeVentas([saleId])).get(saleId) || [] : [];
 
   return {
     odoo_picking_id: p.id,
@@ -298,17 +421,24 @@ export async function buscarPickingEgreso(
     // de orden de despacho o viceversa.
     origen: p.origin || null,
     lineas,
+    facturas,
   };
 }
 
 /**
  * Ordenes de despacho (egresos) que Odoo ya tiene "Listas" (`assigned`) —
- * inventario apartado y listo para cargar el camion — y que Almacen aun no
- * proceso.
+ * inventario apartado y listo para cargar el camion —, con factura de
+ * cliente vigente (issue #298), y que Almacen aun no proceso.
  *
- * `assigned` y no `posted`/`done`: una factura de venta confirmada no dice
- * nada sobre si el almacen ya alisto el pedido, y un picking `done` ya salio
- * (nada que hacer). `assigned` es la señal real de "listo para despachar".
+ * Hacen falta las dos cosas: `assigned` dice que el inventario esta apartado
+ * y la factura dice que Caja ya facturo. En Odoo casi todo se factura por
+ * cantidad pedida (`invoice_policy = order`), asi que la factura existe
+ * antes de despachar: en septiembre de 2026 las ~1.500 salidas de Valencia y
+ * Caracas se facturaron todas antes de validar el picking.
+ *
+ * Ordenadas por fecha de factura, la mas vieja primero: es el orden en que
+ * le llegaron a Almacen. `sin_facturar` cuenta las listas que quedaron
+ * afuera, para que Almacen sepa que existen aunque todavia no le toquen.
  *
  * El cruce con lo ya procesado se hace en MySQL (`seguridad_mercancia`)
  * porque Odoo no sabe nada de nuestros registros. `cids` acota por sucursal
@@ -316,7 +446,7 @@ export async function buscarPickingEgreso(
  */
 export async function listarPickingsEgresoPendientes(
   cids: number | null,
-): Promise<PickingResumen[]> {
+): Promise<{ ordenes: PickingResumen[]; sin_facturar: number }> {
   const domain: any[] = [
     ["picking_type_id.code", "=", "outgoing"],
     ["state", "=", "assigned"],
@@ -329,21 +459,27 @@ export async function listarPickingsEgresoPendientes(
   // culpa a Odoo aunque el problema sea la base local (ej. la migracion de
   // `cids` en seguridad_mercancia sin correr todavia).
   let pickings: any[] | null;
+  let facturas: Map<number, FacturaVenta[]>;
   try {
     pickings = await callOdooRPC<any[]>(
       "stock.picking",
       "search_read",
       [domain],
       {
-        fields: ["name", "partner_id", "state", "origin", "scheduled_date"],
-        order: "scheduled_date desc",
+        fields: ["name", "partner_id", "state", "origin", "scheduled_date", "sale_id"],
+        // Las mas viejas primero: si alguna vez hay mas de 200 listas, las
+        // que quedan afuera son las recien llegadas, no las que llevan dias.
+        order: "scheduled_date asc",
         limit: 200,
       },
     );
+    if (!pickings || pickings.length === 0) return { ordenes: [], sin_facturar: 0 };
+    facturas = await facturasDeVentas([
+      ...new Set(pickings.map((p: any) => p.sale_id?.[0]).filter(Boolean)),
+    ] as number[]);
   } catch (e: any) {
     throw new Error(`[odoo] ${e?.message || e}`);
   }
-  if (!pickings || pickings.length === 0) return [];
 
   let usados: { rows: any[] };
   try {
@@ -360,7 +496,7 @@ export async function listarPickingsEgresoPendientes(
     (usados.rows as any[]).map((r) => Number(r.odoo_picking_id)),
   );
 
-  return pickings
+  const porProcesar = pickings
     .filter((p: any) => !idsUsados.has(p.id))
     .map((p: any) => ({
       odoo_picking_id: p.id,
@@ -369,7 +505,14 @@ export async function listarPickingsEgresoPendientes(
       estado: p.state || "",
       origen: p.origin || null,
       fecha: p.scheduled_date || null,
+      facturas: (p.sale_id && facturas.get(p.sale_id[0])) || [],
     }));
+
+  const ordenes = porProcesar
+    .filter((o) => o.facturas.length > 0)
+    .sort((a, b) => compararFacturas(a.facturas[0], b.facturas[0]));
+
+  return { ordenes, sin_facturar: porProcesar.length - ordenes.length };
 }
 
 /**

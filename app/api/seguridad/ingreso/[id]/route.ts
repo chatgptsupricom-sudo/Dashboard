@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { leerProductosIngreso } from "@/lib/seguridad/productosEnvio";
 
 
 
@@ -88,7 +89,15 @@ export async function GET(
       console.warn("seguridad_calificaciones no disponible:", e?.message);
     }
 
-    return NextResponse.json({ success: true, ingreso, rma_case: rmaCase, calificacion });
+    // Lo que se revisó de cada producto del envío (issue #331) y si ya salió.
+    let productos: any[] = [];
+    try {
+      productos = await leerProductosIngreso(ingresoId);
+    } catch (e: any) {
+      console.warn("seguridad_ingreso_items no disponible:", e?.message);
+    }
+
+    return NextResponse.json({ success: true, ingreso, rma_case: rmaCase, calificacion, productos });
   } catch (error: any) {
     console.error("Error obteniendo ingreso:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

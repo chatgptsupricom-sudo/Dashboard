@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { leerProductosDespacho } from "@/lib/seguridad/productosEnvio";
 
 
 
@@ -107,7 +108,15 @@ export async function GET(
       console.warn("seguridad_calificaciones no disponible:", e?.message);
     }
 
-    return NextResponse.json({ success: true, despacho, ingreso, rma_case: rmaCase, calificacion });
+    // Qué productos del envío salieron en este despacho (issue #331).
+    let productos: any[] = [];
+    try {
+      productos = await leerProductosDespacho(despachoId);
+    } catch (e: any) {
+      console.warn("seguridad_despacho_items no disponible:", e?.message);
+    }
+
+    return NextResponse.json({ success: true, despacho, ingreso, rma_case: rmaCase, calificacion, productos });
   } catch (error: any) {
     console.error("Error obteniendo despacho:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

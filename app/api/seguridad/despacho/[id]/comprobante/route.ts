@@ -3,6 +3,7 @@ import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { fechaLarga } from "@/lib/fecha";
 import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
+import { leerProductosDespacho } from "@/lib/seguridad/productosEnvio";
 
 
 /**
@@ -114,6 +115,9 @@ export async function GET(
   }
 
   const accesoriosOk = d.accesorios_integros === 1 || d.accesorios_integros === true;
+
+  // Productos del envío que salieron en este despacho (issue #331).
+  const productos = await leerProductosDespacho(Number(d.id)).catch(() => []);
 
   // Numero ND del encabezado de la planilla.
   //
@@ -355,6 +359,15 @@ export async function GET(
     </div>
     ` : ""}
   </div>
+
+  ${productos.length > 0 ? `
+  <div class="section">
+    <h2>Productos que salen (${productos.length})</h2>
+    <ul class="facturas">
+      ${productos.map((p) => `<li>${esc(p.producto)}${p.serial ? ` &middot; <span style="font-family:monospace">${esc(p.serial)}</span>` : ""}</li>`).join("")}
+    </ul>
+  </div>
+  ` : ""}
 
   ${facturas.length > 0 ? `
   <div class="section">
