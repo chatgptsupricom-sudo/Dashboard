@@ -71,6 +71,7 @@ export const rolePermissions: RolePermissions = {
       "reportes_comerciales", // Sección Reportes Comerciales (trimestral Panamá por marca)
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
+      "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
       "opiniones", // Opiniones de clientes (encuesta pública de ventas y RMA)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       "cxc_pago_clientes", // Pago de Clientes
