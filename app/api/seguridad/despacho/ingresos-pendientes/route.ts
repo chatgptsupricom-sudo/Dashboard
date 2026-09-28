@@ -36,7 +36,16 @@ export async function GET(request: NextRequest) {
     // Listos para despachar: RMA ya terminó el caso (reparado, nota de
     // crédito o no procesado). Es lo que Seguridad tiene que devolver.
     if (searchParams.get("listos") === "1") {
-      where += " AND rc.status IN ('reparado','nota_credito','no_procesado')";
+      // Con varios productos, también el envío que todavía tiene alguno en
+      // revisión pero ya trae otro terminado y sin salir (devolución parcial).
+      // Los ingresos viejos sin ticket (de antes de que fuera obligatorio)
+      // no tienen estado de RMA: se pueden devolver.
+      where += porProducto
+        ? ` AND (i.rma_case_id IS NULL OR rc.status IN ('reparado','nota_credito','no_procesado')
+                 OR EXISTS (SELECT 1 FROM rma_case_items ci
+                             WHERE ci.case_id = i.rma_case_id AND ci.despachado_at IS NULL
+                               AND ci.status IN ('reparado','nota_credito','no_procesado')))`
+        : " AND (i.rma_case_id IS NULL OR rc.status IN ('reparado','nota_credito','no_procesado'))";
     }
     const ingresoId = parseInt(searchParams.get("ingreso_id") || "", 10);
     if (ingresoId > 0) {
