@@ -2,103 +2,45 @@
 
 import { colorSolicitud, etiquetaSolicitud, fechaCorta } from "@/components/rma/estados";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Check, ExternalLink, FileText, Loader2, Printer, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ExternalLink, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 
-type Filtro = "pendiente" | "aprobada" | "rechazada" | "todas";
-
 /**
- * Solicitudes de nota de crédito de RMA.
- *  - modo "rma": las que pidió RMA y cómo van (sección Nota de Crédito).
- *  - modo "superadmin": además, aprobar o rechazar las pendientes.
+ * Solicitudes de nota de crédito de RMA, las más nuevas primero. Las ve RMA
+ * (su sección Nota de Crédito) y el Super Admin, a quien le llegan. Por ahora
+ * solo se consultan: el proceso de la nota de crédito se define después.
  */
-export function SolicitudesNotaCredito({ modo }: { modo: "rma" | "superadmin" }) {
+export function SolicitudesNotaCredito() {
   const t = useTranslations("rma");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
-  const esAdmin = modo === "superadmin";
-
-  const [filtro, setFiltro] = useState<Filtro>(esAdmin ? "pendiente" : "todas");
   const [notas, setNotas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [rechazando, setRechazando] = useState<any | null>(null);
-  const [motivoRechazo, setMotivoRechazo] = useState("");
-  const [decidiendo, setDecidiendo] = useState<number | null>(null);
   const [imagen, setImagen] = useState<string | null>(null);
 
-  const cargar = async () => {
-    try {
-      setLoading(true);
-      const q = new URLSearchParams({ lista: "1" });
-      if (filtro !== "todas") q.set("estado", filtro);
-      const res = await fetch(`/api/rma/nota-credito?${q}`);
-      const data = await res.json();
-      if (data.success) setNotas(data.notas);
-      else setError(data.error || t("nc_error_cargar"));
-    } catch {
-      setError(t("nc_error_cargar"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    cargar();
-  }, [filtro]);
-
-  const decidir = async (nota: any, decision: "aprobar" | "rechazar") => {
-    try {
-      setDecidiendo(nota.id);
-      setError("");
-      const res = await fetch(`/api/rma/nota-credito/${nota.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, motivo_rechazo: decision === "rechazar" ? motivoRechazo : undefined }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        setError(data.error || t("nc_error_decidir"));
-        return;
+    (async () => {
+      try {
+        const res = await fetch("/api/rma/nota-credito?lista=1");
+        const data = await res.json();
+        if (data.success) setNotas(data.notas);
+        else setError(data.error || t("nc_error_cargar"));
+      } catch {
+        setError(t("nc_error_cargar"));
+      } finally {
+        setLoading(false);
       }
-      setRechazando(null);
-      setMotivoRechazo("");
-      // Avisa al sidebar que cambió el contador de pendientes.
-      window.dispatchEvent(new Event("rma-nc-decidida"));
-      await cargar();
-    } catch {
-      setError(t("nc_error_decidir"));
-    } finally {
-      setDecidiendo(null);
-    }
-  };
+    })();
+  }, []);
 
   return (
     <div className="space-y-4">
-      <Tabs value={filtro} onValueChange={(v) => setFiltro(v as Filtro)}>
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="pendiente" className="px-3 py-1.5">{t("nc_tab_pendientes")}</TabsTrigger>
-          <TabsTrigger value="aprobada" className="px-3 py-1.5">{t("nc_tab_aprobadas")}</TabsTrigger>
-          <TabsTrigger value="rechazada" className="px-3 py-1.5">{t("nc_tab_rechazadas")}</TabsTrigger>
-          <TabsTrigger value="todas" className="px-3 py-1.5">{t("procedencia_todos")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
@@ -190,69 +132,10 @@ export function SolicitudesNotaCredito({ modo }: { modo: "rma" | "superadmin" })
                 </div>
               )}
 
-              <div className="flex flex-wrap justify-end gap-2">
-                {n.estado === "aprobada" && (
-                  <Link href={`/${locale}/rma/nota-credito/${n.id}`}>
-                    <Button variant="outline" size="sm">
-                      <Printer className="w-4 h-4 mr-2" />
-                      {t("nc_ver_documento")}
-                    </Button>
-                  </Link>
-                )}
-                {esAdmin && n.estado === "pendiente" && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-rose-600 border-rose-200 hover:bg-rose-50"
-                      disabled={decidiendo === n.id}
-                      onClick={() => { setRechazando(n); setMotivoRechazo(""); }}
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      {t("nc_rechazar")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                      disabled={decidiendo === n.id}
-                      onClick={() => decidir(n, "aprobar")}
-                    >
-                      {decidiendo === n.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                      {t("nc_aprobar")}
-                    </Button>
-                  </>
-                )}
-              </div>
             </CardContent>
           </Card>
         ))
       )}
-
-      <Dialog open={!!rechazando} onOpenChange={(o) => { if (!o) setRechazando(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("nc_rechazar_titulo", { caso: rechazando?.case_number || "" })}</DialogTitle>
-            <DialogDescription>{t("nc_rechazar_desc")}</DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={motivoRechazo}
-            onChange={(e) => setMotivoRechazo(e.target.value)}
-            placeholder={t("nc_rechazar_placeholder")}
-            rows={4}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRechazando(null)}>{t("cancel")}</Button>
-            <Button
-              variant="destructive"
-              disabled={motivoRechazo.trim().length < 5 || decidiendo === rechazando?.id}
-              onClick={() => rechazando && decidir(rechazando, "rechazar")}
-            >
-              {decidiendo === rechazando?.id && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {t("nc_rechazar")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={!!imagen} onOpenChange={(o) => { if (!o) setImagen(null); }}>
         <DialogContent className="max-w-3xl">

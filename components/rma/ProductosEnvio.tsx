@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
-import { CheckCircle2, Loader2, PackageCheck, Pencil, Plus, Printer, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, PackageCheck, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -142,7 +142,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
 
   async function guardarEstado() {
     if (!estadoDe || !nuevoEstado) return;
-    // La nota de crédito no se pone a mano: se solicita y la aprueba el Super
+    // La nota de crédito no se pone a mano: se solicita y le llega al Super
     // Admin (lib/rma/notaCredito.ts).
     if (nuevoEstado === "nota_credito") {
       router.push(`/${locale}/rma/nota-credito/solicitar?case=${caseNumber}&item=${estadoDe.id}`);
@@ -341,11 +341,6 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
               )}
 
               <div className="flex flex-wrap gap-2 pt-1">
-                {item.status === "nc_revision" ? (
-                  <Badge className="bg-orange-50 text-orange-700 border-orange-200 border self-center">
-                    Nota de crédito esperando al Super Admin
-                  </Badge>
-                ) : (
                 <Button
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -354,7 +349,6 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
                   <CheckCircle2 className="w-4 h-4 mr-1" />
                   Cambiar estado
                 </Button>
-                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -374,16 +368,6 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
                   <Pencil className="w-4 h-4 mr-1" />
                   Diagnóstico y datos
                 </Button>
-                {item.status === "nota_credito" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => router.push(`/${locale}/rma/nota-credito`)}
-                  >
-                    <Printer className="w-4 h-4 mr-1" />
-                    Nota de crédito
-                  </Button>
-                )}
                 {items.length > 1 && (
                   <Button
                     size="sm"

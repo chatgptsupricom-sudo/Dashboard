@@ -32,7 +32,6 @@ import {
   Loader2,
   MapPin,
   PackageCheck,
-  Printer,
   Save,
   Store,
   Trash2,
@@ -141,7 +140,7 @@ export default function RmaCasoDetailPage() {
     if (!newStatus) return;
 
     // La nota de crédito no se pone a mano: se solicita (caso, producto y
-    // por qué) y la aprueba el Super Admin (lib/rma/notaCredito.ts).
+    // por qué) y le llega al Super Admin (lib/rma/notaCredito.ts).
     if (newStatus === "nota_credito") {
       setStatusDialogOpen(false);
       setNewStatus("");
@@ -344,12 +343,7 @@ export default function RmaCasoDetailPage() {
               Envío: {statusLabels[caseData.status]}
             </Badge>
           )}
-          {!varios && caseData.status === "nc_revision" && (
-            <Badge className="bg-orange-50 text-orange-700 border-orange-200 border self-center">
-              {t("nc_esperando_admin")}
-            </Badge>
-          )}
-          {!varios && caseData.status !== "nc_revision" && (
+          {!varios && (
           <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -403,12 +397,6 @@ export default function RmaCasoDetailPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          )}
-          {!varios && caseData.status === "nota_credito" && (
-            <Button variant="outline" onClick={() => router.push(`/${locale}/rma/nota-credito`)}>
-              <Printer className="w-4 h-4 mr-2" />
-              {t("print_pdf")}
-            </Button>
           )}
           <Button variant="outline" onClick={() => setEditing(!editing)}>
             {editing ? t("cancel") : t("edit")}

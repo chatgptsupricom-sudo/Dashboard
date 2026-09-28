@@ -1,26 +1,19 @@
 import { query } from "@/lib/db";
-import {
-  espejarEnProductoUnico,
-  leerProductos,
-  sincronizarEnvio,
-  type EstadoProducto,
-  type ProductoEnvio,
-} from "@/lib/rma/items";
-import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
+import { leerProductos, type EstadoProducto, type ProductoEnvio } from "@/lib/rma/items";
 import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
- * Nota de crédito de RMA con aprobación del Super Admin
- * (sql/rma_nota_credito_aprobacion.sql).
+ * Solicitudes de nota de crédito de RMA (sql/rma_nota_credito_aprobacion.sql).
  *
- *  1. RMA la solicita desde su sección Nota de Crédito: caso, producto y por
- *     qué. El producto (o el caso, si trae uno solo) pasa a "nc_revision" y
- *     al Super Admin le llega el aviso (panel + correo por n8n).
- *  2. El Super Admin la aprueba → "nota_credito", o la rechaza con un motivo
- *     → vuelve a "recibido", para que RMA lo resuelva de otra forma.
+ * Por ahora es SOLO la solicitud: RMA la pide desde su sección Nota de
+ * Crédito (caso, producto y por qué) y al Super Admin le llega (panel +
+ * correo por n8n) para verla. No se aprueba ni se rechaza en el panel, el
+ * caso no cambia de estado, no se imprime documento ni se avisa al cliente:
+ * el proceso de nota de crédito se define después.
  *
- * Mientras está en revisión, el estado no se cambia a mano (lo impiden los
- * PUT del caso y del producto): solo lo mueve la decisión.
+ * El estado "Nota de Crédito" tampoco se pone a mano (lo impiden los PUT del
+ * caso y del producto). "nc_revision" solo lo tienen los casos que se
+ * pidieron con el flujo anterior; esos sí se pueden mover a mano.
  */
 
 export type EstadoNota = "pendiente" | "aprobada" | "rechazada";
@@ -39,10 +32,7 @@ export function sePuedeSolicitar(estado: string): boolean {
 export function errorEstadoNotaCredito(actual: string, nuevo: string | undefined | null): string | null {
   if (!nuevo || nuevo === actual) return null;
   if (nuevo === "nota_credito" || nuevo === "nc_revision") {
-    return "La nota de crédito se solicita en la sección Nota de Crédito y la aprueba el Super Admin.";
-  }
-  if (actual === "nc_revision") {
-    return "Tiene una nota de crédito esperando al Super Admin: el estado cambia cuando la decida.";
+    return "La nota de crédito se solicita en la sección Nota de Crédito: le llega al Super Admin.";
   }
   return null;
 }
@@ -87,43 +77,6 @@ const FALTA_MIGRACION = "Falta correr la migración sql/rma_nota_credito_aprobac
 
 type Opciones = { autor: string; origenPeticion: string };
 
-/**
- * Cambia el estado del producto (envío con varios) o del caso (con uno solo,
- * que se copia a su producto), con su historial, y recalcula el envío.
- */
-async function moverEstado(
-  caseId: number,
-  estadoCaso: string,
-  productos: ProductoEnvio[],
-  producto: ProductoEnvio | null,
-  nuevo: EstadoProducto,
-  nota: string,
-  opciones: Opciones,
-): Promise<{ anterior: string; terminoReparado: boolean }> {
-  if (productos.length > 1 && producto) {
-    await query(`UPDATE rma_case_items SET status = ? WHERE id = ?`, [nuevo, producto.id]);
-    await query(
-      `INSERT INTO rma_history (case_id, item_id, from_status, to_status, changed_by, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [caseId, producto.id, producto.status, nuevo, opciones.autor, nota],
-    );
-    const envio = await sincronizarEnvio(caseId, { changedBy: opciones.autor, origenPeticion: opciones.origenPeticion });
-    return {
-      anterior: producto.status,
-      terminoReparado: !!envio && envio.despues === "reparado" && envio.antes !== "reparado",
-    };
-  }
-
-  await query(`UPDATE rma_cases SET status = ? WHERE id = ?`, [nuevo, caseId]);
-  await query(
-    `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
-     VALUES (?, ?, ?, ?, ?)`,
-    [caseId, estadoCaso, nuevo, opciones.autor, nota],
-  );
-  await espejarEnProductoUnico(caseId, { status: nuevo });
-  return { anterior: estadoCaso, terminoReparado: false };
-}
-
 function nombreProducto(p: { model?: string | null; hardware?: string | null } | null | undefined): string {
   return p?.model || p?.hardware || "";
 }
@@ -162,14 +115,20 @@ export async function solicitarNotaCredito(datos: {
   }
 
   const estado = producto && productos.length > 1 ? producto.status : caso.status;
-  if (estado === "nc_revision") {
-    throw new ErrorNota("Ese producto ya tiene una nota de crédito esperando al Super Admin.", 409);
-  }
   if (!sePuedeSolicitar(estado)) {
     throw new ErrorNota("Solo se pide nota de crédito de un equipo que sigue en revisión (recibido o reingresado).");
   }
 
   const itemId = conItem && producto ? producto.id : null;
+  // Una solicitud por producto: el estado del caso ya no lo dice.
+  const ya = await query(
+    `SELECT id FROM rma_notas_credito
+      WHERE case_id = ? AND estado = 'pendiente'${conItem ? " AND item_id <=> ?" : ""} LIMIT 1`,
+    conItem ? [caso.id, itemId] : [caso.id],
+  );
+  if ((ya.rows as any[]).length) {
+    throw new ErrorNota("Ese producto ya tiene una solicitud de nota de crédito enviada al Super Admin.", 409);
+  }
   const images = datos.images ? JSON.stringify(datos.images) : null;
   const ins = await query(
     conItem
@@ -189,77 +148,27 @@ export async function solicitarNotaCredito(datos: {
   );
   const id = Number((ins.rows as any).insertId);
 
-  await moverEstado(caso.id, caso.status, productos, producto, "nc_revision", `Nota de crédito solicitada: ${motivo}`.slice(0, 1000), datos.opciones);
+  // Queda en el historial del caso, sin cambiarle el estado.
+  const nota = `Nota de crédito solicitada al Super Admin: ${motivo}`.slice(0, 1000);
+  try {
+    if (itemId && productos.length > 1) {
+      await query(
+        `INSERT INTO rma_history (case_id, item_id, from_status, to_status, changed_by, notes)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [caso.id, itemId, estado, estado, datos.opciones.autor, nota],
+      );
+    } else {
+      await query(
+        `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)`,
+        [caso.id, estado, estado, datos.opciones.autor, nota],
+      );
+    }
+  } catch (e: any) {
+    console.error(`[rma/notaCredito] historial de la solicitud ${id}:`, e?.message);
+  }
 
   avisarSuperAdmins(id, datos.opciones.origenPeticion);
   return { id };
-}
-
-export async function decidirNotaCredito(datos: {
-  id: number;
-  aprobar: boolean;
-  motivoRechazo: string | null;
-  opciones: Opciones;
-}): Promise<void> {
-  if (!(await hayColumnasAprobacion())) throw new ErrorNota(FALTA_MIGRACION, 409);
-  const motivoRechazo = datos.motivoRechazo?.trim() || "";
-  if (!datos.aprobar && motivoRechazo.length < 5) {
-    throw new ErrorNota("Escribe por qué se rechaza, para que RMA sepa qué hacer.");
-  }
-
-  const r = await query(`SELECT * FROM rma_notas_credito WHERE id = ?`, [datos.id]);
-  const nota = (r.rows as any[])[0];
-  if (!nota) throw new ErrorNota("Solicitud no encontrada", 404);
-
-  // `AND estado = 'pendiente'`: si dos personas deciden a la vez, gana la
-  // primera y la otra recibe el aviso de abajo.
-  const upd = await query(
-    `UPDATE rma_notas_credito
-        SET estado = ?, decidido_por = ?, decidido_at = NOW(), motivo_rechazo = ?
-      WHERE id = ? AND estado = 'pendiente'`,
-    [datos.aprobar ? "aprobada" : "rechazada", datos.opciones.autor, datos.aprobar ? null : motivoRechazo.slice(0, 5000), nota.id],
-  );
-  if (!Number((upd.rows as any).affectedRows)) {
-    throw new ErrorNota("Esta solicitud ya fue decidida.", 409);
-  }
-
-  const c = await query(`SELECT id, status, model, hardware FROM rma_cases WHERE id = ?`, [nota.case_id]);
-  const caso = (c.rows as any[])[0];
-  if (!caso) return;
-  const productos = await leerProductos(caso.id);
-  const producto =
-    (nota.item_id ? productos.find((p) => p.id === Number(nota.item_id)) : null) ??
-    (productos.length === 1 ? productos[0] : null);
-
-  // Solo se mueve si sigue esperando la decisión (no se tocó por otro lado).
-  const estado = producto && productos.length > 1 ? producto.status : caso.status;
-  if (estado !== "nc_revision") return;
-
-  const nuevo: EstadoProducto = datos.aprobar ? "nota_credito" : "recibido";
-  const { anterior, terminoReparado } = await moverEstado(
-    caso.id,
-    caso.status,
-    productos,
-    producto,
-    nuevo,
-    datos.aprobar ? "Nota de crédito aprobada por el Super Admin" : `Nota de crédito rechazada: ${motivoRechazo}`.slice(0, 1000),
-    datos.opciones,
-  );
-
-  // Al cliente solo le llega la aprobación: el rechazo es interno, su equipo
-  // sigue en revisión como antes.
-  if (datos.aprobar && !terminoReparado) {
-    enviarCorreoActualizacion(
-      caso.id,
-      {
-        producto: nombreProducto(producto ?? caso),
-        estado_anterior: anterior,
-        estado_nuevo: nuevo,
-        tipo: "estado",
-      },
-      datos.opciones.origenPeticion,
-    );
-  }
 }
 
 /** Una solicitud con su caso y producto, o null. */
