@@ -57,6 +57,7 @@ export const rolePermissions: RolePermissions = {
       "inventory", // Stock publicitario
       "audit",
       "auditoria_panel", // Auditoría de acciones
+      "auditoria_nc", // Auditoría de notas de crédito, facturas anuladas y reabiertas
       "brand_management", // Gestión de marcas
       "marketing_management", // Gestión de marketing
       "marketing", // Marketing operativo

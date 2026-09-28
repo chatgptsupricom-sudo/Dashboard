@@ -13,7 +13,8 @@ function valorCelda(v: string | number | null | undefined, tipo?: string) {
   return String(v);
 }
 
-function Control({ c }: { c: AuditoriaSede["controles"][number] }) {
+/** Tarjeta de un control de auditoría (la usa también la auditoría de NC). */
+export function Control({ c }: { c: AuditoriaSede["controles"][number] }) {
   const [abierto, setAbierto] = useState(c.estado === "error");
   const ui = CONTROL_UI[c.estado];
   const tieneTabla = !!c.columnas?.length && !!c.filas?.length;

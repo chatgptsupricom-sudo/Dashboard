@@ -207,6 +207,7 @@
     "auditoria": "Audit",
     "auditoria_odoo": "Odoo Audit",
     "auditoria_panel": "Panel Audit",
+    "auditoria_nc": "Credit Notes & Voids",
     "por_vendedor": "By Seller",
     "por_cliente": "By Client",
     "cerrar_sesion": "Sign Out",

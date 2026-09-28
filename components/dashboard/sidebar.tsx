@@ -389,7 +389,8 @@ export function Sidebar({
   const hasAdminLeadsPermission = allowedSections.includes("adminleads"); // Controla si se ve el menú "Leads"
   const hasAuditPermission =
     allowedSections.includes("audit") ||
-    allowedSections.includes("auditoria_panel");
+    allowedSections.includes("auditoria_panel") ||
+    allowedSections.includes("auditoria_nc");
   const hasComprasPermission =
     allowedSections.includes("compras") ||
     allowedSections.includes("sugeridos") ||
@@ -738,6 +739,11 @@ export function Sidebar({
                           label: t("auditoria_panel"),
                           href: `${basePath}/auditoria_panel`,
                           permission: "auditoria_panel",
+                        },
+                        {
+                          label: t("auditoria_nc"),
+                          href: `${basePath}/auditoria-nc`,
+                          permission: "auditoria_nc",
                         },
                       ].map((subItem, index) => {
                         if (!allowedSections.includes(subItem.permission))
