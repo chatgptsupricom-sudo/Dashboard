@@ -12,6 +12,9 @@ type TicketData = {
   product_name: string;
   product_code: string;
   invoice_number: string;
+  // Equipo que no se compró en Supricom (sin factura ni garantía). Falta en
+  // respuestas de un servidor anterior a esta opción.
+  externo?: boolean;
   serial: string | null;
   client_phone_masked: string | null;
   created_at: string;
@@ -215,6 +218,9 @@ export default function ConsultarPage() {
                 className="pt-input font-mono"
                 autoComplete="off"
               />
+              {/* Un equipo externo no tiene factura: se consulta con el
+                  documento con el que se reportó (mismo campo). */}
+              <p className="pt-hint">{t("externo.consultarHelp")}</p>
             </div>
             {error && (
               <p className="pt-error mt-4">{error}</p>
@@ -325,6 +331,12 @@ export default function ConsultarPage() {
                     <dd className="font-mono">{ticket.invoice_number}</dd>
                   </div>
                 )}
+                {ticket.externo && (
+                  <div className="pt-summary__row">
+                    <dt>{t("externo.consultarTipo")}</dt>
+                    <dd>{t("externo.consultarTipoValor")}</dd>
+                  </div>
+                )}
                 {(ticket.productos?.length ?? 0) <= 1 && ticket.serial && (
                   <div className="pt-summary__row">
                     <dt>Serial</dt>
@@ -411,7 +423,7 @@ export default function ConsultarPage() {
                 {t("consultar_link_volver")}
               </Link>
               <Link
-                href={`/${locale}/servicio-tecnico/${sucursal}/nuevo`}
+                href={`/${locale}/servicio-tecnico/${sucursal}/${ticket.externo ? "externo" : "nuevo"}`}
                 className="pt-cta"
                 style={{ flex: 1 }}
               >

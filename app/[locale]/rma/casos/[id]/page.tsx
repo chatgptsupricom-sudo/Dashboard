@@ -309,6 +309,10 @@ export default function RmaCasoDetailPage() {
     );
   }
 
+  // Equipo que no se compró en Supricom (portal, sin factura): sin garantía
+  // nuestra y sin nota de crédito posible; el servicio se presupuesta.
+  const esExterno = Number(caseData.producto_externo) === 1;
+
   return (
     <div className="p-4 sm:p-8 space-y-6 bg-slate-50/30 min-h-screen max-w-5xl mx-auto">
       {/* Header */}
@@ -327,6 +331,11 @@ export default function RmaCasoDetailPage() {
                 {caseData.origen === "portal" && (
                   <Badge className="bg-violet-100 text-violet-700 border-violet-200 text-[11px]">
                     {t("badge_portal")}
+                  </Badge>
+                )}
+                {esExterno && (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[11px]">
+                    {t("badge_externo")}
                   </Badge>
                 )}
                 {NOMBRES_SUCURSAL[caseData.company_id] && (
@@ -366,7 +375,11 @@ export default function RmaCasoDetailPage() {
                   <div>
                     <Label className="mb-2 block">{t("new_status")}</Label>
                     <div className="flex flex-wrap gap-2">
-                      {Object.entries(statusLabels).filter(([key]) => key !== caseData.status).map(([key, label]) => (
+                      {Object.entries(statusLabels)
+                        .filter(([key]) => key !== caseData.status)
+                        // Un equipo que Supricom no vendió no tiene nada que acreditar.
+                        .filter(([key]) => !(esExterno && key === "nota_credito"))
+                        .map(([key, label]) => (
                         <Button
                           key={key}
                           variant={newStatus === key ? "default" : "outline"}
@@ -714,6 +727,21 @@ export default function RmaCasoDetailPage() {
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_contact_phone")}</Label>
                   <p className="text-sm text-slate-700 mt-1">{caseData.client_phone || "—"}</p>
                 </div>
+                {esExterno && (
+                  <>
+                    <div>
+                      <Label className="text-xs font-medium text-slate-400 uppercase">{t("externo_documento")}</Label>
+                      <p className="text-sm text-slate-700 mt-1 font-mono">{caseData.client_document || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium text-slate-400 uppercase">{t("externo_email")}</Label>
+                      <p className="text-sm text-slate-700 mt-1 break-all">{caseData.contacto_email || "—"}</p>
+                    </div>
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      {t("externo_aviso")}
+                    </p>
+                  </>
+                )}
                 {/* Garantía CONGELADA del momento del reporte, no recalculada
                     al abrir esta pantalla. Si el técnico ve un número distinto
                     al que vio el cliente, no hay conversación posible. */}
@@ -747,7 +775,7 @@ export default function RmaCasoDetailPage() {
                       {String(caseData.garantia_vence).slice(0, 10)}
                     </p>
                   )}
-                  {(!caseData.garantia_estado ||
+                  {!esExterno && (!caseData.garantia_estado ||
                     caseData.garantia_estado === "indeterminada") && (
                     <p className="mt-1 text-xs text-amber-700">
                       {t("portal_warranty_todo")}

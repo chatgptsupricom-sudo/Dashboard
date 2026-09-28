@@ -73,7 +73,10 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
     return;
   }
 
-  const email = await resolverEmailCliente(caso.odoo_partner_id);
+  // Un equipo externo (no comprado en Supricom) no tiene cliente en Odoo: se
+  // usa el correo que el cliente escribió en el portal.
+  const email =
+    (await resolverEmailCliente(caso.odoo_partner_id)) || (await emailDeContacto(caso.id));
   if (!email) {
     console.warn(`[rma/emailReparado] caso ${caso.case_number}: sin email de cliente en Odoo, se omite el correo`);
     return;
@@ -106,6 +109,22 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
       },
     }),
   });
+}
+
+/**
+ * El correo que el cliente escribió al reportar un equipo externo
+ * (`contacto_email`). `SELECT *` porque la columna solo existe después del
+ * primer reporte externo o de la migración. null si no hay.
+ */
+export async function emailDeContacto(caseId: number): Promise<string | null> {
+  try {
+    const r = await query(`SELECT * FROM rma_cases WHERE id = ?`, [caseId]);
+    const email = (r.rows as any[])[0]?.contacto_email;
+    return email ? String(email).trim() : null;
+  } catch (e: any) {
+    console.error(`[rma/emailReparado] caso ${caseId}: no se pudo leer contacto_email:`, e?.message);
+    return null;
+  }
 }
 
 /** Email real (sin enmascarar) del partner en Odoo -- solo para uso interno/envio, nunca para exponer en una API publica. */

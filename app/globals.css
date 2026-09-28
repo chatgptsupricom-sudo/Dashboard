@@ -394,6 +394,12 @@
 .pt-secondary:hover svg {
   transform: translateX(2px);
 }
+/* Servicio para equipos que no se compraron en Supricom: debajo de
+   "consultar", con el morado de reportar porque también abre un reporte. */
+.pt-secondary--otro {
+  margin-top: 0.85rem;
+  color: var(--portal-primary);
+}
 
 .pt-help {
   margin-top: 2.75rem;
