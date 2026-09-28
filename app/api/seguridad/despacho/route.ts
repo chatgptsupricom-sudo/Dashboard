@@ -2,7 +2,13 @@ import { query } from "@/lib/db";
 import { filtroDespachos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { marcarProductosDespachados } from "@/lib/rma/items";
+import { hayTablaProductos, marcarProductosDespachados, sincronizarEnvio } from "@/lib/rma/items";
+import { getPublicOrigin } from "@/lib/publicOrigin";
+import {
+  guardarProductosDespacho,
+  productosParaDespacho,
+  type ProductoDespacho,
+} from "@/lib/seguridad/productosEnvio";
 
 
 
@@ -216,6 +222,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Devolución total o parcial de un envío (issue #331). Sin `item_ids`,
+    // salen todos los productos que siguen en el taller; con ellos, esos.
+    let salen: { filas: ProductoDespacho[]; ids: number[] } | null = null;
+    if (errors.length === 0 && rmaCaseId !== null && (await hayTablaProductos())) {
+      let itemIds: number[] | null = null;
+      if (body.item_ids !== undefined && body.item_ids !== null) {
+        if (!Array.isArray(body.item_ids)) errors.push("item_ids debe ser un array");
+        else itemIds = body.item_ids.map((x: unknown) => parseInt(String(x), 10)).filter((n: number) => n > 0);
+      }
+      if (errors.length === 0) {
+        const sel = await productosParaDespacho(rmaCaseId, itemIds, ingresoId);
+        if ("error" in sel) errors.push(sel.error);
+        else salen = sel;
+      }
+    }
+
     if (errors.length > 0) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
@@ -258,12 +280,22 @@ export async function POST(request: NextRequest) {
     // se puede perder por no haber podido anotar la fecha en el ticket.
     if (rmaCaseId !== null) {
       try {
-        await query(
-          `UPDATE rma_cases SET despachado_at = ?
-           WHERE id = ? AND despachado_at IS NULL`,
-          [fechaDespacho, rmaCaseId],
-        );
-        await marcarProductosDespachados(rmaCaseId, fechaDespacho);
+        if (salen) {
+          // Por producto: salen los elegidos, y el caso queda entregado
+          // cuando sale el último (sincronizarEnvio).
+          await guardarProductosDespacho(insertId, salen.filas);
+          await marcarProductosDespachados(rmaCaseId, fechaDespacho, salen.ids);
+          await sincronizarEnvio(rmaCaseId, {
+            changedBy: almacenistaNombre || "Seguridad",
+            origenPeticion: getPublicOrigin(request),
+          });
+        } else {
+          await query(
+            `UPDATE rma_cases SET despachado_at = ?
+             WHERE id = ? AND despachado_at IS NULL`,
+            [fechaDespacho, rmaCaseId],
+          );
+        }
       } catch (e: any) {
         console.warn(
           `[despacho ${insertId}] no se pudo marcar despachado_at en rma_cases ${rmaCaseId}:`,

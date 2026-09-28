@@ -3,6 +3,7 @@ import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { fechaLarga } from "@/lib/fecha";
 import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
+import { leerProductosIngreso, tablaProductosHtml } from "@/lib/seguridad/productosEnvio";
 
 /**
  * Comprobante imprimible del acta de RECEPCION.
@@ -166,6 +167,9 @@ export async function GET(
     })
     .join("");
 
+  // Productos del envío revisados en el mostrador (issue #331).
+  const productos = await leerProductosIngreso(Number(i.id)).catch(() => []);
+
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -246,6 +250,7 @@ export async function GET(
   .ok { color: #067647; font-weight: 700; }
   .no { color: #b42318; font-weight: 700; }
   .falla { min-height: 60px; }
+  .productos th { width: auto; }
   .signatures {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -297,6 +302,7 @@ export async function GET(
       <tr><th>Hardware</th><td>${esc(i.hardware) || "&mdash;"}</td></tr>
       <tr><th>N&uacute;mero de serie o c&oacute;digo</th><td>${esc(i.serial) || "&mdash;"}</td></tr>
     </table>
+    ${productos.length ? `<h2>Productos del env&iacute;o (${productos.length})</h2>${tablaProductosHtml(productos, esc, true)}` : ""}
 
     <h2>Descripci&oacute;n de la falla</h2>
     <table><tr><td class="falla">${esc(i.descripcion_falla) || "&mdash;"}</td></tr></table>

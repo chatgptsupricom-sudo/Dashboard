@@ -2816,6 +2816,24 @@
         "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",
         "catalogo_vacio_unidad": "Todavía no hay unidades cargadas en esta sucursal."
       }
+    },
+    "productos_envio": {
+      "titulo": "Productos del envío ({n})",
+      "ayuda": "Marca uno por uno si llegó y confirma el serial de la etiqueta. Lo que no llegó queda registrado en el acta.",
+      "llego": "Llegó",
+      "no_llego": "No llegó",
+      "no_llego_etiqueta": "No llegó al mostrador",
+      "serial_etiqueta": "Serial en la etiqueta",
+      "esperado": "esperado",
+      "serial_distinto": "El serial no coincide con el del reporte. Revísalo antes de guardar.",
+      "observacion": "Observación",
+      "error_sin_responder": "Falta indicar si llegó cada producto del envío.",
+      "error_ninguno": "No se marcó ningún producto como recibido.",
+      "salen_titulo": "Productos que salen",
+      "salen_ayuda": "Marca los que se entregan en este despacho. Los demás siguen pendientes hasta el próximo.",
+      "error_salen": "Elige al menos un producto que salga en este despacho.",
+      "ya_salio": "Ya salió el {fecha}",
+      "salieron_titulo": "Productos que salieron ({n})"
     }
   },
   "recepcion": {
