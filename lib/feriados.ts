@@ -1,5 +1,8 @@
 // Dias festivos de Venezuela por año (Caracas / Valencia)
 // Fuente: Gaceta Oficial de Venezuela
+// Carnaval (lunes y martes antes del Miércoles de Ceniza) y Semana Santa
+// dependen de la Pascua: 2025 y 2026 tenían el Carnaval en fechas erradas
+// (17-18 feb 2025 y 9-10 feb 2026) y se corrigieron el 2026-09-28.
 // Nota: Vacaciones colectivas (ej: 23 DIC - 4 ENE) NO se incluyen aquí,
 //       solo feriados oficiales. Sábados y domingos NO se laboran.
 
@@ -22,8 +25,8 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
   ],
   2025: [
     "2025-01-01", // Año Nuevo
-    "2025-02-17", // Carnaval
-    "2025-02-18", // Carnaval
+    "2025-03-03", // Carnaval
+    "2025-03-04", // Carnaval
     "2025-04-17", // Jueves Santo
     "2025-04-18", // Viernes Santo
     "2025-04-19", // Declaración de Independencia
@@ -38,8 +41,8 @@ export const FERIADOS_VENEZUELA: Record<number, string[]> = {
   ],
   2026: [
     "2026-01-01", // Año Nuevo
-    "2026-02-09", // Carnaval
-    "2026-02-10", // Carnaval
+    "2026-02-16", // Carnaval
+    "2026-02-17", // Carnaval
     "2026-04-02", // Jueves Santo
     "2026-04-03", // Viernes Santo
     "2026-04-19", // Declaración de Independencia
