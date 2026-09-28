@@ -13,9 +13,17 @@ import {
   respuesta429,
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
+import { limpiarNumero } from "@/lib/servicio-tecnico/documento";
 import { crearProductos, productosPublicos } from "@/lib/rma/items";
+import {
+  MAX_REINTENTOS,
+  asegurarColumnasPortal,
+  enlazarAdjuntos,
+  esChoqueReintentable,
+  generarTrackingToken,
+  siguienteNumeroCaso,
+} from "@/lib/servicio-tecnico/casos";
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +34,7 @@ export const dynamic = "force-dynamic";
 //   1. NO confiamos en nada que mande el cliente sobre el producto o el cliente.
 //      Re-resolvemos en el servidor contra Odoo con el numero de factura.
 //   2. Validamos que el serial/producto realmente pertenezca a esa factura.
-//   3. case_number: MAX_RETRIES con backoff para evitar condicion de carrera.
+//   3. case_number: MAX_REINTENTOS con backoff para evitar condicion de carrera.
 //   4. tracking_token: 32 bytes random (no uuid v4: queremos mas entropia).
 //   5. tracking_token: UNIQUE en la tabla, asi si hay colision reintentamos.
 //
@@ -43,42 +51,6 @@ export const dynamic = "force-dynamic";
 //                                 OPCIONAL — para enlazar adjuntos ya subidos)
 //   }
 
-const MAX_RETRIES = 5;
-
-// Genera el siguiente case_number consultando el maximo actual.
-// Si dos requests obtienen el mismo numero, el INSERT va a fallar por UNIQUE
-// y reintentamos. Esto es preferible a un lock de tabla porque el portal
-// publico va a tener picos de carga impredecibles.
-async function nextCaseNumber(conn: any): Promise<string> {
-  // conn.execute() devuelve [filas, campos]. Ojo: NO tiene .rows — eso lo pone
-  // el wrapper `query()` de lib/db.ts, que sí desestructura. Leyendo .rows
-  // sobre la conexión cruda sale siempre undefined.
-  const [filas] = (await conn.execute(
-    `SELECT case_number FROM rma_cases ORDER BY id DESC LIMIT 1`
-  )) as [any[], any];
-
-  let nextNum = 1;
-  if (filas.length > 0) {
-    const lastNum = parseInt(filas[0].case_number, 10);
-    if (!Number.isFinite(lastNum)) {
-      // Si el case_number no es numerico (caso legacy), seguimos con count().
-      const [conteo] = (await conn.execute(
-        `SELECT COUNT(*) AS total FROM rma_cases`
-      )) as [any[], any];
-      nextNum = (conteo?.[0]?.total || 0) + 1;
-    } else {
-      nextNum = lastNum + 1;
-    }
-  }
-  return String(nextNum).padStart(4, "0");
-}
-
-// Genera un token de seguimiento: 32 bytes random en hex.
-// crypto.randomBytes es cryptographically secure.
-function generateTrackingToken(): string {
-  return randomBytes(32).toString("hex");
-}
-
 // La resolución contra Odoo vive en lib/servicio-tecnico/factura.ts, que es
 // la misma que usa GET /api/servicio-tecnico/factura (issue #19). Es
 // deliberado que sea una sola: si el formulario ofrece un item y este POST lo
@@ -89,52 +61,6 @@ function generateTrackingToken(): string {
 // stock.move en estado done), y la factura INV/2026/06384 de Panamá tiene 3
 // productos en esa situación. El cliente los veía en el formulario y acá se
 // llevaba un 400.
-
-// Asegura que las columnas del portal existan (idempotente).
-// Asi el portal funciona aunque no se haya corrido el ALTER manualmente.
-async function ensurePortalColumns(conn: any) {
-  const alters = [
-    // client_phone NO es una columna del portal: está en sql/rma_cases.sql
-    // desde el principio y el módulo RMA interno también inserta en ella. Pero
-    // faltaba en la base del entorno de prueba, así que el schema del repo y el
-    // real habían divergido. Se incluye acá para que cualquier entorno con esa
-    // misma laguna se arregle solo — si falta, no se puede guardar el teléfono
-    // de contacto, que es la mitad del sentido de un reporte.
-    `ALTER TABLE rma_cases ADD COLUMN client_phone VARCHAR(50) DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN origen ENUM('interno','portal') DEFAULT 'interno'`,
-    `ALTER TABLE rma_cases ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN odoo_partner_id INT DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN odoo_product_id INT DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN serial VARCHAR(100) DEFAULT NULL`,
-    // Garantía congelada al momento del reporte (issue #29).
-    `ALTER TABLE rma_cases ADD COLUMN garantia_estado VARCHAR(20) DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN garantia_meses INT DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN garantia_vence DATE DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD COLUMN garantia_marca VARCHAR(100) DEFAULT NULL`,
-    `ALTER TABLE rma_cases ADD INDEX idx_origen (origen)`,
-  ];
-  for (const sql of alters) {
-    try {
-      await conn.execute(sql);
-    } catch (e: any) {
-      if (!e.message?.includes("Duplicate") && !e.message?.includes("exists")) {
-        console.error("[portal-ticket] ensurePortalColumns:", e.message);
-      }
-    }
-  }
-  try {
-    await conn.execute(
-      `ALTER TABLE rma_cases ADD UNIQUE INDEX uk_tracking_token (tracking_token)`,
-    );
-  } catch (e: any) {
-    // Duplicate index o duplicate entry, ignorar.
-    if (!e.message?.includes("Duplicate") && !e.message?.includes("exists")) {
-      // Si falla por "Duplicate entry", significa que ya hay duplicados
-      // y debemos limpiar primero. Pero en un deploy limpio esto no pasa.
-      console.error("[portal-ticket] uk_tracking_token:", e.message);
-    }
-  }
-}
 
 /** Lo que el cliente manda de cada producto del envío. */
 type PedidoProducto = {
@@ -436,7 +362,7 @@ export async function POST(request: NextRequest) {
 
     // Paso 3: abrir conexion y asegurar schema.
     conn = await getConnection();
-    await ensurePortalColumns(conn);
+    await asegurarColumnasPortal(conn);
 
     // Paso 4: intentar INSERT con reintentos (race condition del case_number).
     let caseId: number | null = null;
@@ -444,11 +370,11 @@ export async function POST(request: NextRequest) {
     let trackingToken: string | null = null;
     let lastError: any = null;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= MAX_REINTENTOS; attempt++) {
       try {
         // Generar case_number y tracking_token frescos en cada intento.
-        caseNumber = await nextCaseNumber(conn);
-        trackingToken = generateTrackingToken();
+        caseNumber = await siguienteNumeroCaso(conn);
+        trackingToken = generarTrackingToken();
 
         // created_by: nombre del cliente + "(portal)". Asi el tecnico ve de un
         // vistazo quien lo creo. El campo es NOT NULL y VARCHAR(200), asi que
@@ -542,32 +468,19 @@ export async function POST(request: NextRequest) {
         );
 
         // Enlazar los adjuntos que ya se subieron con el token temporal de
-        // cada producto, y pasarlos al token definitivo del ticket (que es con
-        // el que después se sirven). Cada foto queda con su producto; sin la
-        // migración (no hay ids), solo con el caso.
-        for (const [i, e] of elegidos.entries()) {
-          const itemId = idsProductos.length === elegidos.length ? idsProductos[i] : null;
-          await conn.execute(
-            itemId
-              ? `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?, item_id = ?
-                  WHERE tracking_token = ? AND ticket_id IS NULL`
-              : `UPDATE rma_ticket_adjuntos SET ticket_id = ?, tracking_token = ?
-                  WHERE tracking_token = ? AND ticket_id IS NULL`,
-            itemId
-              ? [caseId, trackingToken, itemId, e.pedido.uploadToken]
-              : [caseId, trackingToken, e.pedido.uploadToken],
-          );
-        }
+        // cada producto.
+        await enlazarAdjuntos(
+          conn,
+          caseId,
+          trackingToken,
+          elegidos.map((e) => e.pedido.uploadToken),
+          idsProductos,
+        );
 
         break; // exito, salir del loop
       } catch (e: any) {
         lastError = e;
-        const msg = e.message || "";
-        const isDuplicate =
-          msg.includes("Duplicate entry") && msg.includes("case_number");
-        const isTokenDup =
-          msg.includes("Duplicate entry") && msg.includes("tracking_token");
-        if ((isDuplicate || isTokenDup) && attempt < MAX_RETRIES) {
+        if (esChoqueReintentable(e) && attempt < MAX_REINTENTOS) {
           // Backoff lineal corto (50, 100, 150 ms) — la mayoria de las veces
           // el segundo intento ya pasa.
           await new Promise((r) => setTimeout(r, attempt * 50));
@@ -676,7 +589,9 @@ export async function POST(request: NextRequest) {
 // Lookup manual para la pantalla de consulta (issue #23).
 // El case_number solo no alcanza: son secuenciales (0001, 0002...) y cualquiera
 // los itera. Por eso pedimos case_number + invoice_number (el segundo dato que
-// solo el cliente que reporto conoce).
+// solo el cliente que reporto conoce). En un equipo externo, que no tiene
+// factura, el segundo dato es el documento con el que se reportó (llega en el
+// mismo parámetro `factura`).
 //
 // Privacidad: mismo error generico para "no existe" y "dato de verificacion no
 // coincide" — sin esto se vuelve una forma de enumerar tickets existentes.
@@ -697,6 +612,20 @@ function fechaISO(valor: unknown): string | null {
 }
 
 const TICKET_NOT_FOUND = "No encontramos ese reporte";
+
+/**
+ * Si el documento que escribe el cliente en la consulta es el del reporte de
+ * su equipo externo. Se guarda compuesto (`V12345678`, `8123456`), así que se
+ * acepta tal cual o sin la letra del tipo: en la consulta no hay select de
+ * tipo, y el cliente escribe "12345678" o "V-12.345.678" indistintamente.
+ */
+function documentoDeConsultaCoincide(escrito: string, guardado: unknown): boolean {
+  const g = limpiarNumero(String(guardado || ""));
+  const e = limpiarNumero(escrito);
+  if (!g || e.length < 5) return false;
+  if (e === g) return true;
+  return /^[0-9]+$/.test(e) && g.replace(/^[A-Z]+/, "") === e;
+}
 
 function maskPhoneForResponse(phone: string | null): string | null {
   if (!phone) return null;
@@ -728,28 +657,42 @@ export async function GET(request: NextRequest) {
     // mantener una factura conocida fija y barrer los ~10.000 numero de caso
     // posibles hasta acertar — eso evade el limite por IP de arriba con solo
     // rotar de IP, pero no evade este, porque la factura que el atacante ya
-    // conoce no cambia entre intentos.
+    // conoce no cambia entre intentos. Normalizado: con un documento, "V-123"
+    // y "v123" son el mismo dato y no pueden valer como contadores distintos.
     const limiteFactura = limitar(
-      `ticket-consultar-factura:${factura}`,
+      `ticket-consultar-factura:${limpiarNumero(factura) || factura}`,
       { max: 15, ventanaSegundos: 3600 },
     );
     if (!limiteFactura.ok) return respuesta429(limiteFactura.esperaSegundos);
 
     // Solo tickets del portal. Los internos no son accesibles publicamente.
-    // Validamos case_number + invoice_number en una sola consulta para evitar
-    // race conditions / enumeration.
+    //
+    // `SELECT *` y no una lista de columnas: `producto_externo` y
+    // `client_document` las crea el primer reporte de un equipo externo (o la
+    // migración), y nombrarlas acá rompería la consulta de todos los clientes
+    // en una base que todavía no las tiene.
     const caseResult = await query(
-      `SELECT id, case_number, status, model, hardware, product_code, invoice_number,
-              serial, created_at, client_phone, despachado_at,
-              garantia_estado, garantia_meses, garantia_vence, garantia_marca
-       FROM rma_cases
-       WHERE case_number = ? AND invoice_number = ? AND origen = 'portal'
+      `SELECT * FROM rma_cases
+       WHERE case_number = ? AND origen = 'portal'
        LIMIT 1`,
-      [numero, factura],
+      [numero],
     );
 
     const rows = (caseResult as any).rows ?? caseResult;
-    const row = Array.isArray(rows) ? rows[0] : null;
+    const candidato = Array.isArray(rows) ? rows[0] : null;
+
+    // El segundo dato es la factura; en un equipo externo, que no tiene
+    // factura, el documento con el que se reportó. Mismo error para "no
+    // existe" y "no coincide".
+    const externo = Number(candidato?.producto_externo) === 1;
+    const coincide =
+      !!candidato &&
+      (externo
+        ? documentoDeConsultaCoincide(factura, candidato.client_document)
+        : // Como comparaba antes el WHERE de MySQL: sin distinguir
+          // mayúsculas ni espacios al final.
+          String(candidato.invoice_number || "").trim().toLowerCase() === factura.toLowerCase());
+    const row = coincide ? candidato : null;
 
     if (!row) {
       return NextResponse.json({ error: TICKET_NOT_FOUND }, { status: 404 });
@@ -759,9 +702,9 @@ export async function GET(request: NextRequest) {
     const historyResult = await query(
       `SELECT from_status, to_status, created_at
        FROM rma_history
-       WHERE case_id = (SELECT id FROM rma_cases WHERE case_number = ? AND invoice_number = ? LIMIT 1)
+       WHERE case_id = ?
        ORDER BY created_at ASC`,
-      [numero, factura],
+      [row.id],
     );
     const historyRows = (historyResult as any).rows ?? historyResult;
 
@@ -780,6 +723,8 @@ export async function GET(request: NextRequest) {
         product_name: row.model || row.hardware || "",
         product_code: row.product_code || "",
         invoice_number: row.invoice_number || "",
+        // Equipo que no se compró en Supricom: sin factura ni garantía.
+        externo,
         serial: row.serial || null,
         client_phone_masked: maskPhoneForResponse(row.client_phone),
         // La garantía es la CONGELADA del reporte, no una recalculada: si el

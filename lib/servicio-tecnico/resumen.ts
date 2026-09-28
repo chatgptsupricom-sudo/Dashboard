@@ -16,4 +16,6 @@ export type ResumenReporte = {
   telefono?: string;
   /** Los productos del envío (issue #331). */
   productos?: { nombre: string; serial: string }[];
+  /** Equipo que no se compró en Supricom: sin factura, servicio con costo. */
+  externo?: boolean;
 };

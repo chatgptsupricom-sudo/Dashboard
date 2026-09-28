@@ -52,11 +52,14 @@ const garantiaColores: Record<string, string> = {
   en_garantia: "bg-emerald-100 text-emerald-700 border-emerald-200",
   vida_util: "bg-violet-100 text-violet-700 border-violet-200",
   vencida: "bg-amber-100 text-amber-800 border-amber-200",
+  no_aplica: "bg-amber-100 text-amber-800 border-amber-200",
 };
 const garantiaTextos: Record<string, string> = {
   en_garantia: "En garantía",
   vida_util: "Vida útil",
   vencida: "Garantía vencida",
+  // Equipo que no se compró en Supricom (portal /externo).
+  no_aplica: "Sin garantía (equipo externo)",
 };
 
 export type ProductoEnvio = {
@@ -84,11 +87,13 @@ type Props = {
   adjuntos: any[];
   onCambio: () => void;
   soloAgregar?: boolean;
+  /** Equipo externo: Supricom no lo vendió, no hay nota de crédito posible. */
+  sinNotaCredito?: boolean;
 };
 
 const PRODUCTO_VACIO = { brand: "", model: "", product_code: "", hardware: "", serial: "", reported_fault: "" };
 
-export default function ProductosEnvio({ caseId, caseNumber, locale, items, adjuntos, onCambio, soloAgregar }: Props) {
+export default function ProductosEnvio({ caseId, caseNumber, locale, items, adjuntos, onCambio, soloAgregar, sinNotaCredito }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -398,6 +403,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
             <div className="flex flex-wrap gap-2">
               {Object.entries(statusLabels)
                 .filter(([k]) => k !== estadoDe?.status)
+                .filter(([k]) => !(sinNotaCredito && k === "nota_credito"))
                 .map(([k, label]) => (
                   <Button
                     key={k}

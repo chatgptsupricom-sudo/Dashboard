@@ -220,6 +220,11 @@ export default function RmaCasosPage() {
                               {t("badge_portal")}
                             </Badge>
                           )}
+                          {Number(c.producto_externo) === 1 && (
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200 border text-[11px]">
+                              {t("badge_externo")}
+                            </Badge>
+                          )}
                         </div>
                       </td>
                       <td className="p-4 text-slate-700">{c.client_name}</td>

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { emailDeContacto } from "@/lib/rma/emailReparado";
 import { nombreDelEnvio } from "@/lib/rma/items";
 
 /**
@@ -37,7 +38,11 @@ async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<voi
   // Preferir el email ya cacheado (lo dejo enviarCorreoReparado la primera
   // vez que el caso paso a "reparado") para no repetir la consulta a Odoo
   // en cada guia que se sube; si no esta, se resuelve igual que alla.
-  const email = caso.client_email || (await resolverEmailCliente(caso.odoo_partner_id));
+  const email =
+    caso.client_email ||
+    (await resolverEmailCliente(caso.odoo_partner_id)) ||
+    // Equipo externo: sin cliente en Odoo, el correo que escribió en el portal.
+    (await emailDeContacto(caso.id));
   if (!email) {
     console.warn(`[rma/emailEnviado] caso ${caso.case_number}: sin email de cliente, se omite el correo`);
     return;
