@@ -18,6 +18,7 @@ import {
   Search,
   UserRound,
   Landmark,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -568,6 +569,25 @@ export default function ContadoCreditoPage() {
 
           {/* Contado vs Credito + grafica de torta */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {esPorCobrar ? (
+              // En "Por cobrar" el contado no es un plazo más: debió cobrarse al
+              // facturar. Si queda saldo es una anomalía (pago sin aplicar o
+              // venta sin cobrar), así que se muestra como aviso para depurar.
+              <button
+                onClick={() => openClientes(`Contado sin cobrar`, data.contado.clientesDetalle, { tipo: "contado" })}
+                className="text-left bg-amber-50 border border-amber-300 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2 text-amber-800">
+                  <AlertTriangle size={18} />
+                  <p className="text-sm font-semibold">Contado sin cobrar</p>
+                </div>
+                <p className="text-3xl font-bold text-amber-800 mt-2">{formatCurrency(data.contado.monto)}</p>
+                <p className="text-xs text-amber-900 mt-2">
+                  Debió cobrarse al facturar. Revisar si el pago no está aplicado a la factura o si de verdad no se cobró.
+                </p>
+                <p className="text-xs text-amber-700 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
+              </button>
+            ) : (
             <button
               onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle, { tipo: "contado" })}
               className="text-left bg-white border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
@@ -580,6 +600,7 @@ export default function ContadoCreditoPage() {
               <p className="text-lg font-semibold text-slate-700 mt-1">{formatCurrency(data.contado.monto)}</p>
               <p className="text-xs text-slate-500 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
             </button>
+            )}
             <button
               onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle, { tipo: "credito" })}
               className="text-left bg-white border border-blue-200 bg-blue-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
