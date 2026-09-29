@@ -1,6 +1,6 @@
 import { randomInt } from "crypto";
 import { query } from "@/lib/db";
-import { SORTEO } from "./config";
+import type { ConfigSorteo } from "./config";
 import { datosSorteo } from "./participantes";
 
 /**
@@ -11,6 +11,10 @@ import { datosSorteo } from "./participantes";
  * un ganador en su pantalla y la lista es la misma para todos. Cada cliente
  * gana una sola vez: el giro sortea entre los clientes con tickets que
  * todavía no ganaron (los premios anulados vuelven a la ruleta).
+ *
+ * Los ganadores son de un sorteo = sede + mes (`company_id`, `mes`). Si en la
+ * configuración se cambia solo el monto por ticket, los premios ya sacados de
+ * esa sede y mes siguen valiendo.
  */
 
 export interface Ganador {
@@ -48,8 +52,11 @@ const aGanador = (r: any): Ganador => ({
  */
 const cache = new Map<string, { vence: number; valor: Promise<Ganador[]> }>();
 
-export function listarGanadores(mes: string): Promise<Ganador[]> {
-  const x = cache.get(mes);
+const llaveGanadores = (companyId: number, mes: string) => `${companyId}:${mes}`;
+
+export function listarGanadores(companyId: number, mes: string): Promise<Ganador[]> {
+  const llave = llaveGanadores(companyId, mes);
+  const x = cache.get(llave);
   if (x && x.vence > Date.now()) return x.valor;
   const valor = (async () => {
     // query() devuelve { rows }, no las filas: leerlo directo daba siempre []
@@ -59,13 +66,13 @@ export function listarGanadores(mes: string): Promise<Ganador[]> {
          FROM sorteo_ganadores
         WHERE company_id = ? AND mes = ? AND anulado = 0
         ORDER BY id ASC`,
-      [SORTEO.companyId, mes],
+      [companyId, mes],
     );
     return (Array.isArray(filas) ? filas : []).map(aGanador);
   })();
   const entrada = { vence: Date.now() + 2500, valor };
-  cache.set(mes, entrada);
-  valor.catch(() => { if (cache.get(mes) === entrada) cache.delete(mes); });
+  cache.set(llave, entrada);
+  valor.catch(() => { if (cache.get(llave) === entrada) cache.delete(llave); });
   return valor;
 }
 
@@ -78,10 +85,12 @@ function enCola<T>(fn: () => Promise<T>): Promise<T> {
   return r;
 }
 
-export function sortear(mes: string, quien: string): Promise<Ganador> {
+export function sortear(sorteo: Pick<ConfigSorteo, "companyId" | "mes" | "montoPorTicket">, quien: string): Promise<Ganador> {
+  const { companyId, mes } = sorteo;
+  const llave = llaveGanadores(companyId, mes);
   return enCola(async () => {
-    cache.delete(mes);
-    const [datos, previos] = await Promise.all([datosSorteo(mes), listarGanadores(mes)]);
+    cache.delete(llave);
+    const [datos, previos] = await Promise.all([datosSorteo(sorteo), listarGanadores(companyId, mes)]);
     const yaGanaron = new Set(previos.map((g) => g.partnerId));
     const pool = datos.clientes.filter((c) => c.tickets > 0 && !yaGanaron.has(c.id));
     const total = pool.reduce((s, c) => s + c.tickets, 0);
@@ -95,9 +104,9 @@ export function sortear(mes: string, quien: string): Promise<Ganador> {
       `INSERT INTO sorteo_ganadores
          (company_id, mes, partner_id, nombre, rif, compras, monto, tickets, ticket_sorteado, total_tickets, participantes, sorteado_por)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [SORTEO.companyId, mes, ganador.id, ganador.nombre, ganador.rif || null, ganador.compras, ganador.monto, ganador.tickets, ticket, total, pool.length, quien.slice(0, 200)],
+      [companyId, mes, ganador.id, ganador.nombre, ganador.rif || null, ganador.compras, ganador.monto, ganador.tickets, ticket, total, pool.length, quien.slice(0, 200)],
     );
-    cache.delete(mes);
+    cache.delete(llave);
     return {
       id: Number((r as any)?.insertId),
       partnerId: ganador.id,
@@ -113,12 +122,12 @@ export function sortear(mes: string, quien: string): Promise<Ganador> {
   });
 }
 
-/** Anula un premio (id) o todos los del mes. La fila queda, con anulado = 1. */
-export async function anular(mes: string, quien: string, id?: number) {
+/** Anula un premio (id) o todos los del sorteo. La fila queda, con anulado = 1. */
+export async function anular(companyId: number, mes: string, quien: string, id?: number) {
   await query(
     `UPDATE sorteo_ganadores SET anulado = 1, anulado_por = ?, anulado_at = NOW()
       WHERE company_id = ? AND mes = ? AND anulado = 0 ${id ? "AND id = ?" : ""}`,
-    id ? [quien.slice(0, 200), SORTEO.companyId, mes, id] : [quien.slice(0, 200), SORTEO.companyId, mes],
+    id ? [quien.slice(0, 200), companyId, mes, id] : [quien.slice(0, 200), companyId, mes],
   );
-  cache.delete(mes);
+  cache.delete(llaveGanadores(companyId, mes));
 }

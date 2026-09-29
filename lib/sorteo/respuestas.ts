@@ -3,9 +3,9 @@ import { OdooUnreachableError } from "@/lib/odoo";
 import { listarGanadores, SinParticipantesError, type Ganador } from "@/lib/sorteo/ganadores";
 
 /** Ganadores, o lista vacía + aviso si la tabla todavía no existe (falta correr sql/sorteo_ganadores.sql). */
-export async function ganadoresSeguros(mes: string): Promise<{ ganadores: Ganador[]; ganadoresError: string | null }> {
+export async function ganadoresSeguros(companyId: number, mes: string): Promise<{ ganadores: Ganador[]; ganadoresError: string | null }> {
   try {
-    return { ganadores: await listarGanadores(mes), ganadoresError: null };
+    return { ganadores: await listarGanadores(companyId, mes), ganadoresError: null };
   } catch (e: any) {
     console.error("Error leyendo sorteo_ganadores:", e?.message);
     return {
