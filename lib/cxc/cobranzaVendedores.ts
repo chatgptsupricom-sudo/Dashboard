@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { obtenerCobros } from "@/lib/cxc/cobros";
+import { obtenerCobros, type Cobro } from "@/lib/cxc/cobros";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 
 /**
@@ -62,8 +62,16 @@ async function paginar(model: string, domain: any[], fields: string[]): Promise<
   return out;
 }
 
-export async function cobranzaPorVendedor(companyId: number, desde: string, hasta: string): Promise<VendedorCobranza[]> {
-  const [facturas, cobros, cartera] = await Promise.all([
+const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+
+/**
+ * Lee las tres fuentes del período. Con `userId` las filtra en Odoo a ese
+ * vendedor (0 = sin vendedor): el estado de cuenta de uno sale de las mismas
+ * consultas que la fila de la tabla, así que sus totales cuadran.
+ */
+async function leerFuentes(companyId: number, desde: string, hasta: string, userId?: number) {
+  const uno = userId === undefined ? null : userId || false;
+  return Promise.all([
     paginar(
       "account.move",
       [
@@ -72,17 +80,33 @@ export async function cobranzaPorVendedor(companyId: number, desde: string, hast
         ["company_id", "=", companyId],
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
+        ...(uno === null ? [] : [["invoice_user_id", "=", uno]]),
       ],
-      ["id", "partner_id", "move_type", "amount_untaxed", "invoice_user_id"],
+      ["id", "name", "partner_id", "move_type", "invoice_date", "amount_untaxed", "amount_total", "amount_residual", "invoice_user_id"],
     ),
-    obtenerCobros([companyId], { desde, hasta }),
+    obtenerCobros([companyId], {
+      desde,
+      hasta,
+      ...(uno === null ? {} : { dominioFactura: [["invoice_user_id", "=", uno]] }),
+    }),
     paginar(
       "digiflex.cxc.report",
-      [["company_id", "=", companyId], ["amount_residual", "!=", 0]],
-      ["user_id", "user_name", "partner_id", "amount_residual", "days_overdue"],
+      [
+        ["company_id", "=", companyId],
+        ["amount_residual", "!=", 0],
+        ...(uno === null ? [] : [["user_id", "=", uno]]),
+      ],
+      ["user_id", "user_name", "partner_id", "amount_residual", "days_overdue", "document_number", "invoice_date", "date_maturity"],
     ),
   ]);
+}
 
+export async function cobranzaPorVendedor(companyId: number, desde: string, hasta: string): Promise<VendedorCobranza[]> {
+  const [facturas, cobros, cartera] = await leerFuentes(companyId, desde, hasta);
+  return agrupar(companyId, desde, facturas, cobros, cartera);
+}
+
+function agrupar(companyId: number, desde: string, facturas: any[], cobros: Cobro[], cartera: any[]): VendedorCobranza[] {
   const vendedores = new Map<number, VendedorCobranza>();
   const clientesDe = new Map<number, Map<number, ClienteCobranza>>();
   const vendedor = (userId: number, nombre: string) => {
@@ -155,4 +179,104 @@ export async function cobranzaPorVendedor(companyId: number, desde: string, hast
     }))
     .filter((v) => v.facturado !== 0 || v.cobrado !== 0 || v.porCobrar !== 0)
     .sort((a, b) => b.cobrado - a.cobrado || b.facturado - a.facturado);
+}
+
+export interface EstadoCuentaVendedor {
+  vendedor: VendedorCobranza;
+  sede: string;
+  desde: string;
+  hasta: string;
+  /** Cartera pendiente de hoy por antigüedad. Solo saldos a favor de la empresa. */
+  antiguedad: { banda: string; monto: number; documentos: number }[];
+  /** Notas de crédito y pagos sin aplicar (saldo negativo): restan del por cobrar. */
+  saldoAFavorCliente: number;
+  facturas: {
+    numero: string; fecha: string | null; cliente: string; tipo: "Factura" | "Nota de crédito";
+    sinIva: number; total: number; pendiente: number;
+  }[];
+  cobros: {
+    fecha: string; cliente: string; factura: string; fechaFactura: string | null;
+    diario: string; monto: number; deMesesAnteriores: boolean;
+  }[];
+  cartera: {
+    documento: string; cliente: string; fecha: string | null; vencimiento: string | null;
+    diasVencido: number; banda: string; saldo: number;
+  }[];
+}
+
+const BANDAS = ["Por vencer", "1-30 días", "31-60 días", "61-90 días", "Más de 90 días"];
+const bandaDe = (dias: number) =>
+  dias <= 0 ? BANDAS[0] : dias <= 30 ? BANDAS[1] : dias <= 60 ? BANDAS[2] : dias <= 90 ? BANDAS[3] : BANDAS[4];
+
+/**
+ * Estado de cuenta personal de un vendedor en el período: su resumen (las
+ * mismas cifras de su fila en Cobranza), sus facturas, sus cobros y su
+ * cartera pendiente de hoy, documento por documento. Para exportarlo y
+ * dárselo al vendedor.
+ */
+export async function estadoCuentaVendedor(
+  companyId: number, userId: number, desde: string, hasta: string,
+): Promise<EstadoCuentaVendedor | null> {
+  const [facturas, cobros, cartera] = await leerFuentes(companyId, desde, hasta, userId);
+  const vendedor = agrupar(companyId, desde, facturas, cobros, cartera).find((v) => v.userId === userId);
+  if (!vendedor) return null;
+
+  const externa = (nombre: string) => !esInternoPartner(nombre);
+  const docs = cartera
+    .filter((r) => externa(r.partner_id?.[1] || ""))
+    .map((r) => {
+      const dias = Number(r.days_overdue) || 0;
+      return {
+        documento: r.document_number || "",
+        cliente: r.partner_id?.[1] || "Sin cliente",
+        fecha: r.invoice_date || null,
+        vencimiento: r.date_maturity || null,
+        diasVencido: Math.max(0, dias),
+        banda: (Number(r.amount_residual) || 0) < 0 ? "Saldo a favor del cliente" : bandaDe(dias),
+        saldo: r2(Number(r.amount_residual) || 0),
+      };
+    })
+    .sort((a, b) => b.diasVencido - a.diasVencido || (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+
+  const antiguedad = BANDAS.map((banda) => {
+    const deBanda = docs.filter((d) => d.banda === banda);
+    return { banda, monto: r2(deBanda.reduce((s, d) => s + d.saldo, 0)), documentos: deBanda.length };
+  });
+
+  return {
+    vendedor,
+    sede: SEDES[companyId] || `Empresa ${companyId}`,
+    desde,
+    hasta,
+    antiguedad,
+    saldoAFavorCliente: r2(docs.filter((d) => d.saldo < 0).reduce((s, d) => s + d.saldo, 0)),
+    facturas: facturas
+      .filter((f) => f.partner_id && externa(f.partner_id[1] || ""))
+      .map((f) => {
+        const signo = f.move_type === "out_refund" ? -1 : 1;
+        return {
+          numero: f.name || "",
+          fecha: f.invoice_date || null,
+          cliente: f.partner_id[1] || "",
+          tipo: f.move_type === "out_refund" ? ("Nota de crédito" as const) : ("Factura" as const),
+          sinIva: r2(signo * (Number(f.amount_untaxed) || 0)),
+          total: r2(signo * (Number(f.amount_total) || 0)),
+          pendiente: r2(signo * (Number(f.amount_residual) || 0)),
+        };
+      })
+      .sort((a, b) => (a.fecha || "").localeCompare(b.fecha || "") || a.numero.localeCompare(b.numero)),
+    cobros: cobros
+      .filter((c) => !c.interno)
+      .map((c) => ({
+        fecha: c.fecha,
+        cliente: c.partnerName || "Sin cliente",
+        factura: c.facturaNombre,
+        fechaFactura: c.fechaFactura,
+        diario: c.journalName,
+        monto: r2(c.monto),
+        deMesesAnteriores: !!c.fechaFactura && c.fechaFactura < desde,
+      }))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.factura.localeCompare(b.factura)),
+    cartera: docs,
+  };
 }
