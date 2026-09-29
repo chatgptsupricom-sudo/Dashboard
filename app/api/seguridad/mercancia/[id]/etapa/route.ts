@@ -16,6 +16,7 @@ import {
   rechazoDeSeguridad,
   puedeHacer,
   requiereVehiculo,
+  verificaPorSerial,
   type Accion,
   type Aspecto,
   type DecisionSeguridad,
@@ -504,9 +505,9 @@ async function ejecutar(
         if (cambio) motivo = `${motivo} · ${cambio.motivo}`.slice(0, MAX.motivo);
       }
 
-      // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
-      // pistoleado se conserva; aprobado/despachado = 0 quedan como el
-      // resultado de esta ronda hasta la siguiente verificacion.
+      // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva que
+      // se cuenta desde cero (ver abajo); aprobado/despachado = 0 quedan como
+      // el resultado de esta ronda hasta la siguiente verificacion.
       // Cancelar: no sale; pasa a calificar con despachado = 0 y se cierra
       // como cualquier otro (antes de #301 era el unico "no despachar").
       // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
@@ -561,6 +562,27 @@ async function ejecutar(
             (faltaMigracion(e) ? ": falta correr sql/egreso_verificacion_c4.sql" : ""),
           e?.message || e,
         );
+      }
+
+      // Ronda nueva, conteo nuevo: los renglones sin serial vuelven a "sin
+      // contar" y sin "No salio". Sumarle la ronda 2 a la 1 daba sobras falsas
+      // (9 + 10 = 19) o dejaba sin revisar lo que ya se habia contado. Lo de
+      // esta ronda ya quedo en sus novedades de cierre. Los seriales
+      // pistoleados se conservan: son unidades identificadas, no un conteo.
+      if (devolver) {
+        const sinSerial = items.filter((i) => !verificaPorSerial(i, datos.seriales)).map((i) => Number(i.id));
+        if (sinSerial.length > 0) {
+          try {
+            await query(
+              `UPDATE seguridad_mercancia_items
+                  SET cantidad_verificada = NULL, no_salio = 0, observacion = NULL
+                WHERE mercancia_id = ? AND id IN (${sinSerial.map(() => "?").join(", ")})`,
+              [id, ...sinSerial],
+            );
+          } catch (e: any) {
+            console.error(`[egreso ${id}] no se reiniciaron los conteos de la ronda ${ronda}:`, e?.message || e);
+          }
+        }
       }
 
       if (!aprobado) {
