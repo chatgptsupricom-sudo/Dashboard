@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import type { Novedad } from "@/lib/seguridad/egresoFlujo";
+import { sqlEgresoOcupaOrden } from "@/lib/seguridad/mercancia";
 import { faltaMigracion } from "@/lib/seguridad/seriales";
 
 /**
@@ -241,6 +242,8 @@ export async function guardarNovedadesCierre(
  * Solo de la misma sucursal (lo de otra no se muestra, como en el resto del
  * modulo) y solo egresos abiertos: un serial de un egreso cerrado hace meses
  * es una unidad que se devolvio y se revendio, no una confusion de orden.
+ * Tampoco uno cancelado que espera su nota: la orden se vuelve a registrar
+ * con los mismos seriales, y no es "de otra orden".
  * `cids` null = egreso sin sucursal (filas viejas): no se busca en ninguna.
  */
 export async function serialDeOtroEgreso(
@@ -255,6 +258,7 @@ export async function serialDeOtroEgreso(
        JOIN seguridad_mercancia m ON m.id = s.mercancia_id
       WHERE s.serial = ? AND s.mercancia_id <> ?
         AND m.cids = ? AND m.etapa IS NOT NULL AND m.etapa <> 'cerrado'
+        AND ${sqlEgresoOcupaOrden("m")}
       ORDER BY s.id DESC LIMIT 1`,
     [serial, mercanciaId, cids],
   );

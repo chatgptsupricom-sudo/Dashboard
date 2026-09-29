@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
 import { leerNovedades } from "@/lib/seguridad/novedades";
@@ -92,6 +92,62 @@ export function agruparLineas<T extends LineaPicking>(lineas: T[]): T[] {
     }
   }
   return [...porClave.values()];
+}
+
+/**
+ * SQL de "este egreso todavia ocupa su orden de despacho". Uno que Seguridad
+ * cerro sin despachar (cancelado, o el "no se despacha" de antes de #301) ya
+ * no: el picking sigue Listo en Odoo y se tiene que poder registrar otra vez.
+ * Sin esto la orden quedaba fuera de pendientes y el POST la rechazaba como
+ * repetida para siempre.
+ *
+ * Por `despachado` y la etapa, no por `decision_seguridad`: vale sin
+ * sql/egreso_decision_seguridad.sql, y es la misma expresion de la clave
+ * unica de sql/egreso_picking_unico.sql. Devolver a Almacen no cuenta: vuelve
+ * a `por_asignar_despacho`, sigue en curso.
+ */
+export function sqlEgresoOcupaOrden(alias = ""): string {
+  const a = alias ? `${alias}.` : "";
+  return `NOT (COALESCE(${a}despachado, 1) = 0 AND COALESCE(${a}etapa, '') IN ('por_calificar', 'cerrado'))`;
+}
+
+/** Otra persona tiene tomado el egreso (ver `conEgresoBloqueado`). */
+export class EgresoOcupado extends Error {}
+
+/**
+ * Corre `fn` con el egreso tomado: el cierre de la verificacion de Seguridad
+ * y cada lectura de la pistola pasan por aca, uno a la vez por egreso.
+ *
+ * Sin esto, una lectura que llegaba entre que el cierre leia los conteos y
+ * cambiaba la etapa quedaba escrita en la base pero fuera del estado y de las
+ * novedades del cierre: se aprobaba "conforme" con un conteo distinto.
+ *
+ * Un GET_LOCK con nombre y no `SELECT ... FOR UPDATE` sobre la fila: lo de
+ * adentro escribe por el pool (otras conexiones), y con la fila bloqueada un
+ * INSERT con FK al egreso se quedaria esperando a su propio candado.
+ */
+export async function conEgresoBloqueado<T>(id: number, fn: () => Promise<T>): Promise<T> {
+  const conn = await getConnection();
+  const nombre = `supricom_egreso_${id}`;
+  let sano = true;
+  try {
+    const [r]: any = await conn.query("SELECT GET_LOCK(?, 15) AS ok", [nombre]);
+    if (Number(r?.[0]?.ok) !== 1) {
+      throw new EgresoOcupado("Otra persona está guardando en este egreso. Intenta de nuevo.");
+    }
+    try {
+      return await fn();
+    } finally {
+      // Si no se pudo soltar, la conexion no vuelve al pool: con el candado
+      // puesto, el siguiente que la usara lo heredaria.
+      await conn.query("SELECT RELEASE_LOCK(?)", [nombre]).catch(() => {
+        sano = false;
+      });
+    }
+  } finally {
+    if (sano) conn.release();
+    else conn.destroy();
+  }
 }
 
 /**
@@ -575,6 +631,7 @@ export async function listarPickingsEgresoPendientes(
     usados = await query(
       `SELECT odoo_picking_id FROM seguridad_mercancia
         WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+          AND ${sqlEgresoOcupaOrden()}
           ${cids !== null ? "AND cids = ?" : ""}`,
       cids !== null ? [cids] : [],
     );

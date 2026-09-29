@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { facturasDeVentas, type FacturaVenta } from "@/lib/seguridad/mercancia";
+import { facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutas } from "@/lib/rma/rutasEnvio";
 import { esMetodoRetiro, evaluarRutaGratis, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
@@ -264,7 +264,8 @@ export async function listarPedidosPendientes(opciones: {
     metodosDePedidos(saleIds),
     query(
       `SELECT odoo_picking_id FROM seguridad_mercancia
-        WHERE tipo = 'egreso' AND odoo_picking_id IN (${pickings.map(() => "?").join(",")})`,
+        WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
+          AND odoo_picking_id IN (${pickings.map(() => "?").join(",")})`,
       pickings.map((p) => p.id),
     ).catch(() => ({ rows: [] as any[] })),
     datosDePedidos(saleIds),
@@ -353,7 +354,9 @@ export async function guardarMetodoRetiro(datos: {
     (await callOdooRPC<any[]>("stock.picking", "search_read", [[["sale_id", "=", datos.saleId]]], { fields: ["id"], limit: 50 })) || [];
   if (pickings.length) {
     const r = await query(
-      `SELECT id FROM seguridad_mercancia WHERE tipo = 'egreso' AND odoo_picking_id IN (${pickings.map(() => "?").join(",")}) LIMIT 1`,
+      `SELECT id FROM seguridad_mercancia
+        WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
+          AND odoo_picking_id IN (${pickings.map(() => "?").join(",")}) LIMIT 1`,
       pickings.map((p) => p.id),
     ).catch(() => ({ rows: [] as any[] }));
     if ((r.rows as any[]).length) {

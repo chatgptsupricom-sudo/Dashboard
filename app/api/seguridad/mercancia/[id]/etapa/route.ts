@@ -22,7 +22,12 @@ import {
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { cargarMovimiento, motivoOrdenCambioEnOdoo } from "@/lib/seguridad/mercancia";
+import {
+  cargarMovimiento,
+  conEgresoBloqueado,
+  EgresoOcupado,
+  motivoOrdenCambioEnOdoo,
+} from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import {
   guardarNovedadesCierre,
@@ -104,23 +109,6 @@ export async function POST(
       );
     }
 
-    const datos = await cargarMovimiento(id);
-    // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
-    // que existe. Mismo criterio que el resto del modulo.
-    if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
-      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    }
-    const mov = datos.movimiento;
-    if (mov.tipo !== "egreso" || !mov.etapa) {
-      return NextResponse.json(
-        { error: "Este registro no sigue el flujo por etapas" },
-        { status: 409 },
-      );
-    }
-
-    const desde: Etapa = ETAPA_DE_ACCION[accion];
-    if (mov.etapa !== desde) return conflicto();
-
     // Quien firma cada paso sale de la sesion, no del body: el nombre que
     // queda registrado tiene que ser el de quien de verdad pulso el boton.
     const quien = String(auth.payload?.name || auth.payload?.email || rolSesion).slice(
@@ -128,7 +116,32 @@ export async function POST(
       MAX.nombre,
     );
 
-    const resultado = await ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    const correr = async (): Promise<Resultado | NextResponse> => {
+      const datos = await cargarMovimiento(id);
+      // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
+      // que existe. Mismo criterio que el resto del modulo.
+      if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
+        return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+      }
+      const mov = datos.movimiento;
+      if (mov.tipo !== "egreso" || !mov.etapa) {
+        return NextResponse.json(
+          { error: "Este registro no sigue el flujo por etapas" },
+          { status: 409 },
+        );
+      }
+
+      const desde: Etapa = ETAPA_DE_ACCION[accion];
+      if (mov.etapa !== desde) return conflicto();
+
+      return ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    };
+
+    // El cierre de Seguridad lee los conteos y cambia la etapa con el egreso
+    // tomado, igual que cada lectura de la pistola (.../escaneo): una lectura
+    // que llegue en el medio espera y despues ve que ya no esta por verificar.
+    const resultado =
+      accion === "verificar_seguridad" ? await conEgresoBloqueado(id, correr) : await correr();
     if (resultado instanceof NextResponse) return resultado;
 
     const actualizado = await cargarMovimiento(id);
@@ -159,6 +172,9 @@ export async function POST(
       ...actualizado,
     });
   } catch (error: any) {
+    if (error instanceof EgresoOcupado) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("Error moviendo egreso de etapa:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

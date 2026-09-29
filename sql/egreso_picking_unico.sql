@@ -7,10 +7,15 @@
 -- SELECT y salen dos egresos del mismo picking, que se arman y se despachan
 -- por separado. Con la clave, el segundo recibe "Esta orden ya se registro".
 --
--- Solo egresos: en los ingresos viejos `odoo_picking_id` es el id de la
--- factura de compra y no se toca. Por eso la clave es sobre una expresion
--- (IF(tipo = 'egreso', ...)) y no sobre la columna: los ingresos quedan en
--- NULL, y MySQL admite varias filas con NULL.
+-- Solo egresos que todavia ocupan la orden. La clave es sobre una expresion
+-- y no sobre la columna, que queda en NULL (MySQL admite varias filas con
+-- NULL) para:
+--  - los ingresos viejos: ahi `odoo_picking_id` es el id de la factura de
+--    compra;
+--  - los egresos que Seguridad cerro sin despachar (cancelados): el picking
+--    sigue Listo en Odoo y se tiene que poder registrar otra vez. Es la misma
+--    regla que `sqlEgresoOcupaOrden` en lib/seguridad/mercancia.ts; si cambia
+--    una, cambia la otra.
 --
 -- Hasta que se corra, el panel funciona igual que antes (la carrera queda
 -- posible).
@@ -32,6 +37,8 @@
 --          GROUP_CONCAT(COALESCE(etapa, estado) ORDER BY id) AS etapas
 --     FROM supricom_panel.seguridad_mercancia
 --    WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+--      AND NOT (COALESCE(despachado, 1) = 0
+--               AND COALESCE(etapa, '') IN ('por_calificar', 'cerrado'))
 --    GROUP BY odoo_picking_id, odoo_picking_name
 --   HAVING COUNT(*) > 1;
 -- Si devuelve filas, NO las borres a ciegas: cada una es un egreso con
@@ -40,7 +47,12 @@
 -- ============================================================
 
 ALTER TABLE supricom_panel.seguridad_mercancia
-  ADD UNIQUE INDEX uq_egreso_picking ((IF(tipo = 'egreso', odoo_picking_id, NULL)));
+  ADD UNIQUE INDEX uq_egreso_picking ((
+    IF(tipo = 'egreso'
+         AND NOT (COALESCE(despachado, 1) = 0
+                  AND COALESCE(etapa, '') IN ('por_calificar', 'cerrado')),
+       odoo_picking_id, NULL)
+  ));
 
 -- Comprobacion: tiene que devolver una fila.
 SHOW INDEX FROM supricom_panel.seguridad_mercancia WHERE Key_name = 'uq_egreso_picking';
