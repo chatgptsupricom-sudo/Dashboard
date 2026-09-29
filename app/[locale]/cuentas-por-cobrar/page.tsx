@@ -1178,6 +1178,7 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-amber-800">{kpiData.summary.overdueCount}</span>
                   </div>
                 </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
                   <div className="grid grid-cols-5 gap-2">
@@ -1316,6 +1317,7 @@ export default function CxcDashboardPage() {
                     <span className="text-[10px] text-slate-400 block">{kpiData.summary.recoveredCount}/{kpiData.summary.count} recuperadas</span>
                   </div>
                 </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>

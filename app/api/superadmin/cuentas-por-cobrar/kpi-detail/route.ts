@@ -1,6 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
-import { detalleCEI } from "@/lib/cxc/efectividad";
+import { detalleCEI, saldoRelacionada } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
@@ -82,6 +82,8 @@ export async function GET(request: NextRequest) {
       // Todas las facturas abiertas con saldo, agrupadas por aging band
       // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
       // modelo traen amount_residual NEGATIVO (verificado contra Odoo real).
+      // Solo informativo: si falla, el modal sigue sin el aviso.
+      const relacionadas = saldoRelacionada(companyIds).catch(() => 0);
       const reportData = await fetchPaginated(
         "digiflex.cxc.report",
         [["company_id", "in", companyIds], ["amount_residual", "!=", 0]],
@@ -139,6 +141,8 @@ export async function GET(request: NextRequest) {
         data: {
           type,
           summary: {
+            // SUPER TECHNO: fuera del cálculo, pero el modal muestra su saldo.
+            relacionadas: Math.round((await relacionadas) * 100) / 100,
             totalReceivable: Math.round(total * 100) / 100,
             totalOverdue: Math.round(overdue * 100) / 100,
             overduePct: total > 0 ? Math.round((overdue / total) * 10000) / 100 : 0,
@@ -158,7 +162,10 @@ export async function GET(request: NextRequest) {
       // propia versión de la fórmula.
       const monthStart = getMonthStart(currentYear, currentMonth);
       const monthEnd = new Date(currentYear, currentMonth + 1, 0);
-      const calc = await calcularRecuperacion(companyIds, monthStart, monthEnd);
+      const [calc, relacionadas] = await Promise.all([
+        calcularRecuperacion(companyIds, monthStart, monthEnd),
+        saldoRelacionada(companyIds).catch(() => 0),
+      ]);
 
       // Universo del KPI: facturas ya vencidas al iniciar el mes. Se listan las
       // que siguen con saldo (lo que queda por recuperar) y las que recibieron
@@ -233,6 +240,7 @@ export async function GET(request: NextRequest) {
         data: {
           type: "recuperacion",
           summary: {
+            relacionadas: Math.round(relacionadas * 100) / 100,
             // Nombres que usa el modal; los largos se mantienen por compatibilidad.
             vencidoInicial: calc.saldoVencidoInicial,
             recuperado: calc.recuperadoEnElMes,

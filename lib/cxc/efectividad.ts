@@ -237,6 +237,22 @@ export interface CEIResultado {
 
 const esSupricom = (nombre: string) => nombre.toLowerCase().includes("supricom");
 
+/** Saldo contable de hoy de la empresa relacionada (SUPER TECHNO): se muestra, no entra a los KPIs. */
+export async function saldoRelacionada(companyIds: number[]): Promise<number> {
+  const g = await callOdooRPC<any[]>(
+    "account.move.line",
+    "read_group",
+    [[
+      ["account_id.account_type", "=", "asset_receivable"],
+      ["parent_state", "=", "posted"],
+      ["company_id", "in", companyIds],
+      ["partner_id.commercial_partner_id.name", "ilike", RELACIONADA],
+    ], ["balance:sum"], []],
+    { lazy: false },
+  );
+  return Number(g?.[0]?.balance || 0);
+}
+
 async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string) {
   const out: any[] = [];
   for (let offset = 0; ; offset += 5000) {
@@ -345,18 +361,7 @@ export async function detalleCEI(
     pagosRegistrados(companyIds, desde, hasta),
     carteraCEI(antesDe(monthStart)),
     carteraCEI(corteFinal(monthEnd)),
-    // Saldo de hoy de la relacionada, solo para mostrarlo.
-    callOdooRPC<any[]>(
-      "account.move.line",
-      "read_group",
-      [[
-        ["account_id.account_type", "=", "asset_receivable"],
-        ["parent_state", "=", "posted"],
-        ["company_id", "in", companyIds],
-        ["partner_id.commercial_partner_id.name", "ilike", RELACIONADA],
-      ], ["balance:sum"], []],
-      { lazy: false },
-    ).then((g) => Number(g?.[0]?.balance || 0)),
+    saldoRelacionada(companyIds),
     Promise.all(semanas.map((s) =>
       s.inicio > hoy ? null : Promise.all([carteraCEI(antesDe(s.inicio)), carteraCEI(corteFinal(s.fin))]),
     )),
