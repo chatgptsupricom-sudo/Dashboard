@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS supricom_panel.ventas_metodo_retiro (
   nota VARCHAR(500) DEFAULT NULL,
   registrado_por VARCHAR(200) DEFAULT NULL,
   registrado_rol VARCHAR(50) DEFAULT NULL,
+  ruta_gratis TINYINT(1) DEFAULT NULL,
+  monto_base DECIMAL(14,2) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_vmr_sale (odoo_sale_id),
@@ -41,3 +43,14 @@ CREATE TABLE IF NOT EXISTS supricom_panel.ventas_metodo_retiro (
 
 -- Comprobacion: devuelve una fila.
 SHOW TABLES FROM supricom_panel LIKE 'ventas_metodo_retiro';
+
+-- RUTA GRATIS (si la tabla ya existia sin estas columnas). La app las agrega
+-- sola; a mano, primero mira que no esten:
+--   SHOW COLUMNS FROM supricom_panel.ventas_metodo_retiro LIKE 'ruta_gratis';
+-- y si no devuelve nada:
+--   ALTER TABLE supricom_panel.ventas_metodo_retiro
+--     ADD COLUMN ruta_gratis TINYINT(1) DEFAULT NULL,
+--     ADD COLUMN monto_base DECIMAL(14,2) DEFAULT NULL;
+--   ruta_gratis: 1 = gratis, 0 = flete a cargo del cliente, NULL = no aplica.
+--   Pedidos de Valencia: ruta Valencia gratis desde 300 $ sin IVA; el resto
+--   de las rutas, desde 1000 $ sin IVA.

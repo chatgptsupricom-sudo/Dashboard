@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { facturasDeVentas, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutas } from "@/lib/rma/rutasEnvio";
-import { esMetodoRetiro, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { esMetodoRetiro, rutaEsGratis, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 // Lo que no toca la base (tipos, etiquetas) vive en metodoRetiroTipos para
 // que lo puedan usar las pantallas; se reexporta para el servidor.
@@ -45,13 +45,26 @@ export function asegurarTablaMetodoRetiro(): Promise<void> {
          nota VARCHAR(500) DEFAULT NULL,
          registrado_por VARCHAR(200) DEFAULT NULL,
          registrado_rol VARCHAR(50) DEFAULT NULL,
+         ruta_gratis TINYINT(1) DEFAULT NULL,
+         monto_base DECIMAL(14,2) DEFAULT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
          UNIQUE KEY uq_vmr_sale (odoo_sale_id),
          INDEX idx_vmr_vendedor (vendedor_uid)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     )
-      .then(() => undefined)
+      // Columnas de la ruta gratis (sql/ventas_metodo_retiro.sql), para la
+      // tabla que se creó antes de tenerlas.
+      .then(async () => {
+        for (const sql of [
+          "ALTER TABLE ventas_metodo_retiro ADD COLUMN ruta_gratis TINYINT(1) DEFAULT NULL",
+          "ALTER TABLE ventas_metodo_retiro ADD COLUMN monto_base DECIMAL(14,2) DEFAULT NULL",
+        ]) {
+          await query(sql).catch((e: any) => {
+            if (!/Duplicate column/i.test(e?.message || "")) throw e;
+          });
+        }
+      })
       .catch((e) => {
         tabla = null;
         throw e;
@@ -67,7 +80,8 @@ export async function metodosDePedidos(saleIds: number[]): Promise<Map<number, F
   if (!ids.length) return porVenta;
   await asegurarTablaMetodoRetiro();
   const r = await query(
-    `SELECT odoo_sale_id, metodo, ruta_id, ruta_nombre, agencia, nota, registrado_por, updated_at
+    `SELECT odoo_sale_id, metodo, ruta_id, ruta_nombre, agencia, nota, registrado_por, updated_at,
+            ruta_gratis, monto_base
        FROM ventas_metodo_retiro WHERE odoo_sale_id IN (${ids.map(() => "?").join(",")})`,
     ids,
   );
@@ -83,6 +97,9 @@ export type PedidoPendiente = {
   vendedor: string;
   fecha: string | null;
   total: number;
+  /** Total sin IVA. */
+  base: number;
+  company_id: number | null;
   moneda: string;
   ordenes: { id: number; nombre: string; estado: string }[];
   facturas: FacturaVenta[];
@@ -118,7 +135,7 @@ export async function listarPedidosPendientes(opciones: {
   if (!saleIds.length) return [];
 
   const [ventas, facturas, metodos, usados] = await Promise.all([
-    callOdooRPC<any[]>("sale.order", "read", [saleIds, ["name", "partner_id", "user_id", "date_order", "amount_total", "currency_id"]]),
+    callOdooRPC<any[]>("sale.order", "read", [saleIds, ["name", "partner_id", "user_id", "date_order", "amount_total", "amount_untaxed", "currency_id", "company_id"]]),
     facturasDeVentas(saleIds),
     metodosDePedidos(saleIds),
     query(
@@ -139,6 +156,9 @@ export async function listarPedidosPendientes(opciones: {
       vendedor: v.user_id?.[1] || "",
       fecha: v.date_order || null,
       total: Number(v.amount_total) || 0,
+      // Sin IVA: con esto se decide si la ruta es gratis (metodoRetiroTipos).
+      base: Number(v.amount_untaxed) || 0,
+      company_id: v.company_id?.[0] ?? null,
       moneda: v.currency_id?.[1] || "",
       ordenes: [],
       facturas: facturas.get(v.id) || [],
@@ -187,7 +207,10 @@ export async function guardarMetodoRetiro(datos: {
   const metodo = datos.metodo;
 
   const [venta] =
-    (await callOdooRPC<any[]>("sale.order", "read", [[datos.saleId], ["name", "partner_id", "user_id", "company_id"]])) || [];
+    (await callOdooRPC<any[]>("sale.order", "read", [
+      [datos.saleId],
+      ["name", "partner_id", "user_id", "company_id", "amount_untaxed", "currency_id"],
+    ])) || [];
   // 404 y no 403 para un pedido ajeno: no confirmar que existe.
   if (
     !venta ||
@@ -224,13 +247,19 @@ export async function guardarMetodoRetiro(datos: {
     if (!agencia) throw new ErrorMetodo("Elige la agencia de la encomienda.");
   }
 
+  // Ruta gratis o con flete, según el monto sin IVA (solo Valencia).
+  const montoBase = Number(venta.amount_untaxed) || 0;
+  const rutaGratis =
+    metodo === "ruta" ? rutaEsGratis(venta.company_id?.[0], rutaNombre, montoBase, venta.currency_id?.[1]) : null;
+
   await asegurarTablaMetodoRetiro();
   await query(
     `INSERT INTO ventas_metodo_retiro
        (odoo_sale_id, pedido, company_id, cliente, vendedor_uid, vendedor_nombre, metodo, ruta_id, ruta_nombre,
-        agencia, nota, registrado_por, registrado_rol)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        agencia, nota, registrado_por, registrado_rol, ruta_gratis, monto_base)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE metodo = VALUES(metodo), ruta_id = VALUES(ruta_id), ruta_nombre = VALUES(ruta_nombre),
+       ruta_gratis = VALUES(ruta_gratis), monto_base = VALUES(monto_base),
        agencia = VALUES(agencia), nota = VALUES(nota), registrado_por = VALUES(registrado_por),
        registrado_rol = VALUES(registrado_rol), cliente = VALUES(cliente), pedido = VALUES(pedido)`,
     [
@@ -247,6 +276,8 @@ export async function guardarMetodoRetiro(datos: {
       (datos.nota || "").trim().slice(0, 500) || null,
       datos.autor.slice(0, 200),
       datos.rol.slice(0, 50),
+      rutaGratis,
+      montoBase,
     ],
   );
   return (await metodosDePedidos([datos.saleId])).get(datos.saleId)!;

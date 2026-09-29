@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { describirMetodo, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
+import { describirMetodo, minimoRutaGratis, rutaEsGratis, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
 import { CheckCircle2, Loader2, Lock, Package, Search, Store, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -17,6 +17,9 @@ type Pedido = {
   vendedor: string;
   fecha: string | null;
   total: number;
+  /** Total sin IVA: decide si la ruta es gratis. */
+  base: number;
+  company_id: number | null;
   moneda: string;
   ordenes: { id: number; nombre: string; estado: string }[];
   facturas: { numero: string; fecha: string | null }[];
@@ -28,6 +31,7 @@ type Opcion = { id: number; nombre: string };
 type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; nota: string };
 
 const ICONO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package };
+const usd = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function fecha(v: string | null) {
   if (!v) return "—";
@@ -225,9 +229,12 @@ export function MetodoRetiro() {
                         {fecha(p.fecha)} · {p.ordenes.map((o) => o.nombre).join(", ")}
                       </p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-700 tabular-nums whitespace-nowrap">
-                      {p.total.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {p.moneda}
-                    </p>
+                    <div className="text-right whitespace-nowrap">
+                      <p className="text-sm font-semibold text-slate-700 tabular-nums">
+                        {usd(p.total)} {p.moneda}
+                      </p>
+                      <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base) })}</p>
+                    </div>
                   </div>
 
                   {p.en_despacho ? (
@@ -309,6 +316,21 @@ export function MetodoRetiro() {
                           />
                         )}
                       </div>
+                      {b.metodo === "ruta" && b.ruta_id && (() => {
+                        const ruta = rutas.find((r) => String(r.id) === b.ruta_id)?.nombre;
+                        const minimo = minimoRutaGratis(p.company_id, ruta);
+                        const gratis = rutaEsGratis(p.company_id, ruta, p.base, p.moneda);
+                        if (minimo === null || gratis === null) return null;
+                        return gratis === 1 ? (
+                          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                            {t("ruta_gratis", { base: usd(p.base), minimo: usd(minimo) })}
+                          </p>
+                        ) : (
+                          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                            {t("ruta_flete", { base: usd(p.base), minimo: usd(minimo), falta: usd(minimo - p.base) })}
+                          </p>
+                        );
+                      })()}
                       <div className="flex items-center justify-end gap-3">
                         {errores[p.sale_id] && <span className="text-xs text-red-600">{errores[p.sale_id]}</span>}
                         {guardados[p.sale_id] && !errores[p.sale_id] && (
