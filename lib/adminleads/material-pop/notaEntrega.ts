@@ -1,9 +1,10 @@
 /**
  * Nota de entrega imprimible de material POP.
  *
- * La emiten dos flujos: una solicitud de vendedor aprobada y una salida a
- * cliente cargada directo por el adminLeads. Por eso recibe datos planos y no
- * una solicitud: el documento es el mismo, cambia de dónde salen los datos.
+ * La emiten dos flujos: una solicitud de vendedor aprobada y una salida
+ * cargada directo por el adminLeads —a cliente, uso interno, evento o
+ * campaña—. Por eso recibe datos planos y no una solicitud: el documento es el
+ * mismo, cambia de dónde salen los datos.
  *
  * Es HTML con estilos de impresión, no un PDF: el navegador imprime o guarda
  * como PDF desde el mismo diálogo. El proyecto no tiene librería para generar
@@ -11,7 +12,7 @@
  *
  * Sirve de constancia física: qué salió, de dónde, hacia dónde, para qué
  * cliente y autorizado por quién, con las firmas de quien autoriza y de quien
- * recibe en el almacén de destino.
+ * recibe (en el almacén de destino, o la persona a la que se entrega).
  */
 
 /**
@@ -31,9 +32,23 @@ export interface ItemNota {
   quantity: number;
 }
 
+/** Nombre de cada tipo de salida en el papel. */
+export const NOMBRE_TIPO_SALIDA: Record<string, string> = {
+  cliente: "Cliente",
+  uso_interno: "Uso interno",
+  evento: "Evento",
+  campana: "Campaña",
+};
+
 export interface DatosNota {
   /** Número que identifica el documento: SOL-0005, o el del movimiento. */
   codigo: string;
+  /** `cliente` (por defecto), `uso_interno`, `evento` o `campana`. */
+  tipoSalida?: string;
+  /** Para qué sale el material, en las salidas que no son a cliente. */
+  destino?: string | null;
+  /** Persona que recibe el material y firma el recibido. */
+  entregadoA?: string | null;
   cliente: string;
   /** Vendedor que atiende al cliente. Vacío en una salida cargada a mano. */
   vendedor?: string | null;
@@ -75,6 +90,19 @@ const hoyTexto = (): string => {
  * desde C4, no hay traslado que documentar.
  */
 function fraseMovimiento(datos: DatosNota): string {
+  if (!esACliente(datos)) {
+    // Sin cliente no hay traslado a C4 que documentar: el material se entrega
+    // en mano desde donde está.
+    const tipo = escapar((NOMBRE_TIPO_SALIDA[datos.tipoSalida || ""] || "Salida").toLowerCase());
+    const quien = datos.entregadoA
+      ? ` a <strong>${escapar(datos.entregadoA)}</strong>`
+      : "";
+    const destino = datos.destino ? `: <strong>${escapar(datos.destino)}</strong>` : "";
+    return `Se deja constancia de la entrega del material detallado a continuación,
+      desde <strong>${escapar(NOMBRE_UBICACION[datos.origen] || datos.origen)}</strong>${quien},
+      para ${tipo}${destino}.`;
+  }
+
   const cliente = escapar(datos.cliente || "el cliente");
   const vendedor = datos.vendedor ? escapar(datos.vendedor) : "";
   const atendido = vendedor
@@ -92,7 +120,32 @@ function fraseMovimiento(datos: DatosNota): string {
     <strong>${cliente}</strong>${atendido}.`;
 }
 
+/**
+ * Líneas de firma. A cliente: quien autoriza y la recepción en C4, que es
+ * adonde se traslada; si además se anotó quién lo recibe, su propia línea. Sin
+ * cliente: quien entrega y la persona que se lo lleva.
+ */
+function firmas(datos: DatosNota, aCliente: boolean): string {
+  const autoriza = escapar(datos.autorizadoPor || "");
+  const recibe = datos.entregadoA ? escapar(datos.entregadoA) : "";
+  const lineas = aCliente
+    ? [
+        `Autoriza · ${autoriza} (firma)`,
+        `Recepción ${escapar(NOMBRE_UBICACION.office)} (nombre, C.I. y firma)`,
+        ...(recibe ? [`Recibe · ${recibe} (C.I. y firma)`] : []),
+      ]
+    : [
+        `Entrega · ${autoriza} (firma)`,
+        recibe ? `Recibe · ${recibe} (C.I. y firma)` : "Recibe (nombre, C.I. y firma)",
+      ];
+  return lineas.map((l) => `<div class="firma">${l}</div>`).join("\n      ");
+}
+
+const esACliente = (datos: DatosNota): boolean =>
+  !datos.tipoSalida || datos.tipoSalida === "cliente";
+
 export function notaEntregaHtml(datos: DatosNota): string {
+  const aCliente = esACliente(datos);
   const items = datos.items.filter((it) => it.quantity > 0);
   const totalUnidades = items.reduce((s, it) => s + it.quantity, 0);
 
@@ -109,12 +162,23 @@ export function notaEntregaHtml(datos: DatosNota): string {
     .join("");
 
   const datosExtra = [
+    aCliente
+      ? `<p class="dato"><span>Cliente</span>${escapar(datos.cliente || "—")}</p>`
+      : `<p class="dato"><span>Tipo de salida</span>${escapar(NOMBRE_TIPO_SALIDA[datos.tipoSalida || ""] || datos.tipoSalida)}</p>`,
+    !aCliente
+      ? `<p class="dato"><span>Destino</span>${escapar(datos.destino || "—")}</p>`
+      : "",
+    datos.entregadoA || !aCliente
+      ? `<p class="dato"><span>Entregado a</span>${escapar(datos.entregadoA || "—")}</p>`
+      : "",
     datos.vendedor
       ? `<p class="dato"><span>Vendedor solicitante</span>${escapar(datos.vendedor)}</p>`
       : "",
     `<p class="dato"><span>Autorizado por</span>${escapar(datos.autorizadoPor || "—")}</p>`,
-    `<p class="dato"><span>Fecha de autorización</span>${fmtFecha(datos.fecha)}</p>`,
-    `<p class="dato"><span>Orden de venta (Odoo)</span>${escapar(datos.ordenOdoo || "No aplica")}</p>`,
+    `<p class="dato"><span>${aCliente ? "Fecha de autorización" : "Fecha de entrega"}</span>${fmtFecha(datos.fecha)}</p>`,
+    aCliente
+      ? `<p class="dato"><span>Orden de venta (Odoo)</span>${escapar(datos.ordenOdoo || "No aplica")}</p>`
+      : "",
     datos.condicion
       ? `<p class="dato"><span>Condición de entrega</span>${escapar(datos.condicion)}</p>`
       : "",
@@ -176,7 +240,6 @@ export function notaEntregaHtml(datos: DatosNota): string {
     </header>
 
     <div class="datos">
-      <p class="dato"><span>Cliente</span>${escapar(datos.cliente || "—")}</p>
       ${datosExtra}
     </div>
 
@@ -201,8 +264,7 @@ export function notaEntregaHtml(datos: DatosNota): string {
     }
 
     <div class="firmas">
-      <div class="firma">Autoriza · ${escapar(datos.autorizadoPor || "")} (firma)</div>
-      <div class="firma">Recepción ${escapar(NOMBRE_UBICACION.office)} (nombre, C.I. y firma)</div>
+      ${firmas(datos, aCliente)}
     </div>
 
     <p class="pie">

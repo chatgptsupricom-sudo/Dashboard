@@ -20,6 +20,8 @@ import { BrandClientsTab } from "./BrandClientsTab";
 import { RequestsTab } from "./RequestsTab";
 import type { PopCategory, PopProduct, PopUom } from "@/lib/adminleads/material-pop/types";
 
+const TABS = ["catalog", "entries", "exits", "history", "requests", "brand-clients", "alerts"];
+
 export function MaterialPopPage() {
   const [products, setProducts] = useState<PopProduct[]>([]);
   const [categories, setCategories] = useState<PopCategory[]>([]);
@@ -60,6 +62,14 @@ export function MaterialPopPage() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  // El correo de solicitud nueva enlaza con ?tab=requests: se abre directo en
+  // la pestaña. Se lee al montar y no en el useState para no desencajar el
+  // HTML del servidor con el del navegador.
+  useEffect(() => {
+    const inicial = new URLSearchParams(window.location.search).get("tab");
+    if (inicial && TABS.includes(inicial)) setTab(inicial);
+  }, []);
 
   // Contador de solicitudes por revisar, para que la pestaña avise sin tener
   // que entrar a mirar.

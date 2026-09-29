@@ -7,6 +7,7 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { cambiarStock, leerStock } from "@/lib/adminleads/material-pop/stock";
+import { hayColumnaRecipiente } from "@/lib/adminleads/material-pop/columnas";
 import {
   isValidMovementDate,
   validateNonNegativeQuantity,
@@ -235,6 +236,25 @@ export async function POST(request: NextRequest) {
     // cliente, y los dos salen impresos en la nota de entrega.
     const ordenVenta = truncar(body?.odooOrderName, 50);
     const vendedor = truncar(body?.sellerName, 255);
+    // Persona que recibe el material: la nota de entrega le pide la firma. En
+    // uso interno es obligatoria —es la única constancia de quién se lo
+    // llevó—; en el resto es opcional.
+    const recibe = type === "exit" ? truncar(body?.recipientName, 255) : null;
+    const conRecipiente = type === "exit" ? await hayColumnaRecipiente() : false;
+    if (type === "exit" && String(body?.reasonType || "") === "uso_interno") {
+      if (!recibe) {
+        return NextResponse.json(
+          { error: "Indica a quién se le entrega el material" },
+          { status: 400 },
+        );
+      }
+      if (!conRecipiente) {
+        return NextResponse.json(
+          { error: "Falta correr la migración sql/material_pop_007_movement_recipient.sql" },
+          { status: 409 },
+        );
+      }
+    }
 
     conn = await getConnection();
     await conn.beginTransaction();
@@ -377,8 +397,9 @@ export async function POST(request: NextRequest) {
             `INSERT INTO pop_movements
               (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
                client_id, client_name, client_cids, destination, odoo_order_name, seller_name,
-               created_by_user_id, created_by_name, cids, movement_date, notes)
-             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               created_by_user_id, created_by_name, cids, movement_date, notes
+               ${conRecipiente ? ", recipient_name" : ""})
+             VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${conRecipiente ? ", ?" : ""})`,
             [
               movementGroupId,
               productId,
@@ -397,6 +418,7 @@ export async function POST(request: NextRequest) {
               cids,
               movementDate,
               notas,
+              ...(conRecipiente ? [recibe] : []),
             ],
           );
         }

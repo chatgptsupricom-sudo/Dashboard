@@ -257,10 +257,9 @@ export function HistoryTab({ onGoToCatalog }: { onGoToCatalog: () => void }) {
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {m.client_name || m.destination || "—"}
-                      {/* Reimprimir la nota de una salida a cliente ya
-                          registrada, sin tener que volver a cargarla. */}
+                      {/* Reimprimir la nota de una salida ya registrada, sin
+                          tener que volver a cargarla. */}
                       {m.type === "exit" &&
-                        m.reason_type === "cliente" &&
                         m.movement_group_id && (
                           <button
                             type="button"
@@ -276,6 +275,11 @@ export function HistoryTab({ onGoToCatalog }: { onGoToCatalog: () => void }) {
                             <Printer className="inline h-3.5 w-3.5" />
                           </button>
                         )}
+                      {m.recipient_name && (
+                        <span className="block text-xs text-slate-400">
+                          Entregado a {m.recipient_name}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
