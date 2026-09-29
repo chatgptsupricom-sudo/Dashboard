@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, HandCoins, Search, Wallet,
+  AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileSpreadsheet, FileText, HandCoins, Loader2,
+  Search, Wallet,
 } from "lucide-react";
 
 interface Cliente {
@@ -43,6 +44,9 @@ const moverMes = (mes: string, delta: number) => {
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
+const fechaCorta = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "");
+const archivoDe = (nombre: string) =>
+  nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
 const etiquetaMes = (mes: string) => {
   const [y, m] = mes.split("-").map(Number);
   const s = new Date(y, m - 1, 1).toLocaleDateString("es-VE", { month: "long", year: "numeric" });
@@ -66,12 +70,15 @@ export default function CobranzaVendedores() {
   const [verExcluidos, setVerExcluidos] = useState(false);
   const [abierto, setAbierto] = useState<number | null>(null);
   const [filtroCliente, setFiltroCliente] = useState("");
+  const [exportando, setExportando] = useState<number | null>(null);
+  const [errorExport, setErrorExport] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelado = false;
     setCargando(true);
     setError(false);
     setAbierto(null);
+    setErrorExport(null);
     fetch(`/api/gerente_venta/cobranza?mes=${mes}`, { credentials: "include" })
       .then(async (r) => {
         const json = await r.json().catch(() => null);
@@ -121,6 +128,127 @@ export default function CobranzaVendedores() {
       "Vencido (hoy)": c.vencido,
     })))), "Clientes");
     XLSX.writeFile(wb, `cobranza-${mes}.xlsx`);
+  };
+
+  /**
+   * Estado de cuenta personal de un vendedor, para dárselo a él: resumen del
+   * mes (mismas cifras de su fila), antigüedad de su cartera y el detalle de
+   * facturas, cobros y documentos pendientes.
+   */
+  const exportarEstadoVendedor = async (v: Vendedor) => {
+    setExportando(v.userId);
+    setErrorExport(null);
+    try {
+      const r = await fetch(`/api/gerente_venta/cobranza/vendedor?mes=${mes}&user_id=${v.userId}`, { credentials: "include" });
+      const json = await r.json().catch(() => null);
+      if (!r.ok || !json?.success) throw new Error(json?.error || "No se pudo cargar");
+      const d = json.data;
+      const res = d.vendedor as Vendedor;
+
+      const XLSX = await import("xlsx");
+      const monto = "#,##0.00;-#,##0.00";
+      // Formato numérico y ancho de columnas; SheetJS CE no escribe negritas ni colores.
+      const formatear = (ws: any, anchos: number[], colsMonto: number[], desdeFila = 1) => {
+        ws["!cols"] = anchos.map((wch) => ({ wch }));
+        const rango = XLSX.utils.decode_range(ws["!ref"] || "A1");
+        for (let fila = desdeFila; fila <= rango.e.r; fila++) {
+          for (const col of colsMonto) {
+            const celda = ws[XLSX.utils.encode_cell({ r: fila, c: col })];
+            if (celda && celda.t === "n") celda.z = monto;
+          }
+        }
+        return ws;
+      };
+      const pct = res.porCobrar > 0 ? res.vencido / res.porCobrar : 0;
+
+      const resumen = XLSX.utils.aoa_to_sheet([
+        ["Estado de cuenta del vendedor"],
+        ["Vendedor", res.nombre],
+        ["Sede", d.sede],
+        ["Período", `${etiquetaMes(mes)} (${fechaCorta(d.desde)} al ${fechaCorta(d.hasta)})`],
+        ["Generado", new Date().toLocaleString("es-VE")],
+        [],
+        ["Resumen del mes", "Monto"],
+        ["Facturado sin IVA", res.facturado],
+        ["Facturas emitidas", res.facturas],
+        ["Cobrado en el mes", res.cobrado],
+        ["   de facturas del mes", res.cobradoDelPeriodo],
+        ["   de facturas de meses anteriores", res.cobradoAnterior],
+        ["Cobros registrados", res.pagos],
+        [],
+        ["Cartera pendiente (hoy)", "Monto"],
+        ["Por cobrar", res.porCobrar],
+        ["Vencido", res.vencido],
+        ["% vencido de lo pendiente", pct],
+        [],
+        ["Antigüedad de la cartera", "Monto", "Documentos"],
+        ...d.antiguedad.map((a: any) => [a.banda, a.monto, a.documentos]),
+        ...(d.saldoAFavorCliente !== 0
+          ? [["Saldo a favor de clientes (NC y pagos sin aplicar)", d.saldoAFavorCliente]]
+          : []),
+        [],
+        ["Facturado: facturas y notas de crédito del mes, sin IVA. Cobrado: dinero que entró por banco o caja en el mes (con IVA), según la fecha de confirmación del pago."],
+        ["Por cobrar y vencido son el saldo pendiente al día de hoy. No incluye al cliente interno Supricom."],
+      ]);
+      formatear(resumen, [48, 18, 12], [1]);
+      // Filas 9 y 13 (0-based 8 y 12) son conteos, la 18 es porcentaje.
+      for (const fila of [8, 12]) if (resumen[`B${fila + 1}`]) delete resumen[`B${fila + 1}`].z;
+      if (resumen.B18) resumen.B18.z = "0.0%";
+
+      const facturas = XLSX.utils.json_to_sheet(d.facturas.map((f: any) => ({
+        Fecha: fechaCorta(f.fecha),
+        Documento: f.numero,
+        Tipo: f.tipo,
+        Cliente: f.cliente,
+        "Sin IVA": f.sinIva,
+        Total: f.total,
+        "Pendiente hoy": f.pendiente,
+      })));
+      formatear(facturas, [12, 22, 16, 44, 14, 14, 14], [4, 5, 6]);
+
+      const cobros = XLSX.utils.json_to_sheet(d.cobros.map((c: any) => ({
+        Fecha: fechaCorta(c.fecha),
+        Cliente: c.cliente,
+        Factura: c.factura,
+        "Fecha factura": fechaCorta(c.fechaFactura),
+        Origen: c.deMesesAnteriores ? "Mes anterior" : "Del mes",
+        Diario: c.diario,
+        Monto: c.monto,
+      })));
+      formatear(cobros, [12, 44, 22, 14, 14, 26, 14], [6]);
+
+      const cartera = XLSX.utils.json_to_sheet(d.cartera.map((c: any) => ({
+        Documento: c.documento,
+        Cliente: c.cliente,
+        Fecha: fechaCorta(c.fecha),
+        Vencimiento: fechaCorta(c.vencimiento),
+        "Días vencido": c.diasVencido,
+        Antigüedad: c.banda,
+        Saldo: c.saldo,
+      })));
+      formatear(cartera, [22, 44, 12, 12, 12, 26, 14], [6]);
+
+      const clientes = XLSX.utils.json_to_sheet(res.clientes.map((c) => ({
+        Cliente: c.nombre,
+        "Facturado sin IVA": c.facturado,
+        Cobrado: c.cobrado,
+        "Por cobrar (hoy)": c.porCobrar,
+        "Vencido (hoy)": c.vencido,
+      })));
+      formatear(clientes, [44, 16, 16, 16, 16], [1, 2, 3, 4]);
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, resumen, "Resumen");
+      XLSX.utils.book_append_sheet(wb, clientes, "Clientes");
+      XLSX.utils.book_append_sheet(wb, facturas, "Facturas del mes");
+      XLSX.utils.book_append_sheet(wb, cobros, "Cobros del mes");
+      XLSX.utils.book_append_sheet(wb, cartera, "Cartera pendiente");
+      XLSX.writeFile(wb, `estado-cuenta-${archivoDe(res.nombre) || res.userId}-${mes}.xlsx`);
+    } catch {
+      setErrorExport(v.userId);
+    } finally {
+      setExportando(null);
+    }
   };
 
   const th = "px-3 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
@@ -281,12 +409,27 @@ export default function CobranzaVendedores() {
                                   className="w-full h-8 pl-8 pr-3 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                                 />
                               </div>
-                              <Link
-                                href={`/${locale}/gerente_venta/estado-cuenta/${v.userId}?nombre=${encodeURIComponent(v.nombre)}`}
-                                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
-                              >
-                                Estado de cuenta del vendedor <ExternalLink size={14} />
-                              </Link>
+                              <div className="flex flex-wrap items-center gap-4">
+                                {errorExport === v.userId && (
+                                  <span className="text-xs text-red-600">No se pudo generar el Excel.</span>
+                                )}
+                                <button
+                                  onClick={() => exportarEstadoVendedor(v)}
+                                  disabled={exportando !== null}
+                                  className="inline-flex items-center gap-2 h-8 px-3 rounded-lg bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  {exportando === v.userId
+                                    ? <Loader2 size={14} className="animate-spin" />
+                                    : <FileSpreadsheet size={14} />}
+                                  {exportando === v.userId ? "Generando..." : `Exportar estado de cuenta · ${etiquetaMes(mes)}`}
+                                </button>
+                                <Link
+                                  href={`/${locale}/gerente_venta/estado-cuenta/${v.userId}?nombre=${encodeURIComponent(v.nombre)}`}
+                                  className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+                                >
+                                  Estado de cuenta del vendedor <ExternalLink size={14} />
+                                </Link>
+                              </div>
                             </div>
                             <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white">
                               <table className="w-full text-xs">
