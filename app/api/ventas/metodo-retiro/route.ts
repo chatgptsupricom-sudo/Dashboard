@@ -1,6 +1,7 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
-import { listarAgenciasActivas, listarRutas } from "@/lib/rma/rutasEnvio";
+import { listarAgenciasConSede, listarRutasConSede } from "@/lib/rma/rutasEnvio";
+import { esDeLaSede } from "@/lib/ventas/metodoRetiroTipos";
 import { ErrorMetodo, guardarMetodoRetiro, listarPedidosPendientes } from "@/lib/ventas/metodoRetiro";
 
 /**
@@ -48,10 +49,20 @@ export async function GET(request: NextRequest) {
     const vendedorUid = a.vendedorUid ?? filtro;
     const [pedidos, rutas, agencias] = await Promise.all([
       listarPedidosPendientes({ cids: a.cids, vendedorUid }),
-      listarRutas(),
-      listarAgenciasActivas(),
+      listarRutasConSede(),
+      listarAgenciasConSede(),
     ]);
-    return NextResponse.json({ success: true, pedidos, rutas, agencias, puedeElegirVendedor: a.vendedorUid === null });
+    // Cada una con su sede (`cids`): la pantalla muestra en cada pedido las de
+    // su sede. Con sucursal en la sesion, ni se mandan las de la otra.
+    const deMiSede = <T extends { cids: number | null }>(xs: T[]) =>
+      a.cids === null ? xs : xs.filter((x) => esDeLaSede(x.cids, a.cids));
+    return NextResponse.json({
+      success: true,
+      pedidos,
+      rutas: deMiSede(rutas),
+      agencias: deMiSede(agencias),
+      puedeElegirVendedor: a.vendedorUid === null,
+    });
   } catch (error: any) {
     console.error("GET /api/ventas/metodo-retiro error:", error?.message);
     return NextResponse.json({ error: "No se pudieron cargar los pedidos de Odoo" }, { status: 502 });

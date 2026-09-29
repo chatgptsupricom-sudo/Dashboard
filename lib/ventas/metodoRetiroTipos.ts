@@ -25,7 +25,7 @@ export type FilaMetodo = {
   nota: string | null;
   registrado_por: string | null;
   updated_at: string;
-  /** Solo ruta en Valencia: 1 = gratis, 0 = el cliente paga el flete, null = no aplica. */
+  /** Solo ruta en Valencia y Panamá: 1 = gratis, 0 = el cliente paga el flete, null = no aplica. */
   ruta_gratis?: number | null;
   /** Monto sin IVA (USD) con el que se decidió `ruta_gratis`. */
   monto_base?: number | string | null;
@@ -61,20 +61,38 @@ export function montoRutaGratis(d: {
   return { monto: d.facturado, fuente: "facturado" };
 }
 
-/** Sucursal Valencia (cids 9): la única con monto mínimo de ruta gratis por ahora. */
+/** Sedes con monto mínimo de ruta gratis: Valencia (9) y Panamá (7). */
 export const CIDS_VALENCIA = 9;
+export const CIDS_PANAMA = 7;
 
 /**
- * Monto mínimo del pedido, sin IVA y en USD, para que la ruta sea gratis
- * (pedidos de la sucursal Valencia):
- *  - ruta Valencia (Carabobo): 300 $
- *  - cualquier otra ruta: 1000 $
- * Debajo del mínimo el pedido igual va por ruta, pero el cliente paga el
- * flete. null = no aplica (otra sucursal o sin ruta).
+ * De qué sede es una ruta o agencia (`cids` de sql/panama_rutas_agencias.sql):
+ * NULL = las de Venezuela (Valencia y Caracas), 7 = Panamá. Un pedido de
+ * Panamá solo ve las suyas, y uno de Venezuela solo las de NULL.
+ */
+export function esDeLaSede(cidsOpcion: number | null | undefined, companyId: number | null | undefined): boolean {
+  const deOpcion = cidsOpcion === null || cidsOpcion === undefined ? null : Number(cidsOpcion);
+  return companyId === CIDS_PANAMA ? deOpcion === CIDS_PANAMA : deOpcion === null;
+}
+
+/** El impuesto que se descuenta para el mínimo: ITBMS en Panamá, IVA en Venezuela. */
+export function nombreImpuesto(companyId: number | null | undefined): string {
+  return companyId === CIDS_PANAMA ? "ITBMS" : "IVA";
+}
+
+/**
+ * Monto mínimo del pedido, sin impuesto y en USD, para que la ruta sea
+ * gratis. Debajo del mínimo el pedido igual va por ruta, pero el cliente
+ * paga el flete. null = no aplica (otra sucursal o sin ruta).
+ *  - Valencia: ruta Valencia (Carabobo) 300 $; cualquier otra ruta 1000 $.
+ *  - Panamá (Gabriel Camacho, 29/9/2026): 200 $; el viaje a Colón o a La
+ *    Chorrera, 2.500 $. Sale del nombre de la ruta.
  */
 export function minimoRutaGratis(companyId: number | null | undefined, rutaNombre: string | null | undefined): number | null {
-  if (companyId !== CIDS_VALENCIA || !rutaNombre) return null;
-  return /valencia/i.test(rutaNombre) ? 300 : 1000;
+  if (!rutaNombre) return null;
+  if (companyId === CIDS_VALENCIA) return /valencia/i.test(rutaNombre) ? 300 : 1000;
+  if (companyId === CIDS_PANAMA) return /col[oó]n|chorrera/i.test(rutaNombre) ? 2500 : 200;
+  return null;
 }
 
 export type EvaluacionRuta = {
@@ -86,10 +104,12 @@ export type EvaluacionRuta = {
 
 /**
  * Si la ruta es gratis, con dos controles contra la viveza:
- *  - el monto es lo FACTURADO sin IVA (facturas menos notas de crédito)
- *    cuando ya hay factura; antes, el del pedido;
+ *  - el monto es el de `montoRutaGratis` (lo facturado sin impuesto, o el
+ *    pedido mientras se factura por partes);
  *  - la ruta Valencia (300 $) es solo para clientes de Carabobo: si la
- *    dirección de entrega es de otro estado, se exige el mínimo general.
+ *    dirección de entrega es de otro estado, se exige el mínimo general. En
+ *    Panamá, igual: una entrega en la provincia de Colón por la ruta de la
+ *    ciudad (200 $) es el viaje a Colón (2.500 $).
  */
 export function evaluarRutaGratis(o: {
   companyId: number | null | undefined;
@@ -109,8 +129,12 @@ export function evaluarRutaGratis(o: {
     // mínimo de 300 $ (el dato falta en Odoo, no es culpa del cliente), pero
     // se avisa en vez de pasarlo callado.
     alerta = "La dirección de entrega no tiene estado en Odoo: no se pudo confirmar que sea de Carabobo (ruta Valencia, 300 $)";
+  } else if (o.companyId === CIDS_PANAMA && minimo === 200 && o.estadoCliente && /col[oó]n/i.test(o.estadoCliente)) {
+    minimo = 2500;
+    alerta = `La dirección de entrega es de ${o.estadoCliente.replace(/\s*\(PA\)\s*$/i, "")}: es el viaje a Colón, se exige el mínimo de 2.500 $`;
   }
-  if (o.moneda && o.moneda.toUpperCase() !== "USD") {
+  // El balboa (PAB) va a la par del dólar: en Panamá no es "otra moneda".
+  if (o.moneda && !["USD", "PAB"].includes(o.moneda.toUpperCase())) {
     // El mínimo es en USD. Con lo facturado (en la moneda de la compañía,
     // USD) el caller pasa "USD"; esto queda para un pedido en otra moneda
     // todavía sin facturar, que antes pasaba sin ningún aviso.
