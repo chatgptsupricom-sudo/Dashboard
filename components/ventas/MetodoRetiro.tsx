@@ -4,7 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { describirMetodo, evaluarRutaGratis, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
+import {
+  describirMetodo,
+  esDeLaSede,
+  evaluarRutaGratis,
+  nombreImpuesto,
+  type FilaMetodo,
+  type MetodoRetiro as Metodo,
+} from "@/lib/ventas/metodoRetiroTipos";
 import { CheckCircle2, Loader2, Lock, Package, Search, Store, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -33,7 +40,8 @@ type Pedido = {
   metodo: FilaMetodo | null;
 };
 
-type Opcion = { id: number; nombre: string };
+/** Ruta o agencia, con su sede (null = Venezuela, 7 = Panamá). */
+type Opcion = { id: number; nombre: string; cids?: number | null };
 type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; nota: string };
 
 const ICONO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package };
@@ -107,7 +115,8 @@ export function MetodoRetiro() {
   const borrador = (p: Pedido): Borrador => {
     if (borradores[p.sale_id]) return borradores[p.sale_id];
     const m = p.metodo;
-    const conocida = !!m?.agencia && agencias.some((a) => a.nombre === m.agencia);
+    const conocida =
+      !!m?.agencia && agencias.some((a) => a.nombre === m.agencia && esDeLaSede(a.cids, p.company_id));
     return {
       metodo: m?.metodo || "",
       ruta_id: m?.ruta_id ? String(m.ruta_id) : "",
@@ -213,6 +222,10 @@ export function MetodoRetiro() {
         <div className="space-y-3">
           {visibles.map((p) => {
             const b = borrador(p);
+            // Rutas y agencias de la sede del pedido: Panamá tiene las suyas.
+            const rutasP = rutas.filter((r) => esDeLaSede(r.cids, p.company_id));
+            const agenciasP = agencias.filter((a) => esDeLaSede(a.cids, p.company_id));
+            const imp = nombreImpuesto(p.company_id);
             return (
               <Card key={p.sale_id} className={`rounded-2xl shadow-sm ${p.metodo ? "border-slate-200" : "border-amber-300"}`}>
                 <CardContent className="p-4 space-y-3">
@@ -239,9 +252,9 @@ export function MetodoRetiro() {
                       <p className="text-sm font-semibold text-slate-700 tabular-nums">
                         {usd(p.total)} {p.moneda}
                       </p>
-                      <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base) })}</p>
+                      <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base), imp })}</p>
                       {p.facturado !== null && (
-                        <p className="text-[11px] font-semibold text-slate-600 tabular-nums">{t("facturado", { monto: usd(p.facturado) })}</p>
+                        <p className="text-[11px] font-semibold text-slate-600 tabular-nums">{t("facturado", { monto: usd(p.facturado), imp })}</p>
                       )}
                     </div>
                   </div>
@@ -283,7 +296,7 @@ export function MetodoRetiro() {
                             className="h-10 px-3 border border-slate-200 rounded-md text-sm bg-white"
                           >
                             <option value="">{t("elige_ruta")}</option>
-                            {rutas.map((r) => (
+                            {rutasP.map((r) => (
                               <option key={r.id} value={String(r.id)}>
                                 {r.nombre}
                               </option>
@@ -299,7 +312,7 @@ export function MetodoRetiro() {
                               className="h-10 flex-1 px-3 border border-slate-200 rounded-md text-sm bg-white"
                             >
                               <option value="">{t("elige_agencia")}</option>
-                              {agencias.map((a) => (
+                              {agenciasP.map((a) => (
                                 <option key={a.id} value={a.nombre}>
                                   {a.nombre}
                                 </option>
@@ -326,7 +339,7 @@ export function MetodoRetiro() {
                         )}
                       </div>
                       {b.metodo === "ruta" && b.ruta_id && (() => {
-                        const ruta = rutas.find((r) => String(r.id) === b.ruta_id)?.nombre;
+                        const ruta = rutasP.find((r) => String(r.id) === b.ruta_id)?.nombre;
                         // El mismo monto que usa el servidor: lo facturado, o el
                         // pedido mientras se factura por partes.
                         const monto = p.monto_ruta;
@@ -338,11 +351,11 @@ export function MetodoRetiro() {
                           <div className="space-y-1.5">
                             {ev.gratis === 1 ? (
                               <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                {t("ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo) })}
+                                {t("ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo), imp })}
                               </p>
                             ) : ev.gratis === 0 ? (
                               <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                {t("ruta_flete", { base: usd(monto), minimo: usd(ev.minimo), falta: usd(ev.minimo - monto) })}
+                                {t("ruta_flete", { base: usd(monto), minimo: usd(ev.minimo), falta: usd(ev.minimo - monto), imp })}
                               </p>
                             ) : null}
                             {ev.alerta && (

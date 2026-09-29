@@ -1,8 +1,15 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
-import { listarRutas } from "@/lib/rma/rutasEnvio";
-import { esMetodoRetiro, evaluarRutaGratis, montoRutaGratis, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { listarRutasConSede } from "@/lib/rma/rutasEnvio";
+import {
+  esDeLaSede,
+  esMetodoRetiro,
+  evaluarRutaGratis,
+  montoRutaGratis,
+  nombreImpuesto,
+  type FilaMetodo,
+} from "@/lib/ventas/metodoRetiroTipos";
 
 // Lo que no toca la base (tipos, etiquetas) vive en metodoRetiroTipos para
 // que lo puedan usar las pantallas; se reexporta para el servidor.
@@ -192,7 +199,7 @@ export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined): Fi
   const alertas: string[] = [];
   if (vendedor === 1 && ev.gratis === 0) {
     alertas.push(
-      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${fuente === "facturado" ? "lo facturado" : "el pedido"} sin IVA es ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
+      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${fuente === "facturado" ? "lo facturado" : "el pedido"} sin ${nombreImpuesto(d.company_id)} es ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
     );
   }
   if (ev.alerta) alertas.push(ev.alerta);
@@ -409,7 +416,11 @@ export async function guardarMetodoRetiro(datos: {
   let rutaNombre: string | null = null;
   let agencia: string | null = null;
   if (metodo === "ruta") {
-    const ruta = (await listarRutas()).find((r) => r.id === datos.rutaId);
+    // La ruta tiene que ser de la sede del pedido: una de Venezuela en un
+    // pedido de Panamá (o al revés) no existe para Almacén de esa sede.
+    const ruta = (await listarRutasConSede()).find(
+      (r) => r.id === datos.rutaId && esDeLaSede(r.cids, venta.company_id?.[0]),
+    );
     if (!ruta) throw new ErrorMetodo("Elige la ruta.");
     rutaId = ruta.id;
     rutaNombre = ruta.nombre;
@@ -419,7 +430,7 @@ export async function guardarMetodoRetiro(datos: {
     if (!agencia) throw new ErrorMetodo("Elige la agencia de la encomienda.");
   }
 
-  // Ruta gratis o con flete (solo Valencia): con montoRutaGratis y con el
+  // Ruta gratis o con flete (Valencia y Panamá): con montoRutaGratis y con el
   // estado del cliente. Hasta que Almacén registre el egreso se sigue
   // recalculando con lo que diga Odoo (aplicarEvaluacion).
   const d = (await datosDePedidos([datos.saleId])).get(datos.saleId);
