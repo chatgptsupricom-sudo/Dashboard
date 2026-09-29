@@ -588,7 +588,7 @@ function Encabezado({
 /** Solo en el panel: el enlace que se comparte y cómo gira quien no es SuperAdmin. */
 function EnlacePublico() {
   const [copiado, setCopiado] = useState(false);
-  const url = typeof window !== "undefined" ? `${window.location.origin}/${window.location.pathname.split("/")[1] || "es"}/sorteo` : "";
+  const url = SORTEO.urlPublica;
   const copiar = async () => {
     try {
       await navigator.clipboard.writeText(url);
@@ -601,8 +601,9 @@ function EnlacePublico() {
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-slate-900">Página pública del sorteo</p>
         <p className="text-slate-500">
-          Cualquiera con el enlace ve la ruleta y los participantes (sin RIF). Gira quien tenga sesión de SuperAdmin, o la clave de operador
-          (<code className="rounded bg-slate-100 px-1">SORTEO_CLAVE</code>) desde el botón «Operador» al pie de la página.
+          Cualquiera con el enlace ve la ruleta y los participantes (sin RIF). La sesión del panel no pasa a ese dominio: allá se gira con la
+          clave de operador (<code className="rounded bg-slate-100 px-1">SORTEO_CLAVE</code>, botón «Operador» al pie), o se gira desde esta
+          pantalla y el giro aparece en todas.
         </p>
       </div>
       <div className="flex items-center gap-2">

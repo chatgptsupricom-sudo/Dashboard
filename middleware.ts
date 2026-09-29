@@ -25,6 +25,21 @@ const HOSTS_DEL_PORTAL = (
   .map((h) => h.trim().toLowerCase())
   .filter(Boolean);
 
+/**
+ * Dominio del sorteo de clientes (ruleta pública, `app/[locale]/sorteo`).
+ * Ahí solo se sirve la ruleta: la raíz redirige a ella y todo lo demás —el
+ * login incluido— responde 404, igual que en el portal de servicio técnico,
+ * para que el cliente no llegue al panel. Se configura con SORTEO_HOSTS
+ * (separados por coma). Las APIs (/api/sorteo/*) quedan fuera del matcher y
+ * responden en este dominio como en cualquier otro.
+ */
+const HOSTS_DEL_SORTEO = (process.env.SORTEO_HOSTS || "sorteo.supricom.com.ve")
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+// Con o sin idioma: /sorteo lo redirige next-intl a /es/sorteo.
+const RUTA_SORTEO = /^(\/(es|en))?\/sorteo(\/|$)/;
+
 const METODOS_ESCRITURA = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // Mismo criterio que origenPermitido() en server.js (ahi para el handshake
@@ -111,6 +126,18 @@ export default async function middleware(request: NextRequest) {
       return new NextResponse(null, { status: 404 });
     }
   }
+  if (HOSTS_DEL_SORTEO.includes(host)) {
+    const esRaiz = pathname === "/" || /^\/(es|en)\/?$/.test(pathname);
+    if (esRaiz) {
+      const idioma = /^\/(es|en)/.test(pathname) ? pathname.split("/")[1] : "es";
+      return NextResponse.redirect(new URL(`/${idioma}/sorteo`, request.url));
+    }
+    // 404 y no 403, por lo mismo que en el portal: no confirmar que hay algo.
+    if (!RUTA_SORTEO.test(pathname)) return new NextResponse(null, { status: 404 });
+    // La ruleta es pública: no pasa por el guard de sesión de abajo.
+    return response;
+  }
+
   const token = request.cookies.get("token")?.value;
   const locale = pathname.split("/")[1] || "es";
 
