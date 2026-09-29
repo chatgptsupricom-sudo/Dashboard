@@ -1,5 +1,5 @@
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
-import { metodosDePedidos } from "@/lib/ventas/metodoRetiro";
+import { metodosEvaluados } from "@/lib/ventas/metodoRetiro";
 import { listarPickingsEgresoPendientes } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const { ordenes, sin_facturar } = await listarPickingsEgresoPendientes(cids);
     // Método de retiro que cargó el vendedor (lib/ventas/metodoRetiro): sin
     // él, Almacén no puede registrar el egreso.
-    const metodos = await metodosDePedidos(ordenes.map((o) => o.odoo_sale_id || 0)).catch(() => new Map());
+    const metodos = await metodosEvaluados(ordenes.map((o) => o.odoo_sale_id || 0)).catch(() => new Map());
     return NextResponse.json({
       success: true,
       ordenes: ordenes.map((o) => ({ ...o, metodo_retiro: (o.odoo_sale_id && metodos.get(o.odoo_sale_id)) || null })),

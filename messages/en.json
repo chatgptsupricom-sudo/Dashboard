@@ -3327,6 +3327,8 @@
     "nombre_agencia": "Courier name",
     "nota_sucursal": "Note (optional): who picks up, hours…",
     "nota_envio": "Note (optional): address, contact, hours…",
+    "facturado": "Invoiced before tax: {monto}",
+    "se_recalcula": "Not invoiced yet: it's recalculated with the invoiced amount when the shipment is registered.",
     "sin_iva": "Before tax: {monto}",
     "ruta_gratis": "Free route: the order before tax ({base} $) reaches the {minimo} $ minimum.",
     "ruta_flete": "Customer pays the freight: the order before tax ({base} $) is below the {minimo} $ free-route minimum ({falta} $ short). It can still go by route.",

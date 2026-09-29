@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
-import { describirMetodo, metodosDePedidos, tipoEntregaDeMetodo } from "@/lib/ventas/metodoRetiro";
+import { describirMetodo, fijarRutaGratisFinal, metodosEvaluados, tipoEntregaDeMetodo } from "@/lib/ventas/metodoRetiro";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { filtroMercancia } from "@/lib/seguridad/filtros";
 import {
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
     // Método de retiro del pedido (lib/ventas/metodoRetiro): lo carga el
     // vendedor o el Asistente de Ventas. Sin él no se registra el egreso.
     const metodo = picking.odoo_sale_id
-      ? (await metodosDePedidos([picking.odoo_sale_id])).get(picking.odoo_sale_id) ?? null
+      ? (await metodosEvaluados([picking.odoo_sale_id])).get(picking.odoo_sale_id) ?? null
       : null;
     if (!metodo) {
       return NextResponse.json(
@@ -241,6 +241,10 @@ export async function POST(request: NextRequest) {
       );
     }
     tipoEntrega = tipoEntregaDeMetodo(metodo.metodo);
+    // La ruta gratis final (recalculada con lo facturado) queda guardada.
+    await fijarRutaGratisFinal(metodo).catch((e: any) =>
+      console.warn("[egreso] no se pudo guardar la ruta gratis final:", e?.message),
+    );
     if (!esTipoEntrega(tipoEntrega)) {
       return NextResponse.json({ error: "tipo de entrega invalido" }, { status: 400 });
     }
@@ -310,6 +314,7 @@ export async function POST(request: NextRequest) {
       truncar(
         [
           `Método de retiro: ${describirMetodo(metodo)}${metodo.nota ? ` — ${metodo.nota}` : ""}${metodo.registrado_por ? ` (indicado por ${metodo.registrado_por})` : ""}`,
+          metodo.alerta ? `⚠ ${metodo.alerta}` : null,
           body?.observaciones,
         ]
           .filter((x) => typeof x === "string" && x.trim())

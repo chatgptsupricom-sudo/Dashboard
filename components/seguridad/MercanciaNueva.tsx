@@ -434,6 +434,11 @@ export default function MercanciaNueva({
                     {picking.metodo_retiro.nota && (
                       <p className="text-xs text-slate-600 mt-0.5 whitespace-pre-wrap">{picking.metodo_retiro.nota}</p>
                     )}
+                    {picking.metodo_retiro.alerta && (
+                      <p className="mt-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-semibold text-rose-700">
+                        ⚠ {picking.metodo_retiro.alerta}
+                      </p>
+                    )}
                     <p className="text-[11px] text-slate-400 mt-1">
                       {tf("metodo_indicado_por", { quien: picking.metodo_retiro.registrado_por || "—" })}
                     </p>
