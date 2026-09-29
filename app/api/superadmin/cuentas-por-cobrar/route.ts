@@ -293,10 +293,11 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    // El CEI usa la cartera reconstruida al inicio y al final del mes, así
-    // que va después de las series.
+    // El CEI usa el saldo contable al inicio y al final del mes, pero le resta
+    // el contado y la cartera vieja por factura con esas mismas series, así
+    // que va después (seriesSemanales.ts → carteraCEI).
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
-    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraEn);
+    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -332,6 +333,7 @@ export async function GET(request: NextRequest) {
             pagos: efectividadCalc.pagos,
             facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
+            relacionadas: efectividadCalc.relacionadas,
           },
           carteraVencida: {
             // Se calcula con el mismo método que la fila semanal (reconstruyendo

@@ -69,8 +69,8 @@ export async function GET(request: NextRequest) {
       // CEI con su detalle por cliente. Mismos helpers que la tarjeta
       // (lib/cxc/efectividad.ts) para que nunca discrepen.
       const semanas = obtenerSemanasDelMes(currentYear, currentMonth + 1);
-      const { carteraEn } = await calcularSeriesCxC(companyIds, semanas, today);
-      const { resumen, clientes } = await detalleCEI(companyIds, monthStart, monthEnd, [], today, carteraEn);
+      const { carteraCEI } = await calcularSeriesCxC(companyIds, semanas, today);
+      const { resumen, clientes } = await detalleCEI(companyIds, monthStart, monthEnd, [], today, carteraCEI);
       return NextResponse.json({
         success: true,
         data: { type: "efectividad", summary: resumen, clientes },

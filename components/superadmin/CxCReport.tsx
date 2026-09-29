@@ -35,6 +35,7 @@ interface KPIs {
     value: number | null; meta: number; recuperado: number; ventasCredito: number;
     carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
     pagosRegistrados: number; pagos: number; facturas: number; parcial: boolean;
+    relacionadas?: number;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
@@ -257,7 +258,10 @@ export default function CxCReport() {
               value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("recuperado_mes")}: ${formatCurrency(data.kpis.efectividad.recuperado)} / ${t("ventas_credito_mes")}: ${formatCurrency(data.kpis.efectividad.ventasCredito)}`
+                `${t("recuperado_mes")}: ${formatCurrency(data.kpis.efectividad.recuperado)} / ${t("ventas_credito_mes")}: ${formatCurrency(data.kpis.efectividad.ventasCredito)}` +
+                ((data.kpis.efectividad.relacionadas ?? 0) > 0.005
+                  ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.efectividad.relacionadas!)} (${t("fuera_del_calculo")})`
+                  : "")
               }
               color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
               dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}

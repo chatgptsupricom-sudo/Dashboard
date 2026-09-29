@@ -345,6 +345,11 @@ export default function CxcDashboardPage() {
               {data.kpis.efectividad.parcial && (
                 <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
+              {data.kpis.efectividad.relacionadas > 0.005 && (
+                <div className="text-[11px] text-amber-700 mt-1">
+                  SUPER TECHNO LLC (relacionada) debe {formatCurrency(data.kpis.efectividad.relacionadas)} · fuera del cálculo
+                </div>
+              )}
             </div>
 
             <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
@@ -1097,14 +1102,19 @@ export default function CxcDashboardPage() {
                   </div>
                   <ul className="space-y-1 list-disc pl-4">
                     <li><strong>Solo crédito:</strong> se toman las facturas cuyo plazo de pago tiene días (7, 15, 30…). Las de contado (&quot;Immediate Payment&quot;) quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</li>
-                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes.</li>
+                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes, sin las facturas vencidas antes de 2025 (Incobrables).</li>
                     <li><strong>Ventas crédito:</strong> facturas a crédito del mes menos sus notas de crédito, con IVA.</li>
                     <li><strong>CxC final:</strong> lo que deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"}. La parte <strong>no vencida</strong> se resta del denominador porque todavía no se podía exigir.</li>
-                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos, retenciones y descuentos aplicados. Los anticipos que todavía no se aplicaron a una factura no cuentan.</li>
+                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos (aunque todavía no estén aplicados a una factura), retenciones y descuentos.</li>
                   </ul>
                   <p className="text-slate-500">
-                    Odoo solo guarda el saldo de hoy. La CxC de una fecha pasada se calcula así: saldo de hoy de cada factura + los pagos que recibió después de esa fecha. Es el mismo cálculo que usa Cartera Vencida.
+                    La CxC de cada fecha es el saldo contable de la cuenta de clientes a esa fecha (el mismo del reporte de antigüedad de Odoo), menos la parte de contado y las facturas vencidas antes de 2025. Quedan fuera Supricom y la empresa relacionada SUPER TECHNO LLC.
                   </p>
+                  {kpiData.summary.relacionadas > 0.005 && (
+                    <p className="text-amber-700">
+                      SUPER TECHNO LLC (relacionada) debe hoy {formatCurrency(kpiData.summary.relacionadas)}. No entra en la fórmula.
+                    </p>
+                  )}
                   <p className="text-slate-500">
                     100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
                     {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}

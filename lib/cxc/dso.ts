@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 import { CORTE_ODOO, normalizarRif, RIF_SQL } from "@/lib/smartbit";
+import { RELACIONADA } from "@/lib/cxc/cobros";
 
 /**
  * KPI "DSO" (días promedio de cobro), por cliente y global.
@@ -126,7 +127,7 @@ export async function calcularDSO(companyIds: number[], hoy: Date): Promise<DsoR
       // SUPER TECHNO LLC (Panamá) es empresa relacionada: en sep-2026 debía
       // 2,5 M sin un solo pago (77% del saldo de la sede) y llevaba el DSO de
       // Panamá de ~80 a 344 días. Se excluye como a los internos.
-      ["commercial_partner_id.name", "not ilike", "super techno llc"],
+      ["commercial_partner_id.name", "not ilike", RELACIONADA],
       "|", ["invoice_date_due", "=", false], ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
     ],
     ["commercial_partner_id", "company_id", "move_type", "invoice_date", "amount_total_signed",
