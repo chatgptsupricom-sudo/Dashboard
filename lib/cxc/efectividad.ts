@@ -1,4 +1,5 @@
-import { obtenerCobros } from "@/lib/cxc/cobros";
+import { obtenerCobros, esRelacionada, RELACIONADA } from "@/lib/cxc/cobros";
+import type { CarteraCEI } from "@/lib/cxc/seriesSemanales";
 import { callOdooRPC } from "@/lib/odoo";
 import { fechaDePago } from "@/lib/cxc/fechaConfirmacion";
 import { idsACredito } from "@/lib/cxc/credito";
@@ -182,9 +183,9 @@ export async function calcularEfectividad(
 //         CxC inicial + ventas a crédito − CxC final NO vencida
 //
 // Numerador: lo que salió de la cartera en el período (recuperado). Incluye
-// pagos, retenciones y descuentos aplicados, que también bajan el saldo; los
-// anticipos todavía no aplicados a una factura no cuentan, así que el CEI no
-// pasa de 100%. Denominador: lo que se PODÍA cobrar: la cartera al empezar
+// pagos (aplicados o no a una factura), retenciones y descuentos, que también
+// bajan el saldo. Un anticipo grande puede llevar el CEI por encima de 100%.
+// Denominador: lo que se PODÍA cobrar: la cartera al empezar
 // más lo vendido a crédito, menos lo que al cerrar todavía no vencía.
 //
 // Hasta 2026-09-28 el numerador eran los pagos registrados en banco/caja; se
@@ -193,13 +194,17 @@ export async function calcularEfectividad(
 //
 //  - Solo CRÉDITO en los tres términos (lib/cxc/credito.ts). Ventas a
 //    crédito = facturas − notas de crédito a crédito con `invoice_date` en el
-//    período (`amount_total_signed`, con IVA); CxC inicial y final solo de
-//    facturas a crédito. Si la cartera incluyera contado y las ventas no, una
-//    factura de contado sin cobrar al cierre restaría como "cobro negativo".
-//  - CxC al inicio / al final: cartera reconstruida en el corte
-//    (lib/cxc/seriesSemanales.ts → carteraEn), mismo método que Cartera Vencida.
+//    período (`amount_total_signed`, con IVA); a la CxC inicial y final se le
+//    resta la parte de contado (los pagos sin aplicar y los asientos manuales
+//    de la cuenta por cobrar sí quedan). Si la cartera incluyera contado y las
+//    ventas no, una factura de contado sin cobrar al cierre restaría como
+//    "cobro negativo".
+//  - CxC al inicio / al final: saldo contable de la cuenta por cobrar a la
+//    fecha (lib/cxc/seriesSemanales.ts → carteraCEI), sin contado ni cartera
+//    vieja (vencida antes de 2025).
 //  - Mes en curso: el corte final es hoy.
-//  - El cliente interno Supricom queda fuera de todo.
+//  - El cliente interno Supricom queda fuera de todo. La empresa relacionada
+//    SUPER TECHNO también, pero su saldo se informa en `relacionadas`.
 //
 // `calcularEfectividad` (arriba: cobrado ÷ lo que VENCÍA en el mes) sigue
 // existiendo para "Cobros esperados vs realizados" de Salud financiera.
@@ -225,12 +230,30 @@ export interface CEIResultado {
   facturas: number;
   /** true mientras el mes no cierra: el corte final es hoy. */
   parcial: boolean;
+  /** Saldo de hoy de la empresa relacionada (SUPER TECHNO): se muestra, no entra al CEI. */
+  relacionadas: number;
+  /** CEI del mes por sede (company_id); solo se calcula con más de una sede. */
+  porSede: Record<number, number | null>;
   semana: (string | null)[];
 }
 
-type CarteraEn = (corte: Date, soloCredito?: boolean) => { total: number; vencido: number };
-
 const esSupricom = (nombre: string) => nombre.toLowerCase().includes("supricom");
+
+/** Saldo contable de hoy de la empresa relacionada (SUPER TECHNO): se muestra, no entra a los KPIs. */
+export async function saldoRelacionada(companyIds: number[]): Promise<number> {
+  const g = await callOdooRPC<any[]>(
+    "account.move.line",
+    "read_group",
+    [[
+      ["account_id.account_type", "=", "asset_receivable"],
+      ["parent_state", "=", "posted"],
+      ["company_id", "in", companyIds],
+      ["partner_id.commercial_partner_id.name", "ilike", RELACIONADA],
+    ], ["balance:sum"], []],
+    { lazy: false },
+  );
+  return Number(g?.[0]?.balance || 0);
+}
 
 async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string) {
   const out: any[] = [];
@@ -245,13 +268,14 @@ async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: st
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
       ]],
-      { fields: ["id", "name", "partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
+      { fields: ["id", "name", "partner_id", "commercial_partner_id", "company_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
     )) || [];
     out.push(...page);
     if (page.length < 5000) break;
   }
-  // Solo ventas a crédito (lib/cxc/credito.ts).
-  const propias = out.filter((f) => f.partner_id && !esSupricom(f.partner_id[1] || ""));
+  // Solo ventas a crédito (lib/cxc/credito.ts), sin internos ni relacionadas.
+  const propias = out.filter((f) =>
+    f.partner_id && !esSupricom(f.partner_id[1] || "") && !esRelacionada(f.commercial_partner_id?.[1] || ""));
   const aCredito = await idsACredito(propias);
   return propias.filter((f) => aCredito.has(f.id));
 }
@@ -286,7 +310,7 @@ async function pagosRegistrados(companyIds: number[], desde: string, hasta: stri
     if (page.length < 5000) break;
   }
   return out
-    .filter((p) => !esSupricom(p.partner_id?.[1] || ""))
+    .filter((p) => !esSupricom(p.partner_id?.[1] || "") && !esRelacionada(p.partner_id?.[1] || ""))
     .map((p) => ({
       fecha: fechaDePago(p) || desde,
       monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
@@ -318,9 +342,9 @@ export async function calcularCEI(
   monthEnd: Date,
   semanas: Semana[],
   hoy: Date,
-  carteraEn: CarteraEn,
+  carteraCEI: CarteraCEI,
 ): Promise<CEIResultado> {
-  return (await detalleCEI(companyIds, monthStart, monthEnd, semanas, hoy, carteraEn)).resumen;
+  return (await detalleCEI(companyIds, monthStart, monthEnd, semanas, hoy, carteraCEI)).resumen;
 }
 
 export async function detalleCEI(
@@ -329,17 +353,25 @@ export async function detalleCEI(
   monthEnd: Date,
   semanas: Semana[],
   hoy: Date,
-  carteraEn: CarteraEn,
+  carteraCEI: CarteraCEI,
 ): Promise<DetalleCEI> {
   const desde = iso(monthStart);
   const hasta = iso(monthEnd);
-  const [facturas, pagos] = await Promise.all([
+  const corteFinal = (fin: Date) => (hoy < fin ? hoy : fin);
+  const [facturas, pagos, inicial, final, relacionadas, carteraSemanas] = await Promise.all([
     facturasDelPeriodo(companyIds, desde, hasta),
     pagosRegistrados(companyIds, desde, hasta),
+    carteraCEI(antesDe(monthStart)),
+    carteraCEI(corteFinal(monthEnd)),
+    saldoRelacionada(companyIds),
+    Promise.all(semanas.map((s) =>
+      s.inicio > hoy ? null : Promise.all([carteraCEI(antesDe(s.inicio)), carteraCEI(corteFinal(s.fin))]),
+    )),
   ]);
 
-  const sumaFacturado = (a: string, b: string) => facturas
+  const sumaFacturado = (a: string, b: string, companyId?: number) => facturas
     .filter((f) => f.invoice_date >= a && f.invoice_date <= b)
+    .filter((f) => companyId === undefined || f.company_id?.[0] === companyId)
     .reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
   const sumaPagos = (a: string, b: string) => pagos
     .filter((p) => p.fecha >= a && p.fecha <= b)
@@ -347,17 +379,27 @@ export async function detalleCEI(
 
   const montoPagos = sumaPagos(desde, hasta);
   const ventasCredito = sumaFacturado(desde, hasta);
-  const inicial = carteraEn(antesDe(monthStart), true);
-  const final = carteraEn(hoy < monthEnd ? hoy : monthEnd, true);
-  const finalNoVencida = final.total - final.vencido;
+  const finalNoVencida = final.noVencida;
+
+  // CEI de cada sede con los mismos cortes (tabla Por Sede de la vista consolidada).
+  const porSede: Record<number, number | null> = {};
+  if (companyIds.length > 1) {
+    await Promise.all(companyIds.map(async (cid) => {
+      const [ini, fin] = await Promise.all([
+        carteraCEI(antesDe(monthStart), cid),
+        carteraCEI(corteFinal(monthEnd), cid),
+      ]);
+      porSede[cid] = cei(ini.total, sumaFacturado(desde, hasta, cid), fin.total, fin.noVencida).value;
+    }));
+  }
   const { recuperado, exigible, value } = cei(inicial.total, ventasCredito, final.total, finalNoVencida);
 
   // Fila semanal: el mismo CEI con la semana como período.
-  const semana: (string | null)[] = semanas.map((s) => {
-    if (s.inicio > hoy) return null;
-    const a = iso(s.inicio), b = iso(s.fin);
-    const fin = carteraEn(hoy < s.fin ? hoy : s.fin, true);
-    const r = cei(carteraEn(antesDe(s.inicio), true).total, sumaFacturado(a, b), fin.total, fin.total - fin.vencido);
+  const semana: (string | null)[] = semanas.map((s, i) => {
+    const cortes = carteraSemanas[i];
+    if (!cortes) return null;
+    const [ini, fin] = cortes;
+    const r = cei(ini.total, sumaFacturado(iso(s.inicio), iso(s.fin)), fin.total, fin.noVencida);
     return r.value === null ? null : `${Math.round(r.value)}%`;
   });
 
@@ -386,6 +428,8 @@ export async function detalleCEI(
       pagos: pagos.length,
       facturas: facturas.filter((f) => f.move_type === "out_invoice").length,
       parcial: hoy <= monthEnd,
+      relacionadas: r2(relacionadas),
+      porSede,
       semana,
     },
     clientes: [...porCliente.values()]

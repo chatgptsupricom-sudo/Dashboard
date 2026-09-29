@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -108,6 +109,34 @@ async function cobrosDelMes(
     .sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || ""));
 }
 
+// Facturas del cliente abiertas al cierre, con su saldo (lib/cxc/porCobrar.ts).
+async function porCobrarDelCliente(
+  companyIds: number[], partnerId: number, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined,
+): Promise<Factura[]> {
+  const { renglones } = await porCobrarAlCierre(companyIds, monthEnd, partnerId);
+  const filtrados = renglones
+    .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
+    .filter((r) => vendedorId === undefined || r.sellerId === vendedorId);
+  const ptIds = [...new Set(filtrados.map((r) => r.plazoId).filter((id): id is number => Boolean(id)))];
+  const ptMap: Record<number, string> = {};
+  if (ptIds.length > 0) {
+    try {
+      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
+      (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
+    } catch (_) {}
+  }
+  return filtrados
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      invoiceDate: r.invoiceDate,
+      moveType: r.moveType,
+      amountTotal: r.saldo,
+      paymentTermName: (r.plazoId && ptMap[r.plazoId]) || "Contado",
+    }))
+    .sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || ""));
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -127,11 +156,11 @@ export async function GET(request: NextRequest) {
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
     const modoParam = searchParams.get("modo");
-    const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
+    const modo = modoParam === "cobrado" || modoParam === "por_cobrar" ? modoParam : "facturado";
     // Mismo toggle que contado-credito/route.ts: si no viene explicito, el
     // default historico de cada modo (Facturado si excluia, Cobrado no).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
-    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo === "facturado";
     // Mismos checks que contado-credito/route.ts (solo en Cobrado).
     const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
     const excluirIva25 = searchParams.get("excluirIva25") !== "false";
@@ -170,7 +199,9 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    let facturas = modo === "cobrado"
+    let facturas = modo === "por_cobrar"
+      ? await porCobrarDelCliente(companyIds, partnerId, monthEnd, excluirAsistente, vendedorId)
+      : modo === "cobrado"
       ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId, excluirRetenciones, excluirIva25)
       : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId);
 
