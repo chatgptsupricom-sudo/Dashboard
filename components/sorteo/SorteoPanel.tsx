@@ -602,7 +602,7 @@ function FormConfig({
 
   const campo = "h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-[#1a9ad6] focus:bg-white focus:ring-2 focus:ring-[#1a9ad6]/20";
   return (
-    <form onSubmit={guardar} className="rounded-2xl border border-slate-200 bg-white p-5">
+    <form onSubmit={guardar} className="@container rounded-2xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 font-bold text-slate-900"><Settings2 size={18} className="text-[#0a5fb4]" /> Sorteo activo</h2>
@@ -622,7 +622,8 @@ function FormConfig({
         </p>
       )}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[180px_170px_170px_minmax(0,1fr)]">
+      {/* Por el ancho del formulario (con el menú lateral abierto queda angosto), no de la ventana. */}
+      <div className="mt-4 grid gap-3 @lg:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-[180px_200px_190px_minmax(0,1fr)]">
         <label className="text-xs font-semibold text-slate-600">
           Sede
           <select value={companyId} onChange={(e) => setCompanyId(Number(e.target.value))} className={`mt-1 ${campo}`}>
@@ -637,7 +638,7 @@ function FormConfig({
           Monto por ticket (USD)
           <input type="number" min={1} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} className={`mt-1 ${campo}`} required />
         </label>
-        <label className="text-xs font-semibold text-slate-600">
+        <label className="text-xs font-semibold text-slate-600 @lg:col-span-2 @3xl:col-span-3 @6xl:col-span-1">
           Título de la landing <span className="font-normal text-slate-400">(opcional)</span>
           <input
             type="text"
@@ -677,7 +678,8 @@ function EnlacePublico() {
     } catch { /* sin permiso de portapapeles */ }
   };
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm md:flex-row md:items-center">
+    <div className="@container rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+      <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center">
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-slate-900">Página pública del sorteo</p>
         <p className="text-slate-500">
@@ -686,11 +688,12 @@ function EnlacePublico() {
           botón «Operador» al pie), o se gira desde esta pantalla y el giro aparece también allá.
         </p>
       </div>
-      <div className="flex items-center gap-2">
-        <a href={url} target="_blank" rel="noreferrer" className="truncate rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 hover:bg-slate-200">{url}</a>
-        <button type="button" onClick={copiar} className="flex items-center gap-1.5 rounded-xl bg-[#0b2a6f] px-3 py-2 text-xs font-semibold text-white hover:bg-[#0a5fb4]">
+      <div className="flex min-w-0 items-center gap-2">
+        <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 hover:bg-slate-200">{url}</a>
+        <button type="button" onClick={copiar} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-[#0b2a6f] px-3 py-2 text-xs font-semibold text-white hover:bg-[#0a5fb4]">
           <Copy size={14} /> {copiado ? "Copiado" : "Copiar"}
         </button>
+      </div>
       </div>
     </div>
   );
