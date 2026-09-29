@@ -104,8 +104,19 @@ export function evaluarRutaGratis(o: {
   if (minimo === 300 && o.estadoCliente && !/carabobo/i.test(o.estadoCliente)) {
     minimo = 1000;
     alerta = `La dirección de entrega es de ${o.estadoCliente.replace(/\s*\(VE\)\s*$/i, "")}: la ruta Valencia (300 $) es solo para Carabobo, se exige el mínimo de 1000 $`;
+  } else if (minimo === 300 && !o.estadoCliente) {
+    // Sin estado no se puede confirmar que sea de Carabobo: se deja el
+    // mínimo de 300 $ (el dato falta en Odoo, no es culpa del cliente), pero
+    // se avisa en vez de pasarlo callado.
+    alerta = "La dirección de entrega no tiene estado en Odoo: no se pudo confirmar que sea de Carabobo (ruta Valencia, 300 $)";
   }
-  if (o.moneda && o.moneda.toUpperCase() !== "USD") return { gratis: null, minimo, alerta };
+  if (o.moneda && o.moneda.toUpperCase() !== "USD") {
+    // El mínimo es en USD. Con lo facturado (en la moneda de la compañía,
+    // USD) el caller pasa "USD"; esto queda para un pedido en otra moneda
+    // todavía sin facturar, que antes pasaba sin ningún aviso.
+    const aviso = `El pedido está en ${o.moneda}: la ruta gratis se decide con lo facturado`;
+    return { gratis: null, minimo, alerta: alerta ? `${alerta}. ${aviso}` : aviso };
+  }
   return { gratis: o.monto >= minimo ? 1 : 0, minimo, alerta };
 }
 

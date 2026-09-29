@@ -10,7 +10,7 @@ import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
 import EgresoFlujo from "./EgresoFlujo";
-import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases } from "./mercancia-ui";
+import { PageHeader, Card, SectionTitle, BotonPrimario, BotonSecundario, inputClases } from "./mercancia-ui";
 
 /**
  * Verificacion en el porton y calificacion del almacenista.
@@ -88,17 +88,24 @@ export default function MercanciaDetalle({
   // Un formulario de calificacion en curso por almacenista, gateado por nombre.
   const [estrellasPor, setEstrellasPor] = useState<Record<string, number>>({});
   const [comentarioPor, setComentarioPor] = useState<Record<string, string>>({});
+  // Almacenista cuya nota se esta guardando: el boton se apaga y un doble
+  // toque no deja dos notas.
+  const [calificando, setCalificando] = useState<string | null>(null);
 
   const rol = (user?.role || "").toLowerCase().trim();
   // Almacen preparo el registro (issue #43): ve el estado, pero no verifica
   // en el porton ni firma ni califica — eso es exclusivo de Seguridad.
   const esAlmacen = rol === "almacen";
 
+  // Error al leer el registro: sin esto, la primera carga fallida se veia
+  // "vacia", como si no existiera.
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const cargar = useCallback(async () => {
     try {
       const res = await fetch(`/api/seguridad/mercancia/${id}`);
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || res.statusText || "");
+      setErrorCarga(null);
       setMov(json.movimiento);
       setItems(json.items || []);
       setCalificaciones(json.calificaciones || []);
@@ -116,6 +123,8 @@ export default function MercanciaDetalle({
       setConteos(previos);
       setNoSalio(noSalioPrevios);
       setMotivos(motivosPrevios);
+    } catch (e: any) {
+      setErrorCarga(e?.message || " ");
     } finally {
       setCargando(false);
     }
@@ -176,9 +185,11 @@ export default function MercanciaDetalle({
 
   const calificar = async (almacenistaNombre: string) => {
     const estrellas = estrellasPor[almacenistaNombre] || 0;
-    if (!mov || estrellas < 1) return;
+    if (!mov || estrellas < 1 || calificando) return;
+    setError(null);
+    setCalificando(almacenistaNombre);
     try {
-      await fetch("/api/seguridad/calificar", {
+      const res = await fetch("/api/seguridad/calificar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -187,14 +198,21 @@ export default function MercanciaDetalle({
           relacionado_a: "mercancia",
           relacionado_id: mov.id,
           comentario: (comentarioPor[almacenistaNombre] || "").trim() || null,
-          calificado_por: user?.name || user?.email || "Seguridad",
         }),
       });
+      // Si no se guardo, las estrellas y el comentario se quedan para
+      // reintentar, y se dice por que (antes parecia guardado).
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
       setEstrellasPor((p) => ({ ...p, [almacenistaNombre]: 0 }));
       setComentarioPor((p) => ({ ...p, [almacenistaNombre]: "" }));
       void cargar();
-    } catch {
-      // El fallo de la calificacion no debe tapar la verificacion.
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+    } finally {
+      setCalificando(null);
     }
   };
 
@@ -206,9 +224,18 @@ export default function MercanciaDetalle({
     );
   }
   if (!mov) {
+    // Sin datos por un error (mala señal en el patio), no "vacío": parecía
+    // que el registro no existía.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
-        {tm("vacio")}
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-400 text-sm px-4 text-center">
+        {errorCarga ? (
+          <>
+            <span className="text-red-600">{tm("error_carga")} {errorCarga}</span>
+            <BotonSecundario onClick={() => { setCargando(true); void cargar(); }}>{tm("reintentar")}</BotonSecundario>
+          </>
+        ) : (
+          tm("vacio")
+        )}
       </div>
     );
   }
@@ -430,7 +457,7 @@ export default function MercanciaDetalle({
                           />
                           <BotonPrimario
                             onClick={() => calificar(nombre)}
-                            disabled={(estrellasPor[nombre] || 0) < 1}
+                            disabled={(estrellasPor[nombre] || 0) < 1 || calificando !== null}
                           >
                             {tc("save")}
                           </BotonPrimario>

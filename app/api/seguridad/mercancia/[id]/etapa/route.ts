@@ -160,6 +160,7 @@ export async function POST(
           documento: m.odoo_picking_name,
           aprobado: m.aprobado === null ? undefined : Number(m.aprobado) === 1,
           despachado: m.despachado === null ? undefined : Number(m.despachado) === 1,
+          cancelado: m.decision_seguridad === "cancelar" || undefined,
         },
         Number(m.cids) || null,
       );
@@ -447,18 +448,19 @@ async function ejecutar(
       let decision: DecisionSeguridad = "despachar";
       let motivo: string | null = null;
       if (!aprobado) {
-        // `despachar: true/false` es como lo mandaba la pantalla antes de la
-        // opcion "cancelar": se sigue aceptando.
+        // `despachar: true` (la pantalla de antes de "cancelar") se sigue
+        // aceptando. `despachar: false` no: antes de #301 era "no sale, se
+        // cierra" y ahora se leia como "devolver", asi que una pantalla vieja
+        // en cache devolvia el egreso a Almacen cuando queria cerrarlo. Sin
+        // `decision` explicita, se pide.
         const pedida = esDecision(body?.decision)
           ? body.decision
-          : typeof body?.despachar === "boolean"
-            ? body.despachar
-              ? "despachar"
-              : "devolver"
+          : body?.despachar === true
+            ? "despachar"
             : null;
         if (!pedida) {
           return NextResponse.json(
-            { error: "Decide si se despacha, vuelve a Almacen o se cancela" },
+            { error: "Decide si se despacha, vuelve a Almacén o se cancela. Si no ves esas opciones, recarga la página." },
             { status: 400 },
           );
         }

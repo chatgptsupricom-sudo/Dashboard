@@ -96,8 +96,15 @@ export async function POST(request: NextRequest) {
 
     const comentario = truncate(body.comentario, MAX.comentario);
 
-    const calificadoPor = truncate(body.calificado_por, MAX.calificado_por);
-    if (!calificadoPor) errors.push("calificado_por es obligatorio");
+    // Quien califica sale de la sesion, no del body: con el nombre del
+    // formulario se podia firmar la nota como otra persona. Mismo criterio que
+    // las etapas del egreso (mercancia/[id]/etapa). `calificado_por` del body
+    // se ignora.
+    const calificadoPor = truncate(
+      String(auth.payload?.name || auth.payload?.email || auth.payload?.role || "").trim(),
+      MAX.calificado_por,
+    );
+    if (!calificadoPor) errors.push("no se pudo saber quien califica");
 
     // 'mercancia' entro con la seccion de carga de camiones: ahi tambien se
     // califica, al almacenista que carga. La columna del ENUM ya lo admitia,

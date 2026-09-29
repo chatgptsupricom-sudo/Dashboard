@@ -25,6 +25,7 @@ type Pedido = {
   facturado: number | null;
   /** Con lo que se decide la ruta gratis (montoRutaGratis en el servidor). */
   monto_ruta: number;
+  moneda_ruta: string;
   estado_cliente: string | null;
   ordenes: { id: number; nombre: string; estado: string }[];
   facturas: { numero: string; fecha: string | null }[];
@@ -329,19 +330,21 @@ export function MetodoRetiro() {
                         // El mismo monto que usa el servidor: lo facturado, o el
                         // pedido mientras se factura por partes.
                         const monto = p.monto_ruta;
-                        const ev = evaluarRutaGratis({ companyId: p.company_id, rutaNombre: ruta, monto, moneda: p.moneda, estadoCliente: p.estado_cliente });
-                        if (ev.minimo === null || ev.gratis === null) return null;
+                        const ev = evaluarRutaGratis({ companyId: p.company_id, rutaNombre: ruta, monto, moneda: p.moneda_ruta, estadoCliente: p.estado_cliente });
+                        // gratis null (pedido en otra moneda, sin facturar): no hay
+                        // veredicto, pero el aviso de por qué sí se muestra.
+                        if (ev.minimo === null) return null;
                         return (
                           <div className="space-y-1.5">
                             {ev.gratis === 1 ? (
                               <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                                 {t("ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo) })}
                               </p>
-                            ) : (
+                            ) : ev.gratis === 0 ? (
                               <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                                 {t("ruta_flete", { base: usd(monto), minimo: usd(ev.minimo), falta: usd(ev.minimo - monto) })}
                               </p>
-                            )}
+                            ) : null}
                             {ev.alerta && (
                               <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{ev.alerta}</p>
                             )}
