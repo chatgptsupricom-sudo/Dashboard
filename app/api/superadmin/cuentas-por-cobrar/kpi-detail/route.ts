@@ -4,7 +4,7 @@ import { detalleCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
-import { obtenerCobros, esRelacionada } from "@/lib/cxc/cobros";
+import { obtenerCobros, esRelacionada, RELACIONADA } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { VENCIMIENTO_DESDE, esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { NextRequest, NextResponse } from "next/server";
@@ -172,6 +172,7 @@ export async function GET(request: NextRequest) {
         ["invoice_date_due", "<", desdeStr],
         ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
+        ["commercial_partner_id.name", "not ilike", RELACIONADA],
       ];
       const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
         "invoice_date_due", "payment_state", "amount_total", "amount_residual"];
@@ -188,6 +189,7 @@ export async function GET(request: NextRequest) {
             ["invoice_date_due", "<", desdeStr],
             ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
             ["partner_id.name", "not ilike", "supricom"],
+            ["commercial_partner_id.name", "not ilike", RELACIONADA],
           ],
         }),
       ]);

@@ -362,6 +362,7 @@ export async function GET(request: NextRequest) {
             saldoVencidoHoy: recuperacionCalc.saldoVencidoHoy,
             conciliadoDesdeElCorte: recuperacionCalc.conciliadoDesdeElCorte,
             facturasConSaldo: recuperacionCalc.facturasConSaldo,
+            relacionadas: efectividadCalc.relacionadas,
           },
           dso: {
             value: dsoCalc.value,

@@ -1951,7 +1951,7 @@
     "incobrables_desc": "Overdue before 2025",
     "clientes": "customers",
     "incobrables_nota": "excluded from Overdue, Recovery and DSO",
-    "fuera_del_calculo": "not in the formula",
+    "fuera_del_calculo": "excluded: related group company, not a customer; it would distort the metric",
     "resumen_cartera": "Portfolio Summary",
     "cartera_total_abierta": "Total open portfolio",
     "cartera_vencida_label": "Overdue portfolio",

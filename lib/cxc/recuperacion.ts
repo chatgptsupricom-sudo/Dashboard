@@ -1,6 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
-import { obtenerCobros } from "@/lib/cxc/cobros";
+import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 
 /**
@@ -105,8 +105,11 @@ export async function calcularRecuperacion(
   // El filtro de partners internos va en el dominio de Odoo y no en JS: así
   // no viajan filas que después se descartan (el resto del endpoint las
   // filtra en JS por razones históricas).
+  // SUPER TECHNO (empresa relacionada, lib/cxc/cobros.ts) va fuera igual que
+  // los internos.
   const noInterno = (prefijo: string): any[] => [
     [`${prefijo}partner_id.name`, "not ilike", "supricom"],
+    [`${prefijo}commercial_partner_id.name`, "not ilike", RELACIONADA],
   ];
 
   // Facturas que ya estaban vencidas al iniciar el mes y HOY siguen con saldo.
@@ -144,7 +147,7 @@ export async function calcularRecuperacion(
         ["move_type", "=", "out_invoice"],
         ["invoice_date_due", "<", desde],
         ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
-        ["partner_id.name", "not ilike", "supricom"],
+        ...noInterno(""),
       ],
     }),
   ]);

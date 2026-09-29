@@ -96,6 +96,19 @@ function Modal({ open, onClose, title, children, wide }: { open: boolean; onClos
   );
 }
 
+/**
+ * SUPER TECHNO LLC fuera de un KPI (lib/cxc/cobros.ts → RELACIONADA): se
+ * muestra su saldo y el motivo, para que no parezca que la deuda desapareció.
+ */
+function AvisoRelacionada({ monto }: { monto?: number }) {
+  if (!monto || monto <= 0.005) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
+      <strong>SUPER TECHNO LLC excluida:</strong> debe {formatCurrency(monto)}. Es una empresa relacionada del grupo, no un cliente: su deuda no se gestiona como cobranza y distorsionaría el indicador.
+    </div>
+  );
+}
+
 export default function CxcDashboardPage() {
   const { user } = useAuthStore();
   const [data, setData] = useState<any>(null);
@@ -345,11 +358,7 @@ export default function CxcDashboardPage() {
               {data.kpis.efectividad.parcial && (
                 <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
-              {data.kpis.efectividad.relacionadas > 0.005 && (
-                <div className="text-[11px] text-amber-700 mt-1">
-                  SUPER TECHNO LLC (relacionada) debe {formatCurrency(data.kpis.efectividad.relacionadas)} · fuera del cálculo
-                </div>
-              )}
+              <AvisoRelacionada monto={data.kpis.efectividad.relacionadas} />
             </div>
 
             <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
@@ -368,11 +377,7 @@ export default function CxcDashboardPage() {
                 <span>Vencido: {formatCurrency(data.kpis.carteraVencida.saldoVencido)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
-              {data.kpis.carteraVencida.relacionadas > 0.005 && (
-                <div className="text-[11px] text-amber-700 mt-1">
-                  SUPER TECHNO LLC (relacionada) debe {formatCurrency(data.kpis.carteraVencida.relacionadas)} · fuera del cálculo
-                </div>
-              )}
+              <AvisoRelacionada monto={data.kpis.carteraVencida.relacionadas} />
             </div>
 
             <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
@@ -391,6 +396,7 @@ export default function CxcDashboardPage() {
                 <span>Recuperado en el mes: {formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
+              <AvisoRelacionada monto={data.kpis.recuperacion.relacionadas} />
             </div>
 
             <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
@@ -1115,11 +1121,7 @@ export default function CxcDashboardPage() {
                   <p className="text-slate-500">
                     La CxC de cada fecha es el saldo contable de la cuenta de clientes a esa fecha (el mismo del reporte de antigüedad de Odoo), menos la parte de contado y las facturas vencidas antes de 2025. Quedan fuera Supricom y la empresa relacionada SUPER TECHNO LLC.
                   </p>
-                  {kpiData.summary.relacionadas > 0.005 && (
-                    <p className="text-amber-700">
-                      SUPER TECHNO LLC (relacionada) debe hoy {formatCurrency(kpiData.summary.relacionadas)}. No entra en la fórmula.
-                    </p>
-                  )}
+                  <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                   <p className="text-slate-500">
                     100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
                     {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}

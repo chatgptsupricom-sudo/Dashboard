@@ -1429,7 +1429,7 @@
     "incobrables_desc": "Vencidas antes de 2025",
     "clientes": "clientes",
     "incobrables_nota": "no cuentan en Cartera Vencida, Recuperación ni DSO",
-    "fuera_del_calculo": "fuera del cálculo",
+    "fuera_del_calculo": "excluida: empresa relacionada del grupo, no un cliente; distorsionaría el indicador",
     "resumen_cartera": "Resumen Cartera",
     "cartera_total_abierta": "Cartera total abierta",
     "cartera_vencida_label": "Cartera vencida",

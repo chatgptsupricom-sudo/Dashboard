@@ -38,7 +38,7 @@ interface KPIs {
     relacionadas?: number;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number; relacionadas?: number };
-  recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
+  recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number; relacionadas?: number };
   dso: { value: number | null; meta: number; carteraAbierta: number; ventasNetas: number; clientes: number };
   // Cartera vencida antes de 2025, fuera de los otros KPIs (lib/cxc/carteraVieja.ts).
   incobrables?: { saldo: number; facturas: number; clientes: number };
@@ -285,7 +285,10 @@ export default function CxCReport() {
               title={t("recuperacion_vencidos")}
               value={data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.recuperacion.meta}%`}
-              subtitle={`${t("recuperado")}: ${formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)} / ${t("vencido_al_inicio")}: ${formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}`}
+              subtitle={`${t("recuperado")}: ${formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)} / ${t("vencido_al_inicio")}: ${formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}` +
+                ((data.kpis.recuperacion.relacionadas ?? 0) > 0.005
+                  ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.recuperacion.relacionadas!)} (${t("fuera_del_calculo")})`
+                  : "")}
               color={getTrafficLight(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
               dot={getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
               icon={<RefreshCw size={20} />}
