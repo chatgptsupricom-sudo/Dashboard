@@ -375,6 +375,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HistorialFacturacion } from "@/components/dashboard/HistorialFacturacion";
 import { format } from "date-fns";
 import {
   Activity,
@@ -552,48 +553,7 @@ export function GerenteVentasView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Gráfico 1: Historial */}
-        <Card className="rounded-3xl border-none shadow-sm bg-white">
-          <CardHeader>
-            <CardTitle className="text-slate-700 font-bold">
-              {t("billing_history")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={data.monthlyGrowth || []}
-                margin={{ left: 40, right: 20, top: 20, bottom: 20 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#f1f5f9"
-                />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(value) =>
-                    value >= 1000
-                      ? `$${(value / 1000).toFixed(0)}k`
-                      : `$${value}`
-                  }
-                  width={80}
-                />
-                <RechartsTooltip
-                  formatter={(value: number) => `$${value.toLocaleString()}`}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#3b82f6"
-                  strokeWidth={4}
-                  dot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <HistorialFacturacion title={t("billing_history")} data={data.monthlyGrowth || []} />
 
         {/* Gráfico 2: VENDEDORES */}
         <Card className="rounded-3xl border-none shadow-sm bg-white">

@@ -43,12 +43,19 @@ type Movimiento = {
   saldo: number;
   diasAtraso: number;
   vendedor: string;
+  /** Marcada "Excluir seguimiento" en Odoo y abierta: se muestra, no suma. */
+  excluido?: boolean;
 };
 
 type Estado = {
   cliente: { id: number; nombre: string; vat: string };
   movimientos: Movimiento[];
-  totales: { cargo: number; abono: number; saldo: number };
+  totales: {
+    cargo: number;
+    abono: number;
+    saldo: number;
+    excluido?: { cantidad: number; cargo: number; abono: number };
+  };
 };
 
 const API = "/api/superadmin/cuentas-por-cobrar/estado-cuenta";
@@ -171,6 +178,43 @@ export default function EstadoCuentaCxCPage() {
     [filtrados],
   );
 
+  // Clientes que coinciden con el filtro pero no están en el listado porque
+  // no tienen documentos abiertos (al día). Se buscan en Odoo al escribir 3+
+  // letras, para poder sacarles el estado de cuenta igual.
+  const [sinSaldo, setSinSaldo] = useState<Cliente[]>([]);
+  const [buscandoOdoo, setBuscandoOdoo] = useState(false);
+  useEffect(() => {
+    const q = filtro.trim();
+    if (q.length < 3) {
+      setSinSaldo([]);
+      return;
+    }
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      setBuscandoOdoo(true);
+      try {
+        const qs = new URLSearchParams({ buscar: q });
+        if (empresa) qs.set("empresa", empresa);
+        const res = await fetch(`${API}?${qs}`);
+        const json = await res.json();
+        if (cancelado) return;
+        const listados = new Set(clientes.map((c) => c.partnerId));
+        setSinSaldo(
+          json.success
+            ? (json.clientes || []).filter((c: Cliente) => !listados.has(c.partnerId))
+            : [],
+        );
+      } catch {
+        if (!cancelado) setSinSaldo([]);
+      }
+      if (!cancelado) setBuscandoOdoo(false);
+    }, 400);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [filtro, empresa, clientes]);
+
   // ── Detalle de un cliente ──
   if (seleccionado) {
     return (
@@ -251,6 +295,19 @@ export default function EstadoCuentaCxCPage() {
               </div>
             </div>
 
+            {(estado.totales.excluido?.cantidad ?? 0) > 0 && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <strong>
+                  {estado.totales.excluido!.cantidad}{" "}
+                  {estado.totales.excluido!.cantidad === 1 ? "movimiento excluido" : "movimientos excluidos"} del seguimiento
+                </strong>{" "}
+                (marcados en Odoo con &quot;Excluir seguimiento&quot;): se muestran en gris y{" "}
+                <strong>no suman</strong> al saldo ni a los totales.
+                {estado.totales.excluido!.cargo > 0 && <> Cargos excluidos: {monto(estado.totales.excluido!.cargo)}.</>}
+                {estado.totales.excluido!.abono > 0 && <> Abonos excluidos: {monto(estado.totales.excluido!.abono)}.</>}
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -271,9 +328,12 @@ export default function EstadoCuentaCxCPage() {
                     {estado.movimientos.map((m, i) => (
                       <tr
                         key={i}
-                        className="border-b border-slate-100 hover:bg-slate-50"
+                        className={`border-b border-slate-100 hover:bg-slate-50 ${
+                          m.excluido ? "bg-slate-50/60 italic opacity-60" : ""
+                        }`}
+                        title={m.excluido ? "Excluido de seguimiento en Odoo: no suma al saldo" : undefined}
                       >
-                        <td className="px-4 py-2">
+                        <td className="px-4 py-2 whitespace-nowrap">
                           <span
                             className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
                               COLOR_TRANSACCION[m.transaccion] ||
@@ -282,6 +342,11 @@ export default function EstadoCuentaCxCPage() {
                           >
                             {m.transaccion}
                           </span>
+                          {m.excluido && (
+                            <span className="ml-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold not-italic bg-amber-100 text-amber-700">
+                              Excluido · no suma
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2 text-slate-700">{m.documento}</td>
                         <td className="px-4 py-2 text-slate-500">
@@ -302,7 +367,7 @@ export default function EstadoCuentaCxCPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-2 text-right font-medium text-slate-800">
-                          {monto(m.saldo)}
+                          {m.excluido ? <span className="text-slate-400">—</span> : monto(m.saldo)}
                         </td>
                         <td className="px-4 py-2 text-right">
                           {m.diasAtraso > 0 ? (
@@ -501,13 +566,50 @@ export default function EstadoCuentaCxCPage() {
                     </td>
                   </tr>
                 ))}
-                {filtrados.length === 0 && (
+                {filtrados.length === 0 && sinSaldo.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                      Sin clientes con saldo para este filtro.
+                      {buscandoOdoo
+                        ? "Buscando en Odoo clientes sin saldo…"
+                        : "Sin clientes con saldo para este filtro."}
                     </td>
                   </tr>
                 )}
+                {sinSaldo.length > 0 && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={7} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Fuera del listado · clientes con movimiento en Odoo y sin documentos abiertos en cartera
+                    </td>
+                  </tr>
+                )}
+                {sinSaldo.map((c) => (
+                  <tr
+                    key={`s-${c.partnerId}-${c.sede}`}
+                    onClick={() => abrir(c)}
+                    className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-slate-700">
+                      {c.nombre}
+                      {c.saldo === 0 ? (
+                        <span className="ml-2 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700">
+                          Sin saldo
+                        </span>
+                      ) : (
+                        <span className="ml-2 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-700">
+                          Excluido de seguimiento
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{c.vendedor}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{c.sede}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">—</td>
+                    <td className="px-4 py-2.5 text-right text-emerald-600">—</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">0</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-800">
+                      {monto(c.saldo)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

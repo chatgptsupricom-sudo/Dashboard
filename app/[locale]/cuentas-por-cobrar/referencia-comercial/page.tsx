@@ -71,6 +71,61 @@ function yearSuffix(y: number): string {
   return String(y);
 }
 
+/**
+ * Membrete y firmante de la carta según la sede que la emite. Valencia es
+ * OFFICE SOLUTIONS CENTER 2004 (logo OSC, firma Victor Molina); Caracas es
+ * SUPRICOM CCS 21 (logo Supricom, firma Adriana Ravelo). RIF y dirección de
+ * Caracas salen de res.company 10 en Odoo.
+ */
+type Sede = "valencia" | "caracas";
+
+const SEDES: Record<Sede, {
+  companyId: number;
+  ciudad: string;
+  logo: string;
+  logoAncho: string;
+  marcaAgua: string;
+  rif: string;
+  firma: string;
+  firmante: string;
+  cargo: string;
+  telefonos: string[];
+  pie: string;
+}> = {
+  valencia: {
+    companyId: 9,
+    ciudad: "Valencia",
+    logo: "/osclogo.jpg",
+    logoAncho: "170px",
+    marcaAgua: "/osclogo1.jpg",
+    rif: "J-31163115-1",
+    firma: "/VictorFirma3.png",
+    firmante: "Lic. Victor Molina",
+    cargo: "Coord. Administrativo y Contable",
+    telefonos: ["0424-4099671", "0241-8728311"],
+    pie:
+      "Valencia Zona Ind. Sur. Av. Ernesto Berrind, CEI Arturo Michelena Galpón C4 Valencia edo Carabobo | Telefax: (0241) 1326646 | 8728319 e-mail: venta04@osc2004.com Copyright©2010 | Todos los derechos de propiedad intelectual reservada, imágenes propias y referencias",
+  },
+  caracas: {
+    companyId: 10,
+    ciudad: "Caracas",
+    logo: "/supricom-reporte-logo.png",
+    logoAncho: "200px",
+    marcaAgua: "/Supricom-logo.png",
+    rif: "J-050119373-8",
+    firma: "/AdrianaFirma.png",
+    firmante: "Adriana Ravelo",
+    // Puesto y teléfono de su ficha de empleado en Odoo (hr.employee 1107).
+    cargo: "Administrador",
+    telefonos: ["0424-2536576"],
+    pie:
+      "SUPRICOM CCS 21, C.A. | Calle Los Laboratorios, Edif. Ofinca, PB, Local 2-A, Caracas",
+  },
+};
+
+/** Sede por defecto según la sede del usuario (cids 10 = Caracas). */
+const sedeDeCids = (cids: unknown): Sede => (Number(cids) === 10 ? "caracas" : "valencia");
+
 function SignatureSVG() {
   return (
     <svg
@@ -111,32 +166,47 @@ export default function ReferenciaComercialPage() {
   const [yearsRelation, setYearsRelation] = useState(2);
   const [yearsEdited, setYearsEdited] = useState(false);
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string | null>(null);
+  const [fuenteFecha, setFuenteFecha] = useState<"odoo" | "smartbit" | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const letterRef = useRef<HTMLDivElement>(null);
   const today = new Date();
+  // Solo el superadmin elige membrete; el resto queda fijo en su sede.
+  const esSuperadmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
+  const [sede, setSede] = useState<Sede>(() => sedeDeCids(userCids));
+  useEffect(() => setSede(sedeDeCids(userCids)), [userCids]);
+  const membrete = SEDES[esSuperadmin ? sede : sedeDeCids(userCids)];
+  // Sede real para el histórico: Panamá (7) usa el membrete de Valencia pero
+  // sus ventas de Smartbit son las suyas.
+  const companyHistoria = esSuperadmin ? membrete.companyId : Number(userCids) || membrete.companyId;
+  // Los años salen de la primera factura real y no se tocan a mano, salvo en
+  // Caracas: su histórico de Smartbit todavía no está cargado en
+  // ventas_smartbit. ponytail: quitar la excepción cuando se cargue Caracas.
+  const aniosEditables = companyHistoria === 10;
 
   // Antes "Años de relación" era un numero escrito a mano (por defecto 2)
   // sin respaldo en ningun dato real. Al elegir cliente se calcula desde su
-  // primera factura real en Odoo y se usa como default — sigue siendo
-  // editable a mano por si hay relacion comercial de antes de este sistema.
+  // primera factura real (Odoo o el histórico de Smartbit de la sede).
   useEffect(() => {
     if (!selectedPartner) {
       setFirstInvoiceDate(null);
+      setFuenteFecha(null);
       return;
     }
     setYearsEdited(false);
     setLoadingHistory(true);
-    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}`)
+    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}&company_id=${companyHistoria}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
           setFirstInvoiceDate(json.firstInvoiceDate);
-          if (json.years !== null) setYearsRelation(Math.max(json.years, 1));
+          setFuenteFecha(json.fuente || null);
+          // Sin facturas se queda en 1, no en el valor del cliente anterior.
+          setYearsRelation(Math.max(json.years ?? 1, 1));
         }
       })
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
-  }, [selectedPartner]);
+  }, [selectedPartner, companyHistoria]);
 
   const fetchPartners = useCallback(async () => {
     setLoading(true);
@@ -215,15 +285,15 @@ svg { display: block; }
           zIndex: 0,
         }}
       >
-        <img src="/osclogo1.jpg" alt="" style={{ width: "500px" }} />
+        <img src={membrete.marcaAgua} alt="" style={{ width: "500px" }} />
       </div>
 
-      {/* ========== HEADER: Logo OSC izquierda ========== */}
-      <div style={{ width: "170px", marginBottom: "0" }}>
+      {/* ========== HEADER: Logo de la sede a la izquierda ========== */}
+      <div style={{ width: membrete.logoAncho, marginBottom: "0" }}>
         <img
-          src="/osclogo.jpg"
-          alt="OSC"
-          style={{ width: "170px", display: "block" }}
+          src={membrete.logo}
+          alt="Logo"
+          style={{ width: membrete.logoAncho, display: "block" }}
         />
         <div
           style={{
@@ -233,7 +303,7 @@ svg { display: block; }
             textAlign: "center",
           }}
         >
-          RIF: J-31163115-1
+          RIF: {membrete.rif}
         </div>
       </div>
 
@@ -246,7 +316,7 @@ svg { display: block; }
           marginBottom: "50px",
         }}
       >
-        Valencia, {dayNum} de {monthName} del {yearNum}
+        {membrete.ciudad}, {dayNum} de {monthName} del {yearNum}
       </div>
 
       {/* ========== TITULO ========== */}
@@ -317,32 +387,26 @@ svg { display: block; }
           <div style={{ margin: "5px auto 8px" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/VictorFirma3.png"
+              src={membrete.firma}
               alt="Firma"
               style={{ height: "70px", display: "block", margin: "0 auto" }}
             />
           </div>
 
-          <div
-            style={{ fontWeight: "bold", fontSize: "15px", lineHeight: "1.3" }}
-          >
-            Lic. Victor Molina
-          </div>
-          <div
-            style={{ fontWeight: "bold", fontSize: "15px", lineHeight: "1.3" }}
-          >
-            Coord. Administrativo y Contable
-          </div>
-          <div
-            style={{ fontWeight: "bold", fontSize: "15px", lineHeight: "1.3" }}
-          >
-            Telf. 0424-4099671
-          </div>
-          <div
-            style={{ fontWeight: "bold", fontSize: "15px", lineHeight: "1.3" }}
-          >
-            Telf. 0241-8728311
-          </div>
+          {[
+            membrete.firmante,
+            membrete.cargo,
+            ...membrete.telefonos.map((t) => `Telf. ${t}`),
+          ]
+            .filter(Boolean)
+            .map((linea) => (
+              <div
+                key={linea}
+                style={{ fontWeight: "bold", fontSize: "15px", lineHeight: "1.3" }}
+              >
+                {linea}
+              </div>
+            ))}
         </div>
       </div>
 
@@ -361,10 +425,7 @@ svg { display: block; }
           lineHeight: "1.5",
         }}
       >
-        Valencia Zona Ind. Sur. Av. Ernesto Berrind, CEI Arturo Michelena Galpón
-        C4 Valencia edo Carabobo | Telefax: (0241) 1326646 | 8728319 e-mail:
-        venta04@osc2004.com Copyright©2010 | Todos los derechos de propiedad
-        intelectual reservada, imágenes propias y referencias
+        {membrete.pie}
       </div>
     </div>
   ) : null;
@@ -462,19 +523,25 @@ svg { display: block; }
               min={1}
               max={99}
               value={yearsRelation}
+              readOnly={!aniosEditables}
               onChange={(e) => {
+                if (!aniosEditables) return;
                 setYearsEdited(true);
                 setYearsRelation(parseInt(e.target.value) || 1);
               }}
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none"
+              className={`w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none ${
+                aniosEditables ? "" : "bg-slate-100 text-slate-600 cursor-not-allowed"
+              }`}
             />
             <p className="text-xs text-slate-400 mt-1.5">
               {loadingHistory
                 ? "Calculando desde su primera factura..."
                 : firstInvoiceDate
-                  ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")})`
+                  ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")}, ${fuenteFecha === "smartbit" ? "histórico Smartbit" : "Odoo"})`
                   : selectedPartner
-                    ? "Sin facturas registradas — ingrese el dato manualmente"
+                    ? aniosEditables
+                      ? "Sin facturas registradas — ingrese el dato manualmente"
+                      : "Sin facturas registradas"
                     : ""}
             </p>
           </div>
@@ -483,7 +550,20 @@ svg { display: block; }
 
       {/* Print button */}
       {selectedPartner && (
-        <div className="flex gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          {esSuperadmin && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              Membrete
+              <select
+                value={sede}
+                onChange={(e) => setSede(e.target.value as Sede)}
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:border-blue-400 focus:outline-none"
+              >
+                <option value="valencia">Valencia · Office Solutions Center</option>
+                <option value="caracas">Caracas · Supricom</option>
+              </select>
+            </label>
+          )}
           <button
             onClick={handlePrint}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition"

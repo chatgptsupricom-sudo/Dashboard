@@ -1,4 +1,14 @@
 import { callOdooRPC } from "@/lib/odoo";
+import {
+  crecimientoVsMesAnterior,
+  desdeOdoo,
+  HISTORIA_DESDE,
+  mensualSmartbit,
+  mezclarClientes,
+  mezclarLineasProducto,
+  resumenSmartbit,
+  sumarVendedores,
+} from "@/lib/smartbit";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 
@@ -21,17 +31,24 @@ export async function GET(request: NextRequest) {
         .split("T")[0];
     const end = searchParams.get("endDate") || new Date().toISOString().split("T")[0];
 
+    // Antes del corte las ventas salen de Smartbit (lib/smartbit.ts); Odoo
+    // solo tiene ahí facturas migradas sueltas, así que se consulta desde el corte.
+    const startOdoo = desdeOdoo(start);
+
     let companyFilter: any[] = [];
+    let cids: number[];
     if (payload.role === "superAdmin") {
       const companyIdParam = searchParams.get("company_id");
       companyFilter =
         companyIdParam && companyIdParam !== "all"
           ? ["company_id", "=", parseInt(companyIdParam)]
           : ["company_id", "in", [9, 10, 7]];
+      cids = companyIdParam && companyIdParam !== "all" ? [parseInt(companyIdParam)] : [9, 10, 7];
     } else {
       if (!payload.cids)
         return NextResponse.json({ error: "Sin empresa" }, { status: 403 });
       companyFilter = ["company_id", "=", parseInt(payload.cids as any)];
+      cids = [parseInt(payload.cids as any)];
     }
 
     const sellerExclusions: Record<number, string[]> = {
@@ -52,7 +69,7 @@ export async function GET(request: NextRequest) {
       const excludeSellersDomain: any[] = [
         ["move_type", "in", ["out_invoice", "out_refund"]],
         ["state", "=", "posted"],
-        ["invoice_date", ">=", start],
+        ["invoice_date", ">=", startOdoo],
         ["invoice_date", "<=", end],
         companyFilter,
       ];
@@ -79,21 +96,38 @@ export async function GET(request: NextRequest) {
 
     const currentMonthFilters = [
       ...baseFilters,
-      ["date", ">=", start],
+      ["date", ">=", startOdoo],
       ["date", "<=", end],
     ];
 
-    const linesData =
-      (await callOdooRPC<any[]>("account.move.line", "read_group", [
+    const now = new Date();
+    // Historial completo: la gráfica elige el rango en el navegador. Odoo se
+    // consulta igual solo desde el corte, así que no cuesta más.
+    const historiaDesde = HISTORIA_DESDE;
+    const today = now.toISOString().split("T")[0];
+
+    const [odooLines, sbResumen, sbMensual] = await Promise.all([
+      callOdooRPC<any[]>("account.move.line", "read_group", [
         currentMonthFilters,
         ["price_subtotal", "quantity", "product_id"],
         ["product_id"],
         0,
         0,
         "price_subtotal desc",
-      ])) || [];
+      ]),
+      // Mismo criterio que Odoo: los vendedores excluidos solo se quitan de
+      // productos/clientes cuando se mira una sola sede.
+      resumenSmartbit(cids, start, end, sellerExcludeRules.length > 0
+        ? { [sellerExcludeCompanyId as number]: sellerExcludeRules }
+        : undefined),
+      mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
+    ]);
+    const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
 
-    const productIds = linesData.map((l) => l.product_id[0]);
+    // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
+    const productIds = linesData
+      .map((l) => l.product_id[0])
+      .filter((id) => typeof id === "number");
     const productsInfo =
       productIds.length > 0
         ? (await callOdooRPC<any[]>("product.product", "read", [
@@ -148,12 +182,6 @@ export async function GET(request: NextRequest) {
       .map(([name, data]) => ({ name, revenue: data.revenue, cantidad: data.cantidad }))
       .sort((a, b) => b.revenue - a.revenue);
 
-    const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
-      .toISOString()
-      .split("T")[0];
-    const today = now.toISOString().split("T")[0];
-
     const clientsExcludedFilter = excludedMoveIds.length > 0 ? [["id", "not in", excludedMoveIds]] : [];
 
     const [clientsRanking, allClientsCount] = await Promise.all([
@@ -161,7 +189,7 @@ export async function GET(request: NextRequest) {
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
-          ["invoice_date", ">=", start],
+          ["invoice_date", ">=", startOdoo],
           ["invoice_date", "<=", end],
           companyFilter,
           ...clientsExcludedFilter,
@@ -187,7 +215,7 @@ export async function GET(request: NextRequest) {
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", start],
+      ["invoice_date", ">=", startOdoo],
       ["invoice_date", "<=", end],
       companyFilter,
     ];
@@ -195,7 +223,7 @@ export async function GET(request: NextRequest) {
     const historyDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", twelveMonthsAgo],
+      ["invoice_date", ">=", desdeOdoo(historiaDesde)],
       ["invoice_date", "<=", today],
       companyFilter,
     ];
@@ -216,6 +244,7 @@ export async function GET(request: NextRequest) {
       const amount = inv.amount_untaxed || 0;
       sellerStats[id].total += inv.move_type === "out_refund" ? -amount : amount;
     });
+    sumarVendedores(sellerStats, sbResumen.vendedores);
 
     const sellersDataFiltered = Object.values(sellerStats)
       .filter((s) => {
@@ -241,7 +270,7 @@ export async function GET(request: NextRequest) {
         .map((s) => s.id)
     );
 
-    const monthlyGrowthMap: Record<string, number> = {};
+    const monthlyGrowthMap: Record<string, number> = { ...sbMensual };
     (historyInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       if (excludedIds.has(id)) return;
@@ -257,11 +286,7 @@ export async function GET(request: NextRequest) {
     const monthlyGrowth = Object.entries(monthlyGrowthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, total]) => ({ month, total }));
-    const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
-    const growthPercent = (
-      ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
-      100
-    ).toFixed(1);
+    const growthRate = crecimientoVsMesAnterior(monthlyGrowthMap, start.slice(0, 7), currentMonthTotal);
 
     return NextResponse.json({
       topProducts: processedItems.slice(0, 5),
@@ -277,7 +302,7 @@ export async function GET(request: NextRequest) {
           .slice(0, 5),
       },
       salesByUser: sellersData,
-      topClients: (clientsRanking || [])
+      topClients: mezclarClientes(clientsRanking || [], sbResumen.clientes)
         .filter((c: any) => {
           const name = (c.partner_id?.[1] || "").toLowerCase();
           return !name.includes("supricom");
@@ -292,7 +317,7 @@ export async function GET(request: NextRequest) {
         totalMonth: currentMonthTotal,
         activeClientsCount: (allClientsCount || []).length,
         topProductName: processedItems[0]?.name || "N/A",
-        growthRate: `${parseFloat(growthPercent) > 0 ? "+" : ""}${growthPercent}%`,
+        growthRate,
       },
     });
   } catch (error: any) {
