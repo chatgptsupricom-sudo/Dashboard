@@ -208,6 +208,7 @@
     "rma_inventario_supricom": "Inventario RMA Supricom",
     "rma_inventario_externo": "Inventario RMA Externo",
     "rma_aprobar_nc": "Solicitudes de nota de crédito",
+    "metodo_retiro": "Método de retiro",
     "seg_personal_rma": "Personal RMA",
     "seg_personal_almacen": "Personal Almacén",
     "seg_personal_seguridad": "Personal Seguridad",
@@ -2801,6 +2802,7 @@
         "vacio": "Todavía no hay despachos registrados."
       },
       "ordenes": {
+        "sin_metodo": "Sin método del vendedor",
         "titulo": "Órdenes de despacho pendientes",
         "subtitulo": "Listas y facturadas en Odoo, todavía no procesadas como despacho",
         "vacio": "No hay órdenes de despacho listas y facturadas en Odoo.",
@@ -2887,6 +2889,9 @@
           "por_calificar": "Calificar al almacenista de despacho",
           "cerrado": "Proceso terminado"
         },
+        "metodo_indicado_por": "Indicado por {quien} (vendedor / asistente de ventas)",
+        "sin_metodo_retiro": "El vendedor todavía no indicó el método de retiro de este pedido. Hasta que lo haga (en su sección \"Método de retiro\") no se puede registrar el egreso.",
+        "metodo_despues_de_orden": "Sale de lo que indicó el vendedor al buscar la orden.",
         "tipo_entrega": "Tipo de entrega",
         "entrega": {
           "ruta": "Ruta",
@@ -3285,5 +3290,39 @@
     "dia_sin_coincidencias": "Este día no tiene productos que coincidan con la búsqueda.",
     "sin_fecha": "En camino, sin fecha estimada",
     "sin_fecha_nota": "Compras todavía no cargó la fecha estimada de llegada."
+  },
+  "metodoRetiro": {
+    "titulo": "Método de retiro",
+    "desc_vendedor": "Indica cómo recibe el cliente cada uno de tus pedidos. Almacén no puede despachar un pedido sin método.",
+    "desc_asistente": "Pedidos de todos los vendedores. Puedes indicar el método por cualquiera de ellos. Almacén no despacha un pedido sin método.",
+    "buscar": "Buscar pedido, cliente u orden de despacho",
+    "vendedor": "Vendedor",
+    "todos_vendedores": "Todos los vendedores",
+    "solo_sin_metodo": "Solo sin método ({n})",
+    "sin_metodo": "Sin método",
+    "sin_facturar": "Sin facturar",
+    "sin_pedidos": "No hay pedidos pendientes de despacho.",
+    "todo_listo": "Todos los pedidos tienen su método de retiro.",
+    "en_despacho": "Almacén ya lo está despachando: el método ya no se cambia.",
+    "metodo_sucursal": "Retiro en sucursal",
+    "metodo_ruta": "Por ruta",
+    "metodo_encomienda": "Encomienda",
+    "ruta": "Ruta",
+    "elige_ruta": "Elige la ruta…",
+    "agencia": "Agencia",
+    "elige_agencia": "Elige la agencia…",
+    "otra_agencia": "Otra…",
+    "nombre_agencia": "Nombre de la agencia",
+    "nota_sucursal": "Nota (opcional): quién retira, horario…",
+    "nota_envio": "Nota (opcional): dirección, contacto, horario…",
+    "guardar": "Guardar",
+    "actualizar": "Actualizar",
+    "guardado": "Guardado",
+    "indicado_por": "Indicado por {quien}",
+    "error_cargar": "No se pudieron cargar los pedidos.",
+    "error_guardar": "No se pudo guardar el método.",
+    "error_metodo": "Elige el método de retiro.",
+    "error_ruta": "Elige la ruta.",
+    "error_agencia": "Elige o escribe la agencia."
   }
 }

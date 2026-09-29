@@ -53,6 +53,8 @@ export type PickingOdoo = {
   lineas: LineaPicking[];
   /** Solo egreso: facturas vigentes de la orden de venta. Vacio = sin facturar. */
   facturas?: FacturaVenta[];
+  /** Solo egreso: el pedido (sale.order) de la orden, para su método de retiro. */
+  odoo_sale_id?: number | null;
 };
 
 export type PickingResumen = {
@@ -63,6 +65,8 @@ export type PickingResumen = {
   origen: string | null;
   fecha: string | null;
   facturas: FacturaVenta[];
+  /** El pedido (sale.order) de la orden, para su método de retiro. */
+  odoo_sale_id: number | null;
 };
 
 /**
@@ -275,7 +279,7 @@ export async function buscarFacturaCompra(
  * Si Odoo no responde lanza en vez de devolver vacio: "nadie facturo nada"
  * y "no se pudo preguntar" tienen que verse distinto en la pantalla.
  */
-async function facturasDeVentas(saleIds: number[]): Promise<Map<number, FacturaVenta[]>> {
+export async function facturasDeVentas(saleIds: number[]): Promise<Map<number, FacturaVenta[]>> {
   const porVenta = new Map<number, FacturaVenta[]>();
   if (saleIds.length === 0) return porVenta;
 
@@ -422,6 +426,7 @@ async function leerPickingEgreso(
     origen: p.origin || null,
     lineas,
     facturas,
+    odoo_sale_id: saleId,
   };
 }
 
@@ -506,6 +511,7 @@ export async function listarPickingsEgresoPendientes(
       origen: p.origin || null,
       fecha: p.scheduled_date || null,
       facturas: (p.sale_id && facturas.get(p.sale_id[0])) || [],
+      odoo_sale_id: p.sale_id?.[0] ?? null,
     }));
 
   const ordenes = porProcesar

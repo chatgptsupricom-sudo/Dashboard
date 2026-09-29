@@ -279,6 +279,9 @@ export function Sidebar({
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
+    // Cómo recibe el cliente cada pedido: lo carga el vendedor (o el asistente
+    // de ventas por él) y Almacén lo usa en el egreso (lib/ventas/metodoRetiro).
+    { id: "metodo_retiro", label: t("metodo_retiro"), icon: Truck, slug: "/metodo-retiro" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     // Inventario de RMA separado por procedencia del equipo.
     { id: "rma_inventario_supricom", label: t("rma_inventario_supricom"), icon: PackageCheck, slug: "/rma/inventario/supricom", absoluteHref: true },

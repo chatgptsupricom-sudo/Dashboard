@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
+import { describirMetodo, metodosDePedidos, tipoEntregaDeMetodo } from "@/lib/ventas/metodoRetiro";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { filtroMercancia } from "@/lib/seguridad/filtros";
 import {
@@ -140,10 +141,11 @@ export async function POST(request: NextRequest) {
     // hay paso de empaquetado (solo encomienda).
     const almacenistaArmado =
       tipo === "egreso" ? truncar(body?.almacenista_armado, MAX.almacenista_nombre) : null;
-    const tipoEntrega = tipo === "egreso" ? body?.tipo_entrega : null;
+    // El tipo de entrega ya no lo elige Almacén: sale del método de retiro
+    // que cargó el vendedor para el pedido (más abajo, con la orden de Odoo).
+    let tipoEntrega: string | null = null;
     if (tipo === "egreso") {
       if (!almacenistaArmado) errores.push("falta el almacenista del armado");
-      if (!esTipoEntrega(tipoEntrega)) errores.push("tipo de entrega invalido");
     }
 
     // Facturas: si llega `facturas` (array), es la fuente de verdad — un
@@ -216,6 +218,25 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+    // Método de retiro del pedido (lib/ventas/metodoRetiro): lo carga el
+    // vendedor o el Asistente de Ventas. Sin él no se registra el egreso.
+    const metodo = picking.odoo_sale_id
+      ? (await metodosDePedidos([picking.odoo_sale_id])).get(picking.odoo_sale_id) ?? null
+      : null;
+    if (!metodo) {
+      return NextResponse.json(
+        {
+          error: "El vendedor todavía no indicó el método de retiro de este pedido",
+          codigo: "sin_metodo_retiro",
+        },
+        { status: 409 },
+      );
+    }
+    tipoEntrega = tipoEntregaDeMetodo(metodo.metodo);
+    if (!esTipoEntrega(tipoEntrega)) {
+      return NextResponse.json({ error: "tipo de entrega invalido" }, { status: 400 });
+    }
+
     const facturasVenta = picking.facturas || [];
     if (facturasVenta.length === 0) {
       return NextResponse.json(
@@ -277,7 +298,16 @@ export async function POST(request: NextRequest) {
       almacenistasJson,
       truncar(body?.chofer_nombre, MAX.chofer_nombre),
       truncar(body?.placa_vehiculo, MAX.placa_vehiculo),
-      truncar(body?.observaciones, MAX.observaciones),
+      // Lo que indicó el vendedor queda en el egreso, para Almacén y Seguridad.
+      truncar(
+        [
+          `Método de retiro: ${describirMetodo(metodo)}${metodo.nota ? ` — ${metodo.nota}` : ""}${metodo.registrado_por ? ` (indicado por ${metodo.registrado_por})` : ""}`,
+          body?.observaciones,
+        ]
+          .filter((x) => typeof x === "string" && x.trim())
+          .join(" · "),
+        MAX.observaciones,
+      ),
       cids,
       "por_armar",
       tipoEntrega,

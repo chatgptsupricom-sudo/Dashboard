@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, FileText, Loader2 } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, EmptyState } from "./mercancia-ui";
+import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 /**
  * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir y con
@@ -32,6 +33,8 @@ type Orden = {
   origen: string | null;
   fecha: string | null;
   facturas: { numero: string; fecha: string | null }[];
+  /** Método de retiro que cargó el vendedor; sin él no se registra el egreso. */
+  metodo_retiro?: FilaMetodo | null;
 };
 
 export default function MercanciaOrdenes() {
@@ -118,6 +121,15 @@ export default function MercanciaOrdenes() {
                       <span className="font-mono">{o.facturas.map((f) => f.numero).join(", ")}</span>
                       <span className="text-slate-400"> · {fechaCorta(o.facturas[0].fecha)}</span>
                     </p>
+                  )}
+                  {o.metodo_retiro ? (
+                    <span className="mt-2 inline-flex max-w-full truncate rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--portal-primary,#741DFE)]">
+                      {describirMetodo(o.metodo_retiro)}
+                    </span>
+                  ) : (
+                    <span className="mt-2 inline-flex rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                      {to("sin_metodo")}
+                    </span>
                   )}
                 </div>
               </Link>

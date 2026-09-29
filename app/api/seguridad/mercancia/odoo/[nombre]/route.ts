@@ -1,4 +1,5 @@
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { metodosDePedidos } from "@/lib/ventas/metodoRetiro";
 import {
   buscarFacturaCompra,
   buscarPickingEgreso,
@@ -75,6 +76,12 @@ export async function GET(
       );
     }
 
+    // Egreso: el método de retiro que cargó el vendedor para el pedido.
+    if (tipo !== "ingreso") {
+      const saleId = (factura as any).odoo_sale_id as number | null;
+      const metodo = saleId ? (await metodosDePedidos([saleId]).catch(() => new Map())).get(saleId) : null;
+      return NextResponse.json({ success: true, picking: { ...factura, metodo_retiro: metodo || null } });
+    }
     return NextResponse.json({ success: true, picking: factura });
   } catch (error: any) {
     console.error("Error buscando factura en Odoo:", error);
