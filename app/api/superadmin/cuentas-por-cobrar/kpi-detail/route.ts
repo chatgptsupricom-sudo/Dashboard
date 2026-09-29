@@ -268,12 +268,16 @@ export async function GET(request: NextRequest) {
 
     if (type === "dso") {
       // Mismo helper que la tarjeta (lib/cxc/dso.ts) para que nunca discrepen.
-      const { value, carteraAbierta, ventasNetas, clientesIncluidos, clientes } = await calcularDSO(companyIds, today);
+      const monthStart = getMonthStart(currentYear, currentMonth);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+      const series = await calcularSeriesCxC(companyIds, obtenerSemanasDelMes(currentYear, currentMonth + 1), today);
+      const { value, carteraAbierta, ventasNetas, dias, clientesIncluidos, clientes } =
+        await calcularDSO(companyIds, monthStart, monthEnd, today, series);
       return NextResponse.json({
         success: true,
         data: {
           type: "dso",
-          summary: { dso: value, carteraAbierta, ventasNetas, count: clientesIncluidos },
+          summary: { dso: value, carteraAbierta, ventasNetas, dias, count: clientesIncluidos },
           clientes,
         },
       });

@@ -255,7 +255,8 @@ export async function saldoRelacionada(companyIds: number[]): Promise<number> {
   return Number(g?.[0]?.balance || 0);
 }
 
-async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string) {
+/** Facturas y NC a crédito del período (sin internos ni relacionadas). También las usa el DSO. */
+export async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: string) {
   const out: any[] = [];
   for (let offset = 0; ; offset += 5000) {
     const page = (await callOdooRPC<any[]>(
