@@ -386,7 +386,7 @@ export function Sidebar({
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
@@ -1283,6 +1283,11 @@ export function Sidebar({
                           label: "Clasificación de Clientes",
                           href: `/${locale}/cuentas-por-cobrar/clasificacion-clientes`,
                           permission: "cxc_clasificacion_clientes",
+                        },
+                        {
+                          label: "Tiempo de Cobro",
+                          href: `/${locale}/cuentas-por-cobrar/tiempo-cobro`,
+                          permission: "cxc_tiempo_cobro",
                         },
                         {
                           label: "Stoplight Report",
