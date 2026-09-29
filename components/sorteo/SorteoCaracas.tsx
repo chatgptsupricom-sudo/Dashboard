@@ -1,25 +1,24 @@
 "use client";
 
 /**
- * Sorteo de clientes de Caracas: ruleta + participantes.
+ * Sorteo de clientes de Caracas (SuperAdmin › Ventas › Sorteo Caracas):
+ * ruleta + participantes con RIF y facturas (/api/superadmin/sorteo). El
+ * SuperAdmin siempre es operador: gira y anula con su sesión.
  *
- * Dos lugares:
- * - `publico`: /[locale]/sorteo, sin login. Datos de /api/sorteo (nombre,
- *   compras, monto, tickets; sin RIF ni facturas). Mira la ruleta cualquiera;
- *   gira solo el operador (clave SORTEO_CLAVE o sesión de SuperAdmin).
- * - `superadmin`: /superadmin/sorteo, dentro del panel. Datos completos de
- *   /api/superadmin/sorteo; siempre es operador.
+ * La página pública es otra aplicación, la landing `sorteo-landing`
+ * (sorteo.supricom.com.ve), con su propia copia de estos componentes; usa
+ * las APIs públicas /api/sorteo/*.
  *
  * El ganador lo elige el servidor (POST /api/sorteo/girar) y queda en
- * `sorteo_ganadores`. Todas las pantallas consultan /api/sorteo/ganadores
- * cada pocos segundos y, cuando aparece un ganador nuevo, giran la ruleta
- * hasta él: quien mira la página pública ve el mismo giro que el operador.
+ * `sorteo_ganadores`. Todas las pantallas —esta y la landing— consultan
+ * /api/sorteo/ganadores cada pocos segundos y, cuando aparece un ganador
+ * nuevo, giran la ruleta hasta él: el público ve el giro que se hace acá.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import {
-  AlertTriangle, CalendarDays, Copy, Crown, KeyRound, LogOut, Maximize2, Minimize2,
+  AlertTriangle, CalendarDays, Copy, Crown, KeyRound, Maximize2, Minimize2,
   RefreshCw, RotateCcw, Sparkles, Ticket, Trophy, Users, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { DatosSorteo } from "@/lib/sorteo/participantes";
@@ -29,22 +28,10 @@ import { RuletaSorteo, fanfarria, type RuletaHandle } from "./RuletaSorteo";
 import { TablaParticipantes } from "./TablaParticipantes";
 import { dinero, nombreMes } from "./formato";
 
-type Modo = "publico" | "superadmin";
 type Tab = "ruleta" | "participantes";
 
 const SONDEO_MS = 5000;
-const CLAVE_SESION = "sorteo-caracas:clave";
 const CONFETI = ["#1737d8", "#1a9ad6", "#0a5fb4", "#f5b72b", "#ffffff", "#39e27d"];
-
-const leerClave = () => {
-  try { return sessionStorage.getItem(CLAVE_SESION) || ""; } catch { return ""; }
-};
-const guardarClave = (clave: string) => {
-  try {
-    if (clave) sessionStorage.setItem(CLAVE_SESION, clave);
-    else sessionStorage.removeItem(CLAVE_SESION);
-  } catch { /* sin almacenamiento: la clave vive solo en memoria */ }
-};
 
 /** Grande, chico, grande, chico…: los segmentos gordos no quedan todos juntos. */
 function intercalar<T>(ordenados: T[]): T[] {
@@ -58,8 +45,7 @@ function intercalar<T>(ordenados: T[]): T[] {
 
 const mismaLista = (a: Ganador[], b: Ganador[]) => a.length === b.length && a.every((g, i) => g.id === b[i].id);
 
-export function SorteoCaracas({ modo }: { modo: Modo }) {
-  const publico = modo === "publico";
+export function SorteoCaracas() {
   const [datos, setDatos] = useState<DatosSorteo | null>(null);
   const [ganadores, setGanadores] = useState<Ganador[]>([]);
   const [ganadoresError, setGanadoresError] = useState<string | null>(null);
@@ -78,10 +64,6 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
   // apuntando a otro cliente y confunde a quien está mirando.
   const [destacado, setDestacado] = useState<number | null>(null);
 
-  const [clave, setClave] = useState("");
-  const [esOperador, setEsOperador] = useState(!publico);
-  const [pidiendoClave, setPidiendoClave] = useState(false);
-
   const [tab, setTab] = useState<Tab>("ruleta");
   const [sonido, setSonido] = useState(true);
   const [pidiendo, setPidiendo] = useState(false);
@@ -94,11 +76,6 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
   const lienzo = useRef<HTMLCanvasElement>(null);
   const disparar = useRef<confetti.CreateTypes | null>(null);
   const ruleta = useRef<RuletaHandle>(null);
-
-  const cabeceras = useCallback(
-    (extra?: Record<string, string>): Record<string, string> => ({ ...(clave ? { "x-sorteo-clave": clave } : {}), ...extra }),
-    [clave],
-  );
 
   const recibirGanadores = useCallback((lista: Ganador[], err: string | null) => {
     setGanadoresError(err);
@@ -116,7 +93,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
     setError(null);
     const q = forzar.current ? "?refrescar=1" : "";
     forzar.current = false;
-    fetch(`${publico ? "/api/sorteo" : "/api/superadmin/sorteo"}${q}`, { headers: cabeceras() })
+    fetch(`/api/superadmin/sorteo${q}`)
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
@@ -127,9 +104,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
       .catch((e) => vivo && setError(e.message || "No se pudieron cargar los clientes"))
       .finally(() => vivo && setCargando(false));
     return () => { vivo = false; };
-    // `cabeceras` a propósito fuera: cambiar la clave no tiene que recargar Odoo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publico, recarga, recibirGanadores]);
+  }, [recarga, recibirGanadores]);
 
   // Sondeo de ganadores: así todas las pantallas ven el giro del operador.
   const sondear = useCallback(async () => {
@@ -144,18 +119,6 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
     const t = setInterval(() => { if (!document.hidden) void sondear(); }, SONDEO_MS);
     return () => clearInterval(t);
   }, [sondear]);
-
-  // Modo operador en la página pública: clave guardada en la pestaña, o sesión de SuperAdmin.
-  useEffect(() => {
-    if (!publico) return;
-    const guardada = leerClave();
-    fetch("/api/sorteo/operador", { method: "POST", headers: guardada ? { "x-sorteo-clave": guardada } : {} })
-      .then((r) => {
-        if (r.ok) { setEsOperador(true); setClave(guardada); }
-        else if (guardada) guardarClave("");
-      })
-      .catch(() => undefined);
-  }, [publico]);
 
   useEffect(() => {
     const cambio = () => setPantallaCompleta(document.fullscreenElement === raiz.current);
@@ -225,11 +188,11 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
   }, [destacado, idsGanadores]);
 
   const girar = async () => {
-    if (!esOperador || pidiendo || animando) return;
+    if (pidiendo || animando) return;
     setPidiendo(true);
     setAviso(null);
     try {
-      const r = await fetch("/api/sorteo/girar", { method: "POST", headers: cabeceras() });
+      const r = await fetch("/api/sorteo/girar", { method: "POST" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
       const g: Ganador = j.data;
@@ -246,7 +209,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
     try {
       const r = await fetch("/api/sorteo/anular", {
         method: "POST",
-        headers: cabeceras({ "Content-Type": "application/json" }),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cuerpo),
       });
       const j = await r.json().catch(() => ({}));
@@ -264,35 +227,22 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
     } catch { /* el navegador no lo permite */ }
   };
 
-  const salirOperador = () => {
-    guardarClave("");
-    setClave("");
-    setEsOperador(false);
-  };
-
   const ocupado = pidiendo || animando;
-  const oscuro = publico || pantallaCompleta;
+  const oscuro = pantallaCompleta;
 
   return (
     <div
       ref={raiz}
-      className={
-        pantallaCompleta
-          ? "h-screen overflow-y-auto bg-[#040b24] p-4 md:p-8"
-          : publico
-            ? "min-h-screen bg-[#040b24] px-4 py-6 md:px-8"
-            : "space-y-6"
-      }
+      className={pantallaCompleta ? "h-screen overflow-y-auto bg-[#040b24] p-4 md:p-8" : "space-y-6"}
     >
       <canvas ref={lienzo} className="pointer-events-none fixed inset-0 z-[70] h-full w-full" aria-hidden />
 
-      <div className={publico && !pantallaCompleta ? "mx-auto max-w-[1500px] space-y-6" : pantallaCompleta ? "" : "space-y-6"}>
+      <div className={pantallaCompleta ? "" : "space-y-6"}>
         {!pantallaCompleta && (
           <Encabezado
             datos={datos}
             cargando={cargando}
-            publico={publico}
-            onRefrescar={esOperador ? () => { forzar.current = true; setRecarga((n) => n + 1); } : undefined}
+            onRefrescar={() => { forzar.current = true; setRecarga((n) => n + 1); }}
           />
         )}
 
@@ -303,7 +253,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
           </div>
         )}
 
-        {esOperador && ganadoresError && !pantallaCompleta && (
+        {ganadoresError && !pantallaCompleta && (
           <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             <AlertTriangle size={18} /> {ganadoresError}. Hasta que se cree no se puede girar.
           </div>
@@ -314,12 +264,12 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
             <CalendarDays size={18} className="mt-0.5 shrink-0" />
             <p>
               <b>{nombreMes(datos.mes)} todavía no cierra.</b> Las compras hasta el {datos.hasta.split("-").reverse().join("/")} siguen sumando tickets.
-              {esOperador && " Lo ideal es sortear con el mes cerrado y los datos actualizados desde Odoo."}
+              {" Lo ideal es sortear con el mes cerrado y los datos actualizados desde Odoo."}
             </p>
           </div>
         )}
 
-        {!publico && !pantallaCompleta && <EnlacePublico />}
+        {!pantallaCompleta && <EnlacePublico />}
 
         {!pantallaCompleta && (
           <div className={`inline-flex rounded-2xl p-1 ${oscuro ? "bg-white/10" : "bg-slate-200/70"}`}>
@@ -373,7 +323,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
                   participantes={enRuleta}
                   resaltado={animando ? null : destacado}
                   sonido={sonido}
-                  puedeGirar={esOperador && !ganadoresError}
+                  puedeGirar={!ganadoresError}
                   ocupado={ocupado}
                   onGirar={girar}
                 />
@@ -396,14 +346,8 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-blue-100">
-                  {esOperador ? (
-                    <>
-                      <p className="flex items-center gap-2 font-bold text-white"><KeyRound size={15} className="text-[#f5b72b]" /> Modo operador</p>
-                      <p className="mt-1">Toca <b className="text-white">GIRAR</b> en el centro. Cada cliente gana una sola vez.</p>
-                    </>
-                  ) : (
-                    <p>El operador del sorteo gira la ruleta. Cuando salga un ganador, la vas a ver girar aquí mismo.</p>
-                  )}
+                  <p className="flex items-center gap-2 font-bold text-white"><KeyRound size={15} className="text-[#f5b72b]" /> Modo operador</p>
+                  <p className="mt-1">Toca <b className="text-white">GIRAR</b> en el centro. Cada cliente gana una sola vez; el giro se ve también en la página pública.</p>
                   <p className="mt-2 text-blue-200/70">Quedan {enJuego.length} clientes con {ticketsEnRuleta.toLocaleString("es-VE")} tickets.</p>
                 </div>
 
@@ -413,7 +357,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
                       <Trophy size={18} className="text-[#f5b72b]" /> Ganadores
                       <span className="rounded-full bg-[#f5b72b]/20 px-2 text-xs text-[#f5b72b]">{vistos.length}</span>
                     </h3>
-                    {esOperador && vistos.length > 0 && (
+                    {vistos.length > 0 && (
                       <button
                         type="button"
                         onClick={() => window.confirm("¿Anular TODOS los premios? Todos los clientes vuelven a la ruleta.") && anular({ todos: true })}
@@ -427,7 +371,7 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
                   {vistos.length === 0 ? (
                     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center text-sm text-blue-200/60">
                       <Crown size={30} className="text-[#f5b72b]/50" />
-                      {esOperador ? <>Toca <b className="text-white">GIRAR</b> para sacar al primer ganador.</> : "Todavía no hay ganadores."}
+                      <span>Toca <b className="text-white">GIRAR</b> para sacar al primer ganador.</span>
                     </div>
                   ) : (
                     <ol className="max-h-[420px] space-y-2 overflow-y-auto p-3">
@@ -442,17 +386,15 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
                               {g.tickets} tickets · {dinero(g.monto)} · {new Date(g.fecha).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })}
                             </p>
                           </div>
-                          {esOperador && (
-                            <button
-                              type="button"
-                              onClick={() => window.confirm(`¿Anular el premio de ${g.nombre}? Vuelve a la ruleta.`) && anular({ id: g.id })}
-                              disabled={ocupado}
-                              className="rounded-lg p-1.5 text-blue-200/50 opacity-0 transition hover:bg-white/10 hover:text-white focus:opacity-100 group-hover:opacity-100 disabled:hidden"
-                              title="Anular este premio"
-                            >
-                              <X size={15} />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => window.confirm(`¿Anular el premio de ${g.nombre}? Vuelve a la ruleta.`) && anular({ id: g.id })}
+                            disabled={ocupado}
+                            className="rounded-lg p-1.5 text-blue-200/50 opacity-0 transition hover:bg-white/10 hover:text-white focus:opacity-100 group-hover:opacity-100 disabled:hidden"
+                            title="Anular este premio"
+                          >
+                            <X size={15} />
+                          </button>
                         </li>
                       ))}
                     </ol>
@@ -469,39 +411,16 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
         )}
 
         {datos && tab === "participantes" && !pantallaCompleta && (
-          <TablaParticipantes datos={datos} ganadores={idsGanadores} publico={publico} />
+          <TablaParticipantes datos={datos} ganadores={idsGanadores} />
         )}
 
-        {publico && !pantallaCompleta && (
-          <footer className="flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-5 text-xs text-blue-200/50 sm:flex-row">
-            <p>© {new Date().getFullYear()} Supricom · ¡Tu Mayorista de Confianza!</p>
-            {esOperador ? (
-              clave && (
-                <button type="button" onClick={salirOperador} className="flex items-center gap-1.5 hover:text-white">
-                  <LogOut size={13} /> Salir del modo operador
-                </button>
-              )
-            ) : (
-              <button type="button" onClick={() => setPidiendoClave(true)} className="flex items-center gap-1.5 hover:text-white">
-                <KeyRound size={13} /> Operador
-              </button>
-            )}
-          </footer>
-        )}
       </div>
-
-      {pidiendoClave && (
-        <ModalClave
-          onCerrar={() => setPidiendoClave(false)}
-          onValida={(c) => { guardarClave(c); setClave(c); setEsOperador(true); setPidiendoClave(false); }}
-        />
-      )}
 
       {resultado && (
         <ModalGanador
           ganador={resultado}
           numero={vistos.findIndex((g) => g.id === resultado.id) + 1}
-          esOperador={esOperador}
+          esOperador
           quedan={enJuego.length}
           onCerrar={() => setResultado(null)}
           onOtra={() => { setResultado(null); void girar(); }}
@@ -513,8 +432,8 @@ export function SorteoCaracas({ modo }: { modo: Modo }) {
 }
 
 function Encabezado({
-  datos, cargando, publico, onRefrescar,
-}: { datos: DatosSorteo | null; cargando: boolean; publico: boolean; onRefrescar?: () => void }) {
+  datos, cargando, onRefrescar,
+}: { datos: DatosSorteo | null; cargando: boolean; onRefrescar?: () => void }) {
   const mes = datos?.mes ?? SORTEO.mesDefault;
   const kpis = [
     { label: "Clientes con compras", valor: datos ? datos.totales.clientes.toLocaleString("es-VE") : "–", icono: Users },
@@ -548,7 +467,7 @@ function Encabezado({
           <span className="block bg-gradient-to-r from-[#ffe08a] to-[#f5b72b] bg-clip-text text-transparent">{nombreMes(mes)}</span>
         </h1>
         <p className="mt-3 max-w-xl text-base text-blue-100/90 md:text-lg">
-          {publico ? "¡Gracias por confiar en tu mayorista! " : ""}Cada <b className="text-white">{dinero(SORTEO.montoPorTicket)}</b> en compras del mes es
+          Cada <b className="text-white">{dinero(SORTEO.montoPorTicket)}</b> en compras del mes es
           <b className="text-white"> 1 ticket</b> para la ruleta.
         </p>
 
@@ -576,7 +495,7 @@ function Encabezado({
           {kpis.map(({ label, valor, icono: Icono }) => (
             <div key={label} className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
               <div className="flex items-center gap-2 text-xs font-medium text-blue-100/80"><Icono size={14} /> {label}</div>
-              <p className="mt-1 text-2xl font-black tabular-nums md:text-3xl">{valor}</p>
+              <p className="mt-1 text-lg font-black tabular-nums sm:text-2xl md:text-3xl">{valor}</p>
             </div>
           ))}
         </div>
@@ -585,10 +504,10 @@ function Encabezado({
   );
 }
 
-/** Solo en el panel: el enlace que se comparte y cómo gira quien no es SuperAdmin. */
+/** El enlace de la landing pública y cómo gira quien no es SuperAdmin. */
 function EnlacePublico() {
   const [copiado, setCopiado] = useState(false);
-  const url = typeof window !== "undefined" ? `${window.location.origin}/${window.location.pathname.split("/")[1] || "es"}/sorteo` : "";
+  const url = SORTEO.urlPublica;
   const copiar = async () => {
     try {
       await navigator.clipboard.writeText(url);
@@ -601,8 +520,9 @@ function EnlacePublico() {
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-slate-900">Página pública del sorteo</p>
         <p className="text-slate-500">
-          Cualquiera con el enlace ve la ruleta y los participantes (sin RIF). Gira quien tenga sesión de SuperAdmin, o la clave de operador
-          (<code className="rounded bg-slate-100 px-1">SORTEO_CLAVE</code>) desde el botón «Operador» al pie de la página.
+          Es otra aplicación (landing <code className="rounded bg-slate-100 px-1">sorteo-landing</code>). Cualquiera con el enlace ve la ruleta y
+          los participantes (sin RIF). Allá se gira con la clave de operador (<code className="rounded bg-slate-100 px-1">SORTEO_CLAVE</code>,
+          botón «Operador» al pie), o se gira desde esta pantalla y el giro aparece también allá.
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -611,52 +531,6 @@ function EnlacePublico() {
           <Copy size={14} /> {copiado ? "Copiado" : "Copiar"}
         </button>
       </div>
-    </div>
-  );
-}
-
-function ModalClave({ onCerrar, onValida }: { onCerrar: () => void; onValida: (clave: string) => void }) {
-  const [valor, setValor] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  const enviar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valor.trim()) return;
-    setEnviando(true);
-    setError(null);
-    try {
-      const r = await fetch("/api/sorteo/operador", { method: "POST", headers: { "x-sorteo-clave": valor.trim() } });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "Clave incorrecta");
-      onValida(valor.trim());
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
-    }
-  };
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#020617]/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="titulo-clave">
-      <form onSubmit={enviar} className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="flex items-center justify-between">
-          <h2 id="titulo-clave" className="flex items-center gap-2 text-lg font-bold text-slate-900"><KeyRound size={18} className="text-[#0a5fb4]" /> Modo operador</h2>
-          <button type="button" onClick={onCerrar} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><X size={16} /></button>
-        </div>
-        <p className="mt-2 text-sm text-slate-500">Solo quien presenta el sorteo. La clave queda guardada en esta pestaña hasta cerrarla.</p>
-        <input
-          type="password"
-          autoFocus
-          autoComplete="off"
-          value={valor}
-          onChange={(e) => setValor(e.target.value)}
-          placeholder="Clave de operador"
-          className="mt-4 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-[#1a9ad6] focus:ring-2 focus:ring-[#1a9ad6]/20"
-        />
-        {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
-        <button type="submit" disabled={enviando || !valor.trim()} className="mt-4 h-11 w-full rounded-xl bg-[#0b2a6f] text-sm font-semibold text-white hover:bg-[#0a5fb4] disabled:opacity-50">
-          {enviando ? "Verificando…" : "Entrar"}
-        </button>
-      </form>
     </div>
   );
 }

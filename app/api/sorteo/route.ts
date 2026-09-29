@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aplicarLimites } from "@/lib/servicio-tecnico/limites";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { SORTEO } from "@/lib/sorteo/config";
 import { datosPublicos, datosSorteo } from "@/lib/sorteo/participantes";
-import { operador } from "@/lib/sorteo/operador";
+import { limitarVisitante, operador } from "@/lib/sorteo/operador";
 import { ganadoresSeguros, respuestaError } from "@/lib/sorteo/respuestas";
 
 export const maxDuration = 60;
@@ -20,7 +19,7 @@ export const maxDuration = 60;
  * GET ?refrescar=1 relee Odoo, solo para el operador (lib/sorteo/operador).
  */
 export async function GET(request: NextRequest) {
-  const limite = aplicarLimites(request, "sorteo-publico", [{ max: 60, ventanaSegundos: 60 }]);
+  const limite = limitarVisitante(request, "sorteo-publico", [{ max: 60, ventanaSegundos: 60 }]);
   if (limite) return limite;
 
   const mes = SORTEO.mesDefault;
