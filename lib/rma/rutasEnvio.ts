@@ -152,6 +152,36 @@ function normalizar(s: string): string {
 
 export type Ruta = { id: number; nombre: string };
 export type Agencia = { id: number; nombre: string };
+/** Con su sede: NULL = Venezuela (las de siempre), 7 = Panama (sql/panama_rutas_agencias.sql). */
+export type RutaSede = Ruta & { cids: number | null };
+export type AgenciaSede = Agencia & { cids: number | null };
+
+let conSede = false;
+
+/**
+ * Si ya se corrio sql/panama_rutas_agencias.sql (columna `cids` en rutas y
+ * agencias). SHOW COLUMNS y no information_schema: el phpMyAdmin de
+ * EasyPanel no deja leerlo. Se cachea solo el "si". Sin la columna todo es de
+ * Venezuela, como antes.
+ */
+async function hayColumnaSede(): Promise<boolean> {
+  if (conSede) return true;
+  try {
+    const [r, a] = await Promise.all([
+      query("SHOW COLUMNS FROM rma_rutas_despacho LIKE 'cids'"),
+      query("SHOW COLUMNS FROM rma_agencias_envio LIKE 'cids'"),
+    ]);
+    conSede = (r.rows as any[]).length > 0 && (a.rows as any[]).length > 0;
+  } catch {
+    conSede = false;
+  }
+  return conSede;
+}
+
+/** Filtro de las de Venezuela (las de siempre): es lo unico que ve el portal de RMA. */
+async function soloVenezuela(alias = ""): Promise<string> {
+  return (await hayColumnaSede()) ? ` AND ${alias ? `${alias}.` : ""}cids IS NULL` : "";
+}
 
 /**
  * Busca la ruta que cubre una ciudad dada, tolerando mayúsculas/acentos y
@@ -168,7 +198,7 @@ export async function matchCiudadARuta(ciudadInput: string): Promise<Ruta | null
     SELECT rd.id, rd.nombre, rc.ciudad, rc.alias
     FROM rma_rutas_ciudades rc
     JOIN rma_rutas_despacho rd ON rd.id = rc.ruta_id
-    WHERE rd.activo = 1
+    WHERE rd.activo = 1${await soloVenezuela("rd")}
   `);
 
   for (const r of rows as any[]) {
@@ -180,14 +210,40 @@ export async function matchCiudadARuta(ciudadInput: string): Promise<Ruta | null
   return null;
 }
 
+/** Rutas de Venezuela (portal de RMA). Las de todas las sedes: listarRutasConSede. */
 export async function listarRutas(): Promise<Ruta[]> {
   await ensureRutasEnvioSchema();
-  const { rows } = await query(`SELECT id, nombre FROM rma_rutas_despacho WHERE activo = 1 ORDER BY nombre`);
+  const { rows } = await query(
+    `SELECT id, nombre FROM rma_rutas_despacho WHERE activo = 1${await soloVenezuela()} ORDER BY nombre`,
+  );
   return rows as Ruta[];
 }
 
+/** Agencias de Venezuela (portal de RMA). Las de todas las sedes: listarAgenciasConSede. */
 export async function listarAgenciasActivas(): Promise<Agencia[]> {
   await ensureRutasEnvioSchema();
-  const { rows } = await query(`SELECT id, nombre FROM rma_agencias_envio WHERE activo = 1 ORDER BY nombre`);
+  const { rows } = await query(
+    `SELECT id, nombre FROM rma_agencias_envio WHERE activo = 1${await soloVenezuela()} ORDER BY nombre`,
+  );
   return rows as Agencia[];
+}
+
+/** Rutas activas de todas las sedes, con su `cids` (metodo de retiro de Ventas). */
+export async function listarRutasConSede(): Promise<RutaSede[]> {
+  await ensureRutasEnvioSchema();
+  const sede = await hayColumnaSede();
+  const { rows } = await query(
+    `SELECT id, nombre${sede ? ", cids" : ", NULL AS cids"} FROM rma_rutas_despacho WHERE activo = 1 ORDER BY nombre`,
+  );
+  return (rows as any[]).map((r) => ({ ...r, cids: r.cids === null ? null : Number(r.cids) }));
+}
+
+/** Agencias activas de todas las sedes, con su `cids` (metodo de retiro de Ventas). */
+export async function listarAgenciasConSede(): Promise<AgenciaSede[]> {
+  await ensureRutasEnvioSchema();
+  const sede = await hayColumnaSede();
+  const { rows } = await query(
+    `SELECT id, nombre${sede ? ", cids" : ", NULL AS cids"} FROM rma_agencias_envio WHERE activo = 1 ORDER BY nombre`,
+  );
+  return (rows as any[]).map((r) => ({ ...r, cids: r.cids === null ? null : Number(r.cids) }));
 }
