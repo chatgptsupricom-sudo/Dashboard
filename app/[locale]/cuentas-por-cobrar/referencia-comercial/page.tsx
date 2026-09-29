@@ -175,11 +175,17 @@ export default function ReferenciaComercialPage() {
   const [sede, setSede] = useState<Sede>(() => sedeDeCids(userCids));
   useEffect(() => setSede(sedeDeCids(userCids)), [userCids]);
   const membrete = SEDES[esSuperadmin ? sede : sedeDeCids(userCids)];
+  // Sede real para el histórico: Panamá (7) usa el membrete de Valencia pero
+  // sus ventas de Smartbit son las suyas.
+  const companyHistoria = esSuperadmin ? membrete.companyId : Number(userCids) || membrete.companyId;
+  // Los años salen de la primera factura real y no se tocan a mano, salvo en
+  // Caracas: su histórico de Smartbit todavía no está cargado en
+  // ventas_smartbit. ponytail: quitar la excepción cuando se cargue Caracas.
+  const aniosEditables = companyHistoria === 10;
 
   // Antes "Años de relación" era un numero escrito a mano (por defecto 2)
   // sin respaldo en ningun dato real. Al elegir cliente se calcula desde su
-  // primera factura real (Odoo o el histórico de Smartbit de la sede de la
-  // carta) y se usa como default — sigue siendo editable a mano.
+  // primera factura real (Odoo o el histórico de Smartbit de la sede).
   useEffect(() => {
     if (!selectedPartner) {
       setFirstInvoiceDate(null);
@@ -188,18 +194,19 @@ export default function ReferenciaComercialPage() {
     }
     setYearsEdited(false);
     setLoadingHistory(true);
-    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}&company_id=${membrete.companyId}`)
+    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}&company_id=${companyHistoria}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
           setFirstInvoiceDate(json.firstInvoiceDate);
           setFuenteFecha(json.fuente || null);
-          if (json.years !== null) setYearsRelation(Math.max(json.years, 1));
+          // Sin facturas se queda en 1, no en el valor del cliente anterior.
+          setYearsRelation(Math.max(json.years ?? 1, 1));
         }
       })
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
-  }, [selectedPartner, membrete.companyId]);
+  }, [selectedPartner, companyHistoria]);
 
   const fetchPartners = useCallback(async () => {
     setLoading(true);
@@ -516,11 +523,15 @@ svg { display: block; }
               min={1}
               max={99}
               value={yearsRelation}
+              readOnly={!aniosEditables}
               onChange={(e) => {
+                if (!aniosEditables) return;
                 setYearsEdited(true);
                 setYearsRelation(parseInt(e.target.value) || 1);
               }}
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none"
+              className={`w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none ${
+                aniosEditables ? "" : "bg-slate-100 text-slate-600 cursor-not-allowed"
+              }`}
             />
             <p className="text-xs text-slate-400 mt-1.5">
               {loadingHistory
@@ -528,7 +539,9 @@ svg { display: block; }
                 : firstInvoiceDate
                   ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")}, ${fuenteFecha === "smartbit" ? "histórico Smartbit" : "Odoo"})`
                   : selectedPartner
-                    ? "Sin facturas registradas — ingrese el dato manualmente"
+                    ? aniosEditables
+                      ? "Sin facturas registradas — ingrese el dato manualmente"
+                      : "Sin facturas registradas"
                     : ""}
             </p>
           </div>
