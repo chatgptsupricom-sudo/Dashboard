@@ -3006,7 +3006,7 @@
           "aprobar_requiere": "Hay {n, plural, =1 {# novedad} other {# novedades}}: no se puede aprobar. Decide si se despacha igual.",
           "decidir": "Hay novedades: decidir",
           "no_despachar": "Devolver a Almacén",
-          "no_despachar_ayuda": "Vuelve a Almacén para corregir y asignar el despacho otra vez. Lo pistoleado se conserva.",
+          "no_despachar_ayuda": "Vuelve a Almacén para corregir y asignar el despacho otra vez. En la próxima verificación se cuenta todo de nuevo; solo se conservan los seriales ya pistoleados.",
           "motivo": "Motivo (obligatorio)",
           "excel_seriales": "Excel de seriales",
           "ronda": "Verificación {n}",
