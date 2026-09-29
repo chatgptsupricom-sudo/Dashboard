@@ -71,12 +71,31 @@ export type Exclusiones = Record<number, string[]>;
 
 type Filtro = { sql: string; params: any[] };
 
+/**
+ * Ventas intercompañía en Smartbit: al cliente del grupo (SUPRICOM CCS 21,
+ * SUPRICOM USA / LLC, Office Solutions Center, Ofimaster), por nombre o por
+ * RIF en `codigo_cliente` (sin guiones ni puntos). Mismos criterios que
+ * lib/intercompania.ts en Odoo. No son venta a un cliente: inflaban la sede
+ * que vende y volvían a contar la mercancía.
+ */
+export const SQL_SIN_INTERCOMPANIA = `LOWER(COALESCE(cliente,'')) NOT REGEXP 'supricom|office solutions? center|ofimaster'
+  AND REPLACE(REPLACE(REPLACE(UPPER(COALESCE(codigo_cliente,'')),'-',''),'.',''),' ','') NOT REGEXP '501193738|31163115|155595002|1576706'`;
+
+/** Vendedores "local" de Smartbit: no son un vendedor, no cuentan en las métricas. */
+export const SQL_SIN_VENDEDOR_LOCAL = `LOWER(COALESCE(vendedor,'')) NOT LIKE '%local%'`;
+
+/**
+ * Filtro de las lecturas de los dashboards (resumen y serie mensual): el
+ * rango, las exclusiones de vendedores de cada ruta y siempre sin
+ * intercompañía ni vendedores "local".
+ */
 function filtroBase(
   cids: number[],
   rango: [string, string],
   excluir?: Exclusiones,
 ): Filtro {
-  let sql = `company_id IN (${cids.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ?`;
+  let sql = `company_id IN (${cids.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ?
+    AND ${SQL_SIN_INTERCOMPANIA} AND ${SQL_SIN_VENDEDOR_LOCAL}`;
   const params: any[] = [...cids, rango[0], rango[1]];
   for (const [cid, reglas] of Object.entries(excluir || {})) {
     for (const regla of reglas) {
@@ -107,7 +126,8 @@ export interface ResumenSmartbit {
 /**
  * Productos, clientes y vendedores de Smartbit en [desde, hasta] (solo el
  * tramo previo al corte). `excluir` quita vendedores de productos y clientes;
- * los vendedores se devuelven todos y cada ruta aplica sus exclusiones.
+ * los vendedores se devuelven todos y cada ruta aplica sus exclusiones. Nada
+ * de esto trae intercompañía ni vendedores "local" (ver filtroBase).
  */
 export async function resumenSmartbit(
   cids: number[],
@@ -201,8 +221,7 @@ export async function ultimaVentaSmartbit(cids: number[]): Promise<Map<string, D
        FROM ventas_smartbit
       WHERE company_id IN (${cids.map(() => "?").join(",")})
         AND venta > 0 AND codigo_articulo IS NOT NULL
-        AND COALESCE(cliente,'') NOT LIKE '%supricom%'
-        AND COALESCE(cliente,'') NOT LIKE '%office solution%'
+        AND ${SQL_SIN_INTERCOMPANIA}
       GROUP BY UPPER(TRIM(codigo_articulo))`,
     cids,
   );
