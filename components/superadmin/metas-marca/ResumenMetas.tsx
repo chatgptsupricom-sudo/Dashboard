@@ -1,7 +1,7 @@
 "use client";
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, Flag, Gauge, Rocket, Target, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Flag, Gauge, Package, Rocket, Target, Wallet } from "lucide-react";
 import { ESTADO_UI, colorPct, dinero, dineroCorto, porcentaje, unidadesFmt, type DatosMetas, type EstadoMarca, type FilaMarca } from "./formato";
 
 const COLOR_VENDIDO = "#2563eb"; // blue-600
@@ -80,6 +80,50 @@ function ListaInsight({ titulo, icono: Icono, filas, valor, vacio }: {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Stock disponible hoy de la sede elegida (o suma de las tres, con el desglose). */
+function StockTotal({ data }: { data: DatosMetas }) {
+  const xs = data.stock;
+  if (!xs) {
+    return (
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Package size={14} /> Stock total de la sede</p>
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-700"><AlertTriangle size={13} /> {data.inventarioError || "No se pudo leer el inventario de Odoo"}</p>
+      </div>
+    );
+  }
+  const suma = (k: "unidades" | "valor" | "negativos") => xs.reduce((s, x) => s + x[k], 0);
+  const varias = xs.length > 1;
+  const unidades = suma("unidades");
+  const negativos = suma("negativos");
+  return (
+    <div>
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <Package size={14} /> Stock total {varias ? "de las sedes" : `en ${xs[0]?.nombre ?? "la sede"}`}
+      </p>
+      <p className="mt-1 text-2xl font-black text-slate-900 tabular-nums">
+        {unidadesFmt(unidades)} <span className="text-sm font-semibold text-slate-500">{unidades === 1 ? "unidad" : "unidades"}</span>
+      </p>
+      <p className="text-xs text-slate-500">
+        {!varias && <>{unidadesFmt(xs[0].productos)} productos de {xs[0].marcas} marcas · </>}valor aprox. <b className="text-slate-700">{dinero(suma("valor"))}</b>
+      </p>
+      {varias ? (
+        <ul className="mt-2 space-y-1">
+          {xs.map((x) => (
+            <li key={x.companyId} className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-slate-600">{x.nombre}</span>
+              <span className="tabular-nums text-slate-800"><b>{unidadesFmt(x.unidades)}</b> u · {unidadesFmt(x.productos)} prod. · {dineroCorto(x.valor)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="mt-1 text-[11px] text-slate-400">
+        Disponible hoy (sin reservado) en {varias ? "el almacén principal de cada sede" : xs[0]?.ubicacion || "el almacén principal"}. Valor al precio promedio vendido.
+        {negativos > 0 && <span className="text-amber-700"> {negativos} {negativos === 1 ? "producto" : "productos"} con stock negativo en Odoo (se toman como 0).</span>}
+      </p>
     </div>
   );
 }
@@ -168,6 +212,7 @@ export function ResumenMetas({ data, onFiltrarEstado }: { data: DatosMetas; onFi
               <p className="mt-1 text-[11px] text-slate-400">Excluye {dinero(data.intercompania)} de ventas a empresas del grupo.</p>
             )}
           </div>
+          <div className="border-t border-slate-100 pt-4"><StockTotal data={data} /></div>
           {!sinMetas && (
             <div className="grid grid-cols-2 gap-2">
               {(["cumplida", "en_ritmo", "atencion", "riesgo", "pendiente"] as EstadoMarca[]).map((e) => {

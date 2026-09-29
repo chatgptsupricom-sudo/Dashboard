@@ -183,6 +183,28 @@ export function inventarioSede(companyId: number, refrescar = false): Promise<In
   return valor;
 }
 
+export interface StockSede {
+  companyId: number;
+  ubicacion: string;
+  unidades: number;
+  valor: number;
+  productos: number;
+  marcas: number;
+  valorAlCosto: number;
+  negativos: number;
+}
+
+/** Totales del stock disponible hoy de la sede (todas las marcas, incluido Sin marca). */
+export function stockSede(inv: InventarioSede): StockSede {
+  let unidades = 0, valor = 0, valorAlCosto = 0;
+  for (const m of inv.porMarca.values()) { unidades += m.unidades; valor += m.valor; valorAlCosto += m.valorAlCosto; }
+  const marcas = [...inv.porMarca.keys()].filter((k) => k !== SIN_MARCA).length;
+  return {
+    companyId: inv.companyId, ubicacion: inv.ubicacion, unidades: r2(unidades), valor: r2(valor),
+    productos: inv.productos.length, marcas, valorAlCosto: r2(valorAlCosto), negativos: inv.negativos,
+  };
+}
+
 /** Inventario por marca sumado entre sedes. */
 export async function inventarioPorMarca(sedes: number[], refrescar = false): Promise<Map<string, InventarioMarca>> {
   const todos = await Promise.all(sedes.map((s) => inventarioSede(s, refrescar)));

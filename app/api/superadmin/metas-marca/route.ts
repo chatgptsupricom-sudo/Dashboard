@@ -3,7 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError, callOdooRPC } from "@/lib/odoo";
 import { calcularMetasMarca } from "@/lib/metas-marca/calculo";
 import { claveMarca, esMarcaGenerica, SIN_MARCA } from "@/lib/metas-marca/marcas";
-import { inventarioPorMarca, inventarioSede, metaDesdeUnidades, type InventarioMarca } from "@/lib/metas-marca/inventario";
+import { inventarioPorMarca, inventarioSede, metaDesdeUnidades, stockSede, type InventarioMarca } from "@/lib/metas-marca/inventario";
 import { guardarMeta, leerMetas } from "@/lib/metas-marca/metas";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { esSedeValida, nombreSede } from "@/lib/metas-marca/odoo";
@@ -49,6 +49,13 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Totales del stock por sede (misma lectura en caché que el inventario por marca).
+    const stock = inventario
+      ? await Promise.all(sedes.map((s) => inventarioSede(s).then(stockSede)))
+          .then((xs) => xs.map((x) => ({ ...x, nombre: nombreSede(x.companyId) })))
+          .catch(() => null)
+      : null;
+
     const lineas = ventas.flatMap((v) => v.lineas).filter((l) => incluirIC || !l.intercompania);
     const resumen = calcularMetasMarca(mes, metas, lineas, historial, hoyCaracas());
 
@@ -77,6 +84,7 @@ export async function GET(request: NextRequest) {
         actualizado,
         catalogo: [...catalogo.entries()].map(([clave, marca]) => ({ clave, marca })).sort((a, b) => a.marca.localeCompare(b.marca)),
         inventario: inventario ? Object.fromEntries(inventario) as Record<string, InventarioMarca> : null,
+        stock,
         inventarioError,
         generado: new Date().toISOString(),
       },
