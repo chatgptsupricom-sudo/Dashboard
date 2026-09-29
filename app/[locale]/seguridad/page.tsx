@@ -11,7 +11,6 @@ import {
   ArrowUp,
   ChevronRight,
   ClipboardList,
-  LogOut,
   Send,
   ShieldCheck,
   Star,
@@ -135,7 +134,10 @@ export default function SeguridadDashboard() {
   const t = useTranslations("seguridad");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
+  // superAdmin entra a mirar (sidebar > Seguridad): solo lectura, sin
+  // saludo de "aqui registras" ni botones para registrar.
+  const soloLectura = String(user?.role || "").toLowerCase().trim() === "superadmin";
 
   const base = `/${locale}/seguridad`;
 
@@ -180,24 +182,10 @@ export default function SeguridadDashboard() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:block text-right">
-              <p className="text-xs text-slate-400">{t("logged_in_as")}</p>
-              <p className="text-sm font-semibold text-slate-700">
-                {user?.name || "Seguridad"}
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                logout();
-                window.location.href = `/${locale}/login`;
-              }}
-              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-              title={t("logout")}
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          {/* Sin "Sesion iniciada como" ni boton de salir: eran de cuando el
+              modulo iba a vivir en su propio subdominio. Dentro del panel ya
+              los da el encabezado general, y repetidos parecian una segunda
+              sesion encima de la otra. */}
         </div>
       </header>
 
@@ -205,12 +193,15 @@ export default function SeguridadDashboard() {
         {/* Saludo */}
         <section>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900">
-            {t("welcome", { name: user?.name || "" })}
+            {soloLectura ? t("superadmin_title") : t("welcome", { name: user?.name || "" })}
           </h2>
-          <p className="text-sm text-slate-500 mt-1">{t("welcome_desc")}</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {soloLectura ? t("superadmin_desc") : t("welcome_desc")}
+          </p>
         </section>
 
-        {/* Quick actions */}
+        {/* Quick actions: solo quien opera Seguridad */}
+        {!soloLectura && (
         <section className="flex flex-wrap gap-2">
           <Link
             href={`${base}/ingreso/nuevo`}
@@ -228,6 +219,7 @@ export default function SeguridadDashboard() {
             {t("actions.despacho.title")}
           </Link>
         </section>
+        )}
 
         {loading ? (
           <div className="text-center text-slate-400 py-12">
@@ -241,7 +233,7 @@ export default function SeguridadDashboard() {
         ) : (
           <>
             {data.mes ? (
-              <PanelDelMes mes={data.mes} base={base} t={t} />
+              <PanelDelMes mes={data.mes} base={base} t={t} soloLectura={soloLectura} />
             ) : (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
                 <AlertTriangle className="w-5 h-5 inline mr-2" />
@@ -271,13 +263,14 @@ export default function SeguridadDashboard() {
  * los almacenistas en el despacho de mercancía, y los RMA que Seguridad tiene
  * que mover (más de 7 días, por despachar, por llegar).
  */
-function PanelDelMes({ mes, base, t }: { mes: Mes; base: string; t: any }) {
+function PanelDelMes({ mes, base, t, soloLectura }: { mes: Mes; base: string; t: any; soloLectura: boolean }) {
   const listaRma = (items: ItemRma[], tono: "warning" | "ok") => (
     <div className="divide-y divide-slate-100">
       {items.map((i) => (
         <Link
           key={i.id}
-          href={tono === "ok" ? `${base}/despacho/nuevo?ingreso=${i.id}` : `${base}/ingreso/${i.id}`}
+          // En solo lectura se abre el ingreso, no el formulario de despacho.
+          href={tono === "ok" && !soloLectura ? `${base}/despacho/nuevo?ingreso=${i.id}` : `${base}/ingreso/${i.id}`}
           className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
         >
           <div className="text-xs text-slate-500 w-16">{fechaCorta(i.fecha_entrega)}</div>
@@ -366,8 +359,8 @@ function PanelDelMes({ mes, base, t }: { mes: Mes; base: string; t: any }) {
         {/* RMA por despachar: el taller ya terminó */}
         <Card
           title={`${t("dashboard.mes.por_despachar")} (${mes.rma_por_despachar.total})`}
-          cta={t("actions.despacho.title")}
-          href={`${base}/despacho/nuevo`}
+          cta={soloLectura ? t("dashboard.ver_todos") : t("actions.despacho.title")}
+          href={soloLectura ? `${base}/despacho` : `${base}/despacho/nuevo`}
         >
           {mes.rma_por_despachar.items.length === 0 ? (
             <Empty t={t} texto={t("dashboard.mes.por_despachar_vacio")} />
