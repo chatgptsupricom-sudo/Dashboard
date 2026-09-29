@@ -4,7 +4,7 @@ import { detalleCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
-import { obtenerCobros } from "@/lib/cxc/cobros";
+import { obtenerCobros, esRelacionada } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { VENCIMIENTO_DESDE, esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { NextRequest, NextResponse } from "next/server";
@@ -92,10 +92,12 @@ export async function GET(request: NextRequest) {
          "document_number", "transaction_type"],
       );
 
-      // Cartera Vencida va sin la cartera vieja (vencida antes de 2025), igual
-      // que la tarjeta; Incobrables es solo esa cartera vieja.
+      // Cartera Vencida va sin la cartera vieja (vencida antes de 2025) ni la
+      // empresa relacionada SUPER TECHNO, igual que la tarjeta; Incobrables es
+      // solo esa cartera vieja.
       const filtered = reportData.filter((r: any) =>
         !((r.partner_name || "").toLowerCase().includes("supricom")) &&
+        (type === "incobrables" || !esRelacionada(r.partner_name || "")) &&
         esCarteraVieja(r.date_maturity) === (type === "incobrables"));
 
       function getAgingBand(r: any): string {

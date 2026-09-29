@@ -101,7 +101,7 @@ interface Factura {
   credito: boolean;
   /** Vencida antes de 2025 (lib/cxc/carteraVieja.ts): fuera de Cartera Vencida, Recuperación y CEI. */
   vieja: boolean;
-  /** Empresa relacionada (SUPER TECHNO, lib/cxc/cobros.ts): fuera del CEI. */
+  /** Empresa relacionada (SUPER TECHNO, lib/cxc/cobros.ts): fuera del CEI y de Cartera Vencida. */
   relacionada: boolean;
   /** Conciliaciones de esta factura dentro del período: [fecha, monto]. */
   pagos: { fecha: Date; monto: number }[];
@@ -241,7 +241,7 @@ export async function calcularSeriesCxC(
     let total = 0;
     let vencido = 0;
     for (const f of todas) {
-      if (f.vieja) continue;
+      if (f.vieja || f.relacionada) continue;
       // Una factura emitida después del corte no formaba parte de la cartera
       // en ese momento: sin este filtro, las semanas pasadas salen infladas.
       if (f.emision && f.emision > corte) continue;

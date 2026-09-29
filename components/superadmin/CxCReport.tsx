@@ -37,7 +37,7 @@ interface KPIs {
     pagosRegistrados: number; pagos: number; facturas: number; parcial: boolean;
     relacionadas?: number;
   };
-  carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
+  carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number; relacionadas?: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
   dso: { value: number | null; meta: number; carteraAbierta: number; ventasNetas: number; clientes: number };
   // Cartera vencida antes de 2025, fuera de los otros KPIs (lib/cxc/carteraVieja.ts).
@@ -272,7 +272,10 @@ export default function CxCReport() {
               title={t("cartera_vencida")}
               value={`${data.kpis.carteraVencida.value}%`}
               meta={`${t("meta")}: ≤${data.kpis.carteraVencida.meta}%`}
-              subtitle={`${t("vencido")}: ${formatCurrency(data.kpis.carteraVencida.saldoVencido)} / ${t("total")}: ${formatCurrency(data.kpis.carteraVencida.carteraTotal)}`}
+              subtitle={`${t("vencido")}: ${formatCurrency(data.kpis.carteraVencida.saldoVencido)} / ${t("total")}: ${formatCurrency(data.kpis.carteraVencida.carteraTotal)}` +
+                ((data.kpis.carteraVencida.relacionadas ?? 0) > 0.005
+                  ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.carteraVencida.relacionadas!)} (${t("fuera_del_calculo")})`
+                  : "")}
               color={getTrafficLight(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
               dot={getTrafficDot(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
               icon={<AlertTriangle size={20} />}

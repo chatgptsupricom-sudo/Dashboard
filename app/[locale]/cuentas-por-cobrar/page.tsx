@@ -368,6 +368,11 @@ export default function CxcDashboardPage() {
                 <span>Vencido: {formatCurrency(data.kpis.carteraVencida.saldoVencido)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
+              {data.kpis.carteraVencida.relacionadas > 0.005 && (
+                <div className="text-[11px] text-amber-700 mt-1">
+                  SUPER TECHNO LLC (relacionada) debe {formatCurrency(data.kpis.carteraVencida.relacionadas)} · fuera del cálculo
+                </div>
+              )}
             </div>
 
             <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>

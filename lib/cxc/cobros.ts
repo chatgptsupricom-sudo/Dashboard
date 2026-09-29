@@ -102,7 +102,8 @@ export const esInterno = (partnerName: string) => partnerName.toLowerCase().incl
 /**
  * Empresa relacionada (no se llama "Supricom" pero es del grupo): SUPER TECHNO
  * LLC, en Panamá. En sep-2026 debía 2,5 M sin un solo pago. Queda fuera del
- * DSO y del CEI, pero su saldo se muestra aparte en la tarjeta de Efectividad.
+ * DSO, del CEI y de Cartera Vencida; su saldo se muestra aparte en las
+ * tarjetas de Efectividad y Cartera Vencida.
  */
 export const RELACIONADA = "super techno llc";
 export const esRelacionada = (nombre: string) => nombre.toLowerCase().includes(RELACIONADA);

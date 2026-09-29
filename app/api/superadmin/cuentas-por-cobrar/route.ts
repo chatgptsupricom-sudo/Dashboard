@@ -347,6 +347,8 @@ export async function GET(request: NextRequest) {
             meta: cxcMetas["cartera_vencida"] || 10,
             saldoVencido: seriesCxc.carteraHoy.vencido,
             carteraTotal: seriesCxc.carteraHoy.total,
+            // SUPER TECHNO queda fuera del % pero su saldo se muestra.
+            relacionadas: efectividadCalc.relacionadas,
           },
           recuperacion: {
             value: recuperacion,
