@@ -6,7 +6,8 @@ import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { TIPOS_ENTREGA, type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
+import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
+import { describirMetodo, tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
@@ -56,6 +57,8 @@ export default function MercanciaNueva({
     odoo_picking_name: string;
     contraparte: string;
     facturas: { numero: string; fecha: string | null }[];
+    /** Método de retiro que cargó el vendedor (lib/ventas/metodoRetiro). */
+    metodo_retiro: FilaMetodo | null;
   } | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
 
@@ -171,7 +174,11 @@ export default function MercanciaNueva({
         odoo_picking_name: p.odoo_picking_name,
         contraparte: p.contraparte,
         facturas: p.facturas || [],
+        metodo_retiro: p.metodo_retiro || null,
       });
+      // El tipo de entrega sale del método que indicó el vendedor; Almacén no
+      // lo elige. Sin método, el egreso no se puede registrar.
+      setTipoEntrega(p.metodo_retiro ? tipoEntregaDeMetodo(p.metodo_retiro.metodo) : "");
       setLineas(p.lineas || []);
       // La orden buscada es una de las que salen en el camion: se agrega
       // sola a la lista, en vez de obligar a volver a escribir el mismo
@@ -413,24 +420,25 @@ export default function MercanciaNueva({
               </div>
               <div>
                 <label className={labelClases}>{tf("tipo_entrega")} *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {TIPOS_ENTREGA.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTipoEntrega(t)}
-                      aria-pressed={tipoEntrega === t}
-                      className={`h-11 px-2 rounded-xl border text-[13px] font-semibold transition-colors ${
-                        tipoEntrega === t
-                          ? "border-[color:var(--portal-primary,#741DFE)] bg-violet-50 text-[color:var(--portal-primary,#741DFE)]"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {tf(`entrega.${t}`)}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-400">{tf("entrega_ayuda")}</p>
+                {picking?.metodo_retiro ? (
+                  <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                    <p className="text-sm font-semibold text-[color:var(--portal-primary,#741DFE)]">
+                      {describirMetodo(picking.metodo_retiro)}
+                    </p>
+                    {picking.metodo_retiro.nota && (
+                      <p className="text-xs text-slate-600 mt-0.5 whitespace-pre-wrap">{picking.metodo_retiro.nota}</p>
+                    )}
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {tf("metodo_indicado_por", { quien: picking.metodo_retiro.registrado_por || "—" })}
+                    </p>
+                  </div>
+                ) : picking ? (
+                  <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    {tf("sin_metodo_retiro")}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400">{tf("metodo_despues_de_orden")}</p>
+                )}
               </div>
             </>
           ) : (

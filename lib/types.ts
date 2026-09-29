@@ -139,6 +139,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: [
       "dashboard",
+      "metodo_retiro", // Método de retiro de sus pedidos (sucursal, ruta o encomienda)
       "clientes",
       "leads",
       "cierres",
@@ -191,7 +192,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo", "estado_cuenta"],
+    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo", "estado_cuenta", "metodo_retiro"],
   },
   [UserRole.ADMINISTRACION]: {
     canViewAllSections: false,
