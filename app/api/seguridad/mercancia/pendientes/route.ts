@@ -1,4 +1,5 @@
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { metodosDePedidos } from "@/lib/ventas/metodoRetiro";
 import { listarPickingsEgresoPendientes } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,7 +23,14 @@ export async function GET(request: NextRequest) {
     if (cidsError) return cidsError;
 
     const { ordenes, sin_facturar } = await listarPickingsEgresoPendientes(cids);
-    return NextResponse.json({ success: true, ordenes, sin_facturar });
+    // Método de retiro que cargó el vendedor (lib/ventas/metodoRetiro): sin
+    // él, Almacén no puede registrar el egreso.
+    const metodos = await metodosDePedidos(ordenes.map((o) => o.odoo_sale_id || 0)).catch(() => new Map());
+    return NextResponse.json({
+      success: true,
+      ordenes: ordenes.map((o) => ({ ...o, metodo_retiro: (o.odoo_sale_id && metodos.get(o.odoo_sale_id)) || null })),
+      sin_facturar,
+    });
   } catch (error: any) {
     console.error("Error listando ordenes de despacho pendientes:", error);
     // El mensaje trae [odoo]/[mysql] al frente (ver listarPickingsEgresoPendientes)
