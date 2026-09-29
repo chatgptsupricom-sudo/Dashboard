@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
-import { normalizarCodigo } from "@/lib/escaneo/codigos";
-import { MAX_CODIGO, procesarEscaneo, type RespuestaEscaneo } from "@/lib/escaneo/procesar";
+import { normalizarCodigo, productoPorPrefijo } from "@/lib/escaneo/codigos";
+import { buscarAlias, MAX_CODIGO, procesarEscaneo, type RespuestaEscaneo } from "@/lib/escaneo/procesar";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { puedeHacer, verificaPorSerial } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
@@ -182,6 +182,23 @@ async function leer(request: NextRequest, sesion: Sesion): Promise<NextResponse>
   if (body?.sobrante === true) {
     const codigo = normalizarCodigo(String(body?.codigo ?? "").slice(0, MAX_CODIGO));
     if (!codigo) return NextResponse.json({ error: "Codigo vacio" }, { status: 400 });
+    // Si el codigo es de un producto de la orden (directo, con variante,
+    // aprendido o un serial esperado), no es un sobrante: se contaba como
+    // "producto que no esta en la orden" sin sumar a su renglon.
+    const porCodigo = (c: string) => items.find((i) => i.codigo && normalizarCodigo(i.codigo) === c) || null;
+    let deLaOrden = porCodigo(codigo) || productoPorPrefijo(items, codigo);
+    if (!deLaOrden) {
+      const alias = await buscarAlias(codigo);
+      if (alias) deLaOrden = porCodigo(alias);
+    }
+    const serial = esperado.get(codigo);
+    if (!deLaOrden && serial) deLaOrden = items.find((i) => Number(i.id) === Number(serial.item_id)) || null;
+    if (deLaOrden) {
+      return NextResponse.json(
+        { error: `Ese código es de "${deLaOrden.producto}", que está en la orden: se cuenta en su renglón, no como sobrante` },
+        { status: 400 },
+      );
+    }
     const r = await registrarNovedadEscaneo(
       id,
       ronda,

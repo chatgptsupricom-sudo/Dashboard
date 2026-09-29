@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
@@ -147,17 +147,32 @@ export default function MercanciaNueva({
   const quitarFactura = (v: string) =>
     setFacturas((p) => p.filter((x) => x !== v));
 
+  // La orden que se agrego sola a la lista (ver abajo): al buscar otra se
+  // reemplaza, no se suma. Si no, buscar primero la equivocada y despues la
+  // buena registraba el egreso con la equivocada en la lista.
+  const ordenAgregada = useRef<string | null>(null);
+  const quitarAgregada = () => {
+    const previa = ordenAgregada.current;
+    ordenAgregada.current = null;
+    if (previa) setFacturas((prev) => prev.filter((x) => x !== previa));
+  };
+  // Solo vale la respuesta de la ultima busqueda: con dos Enter rapidos, la
+  // primera podia llegar despues y dejar en pantalla otra orden.
+  const busqueda = useRef(0);
+
   // `id`: solo para la orden que llega prellenada desde la lista de
   // pendientes. Escrita a mano se busca por nombre.
   const buscarOrden = async (valor?: string, id?: string | null) => {
     const v = (valor ?? orden).trim();
     if (!v) return;
+    const esta = ++busqueda.current;
     setBuscando(true);
     setErrorOrden(null);
     try {
       const res = await fetch(
         `/api/seguridad/mercancia/odoo/${encodeURIComponent(v)}?tipo=${tipo}${id ? `&id=${id}` : ""}`,
       );
+      if (esta !== busqueda.current) return;
       if (!res.ok) {
         // Encontrada pero sin facturar: no se deja registrar (issue #298), y
         // el mensaje tiene que decir por que, no "no la encontramos".
@@ -171,9 +186,11 @@ export default function MercanciaNueva({
         );
         setPicking(null);
         setLineas([]);
+        quitarAgregada();
         return;
       }
       const json = await res.json();
+      if (esta !== busqueda.current) return;
       const p = json.picking;
       setPicking({
         odoo_picking_id: p.odoo_picking_id,
@@ -190,14 +207,17 @@ export default function MercanciaNueva({
       // sola a la lista, en vez de obligar a volver a escribir el mismo
       // numero que ya se acaba de buscar.
       if (tipo === "egreso" && p.odoo_picking_name) {
-        setFacturas((prev) =>
-          prev.includes(p.odoo_picking_name) ? prev : [...prev, p.odoo_picking_name],
-        );
+        if (ordenAgregada.current !== p.odoo_picking_name) quitarAgregada();
+        setFacturas((prev) => {
+          if (prev.includes(p.odoo_picking_name)) return prev;
+          ordenAgregada.current = p.odoo_picking_name;
+          return [...prev, p.odoo_picking_name];
+        });
       }
     } catch {
-      setErrorOrden(tm("no_encontrada"));
+      if (esta === busqueda.current) setErrorOrden(tm("no_encontrada"));
     } finally {
-      setBuscando(false);
+      if (esta === busqueda.current) setBuscando(false);
     }
   };
 
@@ -298,7 +318,7 @@ export default function MercanciaNueva({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  buscarOrden();
+                  if (!buscando) void buscarOrden();
                 }
               }}
               placeholder={tm(

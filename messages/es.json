@@ -2766,6 +2766,9 @@
       "sin_verificar": "Sin verificar",
       "vacio": "Todavía no hay movimientos.",
       "error": "No se pudo guardar",
+      "error_carga": "No se pudo cargar el registro.",
+      "reintentar": "Reintentar",
+      "error_recarga": "No se pudo actualizar la pantalla: se muestra lo último que se cargó.",
       "sin_factura": "Sin factura de Odoo",
       "diferencia": "Diferencia",
       "buscar_factura_compra": "Factura de la orden de compra",
@@ -2789,6 +2792,7 @@
         "subtitulo": "Resumen de tu sucursal",
         "loading": "Cargando…",
         "error": "No se pudo cargar el resumen. Intenta recargar la página.",
+        "vs_ayer": "{delta} vs ayer",
         "kpi_egresos_hoy": "Despachos hoy",
         "kpi_pendientes": "Pendientes de verificar",
         "kpi_descuadres": "Descuadres (30 días)",
@@ -2825,7 +2829,8 @@
         "listo_verificar": "Despacho listo para verificar en portón",
         "aprobado": "Seguridad aprobó y despachó",
         "no_aprobado": "Seguridad no aprobó el despacho",
-        "devuelto": "Seguridad no despachó la orden: volvió a Almacén"
+        "devuelto": "Seguridad no despachó la orden: volvió a Almacén",
+        "cancelado": "Seguridad canceló el despacho: la orden no sale"
       },
       "personal_almacen": {
         "titulo": "Personal de Almacén",

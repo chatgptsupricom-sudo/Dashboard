@@ -32,6 +32,8 @@ export type AvisoMercancia = {
   /** Resultado del porton, para avisarle a Almacen si Seguridad aprobo o no. */
   aprobado?: boolean;
   despachado?: boolean;
+  /** Seguridad lo cancelo (no sale): el cartel lo muestra en gris, no como rechazo. */
+  cancelado?: boolean;
   /**
    * Documento con el que viaja la mercancia (orden de despacho o factura de
    * compra). Va en el aviso solo para que el cartel diga cual llego en vez de

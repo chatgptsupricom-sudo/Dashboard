@@ -328,6 +328,7 @@ function KPI({
   subtitle?: string;
   tono?: "neutral" | "amber" | "red";
 }) {
+  const td = useTranslations("seguridad.mercancia.dashboard");
   const iconClases =
     tono === "red"
       ? "bg-red-50 text-red-600"
@@ -345,8 +346,7 @@ function KPI({
       <p className="text-[11px] font-medium text-slate-500 mt-1">{label}</p>
       {typeof delta === "number" && (
         <p className="text-[11px] text-slate-400 mt-0.5">
-          {delta > 0 ? "+" : ""}
-          {delta} vs ayer
+          {td("vs_ayer", { delta: `${delta > 0 ? "+" : ""}${delta}` })}
         </p>
       )}
       {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}

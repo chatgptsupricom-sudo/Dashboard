@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Package, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Package, ShieldCheck, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import type { AvisoMercancia } from "@/lib/seguridad/eventos";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
@@ -25,7 +25,7 @@ import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
 const DURACION_MS = 10_000;
 const MAX_VISIBLES = 3;
 
-type Tono = "nuevo" | "bien" | "mal" | "turno";
+type Tono = "nuevo" | "bien" | "mal" | "turno" | "neutro";
 type Cartel = { texto: string; tono: Tono };
 type Aviso = AvisoMercancia & Cartel & { clave: number };
 
@@ -34,12 +34,15 @@ const ICONO: Record<Tono, typeof Package> = {
   bien: CheckCircle2,
   mal: AlertTriangle,
   turno: ShieldCheck,
+  neutro: Circle,
 };
 const TONO: Record<Tono, string> = {
   nuevo: "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]",
   bien: "bg-emerald-50 text-emerald-600",
   mal: "bg-red-50 text-red-600",
   turno: "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]",
+  // Cancelado: gris, igual que en la lista y el detalle (#324).
+  neutro: "bg-slate-100 text-slate-500",
 };
 
 /**
@@ -76,6 +79,7 @@ function cartelPara(
     }
     if (aviso.etapa === "por_calificar") {
       if (!esAlmacen) return null;
+      if (aviso.cancelado) return { texto: tm("cancelado"), tono: "neutro" };
       return aviso.aprobado
         ? { texto: tm("aprobado"), tono: "bien" }
         : { texto: tm("no_aprobado"), tono: "mal" };

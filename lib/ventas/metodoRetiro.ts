@@ -184,7 +184,9 @@ export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined): Fi
     companyId: d.company_id,
     rutaNombre: m.ruta_nombre,
     monto,
-    moneda: d.moneda,
+    // Lo facturado viene en la moneda de la compañía (USD), aunque el pedido
+    // sea en otra: ahí sí se puede comparar con el mínimo.
+    moneda: fuente === "facturado" ? "USD" : d.moneda,
     estadoCliente: d.estado_cliente,
   });
   const alertas: string[] = [];
@@ -246,6 +248,8 @@ export type PedidoPendiente = {
   facturado: number | null;
   /** Con lo que se decide la ruta gratis (montoRutaGratis). */
   monto_ruta: number;
+  /** Moneda de `monto_ruta`: USD si sale de lo facturado (moneda de la compañía). */
+  moneda_ruta: string;
   /** Estado de la dirección de entrega del cliente. */
   estado_cliente: string | null;
   ordenes: { id: number; nombre: string; estado: string }[];
@@ -260,6 +264,8 @@ export type PedidoPendiente = {
  * los de un vendedor (`vendedorUid`), o todos los de la sucursal (`cids`;
  * null = todas) para el Asistente de Ventas.
  */
+const LIMITE_PEDIDOS = 2000;
+
 export async function listarPedidosPendientes(opciones: {
   cids: number | null;
   vendedorUid: number | null;
@@ -276,8 +282,15 @@ export async function listarPedidosPendientes(opciones: {
     (await callOdooRPC<any[]>("stock.picking", "search_read", [domain], {
       fields: ["name", "state", "sale_id", "scheduled_date"],
       order: "scheduled_date asc",
-      limit: 400,
+      // Las mas viejas primero: con el tope, las que quedan afuera son las
+      // recien llegadas. 400 se quedaba corto para el Asistente de Ventas
+      // (toda la sucursal) y los pedidos nuevos no aparecian, con Almacen
+      // frenado por "sin método".
+      limit: LIMITE_PEDIDOS,
     })) || [];
+  if (pickings.length >= LIMITE_PEDIDOS) {
+    console.warn(`[metodo-retiro] ${LIMITE_PEDIDOS}+ órdenes abiertas: las más nuevas no se listan`);
+  }
   const saleIds = [...new Set(pickings.map((p) => p.sale_id?.[0]).filter(Boolean))] as number[];
   if (!saleIds.length) return [];
 
@@ -311,6 +324,8 @@ export async function listarPedidosPendientes(opciones: {
       moneda: v.currency_id?.[1] || "",
       facturado: datos.get(v.id)?.facturado ?? null,
       monto_ruta: datos.has(v.id) ? montoRutaGratis(datos.get(v.id)!).monto : Number(v.amount_untaxed) || 0,
+      moneda_ruta:
+        datos.has(v.id) && montoRutaGratis(datos.get(v.id)!).fuente === "facturado" ? "USD" : v.currency_id?.[1] || "",
       estado_cliente: datos.get(v.id)?.estado_cliente ?? null,
       ordenes: [],
       facturas: facturas.get(v.id) || [],
@@ -382,7 +397,9 @@ export async function guardarMetodoRetiro(datos: {
         WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
           AND odoo_picking_id IN (${pickings.map(() => "?").join(",")}) LIMIT 1`,
       pickings.map((p) => p.id),
-    ).catch(() => ({ rows: [] as any[] }));
+    );
+    // Sin .catch: si la consulta falla, no se deja cambiar el método a ciegas
+    // (antes fallaba abierto y se podía cambiar con el egreso ya en curso).
     if ((r.rows as any[]).length) {
       throw new ErrorMetodo("Almacén ya está despachando este pedido: el método ya no se puede cambiar.", 409);
     }
@@ -406,14 +423,15 @@ export async function guardarMetodoRetiro(datos: {
   // estado del cliente. Hasta que Almacén registre el egreso se sigue
   // recalculando con lo que diga Odoo (aplicarEvaluacion).
   const d = (await datosDePedidos([datos.saleId])).get(datos.saleId);
-  const montoBase = d ? montoRutaGratis(d).monto : Number(venta.amount_untaxed) || 0;
+  const monto = d ? montoRutaGratis(d) : { monto: Number(venta.amount_untaxed) || 0, fuente: "pedido" as const };
+  const montoBase = monto.monto;
   const rutaGratis =
     metodo === "ruta"
       ? evaluarRutaGratis({
           companyId: venta.company_id?.[0],
           rutaNombre,
           monto: montoBase,
-          moneda: venta.currency_id?.[1],
+          moneda: monto.fuente === "facturado" ? "USD" : venta.currency_id?.[1],
           estadoCliente: d?.estado_cliente,
         }).gratis
       : null;

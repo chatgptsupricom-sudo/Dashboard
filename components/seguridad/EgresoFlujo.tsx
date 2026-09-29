@@ -305,11 +305,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setMotivos((prev) => conservar("motivo", prev, mo));
   }, []);
 
+  // Error al leer el egreso. Con datos en pantalla se avisa que pueden estar
+  // viejos; sin datos, se ofrece reintentar. Antes se ignoraba: la primera
+  // carga fallida se veia "vacia" y las recargas quedaban sin aviso.
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const cargar = useCallback(async () => {
     try {
       const res = await fetch(`/api/seguridad/mercancia/${id}`);
-      if (!res.ok) return;
-      aplicar(await res.json());
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || res.statusText || "");
+      aplicar(json);
+      setErrorCarga(null);
+    } catch (e: any) {
+      setErrorCarga(e?.message || " ");
     } finally {
       setCargando(false);
     }
@@ -413,6 +421,35 @@ export default function EgresoFlujo({ id }: { id: string }) {
     }
   };
 
+  // Excel de seriales: con fetch y no navegando, como la lista. Si el
+  // servidor fallaba, el navegador salia a una pagina con el JSON del error
+  // y se perdia la pantalla (y lo que se estaba contando).
+  const [bajandoSeriales, setBajandoSeriales] = useState(false);
+  const bajarSeriales = async () => {
+    setError(null);
+    setBajandoSeriales(true);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/seriales/export`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const nombre =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "seriales.xlsx";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      a.click();
+      // Liberarla en el mismo tick cancela la descarga en algunos Safari.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+    } finally {
+      setBajandoSeriales(false);
+    }
+  };
+
   // "Actualizar desde Odoo" (issue #299): relee los seriales del picking.
   const actualizarSeriales = async () => {
     setError(null);
@@ -488,9 +525,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
     );
   }
   if (!mov || !esEtapa(mov.etapa)) {
+    // Sin datos por un error (mala señal en el patio), no "vacío": parecía
+    // que el registro no existía.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
-        {tm("vacio")}
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-400 text-sm px-4 text-center">
+        {errorCarga ? (
+          <>
+            <span className="text-red-600">{tm("error_carga")} {errorCarga}</span>
+            <BotonSecundario onClick={() => { setCargando(true); void cargar(); }}>{tm("reintentar")}</BotonSecundario>
+          </>
+        ) : (
+          tm("vacio")
+        )}
       </div>
     );
   }
@@ -600,6 +646,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
         {aviso && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {aviso}
+          </div>
+        )}
+        {errorCarga && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="flex-1 min-w-0">{tm("error_recarga")}</span>
+            <BotonSecundario onClick={() => void cargar()}>{tm("reintentar")}</BotonSecundario>
           </div>
         )}
 
@@ -836,9 +888,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
             {seriales.length > 0 && (mov.verificado_at || contandoPorton) && (
               <div className="flex justify-end">
                 <BotonSecundario
-                  onClick={() => {
-                    window.location.href = `/api/seguridad/mercancia/${id}/seriales/export`;
-                  }}
+                  onClick={() => void bajarSeriales()}
+                  disabled={bajandoSeriales}
                   icon={Download}
                 >
                   {tf("verificacion.excel_seriales")}
