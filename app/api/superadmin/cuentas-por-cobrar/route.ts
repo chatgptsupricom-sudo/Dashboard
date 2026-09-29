@@ -271,14 +271,12 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const [recuperacionCalc, dsoCalc, sinAplicarGrupo] = await Promise.all([
+    const [recuperacionCalc, sinAplicarGrupo] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
       // puede leer directo de `amount_residual` (issue #189).
       calcularRecuperacion(companyIds, monthStart, monthEnd),
-      // DSO por cliente y global ponderado por saldo (lib/cxc/dso.ts).
-      calcularDSO(companyIds, today),
       // Pagos todavía no aplicados a una factura (anticipos, saldo a favor):
       // restan en el reporte de Odoo pero no son de ninguna factura, así que
       // el Resumen los muestra en su propia fila.
@@ -316,7 +314,11 @@ export async function GET(request: NextRequest) {
     // el contado y la cartera vieja por factura con esas mismas series, así
     // que va después (seriesSemanales.ts → carteraCEI).
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
-    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI);
+    // El DSO usa la CxC final y las ventas a crédito del CEI (lib/cxc/dso.ts).
+    const [efectividadCalc, dsoCalc] = await Promise.all([
+      calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI),
+      calcularDSO(companyIds, monthStart, monthEnd, today, seriesCxc),
+    ]);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -388,6 +390,7 @@ export async function GET(request: NextRequest) {
             meta: cxcMetas["dso"] || 45,
             carteraAbierta: dsoCalc.carteraAbierta,
             ventasNetas: dsoCalc.ventasNetas,
+            dias: dsoCalc.dias,
             clientes: dsoCalc.clientesIncluidos,
           },
           incobrables,
