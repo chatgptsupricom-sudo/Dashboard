@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import type { Novedad } from "@/lib/seguridad/egresoFlujo";
+import { faltaMigracion } from "@/lib/seguridad/seriales";
 
 /**
  * Novedades de la verificacion de Seguridad en C4 (issue #301), en
@@ -92,7 +93,11 @@ export async function sqlFueDevuelto(alias = "m"): Promise<string> {
   return (await hayColumnasVerificacion()) ? `${alias}.ronda_verificacion > 1` : "FALSE";
 }
 
-/** Todas las novedades del egreso, de todas las rondas. Sin la tabla: ninguna. */
+/**
+ * Todas las novedades del egreso, de todas las rondas. Sin la tabla: ninguna.
+ * Cualquier otro error se lanza: si una falla de la base se tomara como
+ * "ninguna", la verificacion se cerraba "conforme" sin las de escaneo.
+ */
 export async function leerNovedades(mercanciaId: number): Promise<NovedadGuardada[]> {
   try {
     const r = await query(
@@ -109,8 +114,9 @@ export async function leerNovedades(mercanciaId: number): Promise<NovedadGuardad
       esperado: Number(n.esperado),
       contado: n.contado === null ? null : Number(n.contado),
     }));
-  } catch {
-    return [];
+  } catch (e) {
+    if (faltaMigracion(e)) return [];
+    throw e;
   }
 }
 

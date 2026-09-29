@@ -22,7 +22,7 @@ import {
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { cargarMovimiento } from "@/lib/seguridad/mercancia";
+import { cargarMovimiento, motivoOrdenCambioEnOdoo } from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import {
   guardarNovedadesCierre,
@@ -457,6 +457,36 @@ async function ejecutar(
       }
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
+
+      // Antes de dejarla salir, Odoo otra vez: al registrar estaba Lista y
+      // facturada, pero de una nota de credito o un picking cancelado despues
+      // no se enteraba nadie. Cancelada o sin factura no sale; con renglones
+      // cambiados no se aprueba, se despacha igual con motivo o se devuelve.
+      if (despachar && mov.odoo_picking_id) {
+        let cambio: Awaited<ReturnType<typeof motivoOrdenCambioEnOdoo>>;
+        try {
+          cambio = await motivoOrdenCambioEnOdoo(Number(mov.odoo_picking_id), items);
+        } catch (e: any) {
+          console.error(`[egreso ${id}] no se pudo revisar la orden en Odoo:`, e?.message || e);
+          return NextResponse.json(
+            { error: "No se pudo confirmar la orden en Odoo antes de despacharla. Intenta de nuevo." },
+            { status: 502 },
+          );
+        }
+        if (cambio && (cambio.bloquea || aprobado)) {
+          return NextResponse.json(
+            {
+              error: cambio.bloquea
+                ? `${cambio.motivo}. No puede salir: devuélvelo a Almacén o cancélalo.`
+                : `${cambio.motivo}. No se puede aprobar: despáchalo igual con el motivo, devuélvelo o cancélalo.`,
+              codigo: "orden_cambio_odoo",
+            },
+            { status: 400 },
+          );
+        }
+        // Despachado igual: el cambio queda escrito junto al motivo.
+        if (cambio) motivo = `${motivo} · ${cambio.motivo}`.slice(0, MAX.motivo);
+      }
 
       // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
       // pistoleado se conserva; aprobado/despachado = 0 quedan como el

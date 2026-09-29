@@ -351,6 +351,11 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setAviso(null);
     setEnviando(true);
     try {
+      // Tocar Aprobar saca el foco de la casilla y su guardado sale en ese
+      // mismo instante: sin esperarlo, el servidor decidia con el conteo
+      // anterior (se aprobaba "conforme" un 10 que ya se habia corregido a 9)
+      // o pedia un motivo que ya estaba escrito.
+      await Promise.allSettled([...guardadosEnCamino.current]);
       const res = await fetch(`/api/seguridad/mercancia/${id}/etapa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -413,8 +418,17 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // sepa si se volvio a escribir mientras estaba en camino.
   const enPantalla = useRef({ porton, noSalio, motivos });
   enPantalla.current = { porton, noSalio, motivos };
+  // Guardados del porton que todavia no respondieron: `accionar` los espera.
+  const guardadosEnCamino = useRef(new Set<Promise<void>>());
 
-  const guardarPorton = async (itemId: number, datos: Record<string, unknown>) => {
+  const guardarPorton = (itemId: number, datos: Record<string, unknown>) => {
+    const p = enviarPorton(itemId, datos);
+    guardadosEnCamino.current.add(p);
+    p.finally(() => guardadosEnCamino.current.delete(p)).catch(() => {});
+    return p;
+  };
+
+  const enviarPorton = async (itemId: number, datos: Record<string, unknown>) => {
     setError(null);
     // Lo que se manda deja de estar "sin guardar" cuando responde, salvo que
     // se haya vuelto a escribir mientras tanto: eso sigue sin guardar y se

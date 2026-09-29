@@ -52,21 +52,36 @@ export async function GET(request: NextRequest) {
     // El mismo builder que usa el Excel: lo exportado es lo que se ve.
     const { where, params } = filtroMercancia(new URL(request.url).searchParams, cids);
 
-    const res = await query(
-      `SELECT m.*,
-        (SELECT COUNT(*) FROM seguridad_mercancia_items i
-          WHERE i.mercancia_id = m.id) AS total_items,
-        (SELECT COUNT(*) FROM seguridad_mercancia_items i
-          WHERE i.mercancia_id = m.id
-            AND i.cantidad_verificada IS NOT NULL
-            AND i.cantidad_verificada <> i.cantidad_cargada) AS items_con_diferencia
-       FROM seguridad_mercancia m ${where}
-       ORDER BY m.fecha DESC, m.id DESC
-       LIMIT 100`,
-      params,
+    // Los abiertos van todos y los cerrados, los ultimos 100. Con un solo
+    // LIMIT 100 por fecha, un egreso trabado unos dias (a ~750 salidas al mes
+    // por sucursal) quedaba fuera de "Para mi" y "En proceso", que filtran en
+    // la pantalla, y nadie lo avanzaba. Mismo criterio de "abierto" que la
+    // lista: por etapa, o por estado en los del flujo anterior.
+    const abierto = "COALESCE(CASE WHEN m.etapa IS NOT NULL THEN m.etapa <> 'cerrado' ELSE m.estado = 'pendiente' END, 0)";
+    const seleccionar = (condicion: string, limite: number) =>
+      query(
+        `SELECT m.*,
+          (SELECT COUNT(*) FROM seguridad_mercancia_items i
+            WHERE i.mercancia_id = m.id) AS total_items,
+          (SELECT COUNT(*) FROM seguridad_mercancia_items i
+            WHERE i.mercancia_id = m.id
+              AND i.cantidad_verificada IS NOT NULL
+              AND i.cantidad_verificada <> i.cantidad_cargada) AS items_con_diferencia
+         FROM seguridad_mercancia m ${where} AND ${condicion}
+         ORDER BY m.fecha DESC, m.id DESC
+         LIMIT ${limite}`,
+        params,
+      );
+    const [abiertos, cerrados] = await Promise.all([
+      seleccionar(abierto, 1000),
+      seleccionar(`NOT ${abierto}`, 100),
+    ]);
+    const filas = [...abiertos.rows, ...cerrados.rows].sort(
+      (a: any, b: any) =>
+        new Date(b.fecha).getTime() - new Date(a.fecha).getTime() || Number(b.id) - Number(a.id),
     );
 
-    const movimientos = res.rows.map((row: any) => ({
+    const movimientos = filas.map((row: any) => ({
       ...row,
       facturas: parsearLista(row.facturas_json).length
         ? parsearLista(row.facturas_json)
@@ -342,15 +357,33 @@ export async function POST(request: NextRequest) {
 
     let res;
     try {
-      res = await insertar([...columnas, ...columnasFactura], [...valoresMov, ...valoresFactura]);
+      try {
+        res = await insertar([...columnas, ...columnasFactura], [...valoresMov, ...valoresFactura]);
+      } catch (e: any) {
+        // Sin la migracion (sql/egreso_facturas_venta.sql) el egreso se registra
+        // igual, sin la factura: no se frena el despacho por una columna.
+        if (!/Unknown column/i.test(e?.message || "")) throw e;
+        console.warn(
+          "[egreso] falta correr sql/egreso_facturas_venta.sql: se registra sin la factura",
+        );
+        res = await insertar(columnas, valoresMov);
+      }
     } catch (e: any) {
-      // Sin la migracion (sql/egreso_facturas_venta.sql) el egreso se registra
-      // igual, sin la factura: no se frena el despacho por una columna.
-      if (!/Unknown column/i.test(e?.message || "")) throw e;
-      console.warn(
-        "[egreso] falta correr sql/egreso_facturas_venta.sql: se registra sin la factura",
+      // Dos almacenistas pulsaron la misma orden a la vez: el SELECT de arriba
+      // no ve al otro, la clave unica (sql/egreso_picking_unico.sql) si.
+      if (e?.code !== "ER_DUP_ENTRY" && Number(e?.errno) !== 1062) throw e;
+      const otro = await query(
+        `SELECT id FROM seguridad_mercancia
+          WHERE tipo = 'egreso' AND odoo_picking_id = ? LIMIT 1`,
+        [picking.odoo_picking_id],
       );
-      res = await insertar(columnas, valoresMov);
+      return NextResponse.json(
+        {
+          error: "Esta orden ya se registró como egreso",
+          id: Number((otro.rows[0] as any)?.id) || undefined,
+        },
+        { status: 409 },
+      );
     }
 
     const id = (res.rows as any)?.insertId;

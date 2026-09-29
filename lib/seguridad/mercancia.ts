@@ -452,6 +452,69 @@ export function motivoOrdenNoLista(estado: string): { codigo: string; mensaje: s
 }
 
 /**
+ * Por qué un egreso ya registrado no puede salir según lo que dice HOY Odoo,
+ * o null si puede. Lo "Lista" y facturada se revisa al registrar, pero entre
+ * eso y el portón pueden pasar horas: Caja revierte la factura con una nota
+ * de crédito, cancelan el picking o le cambian renglones. Sin volver a mirar,
+ * Seguridad aprobaba y la mercancía salía igual.
+ *
+ * "Hecha" (`done`) sí puede salir: es la orden ya validada en Odoo, no un
+ * cambio. Los renglones se comparan por producto y cantidad contra lo que se
+ * registró; con renglones viejos sin id de Odoo no hay con qué cruzar y esa
+ * parte se salta.
+ *
+ * `bloquea`: cancelada o sin factura no sale de ninguna forma (se devuelve a
+ * Almacén hasta que se facture, o se cancela). Renglones cambiados no se
+ * aprueban, pero Seguridad puede despacharla igual con motivo: el egreso no
+ * se puede volver a registrar con los renglones nuevos, y sin esa salida la
+ * orden quedaría trabada.
+ *
+ * Lanza si Odoo no responde: "no se pudo preguntar" no es "está bien".
+ */
+export async function motivoOrdenCambioEnOdoo(
+  pickingId: number,
+  items: Array<{ odoo_product_id: number | null; producto: string; cantidad_cargada: number | string }>,
+): Promise<{ motivo: string; bloquea: boolean } | null> {
+  // Por id no hay ambigüedad entre compañías (ver buscarPickingEgreso).
+  const picking = await buscarPickingEgresoPorId(pickingId, null);
+  if (!picking) return { motivo: "La orden de despacho ya no está en Odoo", bloquea: true };
+  if (picking.estado === "cancel") return { motivo: "La orden de despacho se canceló en Odoo", bloquea: true };
+  if ((picking.facturas || []).length === 0) {
+    return {
+      motivo: "La orden ya no tiene factura vigente en Odoo (se anuló o se revirtió con una nota de crédito)",
+      bloquea: true,
+    };
+  }
+
+  if (items.some((i) => i.odoo_product_id == null)) return null;
+  const redondear = (n: number) => Math.round(n * 1000) / 1000;
+  const antes = new Map<number, { producto: string; cantidad: number }>();
+  for (const i of items) {
+    const ya = antes.get(Number(i.odoo_product_id));
+    antes.set(Number(i.odoo_product_id), {
+      producto: i.producto,
+      cantidad: redondear((ya?.cantidad || 0) + Number(i.cantidad_cargada || 0)),
+    });
+  }
+  const cambios: string[] = [];
+  const vistos = new Set<number>();
+  for (const l of picking.lineas) {
+    if (l.odoo_product_id == null) continue;
+    vistos.add(l.odoo_product_id);
+    const a = antes.get(l.odoo_product_id);
+    const ahora = redondear(l.cantidad_cargada);
+    if (!a) cambios.push(`${l.producto} (nuevo en la orden)`);
+    else if (a.cantidad !== ahora) cambios.push(`${a.producto} (antes ${a.cantidad}, ahora ${ahora})`);
+  }
+  for (const [pid, a] of antes) {
+    if (!vistos.has(pid)) cambios.push(`${a.producto} (ya no está en la orden)`);
+  }
+  if (cambios.length === 0) return null;
+  const lista = cambios.slice(0, 3).join("; ") + (cambios.length > 3 ? ` y ${cambios.length - 3} más` : "");
+  return { motivo: `La orden cambió en Odoo después de registrarla: ${lista}`, bloquea: false };
+}
+
+/**
  * Ordenes de despacho (egresos) que Odoo ya tiene "Listas" (`assigned`) —
  * inventario apartado y listo para cargar el camion —, con factura de
  * cliente vigente (issue #298), y que Almacen aun no proceso.
