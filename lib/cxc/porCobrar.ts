@@ -36,6 +36,8 @@ export interface PorCobrar {
   /** YYYY-MM-DD del corte. */
   corte: string;
   renglones: RenglonPorCobrar[];
+  /** Incobrables en el corte, factura por factura (id → saldo), para su detalle. */
+  viejas: Map<number, number>;
   incobrables: number;
   relacionadas: number;
 }
@@ -60,7 +62,7 @@ export async function porCobrarAlCierre(
   // ponytail: calcula toda la sede aunque se pida un solo cliente (drill-down);
   // acotar por partner en seriesSemanales si se vuelve lento.
   const { saldosEn } = await calcularSeriesCxC(companyIds, [{ inicio: inicioCorte, fin: corte }], hoy);
-  const { saldos, incobrables, relacionadas } = saldosEn(corte);
+  const { saldos, viejas, incobrables, relacionadas } = saldosEn(corte);
 
   const ids = [...saldos.keys()];
   const moves: any[] = [];
@@ -101,5 +103,5 @@ export async function porCobrarAlCierre(
     }));
 
   const y = corte.getFullYear(), mo = String(corte.getMonth() + 1).padStart(2, "0"), d = String(corte.getDate()).padStart(2, "0");
-  return { corte: `${y}-${mo}-${d}`, renglones, incobrables: r2(incobrables), relacionadas: r2(relacionadas) };
+  return { corte: `${y}-${mo}-${d}`, renglones, viejas, incobrables: r2(incobrables), relacionadas: r2(relacionadas) };
 }

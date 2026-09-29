@@ -71,7 +71,7 @@ export interface SeriesCxC {
    * sin cartera vieja ni relacionada, más cuánto suman esas dos aparte. Lo usa
    * "Por cobrar" de Contado/Crédito (lib/cxc/porCobrar.ts).
    */
-  saldosEn: (corte: Date) => { saldos: Map<number, number>; incobrables: number; relacionadas: number };
+  saldosEn: (corte: Date) => { saldos: Map<number, number>; viejas: Map<number, number>; incobrables: number; relacionadas: number };
 }
 
 /** `companyId` limita el corte a una sede (para la tabla Por Sede). */
@@ -159,7 +159,7 @@ export async function calcularSeriesCxC(
       aging: { corriente: 0, "1-30": 0, "31-60": 0, "61-90": 0, "91+": 0 } },
     carteraHoyPorSede: {},
     carteraCEI: async () => ({ total: 0, noVencida: 0 }),
-    saldosEn: () => ({ saldos: new Map(), incobrables: 0, relacionadas: 0 }),
+    saldosEn: () => ({ saldos: new Map(), viejas: new Map(), incobrables: 0, relacionadas: 0 }),
   };
   if (semanas.length === 0) return vacio;
 
@@ -425,6 +425,7 @@ export async function calcularSeriesCxC(
     carteraCEI,
     saldosEn: (corte) => {
       const saldos = new Map<number, number>();
+      const viejas = new Map<number, number>();
       let incobrables = 0;
       let relacionadas = 0;
       for (const [id, f] of facturas) {
@@ -432,10 +433,12 @@ export async function calcularSeriesCxC(
         const saldo = saldoEn(f, corte);
         if (Math.abs(saldo) < 0.005) continue;
         if (f.relacionada) relacionadas += saldo;
-        else if (f.vieja) incobrables += saldo;
-        else saldos.set(id, saldo);
+        else if (f.vieja) {
+          incobrables += saldo;
+          viejas.set(id, saldo);
+        } else saldos.set(id, saldo);
       }
-      return { saldos, incobrables, relacionadas };
+      return { saldos, viejas, incobrables, relacionadas };
     },
   };
 }

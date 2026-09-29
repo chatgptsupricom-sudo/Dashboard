@@ -296,6 +296,9 @@ export async function GET(request: NextRequest) {
     const contado = nuevoAcum();
     const credito = nuevoAcum();
     const bucketsPorDias = new Map<number, Acum>();
+    // Parte de cada plazo que es de facturas del período (el resto, de meses
+    // anteriores). Lo usa "Por cobrar" para partir la distribución en dos.
+    const delMesPorDias = new Map<number, number>();
     // Solo relevante en modo "cobrado": por que diario/banco entro el
     // dinero (journal_id del lado pago de la conciliacion).
     const bancosPorJournal = new Map<number, Acum>();
@@ -348,6 +351,7 @@ export async function GET(request: NextRequest) {
 
       if (!bucketsPorDias.has(dias)) bucketsPorDias.set(dias, nuevoAcum());
       acumular(bucketsPorDias.get(dias)!, r.monto, r.partnerId, r.partnerName);
+      if (r.esDelMes) delMesPorDias.set(dias, (delMesPorDias.get(dias) || 0) + r.monto);
     });
 
     const totalFacturado = contado.monto + credito.monto;
@@ -364,6 +368,8 @@ export async function GET(request: NextRequest) {
       .map(([dias, acum]) => ({
         dias,
         monto: round2(acum.monto),
+        montoDelMes: round2(delMesPorDias.get(dias) || 0),
+        montoAnteriores: round2(acum.monto - (delMesPorDias.get(dias) || 0)),
         pct: pct(acum.monto, credito.monto),
         facturas: acum.facturas,
         clientes: acum.clientesMap.size,
