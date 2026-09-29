@@ -59,12 +59,16 @@ import { useEffect } from "react";
 // pedirle /api/auth/verify ni mostrarle el spinner de "sincronizando sesión"
 // mientras esa llamada falla.
 const RUTAS_PUBLICAS = ["/servicio-tecnico"];
+// Ruleta del sorteo de clientes (/es/sorteo). Por prefijo exacto y no con
+// `includes`: /superadmin/sorteo es la vista interna y necesita la sesión.
+const SORTEO_PUBLICO = /^\/(es|en)\/sorteo(\/|$)/;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoading, user, initializeFromToken } = useAuthStore();
   const pathname = usePathname();
   const router = useRouter();
-  const esPublica = RUTAS_PUBLICAS.some((ruta) => pathname?.includes(ruta));
+  const esPublica =
+    RUTAS_PUBLICAS.some((ruta) => pathname?.includes(ruta)) || SORTEO_PUBLICO.test(pathname || "");
   const esLogin = pathname?.includes("/login") ?? false;
 
   useEffect(() => {

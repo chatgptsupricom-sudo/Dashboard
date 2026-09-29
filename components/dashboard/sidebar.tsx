@@ -265,6 +265,7 @@ export function Sidebar({
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
+    { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
     // Respuestas de la encuesta pública a clientes (landing "Queremos conocer su opinión").
     { id: "opiniones", label: t("opiniones"), icon: MessageSquareHeart, slug: "/opiniones" },
     { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
@@ -1233,6 +1234,10 @@ export function Sidebar({
                               label: t("metas_marca"),
                               href: `${basePath}/metas-marca`,
                               permission: "metas_marca",
+                            }, {
+                              label: t("sorteo_caracas"),
+                              href: `${basePath}/sorteo`,
+                              permission: "sorteo_caracas",
                             }]
                           : []),
                         {
