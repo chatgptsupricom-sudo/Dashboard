@@ -2248,6 +2248,8 @@
     "logout": "Cerrar sesión",
     "welcome": "Hola, {name}",
     "welcome_desc": "Aquí registras ingresos y despachos del taller.",
+    "superadmin_title": "Dashboard de Seguridad",
+    "superadmin_desc": "Resumen del mes de Seguridad. Solo lectura: los ingresos y despachos los registra el rol Seguridad.",
     "actions": {
       "ingreso": {
         "title": "Registrar ingreso",
