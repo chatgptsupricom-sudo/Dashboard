@@ -2259,6 +2259,8 @@
     "logout": "Sign out",
     "welcome": "Hi, {name}",
     "welcome_desc": "Register intakes and dispatches for the repair shop here.",
+    "superadmin_title": "Security dashboard",
+    "superadmin_desc": "This month's Security summary. Read-only: intakes and dispatches are recorded by the Security role.",
     "actions": {
       "ingreso": {
         "title": "Register intake",
