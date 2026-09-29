@@ -3335,5 +3335,10 @@
     "error_metodo": "Choose the pickup method.",
     "error_ruta": "Choose the route.",
     "error_agencia": "Choose or type the courier."
+  },
+  "salesHistory": {
+    "last12": "12 months",
+    "last24": "24 months",
+    "all": "All"
   }
 }

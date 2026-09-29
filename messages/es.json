@@ -3324,5 +3324,10 @@
     "error_metodo": "Elige el método de retiro.",
     "error_ruta": "Elige la ruta.",
     "error_agencia": "Elige o escribe la agencia."
+  },
+  "salesHistory": {
+    "last12": "12 meses",
+    "last24": "24 meses",
+    "all": "Todo"
   }
 }

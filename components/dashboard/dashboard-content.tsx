@@ -1,5 +1,6 @@
 "use client";
 
+import { HistorialFacturacion } from "./HistorialFacturacion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, DollarSign, Package, TrendingUp, Users } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -130,56 +131,8 @@ export function SuperAdminView() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico de Crecimiento Mensual - ODOO DATA */}
-        <Card className="rounded-3xl border-none shadow-sm bg-white">
-          <CardHeader>
-            <CardTitle className="text-slate-700 font-bold">
-              Historial de Facturación
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.monthlyGrowth}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#f1f5f9"
-                />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "16px",
-                    border: "none",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#3b82f6"
-                  strokeWidth={4}
-                  dot={{
-                    r: 4,
-                    fill: "#3b82f6",
-                    strokeWidth: 2,
-                    stroke: "#fff",
-                  }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* Gráfico de Crecimiento Mensual */}
+        <HistorialFacturacion title="Historial de Facturación" data={data.monthlyGrowth || []} />
 
         {/* Productos más Vendidos - ODOO DATA */}
         <Card className="rounded-3xl border-none shadow-sm bg-white">

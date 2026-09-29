@@ -1,5 +1,6 @@
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { callOdooRPC } from "@/lib/odoo";
+import { ultimaVentaSmartbit } from "@/lib/smartbit";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
     const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
 
     const rawCids = String(payload.cids ?? "");
-    const cacheKey = `compras_estancados_v11_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
+    const cacheKey = `compras_estancados_v12_${rawCids || "default"}_sede${sedeId ?? "todas"}`;
     const cached = estancadosCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return NextResponse.json(
@@ -261,10 +262,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Lo vendido antes de Odoo está en el histórico de Smartbit: sin esto,
+    // un producto que se vendió en Smartbit y no desde el corte sale "Nunca vendido".
+    const sbUltimaVenta = await ultimaVentaSmartbit(companies);
+
     const estancados = productsData
       .map((prod: any) => {
         const prodId = prod.id;
-        const lastInvoice = productLastInvoice[prodId] || new Date(0);
+        const sbFecha = prod.default_code
+          ? sbUltimaVenta.get(String(prod.default_code).trim().toUpperCase())
+          : undefined;
+        const odooFecha = productLastInvoice[prodId];
+        const lastInvoice =
+          (sbFecha && (!odooFecha || sbFecha > odooFecha) ? sbFecha : odooFecha) || new Date(0);
         const daysInactive =
           lastInvoice.getTime() === 0
             ? 999
