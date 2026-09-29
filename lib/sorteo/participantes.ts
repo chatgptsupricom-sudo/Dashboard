@@ -1,26 +1,25 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { hoyCaracas, isoDia } from "@/lib/metas-marca/servicio";
-import { SORTEO } from "./config";
+import { claveSorteo, nombreSedeSorteo, type ConfigSorteo } from "./config";
 
 /**
- * Sorteo de clientes de Caracas (SuperAdmin > Ventas > Sorteo Caracas).
+ * Participantes del sorteo de clientes (SuperAdmin › Ventas › Sorteo de
+ * clientes). La sede, el mes y el monto por ticket salen de la configuración
+ * activa (lib/sorteo/configuracion.ts).
  *
- * Participa cada cliente de la sede Caracas (company_id 10) con facturas del
- * mes. Cada $5.000 comprados = 1 ticket, sin redondear hacia arriba
- * ($9.999 = 1 ticket).
+ * Participa cada cliente de la sede con facturas del mes. Cada
+ * `montoPorTicket` comprado = 1 ticket, sin redondear hacia arriba (con
+ * $5.000: $9.999 = 1 ticket).
  *
  * - Monto = total facturado (`amount_total_signed`, con IVA, en la moneda de la
- *   empresa: USD). Es lo que el cliente ve en su factura. En Caracas casi todo
- *   sale exento, así que con o sin IVA la diferencia es chica.
+ *   empresa: USD en las tres sedes). Es lo que el cliente ve en su factura.
  * - Las notas de crédito del mes restan (son devoluciones de lo comprado).
  * - Se agrupa por `commercial_partner_id`: las sucursales/contactos hijos
  *   suman a la empresa, no participan por separado.
  * - Se excluye la intercompañía (`lib/intercompania`): Valencia/Caracas se
  *   facturan entre sí y no son clientes.
  */
-
-export { SORTEO };
 
 export interface CompraSorteo {
   id: number;
@@ -64,7 +63,7 @@ function rangoMes(mes: string) {
 }
 
 /** Cálculo en centavos para que $10.000,00 no quede en 1,99999 tickets. */
-export function ticketsDe(monto: number, porTicket = SORTEO.montoPorTicket) {
+export function ticketsDe(monto: number, porTicket: number) {
   const centavos = Math.round(monto * 100);
   const base = porTicket * 100;
   if (centavos <= 0) return { tickets: 0, faltaSiguiente: porTicket };
@@ -83,7 +82,9 @@ async function leerTodo(model: string, domain: any[], fields: string[]): Promise
   }
 }
 
-async function leer(mes: string): Promise<DatosSorteo> {
+type Sorteo = Pick<ConfigSorteo, "companyId" | "mes" | "montoPorTicket">;
+
+async function leer({ companyId, mes, montoPorTicket }: Sorteo): Promise<DatosSorteo> {
   const { desde, hasta } = rangoMes(mes);
   const ic = await partnersIntercompania();
   const moves = await leerTodo(
@@ -91,7 +92,7 @@ async function leer(mes: string): Promise<DatosSorteo> {
     [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["company_id", "=", SORTEO.companyId],
+      ["company_id", "=", companyId],
       ["invoice_date", ">=", desde],
       ["invoice_date", "<=", hasta],
       ["commercial_partner_id", "not in", [...ic.keys()]],
@@ -132,7 +133,7 @@ async function leer(mes: string): Promise<DatosSorteo> {
       return {
         ...c,
         monto,
-        ...ticketsDe(monto),
+        ...ticketsDe(monto, montoPorTicket),
         documentos: c.documentos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.numero.localeCompare(b.numero)),
       };
     })
@@ -143,8 +144,8 @@ async function leer(mes: string): Promise<DatosSorteo> {
     mes,
     desde,
     hasta,
-    sede: SORTEO.sede,
-    montoPorTicket: SORTEO.montoPorTicket,
+    sede: nombreSedeSorteo(companyId),
+    montoPorTicket,
     mesCerrado: isoDia(hoyCaracas()) > hasta,
     clientes,
     totales: {
@@ -161,20 +162,54 @@ async function leer(mes: string): Promise<DatosSorteo> {
 /** Caché de promesas de 5 min: el sorteo se proyecta en vivo y se recarga seguido. */
 const cache = new Map<string, { vence: number; valor: Promise<DatosSorteo> }>();
 
-export function datosSorteo(mes: string, refrescar = false): Promise<DatosSorteo> {
-  const x = cache.get(mes);
+export function datosSorteo(sorteo: Sorteo, refrescar = false): Promise<DatosSorteo> {
+  const llave = claveSorteo(sorteo);
+  const x = cache.get(llave);
   if (!refrescar && x && x.vence > Date.now()) return x.valor;
-  const valor = leer(mes);
+  const valor = leer(sorteo);
   const entrada = { vence: Date.now() + 5 * 60 * 1000, valor };
-  cache.set(mes, entrada);
-  valor.catch(() => { if (cache.get(mes) === entrada) cache.delete(mes); });
+  cache.set(llave, entrada);
+  valor.catch(() => { if (cache.get(llave) === entrada) cache.delete(llave); });
   return valor;
 }
 
 /**
- * Versión para la página pública: nombre, compras, monto y tickets. Sin RIF
- * ni el detalle de facturas, que quedan solo en la vista del SuperAdmin.
+ * Lo que ve la landing pública. La ruleta es anónima («? ? ?») y no hay tabla
+ * de participantes, así que por cliente solo va el id (para ubicar al ganador
+ * en la ruleta) y sus tickets: ni nombre, ni RIF, ni compras, ni montos. Si
+ * mandara los nombres, cualquiera los leería de la API y el anonimato sería
+ * de adorno. El nombre se conoce recién cuando gana (lista de ganadores).
  */
-export function datosPublicos(d: DatosSorteo): DatosSorteo {
-  return { ...d, clientes: d.clientes.map((c) => ({ ...c, rif: "", documentos: [] })) };
+export interface SorteoPublico {
+  sorteo: {
+    clave: string;
+    titulo: string | null;
+    sede: string;
+    mes: string;
+    desde: string;
+    hasta: string;
+    montoPorTicket: number;
+    mesCerrado: boolean;
+  };
+  participantes: { id: number; tickets: number }[];
+  totales: { clientes: number; participantes: number; tickets: number };
+  leido: string;
+}
+
+export function datosPublicos(d: DatosSorteo, config: ConfigSorteo): SorteoPublico {
+  return {
+    sorteo: {
+      clave: claveSorteo(config),
+      titulo: config.titulo,
+      sede: d.sede,
+      mes: d.mes,
+      desde: d.desde,
+      hasta: d.hasta,
+      montoPorTicket: d.montoPorTicket,
+      mesCerrado: d.mesCerrado,
+    },
+    participantes: d.clientes.filter((c) => c.tickets > 0).map((c) => ({ id: c.id, tickets: c.tickets })),
+    totales: { clientes: d.totales.clientes, participantes: d.totales.participantes, tickets: d.totales.tickets },
+    leido: d.leido,
+  };
 }

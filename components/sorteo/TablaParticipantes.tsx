@@ -56,7 +56,7 @@ export function TablaParticipantes({ datos, ganadores, publico = false }: Props)
     hoja["!cols"] = [{ wch: 5 }, { wch: 48 }, ...(publico ? [] : [{ wch: 16 }]), { wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 9 }, { wch: 14 }, { wch: 22 }];
     const libro = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(libro, hoja, "Participantes");
-    XLSX.writeFile(libro, `sorteo-caracas-${datos.mes}.xlsx`);
+    XLSX.writeFile(libro, `sorteo-${datos.sede.toLowerCase()}-${datos.mes}.xlsx`);
   };
 
   const Encabezado = ({ campo, children, className = "" }: { campo: Orden; children: React.ReactNode; className?: string }) => (
@@ -72,7 +72,7 @@ export function TablaParticipantes({ datos, ganadores, publico = false }: Props)
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Clientes de Caracas con compras</h2>
+          <h2 className="text-lg font-bold text-slate-900">Clientes de {datos.sede} con compras</h2>
           <p className="text-sm text-slate-500">
             Total facturado del mes (con IVA) menos notas de crédito · 1 ticket cada {dinero(datos.montoPorTicket)}
           </p>

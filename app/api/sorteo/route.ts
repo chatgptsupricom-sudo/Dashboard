@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { partnersIntercompania } from "@/lib/intercompania";
-import { SORTEO } from "@/lib/sorteo/config";
+import { leerConfig } from "@/lib/sorteo/configuracion";
 import { datosPublicos, datosSorteo } from "@/lib/sorteo/participantes";
 import { limitarVisitante, operador } from "@/lib/sorteo/operador";
 import { ganadoresSeguros, respuestaError } from "@/lib/sorteo/respuestas";
@@ -8,13 +8,13 @@ import { ganadoresSeguros, respuestaError } from "@/lib/sorteo/respuestas";
 export const maxDuration = 60;
 
 /**
- * Sorteo PÚBLICO (sin sesión, página /[locale]/sorteo): clientes de Caracas
- * con compras del mes del sorteo, con nombre, compras, monto y tickets (sin
- * RIF ni facturas: lib/sorteo/participantes#datosPublicos), y los ganadores
- * oficiales.
+ * Sorteo PÚBLICO (sin sesión; lo consume la landing sorteo-landing): el
+ * sorteo activo (título, sede, mes, monto por ticket), los participantes
+ * ANÓNIMOS (solo id + tickets: lib/sorteo/participantes#datosPublicos) y los
+ * ganadores oficiales.
  *
- * Solo el mes del sorteo (SORTEO.mesDefault): no se puede pedir otro mes, o
- * cualquiera podría leer las compras de los clientes mes por mes.
+ * Solo el sorteo activo (lib/sorteo/configuracion): no se puede pedir otra
+ * sede ni otro mes.
  *
  * GET ?refrescar=1 relee Odoo, solo para el operador (lib/sorteo/operador).
  */
@@ -22,7 +22,6 @@ export async function GET(request: NextRequest) {
   const limite = limitarVisitante(request, "sorteo-publico", [{ max: 60, ventanaSegundos: 60 }]);
   if (limite) return limite;
 
-  const mes = SORTEO.mesDefault;
   let refrescar = false;
   if (request.nextUrl.searchParams.get("refrescar") === "1") {
     const op = await operador(request);
@@ -32,8 +31,9 @@ export async function GET(request: NextRequest) {
 
   try {
     if (refrescar) await partnersIntercompania(true);
-    const [datos, ganadores] = await Promise.all([datosSorteo(mes, refrescar), ganadoresSeguros(mes)]);
-    return NextResponse.json({ success: true, data: { datos: datosPublicos(datos), ...ganadores } });
+    const config = await leerConfig();
+    const [datos, ganadores] = await Promise.all([datosSorteo(config, refrescar), ganadoresSeguros(config.companyId, config.mes)]);
+    return NextResponse.json({ success: true, data: { ...datosPublicos(datos, config), ...ganadores } });
   } catch (error: any) {
     return respuestaError(error, "sorteo GET");
   }

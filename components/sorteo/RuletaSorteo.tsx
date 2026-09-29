@@ -28,6 +28,8 @@ interface Props {
   participantes: SegmentoRuleta[];
   /** Cliente ganador del último giro: su segmento va en dorado. */
   resaltado?: number | null;
+  /** Sin nombres: cada segmento dice «? ? ?» (el nombre se conoce cuando gana). */
+  anonima?: boolean;
   sonido: boolean;
   /** Solo el operador: el centro de la ruleta es el botón de girar. */
   puedeGirar: boolean;
@@ -44,6 +46,7 @@ const DURACION = 9000;
 // Paleta de la marca: azul rey (fondo de Supri), azul y celeste del logo, marino.
 const COLORES = ["#1737d8", "#0a5fb4", "#1a9ad6", "#0b2a6f"];
 const BOMBILLOS = 40;
+const OCULTO = "? ? ?";
 
 
 /** Ángulo 0 = arriba (donde está el puntero), sentido horario. */
@@ -53,6 +56,9 @@ const punto = (grados: number, r: number) => {
 };
 
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 4);
+
+/** ¿La etiqueta del segmento con ángulo medio `medio` queda en la mitad izquierda de la pantalla? */
+export const ladoIzquierdo = (medio: number, rotacion: number) => (((medio + rotacion) % 360) + 360) % 360 > 180;
 
 let audio: AudioContext | null = null;
 function contextoAudio() {
@@ -86,14 +92,18 @@ export function fanfarria() {
 }
 
 export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorteo(
-  { participantes, resaltado = null, sonido, puedeGirar, ocupado, onGirar },
+  { participantes, resaltado = null, anonima = false, sonido, puedeGirar, ocupado, onGirar },
   ref,
 ) {
   const rueda = useRef<HTMLDivElement>(null);
   const puntero = useRef<SVGGElement>(null);
   const rotacion = useRef(0);
+  const rotacionViva = useRef(0);
   const [girando, setGirando] = useState(false);
   const [bajoPuntero, setBajoPuntero] = useState<string | null>(null);
+  // Etiquetas por segmento: durante el giro se enderezan cuadro a cuadro
+  // tocando el DOM directo (sin re-render de React), solo cuando una cruza.
+  const etiquetas = useRef<Map<number, SVGGElement>>(new Map());
 
   const total = participantes.reduce((s, p) => s + p.tickets, 0);
   // El ganador resaltado sigue dibujado pero ya no juega.
@@ -117,6 +127,21 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
     [segmentos],
   );
 
+  const orientar = (r: number) => {
+    etiquetas.current.forEach((g) => {
+      const medio = Number(g.dataset.medio);
+      const izq = ladoIzquierdo(medio, r);
+      if (g.dataset.izq === (izq ? "1" : "0")) return;
+      g.dataset.izq = izq ? "1" : "0";
+      g.setAttribute("transform", `rotate(${izq ? medio + 90 : medio - 90} ${C} ${C})`);
+      const t = g.firstElementChild;
+      if (t) {
+        t.setAttribute("x", String(izq ? C - R + 26 : C + R - 26));
+        t.setAttribute("text-anchor", izq ? "start" : "end");
+      }
+    });
+  };
+
   const girarHacia = useCallback((id: number) => new Promise<boolean>((resolver) => {
     const ganador = segmentos.find((s) => s.id === id);
     if (!ganador || total === 0) return resolver(false);
@@ -138,11 +163,13 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
     const cuadro = (ahora: number) => {
       const t = Math.min(1, (ahora - t0) / duracion);
       const r = desde + (hasta - desde) * easeOut(t);
+      rotacionViva.current = r;
       if (rueda.current) rueda.current.style.transform = `rotate(${r}deg)`;
+      orientar(r);
       const seg = segmentoEn(((360 - (r % 360)) % 360 + 360) % 360);
       if (seg && seg.id !== ultimoId) {
         ultimoId = seg.id;
-        setBajoPuntero(seg.nombre);
+        setBajoPuntero(anonima ? OCULTO : seg.nombre);
         if (ahora - ultimoClic > 45) {
           ultimoClic = ahora;
           if (sonido) tono(1400, 0.035, 0.12);
@@ -166,7 +193,7 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
       resolver(true);
     };
     requestAnimationFrame(cuadro);
-  }), [total, segmentos, segmentoEn, sonido]);
+  }), [total, segmentos, segmentoEn, sonido, anonima]);
 
   useImperativeHandle(ref, () => ({ girarHacia }), [girarHacia]);
 
@@ -232,16 +259,26 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
               const largo = R - HUB - 58;
               // Primero se achica la letra para que entre el nombre completo; se
               // recorta solo si ni con letra chica (15) cabe.
-              const fuente = Math.min(tope, Math.max(15, largo / (s.nombre.length * 0.58)));
+              const nombre = anonima ? OCULTO : s.nombre;
+              const fuente = Math.min(tope, Math.max(15, largo / (nombre.length * 0.58)));
               const maxChars = Math.max(4, Math.floor(largo / (fuente * 0.58)));
-              const texto = s.nombre.length > maxChars ? `${s.nombre.slice(0, maxChars - 1).trimEnd()}…` : s.nombre;
+              const texto = nombre.length > maxChars ? `${nombre.slice(0, maxChars - 1).trimEnd()}…` : nombre;
               const medio = (s.a0 + s.a1) / 2;
+              // Lo que en pantalla queda a la izquierda se da vuelta para que no
+              // quede de cabeza (y el «?» no se lea como «¿»). Ver orientar().
+              const izquierda = ladoIzquierdo(medio, rotacionViva.current);
               return (
-                <g key={`t${s.id}`} transform={`rotate(${medio - 90} ${C} ${C})`}>
+                <g
+                  key={`t${s.id}`}
+                  ref={(el) => { if (el) etiquetas.current.set(s.id, el); else etiquetas.current.delete(s.id); }}
+                  data-medio={medio}
+                  data-izq={izquierda ? "1" : "0"}
+                  transform={`rotate(${izquierda ? medio + 90 : medio - 90} ${C} ${C})`}
+                >
                   <text
-                    x={C + R - 26}
+                    x={izquierda ? C - R + 26 : C + R - 26}
                     y={C}
-                    textAnchor="end"
+                    textAnchor={izquierda ? "start" : "end"}
                     dominantBaseline="central"
                     fill={s.id === resaltado ? "#3d2600" : "#ffffff"}
                     fontSize={fuente}
