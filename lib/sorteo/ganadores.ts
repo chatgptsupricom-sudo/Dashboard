@@ -52,7 +52,9 @@ export function listarGanadores(mes: string): Promise<Ganador[]> {
   const x = cache.get(mes);
   if (x && x.vence > Date.now()) return x.valor;
   const valor = (async () => {
-    const filas: any = await query(
+    // query() devuelve { rows }, no las filas: leerlo directo daba siempre []
+    // (lista vacía y, peor, sin excluir a los que ya ganaron).
+    const { rows: filas } = await query(
       `SELECT id, partner_id, nombre, compras, monto, tickets, ticket_sorteado, total_tickets, participantes, created_at
          FROM sorteo_ganadores
         WHERE company_id = ? AND mes = ? AND anulado = 0
@@ -89,7 +91,7 @@ export function sortear(mes: string, quien: string): Promise<Ganador> {
     let acumulado = 0;
     const ganador = pool.find((c) => (acumulado += c.tickets) > ticket)!;
 
-    const r: any = await query(
+    const { rows: r } = await query(
       `INSERT INTO sorteo_ganadores
          (company_id, mes, partner_id, nombre, rif, compras, monto, tickets, ticket_sorteado, total_tickets, participantes, sorteado_por)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -97,7 +99,7 @@ export function sortear(mes: string, quien: string): Promise<Ganador> {
     );
     cache.delete(mes);
     return {
-      id: Number(r?.insertId),
+      id: Number((r as any)?.insertId),
       partnerId: ganador.id,
       nombre: ganador.nombre,
       compras: ganador.compras,
