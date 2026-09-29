@@ -417,7 +417,10 @@ export function Sidebar({
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
   const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
-  const marketingSuperAdminIds = ["catalogo_disenos", "material_pop"];
+  // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
+  // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
+  const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
+  const ventasSuperAdminIds = ["reportes_comerciales"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -450,7 +453,7 @@ export function Sidebar({
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
-          [...administracionDropdownIds, ...marketingSuperAdminIds].includes(item.id)) &&
+          [...administracionDropdownIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -897,8 +900,17 @@ export function Sidebar({
                     >
                       {[
                         { label: t("seg_dashboard"), href: `/${locale}/seguridad` },
-                        { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
-                        { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                        // Ingreso y despacho de RMA, y el despacho de mercancia.
+                        // Ingreso de mercancia no: Seguridad no lo maneja (es
+                        // la recepcion por packing list de Almacen).
+                        { label: t("seg_ingreso_rma"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seg_despacho_rma"), href: `/${locale}/seguridad/despacho` },
+                        { label: t("seg_despacho_mercancia"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        // Para superAdmin el Personal de Seguridad va aca y no
+                        // suelto (el rol Seguridad lo sigue viendo suelto, abajo).
+                        ...(allowedSections.includes("seguridad")
+                          ? [{ label: t("seg_personal_seguridad"), href: `/${locale}/seguridad/config/personal` }]
+                          : []),
                       ].map((sub, index) => {
                         const isSubActive = pathname === sub.href;
 
@@ -926,8 +938,9 @@ export function Sidebar({
             )}
 
             {/* Personal de Seguridad / RMA: seccion propia, no cuelga de RMA —
-                alimenta los selects "Recibio por" del ingreso. */}
-            {allowedSections.includes("seguridad") && (
+                alimenta los selects "Recibio por" del ingreso. El superAdmin
+                lo ve dentro del desplegable "Seguridad". */}
+            {allowedSections.includes("seguridad") && !isSuperAdminRole && (
               <Link
                 href={`/${locale}/seguridad/config/personal`}
                 onClick={() => {
@@ -942,11 +955,7 @@ export function Sidebar({
                   }`}
                 >
                   <Users size={20} className="text-slate-400" />
-                  {/* superAdmin ve tambien el Personal de RMA y el de Almacen:
-                      se aclara de quien es este. */}
-                  <span className="text-sm">
-                    {t(userRole === "superAdmin" ? "seg_personal_seguridad" : "seg_personal")}
-                  </span>
+                  <span className="text-sm">{t("seg_personal")}</span>
                 </div>
               </Link>
             )}
@@ -1234,10 +1243,15 @@ export function Sidebar({
                               label: t("metas_marca"),
                               href: `${basePath}/metas-marca`,
                               permission: "metas_marca",
-                            }, {
-                              label: t("sorteo_caracas"),
-                              href: `${basePath}/sorteo`,
-                              permission: "sorteo_caracas",
+                            }]
+                          : []),
+                        // El Sorteo pasó a Marketing. Reportes Comerciales vive
+                        // en /reportes-comerciales (fuera de /superadmin).
+                        ...(isSuperAdminRole && allowedSections.includes("reportes_comerciales")
+                          ? [{
+                              label: t("reportes_comerciales"),
+                              href: `/${locale}/reportes-comerciales`,
+                              permission: "reportes_comerciales",
                             }]
                           : []),
                         {
@@ -1472,6 +1486,12 @@ export function Sidebar({
                         // Material POP vive en /adminleads (no hay copia bajo
                         // /superadmin): el enlace va a esa ruta.
                         { label: t("material_pop"), href: `/${locale}/adminleads/material-pop` },
+                        ...(allowedSections.includes("sorteo_caracas")
+                          ? [{ label: t("sorteo_caracas"), href: `${basePath}/sorteo` }]
+                          : []),
+                        ...(allowedSections.includes("opiniones")
+                          ? [{ label: t("opiniones"), href: `${basePath}/opiniones` }]
+                          : []),
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
