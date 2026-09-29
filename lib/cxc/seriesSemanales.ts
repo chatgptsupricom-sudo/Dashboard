@@ -58,7 +58,9 @@ export interface SeriesCxC {
   /** % recuperado en cada semana. */
   recuperacionSemana: (string | null)[];
   /** Cartera vencida de HOY, con el mismo método que las semanas. */
-  carteraHoy: { pct: number | null; vencido: number; total: number };
+  carteraHoy: CarteraHoy;
+  /** Lo mismo, por sede (company_id). */
+  carteraHoyPorSede: Record<number, CarteraHoy>;
   /**
    * Cartera a crédito para el CEI (lib/cxc/efectividad.ts) en cualquier corte
    * desde el inicio de la primera semana. Ver carteraCEI más abajo.
@@ -66,7 +68,17 @@ export interface SeriesCxC {
   carteraCEI: CarteraCEI;
 }
 
-export type CarteraCEI = (corte: Date) => Promise<{ total: number; noVencida: number }>;
+/** `companyId` limita el corte a una sede (para la tabla Por Sede). */
+export type CarteraCEI = (corte: Date, companyId?: number) => Promise<{ total: number; noVencida: number }>;
+
+export interface CarteraHoy {
+  pct: number | null;
+  vencido: number;
+  total: number;
+  /** Facturas y notas de crédito con saldo, y cuántas de ellas vencidas. */
+  facturas: number;
+  facturasVencidas: number;
+}
 
 const PAGE = 5000;
 
@@ -104,6 +116,7 @@ const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 interface Factura {
+  companyId: number;
   /** Fecha de emisión: una factura no existía en un corte anterior a ella. */
   emision: Date | null;
   due: Date | null;
@@ -127,7 +140,8 @@ export async function calcularSeriesCxC(
   const vacio: SeriesCxC = {
     carteraVencidaSemana: semanas.map(() => null),
     recuperacionSemana: semanas.map(() => null),
-    carteraHoy: { pct: null, vencido: 0, total: 0 },
+    carteraHoy: { pct: null, vencido: 0, total: 0, facturas: 0, facturasVencidas: 0 },
+    carteraHoyPorSede: {},
     carteraCEI: async () => ({ total: 0, noVencida: 0 }),
   };
   if (semanas.length === 0) return vacio;
@@ -148,7 +162,7 @@ export async function calcularSeriesCxC(
         ["amount_residual", "!=", 0],
         ...noInterno,
       ],
-      ["id", "move_type", "invoice_date", "invoice_date_due", "amount_residual", "invoice_payment_term_id", "reversed_entry_id", "commercial_partner_id"],
+      ["id", "move_type", "invoice_date", "invoice_date_due", "amount_residual", "invoice_payment_term_id", "reversed_entry_id", "commercial_partner_id", "company_id"],
     ),
     // Conciliaciones del período. Sirven para dos cosas: sumar hacia atrás el
     // saldo de un corte, y ser el numerador de Recuperación.
@@ -176,6 +190,7 @@ export async function calcularSeriesCxC(
   for (const inv of abiertasHoy as any[]) {
     const signo = inv.move_type === "out_refund" ? -1 : 1;
     facturas.set(inv.id, {
+      companyId: Array.isArray(inv.company_id) ? inv.company_id[0] : inv.company_id,
       emision: inv.invoice_date ? soloFecha(inv.invoice_date) : null,
       due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
       residual: signo * Math.abs(inv.amount_residual || 0),
@@ -213,12 +228,13 @@ export async function calcularSeriesCxC(
     const cerradas = await paginar(
       "account.move",
       [["id", "in", faltantes]],
-      ["id", "move_type", "invoice_date", "invoice_date_due", "amount_residual", "invoice_payment_term_id", "reversed_entry_id", "commercial_partner_id"],
+      ["id", "move_type", "invoice_date", "invoice_date_due", "amount_residual", "invoice_payment_term_id", "reversed_entry_id", "commercial_partner_id", "company_id"],
     );
     movimientos.push(...(cerradas as any[]));
     for (const inv of cerradas as any[]) {
       const signo = inv.move_type === "out_refund" ? -1 : 1;
       facturas.set(inv.id, {
+        companyId: Array.isArray(inv.company_id) ? inv.company_id[0] : inv.company_id,
         emision: inv.invoice_date ? soloFecha(inv.invoice_date) : null,
         due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
         residual: signo * Math.abs(inv.amount_residual || 0),
@@ -249,23 +265,33 @@ export async function calcularSeriesCxC(
   const saldoEn = (f: Factura, corte: Date) =>
     f.residual + f.pagos.reduce((s, p) => (p.fecha > corte ? s + p.monto : s), 0);
 
-  const carteraVencidaEn = (corte: Date) => {
+  const carteraVencidaEn = (corte: Date, companyId?: number) => {
     let total = 0;
     let vencido = 0;
+    let facturas = 0;
+    let facturasVencidas = 0;
     for (const f of todas) {
       if (f.vieja || f.relacionada) continue;
+      if (companyId !== undefined && f.companyId !== companyId) continue;
       // Una factura emitida después del corte no formaba parte de la cartera
       // en ese momento: sin este filtro, las semanas pasadas salen infladas.
       if (f.emision && f.emision > corte) continue;
       const saldo = saldoEn(f, corte);
       if (Math.abs(saldo) < 0.005) continue;
       total += saldo;
+      facturas++;
       // Vencida = su fecha de vencimiento ya había pasado EN ESE CORTE. No se
       // puede usar el `days_overdue` del reporte de Odoo, que está calculado
       // contra hoy: una factura que vencía el 10 no estaba vencida el 7.
-      if (vencidaEn(f.due, corte)) vencido += saldo;
+      if (vencidaEn(f.due, corte)) {
+        vencido += saldo;
+        facturasVencidas++;
+      }
     }
-    return { total, vencido, pct: total > 0 ? Math.round((vencido / total) * 10000) / 100 : null };
+    return {
+      total, vencido, facturas, facturasVencidas,
+      pct: total > 0 ? Math.round((vencido / total) * 10000) / 100 : null,
+    };
   };
 
   /**
@@ -303,17 +329,19 @@ export async function calcularSeriesCxC(
     ["partner_id.name", "not ilike", "supricom"],
     ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
   ];
-  const carteraCEI: CarteraCEI = async (corte) => {
+  const carteraCEI: CarteraCEI = async (corte, companyId) => {
+    const sede: any[] = companyId !== undefined ? [["company_id", "=", companyId]] : [];
     const g = await callOdooRPC<any[]>(
       "account.move.line",
       "read_group",
-      [[...baseLibro, ["date", "<=", fechaLocal(corte)]], ["balance:sum"], []],
+      [[...baseLibro, ...sede, ["date", "<=", fechaLocal(corte)]], ["balance:sum"], []],
       { lazy: false },
     );
     let total = Number(g?.[0]?.balance || 0);
     let noVencida = 0;
     for (const f of todas) {
       if (f.relacionada) continue;
+      if (companyId !== undefined && f.companyId !== companyId) continue;
       if (f.emision && f.emision > corte) continue;
       const saldo = saldoEn(f, corte);
       if (Math.abs(saldo) < 0.005) continue;
@@ -357,14 +385,16 @@ export async function calcularSeriesCxC(
   });
 
   const hoyCartera = carteraVencidaEn(hoy);
+  const redondear = (c: CarteraHoy): CarteraHoy => ({
+    ...c,
+    vencido: Math.round(c.vencido * 100) / 100,
+    total: Math.round(c.total * 100) / 100,
+  });
   return {
     carteraVencidaSemana,
     recuperacionSemana,
-    carteraHoy: {
-      pct: hoyCartera.pct,
-      vencido: Math.round(hoyCartera.vencido * 100) / 100,
-      total: Math.round(hoyCartera.total * 100) / 100,
-    },
+    carteraHoy: redondear(hoyCartera),
+    carteraHoyPorSede: Object.fromEntries(companyIds.map((cid) => [cid, redondear(carteraVencidaEn(hoy, cid))])),
     carteraCEI,
   };
 }

@@ -49,6 +49,20 @@ function getTrafficDot(value: number, thresholds: { green: number; yellow: numbe
   return "bg-red-500";
 }
 
+/**
+ * Umbrales del semáforo a partir de la meta cargada (kpi_targets), con la
+ * misma regla que el Stoplight (lib/stoplight/scoring.ts → getKpiCellColor):
+ * verde al cumplir la meta; amarillo hasta 70% de la meta (o 130% si menos es
+ * mejor); rojo más allá.
+ */
+function umbral(meta: number, menosEsMejor = false): { green: number; yellow: number } {
+  return { green: meta, yellow: menosEsMejor ? meta * 1.3 : meta * 0.7 };
+}
+
+function getTrafficText(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  return getTrafficDot(value, thresholds, invert).replace("bg-", "text-").replace("-500", "-600");
+}
+
 function getTrafficBg(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
   if (invert) {
     if (value <= thresholds.green) return "bg-emerald-50 border-emerald-200";
@@ -258,6 +272,9 @@ export default function CxcDashboardPage() {
     setKpiLoading(false);
   }, [empresa, userCids, selectedMonth, selectedYear]);
 
+  // Peso de cada KPI: el cargado en kpi_targets para la sede y el mes, o el de
+  // siempre si no hay uno propio.
+  const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
   const agingColors: Record<string, string> = {
     "corriente": "bg-emerald-400",
@@ -333,13 +350,13 @@ export default function CxcDashboardPage() {
       {data && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
+            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">35%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("efectividad_cobranza", 35)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.efectividad.value !== null ? `${data.kpis.efectividad.value}%` : "N/A"}
@@ -361,13 +378,13 @@ export default function CxcDashboardPage() {
               <AvisoRelacionada monto={data.kpis.efectividad.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cartera Vencida</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">30%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("cartera_vencida", 30)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.carteraVencida.value !== null ? `${data.kpis.carteraVencida.value}%` : "N/A"}
@@ -380,13 +397,13 @@ export default function CxcDashboardPage() {
               <AvisoRelacionada monto={data.kpis.carteraVencida.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
+            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Recuperación Vencidos</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">25%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("recuperacion_vencidos", 25)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
@@ -399,13 +416,13 @@ export default function CxcDashboardPage() {
               <AvisoRelacionada monto={data.kpis.recuperacion.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">10%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.dso.value !== null ? `${data.kpis.dso.value} días` : "N/A"}
@@ -450,6 +467,30 @@ export default function CxcDashboardPage() {
                   <span className="text-slate-500">Cartera vencida</span>
                   <span className="font-bold text-red-600">{formatCurrency(data.summary.totalOverdue)}</span>
                 </div>
+                {data.summary.totalOdoo !== undefined && (
+                  <>
+                    <div className="h-px bg-slate-200" />
+                    <div className="text-[11px] text-slate-400">Fuera de los KPIs</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Incobrables (antes de 2025)</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Pagos sin aplicar</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar)}</span>
+                    </div>
+                    {data.summary.relacionadas > 0.005 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">SUPER TECHNO LLC</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.relacionadas)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Total en Odoo</span>
+                      <span className="font-bold text-slate-800">{formatCurrency(data.summary.totalOdoo)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="h-px bg-slate-200" />
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500">Facturas abiertas</span>
@@ -501,12 +542,12 @@ export default function CxcDashboardPage() {
                         <td className="py-2.5 font-medium text-slate-700">{co.companyName}</td>
                         <td className="py-2.5 text-right text-slate-600">{formatCurrency(co.totalReceivable)}</td>
                         <td className="py-2.5 text-right">
-                          <span className={`font-medium ${co.overduePct > 20 ? "text-red-600" : co.overduePct > 10 ? "text-amber-600" : "text-emerald-600"}`}>
+                          <span className={`font-medium ${getTrafficText(co.overduePct ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
                             {formatCurrency(co.totalOverdue)} ({co.overduePct}%)
                           </span>
                         </td>
                         <td className="py-2.5 text-right">
-                          <span className={`font-medium ${co.efectividad >= 95 ? "text-emerald-600" : co.efectividad >= 85 ? "text-amber-600" : "text-red-600"}`}>
+                          <span className={`font-medium ${co.efectividad == null ? "text-slate-400" : getTrafficText(co.efectividad, umbral(data.kpis.efectividad.meta))}`}>
                             {co.efectividad != null ? `${co.efectividad}%` : "N/A"}
                           </span>
                         </td>

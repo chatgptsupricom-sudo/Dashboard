@@ -232,6 +232,8 @@ export interface CEIResultado {
   parcial: boolean;
   /** Saldo de hoy de la empresa relacionada (SUPER TECHNO): se muestra, no entra al CEI. */
   relacionadas: number;
+  /** CEI del mes por sede (company_id); solo se calcula con más de una sede. */
+  porSede: Record<number, number | null>;
   semana: (string | null)[];
 }
 
@@ -266,7 +268,7 @@ async function facturasDelPeriodo(companyIds: number[], desde: string, hasta: st
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
       ]],
-      { fields: ["id", "name", "partner_id", "commercial_partner_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
+      { fields: ["id", "name", "partner_id", "commercial_partner_id", "company_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
     )) || [];
     out.push(...page);
     if (page.length < 5000) break;
@@ -367,8 +369,9 @@ export async function detalleCEI(
     )),
   ]);
 
-  const sumaFacturado = (a: string, b: string) => facturas
+  const sumaFacturado = (a: string, b: string, companyId?: number) => facturas
     .filter((f) => f.invoice_date >= a && f.invoice_date <= b)
+    .filter((f) => companyId === undefined || f.company_id?.[0] === companyId)
     .reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
   const sumaPagos = (a: string, b: string) => pagos
     .filter((p) => p.fecha >= a && p.fecha <= b)
@@ -377,6 +380,18 @@ export async function detalleCEI(
   const montoPagos = sumaPagos(desde, hasta);
   const ventasCredito = sumaFacturado(desde, hasta);
   const finalNoVencida = final.noVencida;
+
+  // CEI de cada sede con los mismos cortes (tabla Por Sede de la vista consolidada).
+  const porSede: Record<number, number | null> = {};
+  if (companyIds.length > 1) {
+    await Promise.all(companyIds.map(async (cid) => {
+      const [ini, fin] = await Promise.all([
+        carteraCEI(antesDe(monthStart), cid),
+        carteraCEI(corteFinal(monthEnd), cid),
+      ]);
+      porSede[cid] = cei(ini.total, sumaFacturado(desde, hasta, cid), fin.total, fin.noVencida).value;
+    }));
+  }
   const { recuperado, exigible, value } = cei(inicial.total, ventasCredito, final.total, finalNoVencida);
 
   // Fila semanal: el mismo CEI con la semana como período.
@@ -414,6 +429,7 @@ export async function detalleCEI(
       facturas: facturas.filter((f) => f.move_type === "out_invoice").length,
       parcial: hoy <= monthEnd,
       relacionadas: r2(relacionadas),
+      porSede,
       semana,
     },
     clientes: [...porCliente.values()]

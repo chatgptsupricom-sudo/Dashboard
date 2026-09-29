@@ -54,7 +54,8 @@ interface CompanyData {
   overdueInvoices: number;
   monthInvoiced: number;
   monthPaid: number;
-  efectividad: number;
+  /** CEI de la sede (lib/cxc/efectividad.ts); null si no hay exigible. */
+  efectividad: number | null;
 }
 
 interface Debtor {
@@ -87,7 +88,14 @@ interface CxCData {
     totalOverdue: number;
     openInvoiceCount: number;
     overdueInvoiceCount: number;
+    // Lo que el reporte de Odoo suma aparte de los KPIs (route.ts → summary).
+    incobrables?: number;
+    sinAplicar?: number;
+    relacionadas?: number;
+    totalOdoo?: number;
   };
+  /** Peso de cada KPI cargado en kpi_targets (solo los que tienen uno propio). */
+  pesos?: Record<string, number>;
   updatedAt: string;
 }
 
@@ -113,6 +121,20 @@ function getTrafficLight(value: number, thresholds: { green: number; yellow: num
   if (value >= thresholds.green) return "bg-emerald-100 text-emerald-700 border-emerald-300";
   if (value >= thresholds.yellow) return "bg-amber-100 text-amber-700 border-amber-300";
   return "bg-red-100 text-red-700 border-red-300";
+}
+
+/**
+ * Umbrales del semáforo a partir de la meta cargada (kpi_targets), con la
+ * misma regla que el Stoplight (lib/stoplight/scoring.ts → getKpiCellColor):
+ * verde al cumplir la meta; amarillo hasta 70% de la meta (o 130% si menos es
+ * mejor); rojo más allá.
+ */
+function umbral(meta: number, menosEsMejor = false): { green: number; yellow: number } {
+  return { green: meta, yellow: menosEsMejor ? meta * 1.3 : meta * 0.7 };
+}
+
+function getTrafficText(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  return getTrafficDot(value, thresholds, invert).replace("bg-", "text-").replace("-500", "-600");
 }
 
 function getTrafficDot(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
@@ -182,6 +204,8 @@ export default function CxCReport() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Peso de cada KPI: el de kpi_targets para la sede y el mes, o el de siempre.
+  const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a, b) => a + b, 0) : 0;
 
   return (
@@ -263,10 +287,10 @@ export default function CxCReport() {
                   ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.efectividad.relacionadas!)} (${t("fuera_del_calculo")})`
                   : "")
               }
-              color={getTrafficLight(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
-              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}
+              color={getTrafficLight(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}
+              dot={getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}
               icon={<TrendingUp size={20} />}
-              weight="35%"
+              weight={peso("efectividad_cobranza", 35)}
             />
             <KPICard
               title={t("cartera_vencida")}
@@ -276,10 +300,10 @@ export default function CxCReport() {
                 ((data.kpis.carteraVencida.relacionadas ?? 0) > 0.005
                   ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.carteraVencida.relacionadas!)} (${t("fuera_del_calculo")})`
                   : "")}
-              color={getTrafficLight(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
-              dot={getTrafficDot(data.kpis.carteraVencida.value, { green: 10, yellow: 20 }, true)}
+              color={getTrafficLight(data.kpis.carteraVencida.value, umbral(data.kpis.carteraVencida.meta, true), true)}
+              dot={getTrafficDot(data.kpis.carteraVencida.value, umbral(data.kpis.carteraVencida.meta, true), true)}
               icon={<AlertTriangle size={20} />}
-              weight="30%"
+              weight={peso("cartera_vencida", 30)}
             />
             <KPICard
               title={t("recuperacion_vencidos")}
@@ -289,20 +313,20 @@ export default function CxCReport() {
                 ((data.kpis.recuperacion.relacionadas ?? 0) > 0.005
                   ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.recuperacion.relacionadas!)} (${t("fuera_del_calculo")})`
                   : "")}
-              color={getTrafficLight(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
-              dot={getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}
+              color={getTrafficLight(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}
+              dot={getTrafficDot(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}
               icon={<RefreshCw size={20} />}
-              weight="25%"
+              weight={peso("recuperacion_vencidos", 25)}
             />
             <KPICard
               title={t("dso")}
               value={data.kpis.dso.value !== null ? `${data.kpis.dso.value} ${t("dias")}` : "N/A"}
               meta={`${t("meta")}: ≤${data.kpis.dso.meta} ${t("dias")}`}
               subtitle={`${t("cartera")}: ${formatCurrency(data.kpis.dso.carteraAbierta)} / ${t("ventas_netas")}: ${formatCurrency(data.kpis.dso.ventasNetas)}`}
-              color={data.kpis.dso.value === null ? "bg-slate-100 text-slate-600 border-slate-300" : getTrafficLight(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
-              dot={data.kpis.dso.value === null ? "bg-slate-400" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}
+              color={data.kpis.dso.value === null ? "bg-slate-100 text-slate-600 border-slate-300" : getTrafficLight(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}
+              dot={data.kpis.dso.value === null ? "bg-slate-400" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}
               icon={<Clock size={20} />}
-              weight="10%"
+              weight={peso("dso", 10)}
             />
             {data.kpis.incobrables && (
               <KPICard
@@ -333,6 +357,31 @@ export default function CxCReport() {
                   <span className="text-slate-500">{t("cartera_vencida_label")}</span>
                   <span className="font-semibold text-red-600">{formatCurrency(data.summary.totalOverdue)}</span>
                 </div>
+                {data.summary.totalOdoo !== undefined && (
+                  <>
+                    <div className="h-px bg-slate-200" />
+                    <div className="text-[11px] text-slate-400">{t("fuera_de_kpis")}</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">{t("incobrables_antes_2025")}</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">{t("pagos_sin_aplicar")}</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar ?? 0)}</span>
+                    </div>
+                    {(data.summary.relacionadas ?? 0) > 0.005 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">SUPER TECHNO LLC</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.relacionadas!)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">{t("total_en_odoo")}</span>
+                      <span className="font-semibold text-slate-800">{formatCurrency(data.summary.totalOdoo)}</span>
+                    </div>
+                    <div className="h-px bg-slate-200" />
+                  </>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500">{t("facturas_abiertas")}</span>
                   <span className="font-semibold text-slate-800">{formatNumber(data.summary.openInvoiceCount)}</span>
@@ -380,13 +429,13 @@ export default function CxCReport() {
                         <td className="py-2 font-medium text-slate-700">{co.companyName}</td>
                         <td className="py-2 text-right text-slate-600">{formatCurrency(co.totalReceivable)}</td>
                         <td className="py-2 text-right">
-                          <span className={`font-medium ${co.overduePct > 20 ? "text-red-600" : co.overduePct > 10 ? "text-amber-600" : "text-emerald-600"}`}>
+                          <span className={`font-medium ${getTrafficText(co.overduePct ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
                             {formatCurrency(co.totalOverdue)} ({co.overduePct}%)
                           </span>
                         </td>
                         <td className="py-2 text-right">
-                          <span className={`font-medium ${co.efectividad >= 95 ? "text-emerald-600" : co.efectividad >= 85 ? "text-amber-600" : "text-red-600"}`}>
-                            {co.efectividad}%
+                          <span className={`font-medium ${co.efectividad == null ? "text-slate-400" : getTrafficText(co.efectividad, umbral(data.kpis.efectividad.meta))}`}>
+                            {co.efectividad != null ? `${co.efectividad}%` : "N/A"}
                           </span>
                         </td>
                         <td className="py-2 text-right text-slate-500">{co.openInvoices}</td>

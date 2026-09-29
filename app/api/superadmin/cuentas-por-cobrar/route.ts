@@ -6,6 +6,7 @@ import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { RELACIONADA } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -270,7 +271,7 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const [recuperacionCalc, dsoCalc] = await Promise.all([
+    const [recuperacionCalc, dsoCalc, sinAplicarGrupo] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
@@ -278,7 +279,25 @@ export async function GET(request: NextRequest) {
       calcularRecuperacion(companyIds, monthStart, monthEnd),
       // DSO por cliente y global ponderado por saldo (lib/cxc/dso.ts).
       calcularDSO(companyIds, today),
+      // Pagos todavía no aplicados a una factura (anticipos, saldo a favor):
+      // restan en el reporte de Odoo pero no son de ninguna factura, así que
+      // el Resumen los muestra en su propia fila.
+      callOdooRPC<any[]>(
+        "account.move.line",
+        "read_group",
+        [[
+          ["account_id.account_type", "=", "asset_receivable"],
+          ["parent_state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["move_type", "not in", ["out_invoice", "out_refund"]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+        ], ["amount_residual:sum"], []],
+        { lazy: false },
+      ),
     ]);
+    const sinAplicar = Math.round(Number(sinAplicarGrupo?.[0]?.amount_residual || 0) * 100) / 100;
 
     // ── Efectividad (CEI) y su fila semanal ──
     // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
@@ -378,14 +397,35 @@ export async function GET(request: NextRequest) {
         semanaRecuperacion: seriesCxc.recuperacionSemana,
         pesos: cxcPesos,
         agingDistribution,
-        byCompany,
+        // Cartera, vencida y facturas por sede con el mismo cálculo que las
+        // tarjetas (sin Incobrables ni SUPER TECHNO); la efectividad es el CEI
+        // de la sede. El aging por sede sigue saliendo del reporte de Odoo.
+        byCompany: byCompany.map((co) => {
+          const sede = seriesCxc.carteraHoyPorSede[co.companyId];
+          return {
+            ...co,
+            totalReceivable: sede?.total ?? co.totalReceivable,
+            totalOverdue: sede?.vencido ?? co.totalOverdue,
+            overduePct: sede?.pct ?? co.overduePct,
+            openInvoices: sede?.facturas ?? co.openInvoices,
+            overdueInvoices: sede?.facturasVencidas ?? co.overdueInvoices,
+            efectividad: companyIds.length > 1 ? efectividadCalc.porSede[co.companyId] ?? null : efectividad,
+          };
+        }),
         topDebtors: topDebtorsConDso,
         bySalesperson,
+        // Mismas cifras que la tarjeta de Cartera Vencida. Lo que el reporte de
+        // Odoo suma aparte va en filas propias; las cuatro partes cuadran con
+        // `totalOdoo` (el total del reporte de antigüedad).
         summary: {
-          totalReceivable: Math.round(totalReceivable * 100) / 100,
-          totalOverdue: Math.round(totalOverdue * 100) / 100,
-          openInvoiceCount: reportInvoices.length,
-          overdueInvoiceCount: reportInvoices.filter((r: any) => r.days_overdue > 0).length,
+          totalReceivable: seriesCxc.carteraHoy.total,
+          totalOverdue: seriesCxc.carteraHoy.vencido,
+          openInvoiceCount: seriesCxc.carteraHoy.facturas,
+          overdueInvoiceCount: seriesCxc.carteraHoy.facturasVencidas,
+          incobrables: incobrables.saldo,
+          sinAplicar,
+          relacionadas: efectividadCalc.relacionadas,
+          totalOdoo: Math.round(totalReceivable * 100) / 100,
         },
         filters: {
           empresa,
