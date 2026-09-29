@@ -396,7 +396,9 @@ export async function GET(request: NextRequest) {
         semanaCarteraVencida: seriesCxc.carteraVencidaSemana,
         semanaRecuperacion: seriesCxc.recuperacionSemana,
         pesos: cxcPesos,
-        agingDistribution,
+        // Antigüedad del saldo abierto con el cálculo de Cartera Vencida (sin
+        // Incobrables ni SUPER TECHNO): las bandas suman la cartera del Resumen.
+        agingDistribution: seriesCxc.carteraHoy.aging,
         // Cartera, vencida y facturas por sede con el mismo cálculo que las
         // tarjetas (sin Incobrables ni SUPER TECHNO); la efectividad es el CEI
         // de la sede. El aging por sede sigue saliendo del reporte de Odoo.
@@ -410,6 +412,7 @@ export async function GET(request: NextRequest) {
             openInvoices: sede?.facturas ?? co.openInvoices,
             overdueInvoices: sede?.facturasVencidas ?? co.overdueInvoices,
             efectividad: companyIds.length > 1 ? efectividadCalc.porSede[co.companyId] ?? null : efectividad,
+            aging: sede?.aging ?? co.aging,
           };
         }),
         topDebtors: topDebtorsConDso,

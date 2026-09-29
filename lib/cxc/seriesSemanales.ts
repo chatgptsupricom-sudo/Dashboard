@@ -78,7 +78,16 @@ export interface CarteraHoy {
   /** Facturas y notas de crédito con saldo, y cuántas de ellas vencidas. */
   facturas: number;
   facturasVencidas: number;
+  /**
+   * Antigüedad del saldo abierto por días vencidos en el corte. Suma `total`,
+   * y las bandas vencidas suman `vencido`.
+   */
+  aging: Record<Banda, number>;
 }
+
+export type Banda = "corriente" | "1-30" | "31-60" | "61-90" | "91+";
+
+const DIA_MS = 24 * 60 * 60 * 1000;
 
 const PAGE = 5000;
 
@@ -140,7 +149,8 @@ export async function calcularSeriesCxC(
   const vacio: SeriesCxC = {
     carteraVencidaSemana: semanas.map(() => null),
     recuperacionSemana: semanas.map(() => null),
-    carteraHoy: { pct: null, vencido: 0, total: 0, facturas: 0, facturasVencidas: 0 },
+    carteraHoy: { pct: null, vencido: 0, total: 0, facturas: 0, facturasVencidas: 0,
+      aging: { corriente: 0, "1-30": 0, "31-60": 0, "61-90": 0, "91+": 0 } },
     carteraHoyPorSede: {},
     carteraCEI: async () => ({ total: 0, noVencida: 0 }),
   };
@@ -270,6 +280,9 @@ export async function calcularSeriesCxC(
     let vencido = 0;
     let facturas = 0;
     let facturasVencidas = 0;
+    const aging: Record<Banda, number> = { corriente: 0, "1-30": 0, "31-60": 0, "61-90": 0, "91+": 0 };
+    const dia = new Date(corte);
+    dia.setHours(0, 0, 0, 0);
     for (const f of todas) {
       if (f.vieja || f.relacionada) continue;
       if (companyId !== undefined && f.companyId !== companyId) continue;
@@ -286,10 +299,14 @@ export async function calcularSeriesCxC(
       if (vencidaEn(f.due, corte)) {
         vencido += saldo;
         facturasVencidas++;
+        const dias = Math.round((dia.getTime() - f.due!.getTime()) / DIA_MS);
+        aging[dias <= 30 ? "1-30" : dias <= 60 ? "31-60" : dias <= 90 ? "61-90" : "91+"] += saldo;
+      } else {
+        aging.corriente += saldo;
       }
     }
     return {
-      total, vencido, facturas, facturasVencidas,
+      total, vencido, facturas, facturasVencidas, aging,
       pct: total > 0 ? Math.round((vencido / total) * 10000) / 100 : null,
     };
   };
@@ -389,6 +406,9 @@ export async function calcularSeriesCxC(
     ...c,
     vencido: Math.round(c.vencido * 100) / 100,
     total: Math.round(c.total * 100) / 100,
+    aging: Object.fromEntries(
+      Object.entries(c.aging).map(([b, v]) => [b, Math.round(v * 100) / 100]),
+    ) as Record<Banda, number>,
   });
   return {
     carteraVencidaSemana,
