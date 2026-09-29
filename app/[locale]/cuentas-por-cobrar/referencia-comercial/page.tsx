@@ -80,6 +80,7 @@ function yearSuffix(y: number): string {
 type Sede = "valencia" | "caracas";
 
 const SEDES: Record<Sede, {
+  companyId: number;
   ciudad: string;
   logo: string;
   logoAncho: string;
@@ -92,6 +93,7 @@ const SEDES: Record<Sede, {
   pie: string;
 }> = {
   valencia: {
+    companyId: 9,
     ciudad: "Valencia",
     logo: "/osclogo.jpg",
     logoAncho: "170px",
@@ -105,6 +107,7 @@ const SEDES: Record<Sede, {
       "Valencia Zona Ind. Sur. Av. Ernesto Berrind, CEI Arturo Michelena Galpón C4 Valencia edo Carabobo | Telefax: (0241) 1326646 | 8728319 e-mail: venta04@osc2004.com Copyright©2010 | Todos los derechos de propiedad intelectual reservada, imágenes propias y referencias",
   },
   caracas: {
+    companyId: 10,
     ciudad: "Caracas",
     logo: "/supricom-reporte-logo.png",
     logoAncho: "200px",
@@ -163,6 +166,7 @@ export default function ReferenciaComercialPage() {
   const [yearsRelation, setYearsRelation] = useState(2);
   const [yearsEdited, setYearsEdited] = useState(false);
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string | null>(null);
+  const [fuenteFecha, setFuenteFecha] = useState<"odoo" | "smartbit" | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const letterRef = useRef<HTMLDivElement>(null);
   const today = new Date();
@@ -174,26 +178,28 @@ export default function ReferenciaComercialPage() {
 
   // Antes "Años de relación" era un numero escrito a mano (por defecto 2)
   // sin respaldo en ningun dato real. Al elegir cliente se calcula desde su
-  // primera factura real en Odoo y se usa como default — sigue siendo
-  // editable a mano por si hay relacion comercial de antes de este sistema.
+  // primera factura real (Odoo o el histórico de Smartbit de la sede de la
+  // carta) y se usa como default — sigue siendo editable a mano.
   useEffect(() => {
     if (!selectedPartner) {
       setFirstInvoiceDate(null);
+      setFuenteFecha(null);
       return;
     }
     setYearsEdited(false);
     setLoadingHistory(true);
-    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}`)
+    fetch(`/api/superadmin/cuentas-por-cobrar/partner-history?partner_id=${selectedPartner.id}&company_id=${membrete.companyId}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
           setFirstInvoiceDate(json.firstInvoiceDate);
+          setFuenteFecha(json.fuente || null);
           if (json.years !== null) setYearsRelation(Math.max(json.years, 1));
         }
       })
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
-  }, [selectedPartner]);
+  }, [selectedPartner, membrete.companyId]);
 
   const fetchPartners = useCallback(async () => {
     setLoading(true);
@@ -520,7 +526,7 @@ svg { display: block; }
               {loadingHistory
                 ? "Calculando desde su primera factura..."
                 : firstInvoiceDate
-                  ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")})`
+                  ? `${yearsEdited ? "Sugerido" : "Calculado"} desde su primera factura (${firstInvoiceDate.split(" ")[0].split("-").reverse().join("/")}, ${fuenteFecha === "smartbit" ? "histórico Smartbit" : "Odoo"})`
                   : selectedPartner
                     ? "Sin facturas registradas — ingrese el dato manualmente"
                     : ""}
