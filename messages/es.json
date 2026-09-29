@@ -3316,6 +3316,8 @@
     "nombre_agencia": "Nombre de la agencia",
     "nota_sucursal": "Nota (opcional): quién retira, horario…",
     "nota_envio": "Nota (opcional): dirección, contacto, horario…",
+    "facturado": "Facturado sin IVA: {monto}",
+    "se_recalcula": "Todavía sin facturar: al registrar el despacho se vuelve a calcular con lo facturado.",
     "sin_iva": "Sin IVA: {monto}",
     "ruta_gratis": "Ruta gratis: el pedido sin IVA ({base} $) llega al mínimo de {minimo} $.",
     "ruta_flete": "Flete a cargo del cliente: el pedido sin IVA ({base} $) no llega al mínimo de {minimo} $ para ruta gratis (faltan {falta} $). Igual puede ir por ruta.",
