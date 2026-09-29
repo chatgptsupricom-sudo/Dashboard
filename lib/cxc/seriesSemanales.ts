@@ -87,6 +87,18 @@ async function paginar(model: string, domain: any[], fields: string[]): Promise<
 
 const iso = (d: Date) => d.toISOString().split("T")[0];
 const soloFecha = (s: string) => new Date(s.slice(0, 10) + "T00:00:00");
+/**
+ * ¿La factura ya estaba vencida en el corte? Se compara contra el INICIO del
+ * día del corte: los cortes llegan a las 23:59 (hoy) y con `due < corte` una
+ * factura que vence hoy contaba como vencida (Valencia, 29-sep-2026: 69 k de
+ * más). Vence hoy = todavía no está vencida, igual que `days_overdue` de Odoo.
+ */
+const vencidaEn = (due: Date | null, corte: Date) => {
+  if (!due) return false;
+  const dia = new Date(corte);
+  dia.setHours(0, 0, 0, 0);
+  return due < dia;
+};
 /** YYYY-MM-DD en hora local: los cortes vienen a las 23:59 y toISOString los pasaría al día siguiente. */
 const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -251,7 +263,7 @@ export async function calcularSeriesCxC(
       // Vencida = su fecha de vencimiento ya había pasado EN ESE CORTE. No se
       // puede usar el `days_overdue` del reporte de Odoo, que está calculado
       // contra hoy: una factura que vencía el 10 no estaba vencida el 7.
-      if (f.due && f.due < corte) vencido += saldo;
+      if (vencidaEn(f.due, corte)) vencido += saldo;
     }
     return { total, vencido, pct: total > 0 ? Math.round((vencido / total) * 10000) / 100 : null };
   };
@@ -309,7 +321,7 @@ export async function calcularSeriesCxC(
         total -= saldo;
         continue;
       }
-      if (!(f.due && f.due < corte)) noVencida += saldo;
+      if (!vencidaEn(f.due, corte)) noVencida += saldo;
     }
     return { total, noVencida };
   };

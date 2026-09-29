@@ -475,7 +475,10 @@ export default function CxcDashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          {/* "Por Sede" solo cuando hay más de una sede (vista consolidada): con
+              una sola repite la tarjeta de resumen. */}
+          <div className={`grid grid-cols-1 ${data.byCompany.length > 1 ? "lg:grid-cols-2" : ""} gap-4 mb-6`}>
+            {data.byCompany.length > 1 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Building2 size={18} className="text-blue-600" />
@@ -514,6 +517,7 @@ export default function CxcDashboardPage() {
                 </table>
               </div>
             </div>
+            )}
 
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
