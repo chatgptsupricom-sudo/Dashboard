@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Sorteo de clientes de Caracas (SuperAdmin › Ventas › Sorteo Caracas):
- * ruleta + participantes con RIF y facturas (/api/superadmin/sorteo). El
- * SuperAdmin siempre es operador: gira y anula con su sesión.
+ * Sorteo de clientes (SuperAdmin › Ventas › Sorteo de clientes): la
+ * configuración del sorteo activo (sede, mes, monto por ticket y título), la
+ * ruleta y los participantes con RIF y facturas (/api/superadmin/sorteo). El
+ * SuperAdmin siempre es operador: gira y anula con su sesión. La ruleta es
+ * anónima («? ? ?») igual que en la landing; el detalle por cliente está en
+ * la pestaña Participantes.
  *
  * La página pública es otra aplicación, la landing `sorteo-landing`
  * (sorteo.supricom.com.ve), con su propia copia de estos componentes; usa
@@ -19,11 +22,12 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import confetti from "canvas-confetti";
 import {
   AlertTriangle, CalendarDays, Copy, Crown, KeyRound, Maximize2, Minimize2,
-  RefreshCw, RotateCcw, Sparkles, Ticket, Trophy, Users, Volume2, VolumeX, X,
+  RefreshCw, RotateCcw, Save, Settings2, Sparkles, Ticket, Trophy, Users, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { DatosSorteo } from "@/lib/sorteo/participantes";
 import type { Ganador } from "@/lib/sorteo/ganadores";
-import { SORTEO } from "@/lib/sorteo/config";
+import type { ConfigLeida } from "@/lib/sorteo/configuracion";
+import { MES_VALIDO, SEDES_SORTEO, SORTEO, TITULO_MAX, claveSorteo } from "@/lib/sorteo/config";
 import { RuletaSorteo, fanfarria, type RuletaHandle } from "./RuletaSorteo";
 import { TablaParticipantes } from "./TablaParticipantes";
 import { dinero, nombreMes } from "./formato";
@@ -45,8 +49,12 @@ function intercalar<T>(ordenados: T[]): T[] {
 
 const mismaLista = (a: Ganador[], b: Ganador[]) => a.length === b.length && a.every((g, i) => g.id === b[i].id);
 
-export function SorteoCaracas() {
+export function SorteoPanel() {
   const [datos, setDatos] = useState<DatosSorteo | null>(null);
+  const [config, setConfig] = useState<ConfigLeida | null>(null);
+  // Sorteo que muestra esta pantalla (sede:mes:monto). Si el sondeo trae otro
+  // (cambiaron la configuración), se recargan los participantes.
+  const claveActual = useRef<string | null>(null);
   const [ganadores, setGanadores] = useState<Ganador[]>([]);
   const [ganadoresError, setGanadoresError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -99,6 +107,8 @@ export function SorteoCaracas() {
         if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
         if (!vivo) return;
         setDatos(j.data.datos);
+        setConfig(j.data.config);
+        claveActual.current = claveSorteo(j.data.config);
         recibirGanadores(j.data.ganadores, j.data.ganadoresError);
       })
       .catch((e) => vivo && setError(e.message || "No se pudieron cargar los clientes"))
@@ -111,9 +121,26 @@ export function SorteoCaracas() {
     try {
       const r = await fetch("/api/sorteo/ganadores", { cache: "no-store" });
       const j = await r.json();
-      if (r.ok && j.success) recibirGanadores(j.data.ganadores, j.data.ganadoresError);
+      if (!r.ok || !j.success) return;
+      if (claveActual.current && j.data.sorteo && j.data.sorteo !== claveActual.current) {
+        cambiarDeSorteo();
+        return;
+      }
+      recibirGanadores(j.data.ganadores, j.data.ganadoresError);
     } catch { /* sin red: se reintenta en el próximo sondeo */ }
   }, [recibirGanadores]);
+
+  // Otro sorteo (otra sede, mes o monto): los premios que ya tenga cuentan
+  // como vistos (no se re-giran) y se vuelven a leer los participantes.
+  function cambiarDeSorteo() {
+    claveActual.current = null;
+    iniciado.current = false;
+    setDestacado(null);
+    setResultado(null);
+    setRevelados(new Set());
+    setGanadores([]);
+    setRecarga((n) => n + 1);
+  }
 
   useEffect(() => {
     const t = setInterval(() => { if (!document.hidden) void sondear(); }, SONDEO_MS);
@@ -241,6 +268,7 @@ export function SorteoCaracas() {
         {!pantallaCompleta && (
           <Encabezado
             datos={datos}
+            titulo={config?.titulo ?? null}
             cargando={cargando}
             onRefrescar={() => { forzar.current = true; setRecarga((n) => n + 1); }}
           />
@@ -267,6 +295,10 @@ export function SorteoCaracas() {
               {" Lo ideal es sortear con el mes cerrado y los datos actualizados desde Odoo."}
             </p>
           </div>
+        )}
+
+        {!pantallaCompleta && config && (
+          <FormConfig config={config} hayGanadores={ganadores.length > 0} ocupado={ocupado} onGuardado={cambiarDeSorteo} />
         )}
 
         {!pantallaCompleta && <EnlacePublico />}
@@ -313,14 +345,15 @@ export function SorteoCaracas() {
                   <div className="mb-4 flex items-center gap-4 text-center">
                     <div className="rounded-2xl bg-white px-4 py-2"><img src="/sorteo/logo-supricom.png" alt="Supricom" className="h-7" /></div>
                     <div className="text-left">
-                      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#6fd0ff]">Sucursal Caracas</p>
-                      <h2 className="text-2xl font-black text-white md:text-3xl">Gran Sorteo {nombreMes(datos.mes)}</h2>
+                      <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#6fd0ff]">Sucursal {datos.sede}</p>
+                      <h2 className="text-2xl font-black text-white md:text-3xl">{config?.titulo || `Gran Sorteo ${nombreMes(datos.mes)}`}</h2>
                     </div>
                   </div>
                 )}
                 <RuletaSorteo
                   ref={ruleta}
                   participantes={enRuleta}
+                  anonima
                   resaltado={animando ? null : destacado}
                   sonido={sonido}
                   puedeGirar={!ganadoresError}
@@ -403,7 +436,7 @@ export function SorteoCaracas() {
 
                 <p className="text-xs leading-relaxed text-blue-200/50">
                   El ganador se elige al azar en el servidor entre todos los tickets en juego: cada cliente tiene tantas oportunidades como
-                  tickets. 1 ticket por cada {dinero(SORTEO.montoPorTicket)} en compras de {datos ? nombreMes(datos.mes).toLowerCase() : "el mes"}, notas de crédito descontadas.
+                  tickets. 1 ticket por cada {dinero(datos.montoPorTicket)} en compras de {datos ? nombreMes(datos.mes).toLowerCase() : "el mes"}, notas de crédito descontadas.
                 </p>
               </aside>
             </div>
@@ -432,9 +465,8 @@ export function SorteoCaracas() {
 }
 
 function Encabezado({
-  datos, cargando, onRefrescar,
-}: { datos: DatosSorteo | null; cargando: boolean; onRefrescar?: () => void }) {
-  const mes = datos?.mes ?? SORTEO.mesDefault;
+  datos, titulo, cargando, onRefrescar,
+}: { datos: DatosSorteo | null; titulo: string | null; cargando: boolean; onRefrescar?: () => void }) {
   const kpis = [
     { label: "Clientes con compras", valor: datos ? datos.totales.clientes.toLocaleString("es-VE") : "–", icono: Users },
     { label: "Participan (≥ 1 ticket)", valor: datos ? datos.totales.participantes.toLocaleString("es-VE") : "–", icono: Crown },
@@ -458,18 +490,17 @@ function Encabezado({
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-2xl bg-white px-4 py-2 shadow-lg"><img src="/sorteo/logo-supricom.png" alt="Supricom" className="h-6 md:h-7" /></div>
           <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.25em] text-[#bfe9ff]">
-            Sucursal Caracas
+            Sucursal {datos?.sede ?? "–"}
           </span>
         </div>
 
-        <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-tight md:text-6xl">
-          Gran Sorteo
-          <span className="block bg-gradient-to-r from-[#ffe08a] to-[#f5b72b] bg-clip-text text-transparent">{nombreMes(mes)}</span>
-        </h1>
-        <p className="mt-3 max-w-xl text-base text-blue-100/90 md:text-lg">
-          Cada <b className="text-white">{dinero(SORTEO.montoPorTicket)}</b> en compras del mes es
-          <b className="text-white"> 1 ticket</b> para la ruleta.
-        </p>
+        <TituloSorteo titulo={titulo} mes={datos?.mes ?? null} />
+        {datos && (
+          <p className="mt-3 max-w-xl text-base text-blue-100/90 md:text-lg">
+            Cada <b className="text-white">{dinero(datos.montoPorTicket)}</b> en compras de {nombreMes(datos.mes).toLowerCase()} es
+            <b className="text-white"> 1 ticket</b> para la ruleta.
+          </p>
+        )}
 
         {(onRefrescar || datos) && (
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -501,6 +532,136 @@ function Encabezado({
         </div>
       </div>
     </header>
+  );
+}
+
+/** Título grande: el configurado, o "Gran Sorteo / <Mes de Año>" en dorado. */
+function TituloSorteo({ titulo, mes }: { titulo: string | null; mes: string | null }) {
+  if (titulo) return <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-tight md:text-6xl">{titulo}</h1>;
+  return (
+    <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-tight md:text-6xl">
+      Gran Sorteo
+      {mes && <span className="block bg-gradient-to-r from-[#ffe08a] to-[#f5b72b] bg-clip-text text-transparent">{nombreMes(mes)}</span>}
+    </h1>
+  );
+}
+
+/**
+ * Configuración del sorteo activo. Al guardar, el panel y la landing pasan
+ * al sorteo nuevo (la landing en unos segundos, por el sondeo de ganadores).
+ */
+function FormConfig({
+  config, hayGanadores, ocupado, onGuardado,
+}: { config: ConfigLeida; hayGanadores: boolean; ocupado: boolean; onGuardado: () => void }) {
+  const [companyId, setCompanyId] = useState(config.companyId);
+  const [mes, setMes] = useState(config.mes);
+  const [monto, setMonto] = useState(String(config.montoPorTicket));
+  const [titulo, setTitulo] = useState(config.titulo ?? "");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+
+  useEffect(() => {
+    setCompanyId(config.companyId);
+    setMes(config.mes);
+    setMonto(String(config.montoPorTicket));
+    setTitulo(config.titulo ?? "");
+  }, [config]);
+
+  const montoNum = Number(monto);
+  const cambio =
+    companyId !== config.companyId || mes !== config.mes || montoNum !== config.montoPorTicket || titulo.trim() !== (config.titulo ?? "");
+  const valido = MES_VALIDO.test(mes) && Number.isFinite(montoNum) && montoNum >= 1 && titulo.length <= TITULO_MAX;
+  const cambiaSorteo = companyId !== config.companyId || mes !== config.mes || montoNum !== config.montoPorTicket;
+
+  const guardar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cambio || !valido) return;
+    if (cambiaSorteo && hayGanadores && !window.confirm(
+      "El sorteo actual ya tiene ganadores. Al cambiar la sede, el mes o el monto, la landing pasa al sorteo nuevo (los ganadores del actual quedan guardados). ¿Seguir?",
+    )) return;
+    setGuardando(true);
+    setError(null);
+    setOk(false);
+    try {
+      const r = await fetch("/api/superadmin/sorteo/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, mes, montoPorTicket: montoNum, titulo: titulo.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
+      setOk(true);
+      onGuardado();
+    } catch (err: any) {
+      setError(err.message || "No se pudo guardar");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const campo = "h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-[#1a9ad6] focus:bg-white focus:ring-2 focus:ring-[#1a9ad6]/20";
+  return (
+    <form onSubmit={guardar} className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="flex items-center gap-2 font-bold text-slate-900"><Settings2 size={18} className="text-[#0a5fb4]" /> Sorteo activo</h2>
+          <p className="text-sm text-slate-500">Lo que muestra la landing y entre quiénes se gira. Cambia al guardar.</p>
+        </div>
+        {config.actualizado && (
+          <p className="text-xs text-slate-400">
+            Último cambio: {new Date(config.actualizado).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" })}
+            {config.actualizadoPor ? ` · ${config.actualizadoPor}` : ""}
+          </p>
+        )}
+      </div>
+
+      {config.configError && (
+        <p className="mt-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle size={15} /> {config.configError}.
+        </p>
+      )}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[180px_170px_170px_minmax(0,1fr)]">
+        <label className="text-xs font-semibold text-slate-600">
+          Sede
+          <select value={companyId} onChange={(e) => setCompanyId(Number(e.target.value))} className={`mt-1 ${campo}`}>
+            {SEDES_SORTEO.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-slate-600">
+          Mes de las compras
+          <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className={`mt-1 ${campo}`} required />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">
+          Monto por ticket (USD)
+          <input type="number" min={1} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} className={`mt-1 ${campo}`} required />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">
+          Título de la landing <span className="font-normal text-slate-400">(opcional)</span>
+          <input
+            type="text"
+            maxLength={TITULO_MAX}
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            placeholder={MES_VALIDO.test(mes) ? `Gran Sorteo ${nombreMes(mes)}` : "Gran Sorteo"}
+            className={`mt-1 ${campo}`}
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={!cambio || !valido || guardando || ocupado}
+          className="flex h-10 items-center gap-2 rounded-xl bg-[#0b2a6f] px-4 text-sm font-semibold text-white hover:bg-[#0a5fb4] disabled:opacity-50"
+        >
+          <Save size={15} /> {guardando ? "Guardando…" : "Guardar"}
+        </button>
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        {ok && !cambio && <p className="text-sm text-emerald-600">Guardado. La landing cambia en unos segundos.</p>}
+      </div>
+    </form>
   );
 }
 
@@ -659,7 +820,7 @@ function Cargando() {
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-[2rem] bg-[#06123a] py-24 text-blue-100">
       <div className="h-14 w-14 animate-spin rounded-full border-4 border-[#1a9ad6]/30 border-t-[#f5b72b]" />
-      <p className="text-sm">Leyendo las compras de Caracas…</p>
+      <p className="text-sm">Leyendo las compras en Odoo…</p>
     </div>
   );
 }

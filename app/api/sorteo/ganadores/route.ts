@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { SORTEO } from "@/lib/sorteo/config";
+import { claveSorteo } from "@/lib/sorteo/config";
+import { leerConfig } from "@/lib/sorteo/configuracion";
 import { ganadoresSeguros } from "@/lib/sorteo/respuestas";
 
 /**
- * Ganadores oficiales del sorteo (público). La página pública lo consulta
- * cada pocos segundos para girar la ruleta en todas las pantallas cuando el
- * operador saca un ganador. Lectura liviana: caché de 2,5 s en
- * lib/sorteo/ganadores.
+ * Ganadores oficiales del sorteo activo (público). Las pantallas lo consultan
+ * cada pocos segundos para girar la ruleta cuando el operador saca un
+ * ganador. Lleva `sorteo` (sede:mes:monto): si cambia la configuración en el
+ * panel, la landing recarga los participantes sin que nadie refresque la
+ * página. Lectura liviana: cachés de 2,5 s (ganadores) y 5 s (configuración).
  */
 export async function GET() {
-  const r = await ganadoresSeguros(SORTEO.mesDefault);
-  return NextResponse.json({ success: true, data: r }, { headers: { "Cache-Control": "no-store" } });
+  const config = await leerConfig();
+  const r = await ganadoresSeguros(config.companyId, config.mes);
+  return NextResponse.json({ success: true, data: { ...r, sorteo: claveSorteo(config) } }, { headers: { "Cache-Control": "no-store" } });
 }

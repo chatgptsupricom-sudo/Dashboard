@@ -1,5 +1,5 @@
-import { SorteoCaracas } from "@/components/sorteo/SorteoCaracas";
+import { SorteoPanel } from "@/components/sorteo/SorteoPanel";
 
 export default function SorteoPage() {
-  return <SorteoCaracas />;
+  return <SorteoPanel />;
 }
