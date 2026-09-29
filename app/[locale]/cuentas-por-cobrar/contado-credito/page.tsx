@@ -707,12 +707,11 @@ export default function ContadoCreditoPage() {
                     <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
                     <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={50} />
                     <Tooltip formatter={(v: number) => formatCurrency(v)} labelFormatter={(_, p) => p?.[0]?.payload?.fullLabel || ""} />
-                    {esPorCobrar ? (
-                      <>
-                        <Bar dataKey="montoDelMes" name="Facturado del mes" stackId="pc" fill={BAR_COLOR} />
-                        <Bar dataKey="montoAnteriores" name="Meses anteriores" stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />
-                      </>
-                    ) : (
+                    {/* Lista y no Fragment: Recharts 2 no busca las <Bar> dentro de un Fragment y no las dibuja. */}
+                    {esPorCobrar ? [
+                      <Bar key="mes" dataKey="montoDelMes" name="Facturado del mes" stackId="pc" fill={BAR_COLOR} />,
+                      <Bar key="ant" dataKey="montoAnteriores" name="Meses anteriores" stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />,
+                    ] : (
                       <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
                     )}
                   </BarChart>
