@@ -65,6 +65,7 @@ import {
   Trophy,
   Truck,
   UserCheck,
+  Hourglass,
   Users,
   Wrench,
   X,
@@ -243,6 +244,11 @@ export function Sidebar({
     { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
     { id: "cxc_contado_credito", label: t("cxc_contado_credito"), icon: PieChart, slug: "/cuentas-por-cobrar/contado-credito", absoluteHref: true },
     { id: "cxc_pago_clientes", label: "Pago de Clientes", icon: Wallet, slug: "/pago-clientes" },
+    // El menú del rol Cuentas por Cobrar sale de esta lista (el submenú de más
+    // abajo es el de SuperAdmin): sin estas dos entradas, esas páginas solo
+    // se alcanzaban escribiendo la URL.
+    { id: "cxc_clasificacion_clientes", label: "Clasificación de Clientes", icon: UserCheck, slug: "/cuentas-por-cobrar/clasificacion-clientes", absoluteHref: true },
+    { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
