@@ -62,8 +62,9 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
             <>
               <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda, en promedio, cada cliente en pagar lo que se le factura.</p>
               <p><strong>{t("info_formula")}</strong> DSO cliente = (Saldo abierto ÷ Ventas netas) × Días del período</p>
-              <p><strong>Ventas netas:</strong> Facturado menos notas de crédito del cliente desde su primera factura.</p>
-              <p><strong>Período:</strong> Días desde la primera factura del cliente hasta hoy.</p>
+              <p><strong>Ventas netas:</strong> Facturado menos notas de crédito del cliente en los últimos 12 meses (Smartbit hasta el 31-mar-2026, Odoo desde el 1-abr-2026).</p>
+              <p><strong>Período:</strong> 365 días, o los días desde la primera factura si el cliente es más nuevo.</p>
+              <p><strong>Saldo:</strong> No incluye las facturas vencidas antes de 2025 (Incobrables).</p>
               <p><strong>DSO global:</strong> Promedio de los DSO por cliente ponderado por su saldo abierto (los que más deben pesan más).</p>
               <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
             </>

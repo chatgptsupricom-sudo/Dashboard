@@ -6,6 +6,7 @@ import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
+import { VENCIMIENTO_DESDE, esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -40,14 +41,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get("type"); // efectividad | cartera | recuperacion | dso
+    const type = searchParams.get("type"); // efectividad | cartera | incobrables | recuperacion | dso
     const empresa = searchParams.get("empresa")?.toLowerCase() || "";
     const userCidsParam = searchParams.get("userCids");
     const monthParam = searchParams.get("month");
     const yearParam = searchParams.get("year");
 
-    if (!type || !["efectividad", "cartera", "recuperacion", "dso"].includes(type)) {
-      return NextResponse.json({ error: "type requerido: efectividad | cartera | recuperacion | dso" }, { status: 400 });
+    if (!type || !["efectividad", "cartera", "incobrables", "recuperacion", "dso"].includes(type)) {
+      return NextResponse.json({ error: "type requerido: efectividad | cartera | incobrables | recuperacion | dso" }, { status: 400 });
     }
 
     const now = new Date();
@@ -76,7 +77,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (type === "cartera") {
+    // "incobrables" es el complemento de "cartera": solo la cartera vieja.
+    if (type === "cartera" || type === "incobrables") {
       // Todas las facturas abiertas con saldo, agrupadas por aging band
       // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
       // modelo traen amount_residual NEGATIVO (verificado contra Odoo real).
@@ -90,7 +92,11 @@ export async function GET(request: NextRequest) {
          "document_number", "transaction_type"],
       );
 
-      const filtered = reportData.filter((r: any) => !((r.partner_name || "").toLowerCase().includes("supricom")));
+      // Cartera Vencida va sin la cartera vieja (vencida antes de 2025), igual
+      // que la tarjeta; Incobrables es solo esa cartera vieja.
+      const filtered = reportData.filter((r: any) =>
+        !((r.partner_name || "").toLowerCase().includes("supricom")) &&
+        esCarteraVieja(r.date_maturity) === (type === "incobrables"));
 
       function getAgingBand(r: any): string {
         if (r.days_overdue <= 0) return "corriente";
@@ -129,13 +135,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          type: "cartera",
+          type,
           summary: {
             totalReceivable: Math.round(total * 100) / 100,
             totalOverdue: Math.round(overdue * 100) / 100,
             overduePct: total > 0 ? Math.round((overdue / total) * 10000) / 100 : 0,
             count: invoices.length,
             overdueCount: invoices.filter(i => i.daysOverdue > 0).length,
+            clientes: new Set(invoices.map(i => i.partnerId).filter(Boolean)).size,
           },
           byBand,
           invoices: invoices.sort((a, b) => b.daysOverdue - a.daysOverdue),
@@ -161,6 +168,7 @@ export async function GET(request: NextRequest) {
         ["state", "=", "posted"],
         ["company_id", "in", companyIds],
         ["invoice_date_due", "<", desdeStr],
+        ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
       ];
       const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
@@ -176,6 +184,7 @@ export async function GET(request: NextRequest) {
           dominioFactura: [
             ["move_type", "=", "out_invoice"],
             ["invoice_date_due", "<", desdeStr],
+            ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
             ["partner_id.name", "not ilike", "supricom"],
           ],
         }),

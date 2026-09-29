@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
+import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 
 /**
  * KPI "Recuperación Vencidos" (issue #189).
@@ -114,6 +115,8 @@ export async function calcularRecuperacion(
     ["state", "=", "posted"],
     ["company_id", "in", companyIds],
     ["invoice_date_due", "<", desde],
+    // Cartera vieja (vencida antes de 2025) fuera: lib/cxc/carteraVieja.ts.
+    ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
     ...noInterno(""),
   ];
 
@@ -123,6 +126,7 @@ export async function calcularRecuperacion(
     ["debit_move_id.move_id.move_type", "=", "out_invoice"],
     ["debit_move_id.move_id.state", "=", "posted"],
     ["debit_move_id.move_id.invoice_date_due", "<", desde],
+    ["debit_move_id.move_id.invoice_date_due", ">=", VENCIMIENTO_DESDE],
     ["company_id", "in", companyIds],
     ...noInterno("debit_move_id.move_id."),
   ];
@@ -139,6 +143,7 @@ export async function calcularRecuperacion(
       dominioFactura: [
         ["move_type", "=", "out_invoice"],
         ["invoice_date_due", "<", desde],
+        ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
       ],
     }),

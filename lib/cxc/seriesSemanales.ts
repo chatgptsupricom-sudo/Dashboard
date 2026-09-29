@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { idsACredito } from "@/lib/cxc/credito";
+import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -95,6 +96,8 @@ interface Factura {
   residual: number;
   /** Venta a crédito (lib/cxc/credito.ts). */
   credito: boolean;
+  /** Vencida antes de 2025 (lib/cxc/carteraVieja.ts): fuera de Cartera Vencida y Recuperación. */
+  vieja: boolean;
   /** Conciliaciones de esta factura dentro del período: [fecha, monto]. */
   pagos: { fecha: Date; monto: number }[];
 }
@@ -160,6 +163,7 @@ export async function calcularSeriesCxC(
       due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
       residual: signo * Math.abs(inv.amount_residual || 0),
       credito: false,
+      vieja: esCarteraVieja(inv.invoice_date_due),
       pagos: [],
     });
   }
@@ -201,6 +205,7 @@ export async function calcularSeriesCxC(
         due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
         residual: signo * Math.abs(inv.amount_residual || 0),
         credito: false,
+        vieja: esCarteraVieja(inv.invoice_date_due),
         pagos: [],
       });
     }
@@ -225,11 +230,12 @@ export async function calcularSeriesCxC(
   const saldoEn = (f: Factura, corte: Date) =>
     f.residual + f.pagos.reduce((s, p) => (p.fecha > corte ? s + p.monto : s), 0);
 
-  const carteraEn = (corte: Date, soloCredito = false) => {
+  const cartera = (corte: Date, soloCredito: boolean, sinViejas: boolean) => {
     let total = 0;
     let vencido = 0;
     for (const f of todas) {
       if (soloCredito && !f.credito) continue;
+      if (sinViejas && f.vieja) continue;
       // Una factura emitida después del corte no formaba parte de la cartera
       // en ese momento: sin este filtro, las semanas pasadas salen infladas.
       if (f.emision && f.emision > corte) continue;
@@ -243,11 +249,15 @@ export async function calcularSeriesCxC(
     }
     return { total, vencido, pct: total > 0 ? Math.round((vencido / total) * 10000) / 100 : null };
   };
+  // El CEI (único que usa `carteraEn`) sigue contando la cartera vieja; la
+  // tarjeta de Cartera Vencida no.
+  const carteraEn = (corte: Date, soloCredito = false) => cartera(corte, soloCredito, false);
+  const carteraVencidaEn = (corte: Date) => cartera(corte, false, true);
 
   const pct1 = (n: number | null) => (n === null ? null : `${Math.round(n)}%`);
 
   const carteraVencidaSemana = semanas.map((s) =>
-    s.inicio > hoy ? null : pct1(carteraEn(s.fin > hoy ? hoy : s.fin).pct),
+    s.inicio > hoy ? null : pct1(carteraVencidaEn(s.fin > hoy ? hoy : s.fin).pct),
   );
 
   const recuperacionSemana = semanas.map((s) => {
@@ -255,6 +265,7 @@ export async function calcularSeriesCxC(
     let denominador = 0;
     let recuperado = 0;
     for (const f of todas) {
+      if (f.vieja) continue;
       if (f.emision && f.emision >= s.inicio) continue; // aún no existía
       if (!f.due || f.due >= s.inicio) continue; // no estaba vencida al iniciar la semana
       denominador += f.residual + f.pagos.reduce((a, p) => (p.fecha >= s.inicio ? a + p.monto : a), 0);
@@ -264,7 +275,7 @@ export async function calcularSeriesCxC(
     for (const c of cobros) {
       if (c.fecha < ini || c.fecha > fin) continue;
       const f = facturas.get(c.facturaId);
-      if (!f) continue;
+      if (!f || f.vieja) continue;
       if (f.emision && f.emision >= s.inicio) continue;
       if (!f.due || f.due >= s.inicio) continue;
       recuperado += c.monto;
@@ -273,7 +284,7 @@ export async function calcularSeriesCxC(
     return `${Math.round((recuperado / denominador) * 100)}%`;
   });
 
-  const hoyCartera = carteraEn(hoy);
+  const hoyCartera = carteraVencidaEn(hoy);
   return {
     carteraVencidaSemana,
     recuperacionSemana,

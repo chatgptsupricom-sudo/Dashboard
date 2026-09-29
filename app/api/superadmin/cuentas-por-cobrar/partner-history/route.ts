@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { normalizarRif, RIF_SQL } from "@/lib/smartbit";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -23,8 +24,6 @@ export const dynamic = "force-dynamic";
  * guiones ni espacios) y por la sede de la carta (`company_id`). Gana la
  * fecha mas vieja de las dos fuentes.
  */
-const normalizarRif = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "");
-
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar"]);
   if (auth.error) return auth.error;
@@ -62,7 +61,7 @@ export async function GET(request: NextRequest) {
           `SELECT DATE_FORMAT(MIN(fecha), '%Y-%m-%d') AS primera
              FROM ventas_smartbit
             WHERE company_id = ?
-              AND REPLACE(REPLACE(UPPER(codigo_cliente), '-', ''), ' ', '') = ?`,
+              AND ${RIF_SQL} = ?`,
           [companyId, rif],
         );
         primeraSmartbit = (rows as any[])[0]?.primera || null;

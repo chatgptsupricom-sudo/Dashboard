@@ -39,6 +39,8 @@ interface KPIs {
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number };
   dso: { value: number | null; meta: number; carteraAbierta: number; ventasNetas: number; clientes: number };
+  // Cartera vencida antes de 2025, fuera de los otros KPIs (lib/cxc/carteraVieja.ts).
+  incobrables?: { saldo: number; facturas: number; clientes: number };
 }
 
 interface CompanyData {
@@ -249,7 +251,7 @@ export default function CxCReport() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
             <KPICard
               title={t("efectividad_cobranza")}
               value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
@@ -292,6 +294,18 @@ export default function CxCReport() {
               icon={<Clock size={20} />}
               weight="10%"
             />
+            {data.kpis.incobrables && (
+              <KPICard
+                title={t("incobrables")}
+                value={formatCurrency(data.kpis.incobrables.saldo)}
+                meta={t("incobrables_desc")}
+                subtitle={`${data.kpis.incobrables.facturas} ${t("facturas").toLowerCase()} · ${data.kpis.incobrables.clientes} ${t("clientes")} · ${t("incobrables_nota")}`}
+                color="bg-slate-100 text-slate-600 border-slate-300"
+                dot="bg-slate-400"
+                icon={<AlertTriangle size={20} />}
+                weight=""
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">

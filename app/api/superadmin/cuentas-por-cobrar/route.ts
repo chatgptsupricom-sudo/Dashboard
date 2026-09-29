@@ -5,6 +5,7 @@ import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
+import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -178,6 +179,15 @@ export async function GET(request: NextRequest) {
       agingDistribution["61-90"] += r.amount_61_90 || 0;
       agingDistribution["91+"] += r.amount_91_plus || 0;
     });
+
+    // Incobrables: la cartera vieja (vencida antes de 2025) que Cartera
+    // Vencida, Recuperación y DSO dejan fuera (lib/cxc/carteraVieja.ts).
+    const viejas = reportInvoices.filter((r: any) => esCarteraVieja(r.date_maturity));
+    const incobrables = {
+      saldo: Math.round(viejas.reduce((s, r: any) => s + (r.amount_residual || 0), 0) * 100) / 100,
+      facturas: viejas.length,
+      clientes: new Set(viejas.map((r: any) => r.partner_id?.[0]).filter(Boolean)).size,
+    };
 
     const carteraVencidaPct = totalReceivable > 0
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
@@ -356,6 +366,7 @@ export async function GET(request: NextRequest) {
             ventasNetas: dsoCalc.ventasNetas,
             clientes: dsoCalc.clientesIncluidos,
           },
+          incobrables,
         },
         semanaEfectividad,
         semanaCarteraVencida: seriesCxc.carteraVencidaSemana,

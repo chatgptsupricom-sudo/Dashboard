@@ -21,6 +21,12 @@ import { getConnection, query } from "@/lib/db";
 
 export const CORTE_ODOO = process.env.SMARTBIT_CORTE || "2026-04-01";
 
+/** RIF comparable entre Odoo (`res.partner.vat`) y Smartbit (`codigo_cliente`). */
+export const normalizarRif = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** SQL equivalente a normalizarRif() sobre `codigo_cliente` (guiones y espacios). */
+export const RIF_SQL = "REPLACE(REPLACE(UPPER(codigo_cliente), '-', ''), ' ', '')";
+
 /** Primer dia del historial de facturacion (Smartbit no tiene ventas antes). */
 export const HISTORIA_DESDE = "2018-01-01";
 
