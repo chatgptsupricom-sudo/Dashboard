@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { describirMetodo, minimoRutaGratis, rutaEsGratis, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
+import { describirMetodo, evaluarRutaGratis, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
 import { CheckCircle2, Loader2, Lock, Package, Search, Store, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -21,6 +21,9 @@ type Pedido = {
   base: number;
   company_id: number | null;
   moneda: string;
+  /** Facturado sin IVA (facturas menos notas de crédito); null = sin factura. */
+  facturado: number | null;
+  estado_cliente: string | null;
   ordenes: { id: number; nombre: string; estado: string }[];
   facturas: { numero: string; fecha: string | null }[];
   en_despacho: boolean;
@@ -234,6 +237,9 @@ export function MetodoRetiro() {
                         {usd(p.total)} {p.moneda}
                       </p>
                       <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base) })}</p>
+                      {p.facturado !== null && (
+                        <p className="text-[11px] font-semibold text-slate-600 tabular-nums">{t("facturado", { monto: usd(p.facturado) })}</p>
+                      )}
                     </div>
                   </div>
 
@@ -318,17 +324,26 @@ export function MetodoRetiro() {
                       </div>
                       {b.metodo === "ruta" && b.ruta_id && (() => {
                         const ruta = rutas.find((r) => String(r.id) === b.ruta_id)?.nombre;
-                        const minimo = minimoRutaGratis(p.company_id, ruta);
-                        const gratis = rutaEsGratis(p.company_id, ruta, p.base, p.moneda);
-                        if (minimo === null || gratis === null) return null;
-                        return gratis === 1 ? (
-                          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                            {t("ruta_gratis", { base: usd(p.base), minimo: usd(minimo) })}
-                          </p>
-                        ) : (
-                          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                            {t("ruta_flete", { base: usd(p.base), minimo: usd(minimo), falta: usd(minimo - p.base) })}
-                          </p>
+                        // Con lo facturado si ya hay factura; si no, con el pedido.
+                        const monto = p.facturado ?? p.base;
+                        const ev = evaluarRutaGratis({ companyId: p.company_id, rutaNombre: ruta, monto, moneda: p.moneda, estadoCliente: p.estado_cliente });
+                        if (ev.minimo === null || ev.gratis === null) return null;
+                        return (
+                          <div className="space-y-1.5">
+                            {ev.gratis === 1 ? (
+                              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                                {t("ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo) })}
+                              </p>
+                            ) : (
+                              <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                {t("ruta_flete", { base: usd(monto), minimo: usd(ev.minimo), falta: usd(ev.minimo - monto) })}
+                              </p>
+                            )}
+                            {ev.alerta && (
+                              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{ev.alerta}</p>
+                            )}
+                            {p.facturado === null && <p className="text-[11px] text-slate-400">{t("se_recalcula")}</p>}
+                          </div>
                         );
                       })()}
                       <div className="flex items-center justify-end gap-3">
@@ -350,6 +365,9 @@ export function MetodoRetiro() {
                         </Button>
                       </div>
                     </div>
+                  )}
+                  {p.metodo?.alerta && (
+                    <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">⚠ {p.metodo.alerta}</p>
                   )}
                   {p.metodo?.registrado_por && (
                     <p className="text-[11px] text-slate-400">{t("indicado_por", { quien: p.metodo.registrado_por })}</p>

@@ -123,9 +123,20 @@ export default function MercanciaOrdenes() {
                     </p>
                   )}
                   {o.metodo_retiro ? (
-                    <span className="mt-2 inline-flex max-w-full truncate rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--portal-primary,#741DFE)]">
-                      {describirMetodo(o.metodo_retiro)}
-                    </span>
+                    <>
+                      <span className="mt-2 inline-flex max-w-full truncate rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--portal-primary,#741DFE)]">
+                        {describirMetodo(o.metodo_retiro)}
+                      </span>
+                      {/* Ruta gratis recalculada con lo facturado, o ruta que no es la del cliente. */}
+                      {o.metodo_retiro.alerta && (
+                        <span
+                          title={o.metodo_retiro.alerta}
+                          className="mt-1 block rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 line-clamp-3"
+                        >
+                          ⚠ {o.metodo_retiro.alerta}
+                        </span>
+                      )}
+                    </>
                   ) : (
                     <span className="mt-2 inline-flex rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
                       {to("sin_metodo")}
