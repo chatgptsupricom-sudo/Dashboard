@@ -47,6 +47,8 @@ export function ExitsTab({
   // Grupo de la última salida registrada: con él se pide su nota de entrega.
   const [ultimaSalida, setUltimaSalida] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
+  // Persona que se lleva el material: firma el recibido en la nota.
+  const [recipient, setRecipient] = useState("");
   const [movementDate, setMovementDate] = useState(today());
   const [notes, setNotes] = useState("");
 
@@ -95,6 +97,10 @@ export function ExitsTab({
       setError("Indica el destino (" + KINDS.find((k) => k.id === kind)?.label.toLowerCase() + ")");
       return;
     }
+    if (kind === "interno" && !recipient.trim()) {
+      setError("Indica a quién se le entrega el material");
+      return;
+    }
 
     let reasonType = "cliente";
     if (kind === "interno") reasonType = "uso_interno";
@@ -109,6 +115,7 @@ export function ExitsTab({
       reasonType,
       movementDate,
       notes: notes.trim() || null,
+      recipientName: recipient.trim() || null,
     };
 
     if (kind === "cliente") {
@@ -136,17 +143,15 @@ export function ExitsTab({
 
       toast({
         title: "Salida registrada",
-        description:
-          kind === "cliente"
-            ? "El stock se actualizó. Ya puedes imprimir la nota de entrega."
-            : "El stock se actualizó correctamente.",
+        description: "El stock se actualizó. Ya puedes imprimir la nota de entrega.",
       });
-      setUltimaSalida(kind === "cliente" ? json?.movementGroupId || null : null);
+      setUltimaSalida(json?.movementGroupId || null);
 
       setLines([lineaVacia()]);
       setOrdenVenta("");
       setVendedor("");
       setDestination("");
+      setRecipient("");
       setClient(null);
       setUseOtherLocation(false);
       setNotes("");
@@ -289,6 +294,20 @@ export function ExitsTab({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
+                <Label>
+                  Entregado a{kind === "interno" ? "" : " · opcional"}
+                </Label>
+                <Input
+                  value={recipient}
+                  onChange={(e) => setRecipient(e.target.value)}
+                  placeholder="Nombre de quien recibe"
+                  className="mt-1.5"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Sale en la nota de entrega, con su línea de firma.
+                </p>
+              </div>
+              <div>
                 <Label>Fecha</Label>
                 <Input
                   type="date"
@@ -328,7 +347,7 @@ export function ExitsTab({
             </Button>
 
             {/* Queda a mano después de registrar: es el papel que firma quien
-                recibe el material en el otro almacén. */}
+                recibe el material. */}
             {ultimaSalida && (
               <Button
                 type="button"

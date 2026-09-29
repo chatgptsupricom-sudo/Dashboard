@@ -69,6 +69,8 @@ export interface PopMovement {
   client_id: number | null;
   client_name: string | null;
   destination: string | null;
+  /** Quien recibió el material. Solo salidas, y solo si se corrió la migración 007. */
+  recipient_name?: string | null;
   notes: string | null;
   created_by_name: string | null;
   cids: number | null;

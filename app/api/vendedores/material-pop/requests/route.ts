@@ -6,6 +6,8 @@ import {
   leerOrden,
   listarSolicitudes,
 } from "@/lib/adminleads/material-pop/requests";
+import { avisarSolicitudCreada } from "@/lib/adminleads/material-pop/aviso";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +98,10 @@ export async function POST(request: NextRequest) {
       notes: body?.notes ? String(body.notes).slice(0, 2000) : null,
       items,
     });
+
+    // Correo al adminLeads de la sede con el resumen del pedido. No se espera:
+    // la solicitud ya quedó guardada aunque n8n no responda.
+    avisarSolicitudCreada(creada.id, cids, getPublicOrigin(request));
 
     return NextResponse.json({ success: true, ...creada });
   } catch (error: any) {
