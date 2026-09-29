@@ -75,7 +75,18 @@ const redondear = (n: number) => Math.round((n || 0) * 100) / 100;
  * ademas no tiene seguimiento que excluir. Caso real que lo destapo
  * (DISTRIBUIDORA GEEK OR): el cobro PBANES/2026/00732 esta marcado y pago
  * una factura que no lo esta — corria 141,75 el saldo.
+ *
+ * En el MOVIMIENTO las excluidas no se ocultan: se muestran marcadas
+ * (`excluido`) y no suman al saldo ni a los totales, para que quien lo lea
+ * sepa por que el saldo no cuadra con la suma de las filas. Caso que lo
+ * pidio (GALLERY COMPUTER PZO): los cobros PBNK1/2026/00214 (10.400,61),
+ * PBNK1/2026/00182 y PBANES/2026/00917 estan marcados y quedaron con
+ * centimos sin aplicar, asi que caen en la regla y antes desaparecian sin
+ * dejar rastro.
  */
+const excluidaDeSeguimiento = (l: { blocked?: boolean; amount_residual?: number }) =>
+  Boolean(l.blocked) && (l.amount_residual || 0) !== 0;
+
 const dominioBloqueadas = (companyIds: number[]) => [
   ["blocked", "=", true],
   ["amount_residual", "!=", 0],
@@ -114,6 +125,54 @@ export async function GET(request: NextRequest) {
     }
 
     const partnerIdParam = searchParams.get("partner_id");
+
+    // ── Búsqueda por nombre, con o sin saldo ──
+    // El listado solo trae clientes con documentos abiertos, así que un
+    // cliente al día (caso ACRONIS 2022: todo cobrado en Valencia y Caracas)
+    // no aparece y no hay cómo sacarle un estado de cuenta "a paz y salvo".
+    // Esto busca en el mayor de cuentas por cobrar a cualquier cliente con
+    // movimiento, agrupado por cliente y sede.
+    const buscar = (searchParams.get("buscar") || "").trim();
+    if (!partnerIdParam && buscar) {
+      if (buscar.length < 3) return NextResponse.json({ success: true, clientes: [] });
+      const grupos = (await callOdooRPC<any[]>(
+        "account.move.line", "read_group",
+        [
+          [
+            ["partner_id.name", "ilike", buscar],
+            ["account_id.account_type", "=", "asset_receivable"],
+            ["parent_state", "=", "posted"],
+            ["company_id", "in", companyIds],
+          ],
+          ["amount_residual:sum"],
+          ["partner_id", "company_id"],
+        ],
+        { lazy: false, limit: 30, orderby: "partner_id" },
+      )) || [];
+
+      const partnerIds = [...new Set(grupos.map((g: any) => g.partner_id?.[0]).filter(Boolean))];
+      const partners = partnerIds.length
+        ? (await callOdooRPC<any[]>(
+            "res.partner", "read", [partnerIds], { fields: ["user_id"] },
+          )) || []
+        : [];
+      const vendedorDe: Record<number, string> = {};
+      partners.forEach((p: any) => { vendedorDe[p.id] = p.user_id?.[1] || "Sin asignar"; });
+
+      const clientes = grupos
+        .filter((g: any) => g.partner_id?.[0])
+        .map((g: any) => ({
+          partnerId: g.partner_id[0],
+          nombre: g.partner_id[1] || "Sin cliente",
+          vendedor: vendedorDe[g.partner_id[0]] || "Sin asignar",
+          sede: g.company_id?.[1] || "",
+          saldo: redondear(g.amount_residual || 0),
+          vencido: 0,
+          documentos: g.__count || 0,
+          diasMax: 0,
+        }));
+      return NextResponse.json({ success: true, clientes });
+    }
 
     // ── Listado de clientes con saldo ──
     if (!partnerIdParam) {
@@ -196,14 +255,12 @@ export async function GET(request: NextRequest) {
         ["account_id.account_type", "=", "asset_receivable"],
         ["parent_state", "=", "posted"],
         ["company_id", "in", companyIds],
-        // Misma regla que `dominioBloqueadas`: pasa si no esta marcada, o si
-        // esta marcada pero ya saldada.
-        "|", ["blocked", "=", false], ["amount_residual", "=", 0],
+        // Las excluidas del seguimiento SI vienen: se marcan abajo y no suman.
       ],
       [
         "move_id", "move_name", "move_type", "journal_id",
         "date", "date_maturity", "debit", "credit", "amount_residual",
-        "amount_currency", "currency_id",
+        "amount_currency", "currency_id", "blocked",
       ],
     );
 
@@ -245,9 +302,10 @@ export async function GET(request: NextRequest) {
     const movimientos = ordenadas.map((l: any) => {
       const cargo = redondear(l.debit);
       const abono = redondear(l.credit);
+      const excluido = excluidaDeSeguimiento(l);
       // Se redondea en cada paso, no al final: con cientos de lineas el
       // arrastre binario corre el saldo unos centimos y el cliente lo nota.
-      saldo = redondear(saldo + cargo - abono);
+      if (!excluido) saldo = redondear(saldo + cargo - abono);
 
       const diario = porDiario[l.journal_id?.[0]] || {};
       const asiento = porAsiento[l.move_id?.[0]] || {};
@@ -256,7 +314,7 @@ export async function GET(request: NextRequest) {
       // queda en 0 aunque se haya pagado tarde, igual que en el reporte que
       // ya usa el modulo.
       const dias =
-        l.amount_residual && vencimiento
+        l.amount_residual && vencimiento && !excluido
           ? Math.max(0, diasEntre(vencimiento, hoy))
           : 0;
 
@@ -291,15 +349,20 @@ export async function GET(request: NextRequest) {
           l.move_type === "out_invoice"
             ? asiento.invoice_user_id?.[1] || ""
             : "",
+        excluido,
+        nota: excluido ? "Excluido de seguimiento: no suma al saldo" : "",
       };
     });
 
-    const totalCargo = redondear(
-      movimientos.reduce((s: number, m: any) => s + m.cargo, 0),
-    );
-    const totalAbono = redondear(
-      movimientos.reduce((s: number, m: any) => s + m.abono, 0),
-    );
+    const incluidos = movimientos.filter((m: any) => !m.excluido);
+    const totalCargo = redondear(incluidos.reduce((s: number, m: any) => s + m.cargo, 0));
+    const totalAbono = redondear(incluidos.reduce((s: number, m: any) => s + m.abono, 0));
+    const excluidos = movimientos.filter((m: any) => m.excluido);
+    const totalExcluido = {
+      cantidad: excluidos.length,
+      cargo: redondear(excluidos.reduce((s: number, m: any) => s + m.cargo, 0)),
+      abono: redondear(excluidos.reduce((s: number, m: any) => s + m.abono, 0)),
+    };
 
     if (searchParams.get("formato") === "xlsx") {
       return excel(partnerId, partner, movimientos, totalCargo, totalAbono);
@@ -309,7 +372,7 @@ export async function GET(request: NextRequest) {
       success: true,
       cliente: { id: partnerId, nombre: partner.name || "", vat: partner.vat || "" },
       movimientos,
-      totales: { cargo: totalCargo, abono: totalAbono, saldo },
+      totales: { cargo: totalCargo, abono: totalAbono, saldo, excluido: totalExcluido },
     });
   } catch (error: any) {
     console.error("Error en estado de cuenta CxC:", error.message);
@@ -328,6 +391,7 @@ const COLUMNAS = [
   { header: "Saldo", key: "saldo", width: 14 },
   { header: "Dias Atraso", key: "diasAtraso", width: 12 },
   { header: "Vendedor", key: "vendedor", width: 28 },
+  { header: "Nota", key: "nota", width: 40 },
 ];
 
 /**
@@ -358,7 +422,9 @@ async function excel(
   ws.columns = COLUMNAS;
 
   movimientos.forEach((m: any) => {
-    ws.addRow({ ...m, fecha: ddmmyyyy(m.fecha) });
+    const fila = ws.addRow({ ...m, fecha: ddmmyyyy(m.fecha) });
+    // Excluida del seguimiento: se ve, pero en gris e italica y sin sumar.
+    if (m.excluido) fila.font = { italic: true, color: { argb: "FF94A3B8" } };
   });
 
   const totales = ws.addRow({ cargo: totalCargo, abono: totalAbono });

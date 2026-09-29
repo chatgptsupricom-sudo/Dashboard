@@ -219,6 +219,16 @@
 //   }
 // }
 import { callOdooRPC } from "@/lib/odoo";
+import {
+  crecimientoVsMesAnterior,
+  desdeOdoo,
+  HISTORIA_DESDE,
+  mensualSmartbit,
+  mezclarClientes,
+  mezclarLineasProducto,
+  resumenSmartbit,
+  sumarVendedores,
+} from "@/lib/smartbit";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -237,14 +247,17 @@ export async function GET(request: NextRequest) {
 
     // Lógica de filtro dinámico
     let companyFilter: any[] = [];
+    let cids: number[];
     if (
       companyIdParam &&
       companyIdParam !== "all" &&
       companyIdParam !== "null"
     ) {
       companyFilter = ["company_id", "=", parseInt(companyIdParam)];
+      cids = [parseInt(companyIdParam)];
     } else {
       companyFilter = ["company_id", "in", [9, 10, 7]];
+      cids = [9, 10, 7];
     }
 
     // 2. CONFIGURACIÓN DE FECHAS
@@ -265,10 +278,15 @@ export async function GET(request: NextRequest) {
       lastDayOfMonth = `${ld.getFullYear()}-${String(ld.getMonth() + 1).padStart(2, "0")}-${String(ld.getDate()).padStart(2, "0")}`;
     }
 
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
-      .toISOString()
-      .split("T")[0];
+    // Historial completo: la gráfica elige el rango en el navegador. Odoo se
+    // consulta igual solo desde el corte, así que no cuesta más.
+    const historiaDesde = HISTORIA_DESDE;
     const today = now.toISOString().split("T")[0];
+
+    // Antes del corte las ventas salen de Smartbit (lib/smartbit.ts); Odoo
+    // solo tiene ahí facturas migradas sueltas, así que se consulta desde el corte.
+    const odooDesdeMes = desdeOdoo(firstDayOfMonth);
+    const odooDesdeHistoria = desdeOdoo(historiaDesde);
 
     // FILTROS BASE
     const baseFilters = [
@@ -281,13 +299,19 @@ export async function GET(request: NextRequest) {
 
     const currentMonthFilters = [
       ...baseFilters,
-      ["date", ">=", firstDayOfMonth],
+      ["date", ">=", odooDesdeMes],
       ["date", "<=", lastDayOfMonth],
     ];
 
     // 3. OBTENER LÍNEAS DE FACTURACIÓN
-    const linesData =
-      (await callOdooRPC<any[]>("account.move.line", "read_group", [
+    const sellerExclusions: Record<number, string[]> = {
+      9: ["asistente", "yusne"],
+      10: ["asistente", "adriana"],
+      7: ["hercilio"],
+    };
+
+    const [odooLines, sbResumen, sbMensual] = await Promise.all([
+      callOdooRPC<any[]>("account.move.line", "read_group", [
         currentMonthFilters,
         // 👇 CAMBIO 1: Agregamos "quantity" para obtener las unidades
         ["price_subtotal", "quantity", "product_id"],
@@ -295,10 +319,17 @@ export async function GET(request: NextRequest) {
         0,
         0,
         "price_subtotal desc",
-      ])) || [];
+      ]),
+      resumenSmartbit(cids, firstDayOfMonth, lastDayOfMonth),
+      mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
+    ]);
+    const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
 
     // 4. OBTENER STOCK (Opcional: Si quieres que el stock sea global, no filtres aquí)
-    const productIds = linesData.map((l) => l.product_id[0]);
+    // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
+    const productIds = linesData
+      .map((l) => l.product_id[0])
+      .filter((id) => typeof id === "number");
     const productsInfo =
       productIds.length > 0
         ? (await callOdooRPC<any[]>("product.product", "read", [
@@ -384,7 +415,8 @@ export async function GET(request: NextRequest) {
         [
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
-          ["invoice_date", ">=", firstDayOfMonth],
+          ["invoice_date", ">=", odooDesdeMes],
+          ["invoice_date", "<=", lastDayOfMonth],
           companyFilter,
         ],
         ["amount_untaxed", "partner_id"],
@@ -404,23 +436,18 @@ export async function GET(request: NextRequest) {
       ]),
     ]);
 
-    const sellerExclusions: Record<number, string[]> = {
-      9: ["asistente", "yusne"],
-      10: ["asistente", "adriana"],
-      7: ["hercilio"],
-    };
-
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDayOfMonth],
+      ["invoice_date", ">=", odooDesdeMes],
+      ["invoice_date", "<=", lastDayOfMonth],
       companyFilter,
     ];
 
     const historyDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", twelveMonthsAgo],
+      ["invoice_date", ">=", odooDesdeHistoria],
       ["invoice_date", "<=", today],
       companyFilter,
     ];
@@ -441,6 +468,7 @@ export async function GET(request: NextRequest) {
       const amount = inv.amount_untaxed || 0;
       sellerStats[id].total += inv.move_type === "out_refund" ? -amount : amount;
     });
+    sumarVendedores(sellerStats, sbResumen.vendedores);
 
     const sellersDataFiltered = Object.values(sellerStats)
       .filter((s) => {
@@ -459,7 +487,7 @@ export async function GET(request: NextRequest) {
         .map((s) => s.id)
     );
 
-    const monthlyGrowthMap: Record<string, number> = {};
+    const monthlyGrowthMap: Record<string, number> = { ...sbMensual };
     (historyInvoices || []).forEach((inv: any) => {
       const id = inv.invoice_user_id?.[0] || 0;
       if (excludedIds.has(id)) return;
@@ -483,11 +511,7 @@ export async function GET(request: NextRequest) {
     const monthlyGrowth = Object.entries(monthlyGrowthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, total]) => ({ month, total }));
-    const lastMonthTotal = monthlyGrowth[monthlyGrowth.length - 2]?.total || 1;
-    const growthPercent = (
-      ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) *
-      100
-    ).toFixed(1);
+    const growthRate = crecimientoVsMesAnterior(monthlyGrowthMap, firstDayOfMonth.slice(0, 7), currentMonthTotal);
 
     return NextResponse.json({
       // 👇 CAMBIO 4: Quitamos .map((p) => ({ name: p.name })) en topProducts y bottomProducts
@@ -505,7 +529,7 @@ export async function GET(request: NextRequest) {
           .slice(0, 5),
       },
       salesByUser: sellersData,
-      topClients: (clientsRanking || [])
+      topClients: mezclarClientes(clientsRanking || [], sbResumen.clientes)
         .filter((c: any) => {
           const name = (c.partner_id?.[1] || "").toLowerCase();
           return !name.includes("supricom");
@@ -520,7 +544,7 @@ export async function GET(request: NextRequest) {
         totalMonth: currentMonthTotal,
         activeClientsCount: (allClientsCount || []).length,
         topProductName: processedItems[0]?.name || "N/A",
-        growthRate: `${parseFloat(growthPercent) > 0 ? "+" : ""}${growthPercent}%`,
+        growthRate,
       },
     });
   } catch (error: any) {
