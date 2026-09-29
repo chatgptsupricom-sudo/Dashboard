@@ -3,6 +3,7 @@ import { metodosDePedidos } from "@/lib/ventas/metodoRetiro";
 import {
   buscarFacturaCompra,
   buscarPickingEgreso,
+  motivoOrdenNoLista,
 } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -65,6 +66,16 @@ export async function GET(
         },
         { status: 404 },
       );
+    }
+
+    // Solo una orden "Lista" en Odoo: una ya hecha (despachada), cancelada o
+    // que todavía espera inventario no se registra. El POST lo vuelve a
+    // comprobar por su cuenta.
+    if (tipo !== "ingreso") {
+      const noLista = motivoOrdenNoLista((factura as any).estado || "");
+      if (noLista) {
+        return NextResponse.json({ error: noLista.mensaje, codigo: noLista.codigo }, { status: 409 });
+      }
     }
 
     // Una orden sin facturar no se arma (issue #298): se avisa y no se deja

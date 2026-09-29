@@ -7,6 +7,7 @@ import { filtroMercancia } from "@/lib/seguridad/filtros";
 import {
   agruparLineas,
   buscarPickingEgresoPorId,
+  motivoOrdenNoLista,
   parsearLista,
   serializarLista,
   type PickingOdoo,
@@ -218,6 +219,13 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+    // Solo una orden "Lista" en Odoo (la relee por id): ya hecha, cancelada o
+    // esperando inventario, no.
+    const noLista = motivoOrdenNoLista(picking.estado);
+    if (noLista) {
+      return NextResponse.json({ error: noLista.mensaje, codigo: noLista.codigo }, { status: 409 });
+    }
+
     // Método de retiro del pedido (lib/ventas/metodoRetiro): lo carga el
     // vendedor o el Asistente de Ventas. Sin él no se registra el egreso.
     const metodo = picking.odoo_sale_id

@@ -431,6 +431,27 @@ async function leerPickingEgreso(
 }
 
 /**
+ * Por qué una orden de despacho no se puede registrar como egreso según su
+ * estado en Odoo, o null si está "Lista" (`assigned`): inventario apartado y
+ * todavía sin validar. Es el mismo criterio de la lista de pendientes; sin
+ * esto, escribiendo el número a mano se podía registrar una orden ya hecha
+ * (despachada) o cancelada.
+ */
+export function motivoOrdenNoLista(estado: string): { codigo: string; mensaje: string } | null {
+  if (estado === "assigned") return null;
+  if (estado === "done") {
+    return { codigo: "orden_despachada", mensaje: "Esta orden ya se despachó en Odoo (está Hecha): no se puede registrar otra vez" };
+  }
+  if (estado === "cancel") {
+    return { codigo: "orden_cancelada", mensaje: "Esta orden está cancelada en Odoo" };
+  }
+  return {
+    codigo: "orden_no_lista",
+    mensaje: "Esta orden todavía no está Lista en Odoo (falta apartar el inventario)",
+  };
+}
+
+/**
  * Ordenes de despacho (egresos) que Odoo ya tiene "Listas" (`assigned`) —
  * inventario apartado y listo para cargar el camion —, con factura de
  * cliente vigente (issue #298), y que Almacen aun no proceso.
