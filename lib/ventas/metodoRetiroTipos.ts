@@ -35,7 +35,31 @@ export type FilaMetodo = {
   monto_facturado?: number | string | null;
   /** Aviso para Almacén / Ventas (ruta gratis perdida, ruta que no es la del cliente). */
   alerta?: string | null;
+  /** Lo que decidió el primer egreso (ver fijarRutaGratisFinal). */
+  ruta_gratis_final?: number | null;
+  /** Cuándo se fijó `ruta_gratis_final`; con valor, ya no se recalcula. */
+  recalculado_at?: string | null;
 };
+
+/**
+ * Con qué monto se decide la ruta gratis:
+ *  - sin factura: el pedido;
+ *  - con todo facturado, o con alguna nota de crédito: lo facturado (menos
+ *    las NC). Es el control contra bajar el pedido después de marcarlo;
+ *  - facturado en parte y sin NC: el pedido. Un pedido que se despacha en
+ *    dos entregas se factura por partes, y con lo facturado la primera orden
+ *    perdía la ruta gratis (400 $ de un pedido de 1.200 $).
+ */
+export function montoRutaGratis(d: {
+  base_pedido: number;
+  facturado: number | null;
+  por_facturar?: boolean;
+  con_nota_credito?: boolean;
+}): { monto: number; fuente: "pedido" | "facturado" } {
+  if (d.facturado === null) return { monto: d.base_pedido, fuente: "pedido" };
+  if (d.por_facturar && !d.con_nota_credito) return { monto: d.base_pedido, fuente: "pedido" };
+  return { monto: d.facturado, fuente: "facturado" };
+}
 
 /** Sucursal Valencia (cids 9): la única con monto mínimo de ruta gratis por ahora. */
 export const CIDS_VALENCIA = 9;
@@ -80,8 +104,19 @@ export function evaluarRutaGratis(o: {
   if (minimo === 300 && o.estadoCliente && !/carabobo/i.test(o.estadoCliente)) {
     minimo = 1000;
     alerta = `La dirección de entrega es de ${o.estadoCliente.replace(/\s*\(VE\)\s*$/i, "")}: la ruta Valencia (300 $) es solo para Carabobo, se exige el mínimo de 1000 $`;
+  } else if (minimo === 300 && !o.estadoCliente) {
+    // Sin estado no se puede confirmar que sea de Carabobo: se deja el
+    // mínimo de 300 $ (el dato falta en Odoo, no es culpa del cliente), pero
+    // se avisa en vez de pasarlo callado.
+    alerta = "La dirección de entrega no tiene estado en Odoo: no se pudo confirmar que sea de Carabobo (ruta Valencia, 300 $)";
   }
-  if (o.moneda && o.moneda.toUpperCase() !== "USD") return { gratis: null, minimo, alerta };
+  if (o.moneda && o.moneda.toUpperCase() !== "USD") {
+    // El mínimo es en USD. Con lo facturado (en la moneda de la compañía,
+    // USD) el caller pasa "USD"; esto queda para un pedido en otra moneda
+    // todavía sin facturar, que antes pasaba sin ningún aviso.
+    const aviso = `El pedido está en ${o.moneda}: la ruta gratis se decide con lo facturado`;
+    return { gratis: null, minimo, alerta: alerta ? `${alerta}. ${aviso}` : aviso };
+  }
   return { gratis: o.monto >= minimo ? 1 : 0, minimo, alerta };
 }
 

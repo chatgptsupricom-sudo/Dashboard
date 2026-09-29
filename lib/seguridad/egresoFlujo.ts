@@ -351,7 +351,8 @@ export const LOCAL_DESPACHO = "C4";
  * otra razon):
  *  - despachar: sale igual.
  *  - devolver: vuelve a Almacen a asignar despacho (no a armar de nuevo),
- *    para corregir y mandarlo otra vez. Lo ya pistoleado se conserva.
+ *    para corregir y mandarlo otra vez. La ronda nueva se cuenta desde cero;
+ *    solo los seriales ya pistoleados se conservan.
  *  - cancelar: no sale nunca (el cliente cancelo, por ejemplo). Se cierra
  *    sin despachar, pasando por calificar como cualquier otro.
  */

@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
 import { leerNovedades } from "@/lib/seguridad/novedades";
@@ -92,6 +92,62 @@ export function agruparLineas<T extends LineaPicking>(lineas: T[]): T[] {
     }
   }
   return [...porClave.values()];
+}
+
+/**
+ * SQL de "este egreso todavia ocupa su orden de despacho". Uno que Seguridad
+ * cerro sin despachar (cancelado, o el "no se despacha" de antes de #301) ya
+ * no: el picking sigue Listo en Odoo y se tiene que poder registrar otra vez.
+ * Sin esto la orden quedaba fuera de pendientes y el POST la rechazaba como
+ * repetida para siempre.
+ *
+ * Por `despachado` y la etapa, no por `decision_seguridad`: vale sin
+ * sql/egreso_decision_seguridad.sql, y es la misma expresion de la clave
+ * unica de sql/egreso_picking_unico.sql. Devolver a Almacen no cuenta: vuelve
+ * a `por_asignar_despacho`, sigue en curso.
+ */
+export function sqlEgresoOcupaOrden(alias = ""): string {
+  const a = alias ? `${alias}.` : "";
+  return `NOT (COALESCE(${a}despachado, 1) = 0 AND COALESCE(${a}etapa, '') IN ('por_calificar', 'cerrado'))`;
+}
+
+/** Otra persona tiene tomado el egreso (ver `conEgresoBloqueado`). */
+export class EgresoOcupado extends Error {}
+
+/**
+ * Corre `fn` con el egreso tomado: el cierre de la verificacion de Seguridad
+ * y cada lectura de la pistola pasan por aca, uno a la vez por egreso.
+ *
+ * Sin esto, una lectura que llegaba entre que el cierre leia los conteos y
+ * cambiaba la etapa quedaba escrita en la base pero fuera del estado y de las
+ * novedades del cierre: se aprobaba "conforme" con un conteo distinto.
+ *
+ * Un GET_LOCK con nombre y no `SELECT ... FOR UPDATE` sobre la fila: lo de
+ * adentro escribe por el pool (otras conexiones), y con la fila bloqueada un
+ * INSERT con FK al egreso se quedaria esperando a su propio candado.
+ */
+export async function conEgresoBloqueado<T>(id: number, fn: () => Promise<T>): Promise<T> {
+  const conn = await getConnection();
+  const nombre = `supricom_egreso_${id}`;
+  let sano = true;
+  try {
+    const [r]: any = await conn.query("SELECT GET_LOCK(?, 15) AS ok", [nombre]);
+    if (Number(r?.[0]?.ok) !== 1) {
+      throw new EgresoOcupado("Otra persona está guardando en este egreso. Intenta de nuevo.");
+    }
+    try {
+      return await fn();
+    } finally {
+      // Si no se pudo soltar, la conexion no vuelve al pool: con el candado
+      // puesto, el siguiente que la usara lo heredaria.
+      await conn.query("SELECT RELEASE_LOCK(?)", [nombre]).catch(() => {
+        sano = false;
+      });
+    }
+  } finally {
+    if (sano) conn.release();
+    else conn.destroy();
+  }
 }
 
 /**
@@ -452,6 +508,69 @@ export function motivoOrdenNoLista(estado: string): { codigo: string; mensaje: s
 }
 
 /**
+ * Por qué un egreso ya registrado no puede salir según lo que dice HOY Odoo,
+ * o null si puede. Lo "Lista" y facturada se revisa al registrar, pero entre
+ * eso y el portón pueden pasar horas: Caja revierte la factura con una nota
+ * de crédito, cancelan el picking o le cambian renglones. Sin volver a mirar,
+ * Seguridad aprobaba y la mercancía salía igual.
+ *
+ * "Hecha" (`done`) sí puede salir: es la orden ya validada en Odoo, no un
+ * cambio. Los renglones se comparan por producto y cantidad contra lo que se
+ * registró; con renglones viejos sin id de Odoo no hay con qué cruzar y esa
+ * parte se salta.
+ *
+ * `bloquea`: cancelada o sin factura no sale de ninguna forma (se devuelve a
+ * Almacén hasta que se facture, o se cancela). Renglones cambiados no se
+ * aprueban, pero Seguridad puede despacharla igual con motivo: el egreso no
+ * se puede volver a registrar con los renglones nuevos, y sin esa salida la
+ * orden quedaría trabada.
+ *
+ * Lanza si Odoo no responde: "no se pudo preguntar" no es "está bien".
+ */
+export async function motivoOrdenCambioEnOdoo(
+  pickingId: number,
+  items: Array<{ odoo_product_id: number | null; producto: string; cantidad_cargada: number | string }>,
+): Promise<{ motivo: string; bloquea: boolean } | null> {
+  // Por id no hay ambigüedad entre compañías (ver buscarPickingEgreso).
+  const picking = await buscarPickingEgresoPorId(pickingId, null);
+  if (!picking) return { motivo: "La orden de despacho ya no está en Odoo", bloquea: true };
+  if (picking.estado === "cancel") return { motivo: "La orden de despacho se canceló en Odoo", bloquea: true };
+  if ((picking.facturas || []).length === 0) {
+    return {
+      motivo: "La orden ya no tiene factura vigente en Odoo (se anuló o se revirtió con una nota de crédito)",
+      bloquea: true,
+    };
+  }
+
+  if (items.some((i) => i.odoo_product_id == null)) return null;
+  const redondear = (n: number) => Math.round(n * 1000) / 1000;
+  const antes = new Map<number, { producto: string; cantidad: number }>();
+  for (const i of items) {
+    const ya = antes.get(Number(i.odoo_product_id));
+    antes.set(Number(i.odoo_product_id), {
+      producto: i.producto,
+      cantidad: redondear((ya?.cantidad || 0) + Number(i.cantidad_cargada || 0)),
+    });
+  }
+  const cambios: string[] = [];
+  const vistos = new Set<number>();
+  for (const l of picking.lineas) {
+    if (l.odoo_product_id == null) continue;
+    vistos.add(l.odoo_product_id);
+    const a = antes.get(l.odoo_product_id);
+    const ahora = redondear(l.cantidad_cargada);
+    if (!a) cambios.push(`${l.producto} (nuevo en la orden)`);
+    else if (a.cantidad !== ahora) cambios.push(`${a.producto} (antes ${a.cantidad}, ahora ${ahora})`);
+  }
+  for (const [pid, a] of antes) {
+    if (!vistos.has(pid)) cambios.push(`${a.producto} (ya no está en la orden)`);
+  }
+  if (cambios.length === 0) return null;
+  const lista = cambios.slice(0, 3).join("; ") + (cambios.length > 3 ? ` y ${cambios.length - 3} más` : "");
+  return { motivo: `La orden cambió en Odoo después de registrarla: ${lista}`, bloquea: false };
+}
+
+/**
  * Ordenes de despacho (egresos) que Odoo ya tiene "Listas" (`assigned`) —
  * inventario apartado y listo para cargar el camion —, con factura de
  * cliente vigente (issue #298), y que Almacen aun no proceso.
@@ -512,6 +631,7 @@ export async function listarPickingsEgresoPendientes(
     usados = await query(
       `SELECT odoo_picking_id FROM seguridad_mercancia
         WHERE tipo = 'egreso' AND odoo_picking_id IS NOT NULL
+          AND ${sqlEgresoOcupaOrden()}
           ${cids !== null ? "AND cids = ?" : ""}`,
       cids !== null ? [cids] : [],
     );

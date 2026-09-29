@@ -2777,6 +2777,9 @@
       "sin_verificar": "Not verified",
       "vacio": "No movements yet.",
       "error": "Could not save",
+      "error_carga": "Couldn't load the record.",
+      "reintentar": "Retry",
+      "error_recarga": "Couldn't refresh the screen: showing the last data loaded.",
       "sin_factura": "No Odoo invoice",
       "diferencia": "Difference",
       "buscar_factura_compra": "Purchase order invoice",
@@ -2800,6 +2803,7 @@
         "subtitulo": "Your branch at a glance",
         "loading": "Loading…",
         "error": "Could not load the summary. Try reloading the page.",
+        "vs_ayer": "{delta} vs yesterday",
         "kpi_egresos_hoy": "Dispatches today",
         "kpi_pendientes": "Pending verification",
         "kpi_descuadres": "Mismatches (30 days)",
@@ -2836,7 +2840,8 @@
         "listo_verificar": "Dispatch ready to verify at the gate",
         "aprobado": "Security approved and dispatched",
         "no_aprobado": "Security did not approve the dispatch",
-        "devuelto": "Security didn't dispatch the order: it's back in Warehouse"
+        "devuelto": "Security didn't dispatch the order: it's back in Warehouse",
+        "cancelado": "Security cancelled the dispatch: the order will not go out"
       },
       "personal_almacen": {
         "titulo": "Warehouse staff",
@@ -3017,7 +3022,7 @@
           "aprobar_requiere": "There {n, plural, =1 {is # issue} other {are # issues}}: it can't be approved. Decide whether to dispatch anyway.",
           "decidir": "There are issues: decide",
           "no_despachar": "Send back to Warehouse",
-          "no_despachar_ayuda": "It goes back to Warehouse to fix it and assign the dispatch again. What was scanned is kept.",
+          "no_despachar_ayuda": "It goes back to Warehouse to fix it and assign the dispatch again. Everything is counted again at the next check; only the serials already scanned are kept.",
           "motivo": "Reason (required)",
           "excel_seriales": "Serials Excel",
           "ronda": "Check {n}",

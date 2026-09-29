@@ -16,13 +16,19 @@ import {
   rechazoDeSeguridad,
   puedeHacer,
   requiereVehiculo,
+  verificaPorSerial,
   type Accion,
   type Aspecto,
   type DecisionSeguridad,
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { cargarMovimiento } from "@/lib/seguridad/mercancia";
+import {
+  cargarMovimiento,
+  conEgresoBloqueado,
+  EgresoOcupado,
+  motivoOrdenCambioEnOdoo,
+} from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import {
   guardarNovedadesCierre,
@@ -104,23 +110,6 @@ export async function POST(
       );
     }
 
-    const datos = await cargarMovimiento(id);
-    // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
-    // que existe. Mismo criterio que el resto del modulo.
-    if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
-      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    }
-    const mov = datos.movimiento;
-    if (mov.tipo !== "egreso" || !mov.etapa) {
-      return NextResponse.json(
-        { error: "Este registro no sigue el flujo por etapas" },
-        { status: 409 },
-      );
-    }
-
-    const desde: Etapa = ETAPA_DE_ACCION[accion];
-    if (mov.etapa !== desde) return conflicto();
-
     // Quien firma cada paso sale de la sesion, no del body: el nombre que
     // queda registrado tiene que ser el de quien de verdad pulso el boton.
     const quien = String(auth.payload?.name || auth.payload?.email || rolSesion).slice(
@@ -128,7 +117,32 @@ export async function POST(
       MAX.nombre,
     );
 
-    const resultado = await ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    const correr = async (): Promise<Resultado | NextResponse> => {
+      const datos = await cargarMovimiento(id);
+      // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
+      // que existe. Mismo criterio que el resto del modulo.
+      if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
+        return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+      }
+      const mov = datos.movimiento;
+      if (mov.tipo !== "egreso" || !mov.etapa) {
+        return NextResponse.json(
+          { error: "Este registro no sigue el flujo por etapas" },
+          { status: 409 },
+        );
+      }
+
+      const desde: Etapa = ETAPA_DE_ACCION[accion];
+      if (mov.etapa !== desde) return conflicto();
+
+      return ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    };
+
+    // El cierre de Seguridad lee los conteos y cambia la etapa con el egreso
+    // tomado, igual que cada lectura de la pistola (.../escaneo): una lectura
+    // que llegue en el medio espera y despues ve que ya no esta por verificar.
+    const resultado =
+      accion === "verificar_seguridad" ? await conEgresoBloqueado(id, correr) : await correr();
     if (resultado instanceof NextResponse) return resultado;
 
     const actualizado = await cargarMovimiento(id);
@@ -147,6 +161,7 @@ export async function POST(
           documento: m.odoo_picking_name,
           aprobado: m.aprobado === null ? undefined : Number(m.aprobado) === 1,
           despachado: m.despachado === null ? undefined : Number(m.despachado) === 1,
+          cancelado: m.decision_seguridad === "cancelar" || undefined,
         },
         Number(m.cids) || null,
       );
@@ -159,6 +174,9 @@ export async function POST(
       ...actualizado,
     });
   } catch (error: any) {
+    if (error instanceof EgresoOcupado) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("Error moviendo egreso de etapa:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -431,18 +449,19 @@ async function ejecutar(
       let decision: DecisionSeguridad = "despachar";
       let motivo: string | null = null;
       if (!aprobado) {
-        // `despachar: true/false` es como lo mandaba la pantalla antes de la
-        // opcion "cancelar": se sigue aceptando.
+        // `despachar: true` (la pantalla de antes de "cancelar") se sigue
+        // aceptando. `despachar: false` no: antes de #301 era "no sale, se
+        // cierra" y ahora se leia como "devolver", asi que una pantalla vieja
+        // en cache devolvia el egreso a Almacen cuando queria cerrarlo. Sin
+        // `decision` explicita, se pide.
         const pedida = esDecision(body?.decision)
           ? body.decision
-          : typeof body?.despachar === "boolean"
-            ? body.despachar
-              ? "despachar"
-              : "devolver"
+          : body?.despachar === true
+            ? "despachar"
             : null;
         if (!pedida) {
           return NextResponse.json(
-            { error: "Decide si se despacha, vuelve a Almacen o se cancela" },
+            { error: "Decide si se despacha, vuelve a Almacén o se cancela. Si no ves esas opciones, recarga la página." },
             { status: 400 },
           );
         }
@@ -458,9 +477,39 @@ async function ejecutar(
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
 
-      // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
-      // pistoleado se conserva; aprobado/despachado = 0 quedan como el
-      // resultado de esta ronda hasta la siguiente verificacion.
+      // Antes de dejarla salir, Odoo otra vez: al registrar estaba Lista y
+      // facturada, pero de una nota de credito o un picking cancelado despues
+      // no se enteraba nadie. Cancelada o sin factura no sale; con renglones
+      // cambiados no se aprueba, se despacha igual con motivo o se devuelve.
+      if (despachar && mov.odoo_picking_id) {
+        let cambio: Awaited<ReturnType<typeof motivoOrdenCambioEnOdoo>>;
+        try {
+          cambio = await motivoOrdenCambioEnOdoo(Number(mov.odoo_picking_id), items);
+        } catch (e: any) {
+          console.error(`[egreso ${id}] no se pudo revisar la orden en Odoo:`, e?.message || e);
+          return NextResponse.json(
+            { error: "No se pudo confirmar la orden en Odoo antes de despacharla. Intenta de nuevo." },
+            { status: 502 },
+          );
+        }
+        if (cambio && (cambio.bloquea || aprobado)) {
+          return NextResponse.json(
+            {
+              error: cambio.bloquea
+                ? `${cambio.motivo}. No puede salir: devuélvelo a Almacén o cancélalo.`
+                : `${cambio.motivo}. No se puede aprobar: despáchalo igual con el motivo, devuélvelo o cancélalo.`,
+              codigo: "orden_cambio_odoo",
+            },
+            { status: 400 },
+          );
+        }
+        // Despachado igual: el cambio queda escrito junto al motivo.
+        if (cambio) motivo = `${motivo} · ${cambio.motivo}`.slice(0, MAX.motivo);
+      }
+
+      // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva que
+      // se cuenta desde cero (ver abajo); aprobado/despachado = 0 quedan como
+      // el resultado de esta ronda hasta la siguiente verificacion.
       // Cancelar: no sale; pasa a calificar con despachado = 0 y se cierra
       // como cualquier otro (antes de #301 era el unico "no despachar").
       // Sin sql/egreso_verificacion_c4.sql se cierra igual, sin el local ni
@@ -515,6 +564,27 @@ async function ejecutar(
             (faltaMigracion(e) ? ": falta correr sql/egreso_verificacion_c4.sql" : ""),
           e?.message || e,
         );
+      }
+
+      // Ronda nueva, conteo nuevo: los renglones sin serial vuelven a "sin
+      // contar" y sin "No salio". Sumarle la ronda 2 a la 1 daba sobras falsas
+      // (9 + 10 = 19) o dejaba sin revisar lo que ya se habia contado. Lo de
+      // esta ronda ya quedo en sus novedades de cierre. Los seriales
+      // pistoleados se conservan: son unidades identificadas, no un conteo.
+      if (devolver) {
+        const sinSerial = items.filter((i) => !verificaPorSerial(i, datos.seriales)).map((i) => Number(i.id));
+        if (sinSerial.length > 0) {
+          try {
+            await query(
+              `UPDATE seguridad_mercancia_items
+                  SET cantidad_verificada = NULL, no_salio = 0, observacion = NULL
+                WHERE mercancia_id = ? AND id IN (${sinSerial.map(() => "?").join(", ")})`,
+              [id, ...sinSerial],
+            );
+          } catch (e: any) {
+            console.error(`[egreso ${id}] no se reiniciaron los conteos de la ronda ${ronda}:`, e?.message || e);
+          }
+        }
       }
 
       if (!aprobado) {

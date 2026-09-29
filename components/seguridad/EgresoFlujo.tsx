@@ -264,6 +264,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
       setMotivoNoAprobado("");
     }
     claveDecision.current = clave;
+    // Fuera de la etapa donde se escribe, lo marcado "sin guardar" ya no
+    // cuenta: si otra persona verifico el armado (o cerro el porton), la
+    // columna seguia mostrando lo tecleado aca en vez de lo guardado. Tambien
+    // limpia el porton al devolverse, para que la ronda nueva arranque de la
+    // base.
+    for (const k of [...sinGuardar.current]) {
+      const [campo] = k.split(":");
+      const etapaDelCampo = campo === "armado" ? "pre_despacho" : "por_verificar";
+      if (m?.etapa !== etapaDelCampo) sinGuardar.current.delete(k);
+    }
     setMov(m);
     const its = (json.items || []) as Item[];
     setItems(its);
@@ -295,11 +305,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setMotivos((prev) => conservar("motivo", prev, mo));
   }, []);
 
+  // Error al leer el egreso. Con datos en pantalla se avisa que pueden estar
+  // viejos; sin datos, se ofrece reintentar. Antes se ignoraba: la primera
+  // carga fallida se veia "vacia" y las recargas quedaban sin aviso.
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const cargar = useCallback(async () => {
     try {
       const res = await fetch(`/api/seguridad/mercancia/${id}`);
-      if (!res.ok) return;
-      aplicar(await res.json());
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || res.statusText || "");
+      aplicar(json);
+      setErrorCarga(null);
+    } catch (e: any) {
+      setErrorCarga(e?.message || " ");
     } finally {
       setCargando(false);
     }
@@ -311,9 +329,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // En vivo: cualquier movimiento de ESTE egreso (lo mueve el otro rol, o
   // otra persona del mismo) recarga la pantalla.
-  useMercanciaEnVivo((a) => {
-    if (a.id === Number(id)) void cargar();
-  });
+  // Al reconectar, de nuevo entero: lo que se esta escribiendo se conserva
+  // (ver `aplicar`).
+  useMercanciaEnVivo(
+    (a) => {
+      if (a.id === Number(id)) void cargar();
+    },
+    () => void cargar(),
+  );
 
   // Los catalogos solo hacen falta en el paso de asignar despacho; choferes y
   // unidades, solo si sale por ruta.
@@ -351,15 +374,23 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setAviso(null);
     setEnviando(true);
     try {
+      // Tocar Aprobar saca el foco de la casilla y su guardado sale en ese
+      // mismo instante: sin esperarlo, el servidor decidia con el conteo
+      // anterior (se aprobaba "conforme" un 10 que ya se habia corregido a 9)
+      // o pedia un motivo que ya estaba escrito.
+      await Promise.allSettled([...guardadosEnCamino.current]);
       const res = await fetch(`/api/seguridad/mercancia/${id}/etapa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion, ...extra }),
       });
       const json = await res.json().catch(() => ({}));
-      // El conteo del armado se manda entero al verificar: la respuesta (o la
-      // recarga) trae lo guardado, ya no hay nada "sin guardar" ahi.
-      if (accion === "verificar_armado") {
+      // El conteo del armado se manda entero al verificar: si el servidor lo
+      // guardo (o ya lo movio otro, 409), la respuesta o la recarga trae lo
+      // guardado y no queda nada "sin guardar". Con un 400 o un 500 no se
+      // guardo nada: se deja marcado, o el siguiente aviso en vivo pisaba
+      // todo lo que Almacen tecleo.
+      if (accion === "verificar_armado" && (res.ok || res.status === 409)) {
         for (const k of [...sinGuardar.current]) if (k.startsWith("armado:")) sinGuardar.current.delete(k);
       }
       if (res.status === 409) {
@@ -390,6 +421,35 @@ export default function EgresoFlujo({ id }: { id: string }) {
     }
   };
 
+  // Excel de seriales: con fetch y no navegando, como la lista. Si el
+  // servidor fallaba, el navegador salia a una pagina con el JSON del error
+  // y se perdia la pantalla (y lo que se estaba contando).
+  const [bajandoSeriales, setBajandoSeriales] = useState(false);
+  const bajarSeriales = async () => {
+    setError(null);
+    setBajandoSeriales(true);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/seriales/export`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const nombre =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "seriales.xlsx";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      a.click();
+      // Liberarla en el mismo tick cancela la descarga en algunos Safari.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+    } finally {
+      setBajandoSeriales(false);
+    }
+  };
+
   // "Actualizar desde Odoo" (issue #299): relee los seriales del picking.
   const actualizarSeriales = async () => {
     setError(null);
@@ -413,8 +473,17 @@ export default function EgresoFlujo({ id }: { id: string }) {
   // sepa si se volvio a escribir mientras estaba en camino.
   const enPantalla = useRef({ porton, noSalio, motivos });
   enPantalla.current = { porton, noSalio, motivos };
+  // Guardados del porton que todavia no respondieron: `accionar` los espera.
+  const guardadosEnCamino = useRef(new Set<Promise<void>>());
 
-  const guardarPorton = async (itemId: number, datos: Record<string, unknown>) => {
+  const guardarPorton = (itemId: number, datos: Record<string, unknown>) => {
+    const p = enviarPorton(itemId, datos);
+    guardadosEnCamino.current.add(p);
+    p.finally(() => guardadosEnCamino.current.delete(p)).catch(() => {});
+    return p;
+  };
+
+  const enviarPorton = async (itemId: number, datos: Record<string, unknown>) => {
     setError(null);
     // Lo que se manda deja de estar "sin guardar" cuando responde, salvo que
     // se haya vuelto a escribir mientras tanto: eso sigue sin guardar y se
@@ -456,9 +525,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
     );
   }
   if (!mov || !esEtapa(mov.etapa)) {
+    // Sin datos por un error (mala señal en el patio), no "vacío": parecía
+    // que el registro no existía.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
-        {tm("vacio")}
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-400 text-sm px-4 text-center">
+        {errorCarga ? (
+          <>
+            <span className="text-red-600">{tm("error_carga")} {errorCarga}</span>
+            <BotonSecundario onClick={() => { setCargando(true); void cargar(); }}>{tm("reintentar")}</BotonSecundario>
+          </>
+        ) : (
+          tm("vacio")
+        )}
       </div>
     );
   }
@@ -568,6 +646,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
         {aviso && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {aviso}
+          </div>
+        )}
+        {errorCarga && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="flex-1 min-w-0">{tm("error_recarga")}</span>
+            <BotonSecundario onClick={() => void cargar()}>{tm("reintentar")}</BotonSecundario>
           </div>
         )}
 
@@ -804,9 +888,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
             {seriales.length > 0 && (mov.verificado_at || contandoPorton) && (
               <div className="flex justify-end">
                 <BotonSecundario
-                  onClick={() => {
-                    window.location.href = `/api/seguridad/mercancia/${id}/seriales/export`;
-                  }}
+                  onClick={() => void bajarSeriales()}
+                  disabled={bajandoSeriales}
                   icon={Download}
                 >
                   {tf("verificacion.excel_seriales")}
@@ -1429,6 +1512,21 @@ function Celda({
   /** Al salir del campo (en C4 se guarda al momento). */
   onBlur?: (v: string) => void;
 }) {
+  // La pistola es un teclado: si el foco quedo en esta casilla, la siguiente
+  // lectura (un EAN de 13 digitos) se escribia como cantidad y se guardaba al
+  // salir. Se reconoce por la velocidad (una persona no teclea 6 digitos en
+  // un cuarto de segundo): se descarta y el foco vuelve a la pistola.
+  const antesDeRafaga = useRef(valor);
+  const teclas = useRef<number[]>([]);
+  const alPistola = (input: HTMLInputElement) => {
+    // Despues del render: el blur (que guarda) tiene que leer el valor ya
+    // corregido, no la lectura.
+    setTimeout(() => {
+      const pistola = document.querySelector<HTMLInputElement>("input[data-pistola]");
+      if (pistola) pistola.focus();
+      else input.blur();
+    }, 0);
+  };
   if (!editable) {
     return (
       <span
@@ -1446,7 +1544,27 @@ function Celda({
       inputMode="decimal"
       min={0}
       value={valor}
+      onFocus={() => {
+        teclas.current = [];
+      }}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        const ahora = Date.now();
+        if (e.key !== "Enter") {
+          if (e.key.length !== 1) return;
+          // Lo que habia antes de esta rafaga de teclas: si resulta ser una
+          // lectura, se vuelve a eso (y no se pierde lo tecleado a mano antes).
+          const ultima = teclas.current[teclas.current.length - 1];
+          if (ultima === undefined || ahora - ultima > 100) antesDeRafaga.current = e.currentTarget.value;
+          teclas.current = [...teclas.current, ahora].slice(-20);
+          return;
+        }
+        e.preventDefault();
+        const recientes = teclas.current.filter((t) => ahora - t < 250);
+        if (recientes.length >= 6) onChange(antesDeRafaga.current);
+        teclas.current = [];
+        alPistola(e.currentTarget);
+      }}
       onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
       className={`w-full h-10 px-2 text-right rounded-lg border text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-violet-100 ${
         diferencia

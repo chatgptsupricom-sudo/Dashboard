@@ -106,9 +106,12 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
   // En vivo: Almacen guarda una carga o Seguridad la verifica en el porton y
   // este listado se actualiza solo, sin recargar la pagina. Se ignora lo del
   // otro sentido (un ingreso no cambia la lista de egresos).
-  useMercanciaEnVivo((aviso) => {
-    if (aviso.tipo === tipo) void cargar();
-  });
+  useMercanciaEnVivo(
+    (aviso) => {
+      if (aviso.tipo === tipo) void cargar();
+    },
+    () => void cargar(),
+  );
 
   const esEgreso = tipo === "egreso";
   const meToca = (m: Movimiento) =>
