@@ -257,10 +257,6 @@ export async function POST(request: NextRequest) {
       );
     }
     tipoEntrega = tipoEntregaDeMetodo(metodo.metodo);
-    // La ruta gratis final (recalculada con lo facturado) queda guardada.
-    await fijarRutaGratisFinal(metodo).catch((e: any) =>
-      console.warn("[egreso] no se pudo guardar la ruta gratis final:", e?.message),
-    );
     if (!esTipoEntrega(tipoEntrega)) {
       return NextResponse.json({ error: "tipo de entrega invalido" }, { status: 400 });
     }
@@ -426,6 +422,13 @@ export async function POST(request: NextRequest) {
     } finally {
       conn.release();
     }
+
+    // La ruta gratis con que sale el pedido queda fijada, recien con el egreso
+    // ya registrado: antes se escribia aunque el alta se rechazara despues
+    // (sin factura, repetida), y un reintento la pisaba.
+    await fijarRutaGratisFinal(metodo).catch((e: any) =>
+      console.warn("[egreso] no se pudo guardar la ruta gratis final:", e?.message),
+    );
 
     // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
     // preparar sin recargar la pantalla del porton.

@@ -345,6 +345,14 @@ async function guardar(request: NextRequest, sesion: Sesion): Promise<NextRespon
     if (n !== null && (!Number.isFinite(n) || n < 0)) {
       return NextResponse.json({ error: `Cantidad invalida en "${item.producto}"` }, { status: 400 });
     }
+    // Un codigo de barras leido en la casilla (la pistola escribe como un
+    // teclado) llegaba como cantidad: 7591234567890 y una "sobra" enorme.
+    if (n !== null && n > Math.max(Number(item.cantidad_cargada) * 10, 1000)) {
+      return NextResponse.json(
+        { error: `Cantidad fuera de rango en "${item.producto}": ¿se leyó un código en la casilla?` },
+        { status: 400 },
+      );
+    }
     sets.push("cantidad_verificada = ?");
     valores.push(n);
   }

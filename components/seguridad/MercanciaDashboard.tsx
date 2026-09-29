@@ -111,9 +111,12 @@ export default function MercanciaDashboard() {
   }, [cargar]);
 
   // En vivo: los KPIs son de egresos, asi que un ingreso no los mueve.
-  useMercanciaEnVivo((aviso) => {
-    if (aviso.tipo === "egreso") void cargar();
-  });
+  useMercanciaEnVivo(
+    (aviso) => {
+      if (aviso.tipo === "egreso") void cargar();
+    },
+    () => void cargar(),
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">

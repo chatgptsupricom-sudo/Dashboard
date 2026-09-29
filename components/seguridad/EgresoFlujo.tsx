@@ -264,6 +264,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
       setMotivoNoAprobado("");
     }
     claveDecision.current = clave;
+    // Fuera de la etapa donde se escribe, lo marcado "sin guardar" ya no
+    // cuenta: si otra persona verifico el armado (o cerro el porton), la
+    // columna seguia mostrando lo tecleado aca en vez de lo guardado. Tambien
+    // limpia el porton al devolverse, para que la ronda nueva arranque de la
+    // base.
+    for (const k of [...sinGuardar.current]) {
+      const [campo] = k.split(":");
+      const etapaDelCampo = campo === "armado" ? "pre_despacho" : "por_verificar";
+      if (m?.etapa !== etapaDelCampo) sinGuardar.current.delete(k);
+    }
     setMov(m);
     const its = (json.items || []) as Item[];
     setItems(its);
@@ -311,9 +321,14 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // En vivo: cualquier movimiento de ESTE egreso (lo mueve el otro rol, o
   // otra persona del mismo) recarga la pantalla.
-  useMercanciaEnVivo((a) => {
-    if (a.id === Number(id)) void cargar();
-  });
+  // Al reconectar, de nuevo entero: lo que se esta escribiendo se conserva
+  // (ver `aplicar`).
+  useMercanciaEnVivo(
+    (a) => {
+      if (a.id === Number(id)) void cargar();
+    },
+    () => void cargar(),
+  );
 
   // Los catalogos solo hacen falta en el paso de asignar despacho; choferes y
   // unidades, solo si sale por ruta.
@@ -362,9 +377,12 @@ export default function EgresoFlujo({ id }: { id: string }) {
         body: JSON.stringify({ accion, ...extra }),
       });
       const json = await res.json().catch(() => ({}));
-      // El conteo del armado se manda entero al verificar: la respuesta (o la
-      // recarga) trae lo guardado, ya no hay nada "sin guardar" ahi.
-      if (accion === "verificar_armado") {
+      // El conteo del armado se manda entero al verificar: si el servidor lo
+      // guardo (o ya lo movio otro, 409), la respuesta o la recarga trae lo
+      // guardado y no queda nada "sin guardar". Con un 400 o un 500 no se
+      // guardo nada: se deja marcado, o el siguiente aviso en vivo pisaba
+      // todo lo que Almacen tecleo.
+      if (accion === "verificar_armado" && (res.ok || res.status === 409)) {
         for (const k of [...sinGuardar.current]) if (k.startsWith("armado:")) sinGuardar.current.delete(k);
       }
       if (res.status === 409) {
@@ -1443,6 +1461,21 @@ function Celda({
   /** Al salir del campo (en C4 se guarda al momento). */
   onBlur?: (v: string) => void;
 }) {
+  // La pistola es un teclado: si el foco quedo en esta casilla, la siguiente
+  // lectura (un EAN de 13 digitos) se escribia como cantidad y se guardaba al
+  // salir. Se reconoce por la velocidad (una persona no teclea 6 digitos en
+  // un cuarto de segundo): se descarta y el foco vuelve a la pistola.
+  const antesDeRafaga = useRef(valor);
+  const teclas = useRef<number[]>([]);
+  const alPistola = (input: HTMLInputElement) => {
+    // Despues del render: el blur (que guarda) tiene que leer el valor ya
+    // corregido, no la lectura.
+    setTimeout(() => {
+      const pistola = document.querySelector<HTMLInputElement>("input[data-pistola]");
+      if (pistola) pistola.focus();
+      else input.blur();
+    }, 0);
+  };
   if (!editable) {
     return (
       <span
@@ -1460,7 +1493,27 @@ function Celda({
       inputMode="decimal"
       min={0}
       value={valor}
+      onFocus={() => {
+        teclas.current = [];
+      }}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        const ahora = Date.now();
+        if (e.key !== "Enter") {
+          if (e.key.length !== 1) return;
+          // Lo que habia antes de esta rafaga de teclas: si resulta ser una
+          // lectura, se vuelve a eso (y no se pierde lo tecleado a mano antes).
+          const ultima = teclas.current[teclas.current.length - 1];
+          if (ultima === undefined || ahora - ultima > 100) antesDeRafaga.current = e.currentTarget.value;
+          teclas.current = [...teclas.current, ahora].slice(-20);
+          return;
+        }
+        e.preventDefault();
+        const recientes = teclas.current.filter((t) => ahora - t < 250);
+        if (recientes.length >= 6) onChange(antesDeRafaga.current);
+        teclas.current = [];
+        alPistola(e.currentTarget);
+      }}
       onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
       className={`w-full h-10 px-2 text-right rounded-lg border text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-violet-100 ${
         diferencia

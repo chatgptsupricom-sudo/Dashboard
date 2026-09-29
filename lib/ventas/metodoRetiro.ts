@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutas } from "@/lib/rma/rutasEnvio";
-import { esMetodoRetiro, evaluarRutaGratis, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { esMetodoRetiro, evaluarRutaGratis, montoRutaGratis, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 // Lo que no toca la base (tipos, etiquetas) vive en metodoRetiroTipos para
 // que lo puedan usar las pantallas; se reexporta para el servidor.
@@ -90,7 +90,7 @@ export async function metodosDePedidos(saleIds: number[]): Promise<Map<number, F
   await asegurarTablaMetodoRetiro();
   const r = await query(
     `SELECT odoo_sale_id, metodo, ruta_id, ruta_nombre, agencia, nota, registrado_por, updated_at,
-            ruta_gratis, monto_base, monto_facturado, ruta_gratis_final, alerta
+            ruta_gratis, monto_base, monto_facturado, ruta_gratis_final, alerta, recalculado_at
        FROM ventas_metodo_retiro WHERE odoo_sale_id IN (${ids.map(() => "?").join(",")})`,
     ids,
   );
@@ -106,6 +106,10 @@ export type DatosPedido = {
   base_pedido: number;
   /** Facturado sin IVA: facturas publicadas menos notas de crédito. null = sin factura. */
   facturado: number | null;
+  /** A la orden de venta le queda algo por facturar (`invoice_status = 'to invoice'`). */
+  por_facturar: boolean;
+  /** Tiene alguna nota de crédito publicada. */
+  con_nota_credito: boolean;
   /** Estado de la dirección de entrega (ej. "Carabobo (VE)"). */
   estado_cliente: string | null;
 };
@@ -117,7 +121,7 @@ export async function datosDePedidos(saleIds: number[]): Promise<Map<number, Dat
   const ventas =
     (await callOdooRPC<any[]>("sale.order", "read", [
       ids,
-      ["company_id", "currency_id", "amount_untaxed", "invoice_ids", "partner_shipping_id", "partner_id"],
+      ["company_id", "currency_id", "amount_untaxed", "invoice_ids", "invoice_status", "partner_shipping_id", "partner_id"],
     ])) || [];
   const facturaIds = [...new Set(ventas.flatMap((v) => v.invoice_ids || []))];
   const direcciones = [...new Set(ventas.map((v) => (v.partner_shipping_id || v.partner_id)?.[0]).filter(Boolean))];
@@ -143,6 +147,8 @@ export async function datosDePedidos(saleIds: number[]): Promise<Map<number, Dat
       moneda: v.currency_id?.[1] || "",
       base_pedido: Number(v.amount_untaxed) || 0,
       facturado,
+      por_facturar: v.invoice_status === "to invoice",
+      con_nota_credito: publicadas.some((f: any) => f.move_type === "out_refund"),
       estado_cliente: estado.get((v.partner_shipping_id || v.partner_id)?.[0]) ?? null,
     });
   }
@@ -152,15 +158,28 @@ export async function datosDePedidos(saleIds: number[]): Promise<Map<number, Dat
 const usd = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
- * La ruta gratis que vale ahora: con lo FACTURADO si ya hay factura (si no,
- * con el pedido) y con el estado del cliente. Devuelve el método con
- * `ruta_gratis` actualizado, lo que marcó el vendedor en
- * `ruta_gratis_vendedor` y un aviso si cambió o si la ruta no es la del
- * cliente. Métodos que no son por ruta, tal cual.
+ * La ruta gratis que vale ahora: con el monto de `montoRutaGratis` (lo
+ * facturado, o el pedido mientras se factura por partes) y con el estado del
+ * cliente. Devuelve el método con `ruta_gratis` actualizado, lo que marcó el
+ * vendedor en `ruta_gratis_vendedor` y un aviso si cambió o si la ruta no es
+ * la del cliente. Métodos que no son por ruta, tal cual.
+ *
+ * Una vez que Almacén registró el egreso (`recalculado_at`), vale lo que se
+ * fijó ahí: una NC posterior no cambia "gratis / flete" de un pedido que ya
+ * salió.
  */
 export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined): FilaMetodo {
-  if (m.metodo !== "ruta" || !d) return m;
-  const monto = d.facturado ?? d.base_pedido;
+  if (m.metodo !== "ruta") return m;
+  const vendedor = m.ruta_gratis === null || m.ruta_gratis === undefined ? null : Number(m.ruta_gratis);
+  if (m.recalculado_at) {
+    return {
+      ...m,
+      ruta_gratis_vendedor: vendedor,
+      ruta_gratis: m.ruta_gratis_final === null || m.ruta_gratis_final === undefined ? null : Number(m.ruta_gratis_final),
+    };
+  }
+  if (!d) return m;
+  const { monto, fuente } = montoRutaGratis(d);
   const ev = evaluarRutaGratis({
     companyId: d.company_id,
     rutaNombre: m.ruta_nombre,
@@ -169,10 +188,9 @@ export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined): Fi
     estadoCliente: d.estado_cliente,
   });
   const alertas: string[] = [];
-  const vendedor = m.ruta_gratis === null || m.ruta_gratis === undefined ? null : Number(m.ruta_gratis);
   if (vendedor === 1 && ev.gratis === 0) {
     alertas.push(
-      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${d.facturado !== null ? "lo facturado" : "el pedido"} sin IVA es ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
+      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${fuente === "facturado" ? "lo facturado" : "el pedido"} sin IVA es ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
     );
   }
   if (ev.alerta) alertas.push(ev.alerta);
@@ -196,15 +214,18 @@ export async function metodosEvaluados(saleIds: number[]): Promise<Map<number, F
 }
 
 /**
- * Al registrar el egreso: guarda la decisión final (con lo facturado) en el
- * método del pedido, para que quede de dónde salió.
+ * Al registrar el egreso: guarda la decisión final en el método del pedido,
+ * para que quede de dónde salió y deje de recalcularse (aplicarEvaluacion).
+ * Solo la primera vez: con un pedido de varias órdenes, cada egreso pisaba
+ * la decisión del anterior. Se vuelve a abrir si el vendedor cambia el
+ * método (guardarMetodoRetiro limpia `recalculado_at`).
  */
 export async function fijarRutaGratisFinal(m: FilaMetodo): Promise<void> {
-  if (m.metodo !== "ruta") return;
+  if (m.metodo !== "ruta" || m.recalculado_at) return;
   await query(
     `UPDATE ventas_metodo_retiro
         SET monto_facturado = ?, ruta_gratis_final = ?, alerta = ?, recalculado_at = NOW()
-      WHERE odoo_sale_id = ?`,
+      WHERE odoo_sale_id = ? AND recalculado_at IS NULL`,
     [m.monto_facturado ?? null, m.ruta_gratis ?? null, m.alerta ? String(m.alerta).slice(0, 400) : null, m.odoo_sale_id],
   );
 }
@@ -223,6 +244,8 @@ export type PedidoPendiente = {
   moneda: string;
   /** Facturado sin IVA (facturas menos notas de crédito); null = sin factura. */
   facturado: number | null;
+  /** Con lo que se decide la ruta gratis (montoRutaGratis). */
+  monto_ruta: number;
   /** Estado de la dirección de entrega del cliente. */
   estado_cliente: string | null;
   ordenes: { id: number; nombre: string; estado: string }[];
@@ -287,6 +310,7 @@ export async function listarPedidosPendientes(opciones: {
       company_id: v.company_id?.[0] ?? null,
       moneda: v.currency_id?.[1] || "",
       facturado: datos.get(v.id)?.facturado ?? null,
+      monto_ruta: datos.has(v.id) ? montoRutaGratis(datos.get(v.id)!).monto : Number(v.amount_untaxed) || 0,
       estado_cliente: datos.get(v.id)?.estado_cliente ?? null,
       ordenes: [],
       facturas: facturas.get(v.id) || [],
@@ -378,11 +402,11 @@ export async function guardarMetodoRetiro(datos: {
     if (!agencia) throw new ErrorMetodo("Elige la agencia de la encomienda.");
   }
 
-  // Ruta gratis o con flete (solo Valencia): con lo facturado si ya hay
-  // factura, si no con el pedido; y con el estado del cliente. Al registrar
-  // el egreso se vuelve a calcular con lo facturado (aplicarEvaluacion).
+  // Ruta gratis o con flete (solo Valencia): con montoRutaGratis y con el
+  // estado del cliente. Hasta que Almacén registre el egreso se sigue
+  // recalculando con lo que diga Odoo (aplicarEvaluacion).
   const d = (await datosDePedidos([datos.saleId])).get(datos.saleId);
-  const montoBase = d ? (d.facturado ?? d.base_pedido) : Number(venta.amount_untaxed) || 0;
+  const montoBase = d ? montoRutaGratis(d).monto : Number(venta.amount_untaxed) || 0;
   const rutaGratis =
     metodo === "ruta"
       ? evaluarRutaGratis({

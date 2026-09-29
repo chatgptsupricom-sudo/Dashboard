@@ -260,6 +260,8 @@ export default function Pistola({
           <ScanBarcode className={`w-5 h-5 shrink-0 ${conFoco ? "text-violet-600" : "text-slate-400"}`} />
           <input
             ref={campo}
+            // Lo buscan las casillas de cantidad para devolverle el foco.
+            data-pistola=""
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={(e) => {
