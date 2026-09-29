@@ -102,6 +102,8 @@ type ContadoCreditoData = {
   mesesAnteriores: Parcial;
   /** Solo en "cobrado": el total repartido en los tramos que usan los KPIs. */
   cuadre: Cuadre | null;
+  /** Solo en "por_cobrar": corte y lo que queda fuera del reparto (sinAplicar solo si el corte es hoy). */
+  porCobrar?: { corte: string; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
   buckets: Bucket[];
   bancos: Banco[];
   vendedores: Vendedor[];
@@ -109,7 +111,7 @@ type ContadoCreditoData = {
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
-type Modo = "facturado" | "cobrado";
+type Modo = "facturado" | "cobrado" | "por_cobrar";
 type Filtro = { tipo?: "contado" | "credito"; dias?: number; journalId?: number };
 
 export default function ContadoCreditoPage() {
@@ -126,13 +128,16 @@ export default function ContadoCreditoPage() {
   // (lib/cxc/cobros.ts), asi que los totales cuadran entre pantallas.
   const [modo, setModo] = useState<Modo>("facturado");
   const esCobrado = modo === "cobrado";
+  // Por cobrar: saldo abierto al cierre del mes (= CxC inicial del mes
+  // siguiente), repartido igual por plazo (lib/cxc/porCobrar.ts).
+  const esPorCobrar = modo === "por_cobrar";
 
   // Toggle para incluir/excluir "Asistente de Ventas" (y demas vendedores
   // internos/de prueba). Cada modo recuerda su propio estado por separado
   // porque tienen defaults distintos: Facturado lo excluye por default
   // (para coincidir con "Ventas del Mes"), Cobrado no (coincide con el
   // numero real que usa cobranza).
-  const [excluirAsistente, setExcluirAsistente] = useState<{ facturado: boolean; cobrado: boolean }>({ facturado: true, cobrado: false });
+  const [excluirAsistente, setExcluirAsistente] = useState<Record<Modo, boolean>>({ facturado: true, cobrado: false, por_cobrar: false });
   const excluirAsistenteActual = excluirAsistente[modo];
   // Solo en Cobrado: marcados (default) es la regla de lib/cxc/cobros.ts,
   // retenciones y pagos del 25% de IVA no cuentan como cobro.
@@ -298,8 +303,10 @@ export default function ContadoCreditoPage() {
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
-  const tituloTotal = esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
-  const tituloFacturasModal = esCobrado ? "Cobros" : "Facturas";
+  const tituloTotal = esPorCobrar
+    ? "Por cobrar al cierre del mes"
+    : esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
+  const tituloFacturasModal = esCobrado ? "Cobros" : esPorCobrar ? "Facturas abiertas" : "Facturas";
   const etiquetaColFecha = esCobrado ? "Fecha de abono" : "Fecha";
 
   const pieData = data ? [
@@ -412,7 +419,7 @@ export default function ContadoCreditoPage() {
         <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
           <button
             onClick={() => setModo("facturado")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${!esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${modo === "facturado" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Facturado
           </button>
@@ -421,6 +428,13 @@ export default function ContadoCreditoPage() {
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Cobrado
+          </button>
+          <button
+            onClick={() => setModo("por_cobrar")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esPorCobrar ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            title="Saldo abierto al cierre del mes (CxC inicial del mes siguiente)"
+          >
+            Por cobrar
           </button>
         </div>
         <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none">
@@ -481,7 +495,12 @@ export default function ContadoCreditoPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
-            {esCobrado ? (
+            {esPorCobrar && data.porCobrar && (
+              <p className="text-xs text-slate-500 mt-1">
+                Saldo con IVA al {data.porCobrar.corte}{data.porCobrar.sinAplicar !== null ? " (hoy, el mes no ha cerrado)" : ""} — es la CxC con la que arranca el mes siguiente.
+              </p>
+            )}
+            {esCobrado || esPorCobrar ? (
               <>
                 <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
                   <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`Facturas del mes: ${data.delMes.pct}%`} />
@@ -497,6 +516,26 @@ export default function ContadoCreditoPage() {
                     Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
                   </span>
                 </div>
+                {esPorCobrar && data.porCobrar && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 mb-2">Fuera de este total, igual que en los KPIs del Dashboard</p>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                      {[
+                        { label: "Incobrables", hint: "Vencidas antes de 2025", monto: data.porCobrar.incobrables },
+                        { label: "SUPER TECHNO LLC", hint: "Empresa relacionada del grupo", monto: data.porCobrar.relacionadas },
+                        ...(data.porCobrar.sinAplicar !== null
+                          ? [{ label: "Pagos sin aplicar", hint: "Entraron pero no están aplicados a una factura", monto: data.porCobrar.sinAplicar }]
+                          : []),
+                      ].map((x) => (
+                        <div key={x.label} className="rounded-xl bg-slate-50 p-3 min-w-0">
+                          <p className="text-[11px] text-slate-500">{x.label}</p>
+                          <p className="text-base font-semibold text-slate-800 tabular-nums break-words">{formatCurrency(x.monto)}</p>
+                          <p className="text-[10px] text-slate-400">{x.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {data.cuadre && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs text-slate-500 mb-2">

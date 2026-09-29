@@ -2,6 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { cuadrarCobros, obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
+import { RELACIONADA } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -125,6 +127,33 @@ async function renglonesCobradoDinero(
     }));
 }
 
+// Lo que quedó abierto al cierre del período (lib/cxc/porCobrar.ts), con el
+// saldo de cada factura como monto. "Del mes" = factura emitida en el
+// período; "anterior" = deuda de meses previos que sigue abierta.
+async function renglonesPorCobrar(
+  companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
+): Promise<{ renglones: Renglon[]; corte: string; incobrables: number; relacionadas: number }> {
+  const { corte, renglones, incobrables, relacionadas } = await porCobrarAlCierre(companyIds, monthEnd);
+  const startStr = monthStart.toISOString().split("T")[0];
+  return {
+    corte, incobrables, relacionadas,
+    renglones: renglones
+      .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
+      .map((r) => ({
+        monto: r.saldo,
+        partnerId: r.partnerId,
+        partnerName: r.partnerName,
+        paymentTermId: r.plazoId,
+        esDelMes: !!r.invoiceDate && r.invoiceDate >= startStr,
+        journalId: undefined,
+        journalName: "",
+        sellerId: r.sellerId,
+        sellerName: r.sellerName,
+        invoiceName: r.name,
+      })),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
@@ -138,14 +167,15 @@ export async function GET(request: NextRequest) {
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
     const modoParam = searchParams.get("modo");
-    const modo = modoParam === "cobrado" ? "cobrado" : "facturado";
+    const modo = modoParam === "cobrado" || modoParam === "por_cobrar" ? modoParam : "facturado";
     // Toggle del usuario para incluir/excluir "Asistente de Ventas" (y
     // demas vendedores internos/de prueba). Si no viene explicito, se
     // usa el default historico de cada modo: Facturado siempre lo excluia
     // (para coincidir con "Ventas del Mes"), Cobrado nunca lo excluia
     // (coincide con el export real de cobranza).
     const excluirAsistenteParam = searchParams.get("excluirAsistente");
-    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo !== "cobrado";
+    // "Por cobrar" es saldo real, como Cobrado: no excluye asistentes por defecto.
+    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo === "facturado";
     // Solo en Cobrado. Default true = la regla historica de lib/cxc/cobros.ts
     // (retenciones y pagos del 25% de IVA no son cobro).
     const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
@@ -180,9 +210,38 @@ export async function GET(request: NextRequest) {
         ? [parseInt(userCidsParam, 10)]
         : [7, 9, 10];
 
-    const renglonesSinFiltrar = modo === "cobrado"
-      ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25)
-      : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
+    const porCobrar = modo === "por_cobrar"
+      ? await renglonesPorCobrar(companyIds, monthStart, monthEnd, excluirAsistente)
+      : null;
+    const renglonesSinFiltrar = porCobrar
+      ? porCobrar.renglones
+      : modo === "cobrado"
+        ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25)
+        : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
+
+    // Solo en "Por cobrar" y si el corte es hoy: pagos que entraron pero no
+    // están aplicados a ninguna factura. Restan de la cartera en Odoo; en un
+    // corte pasado no se pueden reconstruir, así que ahí no se muestran.
+    const h = new Date();
+    const hoyStr = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
+    let sinAplicar: number | null = null;
+    if (porCobrar && porCobrar.corte >= hoyStr) {
+      const g = await callOdooRPC<any[]>(
+        "account.move.line",
+        "read_group",
+        [[
+          ["account_id.account_type", "=", "asset_receivable"],
+          ["parent_state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["move_type", "not in", ["out_invoice", "out_refund"]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+        ], ["amount_residual:sum"], []],
+        { lazy: false },
+      );
+      sinAplicar = Math.round(Number(g?.[0]?.amount_residual || 0) * 100) / 100;
+    }
 
     // Vendedores para el dropdown: todos los que aparecen en el periodo,
     // sin aplicar todavia el filtro de vendedor/busqueda/banco -- para que
@@ -360,6 +419,10 @@ export async function GET(request: NextRequest) {
               monthStart.toISOString().split("T")[0],
               monthEnd.toISOString().split("T")[0],
             )
+          : null,
+        // Solo en "por_cobrar": corte usado y lo que queda fuera del reparto.
+        porCobrar: porCobrar
+          ? { corte: porCobrar.corte, incobrables: porCobrar.incobrables, relacionadas: porCobrar.relacionadas, sinAplicar }
           : null,
         buckets,
         bancos,
