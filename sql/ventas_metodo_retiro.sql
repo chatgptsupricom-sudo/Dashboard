@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS supricom_panel.ventas_metodo_retiro (
   registrado_rol VARCHAR(50) DEFAULT NULL,
   ruta_gratis TINYINT(1) DEFAULT NULL,
   monto_base DECIMAL(14,2) DEFAULT NULL,
+  monto_facturado DECIMAL(14,2) DEFAULT NULL,
+  ruta_gratis_final TINYINT(1) DEFAULT NULL,
+  alerta VARCHAR(400) DEFAULT NULL,
+  recalculado_at DATETIME DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_vmr_sale (odoo_sale_id),
@@ -54,3 +58,16 @@ SHOW TABLES FROM supricom_panel LIKE 'ventas_metodo_retiro';
 --   ruta_gratis: 1 = gratis, 0 = flete a cargo del cliente, NULL = no aplica.
 --   Pedidos de Valencia: ruta Valencia gratis desde 300 $ sin IVA; el resto
 --   de las rutas, desde 1000 $ sin IVA.
+
+-- RECALCULO CON LO FACTURADO (si la tabla ya existia sin estas columnas). La
+-- app las agrega sola; a mano, primero:
+--   SHOW COLUMNS FROM supricom_panel.ventas_metodo_retiro LIKE 'monto_facturado';
+-- y si no devuelve nada:
+--   ALTER TABLE supricom_panel.ventas_metodo_retiro
+--     ADD COLUMN monto_facturado DECIMAL(14,2) DEFAULT NULL,
+--     ADD COLUMN ruta_gratis_final TINYINT(1) DEFAULT NULL,
+--     ADD COLUMN alerta VARCHAR(400) DEFAULT NULL,
+--     ADD COLUMN recalculado_at DATETIME DEFAULT NULL;
+--   monto_facturado: facturas publicadas menos notas de credito, sin IVA.
+--   ruta_gratis_final: la decision al registrar el egreso (1 gratis / 0 flete).
+--   alerta: "ya no es gratis" o "la ruta Valencia es solo para Carabobo".
