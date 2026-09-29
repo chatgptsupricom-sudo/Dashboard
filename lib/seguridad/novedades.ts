@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import type { Novedad } from "@/lib/seguridad/egresoFlujo";
+import { sqlEgresoOcupaOrden } from "@/lib/seguridad/mercancia";
+import { faltaMigracion } from "@/lib/seguridad/seriales";
 
 /**
  * Novedades de la verificacion de Seguridad en C4 (issue #301), en
@@ -92,7 +94,11 @@ export async function sqlFueDevuelto(alias = "m"): Promise<string> {
   return (await hayColumnasVerificacion()) ? `${alias}.ronda_verificacion > 1` : "FALSE";
 }
 
-/** Todas las novedades del egreso, de todas las rondas. Sin la tabla: ninguna. */
+/**
+ * Todas las novedades del egreso, de todas las rondas. Sin la tabla: ninguna.
+ * Cualquier otro error se lanza: si una falla de la base se tomara como
+ * "ninguna", la verificacion se cerraba "conforme" sin las de escaneo.
+ */
 export async function leerNovedades(mercanciaId: number): Promise<NovedadGuardada[]> {
   try {
     const r = await query(
@@ -109,8 +115,9 @@ export async function leerNovedades(mercanciaId: number): Promise<NovedadGuardad
       esperado: Number(n.esperado),
       contado: n.contado === null ? null : Number(n.contado),
     }));
-  } catch {
-    return [];
+  } catch (e) {
+    if (faltaMigracion(e)) return [];
+    throw e;
   }
 }
 
@@ -235,6 +242,8 @@ export async function guardarNovedadesCierre(
  * Solo de la misma sucursal (lo de otra no se muestra, como en el resto del
  * modulo) y solo egresos abiertos: un serial de un egreso cerrado hace meses
  * es una unidad que se devolvio y se revendio, no una confusion de orden.
+ * Tampoco uno cancelado que espera su nota: la orden se vuelve a registrar
+ * con los mismos seriales, y no es "de otra orden".
  * `cids` null = egreso sin sucursal (filas viejas): no se busca en ninguna.
  */
 export async function serialDeOtroEgreso(
@@ -249,6 +258,7 @@ export async function serialDeOtroEgreso(
        JOIN seguridad_mercancia m ON m.id = s.mercancia_id
       WHERE s.serial = ? AND s.mercancia_id <> ?
         AND m.cids = ? AND m.etapa IS NOT NULL AND m.etapa <> 'cerrado'
+        AND ${sqlEgresoOcupaOrden("m")}
       ORDER BY s.id DESC LIMIT 1`,
     [serial, mercanciaId, cids],
   );

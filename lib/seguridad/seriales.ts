@@ -38,7 +38,11 @@ export type SerialEgreso = {
 
 const MAX_SERIAL = 100;
 
-/** Seriales guardados de un egreso. Sin la tabla (migracion pendiente): ninguno. */
+/**
+ * Seriales guardados de un egreso. Sin la tabla (migracion pendiente):
+ * ninguno. Cualquier otro error se lanza: con la base caida un momento,
+ * "ninguno" hacia que Seguridad aprobara sin los seriales que faltaban.
+ */
 export async function leerSerialesEgreso(mercanciaId: number): Promise<SerialEgreso[]> {
   try {
     const r = await query(
@@ -47,8 +51,9 @@ export async function leerSerialesEgreso(mercanciaId: number): Promise<SerialEgr
       [mercanciaId],
     );
     return r.rows as SerialEgreso[];
-  } catch {
-    return [];
+  } catch (e) {
+    if (faltaMigracion(e)) return [];
+    throw e;
   }
 }
 

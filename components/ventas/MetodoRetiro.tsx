@@ -23,6 +23,8 @@ type Pedido = {
   moneda: string;
   /** Facturado sin IVA (facturas menos notas de crédito); null = sin factura. */
   facturado: number | null;
+  /** Con lo que se decide la ruta gratis (montoRutaGratis en el servidor). */
+  monto_ruta: number;
   estado_cliente: string | null;
   ordenes: { id: number; nombre: string; estado: string }[];
   facturas: { numero: string; fecha: string | null }[];
@@ -324,8 +326,9 @@ export function MetodoRetiro() {
                       </div>
                       {b.metodo === "ruta" && b.ruta_id && (() => {
                         const ruta = rutas.find((r) => String(r.id) === b.ruta_id)?.nombre;
-                        // Con lo facturado si ya hay factura; si no, con el pedido.
-                        const monto = p.facturado ?? p.base;
+                        // El mismo monto que usa el servidor: lo facturado, o el
+                        // pedido mientras se factura por partes.
+                        const monto = p.monto_ruta;
                         const ev = evaluarRutaGratis({ companyId: p.company_id, rutaNombre: ruta, monto, moneda: p.moneda, estadoCliente: p.estado_cliente });
                         if (ev.minimo === null || ev.gratis === null) return null;
                         return (

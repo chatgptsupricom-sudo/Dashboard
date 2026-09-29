@@ -22,7 +22,12 @@ import {
   type Etapa,
 } from "@/lib/seguridad/egresoFlujo";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
-import { cargarMovimiento } from "@/lib/seguridad/mercancia";
+import {
+  cargarMovimiento,
+  conEgresoBloqueado,
+  EgresoOcupado,
+  motivoOrdenCambioEnOdoo,
+} from "@/lib/seguridad/mercancia";
 import { hayColumnaAspecto } from "@/lib/seguridad/calificaciones";
 import {
   guardarNovedadesCierre,
@@ -104,23 +109,6 @@ export async function POST(
       );
     }
 
-    const datos = await cargarMovimiento(id);
-    // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
-    // que existe. Mismo criterio que el resto del modulo.
-    if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
-      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    }
-    const mov = datos.movimiento;
-    if (mov.tipo !== "egreso" || !mov.etapa) {
-      return NextResponse.json(
-        { error: "Este registro no sigue el flujo por etapas" },
-        { status: 409 },
-      );
-    }
-
-    const desde: Etapa = ETAPA_DE_ACCION[accion];
-    if (mov.etapa !== desde) return conflicto();
-
     // Quien firma cada paso sale de la sesion, no del body: el nombre que
     // queda registrado tiene que ser el de quien de verdad pulso el boton.
     const quien = String(auth.payload?.name || auth.payload?.email || rolSesion).slice(
@@ -128,7 +116,32 @@ export async function POST(
       MAX.nombre,
     );
 
-    const resultado = await ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    const correr = async (): Promise<Resultado | NextResponse> => {
+      const datos = await cargarMovimiento(id);
+      // 404 y no 403 para otra sucursal: adivinar un id no debe ni confirmar
+      // que existe. Mismo criterio que el resto del modulo.
+      if (!datos || (cids !== null && Number(datos.movimiento.cids) !== cids)) {
+        return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+      }
+      const mov = datos.movimiento;
+      if (mov.tipo !== "egreso" || !mov.etapa) {
+        return NextResponse.json(
+          { error: "Este registro no sigue el flujo por etapas" },
+          { status: 409 },
+        );
+      }
+
+      const desde: Etapa = ETAPA_DE_ACCION[accion];
+      if (mov.etapa !== desde) return conflicto();
+
+      return ejecutar(accion, id, mov, datos.items, body, quien, cids, datos);
+    };
+
+    // El cierre de Seguridad lee los conteos y cambia la etapa con el egreso
+    // tomado, igual que cada lectura de la pistola (.../escaneo): una lectura
+    // que llegue en el medio espera y despues ve que ya no esta por verificar.
+    const resultado =
+      accion === "verificar_seguridad" ? await conEgresoBloqueado(id, correr) : await correr();
     if (resultado instanceof NextResponse) return resultado;
 
     const actualizado = await cargarMovimiento(id);
@@ -159,6 +172,9 @@ export async function POST(
       ...actualizado,
     });
   } catch (error: any) {
+    if (error instanceof EgresoOcupado) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("Error moviendo egreso de etapa:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -457,6 +473,36 @@ async function ejecutar(
       }
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
+
+      // Antes de dejarla salir, Odoo otra vez: al registrar estaba Lista y
+      // facturada, pero de una nota de credito o un picking cancelado despues
+      // no se enteraba nadie. Cancelada o sin factura no sale; con renglones
+      // cambiados no se aprueba, se despacha igual con motivo o se devuelve.
+      if (despachar && mov.odoo_picking_id) {
+        let cambio: Awaited<ReturnType<typeof motivoOrdenCambioEnOdoo>>;
+        try {
+          cambio = await motivoOrdenCambioEnOdoo(Number(mov.odoo_picking_id), items);
+        } catch (e: any) {
+          console.error(`[egreso ${id}] no se pudo revisar la orden en Odoo:`, e?.message || e);
+          return NextResponse.json(
+            { error: "No se pudo confirmar la orden en Odoo antes de despacharla. Intenta de nuevo." },
+            { status: 502 },
+          );
+        }
+        if (cambio && (cambio.bloquea || aprobado)) {
+          return NextResponse.json(
+            {
+              error: cambio.bloquea
+                ? `${cambio.motivo}. No puede salir: devuélvelo a Almacén o cancélalo.`
+                : `${cambio.motivo}. No se puede aprobar: despáchalo igual con el motivo, devuélvelo o cancélalo.`,
+              codigo: "orden_cambio_odoo",
+            },
+            { status: 400 },
+          );
+        }
+        // Despachado igual: el cambio queda escrito junto al motivo.
+        if (cambio) motivo = `${motivo} · ${cambio.motivo}`.slice(0, MAX.motivo);
+      }
 
       // Devolver: vuelve a Almacen a asignar despacho, en una ronda nueva. Lo
       // pistoleado se conserva; aprobado/despachado = 0 quedan como el

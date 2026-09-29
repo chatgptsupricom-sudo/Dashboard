@@ -35,7 +35,31 @@ export type FilaMetodo = {
   monto_facturado?: number | string | null;
   /** Aviso para Almacén / Ventas (ruta gratis perdida, ruta que no es la del cliente). */
   alerta?: string | null;
+  /** Lo que decidió el primer egreso (ver fijarRutaGratisFinal). */
+  ruta_gratis_final?: number | null;
+  /** Cuándo se fijó `ruta_gratis_final`; con valor, ya no se recalcula. */
+  recalculado_at?: string | null;
 };
+
+/**
+ * Con qué monto se decide la ruta gratis:
+ *  - sin factura: el pedido;
+ *  - con todo facturado, o con alguna nota de crédito: lo facturado (menos
+ *    las NC). Es el control contra bajar el pedido después de marcarlo;
+ *  - facturado en parte y sin NC: el pedido. Un pedido que se despacha en
+ *    dos entregas se factura por partes, y con lo facturado la primera orden
+ *    perdía la ruta gratis (400 $ de un pedido de 1.200 $).
+ */
+export function montoRutaGratis(d: {
+  base_pedido: number;
+  facturado: number | null;
+  por_facturar?: boolean;
+  con_nota_credito?: boolean;
+}): { monto: number; fuente: "pedido" | "facturado" } {
+  if (d.facturado === null) return { monto: d.base_pedido, fuente: "pedido" };
+  if (d.por_facturar && !d.con_nota_credito) return { monto: d.base_pedido, fuente: "pedido" };
+  return { monto: d.facturado, fuente: "facturado" };
+}
 
 /** Sucursal Valencia (cids 9): la única con monto mínimo de ruta gratis por ahora. */
 export const CIDS_VALENCIA = 9;

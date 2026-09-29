@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { getConnection, query } from "@/lib/db";
 import { requireAlmacenOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
 import { esTipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { describirMetodo, fijarRutaGratisFinal, metodosEvaluados, tipoEntregaDeMetodo } from "@/lib/ventas/metodoRetiro";
@@ -10,6 +10,7 @@ import {
   motivoOrdenNoLista,
   parsearLista,
   serializarLista,
+  sqlEgresoOcupaOrden,
   type PickingOdoo,
 } from "@/lib/seguridad/mercancia";
 import { NextRequest, NextResponse } from "next/server";
@@ -52,21 +53,36 @@ export async function GET(request: NextRequest) {
     // El mismo builder que usa el Excel: lo exportado es lo que se ve.
     const { where, params } = filtroMercancia(new URL(request.url).searchParams, cids);
 
-    const res = await query(
-      `SELECT m.*,
-        (SELECT COUNT(*) FROM seguridad_mercancia_items i
-          WHERE i.mercancia_id = m.id) AS total_items,
-        (SELECT COUNT(*) FROM seguridad_mercancia_items i
-          WHERE i.mercancia_id = m.id
-            AND i.cantidad_verificada IS NOT NULL
-            AND i.cantidad_verificada <> i.cantidad_cargada) AS items_con_diferencia
-       FROM seguridad_mercancia m ${where}
-       ORDER BY m.fecha DESC, m.id DESC
-       LIMIT 100`,
-      params,
+    // Los abiertos van todos y los cerrados, los ultimos 100. Con un solo
+    // LIMIT 100 por fecha, un egreso trabado unos dias (a ~750 salidas al mes
+    // por sucursal) quedaba fuera de "Para mi" y "En proceso", que filtran en
+    // la pantalla, y nadie lo avanzaba. Mismo criterio de "abierto" que la
+    // lista: por etapa, o por estado en los del flujo anterior.
+    const abierto = "COALESCE(CASE WHEN m.etapa IS NOT NULL THEN m.etapa <> 'cerrado' ELSE m.estado = 'pendiente' END, 0)";
+    const seleccionar = (condicion: string, limite: number) =>
+      query(
+        `SELECT m.*,
+          (SELECT COUNT(*) FROM seguridad_mercancia_items i
+            WHERE i.mercancia_id = m.id) AS total_items,
+          (SELECT COUNT(*) FROM seguridad_mercancia_items i
+            WHERE i.mercancia_id = m.id
+              AND i.cantidad_verificada IS NOT NULL
+              AND i.cantidad_verificada <> i.cantidad_cargada) AS items_con_diferencia
+         FROM seguridad_mercancia m ${where} AND ${condicion}
+         ORDER BY m.fecha DESC, m.id DESC
+         LIMIT ${limite}`,
+        params,
+      );
+    const [abiertos, cerrados] = await Promise.all([
+      seleccionar(abierto, 1000),
+      seleccionar(`NOT ${abierto}`, 100),
+    ]);
+    const filas = [...abiertos.rows, ...cerrados.rows].sort(
+      (a: any, b: any) =>
+        new Date(b.fecha).getTime() - new Date(a.fecha).getTime() || Number(b.id) - Number(a.id),
     );
 
-    const movimientos = res.rows.map((row: any) => ({
+    const movimientos = filas.map((row: any) => ({
       ...row,
       facturas: parsearLista(row.facturas_json).length
         ? parsearLista(row.facturas_json)
@@ -241,10 +257,6 @@ export async function POST(request: NextRequest) {
       );
     }
     tipoEntrega = tipoEntregaDeMetodo(metodo.metodo);
-    // La ruta gratis final (recalculada con lo facturado) queda guardada.
-    await fijarRutaGratisFinal(metodo).catch((e: any) =>
-      console.warn("[egreso] no se pudo guardar la ruta gratis final:", e?.message),
-    );
     if (!esTipoEntrega(tipoEntrega)) {
       return NextResponse.json({ error: "tipo de entrega invalido" }, { status: 400 });
     }
@@ -260,17 +272,21 @@ export async function POST(request: NextRequest) {
     // Una orden de despacho, un egreso. La lista de pendientes ya las
     // esconde, pero buscando por numero se podia registrar dos veces.
     // El id de picking es unico en todo Odoo: no hace falta filtrar por cids.
-    const repetido = await query(
-      `SELECT id FROM seguridad_mercancia
-        WHERE tipo = 'egreso' AND odoo_picking_id = ? LIMIT 1`,
-      [picking.odoo_picking_id],
-    );
-    if (repetido.rows.length > 0) {
+    // Uno cerrado sin despachar (cancelado) ya no la ocupa: se vuelve a
+    // registrar (ver sqlEgresoOcupaOrden).
+    const yaRegistrado = async () => {
+      const r = await query(
+        `SELECT id FROM seguridad_mercancia
+          WHERE tipo = 'egreso' AND odoo_picking_id = ? AND ${sqlEgresoOcupaOrden()} LIMIT 1`,
+        [picking!.odoo_picking_id],
+      );
+      const fila = r.rows[0] as any;
+      return fila ? Number(fila.id) : null;
+    };
+    const repetido = await yaRegistrado();
+    if (repetido !== null) {
       return NextResponse.json(
-        {
-          error: "Esta orden ya se registró como egreso",
-          id: Number((repetido.rows[0] as any).id),
-        },
+        { error: "Esta orden ya se registró como egreso", id: repetido },
         { status: 409 },
       );
     }
@@ -333,59 +349,86 @@ export async function POST(request: NextRequest) {
       facturasVenta[0].fecha,
     ];
 
-    const insertar = (cols: string[], vals: unknown[]) =>
-      query(
-        `INSERT INTO seguridad_mercancia (${cols.join(", ")})
-         VALUES (${cols.map(() => "?").join(", ")})`,
-        vals,
-      );
-
-    let res;
-    try {
-      res = await insertar([...columnas, ...columnasFactura], [...valoresMov, ...valoresFactura]);
-    } catch (e: any) {
-      // Sin la migracion (sql/egreso_facturas_venta.sql) el egreso se registra
-      // igual, sin la factura: no se frena el despacho por una columna.
-      if (!/Unknown column/i.test(e?.message || "")) throw e;
-      console.warn(
-        "[egreso] falta correr sql/egreso_facturas_venta.sql: se registra sin la factura",
-      );
-      res = await insertar(columnas, valoresMov);
-    }
-
-    const id = (res.rows as any)?.insertId;
-
     // Un renglon por producto (ver agruparLineas): si el mismo producto viene
     // dos veces se suma, para no contarlo dos veces por separado.
     const renglones = agruparLineas(limpios as any[]);
 
-    // Los renglones en una sola sentencia: 300 INSERT sueltos en el porton,
-    // con el camion esperando, se notan.
-    // `lleva_serial` (issue #299) sale del tracking de Odoo. Sin la migracion
-    // (sql/egreso_seriales.sql) se registra igual, sin esa columna.
-    const insertarRenglones = (conSerial: boolean) => {
-      const valores: any[] = [];
-      const marcadores = renglones
-        .map((i: any) => {
-          valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
-          if (conSerial) valores.push(i.lleva_serial);
-          return conSerial ? "(?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?)";
-        })
-        .join(", ");
-      return query(
-        `INSERT INTO seguridad_mercancia_items
-          (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada${conSerial ? ", lleva_serial" : ""})
-         VALUES ${marcadores}`,
-        valores,
-      );
-    };
+    // Cabecera y renglones en una transaccion: si fallaban los renglones
+    // quedaba un egreso vacio, que `evaluarArmado([])` da por completo y
+    // podia llegar hasta Seguridad, y reintentar decia "ya se registro".
+    // (Un "Unknown column" no aborta la transaccion en MySQL: los reintentos
+    // sin columna van en la misma.)
+    const conn = await getConnection();
+    let id: number;
     try {
-      await insertarRenglones(true);
+      await conn.beginTransaction();
+      const insertar = (cols: string[], vals: unknown[]) =>
+        conn.execute(
+          `INSERT INTO seguridad_mercancia (${cols.join(", ")})
+           VALUES (${cols.map(() => "?").join(", ")})`,
+          vals as any[],
+        );
+      let cabecera: any;
+      try {
+        [cabecera] = await insertar([...columnas, ...columnasFactura], [...valoresMov, ...valoresFactura]);
+      } catch (e: any) {
+        // Sin la migracion (sql/egreso_facturas_venta.sql) el egreso se registra
+        // igual, sin la factura: no se frena el despacho por una columna.
+        if (!/Unknown column/i.test(e?.message || "")) throw e;
+        console.warn(
+          "[egreso] falta correr sql/egreso_facturas_venta.sql: se registra sin la factura",
+        );
+        [cabecera] = await insertar(columnas, valoresMov);
+      }
+      id = Number(cabecera?.insertId);
+
+      // Los renglones en una sola sentencia: 300 INSERT sueltos en el porton,
+      // con el camion esperando, se notan.
+      // `lleva_serial` (issue #299) sale del tracking de Odoo. Sin la migracion
+      // (sql/egreso_seriales.sql) se registra igual, sin esa columna.
+      const insertarRenglones = (conSerial: boolean) => {
+        const valores: any[] = [];
+        const marcadores = renglones
+          .map((i: any) => {
+            valores.push(id, i.odoo_product_id, i.producto, i.codigo, i.cantidad_cargada);
+            if (conSerial) valores.push(i.lleva_serial);
+            return conSerial ? "(?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?)";
+          })
+          .join(", ");
+        return conn.execute(
+          `INSERT INTO seguridad_mercancia_items
+            (mercancia_id, odoo_product_id, producto, codigo, cantidad_cargada${conSerial ? ", lleva_serial" : ""})
+           VALUES ${marcadores}`,
+          valores,
+        );
+      };
+      try {
+        await insertarRenglones(true);
+      } catch (e: any) {
+        if (!/Unknown column/i.test(e?.message || "")) throw e;
+        console.warn("[egreso] falta correr sql/egreso_seriales.sql: renglones sin lleva_serial");
+        await insertarRenglones(false);
+      }
+      await conn.commit();
     } catch (e: any) {
-      if (!/Unknown column/i.test(e?.message || "")) throw e;
-      console.warn("[egreso] falta correr sql/egreso_seriales.sql: renglones sin lleva_serial");
-      await insertarRenglones(false);
+      await conn.rollback().catch(() => {});
+      // Dos almacenistas pulsaron la misma orden a la vez: el SELECT de arriba
+      // no ve al otro, la clave unica (sql/egreso_picking_unico.sql) si.
+      if (e?.code !== "ER_DUP_ENTRY" && Number(e?.errno) !== 1062) throw e;
+      return NextResponse.json(
+        { error: "Esta orden ya se registró como egreso", id: (await yaRegistrado()) ?? undefined },
+        { status: 409 },
+      );
+    } finally {
+      conn.release();
     }
+
+    // La ruta gratis con que sale el pedido queda fijada, recien con el egreso
+    // ya registrado: antes se escribia aunque el alta se rechazara despues
+    // (sin factura, repetida), y un reintento la pisaba.
+    await fijarRutaGratisFinal(metodo).catch((e: any) =>
+      console.warn("[egreso] no se pudo guardar la ruta gratis final:", e?.message),
+    );
 
     // Aviso en vivo: Seguridad ve aparecer el registro que Almacen acaba de
     // preparar sin recargar la pantalla del porton.
