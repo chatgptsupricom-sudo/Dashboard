@@ -3035,6 +3035,7 @@
           "rondas_previas": "{n, plural, =1 {Seguridad lo devolvió una vez} other {Seguridad lo devolvió # veces}} antes de despacharlo:",
           "cancelar": "No se despacha (cancelado)",
           "cancelar_ayuda": "No sale nunca (por ejemplo, el cliente canceló). Se cierra sin despachar, después de calificar.",
+          "falta_firma": "Falta tu firma en el acta: firma arriba antes de despachar.",
           "faltan": "{n, plural, =1 {Falta # por pistolear} other {Faltan # por pistolear}}"
         },
         "catalogo_vacio_chofer": "Todavía no hay choferes cargados en esta sucursal.",

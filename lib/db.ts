@@ -65,11 +65,28 @@ export const query = async (sql: string, params?: any[]) => {
       );
     }
     return { rows: results as any[] };
-  } catch (error) {
-    console.error("❌ Error ejecutando query en la DB:", error);
+  } catch (error: any) {
+    // Las migraciones idempotentes (ALTER ... ADD COLUMN / ADD INDEX, CREATE
+    // TABLE) chocan con lo que ya existe en cada arranque y el caller lo
+    // atrapa a proposito: no es un error, y registrarlo llenaba el log de
+    // "Duplicate column" con stack y todo. El resto se registra en una linea;
+    // el error completo sigue llegando al caller.
+    if (!esDuplicadoDeMigracion(error, sql)) {
+      console.error(
+        `❌ Error en la DB [${error?.code || "?"}] ${error?.message || error} — ${String(sql).replace(/\s+/g, " ").trim().slice(0, 160)}`,
+      );
+    }
     throw error;
   }
 };
+
+/** Un ALTER/CREATE que falla porque la columna, el indice o la tabla ya existe. */
+function esDuplicadoDeMigracion(error: any, sql: string): boolean {
+  return (
+    ["ER_DUP_FIELDNAME", "ER_DUP_KEYNAME", "ER_TABLE_EXISTS_ERROR"].includes(error?.code) &&
+    /^\s*(ALTER|CREATE)\b/i.test(String(sql))
+  );
+}
 
 // Devuelve una conexion dedicada del pool, para hacer varias queries en una
 // transaccion (commit/rollback) o que comparten estado.
