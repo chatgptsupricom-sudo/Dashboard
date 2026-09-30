@@ -20,3 +20,13 @@ export const COMPANIAS_DE_LA_REGION: Record<number, number[]> = {
   10: [9, 10], // Caracas -> Venezuela (Valencia + Caracas)
   7: [7],      // Panama -> solo Panama
 };
+
+/**
+ * Sede pedida en la query (`?sede=9|10|7`, Valencia si no viene). null si no
+ * es una de las tres: todo lo de Compras es por sede (stock, costo y venta).
+ */
+export function leerSede(url: string): number | null {
+  const v = new URL(url).searchParams.get("sede");
+  const n = v ? Number(v) : 9;
+  return MAIN_WAREHOUSE_BY_COMPANY[n] ? n : null;
+}

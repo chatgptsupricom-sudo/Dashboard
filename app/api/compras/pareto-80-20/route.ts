@@ -1,5 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { leerSede } from "@/lib/compras/constants";
+import { catalogo, hoyCaracas, inicioDiaUtc, leerTodo, sumarDias } from "@/lib/compras/datosOdoo";
 import { NextRequest, NextResponse } from "next/server";
 
 // Las compras son mucho menos frecuentes que las ventas, asi que 90 dias
@@ -8,8 +10,6 @@ import { NextRequest, NextResponse } from "next/server";
 // lo que ya veia compras.
 const VENTANAS_VALIDAS = [90, 180, 365];
 const VENTANA_DEFAULT = 90;
-
-const COMPANIES = [9, 10, 7];
 
 /**
  * Clasificacion ABC por monto comprado (curva de Pareto): mismo criterio que
@@ -43,26 +43,23 @@ export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["compras"]);
   if (auth.error) return auth.error;
 
+  const sedeId = leerSede(request.url);
+  if (!sedeId) return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
+
   try {
     const { searchParams } = new URL(request.url);
-    const sedeParam = searchParams.get("sede");
-    const sedeId = sedeParam ? parseInt(sedeParam, 10) : null;
-    const companies = sedeId ? [sedeId] : COMPANIES;
-
     const diasParam = parseInt(searchParams.get("dias") || "", 10);
     const dias = VENTANAS_VALIDAS.includes(diasParam) ? diasParam : VENTANA_DEFAULT;
-
-    const desde = new Date();
-    desde.setDate(desde.getDate() - dias);
-    const desdeStr = desde.toISOString().split("T")[0];
+    // `dias` días de calendario contando hoy (Caracas); date_order es un
+    // datetime en UTC.
+    const desde = sumarDias(hoyCaracas(), -(dias - 1));
 
     // purchase.order.line, NO account.move.line: este reporte vive bajo
     // /compras y antes consultaba facturas de VENTA (out_invoice/out_refund),
     // asi que mostraba unidades vendidas disfrazadas de compradas (issue #176).
     //
     // Solo `state = "purchase"` (ordenes confirmadas) — borradores y
-    // canceladas no son compras reales. Mismo criterio que
-    // lib/compras/purchaseOrders.ts::getPendingPurchaseQtyByProduct().
+    // canceladas no son compras reales.
     //
     // A diferencia de la version de ventas, aca NO se excluyen los partners
     // del grupo ("supricom" / "office solution"): las sucursales le compran
@@ -72,10 +69,6 @@ export async function GET(request: NextRequest) {
     // reporte del bug (SATUR1000+) tiene sus 1188 unidades en una orden a
     // SUPRICOM LLC.
     //
-    // Tampoco hay que restar devoluciones: al sumar `product_qty` de ordenes
-    // confirmadas no entran notas de credito, que era la causa secundaria del
-    // numero inflado.
-    //
     // Se excluyen los productos de tipo servicio: en las ordenes de compra
     // viajan gastos modelados como producto (el caso gordo es `FLE_ACA_V`
     // "GASTO FLETES Y ACARREOS VALENCIA", ~$349.000 en 90 dias repartidos en
@@ -84,41 +77,46 @@ export async function GET(request: NextRequest) {
     // priorizar QUE COMPRAR. Se filtra por `!= "service"` y no por
     // `in ["product","consu"]` a proposito: los consumibles (toners, tintas,
     // cartuchos) SI son mercancia real y tienen que contar.
-    const domain: any[] = [
-      ["state", "=", "purchase"],
-      ["product_id", "!=", false],
-      ["product_id.type", "!=", "service"],
-      ["date_order", ">=", desdeStr],
-      ["company_id", "in", companies],
-    ];
+    const lines = await leerTodo(
+      "purchase.order.line",
+      [
+        ["state", "=", "purchase"],
+        ["product_id", "!=", false],
+        ["product_id.type", "!=", "service"],
+        ["date_order", ">=", inicioDiaUtc(desde)],
+        ["company_id", "=", sedeId],
+      ],
+      ["product_id", "product_qty", "qty_received", "price_subtotal"],
+    );
 
-    const lines: any[] = [];
-    let offset = 0;
-    while (true) {
-      const page = await callOdooRPC<any[]>(
-        "purchase.order.line",
-        "search_read",
-        [domain],
-        {
-          fields: ["product_id", "product_qty", "price_subtotal"],
-          order: "id asc",
-          limit: 5000,
-          offset,
-        },
-      );
-      if (!page || page.length === 0) break;
-      lines.push(...page);
-      if (page.length < 5000) break;
-      offset += 5000;
+    // Cantidad comprada de verdad = lo recibido + lo que falta por recibir.
+    // No `product_qty` de la orden: una orden confirmada que se recibio y se
+    // devolvio al proveedor, o a la que se le cancelo el resto, sigue en
+    // estado "purchase" con su cantidad original. En Valencia la P-00103
+    // ($614k, factura INV00928) se recibio y se devolvio el mismo dia y la
+    // compra real es la P-00105: sumando product_qty se contaba dos veces.
+    const pendiente = new Map<number, number>();
+    for (let i = 0; i < lines.length; i += 2000) {
+      const grupos = await callOdooRPC<any[]>("stock.move", "read_group", [
+        [["purchase_line_id", "in", lines.slice(i, i + 2000).map((l) => l.id)], ["state", "not in", ["draft", "done", "cancel"]]],
+        ["product_uom_qty:sum"],
+        ["purchase_line_id"],
+      ], { lazy: false });
+      if (!Array.isArray(grupos)) throw new Error("Odoo no respondió las recepciones pendientes");
+      for (const g of grupos) if (g.purchase_line_id) pendiente.set(g.purchase_line_id[0], Number(g.product_uom_qty) || 0);
     }
 
     const stats: Record<number, { monto: number; unidades: number }> = {};
     lines.forEach((l: any) => {
       if (!l.product_id) return;
+      const pedida = Number(l.product_qty) || 0;
+      if (pedida <= 0) return;
+      const comprada = (Number(l.qty_received) || 0) + (pendiente.get(l.id) ?? 0);
+      if (comprada <= 0) return;
       const id = l.product_id[0];
       if (!stats[id]) stats[id] = { monto: 0, unidades: 0 };
-      stats[id].monto += l.price_subtotal || 0;
-      stats[id].unidades += l.product_qty || 0;
+      stats[id].monto += (Number(l.price_subtotal) || 0) * (comprada / pedida);
+      stats[id].unidades += comprada;
     });
 
     const productIds = Object.keys(stats)
@@ -134,12 +132,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const productos = await callOdooRPC<any[]>(
-      "product.product",
-      "search_read",
-      [[["id", "in", productIds]]],
-      { fields: ["id", "default_code", "name", "categ_id"], limit: 0 },
-    );
+    const [productos, cat] = await Promise.all([
+      callOdooRPC<any[]>(
+        "product.product",
+        "search_read",
+        [[["id", "in", productIds]]],
+        // Incluye archivados: si un producto comprado se archivo despues, su
+        // gasto igual cuenta en la curva.
+        { fields: ["id", "default_code", "name", "categ_id", "spiff_brand_id"], limit: 0, context: { active_test: false } },
+      ),
+      catalogo(),
+    ]);
 
     const clasificacion = clasificarPorMonto(
       productIds.map((id) => ({ id, monto: stats[id].monto })),
@@ -154,13 +157,9 @@ export async function GET(request: NextRequest) {
           id: pId,
           codigo: prod.default_code ? String(prod.default_code).trim() : `PROD-${pId}`,
           name: nombre,
-          // Se hace .trim() ANTES de partir por espacios: hay productos en
-          // Odoo cuyo `name` empieza con un espacio (ej. " HAVIT AIR
-          // CONDUCTION HEADPHONES..."), y con el split crudo la marca salia
-          // "" -> la pagina renderiza <SelectItem value=""> en el filtro de
-          // marca -> Radix lanza "A <Select.Item /> must have a value prop
-          // that is not an empty string" y se cae toda la pantalla.
-          marca: nombre.split(/\s+/)[0]?.toUpperCase() || "SIN MARCA",
+          // Marca de Odoo (spiff_brand_id), la misma del resto de Compras y
+          // de Metas por marca. Nunca "" (Radix se cae con <SelectItem value="">).
+          marca: cat.get(pId)?.marca || (prod.spiff_brand_id ? String(prod.spiff_brand_id[1]).trim().toUpperCase() : "") || "SIN MARCA",
           categoria: prod.categ_id ? prod.categ_id[1] : "Sin Categoría",
           monto: Number(stats[pId].monto.toFixed(2)),
           unidades: Math.round(stats[pId].unidades),

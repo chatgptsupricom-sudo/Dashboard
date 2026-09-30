@@ -1611,8 +1611,11 @@
       "variacion_label": "Variation",
       "ahorro_sobrecosto": "Unit Savings/Overcost",
       "costo_unitario": "Unit cost",
-      "valor_inmovilizado": "Tied-up value",
-      "dias_sin_stock_est": "Days without stock (est.)"
+      "valor_inmovilizado": "Value aged 90+ days",
+      "dias_sin_stock_est": "Days out of stock this month",
+      "mas_90_unid": "90+ days (units)",
+      "dias_sin_venta": "Days since last sale",
+      "sin_ventas": "No sales"
     },
     "alert": {
       "centro_control": "Control Center",

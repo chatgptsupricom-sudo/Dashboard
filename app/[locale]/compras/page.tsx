@@ -193,9 +193,9 @@ export default function ComprasDashboard() {
           <Zap className="h-4 w-4 shrink-0" />
           <span className="text-sm font-medium">
             {r.enQuiebre} producto{r.enQuiebre > 1 ? "s" : ""} en quiebre total
-            — sin stock disponible.
+            — se vendieron en los últimos 45 días y no tienen stock disponible ni en tránsito.
           </span>
-          <Link href={`${base}/sugeridos`} className="ml-auto shrink-0">
+          <Link href={`${base}/mayor_rotacion`} className="ml-auto shrink-0">
             <Button
               size="sm"
               variant="outline"
@@ -212,7 +212,7 @@ export default function ComprasDashboard() {
         <div className="flex items-center gap-3 bg-amber-500 rounded-2xl px-4 py-3 text-white">
           <PackageSearch className="h-4 w-4 shrink-0" />
           <span className="text-sm font-medium">
-            ${fmt(r.capitalEstancado)} en capital inmovilizado — {r.totalEstancados} productos sin movimiento ≥30 días.
+            ${fmt(r.capitalEstancado)} en capital inmovilizado — {r.totalEstancados} productos sin venta hace 30 días o más.
           </span>
           <Link href={`${base}/menor_rotacion`} className="ml-auto shrink-0">
             <Button
@@ -239,7 +239,7 @@ export default function ComprasDashboard() {
         <MetricCard
           title="En quiebre"
           value={String(r.enQuiebre)}
-          subtitle="Stock = 0 con demanda"
+          subtitle="Vendidos en 45 días, sin stock ni tránsito"
           icon={AlertTriangle}
           color="red"
           href={`${base}/mayor_rotacion`}
@@ -311,15 +311,15 @@ export default function ComprasDashboard() {
         </CardContent>
       </Card>
 
-      {/* Clasificación ABC — clickeable */}
-      <Link href={`${base}/mayor_rotacion`}>
+      {/* Clasificación ABC — clickeable (es la de Sugeridos) */}
+      <Link href={`${base}/sugeridos`}>
         <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden hover:shadow-md transition-shadow cursor-pointer">
           <CardHeader className="pb-3 border-b border-slate-50 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-bold text-slate-700 flex items-center gap-2">
               <BarChart3 size={18} className="opacity-70" /> Clasificación ABC del Catálogo
             </CardTitle>
             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-              {r.totalSkusActivos} SKUs activos
+              {r.totalSkusActivos} SKUs vendidos en el año
             </span>
           </CardHeader>
           <CardContent className="p-6">

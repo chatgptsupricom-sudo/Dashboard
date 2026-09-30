@@ -1,312 +1,225 @@
+import { requireRoles } from "@/lib/auth/roles";
+import { leerSede } from "@/lib/compras/constants";
+import {
+  cachear,
+  catalogo,
+  dominioVentas,
+  hoyCaracas,
+  idsPorCodigo,
+  leerSmartbit,
+  signoDocumento,
+  type ProductoCompras,
+} from "@/lib/compras/datosOdoo";
+import { ventasPorDia } from "@/lib/compras/historial";
 import { callOdooRPC } from "@/lib/odoo";
-import { jwtVerify } from "jose";
+import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, desdeOdoo, rangoSmartbit } from "@/lib/smartbit";
 import { NextRequest, NextResponse } from "next/server";
-import { jwtSecretBytes } from "@/lib/secretos";
 
-const JWT_SECRET = jwtSecretBytes();
-
-const tendenciaCache = new Map<string, { data: any; ts: number }>();
-const CACHE_TTL = 15 * 60 * 1000;
+/**
+ * GET /api/compras/tendencia?sede=9&mes=YYYY-MM | &historico=true
+ *
+ * Unidades vendidas con las reglas de Compras (lib/compras/datosOdoo.ts): sin
+ * las líneas de costo (COGS) que triplicaban las unidades, notas de crédito
+ * restando, sin intercompañía ni servicios ("Saldo Inicial" salía entre los
+ * más vendidos). Antes del corte (abr-2026) la venta sale de Smartbit: en
+ * Odoo esos meses solo tienen las facturas abiertas migradas.
+ */
 
 const MESES_ES = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-function buildWeeksForMonth(year: number, month: number) {
-  const weeks: { label: string; start: Date; end: Date }[] = [];
-  const lastDay = new Date(year, month, 0, 23, 59, 59, 999);
-  let cursor = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  let weekNum = 1;
-  while (cursor <= lastDay) {
-    const start = new Date(cursor);
-    const end = new Date(cursor);
-    end.setDate(cursor.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    if (end > lastDay) end.setTime(lastDay.getTime());
-    weeks.push({
-      label: `Sem ${weekNum} (${start.getDate()}/${start.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1})`,
-      start,
-      end,
+const dd = (n: number) => String(n).padStart(2, "0");
+
+/** Semanas del mes: 1–7, 8–14, 15–21, 22–28 y 29–fin. */
+function semanasDelMes(anio: number, mes: number) {
+  const ultimo = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  const semanas: { label: string; ini: string; fin: string }[] = [];
+  for (let d = 1, n = 1; d <= ultimo; d += 7, n++) {
+    const hasta = Math.min(d + 6, ultimo);
+    semanas.push({
+      label: `Sem ${n} (${d}/${mes}–${hasta}/${mes})`,
+      ini: `${anio}-${dd(mes)}-${dd(d)}`,
+      fin: `${anio}-${dd(mes)}-${dd(hasta)}`,
     });
-    cursor.setDate(cursor.getDate() + 7);
-    weekNum++;
   }
-  return weeks;
+  return semanas;
 }
 
-async function fetchLines(domain: any[], fields: string[]): Promise<any[]> {
-  let result: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await callOdooRPC<any[]>(
-      "account.move.line",
-      "search_read",
-      [domain],
-      {
-        fields,
-        order: "id asc",
-        limit: 5000,
-        offset,
-      },
-    );
-    if (!page || page.length === 0) break;
-    result = result.concat(page);
-    if (page.length < 5000) break;
-    offset += 5000;
+const nombreDe = (p: ProductoCompras) => (p.codigo.startsWith("PROD-") ? p.nombre : `[${p.codigo}] ${p.nombre}`);
+
+async function mensual(sedeId: number, anio: number, mes: number) {
+  const semanas = semanasDelMes(anio, mes);
+  const desde = semanas[0].ini;
+  const hasta = semanas[semanas.length - 1].fin;
+  const [{ porProducto, sinProducto }, cat] = await Promise.all([ventasPorDia(sedeId, desde, hasta), catalogo()]);
+
+  // producto -> unidades por semana
+  const filas: { key: string; nombre: string; semanal: number[] }[] = [];
+  const agregar = (key: string, nombre: string, dias: Map<string, number>) => {
+    const semanal = semanas.map((s) => {
+      let t = 0;
+      for (const [d, q] of dias) if (d >= s.ini && d <= s.fin) t += q;
+      return t;
+    });
+    filas.push({ key, nombre, semanal });
+  };
+  for (const [id, dias] of porProducto) {
+    const p = cat.get(id);
+    agregar(String(id), p ? nombreDe(p) : `Producto ${id}`, dias);
   }
-  return result;
+  for (const [codigo, x] of sinProducto) agregar(`sb:${codigo}`, `[${codigo}] ${x.nombre}`, x.dias);
+
+  const total = (f: { semanal: number[] }) => f.semanal.reduce((a, b) => a + b, 0);
+  const ordenadas = filas
+    .map((f) => ({ ...f, total: total(f) }))
+    .filter((f) => f.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const productosPorSemana: Record<string, { nombre: string; qty: number }[]> = {};
+  semanas.forEach((s, i) => {
+    productosPorSemana[s.label] = filas
+      .map((f) => ({ nombre: f.nombre, qty: Math.round(f.semanal[i]) }))
+      .filter((p) => p.qty > 0)
+      .sort((a, b) => b.qty - a.qty);
+  });
+
+  return {
+    historico: false,
+    mes: `${anio}-${dd(mes)}`,
+    // "smartbit" = mes previo al corte: la venta sale del histórico de Smartbit.
+    fuente: hasta < CORTE_ODOO ? "smartbit" : "odoo",
+    semanas: semanas.map((s) => s.label),
+    totalPorSemana: semanas.map((s, i) => ({
+      semana: s.label,
+      total: Math.round(filas.reduce((t, f) => t + f.semanal[i], 0)),
+    })),
+    topProductos: ordenadas.slice(0, 10).map((f) => ({
+      id: f.key,
+      nombre: f.nombre,
+      totalVentas: Math.round(f.total),
+      semanal: f.semanal.map((q) => Math.round(q)),
+    })),
+    productosPorSemana,
+    productosTotal: ordenadas.map((f) => ({ nombre: f.nombre, qty: Math.round(f.total) })),
+  };
+}
+
+async function historico(sedeId: number) {
+  const hoy = hoyCaracas();
+  const [y, m] = hoy.split("-").map(Number);
+  // Últimos 24 meses, contando el actual.
+  const inicio = new Date(Date.UTC(y, m - 1 - 23, 1));
+  const since = `${inicio.getUTCFullYear()}-${dd(inicio.getUTCMonth() + 1)}-01`;
+
+  const ini = desdeOdoo(since);
+  const rango = rangoSmartbit(since, hoy);
+  const dominio = [...(await dominioVentas(sedeId)), ["invoice_date", ">=", ini], ["invoice_date", "<=", hoy]];
+  const leerGrupos = async (groupby: string[]) => {
+    const r = await callOdooRPC<any[]>("account.move.line", "read_group", [dominio, ["quantity:sum"], groupby], { lazy: false });
+    if (!Array.isArray(r)) throw new Error("Odoo no respondió la tendencia");
+    return r;
+  };
+  const [porMesOdoo, porProductoOdoo, porMesSb, porProductoSb, cat, codigos] = await Promise.all([
+    leerGrupos(["invoice_date:month", "move_type"]),
+    leerGrupos(["product_id", "move_type"]),
+    rango
+      ? leerSmartbit(
+          `SELECT DATE_FORMAT(fecha, '%Y-%m') AS mes, SUM(unidades) AS unidades
+             FROM ventas_smartbit
+            WHERE company_id = ? AND fecha BETWEEN ? AND ? AND ${SQL_SIN_INTERCOMPANIA}
+            GROUP BY mes`,
+          [sedeId, rango[0], rango[1]],
+        )
+      : Promise.resolve([] as any[]),
+    rango
+      ? leerSmartbit(
+          `SELECT UPPER(TRIM(codigo_articulo)) AS codigo, MAX(articulo) AS articulo, SUM(unidades) AS unidades
+             FROM ventas_smartbit
+            WHERE company_id = ? AND fecha BETWEEN ? AND ? AND codigo_articulo IS NOT NULL
+              AND ${SQL_SIN_INTERCOMPANIA}
+            GROUP BY UPPER(TRIM(codigo_articulo))`,
+          [sedeId, rango[0], rango[1]],
+        )
+      : Promise.resolve([] as any[]),
+    catalogo(),
+    idsPorCodigo(),
+  ]);
+
+  const porMes = new Map<string, number>();
+  for (const g of porMesOdoo) {
+    const mes = String(g.__range?.["invoice_date:month"]?.from || "").slice(0, 7);
+    if (mes) porMes.set(mes, (porMes.get(mes) ?? 0) + signoDocumento(g.move_type) * (Number(g.quantity) || 0));
+  }
+  for (const f of porMesSb) {
+    const mes = String(f.mes || "");
+    if (mes) porMes.set(mes, (porMes.get(mes) ?? 0) + (Number(f.unidades) || 0));
+  }
+
+  const porProducto = new Map<string, { nombre: string; qty: number }>();
+  const sumarProducto = (key: string, nombre: string, q: number) => {
+    const x = porProducto.get(key) ?? { nombre, qty: 0 };
+    x.qty += q;
+    porProducto.set(key, x);
+  };
+  for (const g of porProductoOdoo) {
+    const id = g.product_id?.[0];
+    if (!id) continue;
+    const p = cat.get(id);
+    sumarProducto(String(id), p ? nombreDe(p) : String(g.product_id[1] || id), signoDocumento(g.move_type) * (Number(g.quantity) || 0));
+  }
+  for (const f of porProductoSb) {
+    const codigo = String(f.codigo || "");
+    if (!codigo) continue;
+    const id = codigos.get(codigo);
+    const p = id ? cat.get(id) : undefined;
+    sumarProducto(id ? String(id) : `sb:${codigo}`, p ? nombreDe(p) : `[${codigo}] ${f.articulo || ""}`.trim(), Number(f.unidades) || 0);
+  }
+
+  const meses = [...porMes.entries()].filter(([, q]) => q > 0);
+  const totalHistorico = meses.reduce((s, [, q]) => s + q, 0);
+  const mesesConVenta = meses.length;
+  const mejor = meses.sort((a, b) => b[1] - a[1])[0];
+  const mejorMesLabel = mejor
+    ? `${MESES_ES[parseInt(mejor[0].slice(5, 7), 10) - 1]} ${mejor[0].slice(0, 4)}`
+    : "-";
+
+  return {
+    historico: true,
+    totalHistorico: Math.round(totalHistorico),
+    promedioMensual: mesesConVenta > 0 ? Math.round(totalHistorico / mesesConVenta) : 0,
+    mejorMes: { label: mejorMesLabel, total: mejor ? Math.round(mejor[1]) : 0 },
+    mesesConVenta,
+    topProductos: [...porProducto.values()]
+      .map((v) => ({ nombre: v.nombre, qty: Math.round(v.qty) }))
+      .filter((p) => p.qty > 0)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 10),
+  };
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["compras"]);
+  if (auth.error) return auth.error;
+
+  const sedeId = leerSede(request.url);
+  if (!sedeId) return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
+
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "compras" && userRole !== "superadmin") {
-      return NextResponse.json(
-        { error: "Permisos insuficientes" },
-        { status: 403 },
-      );
-    }
-
     const { searchParams } = new URL(request.url);
-    const sedeParam = searchParams.get("sede");
-    const historico = searchParams.get("historico") === "true";
-
-    const today = new Date();
-    const defaultMes = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-    const mesParam = historico ? null : (searchParams.get("mes") ?? defaultMes);
-
-    const cacheKey = historico
-      ? `compras_tendencia_v5_historico_sede${sedeParam ?? "todas"}`
-      : `compras_tendencia_v5_mes${mesParam}_sede${sedeParam ?? "todas"}`;
-
-    const cached = tendenciaCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      return NextResponse.json({ success: true, data: cached.data });
+    if (searchParams.get("historico") === "true") {
+      const data = await cachear(`tendencia|hist|${sedeId}|${hoyCaracas()}`, () => historico(sedeId), 15 * 60 * 1000);
+      return NextResponse.json({ success: true, data });
     }
 
-    // Base domain — igual para histórico y mensual
-    const baseDomain: any[] = [
-      ["move_id.move_type", "in", ["out_invoice", "out_refund", "out_receipt"]],
-      ["move_id.state", "=", "posted"],
-      ["move_id.partner_id.name", "not ilike", "supricom"],
-      ["move_id.partner_id.name", "not ilike", "office solution"],
-      ["product_id", "!=", false],
-    ];
-    if (sedeParam)
-      baseDomain.push(["move_id.company_id", "=", parseInt(sedeParam, 10)]);
-
-    // ── MODO HISTÓRICO ──────────────────────────────────────────────────────
-    if (historico) {
-      // Últimos 24 meses
-      const since = new Date(today.getFullYear(), today.getMonth() - 23, 1);
-      const sinceStr = since.toISOString().split("T")[0];
-      const domain = [...baseDomain, ["move_id.invoice_date", ">=", sinceStr]];
-
-      const lines = await fetchLines(domain, [
-        "product_id",
-        "quantity",
-        "date",
-      ]);
-
-      // Acumular por mes y por producto
-      const monthTotals: Record<string, number> = {};
-      const productTotals: Record<number, { name: string; qty: number }> = {};
-
-      lines.forEach((line: any) => {
-        if (!line.product_id || !line.date) return;
-        const d = new Date(line.date);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        const qty = line.quantity || 0;
-        const pId = line.product_id[0];
-        const pName = line.product_id[1] || "";
-
-        monthTotals[monthKey] = (monthTotals[monthKey] ?? 0) + qty;
-        if (!productTotals[pId]) productTotals[pId] = { name: pName, qty: 0 };
-        productTotals[pId].qty += qty;
-      });
-
-      const totalHistorico = Object.values(monthTotals).reduce(
-        (s, v) => s + v,
-        0,
-      );
-      const mesesConVenta = Object.keys(monthTotals).length || 1;
-      const promedioMensual = Math.round(totalHistorico / mesesConVenta);
-
-      const mejorMesKey =
-        Object.entries(monthTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-      const mejorMesTotal = mejorMesKey
-        ? Math.round(monthTotals[mejorMesKey])
-        : 0;
-      const mejorMesLabel = mejorMesKey
-        ? (() => {
-            const [y, m] = mejorMesKey.split("-");
-            return `${MESES_ES[parseInt(m, 10) - 1]} ${y}`;
-          })()
-        : "-";
-
-      const topProductos = Object.values(productTotals)
-        .map((v) => ({ nombre: v.name, qty: Math.round(v.qty) }))
-        .filter((p) => p.qty > 0)
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 10);
-
-      const resultado = {
-        historico: true,
-        totalHistorico: Math.round(totalHistorico),
-        promedioMensual,
-        mejorMes: { label: mejorMesLabel, total: mejorMesTotal },
-        mesesConVenta,
-        topProductos,
-      };
-
-      tendenciaCache.set(cacheKey, { data: resultado, ts: Date.now() });
-      return NextResponse.json({ success: true, data: resultado });
+    const mesParam = searchParams.get("mes") ?? hoyCaracas().slice(0, 7);
+    const [anio, mes] = mesParam.split("-").map((x) => parseInt(x, 10));
+    if (!anio || !mes || mes < 1 || mes > 12) {
+      return NextResponse.json({ error: "Parámetro mes inválido" }, { status: 400 });
     }
-
-    // ── MODO MENSUAL ────────────────────────────────────────────────────────
-    const [yearStr, monthStr] = mesParam!.split("-");
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    if (!year || !month || month < 1 || month > 12) {
-      return NextResponse.json(
-        { error: "Parámetro mes inválido" },
-        { status: 400 },
-      );
-    }
-
-    const weeks = buildWeeksForMonth(year, month);
-    const startStr = weeks[0].start.toISOString().split("T")[0];
-    const endStr = weeks[weeks.length - 1].end.toISOString().split("T")[0];
-
-    const domain = [
-      ...baseDomain,
-      ["move_id.invoice_date", ">=", startStr],
-      ["move_id.invoice_date", "<=", endStr],
-    ];
-
-    const invoiceLines = await fetchLines(domain, [
-      "product_id",
-      "quantity",
-      "date",
-    ]);
-
-    const weeklyTotals: Record<string, number> = {};
-    weeks.forEach((w) => {
-      weeklyTotals[w.label] = 0;
-    });
-
-    const productTotals: Record<number, { name: string; qty: number }> = {};
-    const weekProductMap: Record<
-      string,
-      Record<number, { nombre: string; qty: number }>
-    > = {};
-    weeks.forEach((w) => {
-      weekProductMap[w.label] = {};
-    });
-
-    invoiceLines.forEach((line: any) => {
-      if (!line.product_id || !line.date) return;
-      const date = new Date(line.date);
-      const qty = line.quantity || 0;
-      const pId = line.product_id[0];
-      const pName = line.product_id[1] || "";
-
-      if (!productTotals[pId]) productTotals[pId] = { name: pName, qty: 0 };
-      productTotals[pId].qty += qty;
-
-      for (const w of weeks) {
-        if (date >= w.start && date <= w.end) {
-          weeklyTotals[w.label] = (weeklyTotals[w.label] ?? 0) + qty;
-          if (!weekProductMap[w.label][pId])
-            weekProductMap[w.label][pId] = { nombre: pName, qty: 0 };
-          weekProductMap[w.label][pId].qty += qty;
-          break;
-        }
-      }
-    });
-
-    const topProductos = Object.entries(productTotals)
-      .sort((a, b) => b[1].qty - a[1].qty)
-      .slice(0, 10)
-      .map(([id, v]) => ({
-        id: Number(id),
-        nombre: v.name,
-        totalVentas: Math.round(v.qty),
-      }));
-
-    const ventasPorProducto: Record<number, Record<string, number>> = {};
-    topProductos.forEach((p) => {
-      ventasPorProducto[p.id] = {};
-      weeks.forEach((w) => {
-        ventasPorProducto[p.id][w.label] = 0;
-      });
-    });
-    invoiceLines.forEach((line: any) => {
-      if (!line.product_id || !line.date) return;
-      const pId = line.product_id[0];
-      if (!ventasPorProducto[pId]) return;
-      const date = new Date(line.date);
-      for (const w of weeks) {
-        if (date >= w.start && date <= w.end) {
-          ventasPorProducto[pId][w.label] =
-            (ventasPorProducto[pId][w.label] ?? 0) + (line.quantity || 0);
-          break;
-        }
-      }
-    });
-
-    const productosPorSemana: Record<
-      string,
-      { nombre: string; qty: number }[]
-    > = {};
-    weeks.forEach((w) => {
-      productosPorSemana[w.label] = Object.values(weekProductMap[w.label])
-        .map((v) => ({ nombre: v.nombre, qty: Math.round(v.qty) }))
-        .filter((p) => p.qty > 0)
-        .sort((a, b) => b.qty - a.qty);
-    });
-
-    const productosTotal = Object.values(productTotals)
-      .map((v) => ({ nombre: v.name, qty: Math.round(v.qty) }))
-      .filter((p) => p.qty > 0)
-      .sort((a, b) => b.qty - a.qty);
-
-    const resultado = {
-      historico: false,
-      mes: mesParam,
-      semanas: weeks.map((w) => w.label),
-      totalPorSemana: weeks.map((w) => ({
-        semana: w.label,
-        total: Math.round(weeklyTotals[w.label] ?? 0),
-      })),
-      topProductos: topProductos.map((p) => ({
-        ...p,
-        semanal: weeks.map((w) =>
-          Math.round(ventasPorProducto[p.id][w.label] ?? 0),
-        ),
-      })),
-      productosPorSemana,
-      productosTotal,
-    };
-
-    tendenciaCache.set(cacheKey, { data: resultado, ts: Date.now() });
-    return NextResponse.json({ success: true, data: resultado });
+    const data = await cachear(`tendencia|${sedeId}|${mesParam}|${hoyCaracas()}`, () => mensual(sedeId, anio, mes), 15 * 60 * 1000);
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error("❌ Error en API tendencia:", error.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });

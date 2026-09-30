@@ -34,17 +34,20 @@ export async function completarLlevaSerial<T extends { id: number; codigo: strin
   let conSerial = new Set<string>();
   if (codigos.length > 0) {
     try {
+      // Todos los que llevan serial o lote (~1.000) y se comparan normalizados:
+      // buscar por `default_code in codigos` exigía el código idéntico, y en
+      // Odoo hay códigos con espacios adentro ("90NR0N06- M00590") que el
+      // packing list trae sin ellos.
       const productos = await callOdooRPC<any[]>(
         "product.product",
         "search_read",
-        [[["default_code", "in", codigos]]],
-        { fields: ["default_code", "tracking"], limit: 0, context: { active_test: false } },
+        [[["tracking", "!=", "none"], ["default_code", "!=", false]]],
+        { fields: ["default_code"], limit: 0, context: { active_test: false } },
       );
-      conSerial = new Set(
-        (productos || [])
-          .filter((p) => p.tracking && p.tracking !== "none")
-          .map((p) => normalizarCodigo(p.default_code)),
-      );
+      // Un error de Odoo llega como undefined, no como excepción: sin esto se
+      // guardaba "sin serial" para siempre en todos los renglones.
+      if (!Array.isArray(productos)) throw new Error("Odoo no respondió los productos con serial");
+      conSerial = new Set(productos.map((p) => normalizarCodigo(p.default_code)));
     } catch (e: any) {
       console.error("[recepcion] no se pudo consultar en Odoo que productos llevan serial:", e?.message);
       return items;

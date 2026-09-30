@@ -2038,8 +2038,11 @@
       "variacion_label": "Variación",
       "ahorro_sobrecosto": "Ahorro/Sobrecosto Unit.",
       "costo_unitario": "Costo unitario",
-      "valor_inmovilizado": "Valor inmovilizado",
-      "dias_sin_stock_est": "Días sin stock (estimado)"
+      "valor_inmovilizado": "Valor con +90 días",
+      "dias_sin_stock_est": "Días sin stock en el mes",
+      "mas_90_unid": "+90 días (unid.)",
+      "dias_sin_venta": "Días sin venta",
+      "sin_ventas": "Sin ventas"
     },
     "alert": {
       "centro_control": "Centro de Control",

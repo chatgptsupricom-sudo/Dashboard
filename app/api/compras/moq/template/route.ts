@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
+import { almacenables } from "@/lib/compras/datosOdoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
@@ -26,51 +26,23 @@ export async function GET(request: NextRequest) {
     const brandFilter = searchParams.get("brand")?.trim().toUpperCase() || "";
     const categoryFilter = searchParams.get("category")?.trim() || "";
 
-    const productDomain = [
-      ["active", "=", true],
-      ["type", "=", "product"],
-    ];
-    const productFields = ["default_code", "name", "categ_id"];
-
-    const productsData = (await callOdooRPC<any[]>(
-      "product.product",
-      "search_read",
-      [productDomain],
-      {
-        fields: productFields,
-        limit: 0,
-      },
-    )) || [];
-
-    if (!productsData) {
-      return NextResponse.json(
-        { error: "Error obteniendo SKUs de Odoo" },
-        { status: 500 },
-      );
-    }
+    // Almacenables activos con código; marca = la de Odoo (spiff_brand_id),
+    // la misma que en el resto de Compras. Antes era la primera palabra del
+    // nombre, que salía vacía en los nombres que empiezan con espacio.
+    const productsData = await almacenables();
 
     const moqsDb = await query("SELECT sku, cantidad, costo FROM moqs");
     const moqMap = new Map(moqsDb.rows.map((row: any) => [row.sku, row]));
 
     const productsWithMeta = productsData
-      .filter(
-        (p) =>
-          p.default_code &&
-          typeof p.default_code === "string" &&
-          p.default_code.trim() !== "",
-      )
+      .filter((p) => !p.codigo.startsWith("PROD-"))
       .map((p) => {
-        const sku = p.default_code.trim();
-        const nombre = p.name || "";
-        const marca = nombre ? nombre.split(" ")[0].toUpperCase() : "SIN MARCA";
-        const categoria = p.categ_id ? p.categ_id[1] : "Sin Categoría";
-        const registro = moqMap.get(sku);
-
+        const registro = moqMap.get(p.codigo);
         return {
-          sku,
-          nombre,
-          marca,
-          categoria,
+          sku: p.codigo,
+          nombre: p.nombre,
+          marca: p.marca,
+          categoria: p.categoria,
           cantidad: registro?.cantidad ?? "",
           costo: registro?.costo ?? "",
         };

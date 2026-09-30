@@ -81,7 +81,19 @@ export interface ProductoOdoo {
   id: number;
   default_code: string | null;
   name: string;
+  /** Costo de la sede (promedio con gastos de importación). */
   standard_price: number;
+  /** Tarifa del proveedor elegido (product.supplierinfo), si tiene. */
+  supplier_price?: number | null;
+  /** Último precio pagado en una orden confirmada de la sede. */
+  last_price?: number | null;
+}
+
+/** Precio que se propone para una línea nueva y de dónde sale. */
+export function precioPropuesto(p: ProductoOdoo): { precio: number; fuente: string } {
+  if (p.supplier_price && p.supplier_price > 0) return { precio: p.supplier_price, fuente: "precio del proveedor" };
+  if (p.last_price && p.last_price > 0) return { precio: p.last_price, fuente: "última compra" };
+  return { precio: Number(p.standard_price || 0), fuente: "costo" };
 }
 
 export const ESTADO_LABEL: Record<OrdenEstado, string> = {

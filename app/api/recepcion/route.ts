@@ -49,7 +49,12 @@ export async function GET(request: NextRequest) {
                 WHERE a.recepcion_id = r.id AND a.tipo = 'foto_llegada') AS inicio_at
          FROM recepcion_packing r
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY (r.etapa = 'cerrado') ASC, COALESCE(r.fecha_estimada, DATE(r.created_at)) ASC, r.id DESC
+        -- Abiertos primero, por fecha estimada; los cerrados, el más reciente
+        -- primero: antes iban del más viejo al más nuevo y, con el LIMIT, los
+        -- últimos cerrados eran los que desaparecían de la lista.
+        ORDER BY (r.etapa = 'cerrado') ASC,
+                 IF(r.etapa = 'cerrado', NULL, COALESCE(r.fecha_estimada, DATE(r.created_at))) ASC,
+                 r.cerrado_at DESC, r.id DESC
         LIMIT 200`,
       params,
     );
