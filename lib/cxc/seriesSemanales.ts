@@ -4,6 +4,7 @@ import { obtenerCobros, esRelacionada, RELACIONADA } from "@/lib/cxc/cobros";
 import { idsACredito } from "@/lib/cxc/credito";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { agingVacio, bandaDeDias, type Banda } from "@/lib/cxc/bandas";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -146,7 +147,8 @@ interface Factura {
   residual: number;
   /** Venta a crédito (lib/cxc/credito.ts). */
   credito: boolean;
-  /** Vencida antes de 2025 (lib/cxc/carteraVieja.ts): fuera de Cartera Vencida, Recuperación y CEI. */
+  /** Incobrable: vencida antes de 2025 (lib/cxc/carteraVieja.ts) o marcada a mano
+   *  (lib/cxc/incobrablesManuales.ts). Fuera de Cartera Vencida, Recuperación y CEI. */
   vieja: boolean;
   /** Empresa relacionada (SUPER TECHNO, lib/cxc/cobros.ts): fuera del CEI, Cartera Vencida y Recuperación. */
   relacionada: boolean;
@@ -174,7 +176,7 @@ export async function calcularSeriesCxC(
   const noInterno: any[] = [["partner_id.name", "not ilike", "supricom"]];
 
   const hastaSerie = iso(semanas[semanas.length - 1].fin > hoy ? hoy : semanas[semanas.length - 1].fin);
-  const [abiertasHoy, conciliaciones, cobros] = await Promise.all([
+  const [abiertasHoy, conciliaciones, cobros, manuales] = await Promise.all([
     // Cartera abierta hoy (cualquier vencimiento): la base sobre la que se
     // reconstruye hacia atrás.
     paginar(
@@ -207,6 +209,8 @@ export async function calcularSeriesCxC(
       hasta: hastaSerie,
       dominioFactura: [["move_type", "=", "out_invoice"], ["partner_id.name", "not ilike", "supricom"]],
     }),
+    // Incobrables marcados a mano: se tratan como cartera vieja.
+    idsIncobrablesManuales(companyIds),
   ]);
 
   const facturas = new Map<number, Factura>();
@@ -219,7 +223,7 @@ export async function calcularSeriesCxC(
       due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
       residual: signo * Math.abs(inv.amount_residual || 0),
       credito: false,
-      vieja: esCarteraVieja(inv.invoice_date_due),
+      vieja: esCarteraVieja(inv.invoice_date_due) || manuales.has(inv.id),
       relacionada: esRelacionada(inv.commercial_partner_id?.[1] || ""),
       pagos: [],
     });
@@ -263,7 +267,7 @@ export async function calcularSeriesCxC(
         due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
         residual: signo * Math.abs(inv.amount_residual || 0),
         credito: false,
-        vieja: esCarteraVieja(inv.invoice_date_due),
+        vieja: esCarteraVieja(inv.invoice_date_due) || manuales.has(inv.id),
         relacionada: esRelacionada(inv.commercial_partner_id?.[1] || ""),
         pagos: [],
       });

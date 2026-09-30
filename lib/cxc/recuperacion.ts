@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 
 /**
  * KPI "Recuperación Vencidos" (issue #189).
@@ -107,9 +108,13 @@ export async function calcularRecuperacion(
   // filtra en JS por razones históricas).
   // SUPER TECHNO (empresa relacionada, lib/cxc/cobros.ts) va fuera igual que
   // los internos.
+  // Incobrables marcados a mano (lib/cxc/incobrablesManuales.ts): fuera
+  // igual que la cartera vieja.
+  const manuales = [...(await idsIncobrablesManuales(companyIds))];
   const noInterno = (prefijo: string): any[] => [
     [`${prefijo}partner_id.name`, "not ilike", "supricom"],
     [`${prefijo}commercial_partner_id.name`, "not ilike", RELACIONADA],
+    ...(manuales.length ? [[prefijo ? prefijo.slice(0, -1) : "id", "not in", manuales]] : []),
   ];
 
   // Facturas que ya estaban vencidas al iniciar el mes y HOY siguen con saldo.

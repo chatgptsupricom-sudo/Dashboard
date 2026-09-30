@@ -1426,7 +1426,7 @@
     "cartera": "Cartera",
     "ventas_netas": "Ventas netas",
     "incobrables": "Incobrables",
-    "incobrables_desc": "Vencidas antes de 2025",
+    "incobrables_desc": "Vencidas antes de 2025 o marcadas",
     "clientes": "clientes",
     "incobrables_nota": "no cuentan en Cartera Vencida, Recuperación ni DSO",
     "fuera_del_calculo": "excluida: empresa relacionada del grupo, no un cliente; distorsionaría el indicador",

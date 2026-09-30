@@ -8,6 +8,7 @@ import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 import { bandaDeDias } from "@/lib/cxc/bandas";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -181,6 +182,9 @@ export async function GET(request: NextRequest) {
       // cobros en el mes, aunque ya esten cerradas.
       const desdeStr = monthStart.toISOString().split("T")[0];
       const hastaStr = monthEnd.toISOString().split("T")[0];
+      // Incobrables marcados a mano: fuera, igual que en la tarjeta.
+      const manuales = [...(await idsIncobrablesManuales(companyIds))];
+      const sinManuales: any[] = manuales.length ? [["id", "not in", manuales]] : [];
       const dominioVencidas: any[] = [
         ["move_type", "=", "out_invoice"],
         ["state", "=", "posted"],
@@ -189,6 +193,7 @@ export async function GET(request: NextRequest) {
         ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
         ["commercial_partner_id.name", "not ilike", RELACIONADA],
+        ...sinManuales,
       ];
       const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
         "invoice_date_due", "payment_state", "amount_total", "amount_residual"];
@@ -206,6 +211,7 @@ export async function GET(request: NextRequest) {
             ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
             ["partner_id.name", "not ilike", "supricom"],
             ["commercial_partner_id.name", "not ilike", RELACIONADA],
+            ...sinManuales,
           ],
         }),
       ]);

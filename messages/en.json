@@ -1948,7 +1948,7 @@
     "cartera": "Portfolio",
     "ventas_netas": "Net sales",
     "incobrables": "Uncollectible",
-    "incobrables_desc": "Overdue before 2025",
+    "incobrables_desc": "Overdue before 2025 or flagged",
     "clientes": "customers",
     "incobrables_nota": "excluded from Overdue, Recovery and DSO",
     "fuera_del_calculo": "excluded: related group company, not a customer; it would distort the metric",

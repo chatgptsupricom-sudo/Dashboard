@@ -77,6 +77,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_pago_clientes", // Pago de Clientes
       "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
+      "cxc_incobrables", // Incobrables marcados a mano, con justificación
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
@@ -239,6 +240,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_pago_clientes", // Pago de Clientes
       "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
+      "cxc_incobrables", // Incobrables marcados a mano, con justificación
     ],
   },
   [UserRole.RECURSOS_HUMANOS]: {
@@ -312,6 +314,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_pago_clientes",
       "cxc_clasificacion_clientes", // Clasificación de clientes (buena/mala paga)
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
+      "cxc_incobrables", // Incobrables marcados a mano, con justificación
     ],
   },
   [UserRole.DISENADOR]: {

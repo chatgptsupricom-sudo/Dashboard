@@ -438,7 +438,7 @@ export default function CxcDashboardPage() {
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Incobrables</span>
                 </div>
                 <div className="text-3xl font-bold text-slate-800">{formatCurrency(data.kpis.incobrables.saldo)}</div>
-                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025</div>
+                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025 o marcadas a mano</div>
                 <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
                   <span>{data.kpis.incobrables.facturas} facturas · {data.kpis.incobrables.clientes} clientes</span>
                 </div>
@@ -1294,7 +1294,7 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.clientes}</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025 que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
+                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025, o marcadas como incobrables en la sección Incobrables, que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>

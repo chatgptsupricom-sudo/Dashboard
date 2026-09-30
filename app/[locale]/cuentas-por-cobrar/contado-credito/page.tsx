@@ -552,7 +552,7 @@ export default function ContadoCreditoPage() {
                     <p className="text-xs text-slate-500 mb-2">Fuera de este total, igual que en los KPIs del Dashboard</p>
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                       {[
-                        { label: "Incobrables", hint: "Vencidas antes de 2025 · click para ver", monto: data.porCobrar.incobrables, tipo: "incobrables" as TipoAparte },
+                        { label: "Incobrables", hint: "Antes de 2025 o marcadas · click para ver", monto: data.porCobrar.incobrables, tipo: "incobrables" as TipoAparte },
                         // Solo en la sede donde tiene saldo (Panamá).
                         ...(Math.abs(data.porCobrar.relacionadas) > 0.005
                           ? [{ label: "SUPER TECHNO LLC", hint: "Empresa relacionada del grupo", monto: data.porCobrar.relacionadas, tipo: undefined }]
