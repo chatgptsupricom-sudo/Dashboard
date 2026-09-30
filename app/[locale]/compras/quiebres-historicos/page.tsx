@@ -274,16 +274,16 @@ export default function QuiebresHistoricosPage() {
                     <ColumnHeader label="Sem. con venta" tooltip={COLUMN_TOOLTIPS["Sem. con venta"]} />
                   </TableHead>
                   <TableHead className="text-center font-bold text-rose-700">
-                    <ColumnHeader label="Quiebres" tooltip="Semanas con pedidos que no se pudieron entregar completamente" />
+                    <ColumnHeader label="Quiebres" tooltip="Veces que el stock llegó a 0 teniendo demanda (venta en los 90 días previos)" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Sem. en quiebre" tooltip={COLUMN_TOOLTIPS["Sem. en quiebre"]} />
                   </TableHead>
                   <TableHead className="text-center">
-                    <ColumnHeader label="Pedidos sin entregar" tooltip="Número de líneas de venta donde qty pedida > qty entregada" />
+                    <ColumnHeader label="Pedidos sin entregar" tooltip="Líneas de pedidos de venta confirmados (de hace más de 3 días, sin intercompañía) con menos entregado que pedido" />
                   </TableHead>
                   <TableHead className="text-center">
-                    <ColumnHeader label="Unidades faltantes" tooltip="Suma de unidades pedidas menos entregadas (faltante real)" />
+                    <ColumnHeader label="Unidades faltantes" tooltip="Unidades pedidas menos entregadas de esas líneas" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Frecuencia" tooltip={COLUMN_TOOLTIPS.Frecuencia} />

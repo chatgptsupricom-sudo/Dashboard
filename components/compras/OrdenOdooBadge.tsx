@@ -2,6 +2,14 @@ import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { OdooSyncStatus } from "@/lib/compras/ordenes-types";
 
+const ESTADO_ODOO: Record<string, string> = {
+  draft: "borrador",
+  sent: "enviada",
+  "to approve": "por aprobar",
+  purchase: "confirmada",
+  done: "bloqueada",
+};
+
 /**
  * Estado de sincronizacion con Odoo (issue #166), aparte del badge de
  * estado del panel (OrdenEstadoBadge). "no_aplica" no es un error -- la
@@ -39,6 +47,19 @@ export function OrdenOdooBadge({
     );
   }
 
+  // El estado vivo de Odoo manda: una orden cancelada en Odoo después de
+  // sincronizarla (P-00101, cancelada allá el 21-sep) seguía en verde.
+  if (status === "sincronizado" && odooLive?.state === "cancel") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-600 dark:bg-red-950/40 dark:text-red-300"
+        title={`La orden ${odooLive.name} está cancelada en Odoo: el panel y Odoo no coinciden.`}
+      >
+        <AlertTriangle className="h-3 w-3" /> Cancelada en Odoo: {odooLive.name}
+      </span>
+    );
+  }
+
   if (status === "sincronizado") {
     return (
       <span
@@ -48,7 +69,9 @@ export function OrdenOdooBadge({
         title={odooLive ? `Odoo: ${odooLive.name} (${odooLive.state})` : "Sincronizada con Odoo"}
       >
         <CheckCircle2 className="h-3 w-3" />
-        {odooLive ? `Odoo: ${odooLive.name}` : "Sincronizada con Odoo"}
+        {odooLive
+          ? `Odoo: ${odooLive.name}${ESTADO_ODOO[odooLive.state] ? ` (${ESTADO_ODOO[odooLive.state]})` : ""}`
+          : "Sincronizada con Odoo"}
       </span>
     );
   }

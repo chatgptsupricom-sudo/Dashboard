@@ -52,6 +52,8 @@ type Renglon = {
   sellerId: number | undefined;
   sellerName: string;
   invoiceName: string;
+  /** Fecha del renglón para el Excel: emisión (facturado, por cobrar) o abono (cobrado). */
+  fecha?: string | null;
   /** Solo en "cobrado": vencimiento de la factura e interno, para el cuadre. */
   vencimiento?: string | null;
   interno?: boolean;
@@ -67,7 +69,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ],
-    ["id", "name", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id"],
+    ["id", "name", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id", "invoice_date"],
   );
 
   return invoicesRaw
@@ -87,6 +89,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       sellerId: inv.invoice_user_id?.[0],
       sellerName: inv.invoice_user_id?.[1] || "Sin vendedor",
       invoiceName: inv.name || "",
+      fecha: inv.invoice_date || null,
     }));
 }
 
@@ -122,6 +125,7 @@ async function renglonesCobradoDinero(
       sellerId: c.vendedorId,
       sellerName: c.vendedorName,
       invoiceName: c.facturaNombre,
+      fecha: c.fecha,
       vencimiento: c.vencimiento,
       interno: c.interno,
     }));
@@ -150,6 +154,7 @@ async function renglonesPorCobrar(
         sellerId: r.sellerId,
         sellerName: r.sellerName,
         invoiceName: r.name,
+        fecha: r.invoiceDate,
       })),
   };
 }
@@ -363,6 +368,24 @@ export async function GET(request: NextRequest) {
         .map((c) => ({ ...c, monto: round2(c.monto) }))
         .sort((a, b) => b.monto - a.monto);
 
+    // Desglose renglón por renglón para los Excel de la pantalla (cada tarjeta
+    // exporta las facturas o abonos que la forman, no solo el total).
+    const detalle = renglones.map((r) => {
+      const d = (ptMap[r.paymentTermId ?? -1] || "Contado").match(/(\d+)/);
+      return {
+        factura: r.invoiceName,
+        partnerId: r.partnerId,
+        cliente: r.partnerName,
+        fecha: r.fecha ?? null,
+        plazo: d ? parseInt(d[1], 10) : null,
+        monto: round2(r.monto),
+        vendedor: r.sellerName,
+        delMes: r.esDelMes,
+        journalId: r.journalId ?? null,
+        banco: r.journalName || "",
+      };
+    });
+
     const buckets = [...bucketsPorDias.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([dias, acum]) => ({
@@ -431,6 +454,7 @@ export async function GET(request: NextRequest) {
           ? { corte: porCobrar.corte, incobrables: porCobrar.incobrables, relacionadas: porCobrar.relacionadas, sinAplicar }
           : null,
         buckets,
+        detalle,
         bancos,
         vendedores,
         bancosDisponibles,

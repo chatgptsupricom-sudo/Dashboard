@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
+import { BANDAS, COLOR_BANDA } from "@/lib/cxc/bandas";
 import {
   TrendingUp,
   TrendingDown,
@@ -74,7 +75,8 @@ interface Salesperson {
   name: string;
   total: number;
   overdue: number;
-  count: number;
+  count: number;  /** Cobrado a banco/caja en el mes, de facturas de este vendedor. */
+  cobrado?: number;
 }
 
 interface CxCData {
@@ -150,13 +152,7 @@ function getTrafficDot(value: number, thresholds: { green: number; yellow: numbe
 
 function AgingBar({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
-  const colors: Record<string, string> = {
-    "corriente": "bg-emerald-400",
-    "1-30": "bg-amber-400",
-    "31-60": "bg-orange-400",
-    "61-90": "bg-red-500",
-    "91+": "bg-red-700",
-  };
+  const colors: Record<string, string> = Object.fromEntries(BANDAS.map((b) => [b.key, COLOR_BANDA[b.key].barra]));
   return (
     <div className="flex items-center gap-3">
       <span className="w-20 text-xs text-slate-500 text-right">{label}</span>
@@ -504,6 +500,7 @@ export default function CxCReport() {
                     <th className="text-left py-2 text-slate-500 font-medium">{t("responsable")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("cartera_total_label")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t("cobrado_mes")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("facturas")}</th>
                   </tr>
                 </thead>
@@ -519,6 +516,7 @@ export default function CxCReport() {
                           <span className="text-emerald-600">—</span>
                         )}
                       </td>
+                      <td className="py-2 text-right text-emerald-700 font-medium">{sp.cobrado ? formatCurrency(sp.cobrado) : "—"}</td>
                       <td className="py-2 text-right text-slate-500">{sp.count}</td>
                     </tr>
                   ))}

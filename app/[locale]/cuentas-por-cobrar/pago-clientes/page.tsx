@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   RefreshCw, Download, Search, AlertTriangle, DollarSign, Banknote, Receipt, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { XLSX, estilizarHoja } from "@/lib/excel";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -260,6 +260,7 @@ export default function PagoClientesPage() {
       { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 45 },
       { wch: 24 }, { wch: 10 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 9 },
     ];
+    estilizarHoja(ws);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, tab === "cobro" ? "Cobros" : "Retenciones y ajustes");
     const rango = (desdePago && hastaPago) ? `pago_${desdePago}_${hastaPago}` : `conf_${desdeConf}_${hastaConf}`;

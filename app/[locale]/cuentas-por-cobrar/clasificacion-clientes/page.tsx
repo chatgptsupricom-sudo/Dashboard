@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Calendar, RefreshCw, ThumbsUp, ThumbsDown, Info } from "lucide-react";
+import { Building2, Calendar, RefreshCw, ThumbsUp, ThumbsDown, Info, Search } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
@@ -99,6 +99,9 @@ export default function ClasificacionClientesPage() {
 
   const [empresa, setEmpresa] = useState("");
   const [meses, setMeses] = useState(6);
+  const [busqueda, setBusqueda] = useState("");
+  const q = busqueda.trim().toLowerCase();
+  const filtrar = (cs: Cliente[]) => cs.filter((c) => !q || c.partnerName.toLowerCase().includes(q));
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +135,7 @@ export default function ClasificacionClientesPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Clasificación de Clientes</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Buena paga / mala paga según su historial real de pagos, últimos {meses} {meses === 1 ? "mes" : "meses"}
+            Mejor récord de pago / con más retrasos según su historial real de pagos, últimos {meses} {meses === 1 ? "mes" : "meses"}
             {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
@@ -162,6 +165,16 @@ export default function ClasificacionClientesPage() {
               <option value={24}>Últimos 24 meses</option>
             </select>
           </div>
+          <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar cliente..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
           <button onClick={fetchData} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Actualizar
@@ -183,10 +196,10 @@ export default function ClasificacionClientesPage() {
                 <div className="bg-emerald-100 text-emerald-600 rounded-lg p-1.5">
                   <ThumbsUp size={16} />
                 </div>
-                <h2 className="font-semibold text-slate-800">Buena Paga</h2>
+                <h2 className="font-semibold text-slate-800">Mejor récord de pago</h2>
                 <span className="text-xs text-slate-400">({data.buenaPaga.length})</span>
               </div>
-              <TablaClientes clientes={data.buenaPaga} tono="verde" />
+              <TablaClientes clientes={filtrar(data.buenaPaga)} tono="verde" />
             </div>
 
             <div className="bg-white border border-red-200 rounded-2xl p-5">
@@ -194,10 +207,10 @@ export default function ClasificacionClientesPage() {
                 <div className="bg-red-100 text-red-600 rounded-lg p-1.5">
                   <ThumbsDown size={16} />
                 </div>
-                <h2 className="font-semibold text-slate-800">Mala Paga</h2>
+                <h2 className="font-semibold text-slate-800">Con más retrasos</h2>
                 <span className="text-xs text-slate-400">({data.malaPaga.length})</span>
               </div>
-              <TablaClientes clientes={data.malaPaga} tono="rojo" />
+              <TablaClientes clientes={filtrar(data.malaPaga)} tono="rojo" />
             </div>
           </div>
 
@@ -205,9 +218,9 @@ export default function ClasificacionClientesPage() {
             <Info size={14} className="shrink-0 mt-0.5" />
             <p>
               Se clasifica por el promedio de días de atraso entre la fecha de vencimiento de cada factura y la fecha real
-              en que se concilió el pago (no la fecha de la factura). Buena paga: promedio ≤ {data.criterios.diasBuenaPaga} días.
-              Mala paga: más de {data.criterios.diasBuenaPaga} días; si el promedio supera {data.criterios.diasMalaPagaSevera} días
-              se sugiere quitar el crédito en vez de solo bajarlo. Para buena paga, si además usa {data.criterios.utilizacionAlta}%
+              en que se concilió el pago (no la fecha de la factura). Mejor récord de pago: promedio ≤ {data.criterios.diasBuenaPaga} días.
+              Con más retrasos: más de {data.criterios.diasBuenaPaga} días; si el promedio supera {data.criterios.diasMalaPagaSevera} días
+              se sugiere quitar el crédito en vez de solo bajarlo. En mejor récord de pago, si además usa {data.criterios.utilizacionAlta}%
               o más de su cupo actual, se sugiere subirlo. Clientes con menos de {data.criterios.minFacturasParaClasificar} facturas
               cobradas en el período ({data.totalClientesConHistorial} clasificados en total) no aparecen -- no hay historial
               suficiente para juzgarlos. Estos umbrales son ajustables si el negocio quiere otro criterio.

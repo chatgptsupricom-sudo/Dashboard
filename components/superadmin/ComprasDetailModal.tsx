@@ -580,7 +580,8 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
                 <th className="p-3 text-center font-medium text-slate-600">{t("valor_inventario")}</th>
                 <th className="p-3 text-center font-medium text-slate-600">{t("banda")}</th>
                 <th className="p-3 text-center font-medium text-slate-600">{t("ult_recepcion")}</th>
-                <th className="p-3 text-center font-medium text-slate-600">{t("dias_col")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("mas_90_unid")}</th>
+                <th className="p-3 text-center font-medium text-slate-600">{t("dias_sin_venta")}</th>
                 <th className="p-3 text-center font-medium text-slate-600">{t("estado_label")}</th>
               </tr>
             </thead>
@@ -595,8 +596,14 @@ function renderList(kpi: string, data: any, onSelect: (item: any) => void, fmt: 
                   <td className="p-3 text-center text-xs font-medium text-slate-600">{item.banda}</td>
                   <td className="p-3 text-center text-slate-500 text-xs">{item.ultimoMovimiento}</td>
                   <td className="p-3 text-center">
-                    <span className={`font-bold ${item.diasInactivo <= 90 ? "text-green-600" : item.diasInactivo <= 180 ? "text-yellow-600" : "text-red-600"}`}>
-                      {item.diasInactivo >= 999 ? "N/A" : item.diasInactivo}
+                    <span className={`font-bold ${item.unidadesMayor90 > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {item.unidadesMayor90}
+                    </span>
+                  </td>
+                  {/* Días desde la última venta del producto (no desde la recepción). */}
+                  <td className="p-3 text-center">
+                    <span className={`font-bold ${item.diasSinVenta === null ? "text-red-600" : item.diasSinVenta <= 90 ? "text-green-600" : item.diasSinVenta <= 180 ? "text-yellow-600" : "text-red-600"}`}>
+                      {item.diasSinVenta === null ? t("sin_ventas") : item.diasSinVenta}
                     </span>
                   </td>
                   <td className="p-3 text-center">
@@ -785,7 +792,8 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
           </div>
           <div className="bg-red-50 rounded-xl p-4">
             <p className="text-xs text-red-600 font-medium">{t("valor_inmovilizado")}</p>
-            <p className="text-xl font-bold text-red-700">${fmt(item.valorInventario)}</p>
+            <p className="text-xl font-bold text-red-700">${fmt(item.valorMayor90)}</p>
+            <p className="text-xs text-red-500">{item.unidadesMayor90} {t("mas_90_unid")}</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
             <p className="text-xs text-slate-500 font-medium">{t("ultima_compra")}</p>

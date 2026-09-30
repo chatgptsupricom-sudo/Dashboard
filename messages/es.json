@@ -1491,7 +1491,7 @@
     "cartera": "Cartera",
     "ventas_netas": "Ventas netas",
     "incobrables": "Incobrables",
-    "incobrables_desc": "Vencidas antes de 2025",
+    "incobrables_desc": "Vencidas antes de 2025 o marcadas",
     "clientes": "clientes",
     "incobrables_nota": "no cuentan en Cartera Vencida, Recuperación ni DSO",
     "fuera_del_calculo": "excluida: empresa relacionada del grupo, no un cliente; distorsionaría el indicador",
@@ -1509,7 +1509,7 @@
     "sede": "Sede",
     "efectividad": "Efectiv.",
     "fact": "Fact.",
-    "top_10_deudores": "Top 10 Deudores",
+    "top_10_deudores": "Top 10 Deudores Vencidos",
     "cliente": "Cliente",
     "total": "Total",
     "dias_col": "Días",
@@ -2038,8 +2038,11 @@
       "variacion_label": "Variación",
       "ahorro_sobrecosto": "Ahorro/Sobrecosto Unit.",
       "costo_unitario": "Costo unitario",
-      "valor_inmovilizado": "Valor inmovilizado",
-      "dias_sin_stock_est": "Días sin stock (estimado)"
+      "valor_inmovilizado": "Valor con +90 días",
+      "dias_sin_stock_est": "Días sin stock en el mes",
+      "mas_90_unid": "+90 días (unid.)",
+      "dias_sin_venta": "Días sin venta",
+      "sin_ventas": "Sin ventas"
     },
     "alert": {
       "centro_control": "Centro de Control",

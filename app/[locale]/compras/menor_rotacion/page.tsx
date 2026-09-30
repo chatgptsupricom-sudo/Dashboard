@@ -34,8 +34,15 @@ interface ProductoAnalisis {
   categoria: string;
   stockDisponible: number;
   costo: number;
-  days_inactive: number;
+  /** Días desde la última venta; null = nunca se vendió en la sede. */
+  days_inactive: number | null;
+  ultimaVenta: string | null;
+  /** Día en que entró la unidad más vieja del stock. */
+  enStockDesde: string | null;
 }
+
+/** "2026-09-23" -> "23/09/2026". */
+const fechaCorta = (iso: string) => iso.split("-").reverse().join("/");
 
 export default function MenorRotacionPage() {
   const [productos, setProductos] = useState<ProductoAnalisis[]>([]);
@@ -72,11 +79,12 @@ export default function MenorRotacionPage() {
   }, [sede]);
 
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(productos.map((p) => p.marca))).sort(),
+    // Nunca un valor vacío: Radix se cae con <SelectItem value="">.
+    () => Array.from(new Set(productos.map((p) => p.marca).filter(Boolean))).sort(),
     [productos],
   );
   const categoriasUnicas = useMemo(
-    () => Array.from(new Set(productos.map((p) => p.categoria))).sort(),
+    () => Array.from(new Set(productos.map((p) => p.categoria).filter(Boolean))).sort(),
     [productos],
   );
 
@@ -95,13 +103,15 @@ export default function MenorRotacionPage() {
         const cumpleCategoria =
           filtroCategoria === "TODAS" || p.categoria === filtroCategoria;
 
-        // Filtro Días Inactivos (rangos excluyentes)
+        // Filtro Días Inactivos (rangos excluyentes). La API ya trae solo
+        // 30+ días; null = nunca se vendió.
+        const d = p.days_inactive;
         let cumpleDias = false;
-        if (filtroDias === "TODOS") cumpleDias = p.days_inactive >= 30;
-        else if (filtroDias === "30") cumpleDias = p.days_inactive >= 30 && p.days_inactive < 60;
-        else if (filtroDias === "60") cumpleDias = p.days_inactive >= 60 && p.days_inactive < 90;
-        else if (filtroDias === "90") cumpleDias = p.days_inactive >= 90 && p.days_inactive !== 999;
-        else if (filtroDias === "NUNCA") cumpleDias = p.days_inactive === 999;
+        if (filtroDias === "TODOS") cumpleDias = true;
+        else if (filtroDias === "30") cumpleDias = d !== null && d >= 30 && d < 60;
+        else if (filtroDias === "60") cumpleDias = d !== null && d >= 60 && d < 90;
+        else if (filtroDias === "90") cumpleDias = d !== null && d >= 90;
+        else if (filtroDias === "NUNCA") cumpleDias = d === null;
 
         return (
           cumpleDias &&
@@ -111,7 +121,8 @@ export default function MenorRotacionPage() {
           coincideBusqueda
         );
       })
-      .sort((a, b) => b.days_inactive - a.days_inactive); // Siempre los más antiguos primero
+      // Siempre los más antiguos primero (los que nunca se vendieron, arriba).
+      .sort((a, b) => (b.days_inactive ?? Infinity) - (a.days_inactive ?? Infinity));
   }, [productos, busqueda, filtroMarca, filtroCategoria, filtroDias]);
 
   // Si se mueve algún filtro, devolver a la página 1
@@ -140,9 +151,10 @@ export default function MenorRotacionPage() {
       Descripción: item.descripcion,
       Marca: item.marca,
       Categoría: item.categoria,
-      "Stock Físico": item.stockDisponible,
-      "Días Inactivos":
-        item.days_inactive === 999 ? "Nunca vendido" : item.days_inactive,
+      "Stock disponible": item.stockDisponible,
+      "Última venta": item.ultimaVenta ? fechaCorta(item.ultimaVenta) : "Nunca vendido",
+      "En stock desde": item.enStockDesde ? fechaCorta(item.enStockDesde) : "",
+      "Días Inactivos": item.days_inactive === null ? "Nunca vendido" : item.days_inactive,
       "Costo Unitario ($)": item.costo,
       "Capital Estancado ($)": Number(
         (item.stockDisponible * item.costo).toFixed(2),
@@ -165,7 +177,7 @@ export default function MenorRotacionPage() {
           Calculando Capital Inmovilizado...
         </h2>
         <p className="text-gray-500 text-sm mt-2">
-          Cruzando costos de Odoo y MySQL
+          Cruzando stock, costos y última venta de cada producto
         </p>
       </div>
     );
@@ -178,8 +190,10 @@ export default function MenorRotacionPage() {
           Productos de Menor Rotación
         </h1>
         <p className="text-gray-500">
-          Analiza el inventario físico inmovilizado y el capital estancado en
-          los almacenes.
+          Productos con stock disponible en el almacén principal que no se
+          venden hace 30 días o más. Días inactivos = días desde la última
+          venta (factura a cliente) del producto en la sede; los que nunca se
+          vendieron salen cuando llevan 30 días o más en el almacén.
         </p>
       </div>
 
@@ -303,7 +317,7 @@ export default function MenorRotacionPage() {
               })}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              Solo productos con costo configurado
+              A costo de Odoo; los "Sin costo" no suman
             </p>
           </CardContent>
         </Card>
@@ -328,7 +342,7 @@ export default function MenorRotacionPage() {
                     <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
                   </TableHead>
                   <TableHead className="text-center font-bold text-gray-800">
-                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
+                    <ColumnHeader label="Stock disp." tooltip={COLUMN_TOOLTIPS["Stock disponible"]} />
                   </TableHead>
                   <TableHead className="text-center text-red-700">
                     <ColumnHeader label="Días Inactivos" tooltip={COLUMN_TOOLTIPS["Días Inactivos"]} />
@@ -375,10 +389,19 @@ export default function MenorRotacionPage() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="destructive" className="bg-red-600">
-                          {item.days_inactive === 999
+                          {item.days_inactive === null
                             ? "Nunca vendido"
                             : `${item.days_inactive} días`}
                         </Badge>
+                        {item.ultimaVenta ? (
+                          <div className="text-[10px] text-gray-500 mt-1">
+                            Últ. venta {fechaCorta(item.ultimaVenta)}
+                          </div>
+                        ) : item.enStockDesde ? (
+                          <div className="text-[10px] text-gray-500 mt-1">
+                            En stock desde {fechaCorta(item.enStockDesde)}
+                          </div>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 font-medium">
                         {item.costo > 0 ? (

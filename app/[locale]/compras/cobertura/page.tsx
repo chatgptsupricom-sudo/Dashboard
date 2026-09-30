@@ -39,7 +39,13 @@ interface ProductoCobertura {
   diasCobertura: number;
   diasInvDeseado: number;
   costo: number;
-  fechaQuiebreEstimada: string;
+}
+
+/** Fecha en que se acaba el stock disponible si se mantiene la venta de 45 días. */
+function fechaQuiebre(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function abcColor(abc: string) {
@@ -187,7 +193,7 @@ export default function CoberturaPage() {
       "Días cobertura":
         p.diasCobertura >= 999 ? "Sin riesgo" : p.diasCobertura,
       "Días deseados": p.diasInvDeseado,
-      "Fecha quiebre estimada": p.fechaQuiebreEstimada,
+      "Fecha quiebre estimada": fechaQuiebre(p.diasCobertura),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -214,8 +220,9 @@ export default function CoberturaPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Días de Cobertura</h1>
         <p className="text-gray-500">
-          Cuántos días de stock quedan para productos con demanda activa,
-          ordenados de menor a mayor cobertura.
+          Cuántos días alcanza el stock disponible de cada producto con la
+          venta de los últimos 45 días. Clase ABC y días deseados, los de
+          Sugeridos.
         </p>
       </div>
 
@@ -422,9 +429,7 @@ export default function CoberturaPage() {
                         <CoberturaChip dias={p.diasCobertura} />
                       </TableCell>
                       <TableCell className="text-right pr-6 text-xs text-gray-500">
-                        {p.fechaQuiebreEstimada !== "Sin riesgo"
-                          ? p.fechaQuiebreEstimada
-                          : "—"}
+                        {fechaQuiebre(p.diasCobertura)}
                       </TableCell>
                     </TableRow>
                   ))

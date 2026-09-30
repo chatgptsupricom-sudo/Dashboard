@@ -19,7 +19,9 @@ import {
   UserRound,
   Landmark,
   AlertTriangle,
+  Download,
 } from "lucide-react";
+import { descargarExcel } from "@/lib/excel";
 import {
   ResponsiveContainer,
   PieChart,
@@ -91,6 +93,10 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number; montoDelMes: number; montoAnteriores: number };
+type Detalle = {
+  factura: string; partnerId: number; cliente: string; fecha: string | null; plazo: number | null;
+  monto: number; vendedor: string; delMes: boolean; journalId: number | null; banco: string;
+};
 type FilaAparte = { id: number; documento: string; referencia: string; cliente: string; fecha: string | null; vence?: string | null; diario?: string; monto: number };
 type TipoAparte = "incobrables" | "sin_aplicar";
 type Banco = Acumulado & { journalId: number; journalName: string };
@@ -109,6 +115,8 @@ type ContadoCreditoData = {
   /** Solo en "por_cobrar": corte y lo que queda fuera del reparto (sinAplicar solo si el corte es hoy). */
   porCobrar?: { corte: string; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
   buckets: Bucket[];
+  /** Cada factura / abono detrás de las tarjetas (para los Excel). */
+  detalle?: Detalle[];
   bancos: Banco[];
   vendedores: Vendedor[];
   bancosDisponibles: Vendedor[];
@@ -229,8 +237,13 @@ export default function ContadoCreditoPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const openClientes = (titulo: string, clientes: ClienteDetalle[], filtro: Filtro = {}) => {
+    setBusquedaModal("");
     setClientesModal({ open: true, titulo, clientes, filtro });
   };
+  // Buscador compartido por el modal de clientes y el de Pagos sin aplicar / Incobrables.
+  const [busquedaModal, setBusquedaModal] = useState("");
+  const qModal = busquedaModal.trim().toLowerCase();
+  const clientesVisibles = clientesModal.clientes.filter((c) => !qModal || c.partnerName.toLowerCase().includes(qModal));
 
   const facturasFetchIdRef = useRef(0);
 
@@ -277,6 +290,7 @@ export default function ContadoCreditoPage() {
   // Detalle de lo que "Por cobrar" deja fuera (Incobrables / Pagos sin aplicar).
   const [aparteModal, setAparteModal] = useState<{ open: boolean; tipo: TipoAparte; loading: boolean; filas: FilaAparte[] }>({ open: false, tipo: "incobrables", loading: false, filas: [] });
   const openAparte = async (tipo: TipoAparte) => {
+    setBusquedaModal("");
     setAparteModal({ open: true, tipo, loading: true, filas: [] });
     try {
       const params = new URLSearchParams({ tipo });
@@ -297,6 +311,58 @@ export default function ContadoCreditoPage() {
       setAparteModal({ open: true, tipo, loading: false, filas: [] });
     }
   };
+
+  // ── Excel ──
+  const periodoTxt = usarRangoFechas && startDate && endDate ? `${startDate}_a_${endDate}` : `${MONTHS[selectedMonth - 1]}_${selectedYear}`;
+  const etiquetaModo = esPorCobrar ? "Por_cobrar" : esCobrado ? "Cobrado" : "Facturado";
+  const colMonto = esPorCobrar ? "Saldo por cobrar (con IVA)" : esCobrado ? "Cobrado" : "Monto (sin IVA)";
+  const colFecha = esCobrado ? "Fecha de abono" : "Fecha de emisión";
+  const libro = (nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) => {
+    descargarExcel(nombre.replace(/[^\w-]+/g, "_"), hojas);
+  };
+  const exportarClientes = () => {
+    const f = clientesModal.filtro;
+    const filas = (data?.detalle || [])
+      .filter((d) => f.journalId !== undefined ? d.journalId === f.journalId
+        : f.dias !== undefined ? d.plazo === f.dias
+        : f.tipo === "contado" ? d.plazo === null
+        : f.tipo === "credito" ? d.plazo !== null
+        : true)
+      .sort((a, b) => a.cliente.localeCompare(b.cliente, "es") || (a.fecha || "").localeCompare(b.fecha || ""));
+    libro(`${etiquetaModo}_${clientesModal.titulo}_${periodoTxt}`, [
+      { nombre: "Clientes", filas: clientesVisibles.map((c) => ({ Cliente: c.partnerName, Facturas: c.facturas, [colMonto]: c.monto })) },
+      {
+        nombre: "Detalle",
+        filas: filas.map((d) => ({
+          Cliente: d.cliente,
+          Factura: d.factura,
+          [colFecha]: d.fecha || "",
+          Plazo: d.plazo === null ? "Contado" : `${d.plazo} días`,
+          ...(esCobrado ? { Banco: d.banco } : {}),
+          ...(esPorCobrar ? { Origen: d.delMes ? "Facturada en el mes" : "Meses anteriores" } : {}),
+          Vendedor: d.vendedor,
+          [colMonto]: d.monto,
+        })),
+      },
+    ]);
+  };
+  const exportarAparte = () => {
+    const incob = aparteModal.tipo === "incobrables";
+    libro(`${incob ? "Incobrables" : "Pagos_sin_aplicar"}_${periodoTxt}`, [{
+      nombre: incob ? "Incobrables" : "Pagos sin aplicar",
+      filas: filasAparte.map((f) => ({
+        Documento: f.documento,
+        Referencia: f.referencia,
+        Cliente: f.cliente,
+        Fecha: f.fecha || "",
+        ...(incob ? { Vence: f.vence || "" } : { Diario: f.diario || "" }),
+        [incob ? "Saldo" : "Sin aplicar"]: f.monto,
+      })),
+    }]);
+  };
+
+  const filasAparte = aparteModal.filas.filter((f) =>
+    !qModal || [f.cliente, f.documento, f.referencia, f.diario || ""].some((v) => v.toLowerCase().includes(qModal)));
 
   const closeAllModals = () => {
     setAparteModal((prev) => ({ ...prev, open: false }));
@@ -552,7 +618,7 @@ export default function ContadoCreditoPage() {
                     <p className="text-xs text-slate-500 mb-2">Fuera de este total, igual que en los KPIs del Dashboard</p>
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                       {[
-                        { label: "Incobrables", hint: "Vencidas antes de 2025 · click para ver", monto: data.porCobrar.incobrables, tipo: "incobrables" as TipoAparte },
+                        { label: "Incobrables", hint: "Antes de 2025 o marcadas · click para ver", monto: data.porCobrar.incobrables, tipo: "incobrables" as TipoAparte },
                         // Solo en la sede donde tiene saldo (Panamá).
                         ...(Math.abs(data.porCobrar.relacionadas) > 0.005
                           ? [{ label: "SUPER TECHNO LLC", hint: "Empresa relacionada del grupo", monto: data.porCobrar.relacionadas, tipo: undefined }]
@@ -766,9 +832,26 @@ export default function ContadoCreditoPage() {
       <Modal
         open={aparteModal.open}
         onClose={closeAllModals}
-        title={aparteModal.tipo === "incobrables" ? "Incobrables — vencidas antes de 2025" : "Pagos sin aplicar"}
+        title={aparteModal.tipo === "incobrables" ? "Incobrables — vencidas antes de 2025 o marcadas" : "Pagos sin aplicar"}
         wide
       >
+        {!aparteModal.loading && aparteModal.filas.length > 0 && (
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaModal}
+                  onChange={(e) => setBusquedaModal(e.target.value)}
+                  placeholder="Buscar cliente, documento o diario..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+            <button onClick={exportarAparte} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+              <Download size={13} /> Excel
+            </button>
+          </div>
+        )}
         {aparteModal.loading ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={24} className="animate-spin text-blue-500" />
@@ -792,7 +875,7 @@ export default function ContadoCreditoPage() {
                 </tr>
               </thead>
               <tbody>
-                {aparteModal.filas.map((f) => (
+                {filasAparte.map((f) => (
                   <tr key={f.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4 font-medium text-slate-700">
                       {f.documento}
@@ -807,9 +890,9 @@ export default function ContadoCreditoPage() {
                   </tr>
                 ))}
                 <tr className="border-t-2 border-slate-200">
-                  <td colSpan={4} className="py-2.5 px-4 font-semibold text-slate-600">{aparteModal.filas.length} registros</td>
+                  <td colSpan={4} className="py-2.5 px-4 font-semibold text-slate-600">{filasAparte.length} registros</td>
                   <td className="py-2.5 px-4 text-right font-bold text-slate-800">
-                    {formatCurrency(aparteModal.filas.reduce((s, f) => s + f.monto, 0))}
+                    {formatCurrency(filasAparte.reduce((s, f) => s + f.monto, 0))}
                   </td>
                 </tr>
               </tbody>
@@ -820,6 +903,23 @@ export default function ContadoCreditoPage() {
 
       {/* Modal 1: clientes del grupo */}
       <Modal open={clientesModal.open} onClose={closeAllModals} title={clientesModal.titulo}>
+        {clientesModal.clientes.length > 0 && (
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaModal}
+                  onChange={(e) => setBusquedaModal(e.target.value)}
+                  placeholder="Buscar cliente..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+            <button onClick={exportarClientes} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+              <Download size={13} /> Excel con el detalle
+            </button>
+          </div>
+        )}
         {clientesModal.clientes.length === 0 ? (
           <div className="text-center py-8 text-slate-400">Sin clientes</div>
         ) : (
@@ -833,7 +933,7 @@ export default function ContadoCreditoPage() {
                 </tr>
               </thead>
               <tbody>
-                {clientesModal.clientes.map((c) => (
+                {clientesVisibles.map((c) => (
                   <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 px-4">
                       <button onClick={() => openFacturasCliente(c.partnerId, c.partnerName, clientesModal.filtro)} className="font-semibold text-blue-600 hover:underline text-left">

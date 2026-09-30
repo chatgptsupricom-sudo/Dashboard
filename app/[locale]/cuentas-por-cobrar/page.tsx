@@ -24,6 +24,7 @@ import {
   Package,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -151,6 +152,11 @@ export default function CxcDashboardPage() {
   // KPI detail modals
   const [kpiModal, setKpiModal] = useState<{ open: boolean; type: string; title: string }>({ open: false, type: "", title: "" });
   const [kpiData, setKpiData] = useState<any>(null);
+  // Buscador de los modales con lista de facturas (cliente o número).
+  const [busquedaDetalle, setBusquedaDetalle] = useState("");
+  const qDetalle = busquedaDetalle.trim().toLowerCase();
+  const coincideDetalle = (inv: any) =>
+    !qDetalle || String(inv.name || "").toLowerCase().includes(qDetalle) || String(inv.partnerName || "").toLowerCase().includes(qDetalle);
   const [kpiLoading, setKpiLoading] = useState(false);
   // Track where invoice detail was opened from
   const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
@@ -254,6 +260,7 @@ export default function CxcDashboardPage() {
 
   // KPI detail modal handlers
   const fetchKpiDetail = useCallback(async (type: string, title: string) => {
+    setBusquedaDetalle("");
     setKpiModal({ open: true, type, title });
     setKpiLoading(true);
     setKpiData(null);
@@ -276,13 +283,7 @@ export default function CxcDashboardPage() {
   // siempre si no hay uno propio.
   const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
-  const agingColors: Record<string, string> = {
-    "corriente": "bg-emerald-400",
-    "1-30": "bg-amber-400",
-    "31-60": "bg-orange-400",
-    "61-90": "bg-red-500",
-    "91+": "bg-red-700",
-  };
+  const agingColors: Record<string, string> = Object.fromEntries(BANDAS.map((b) => [b.key, COLOR_BANDA[b.key].barra]));
 
   const filteredSalespersons = data?.bySalesperson
     ? data.bySalesperson.filter((sp: any) =>
@@ -443,7 +444,7 @@ export default function CxcDashboardPage() {
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Incobrables</span>
                 </div>
                 <div className="text-3xl font-bold text-slate-800">{formatCurrency(data.kpis.incobrables.saldo)}</div>
-                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025</div>
+                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025 o marcadas a mano</div>
                 <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
                   <span>{data.kpis.incobrables.facturas} facturas · {data.kpis.incobrables.clientes} clientes</span>
                 </div>
@@ -563,7 +564,7 @@ export default function CxcDashboardPage() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Users size={18} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores Vencidos</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -631,6 +632,7 @@ export default function CxcDashboardPage() {
                     <th className="text-left py-2 text-slate-500 font-medium">Responsable</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Cartera total</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
+                    <th className="text-right py-2 text-slate-500 font-medium" title="Pagos que entraron a banco/caja en el mes, de facturas de este vendedor">Cobrado del mes</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Facturas</th>
                     <th className="w-8"></th>
                   </tr>
@@ -647,6 +649,7 @@ export default function CxcDashboardPage() {
                       <td className="py-2.5 text-right">
                         {sp.overdue > 0 ? <span className="text-red-600 font-medium">{formatCurrency(sp.overdue)}</span> : <span className="text-emerald-600">—</span>}
                       </td>
+                      <td className="py-2.5 text-right text-emerald-700 font-medium">{sp.cobrado ? formatCurrency(sp.cobrado) : "—"}</td>
                       <td className="py-2.5 text-right text-slate-500">{sp.count}</td>
                       <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
                     </tr>
@@ -1122,6 +1125,27 @@ export default function CxcDashboardPage() {
         ) : (
           <div className="space-y-5">
             {/* ── Efectividad Cobranza Detail ── */}
+            {["cartera", "incobrables", "recuperacion"].includes(kpiData.type) && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaDetalle}
+                  onChange={(e) => setBusquedaDetalle(e.target.value)}
+                  placeholder="Buscar cliente o número de factura..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+                {qDetalle && (
+                  <span className="text-xs text-slate-500">
+                    {kpiData.invoices.filter(coincideDetalle).length} de {kpiData.invoices.length} facturas ·{" "}
+                    {formatCurrency(kpiData.invoices.filter(coincideDetalle).reduce((s: number, i: any) => s + (i.amountResidual || 0), 0))}
+                  </span>
+                )}
+              </div>
+            )}
+
             {kpiData.type === "efectividad" && (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1226,21 +1250,14 @@ export default function CxcDashboardPage() {
                 <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
-                  <div className="grid grid-cols-5 gap-2">
-                    {["corriente", "1-30", "31-60", "61-90", "91+"].map((band) => {
+                  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+                    {BANDAS.map(({ key: band, label }) => {
                       const bandData = kpiData.byBand[band] || { count: 0, total: 0 };
-                      const colors: Record<string, { bg: string; text: string }> = {
-                        corriente: { bg: "bg-emerald-50", text: "text-emerald-700" },
-                        "1-30": { bg: "bg-amber-50", text: "text-amber-700" },
-                        "31-60": { bg: "bg-orange-50", text: "text-orange-700" },
-                        "61-90": { bg: "bg-red-50", text: "text-red-700" },
-                        "91+": { bg: "bg-red-100", text: "text-red-800" },
-                      };
-                      const c = colors[band] || colors.corriente;
+                      const c = COLOR_BANDA[band];
                       return (
-                        <div key={band} className={`${c.bg} border rounded-xl p-3 text-center`}>
-                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{band === "corriente" ? "Corriente" : `${band} días`}</span>
-                          <span className={`text-base font-bold ${c.text}`}>{formatCurrency(bandData.total)}</span>
+                        <div key={band} className={`${c.fondo} border rounded-xl p-3 text-center`}>
+                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{label}</span>
+                          <span className={`text-sm font-bold ${c.texto}`}>{formatCurrency(bandData.total)}</span>
                           <span className="text-[10px] text-slate-400 block">{bandData.count} fact.</span>
                         </div>
                       );
@@ -1260,21 +1277,15 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => {
-                        const bandColors: Record<string, string> = {
-                          corriente: "bg-emerald-50 text-emerald-700",
-                          "1-30": "bg-amber-50 text-amber-700",
-                          "31-60": "bg-orange-50 text-orange-700",
-                          "61-90": "bg-red-50 text-red-700",
-                          "91+": "bg-red-100 text-red-800",
-                        };
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => {
+                        const cb = COLOR_BANDA[inv.agingBand as Banda];
                         return (
                           <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                             <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                             <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
                             <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
                             <td className="py-2.5 px-3 text-center">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bandColors[inv.agingBand] || "bg-slate-50 text-slate-600"}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${cb ? `${cb.fondo} ${cb.texto}` : "bg-slate-50 text-slate-600"}`}>
                                 {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
                               </span>
                             </td>
@@ -1310,7 +1321,7 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.clientes}</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025 que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
+                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025, o marcadas como incobrables en la sección Incobrables, que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -1324,7 +1335,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
                         <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                           <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
@@ -1377,7 +1388,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
                         <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                           <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>

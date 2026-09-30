@@ -30,7 +30,11 @@ import {
   type ProveedorOdoo,
 } from "@/lib/compras/ordenes-types";
 
-const MONEDAS = ["USD", "EUR", "VES"];
+// Solo USD: es la moneda de las tres sedes en Odoo y la de todas sus órdenes
+// de compra. Con EUR o VES los precios (que salen en dólares de Odoo) se
+// mostraban y totalizaban con la otra etiqueta sin convertir, y VES ni existe
+// activa en Odoo (el bolívar es VEF): esas órdenes nunca sincronizaban.
+const MONEDAS = ["USD"];
 
 const microLabel =
   "text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500";
@@ -243,6 +247,7 @@ export function OrdenForm({
           onChange={(lines) => set({ lines })}
           currency={value.currency}
           sede={value.company_id}
+          supplierId={value.supplier_odoo_id || undefined}
           disabled={disabled}
         />
       </section>

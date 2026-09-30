@@ -26,20 +26,34 @@ import { SEDES } from "@/lib/compras/constants";
 import { ColumnHeader } from "@/components/compras/column-header";
 import { COLUMN_TOOLTIPS } from "@/lib/compras/column-tooltips";
 
+/** Lo que manda /api/compras/quiebre: mismos datos y calculo que Sugeridos. */
 interface ProductoQuiebre {
   id: number;
   codigo: string;
   name: string;
   marca: string;
   categoria: string;
-  stockDisponible: number;
   ventas45d: number;
+  fisico: number;
+  reservado: number;
+  stockDisponible: number;
+  transito: number;
+  stockEfectivo: number;
   demandaDiaria: number;
+  eta: number;
   puntoReorden: number;
   cantidadAComprar: number;
-  nivelCritico: string;
+  nivelCritico: "QUIEBRE TOTAL" | "RIESGO ALTO";
   costo: number;
-  fechaQuiebreEstimada: string;
+  diasHastaQuiebre: number;
+}
+
+/** Fecha estimada en que se acaba el stock (disponible + tránsito) con la demanda actual. */
+function fechaQuiebre(dias: number): string {
+  if (dias >= 730) return "";
+  const d = new Date();
+  d.setDate(d.getDate() + Math.floor(dias));
+  return d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export default function MayorRotacionPage() {
@@ -76,11 +90,12 @@ export default function MayorRotacionPage() {
   }, [sede]);
 
   const marcasUnicas = useMemo(
-    () => Array.from(new Set(productos.map((p) => p.marca))).sort(),
+    // Nunca un valor vacío: Radix se cae con <SelectItem value="">.
+    () => Array.from(new Set(productos.map((p) => p.marca).filter(Boolean))).sort(),
     [productos],
   );
   const categoriasUnicas = useMemo(
-    () => Array.from(new Set(productos.map((p) => p.categoria))).sort(),
+    () => Array.from(new Set(productos.map((p) => p.categoria).filter(Boolean))).sort(),
     [productos],
   );
 
@@ -132,11 +147,14 @@ export default function MayorRotacionPage() {
       Descripción: item.name,
       Marca: item.marca,
       Categoría: item.categoria,
-      "Stock Físico": item.stockDisponible,
       "Ventas (Últ. 45 Días)": item.ventas45d,
+      "Stock disponible": item.stockDisponible,
+      "En tránsito": item.transito,
       "Demanda Diaria": Number(item.demandaDiaria.toFixed(2)),
+      "ETA (días)": item.eta,
       "Punto de Reorden": Number(item.puntoReorden.toFixed(2)),
       "Cant. Sugerida Compra": item.cantidadAComprar,
+      "Valor Compra ($)": Number((item.cantidadAComprar * item.costo).toFixed(2)),
       "Nivel de Alerta": item.nivelCritico,
     }));
     const worksheet = XLSX.utils.json_to_sheet(data);
@@ -166,8 +184,9 @@ export default function MayorRotacionPage() {
           Mayor Rotación (Alerta de Quiebre)
         </h1>
         <p className="text-gray-500">
-          Productos con alta demanda que están por debajo del punto de reorden
-          de seguridad.
+          Productos vendidos en los últimos 45 días cuyo stock (disponible +
+          tránsito) está en el punto de reorden o por debajo. Mismo cálculo y
+          ETA que Sugeridos.
         </p>
       </div>
 
@@ -181,7 +200,7 @@ export default function MayorRotacionPage() {
             <p className="text-3xl font-bold text-red-700 mt-1">
               {kpis.enQuiebre}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Stock = 0</p>
+            <p className="text-xs text-gray-400 mt-1">Sin stock ni tránsito</p>
           </CardContent>
         </Card>
         <Card className="border-orange-200 bg-orange-50/40 shadow-sm">
@@ -310,7 +329,10 @@ export default function MayorRotacionPage() {
                     <ColumnHeader label="Ventas (45d)" tooltip={COLUMN_TOOLTIPS["Ventas (45d)"]} />
                   </TableHead>
                   <TableHead className="text-center text-orange-700 font-bold">
-                    <ColumnHeader label="Stock Físico" tooltip={COLUMN_TOOLTIPS["Stock Físico"]} />
+                    <ColumnHeader label="Disponible" tooltip={COLUMN_TOOLTIPS["Stock disponible"]} />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Tránsito" tooltip={COLUMN_TOOLTIPS["En tránsito"]} />
                   </TableHead>
                   <TableHead className="text-center font-bold">
                     <ColumnHeader label="Pto. Reorden" tooltip={COLUMN_TOOLTIPS["Pto. Reorden"]} />
@@ -329,7 +351,7 @@ export default function MayorRotacionPage() {
               <TableBody>
                 {currentItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       ¡Excelente! Tu inventario de alta rotación está
                       abastecido.
                     </TableCell>
@@ -381,6 +403,9 @@ export default function MayorRotacionPage() {
                           {item.stockDisponible}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center text-gray-600">
+                        {item.transito > 0 ? item.transito : "—"}
+                      </TableCell>
                       <TableCell className="text-center text-gray-700 font-medium">
                         {Math.round(item.puntoReorden)}
                       </TableCell>
@@ -409,9 +434,7 @@ export default function MayorRotacionPage() {
                             : "RIESGO"}
                         </Badge>
                         <div className="text-[10px] text-gray-400 mt-1 text-right">
-                          {item.fechaQuiebreEstimada !== "Sin riesgo inmediato"
-                            ? item.fechaQuiebreEstimada
-                            : ""}
+                          {item.nivelCritico === "RIESGO ALTO" ? fechaQuiebre(item.diasHastaQuiebre) : ""}
                         </div>
                       </TableCell>
                     </TableRow>

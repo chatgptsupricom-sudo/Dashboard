@@ -6,7 +6,9 @@ import { leerEstadoOdoo, sincronizarOrdenConOdoo } from "@/lib/compras/odooSync"
 
 const JWT_SECRET = jwtSecretBytes();
 
-const MONEDAS_VALIDAS = new Set(["USD", "EUR", "VES"]);
+// Solo USD (moneda de las tres sedes en Odoo): los precios de las líneas salen
+// de Odoo en dólares y no se convierten; ver components/compras/OrdenForm.tsx.
+const MONEDAS_VALIDAS = new Set(["USD"]);
 const SEDES_VALIDAS = new Set([7, 9, 10]);
 const EDITABLES = new Set(["borrador", "rechazada"]);
 

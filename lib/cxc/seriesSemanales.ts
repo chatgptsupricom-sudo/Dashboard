@@ -3,6 +3,8 @@ import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmaci
 import { obtenerCobros, esRelacionada, RELACIONADA } from "@/lib/cxc/cobros";
 import { idsACredito } from "@/lib/cxc/credito";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { agingVacio, bandaDeDias, type Banda } from "@/lib/cxc/bandas";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -98,7 +100,6 @@ export interface CarteraHoy {
   aging: Record<Banda, number>;
 }
 
-export type Banda = "corriente" | "1-30" | "31-60" | "61-90" | "91+";
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
@@ -146,7 +147,8 @@ interface Factura {
   residual: number;
   /** Venta a crédito (lib/cxc/credito.ts). */
   credito: boolean;
-  /** Vencida antes de 2025 (lib/cxc/carteraVieja.ts): fuera de Cartera Vencida, Recuperación y CEI. */
+  /** Incobrable: vencida antes de 2025 (lib/cxc/carteraVieja.ts) o marcada a mano
+   *  (lib/cxc/incobrablesManuales.ts). Fuera de Cartera Vencida, Recuperación y CEI. */
   vieja: boolean;
   /** Empresa relacionada (SUPER TECHNO, lib/cxc/cobros.ts): fuera del CEI, Cartera Vencida y Recuperación. */
   relacionada: boolean;
@@ -163,7 +165,7 @@ export async function calcularSeriesCxC(
     carteraVencidaSemana: semanas.map(() => null),
     recuperacionSemana: semanas.map(() => null),
     carteraHoy: { pct: null, vencido: 0, total: 0, facturas: 0, facturasVencidas: 0,
-      aging: { corriente: 0, "1-30": 0, "31-60": 0, "61-90": 0, "91+": 0 } },
+      aging: agingVacio() },
     carteraHoyPorSede: {},
     carteraCEI: async () => ({ total: 0, noVencida: 0 }),
     saldosEn: () => ({ saldos: new Map(), credito: new Set(), viejas: new Map(), incobrables: 0, relacionadas: 0 }),
@@ -174,7 +176,7 @@ export async function calcularSeriesCxC(
   const noInterno: any[] = [["partner_id.name", "not ilike", "supricom"]];
 
   const hastaSerie = iso(semanas[semanas.length - 1].fin > hoy ? hoy : semanas[semanas.length - 1].fin);
-  const [abiertasHoy, conciliaciones, cobros] = await Promise.all([
+  const [abiertasHoy, conciliaciones, cobros, manuales] = await Promise.all([
     // Cartera abierta hoy (cualquier vencimiento): la base sobre la que se
     // reconstruye hacia atrás.
     paginar(
@@ -207,6 +209,8 @@ export async function calcularSeriesCxC(
       hasta: hastaSerie,
       dominioFactura: [["move_type", "=", "out_invoice"], ["partner_id.name", "not ilike", "supricom"]],
     }),
+    // Incobrables marcados a mano: se tratan como cartera vieja.
+    idsIncobrablesManuales(companyIds),
   ]);
 
   const facturas = new Map<number, Factura>();
@@ -219,7 +223,7 @@ export async function calcularSeriesCxC(
       due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
       residual: signo * Math.abs(inv.amount_residual || 0),
       credito: false,
-      vieja: esCarteraVieja(inv.invoice_date_due),
+      vieja: esCarteraVieja(inv.invoice_date_due) || manuales.has(inv.id),
       relacionada: esRelacionada(inv.commercial_partner_id?.[1] || ""),
       pagos: [],
     });
@@ -263,7 +267,7 @@ export async function calcularSeriesCxC(
         due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
         residual: signo * Math.abs(inv.amount_residual || 0),
         credito: false,
-        vieja: esCarteraVieja(inv.invoice_date_due),
+        vieja: esCarteraVieja(inv.invoice_date_due) || manuales.has(inv.id),
         relacionada: esRelacionada(inv.commercial_partner_id?.[1] || ""),
         pagos: [],
       });
@@ -294,7 +298,7 @@ export async function calcularSeriesCxC(
     let vencido = 0;
     let facturas = 0;
     let facturasVencidas = 0;
-    const aging: Record<Banda, number> = { corriente: 0, "1-30": 0, "31-60": 0, "61-90": 0, "91+": 0 };
+    const aging = agingVacio();
     const dia = new Date(corte);
     dia.setHours(0, 0, 0, 0);
     for (const f of todas) {
@@ -314,7 +318,7 @@ export async function calcularSeriesCxC(
         vencido += saldo;
         facturasVencidas++;
         const dias = Math.round((dia.getTime() - f.due!.getTime()) / DIA_MS);
-        aging[dias <= 30 ? "1-30" : dias <= 60 ? "31-60" : dias <= 90 ? "61-90" : "91+"] += saldo;
+        aging[bandaDeDias(dias)] += saldo;
       } else {
         aging.corriente += saldo;
       }

@@ -1611,8 +1611,11 @@
       "variacion_label": "Variation",
       "ahorro_sobrecosto": "Unit Savings/Overcost",
       "costo_unitario": "Unit cost",
-      "valor_inmovilizado": "Tied-up value",
-      "dias_sin_stock_est": "Days without stock (est.)"
+      "valor_inmovilizado": "Value aged 90+ days",
+      "dias_sin_stock_est": "Days out of stock this month",
+      "mas_90_unid": "90+ days (units)",
+      "dias_sin_venta": "Days since last sale",
+      "sin_ventas": "No sales"
     },
     "alert": {
       "centro_control": "Control Center",
@@ -2013,7 +2016,7 @@
     "cartera": "Portfolio",
     "ventas_netas": "Net sales",
     "incobrables": "Uncollectible",
-    "incobrables_desc": "Overdue before 2025",
+    "incobrables_desc": "Overdue before 2025 or flagged",
     "clientes": "customers",
     "incobrables_nota": "excluded from Overdue, Recovery and DSO",
     "fuera_del_calculo": "excluded: related group company, not a customer; it would distort the metric",
@@ -2031,7 +2034,7 @@
     "sede": "Branch",
     "efectividad": "Effect.",
     "fact": "Invoices",
-    "top_10_deudores": "Top 10 Debtors",
+    "top_10_deudores": "Top 10 Overdue Debtors",
     "cliente": "Client",
     "total": "Total",
     "dias_col": "Days",

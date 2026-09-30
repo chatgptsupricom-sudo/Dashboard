@@ -18,6 +18,7 @@ import {
   calcularTotal,
   contarUnidades,
   fmtMoneda,
+  precioPropuesto,
   type OrdenLinea,
   type ProductoOdoo,
 } from "@/lib/compras/ordenes-types";
@@ -27,6 +28,8 @@ interface Props {
   onChange: (lines: OrdenLinea[]) => void;
   currency?: string;
   sede?: string;
+  /** Proveedor de Odoo elegido: con él se propone su tarifa como precio. */
+  supplierId?: string;
   disabled?: boolean;
 }
 
@@ -43,13 +46,17 @@ function nuevaLinea(): OrdenLinea {
 const microLabel =
   "text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500";
 
-export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, disabled }: Props) {
+export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, supplierId, disabled }: Props) {
   const update = (i: number, patch: Partial<OrdenLinea>) => {
     onChange(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
   const remove = (i: number) => onChange(lines.filter((_, idx) => idx !== i));
   const addManual = () => onChange([...lines, nuevaLinea()]);
 
+  // Precio propuesto: tarifa del proveedor, si no el último precio pagado en
+  // la sede, y recién si no hay ninguno el costo. Antes siempre era el costo
+  // (promedio con gastos de importación), por encima de lo que cobra el
+  // proveedor.
   const addProducto = (p: ProductoOdoo) => {
     onChange([
       ...lines,
@@ -58,7 +65,7 @@ export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, dis
         product_code: p.default_code ?? "",
         description: p.name,
         quantity: 1,
-        unit_price: Number(p.standard_price || 0),
+        unit_price: precioPropuesto(p).precio,
       },
     ]);
   };
@@ -66,14 +73,63 @@ export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, dis
   const total = calcularTotal(lines);
   const unidades = contarUnidades(lines);
 
+  // Las líneas que vienen de Sugeridos traen el costo como precio: esto las
+  // pasa a la tarifa del proveedor o al último precio pagado en la sede.
+  const [repreciando, setRepreciando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const conProducto = lines.filter((l) => l.product_odoo_id != null);
+  const traerPrecios = async () => {
+    setRepreciando(true);
+    setAviso(null);
+    try {
+      const ids = [...new Set(conProducto.map((l) => l.product_odoo_id))].join(",");
+      const params = new URLSearchParams({ ids });
+      if (sede) params.set("sede", sede);
+      if (supplierId) params.set("supplier_id", supplierId);
+      const r = await fetch(`/api/compras/ordenes/productos?${params}`);
+      const json = await r.json();
+      if (!json.success) throw new Error(json.error || "No se pudieron leer los precios");
+      const porId = new Map<number, ProductoOdoo>((json.data as ProductoOdoo[]).map((p) => [p.id, p]));
+      let cambiadas = 0;
+      const nuevas = lines.map((l) => {
+        const p = l.product_odoo_id != null ? porId.get(l.product_odoo_id) : undefined;
+        if (!p) return l;
+        const { precio, fuente } = precioPropuesto(p);
+        if (fuente === "costo" || precio === Number(l.unit_price)) return l;
+        cambiadas++;
+        return { ...l, unit_price: precio };
+      });
+      onChange(nuevas);
+      setAviso(cambiadas > 0 ? `${cambiadas} precio(s) actualizados` : "Sin precios de compra distintos para estos productos");
+    } catch (e: any) {
+      setAviso(e.message);
+    } finally {
+      setRepreciando(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {!disabled && (
         <div className="flex flex-wrap items-center gap-2">
-          <BuscadorProducto onSelect={addProducto} sede={sede} />
+          <BuscadorProducto onSelect={addProducto} sede={sede} supplierId={supplierId} />
           <Button type="button" variant="outline" size="sm" onClick={addManual}>
             <Plus className="h-4 w-4 mr-1" /> Línea manual
           </Button>
+          {conProducto.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={traerPrecios}
+              disabled={repreciando}
+              title="Tarifa del proveedor elegido o, si no tiene, el último precio pagado en la sede"
+            >
+              {repreciando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Usar precios de compra
+            </Button>
+          )}
+          {aviso && <span className="text-xs text-slate-500">{aviso}</span>}
         </div>
       )}
 
@@ -219,9 +275,11 @@ export function OrdenLineasEditor({ lines, onChange, currency = "USD", sede, dis
 function BuscadorProducto({
   onSelect,
   sede,
+  supplierId,
 }: {
   onSelect: (p: ProductoOdoo) => void;
   sede?: string;
+  supplierId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -240,7 +298,8 @@ function BuscadorProducto({
       setLoading(true);
       try {
         const sedeParam = sede ? `&sede=${encodeURIComponent(sede)}` : "";
-        const r = await fetch(`/api/compras/ordenes/productos?q=${encodeURIComponent(q)}${sedeParam}`);
+        const provParam = supplierId ? `&supplier_id=${encodeURIComponent(supplierId)}` : "";
+        const r = await fetch(`/api/compras/ordenes/productos?q=${encodeURIComponent(q)}${sedeParam}${provParam}`);
         const json = await r.json();
         setItems(json.success ? json.data : []);
       } catch {
@@ -252,7 +311,7 @@ function BuscadorProducto({
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [q, open, sede]);
+  }, [q, open, sede, supplierId]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -301,7 +360,7 @@ function BuscadorProducto({
                     <span className="text-sm leading-tight">{p.name}</span>
                     <span className="text-xs text-slate-400">
                       {p.default_code || "sin código"} ·{" "}
-                      {fmtMoneda(Number(p.standard_price || 0))}
+                      {fmtMoneda(precioPropuesto(p).precio)} ({precioPropuesto(p).fuente})
                     </span>
                   </CommandItem>
                 ))}

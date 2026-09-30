@@ -50,6 +50,28 @@ export async function searchProducts(
   }));
 }
 
+/** Los mismos datos que searchProducts, para productos ya elegidos (por id). */
+export async function getProductsByIds(ids: number[], companies: number[]): Promise<CatalogoProducto[]> {
+  if (ids.length === 0) return [];
+  const products = await callOdooRPC<any[]>(
+    "product.product",
+    "search_read",
+    [[["id", "in", ids]]],
+    {
+      fields: ["id", "default_code", "name", "standard_price", "uom_id"],
+      limit: 0,
+      context: companies.length > 0 ? { allowed_company_ids: companies, active_test: false } : { active_test: false },
+    },
+  );
+  return (products || []).map((p: any) => ({
+    id: p.id,
+    default_code: p.default_code || "",
+    name: p.name || "",
+    standard_price: p.standard_price || 0,
+    uom: Array.isArray(p.uom_id) ? p.uom_id[1] : "",
+  }));
+}
+
 /**
  * Precios de un proveedor para un set de productos (product.supplierinfo),
  * para autocompletar `unit_price` al armar las lineas de la orden.
@@ -126,5 +148,43 @@ export async function getSupplierPrices(
     }
   }
 
+  return result;
+}
+
+/**
+ * Último precio pagado por cada producto en la sede: la línea de orden de
+ * compra confirmada más reciente (precio neto de descuento). Para proponer el
+ * precio de la orden cuando el proveedor no tiene tarifa cargada; el costo
+ * (`standard_price`) es el promedio con gastos de importación, no lo que cobra
+ * el proveedor (Epson L3250 en Valencia: costo $185,92, SUPRICOM LLC cobró
+ * $159,18 en la P-00105).
+ */
+export async function getLastPurchasePrices(
+  productIds: number[],
+  companyId: number,
+): Promise<Record<number, number>> {
+  if (productIds.length === 0) return {};
+  // La línea más reciente de cada producto (id máximo): con un search_read
+  // ordenado y con límite, un producto con muchas compras dejaba sin precio
+  // a los demás.
+  const grupos = await callOdooRPC<any[]>(
+    "purchase.order.line",
+    "read_group",
+    [
+      [["product_id", "in", productIds], ["company_id", "=", companyId], ["state", "=", "purchase"], ["product_qty", ">", 0], ["price_subtotal", ">", 0]],
+      ["id:max"],
+      ["product_id"],
+    ],
+    { lazy: false },
+  );
+  const ultimas = (grupos || []).map((g: any) => g.id).filter(Boolean);
+  if (ultimas.length === 0) return {};
+  const lineas = await callOdooRPC<any[]>("purchase.order.line", "read", [ultimas, ["product_id", "price_subtotal", "product_qty"]]);
+  const result: Record<number, number> = {};
+  for (const l of lineas || []) {
+    const id = Array.isArray(l.product_id) ? l.product_id[0] : null;
+    const precio = (Number(l.price_subtotal) || 0) / (Number(l.product_qty) || 1);
+    if (id && precio > 0) result[id] = Math.round(precio * 100) / 100;
+  }
   return result;
 }

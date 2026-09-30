@@ -63,9 +63,9 @@ const POR_PAGINA = 25;
 
 const TIPS: Record<string, string> = {
   ABC: "Por valor vendido en el año (ventas 365d × costo): A ≥ $15.000, B ≥ $5.000, C el resto.",
-  Físico: "Unidades en el almacén principal de la sede.",
+  Físico: "Unidades en el almacén principal de la sede, incluida la zona de Entrada (recibido que falta ubicar).",
   Res: "Unidades reservadas para pedidos.",
-  Tráns: "Unidades en órdenes de compra confirmadas que todavía no llegaron.",
+  Tráns: "Unidades de órdenes de compra confirmadas cuya recepción todavía no se validó en Odoo.",
   Disp: "Stock disponible = Físico + Tránsito − Reservado (como la hoja).",
   "Dem./día":
     "Demanda diaria. Si las ventas de 45 días son más del doble del promedio anual, se usa solo 45d; si no, 70% de 45d + 30% de 365d.",

@@ -171,6 +171,20 @@ export function calcularSugerido(e: EntradaSugerido): ResultadoSugerido {
   };
 }
 
+/**
+ * Alerta de quiebre de un producto, la misma en el resumen de Compras y en
+ * Mayor rotacion. Solo productos que se vendieron en los ultimos 45 dias:
+ * con la demanda anual sola, un producto que vendio una vez hace ocho meses
+ * y no tiene stock salia como "quiebre total" (en Valencia eran 4 de cada 5
+ * alertas). Sin stock ni transito = quiebre; con algo pero en el punto de
+ * reorden o por debajo = riesgo.
+ */
+export function nivelAlerta(e: EntradaSugerido, c: ResultadoSugerido): "quiebre" | "riesgo" | null {
+  if (e.ventas45d <= 0 || c.demandaDiaria <= 0) return null;
+  if (c.stockEfectivo <= 0) return "quiebre";
+  return c.stockEfectivo <= c.puntoReorden ? "riesgo" : null;
+}
+
 /** Texto y color de cada accion, en el orden de urgencia en que se muestran. */
 export const ACCIONES: Record<Accion, { label: string; clase: string; orden: number }> = {
   riesgo: { label: "Riesgo: quiebre inminente", clase: "bg-red-100 text-red-800 border-red-300", orden: 0 },
