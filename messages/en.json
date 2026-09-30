@@ -3037,6 +3037,7 @@
           "rondas_previas": "{n, plural, =1 {Security sent it back once} other {Security sent it back # times}} before dispatching it:",
           "cancelar": "Not dispatched (cancelled)",
           "cancelar_ayuda": "It never leaves (for example, the customer cancelled). It closes without dispatch, after rating.",
+          "falta_firma": "Your signature on the record is missing: sign above before dispatching.",
           "faltan": "{n, plural, =1 {# left to scan} other {# left to scan}}"
         },
         "catalogo_vacio_chofer": "There are no drivers set up for this branch yet.",

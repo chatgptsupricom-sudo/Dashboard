@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { CheckCircle2, Loader2, Lock, PenLine, Trash2 } from "lucide-react";
 import SignaturePad from "@/components/seguridad/SignaturePad";
@@ -48,6 +48,7 @@ export default function FirmasActa({
   ayudaUna = "ayuda_una",
   opcionales = [],
   puedeFirmar,
+  onFirmas,
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -90,8 +91,15 @@ export default function FirmasActa({
    * botón. Sin esto, todas las de `roles` (si no es readOnly).
    */
   puedeFirmar?: Rol[];
+  /**
+   * Avisa que roles ya firmaron, cada vez que cambia (al cargar y al firmar).
+   * El egreso lo usa para no dejar despachar sin la firma de Seguridad.
+   */
+  onFirmas?: (rolesFirmados: Rol[]) => void;
 }) {
   const t = useTranslations("seguridad.firmas");
+  const onFirmasRef = useRef(onFirmas);
+  onFirmasRef.current = onFirmas;
 
   const [firmas, setFirmas] = useState<Firma[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -125,6 +133,10 @@ export default function FirmasActa({
   }, [cargar]);
 
   const firmaDe = (rol: Rol) => firmas.find((f) => f.rol === rol);
+
+  useEffect(() => {
+    if (!cargando) onFirmasRef.current?.(firmas.map((f) => f.rol));
+  }, [firmas, cargando]);
 
   const abrir = (rol: Rol) => {
     setAbierta(rol);

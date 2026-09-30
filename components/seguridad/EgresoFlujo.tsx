@@ -241,6 +241,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const editando = (campo: string, itemId: number) => sinGuardar.current.add(`${campo}:${itemId}`);
   const guardado = (campo: string, itemId: number) => sinGuardar.current.delete(`${campo}:${itemId}`);
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
+  // Firma de Seguridad en el acta: obligatoria para aprobar o despachar igual
+  // (la API tambien la exige). null = todavia no se sabe.
+  const [firmoSeguridad, setFirmoSeguridad] = useState<boolean | null>(null);
 
   // Calificacion final.
   // Dos notas al cerrar (issue #302): picking y despacho.
@@ -931,6 +934,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   roles={["seguridad"]}
                   nombresSugeridos={{ seguridad: user?.name }}
                   permitirRehacer={rol === "superadmin"}
+                  onFirmas={(r) => setFirmoSeguridad(r.includes("seguridad"))}
                 />
               )}
 
@@ -1044,7 +1048,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                       <>
                         <BotonPrimario
                           onClick={() => accionar("verificar_seguridad", { aprobado: true })}
-                          disabled={enviando || novedades.length > 0 || faltaMotivoRenglon}
+                          disabled={enviando || novedades.length > 0 || faltaMotivoRenglon || !firmoSeguridad}
                           icon={ShieldCheck}
                           className="w-full h-12"
                         >
@@ -1061,6 +1065,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                               .filter(Boolean)
                               .join(" · ")}
                           </p>
+                        )}
+                        {!firmoSeguridad && (
+                          <p className="text-xs text-amber-700 text-center">{tf("verificacion.falta_firma")}</p>
                         )}
                         <BotonSecundario onClick={() => setNoAprobar(true)} disabled={enviando} icon={XCircle} className="w-full">
                           {novedades.length > 0 ? tf("verificacion.decidir") : tf("no_aprobar")}
@@ -1090,6 +1097,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         {decision === "cancelar" && (
                           <p className="text-xs text-slate-500">{tf("verificacion.cancelar_ayuda")}</p>
                         )}
+                        {decision === "despachar" && !firmoSeguridad && (
+                          <p className="text-xs text-amber-700">{tf("verificacion.falta_firma")}</p>
+                        )}
                         <textarea
                           value={motivoNoAprobado}
                           onChange={(e) => setMotivoNoAprobado(e.target.value.slice(0, 500))}
@@ -1112,7 +1122,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
                               enviando ||
                               decision === null ||
                               !motivoNoAprobado.trim() ||
-                              faltaMotivoRenglon
+                              faltaMotivoRenglon ||
+                              (decision === "despachar" && !firmoSeguridad)
                             }
                             className="flex-1"
                           >
