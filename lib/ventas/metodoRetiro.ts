@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
-import { facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
+import { CORTE_VALIDADAS_ODOO, facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutasConSede } from "@/lib/rma/rutasEnvio";
 import {
   esDeLaSede,
@@ -269,9 +269,14 @@ export type PedidoPendiente = {
 };
 
 /**
- * Pedidos con órdenes de despacho abiertas en Odoo (no hechas ni canceladas):
- * los de un vendedor (`vendedorUid`), o todos los de la sucursal (`cids`;
- * null = todas) para el Asistente de Ventas.
+ * Pedidos con órdenes de despacho por salir: los de un vendedor
+ * (`vendedorUid`), o todos los de la sucursal (`cids`; null = todas) para el
+ * Asistente de Ventas.
+ *
+ * "Por salir" es no cancelada y sin despachar por Seguridad en el panel.
+ * Almacén valida el picking en Odoo (Hecho) al armarlo, antes de que salga:
+ * una orden Hecha desde el corte (CORTE_VALIDADAS_ODOO) sigue en la lista
+ * hasta que su egreso se despacha; las Hechas antes del corte ya salieron.
  */
 const LIMITE_PEDIDOS = 2000;
 
@@ -281,7 +286,10 @@ export async function listarPedidosPendientes(opciones: {
 }): Promise<PedidoPendiente[]> {
   const domain: any[] = [
     ["picking_type_id.code", "=", "outgoing"],
-    ["state", "not in", ["done", "cancel"]],
+    ["state", "!=", "cancel"],
+    "|",
+    ["state", "!=", "done"],
+    ["date_done", ">=", CORTE_VALIDADAS_ODOO],
     ["sale_id", "!=", false],
   ];
   if (opciones.cids !== null) domain.push(["company_id", "=", opciones.cids]);
@@ -300,22 +308,31 @@ export async function listarPedidosPendientes(opciones: {
   if (pickings.length >= LIMITE_PEDIDOS) {
     console.warn(`[metodo-retiro] ${LIMITE_PEDIDOS}+ órdenes abiertas: las más nuevas no se listan`);
   }
-  const saleIds = [...new Set(pickings.map((p) => p.sale_id?.[0]).filter(Boolean))] as number[];
+  // Egresos del panel de estas órdenes: el que ya salió (Seguridad lo
+  // despachó) saca la orden de la lista; el que está en curso la bloquea.
+  const egresos = pickings.length
+    ? await query(
+        `SELECT odoo_picking_id,
+                (COALESCE(despachado, 1) = 1 AND COALESCE(etapa, '') IN ('por_calificar', 'cerrado')) AS salio
+           FROM seguridad_mercancia
+          WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
+            AND odoo_picking_id IN (${pickings.map(() => "?").join(",")})`,
+        pickings.map((p) => p.id),
+      ).catch(() => ({ rows: [] as any[] }))
+    : { rows: [] as any[] };
+  const salidas = new Set((egresos.rows as any[]).filter((r) => Number(r.salio) === 1).map((r) => Number(r.odoo_picking_id)));
+  const egresados = new Set((egresos.rows as any[]).map((r) => Number(r.odoo_picking_id)));
+  const porSalir = pickings.filter((p) => !salidas.has(p.id));
+
+  const saleIds = [...new Set(porSalir.map((p) => p.sale_id?.[0]).filter(Boolean))] as number[];
   if (!saleIds.length) return [];
 
-  const [ventas, facturas, metodos, usados, datos] = await Promise.all([
+  const [ventas, facturas, metodos, datos] = await Promise.all([
     callOdooRPC<any[]>("sale.order", "read", [saleIds, ["name", "partner_id", "user_id", "date_order", "amount_total", "amount_untaxed", "currency_id", "company_id"]]),
     facturasDeVentas(saleIds),
     metodosDePedidos(saleIds),
-    query(
-      `SELECT odoo_picking_id FROM seguridad_mercancia
-        WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
-          AND odoo_picking_id IN (${pickings.map(() => "?").join(",")})`,
-      pickings.map((p) => p.id),
-    ).catch(() => ({ rows: [] as any[] })),
     datosDePedidos(saleIds),
   ]);
-  const egresados = new Set((usados.rows as any[]).map((r) => Number(r.odoo_picking_id)));
 
   const porVenta = new Map<number, PedidoPendiente>();
   for (const v of ventas || []) {
@@ -343,7 +360,7 @@ export async function listarPedidosPendientes(opciones: {
       metodo: metodos.has(v.id) ? aplicarEvaluacion(metodos.get(v.id)!, datos.get(v.id)) : null,
     });
   }
-  for (const p of pickings) {
+  for (const p of porSalir) {
     const pedido = porVenta.get(p.sale_id?.[0]);
     if (!pedido) continue;
     pedido.ordenes.push({ id: p.id, nombre: p.name, estado: p.state });

@@ -68,11 +68,11 @@ export async function GET(
       );
     }
 
-    // Solo una orden "Lista" en Odoo: una ya hecha (despachada), cancelada o
-    // que todavía espera inventario no se registra. El POST lo vuelve a
-    // comprobar por su cuenta.
+    // Solo una orden Lista, o Hecha desde el corte (Almacén ya la validó y
+    // falta que salga), en Odoo: cancelada, esperando inventario o validada
+    // antes del corte no se registra. El POST lo vuelve a comprobar.
     if (tipo !== "ingreso") {
-      const noLista = motivoOrdenNoLista((factura as any).estado || "");
+      const noLista = motivoOrdenNoLista((factura as any).estado || "", (factura as any).fecha_hecho);
       if (noLista) {
         return NextResponse.json({ error: noLista.mensaje, codigo: noLista.codigo }, { status: 409 });
       }
