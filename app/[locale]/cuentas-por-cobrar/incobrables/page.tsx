@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import * as XLSX from "xlsx";
+import { descargarExcel } from "@/lib/excel";
 import { Building2, RefreshCw, Search, X, Ban, Undo2, Download, Info } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
@@ -141,7 +141,7 @@ export default function IncobrablesPage() {
   };
 
   const exportarRegistro = () => {
-    const ws = XLSX.utils.json_to_sheet(registroFiltrado.map((r) => ({
+    descargarExcel("Incobrables_marcados", [{ nombre: "Registro", filas: registroFiltrado.map((r) => ({
       Estado: r.activo ? "Vigente" : "Revertida",
       Sede: COMPANY_MAP[r.companyId] || r.companyId,
       Factura: r.moveName,
@@ -155,10 +155,7 @@ export default function IncobrablesPage() {
       "Revertido por": r.revertidoPor || "",
       "Revertido el": r.revertidoEn || "",
       "Motivo de reversión": r.motivoReversion || "",
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Incobrables");
-    XLSX.writeFile(wb, "Incobrables_marcados.xlsx");
+    })) }]);
   };
 
   const vigentes = registro.filter((r) => r.activo);
@@ -172,7 +169,6 @@ export default function IncobrablesPage() {
   const todosFiltrados = todos.filter((t) => !qTodos || t.partnerName.toLowerCase().includes(qTodos) || t.name.toLowerCase().includes(qTodos));
 
   const exportarTodos = () => {
-    const wb = XLSX.utils.book_new();
     // Resumen por cliente + cada factura detrás.
     const porCliente = new Map<string, { saldo: number; facturas: number; marcadas: number }>();
     for (const t of todosFiltrados) {
@@ -182,10 +178,11 @@ export default function IncobrablesPage() {
       if (t.origen === "marcada") c.marcadas += 1;
       porCliente.set(t.partnerName, c);
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([...porCliente].sort((a, b) => b[1].saldo - a[1].saldo).map(([cliente, c]) => ({
+    descargarExcel("Incobrables", [
+    { nombre: "Por cliente", filas: [...porCliente].sort((a, b) => b[1].saldo - a[1].saldo).map(([cliente, c]) => ({
       Cliente: cliente, Facturas: c.facturas, "Marcadas a mano": c.marcadas, Saldo: Math.round(c.saldo * 100) / 100,
-    }))), "Por cliente");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todosFiltrados.map((t) => ({
+    })) },
+    { nombre: "Facturas", filas: todosFiltrados.map((t) => ({
       Origen: t.origen === "marcada" ? "Marcada a mano" : "Automática (vencida antes de 2025)",
       Sede: COMPANY_MAP[t.companyId] || t.companyId,
       Documento: t.name,
@@ -199,8 +196,8 @@ export default function IncobrablesPage() {
       Justificación: t.justificacion || "",
       "Marcado por": t.marcadoPor || "",
       "Marcado el": t.marcadoEn || "",
-    }))), "Facturas");
-    XLSX.writeFile(wb, "Incobrables.xlsx");
+    })) },
+    ]);
   };
 
   return (

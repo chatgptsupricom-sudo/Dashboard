@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import * as XLSX from "xlsx";
+import { descargarExcel } from "@/lib/excel";
 import { Building2, Calendar, RefreshCw, Clock, X, Download, Search } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
@@ -58,9 +58,7 @@ const filaFactura = (f: Factura) => ({
   "Monto (con IVA)": f.monto,
 });
 function descargar(nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) {
-  const wb = XLSX.utils.book_new();
-  for (const h of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(h.filas), h.nombre.slice(0, 31));
-  XLSX.writeFile(wb, `${nombre}.xlsx`);
+  descargarExcel(nombre, hojas);
 }
 
 /** Facturas agrupadas por cliente, con días ponderados por monto (para el detalle). */
@@ -225,14 +223,14 @@ export default function TiempoCobroPage() {
       {
         nombre: "Resumen",
         filas: [
-          { Indicador: "Tardan en pagar (días, ponderado por monto)", Valor: r.promedioDias },
-          { Indicador: "Plazo promedio (días)", Valor: r.plazoPromedio },
-          { Indicador: "Factura típica / mediana (días)", Valor: r.mediana },
-          { Indicador: "Promedio simple (días)", Valor: r.promedioSimple },
-          { Indicador: "Pagadas a tiempo (%)", Valor: r.aTiempoPct },
-          { Indicador: "Facturas pagadas", Valor: r.facturas },
-          { Indicador: "Monto pagado (con IVA)", Valor: r.monto },
-          { Indicador: "Período", Valor: `${data.filters.desde} a ${data.filters.hasta}` },
+          { Indicador: "Tardan en pagar (días, ponderado por monto)", Resultado: r.promedioDias },
+          { Indicador: "Plazo promedio (días)", Resultado: r.plazoPromedio },
+          { Indicador: "Factura típica / mediana (días)", Resultado: r.mediana },
+          { Indicador: "Promedio simple (días)", Resultado: r.promedioSimple },
+          { Indicador: "Pagadas a tiempo (%)", Resultado: r.aTiempoPct },
+          { Indicador: "Facturas pagadas", Resultado: r.facturas },
+          { Indicador: "Monto pagado (con IVA)", Resultado: r.monto },
+          { Indicador: "Período", Resultado: `${data.filters.desde} a ${data.filters.hasta}` },
         ],
       },
       { nombre: "Tramos de días", filas: data.tramos.map((t) => ({ Tramo: t.label, Facturas: t.facturas, "Monto (con IVA)": t.monto, "% del monto": t.pct })) },

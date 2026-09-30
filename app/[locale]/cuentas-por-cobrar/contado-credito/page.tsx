@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   Download,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { descargarExcel } from "@/lib/excel";
 import {
   ResponsiveContainer,
   PieChart,
@@ -318,9 +318,7 @@ export default function ContadoCreditoPage() {
   const colMonto = esPorCobrar ? "Saldo por cobrar (con IVA)" : esCobrado ? "Cobrado" : "Monto (sin IVA)";
   const colFecha = esCobrado ? "Fecha de abono" : "Fecha de emisión";
   const libro = (nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) => {
-    const wb = XLSX.utils.book_new();
-    for (const h of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(h.filas.length ? h.filas : [{ "": "Sin registros" }]), h.nombre.slice(0, 31));
-    XLSX.writeFile(wb, `${nombre.replace(/[^\w-]+/g, "_")}.xlsx`);
+    descargarExcel(nombre.replace(/[^\w-]+/g, "_"), hojas);
   };
   const exportarClientes = () => {
     const f = clientesModal.filtro;

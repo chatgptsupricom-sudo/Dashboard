@@ -3,7 +3,7 @@
 import { DateRangePicker } from "@tremor/react";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import * as XLSX from "xlsx";
+import { XLSX, estilizarHoja } from "@/lib/excel";
 
 export default function IntegracionDePagoPage() {
   const [data, setData] = useState<any>({ results: [], total_count: 0 });
@@ -84,6 +84,7 @@ export default function IntegracionDePagoPage() {
         { wch: 18 },
       ];
 
+      estilizarHoja(worksheet);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "IntegracionDePago");
 
