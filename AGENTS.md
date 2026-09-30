@@ -28,6 +28,7 @@ Gotchas:
 - `JWT_SECRET`/`ODOO_API_KEY` no tienen fallback hardcodeado: `lib/secretos.ts` falla cerrado (secreto aleatorio de un solo uso / string vacío) si la env var falta, y loguea el error. No reintroducir un fallback fijo — es lo que este archivo reemplazó.
 - `target_company_id` (cids) en agentes/reportes: 9=Valencia (default), 10=Caracas, 7=Panamá (`lib/tools.ts`).
 - Ninguna ruta desactiva la verificación TLS globalmente (`NODE_TLS_REJECT_UNAUTHORIZED`) — las que antes lo hacían (inventario ×3, agenteia) usan `callOdooRPCInsecure()` en `lib/odoo.ts`, que aplica un `https.Agent({rejectUnauthorized:false})` scoped a esa llamada puntual, no al proceso.
+- Compras lee todo de `lib/compras/datosOdoo.ts`. Toda suma de cantidades en `account.move.line` necesita `display_type = 'product'` (las líneas COGS repiten producto y cantidad: sin el filtro, ×3). El stock del almacén principal incluye la ubicación Entrada; el tránsito sale de `stock.move` de recepción pendientes; días inactivos = desde la última factura/recibo de cliente (una NC no es venta).
 
 ## Docs
 

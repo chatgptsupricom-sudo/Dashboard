@@ -136,7 +136,9 @@ export function OrdenDetalleLayout({
       {orden.status === "rechazada" && orden.rejection_reason && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950/40">
           <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-            Rechazada por {orden.approved_by ?? "el aprobador"}
+            {/* rechazarOrden no llena approved_by: quien rechazó está en el historial. */}
+            Rechazada por{" "}
+            {[...(orden.history ?? [])].reverse().find((h) => h.to_status === "rechazada")?.changed_by ?? "el aprobador"}
           </p>
           <p className="mt-0.5 text-sm text-red-600 dark:text-red-300/90">
             {orden.rejection_reason}

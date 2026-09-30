@@ -1,8 +1,37 @@
 import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
 import { puedeComo, requireRecepcion } from "@/lib/recepcion/servidor";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Quita las órdenes aprobadas en el panel cuya orden de Odoo se canceló
+ * después (P-00101 se canceló en Odoo y se seguía ofreciendo). Si la base
+ * todavía no tiene las columnas de sincronización o Odoo no responde, se
+ * devuelven tal cual.
+ */
+async function sinCanceladasEnOdoo(ordenes: any[]): Promise<any[]> {
+  if (ordenes.length === 0) return ordenes;
+  try {
+    const ids = ordenes.map((o) => o.id);
+    const r = await query(
+      `SELECT id, odoo_purchase_order_id FROM purchase_orders
+        WHERE id IN (${ids.map(() => "?").join(",")}) AND odoo_purchase_order_id IS NOT NULL`,
+      ids,
+    );
+    const odooDe = new Map((r.rows as any[]).map((x) => [x.id, Number(x.odoo_purchase_order_id)]));
+    if (odooDe.size === 0) return ordenes;
+    const pos = await callOdooRPC<any[]>("purchase.order", "search_read", [[["id", "in", [...odooDe.values()]], ["state", "=", "cancel"]]], {
+      fields: ["id"],
+      limit: 0,
+    });
+    const canceladas = new Set((pos || []).map((p) => p.id));
+    return ordenes.filter((o) => !canceladas.has(odooDe.get(o.id) ?? -1));
+  } catch {
+    return ordenes;
+  }
+}
 
 /**
  * GET /api/recepcion/ordenes-compra?cids=9        ordenes de compra aprobadas de esa sucursal
@@ -48,7 +77,7 @@ export async function GET(request: NextRequest) {
         LIMIT 100`,
       Number.isFinite(cids) && cids > 0 ? [cids] : [],
     );
-    return NextResponse.json({ success: true, ordenes: res.rows });
+    return NextResponse.json({ success: true, ordenes: await sinCanceladasEnOdoo(res.rows as any[]) });
   } catch (e: any) {
     // Una base sin el modulo de ordenes de compra no rompe la pantalla: solo
     // no ofrece importar desde una orden.

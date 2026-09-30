@@ -28,7 +28,8 @@ import {
 } from "recharts";
 
 interface TopProducto {
-  id: number;
+  /** id de Odoo, o "sb:<codigo>" si solo está en el histórico de Smartbit. */
+  id: string;
   nombre: string;
   totalVentas: number;
   semanal: number[];
@@ -37,6 +38,8 @@ interface TopProducto {
 interface TendenciaData {
   historico: false;
   mes: string;
+  /** "smartbit" = mes anterior al paso a Odoo (abr-2026): sale del histórico de Smartbit. */
+  fuente: "odoo" | "smartbit";
   semanas: string[];
   totalPorSemana: { semana: string; total: number }[];
   topProductos: TopProducto[];
@@ -213,7 +216,10 @@ export default function TendenciaPage() {
           <h1 className="text-3xl font-bold tracking-tight">
             Tendencia de Ventas
           </h1>
-          <p className="text-gray-500">Unidades facturadas por semana.</p>
+          <p className="text-gray-500">
+            Unidades vendidas a clientes (facturas menos notas de crédito, sin
+            intercompañía). Antes de abril 2026, del histórico de Smartbit.
+          </p>
         </div>
         <Select value={sede} onValueChange={setSede}>
           <SelectTrigger className="w-44">
@@ -401,6 +407,11 @@ export default function TendenciaPage() {
                   <span className="text-xs font-normal text-gray-400">
                     (clic en barra para ver productos)
                   </span>
+                  {chartData?.fuente === "smartbit" && (
+                    <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      Datos de Smartbit
+                    </span>
+                  )}
                 </CardTitle>
                 <Select value={chartMes} onValueChange={setChartMes}>
                   <SelectTrigger className="w-44 flex-shrink-0">

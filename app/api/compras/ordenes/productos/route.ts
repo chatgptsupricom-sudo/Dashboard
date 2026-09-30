@@ -1,4 +1,4 @@
-import { searchProducts, getSupplierPrices } from "@/lib/compras/catalogoOdoo";
+import { searchProducts, getProductsByIds, getSupplierPrices, getLastPurchasePrices } from "@/lib/compras/catalogoOdoo";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -37,17 +37,26 @@ export async function GET(request: NextRequest) {
       ? [sedeId]
       : Object.keys(MAIN_WAREHOUSE_BY_COMPANY).map(Number);
 
-    const productos = await searchProducts(q, companies, limit);
+    // ?ids=1,2,3: los precios de compra de productos que ya están en la orden
+    // (ej. los que vienen de Sugeridos con el costo como precio).
+    const ids_ = (searchParams.get("ids") || "")
+      .split(",")
+      .map((x) => parseInt(x, 10))
+      .filter((x) => Number.isFinite(x) && x > 0)
+      .slice(0, 200);
+    const productos = ids_.length > 0 ? await getProductsByIds(ids_, companies) : await searchProducts(q, companies, limit);
 
-    let precios: Record<number, { price: number; min_qty: number }> = {};
-    if (supplierId && productos.length > 0) {
-      precios = await getSupplierPrices(productos.map((p) => p.id), supplierId);
-    }
+    const ids = productos.map((p) => p.id);
+    const [precios, ultimos] = await Promise.all([
+      supplierId && ids.length > 0 ? getSupplierPrices(ids, supplierId) : Promise.resolve({} as Record<number, { price: number; min_qty: number }>),
+      sedeId && ids.length > 0 ? getLastPurchasePrices(ids, sedeId) : Promise.resolve({} as Record<number, number>),
+    ]);
 
     const data = productos.map((p) => ({
       ...p,
-      supplier_price: precios[p.id]?.price ?? null,
+      supplier_price: precios[p.id]?.price || null,
       supplier_min_qty: precios[p.id]?.min_qty ?? null,
+      last_price: ultimos[p.id] ?? null,
     }));
 
     return NextResponse.json({ success: true, data });

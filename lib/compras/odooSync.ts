@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
+import { callOdooRPC, callOdooRPCEstricto } from "@/lib/odoo";
 
 /**
  * Sincronizacion de ordenes de compra del panel con purchase.order en Odoo
@@ -82,10 +82,14 @@ function puedeSincronizar(orden: OrdenParaSync, lineas: LineaParaSync[]): boolea
 // que es lo que sale de mysql2 al pasar por JSON.stringify (encontrado
 // probando en vivo: expected_date rompia el create entero de la orden,
 // no solo ese campo).
+//
+// Odoo guarda los Datetime en UTC: "YYYY-MM-DD 00:00:00" se veia en Caracas
+// (UTC-4) como el dia anterior a las 20:00. Se manda el mediodia de Caracas
+// (16:00 UTC), que es el mismo dia en cualquier zona del grupo.
 function formatearFechaOdoo(fecha: string | Date): string {
   const d = fecha instanceof Date ? fecha : new Date(fecha);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} 00:00:00`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} 16:00:00`;
 }
 
 async function resolverMonedaOdoo(code: string): Promise<number | null> {
@@ -162,6 +166,7 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
       return;
     }
 
+    const fechaPrevista = orden.expected_date ? formatearFechaOdoo(orden.expected_date) : null;
     const orderLineCommands = [
       [5, 0, 0], // borra todas las lineas actuales de la PO antes de reescribirlas
       ...lineas.map((l) => [
@@ -172,6 +177,9 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
           name: l.description,
           product_qty: l.quantity,
           price_unit: l.unit_price,
+          // La fecha prevista de la recepcion sale de la linea, no de la
+          // cabecera: sin esto la recepcion quedaba con la fecha de creacion.
+          ...(fechaPrevista ? { date_planned: fechaPrevista } : {}),
         },
       ]),
     ];
@@ -183,7 +191,7 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
       notes: orden.notes || undefined,
       order_line: orderLineCommands,
     };
-    if (orden.expected_date) vals.date_planned = formatearFechaOdoo(orden.expected_date);
+    if (fechaPrevista) vals.date_planned = fechaPrevista;
 
     let odooId = orden.odoo_purchase_order_id;
     let odooState: string | null = null;
@@ -191,14 +199,17 @@ export async function sincronizarOrdenConOdoo(orderId: number): Promise<void> {
     if (odooId) {
       odooState = await estadoOdoo(odooId);
       if (odooState) {
-        await callOdooRPC("purchase.order", "write", [[odooId], vals]);
+        // Estricto: un error de validacion de Odoo llega como HTTP 200 y
+        // callOdooRPC devolvia undefined; la orden quedaba "sincronizada"
+        // sin haberse escrito.
+        await callOdooRPCEstricto("purchase.order", "write", [[odooId], vals]);
       } else {
         // El id que teniamos guardado ya no existe en Odoo (borrado a mano) -- recrear.
         odooId = null;
       }
     }
     if (!odooId) {
-      odooId = await callOdooRPC<number>("purchase.order", "create", [vals]);
+      odooId = await callOdooRPCEstricto<number>("purchase.order", "create", [vals]);
       odooState = "draft";
     }
     if (!odooId) throw new Error("Odoo no devolvio un id de purchase.order");
