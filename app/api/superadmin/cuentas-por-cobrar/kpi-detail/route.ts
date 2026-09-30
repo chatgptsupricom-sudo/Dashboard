@@ -7,6 +7,7 @@ import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
+import { bandaDeDias } from "@/lib/cxc/bandas";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -116,13 +117,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      function getAgingBand(r: any): string {
-        if (r.days_overdue <= 0) return "corriente";
-        if (r.days_overdue <= 30) return "1-30";
-        if (r.days_overdue <= 60) return "31-60";
-        if (r.days_overdue <= 90) return "61-90";
-        return "91+";
-      }
+      const getAgingBand = (r: any) => bandaDeDias(r.days_overdue || 0);
 
       const invoices = filtered.map((r: any) => ({
         id: r.id,

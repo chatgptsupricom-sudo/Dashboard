@@ -132,7 +132,7 @@ export default function ClasificacionClientesPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Clasificación de Clientes</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Buena paga / mala paga según su historial real de pagos, últimos {meses} {meses === 1 ? "mes" : "meses"}
+            Mejor récord de pago / con más retrasos según su historial real de pagos, últimos {meses} {meses === 1 ? "mes" : "meses"}
             {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
@@ -183,7 +183,7 @@ export default function ClasificacionClientesPage() {
                 <div className="bg-emerald-100 text-emerald-600 rounded-lg p-1.5">
                   <ThumbsUp size={16} />
                 </div>
-                <h2 className="font-semibold text-slate-800">Buena Paga</h2>
+                <h2 className="font-semibold text-slate-800">Mejor récord de pago</h2>
                 <span className="text-xs text-slate-400">({data.buenaPaga.length})</span>
               </div>
               <TablaClientes clientes={data.buenaPaga} tono="verde" />
@@ -194,7 +194,7 @@ export default function ClasificacionClientesPage() {
                 <div className="bg-red-100 text-red-600 rounded-lg p-1.5">
                   <ThumbsDown size={16} />
                 </div>
-                <h2 className="font-semibold text-slate-800">Mala Paga</h2>
+                <h2 className="font-semibold text-slate-800">Con más retrasos</h2>
                 <span className="text-xs text-slate-400">({data.malaPaga.length})</span>
               </div>
               <TablaClientes clientes={data.malaPaga} tono="rojo" />
@@ -205,9 +205,9 @@ export default function ClasificacionClientesPage() {
             <Info size={14} className="shrink-0 mt-0.5" />
             <p>
               Se clasifica por el promedio de días de atraso entre la fecha de vencimiento de cada factura y la fecha real
-              en que se concilió el pago (no la fecha de la factura). Buena paga: promedio ≤ {data.criterios.diasBuenaPaga} días.
-              Mala paga: más de {data.criterios.diasBuenaPaga} días; si el promedio supera {data.criterios.diasMalaPagaSevera} días
-              se sugiere quitar el crédito en vez de solo bajarlo. Para buena paga, si además usa {data.criterios.utilizacionAlta}%
+              en que se concilió el pago (no la fecha de la factura). Mejor récord de pago: promedio ≤ {data.criterios.diasBuenaPaga} días.
+              Con más retrasos: más de {data.criterios.diasBuenaPaga} días; si el promedio supera {data.criterios.diasMalaPagaSevera} días
+              se sugiere quitar el crédito en vez de solo bajarlo. En mejor récord de pago, si además usa {data.criterios.utilizacionAlta}%
               o más de su cupo actual, se sugiere subirlo. Clientes con menos de {data.criterios.minFacturasParaClasificar} facturas
               cobradas en el período ({data.totalClientesConHistorial} clasificados en total) no aparecen -- no hay historial
               suficiente para juzgarlos. Estos umbrales son ajustables si el negocio quiere otro criterio.

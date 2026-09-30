@@ -24,6 +24,7 @@ import {
   Package,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -276,13 +277,7 @@ export default function CxcDashboardPage() {
   // siempre si no hay uno propio.
   const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
-  const agingColors: Record<string, string> = {
-    "corriente": "bg-emerald-400",
-    "1-30": "bg-amber-400",
-    "31-60": "bg-orange-400",
-    "61-90": "bg-red-500",
-    "91+": "bg-red-700",
-  };
+  const agingColors: Record<string, string> = Object.fromEntries(BANDAS.map((b) => [b.key, COLOR_BANDA[b.key].barra]));
 
   const filteredSalespersons = data?.bySalesperson
     ? data.bySalesperson.filter((sp: any) =>
@@ -563,7 +558,7 @@ export default function CxcDashboardPage() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Users size={18} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores</h3>
+                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores Vencidos</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1226,21 +1221,14 @@ export default function CxcDashboardPage() {
                 <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
-                  <div className="grid grid-cols-5 gap-2">
-                    {["corriente", "1-30", "31-60", "61-90", "91+"].map((band) => {
+                  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+                    {BANDAS.map(({ key: band, label }) => {
                       const bandData = kpiData.byBand[band] || { count: 0, total: 0 };
-                      const colors: Record<string, { bg: string; text: string }> = {
-                        corriente: { bg: "bg-emerald-50", text: "text-emerald-700" },
-                        "1-30": { bg: "bg-amber-50", text: "text-amber-700" },
-                        "31-60": { bg: "bg-orange-50", text: "text-orange-700" },
-                        "61-90": { bg: "bg-red-50", text: "text-red-700" },
-                        "91+": { bg: "bg-red-100", text: "text-red-800" },
-                      };
-                      const c = colors[band] || colors.corriente;
+                      const c = COLOR_BANDA[band];
                       return (
-                        <div key={band} className={`${c.bg} border rounded-xl p-3 text-center`}>
-                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{band === "corriente" ? "Corriente" : `${band} días`}</span>
-                          <span className={`text-base font-bold ${c.text}`}>{formatCurrency(bandData.total)}</span>
+                        <div key={band} className={`${c.fondo} border rounded-xl p-3 text-center`}>
+                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{label}</span>
+                          <span className={`text-sm font-bold ${c.texto}`}>{formatCurrency(bandData.total)}</span>
                           <span className="text-[10px] text-slate-400 block">{bandData.count} fact.</span>
                         </div>
                       );
@@ -1261,20 +1249,14 @@ export default function CxcDashboardPage() {
                     </thead>
                     <tbody>
                       {kpiData.invoices.map((inv: any) => {
-                        const bandColors: Record<string, string> = {
-                          corriente: "bg-emerald-50 text-emerald-700",
-                          "1-30": "bg-amber-50 text-amber-700",
-                          "31-60": "bg-orange-50 text-orange-700",
-                          "61-90": "bg-red-50 text-red-700",
-                          "91+": "bg-red-100 text-red-800",
-                        };
+                        const cb = COLOR_BANDA[inv.agingBand as Banda];
                         return (
                           <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                             <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                             <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
                             <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
                             <td className="py-2.5 px-3 text-center">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bandColors[inv.agingBand] || "bg-slate-50 text-slate-600"}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${cb ? `${cb.fondo} ${cb.texto}` : "bg-slate-50 text-slate-600"}`}>
                                 {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
                               </span>
                             </td>

@@ -1966,7 +1966,7 @@
     "sede": "Branch",
     "efectividad": "Effect.",
     "fact": "Invoices",
-    "top_10_deudores": "Top 10 Debtors",
+    "top_10_deudores": "Top 10 Overdue Debtors",
     "cliente": "Client",
     "total": "Total",
     "dias_col": "Days",

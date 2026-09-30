@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
+import { BANDAS, COLOR_BANDA } from "@/lib/cxc/bandas";
 import {
   TrendingUp,
   TrendingDown,
@@ -150,13 +151,7 @@ function getTrafficDot(value: number, thresholds: { green: number; yellow: numbe
 
 function AgingBar({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
-  const colors: Record<string, string> = {
-    "corriente": "bg-emerald-400",
-    "1-30": "bg-amber-400",
-    "31-60": "bg-orange-400",
-    "61-90": "bg-red-500",
-    "91+": "bg-red-700",
-  };
+  const colors: Record<string, string> = Object.fromEntries(BANDAS.map((b) => [b.key, COLOR_BANDA[b.key].barra]));
   return (
     <div className="flex items-center gap-3">
       <span className="w-20 text-xs text-slate-500 text-right">{label}</span>
