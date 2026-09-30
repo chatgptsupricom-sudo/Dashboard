@@ -211,9 +211,9 @@ export async function GET(request: NextRequest) {
       });
       return Object.entries(byClient)
         .map(([id, data]) => ({ partnerId: parseInt(id), ...data }))
-        // Top de DEUDORES: solo quien tiene algo vencido. Un cliente al día
-        // (todo corriente) no es un caso de cobranza aunque tenga saldo.
-        .filter((d) => d.overdue > 0.005)
+        // Solo quien debe (un saldo a favor no es deudor). Total = todo lo que
+        // debe, vencido o no; la columna Vencido muestra la parte ya vencida.
+        .filter((d) => d.total > 0.005)
         .sort((a, b) => b.total - a.total)
         .slice(0, 10);
     })();
