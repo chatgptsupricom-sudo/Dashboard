@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { dominioFechaEfectiva, fechasEfectivas } from "@/lib/cxc/fechaConfirmacion";
+import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 
@@ -14,8 +14,11 @@ import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
  * los meses recientes: las que tardan más todavía no están pagadas y solo
  * aparecerían las rápidas.
  *
- * Fecha de cada abono: la confirmación del pago (lib/cxc/fechaConfirmacion.ts),
- * igual que el resto de CxC. Solo facturas a crédito (plazo con días) que
+ * Fecha de cada abono: la FECHA DEL PAGO (`account.payment.date`), no la de
+ * registro/confirmación que usa el resto de CxC: aquí se mide cuánto tardó el
+ * cliente, y la confirmación suele llegar después (sep-2026 en Valencia: 271 de
+ * 400 pagos, 2,4 días más tarde en promedio), que es demora interna. Un abono
+ * que no es pago (nota de crédito, retención) se fecha por la conciliación. Solo facturas a crédito (plazo con días) que
  * recibieron al menos un pago real: una cerrada solo con nota de crédito no es
  * "el cliente pagó". Fuera Supricom, SUPER TECHNO y la cartera vieja (vencida
  * antes de 2025), como en los KPIs.
@@ -132,22 +135,26 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
     ["id", "max_date", "debit_move_id", "credit_move_id"],
   );
 
-  const [fechaDe, lineasDebito, lineasCredito] = await Promise.all([
-    fechasEfectivas(conciliaciones),
+  const [lineasDebito, lineasCredito] = await Promise.all([
     leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.debit_move_id)!).filter(Boolean))], ["id", "move_id"]),
     leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.credit_move_id)!).filter(Boolean))], ["id", "payment_id"]),
   ]);
   const facturaDeLinea = new Map(lineasDebito.map((l) => [l.id, idDe(l.move_id)]));
-  const esPago = new Set(lineasCredito.filter((l) => idDe(l.payment_id)).map((l) => l.id));
+  const pagoDeLinea = new Map(lineasCredito.filter((l) => idDe(l.payment_id)).map((l) => [l.id, idDe(l.payment_id)!]));
+  const pagos = await leer("account.payment", [...new Set(pagoDeLinea.values())], ["id", "date"]);
+  const fechaPago = new Map(pagos.map((p) => [p.id, String(p.date || "").slice(0, 10)]));
 
   const ultimo = new Map<number, { fecha: string; conPago: boolean }>();
   for (const c of conciliaciones) {
     const fid = facturaDeLinea.get(idDe(c.debit_move_id)!);
-    const fecha = fechaDe.get(c.id);
+    const pagoId = pagoDeLinea.get(idDe(c.credit_move_id)!);
+    // El dominio filtra por confirmación (siempre >= fecha del pago), así que
+    // no se pierde ningún pago del período; los que sobran caen en el filtro de abajo.
+    const fecha = (pagoId && fechaPago.get(pagoId)) || (c.max_date ? String(c.max_date).slice(0, 10) : "");
     if (!fid || !fecha) continue;
     const u = ultimo.get(fid) || { fecha: "", conPago: false };
     if (fecha > u.fecha) u.fecha = fecha;
-    if (esPago.has(idDe(c.credit_move_id)!)) u.conPago = true;
+    if (pagoId) u.conPago = true;
     ultimo.set(fid, u);
   }
   // Pagada en el período: su último abono cae entre desde y hasta.

@@ -241,7 +241,7 @@ export default function TiempoCobroPage() {
               </div>
 
               <p className="text-[11px] text-slate-400">
-                Cada factura cuenta desde su fecha de emisión hasta la fecha de confirmación del último pago que la dejó en cero.
+                Cada factura cuenta desde su fecha de emisión hasta la fecha del último pago que la dejó en cero (fecha del pago, no la de registro en Odoo).
                 Solo crédito; sin Supricom, SUPER TECHNO ni facturas vencidas antes de 2025. Las cerradas solo con nota de crédito no cuentan.
               </p>
             </>
