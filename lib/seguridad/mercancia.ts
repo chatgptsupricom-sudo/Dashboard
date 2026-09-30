@@ -55,6 +55,8 @@ export type PickingOdoo = {
   facturas?: FacturaVenta[];
   /** Solo egreso: el pedido (sale.order) de la orden, para su método de retiro. */
   odoo_sale_id?: number | null;
+  /** Solo egreso: cuándo se validó en Odoo (`date_done`, UTC); null si no está Hecha. */
+  fecha_hecho?: string | null;
 };
 
 export type PickingResumen = {
@@ -436,11 +438,14 @@ async function leerPickingEgreso(
     "stock.picking",
     "search_read",
     [domain],
-    { fields: ["name", "partner_id", "state", "origin", "sale_id"], limit: 10, order: "id desc" },
+    { fields: ["name", "partner_id", "state", "origin", "sale_id", "date_done"], limit: 10, order: "id desc" },
   );
 
-  const abiertos = (pickings || []).filter((x) => x.state !== "done" && x.state !== "cancel");
-  const p = abiertos.find((x) => x.state === "assigned") || abiertos[0] || pickings?.[0];
+  // Las que todavía pueden salir: Lista, Hecha desde el corte (ver
+  // CORTE_VALIDADAS_ODOO) o esperando inventario; primero la Lista.
+  const vigentes = (pickings || []).filter((x) => x.state !== "cancel" && !validadaAntesDelCorte(x.state, x.date_done));
+  const prioridad = (x: any) => (x.state === "assigned" ? 0 : x.state === "done" ? 1 : 2);
+  const p = [...vigentes].sort((a, b) => prioridad(a) - prioridad(b))[0] || pickings?.[0];
   if (!p) return null;
 
   const lineas_raw = await callOdooRPC<any[]>(
@@ -483,20 +488,52 @@ async function leerPickingEgreso(
     lineas,
     facturas,
     odoo_sale_id: saleId,
+    fecha_hecho: p.state === "done" ? p.date_done || null : null,
   };
 }
 
 /**
- * Por qué una orden de despacho no se puede registrar como egreso según su
- * estado en Odoo, o null si está "Lista" (`assigned`): inventario apartado y
- * todavía sin validar. Es el mismo criterio de la lista de pendientes; sin
- * esto, escribiendo el número a mano se podía registrar una orden ya hecha
- * (despachada) o cancelada.
+ * Almacén valida el picking en Odoo (queda "Hecho") cuando termina de armarlo,
+ * antes de que Seguridad lo despache en el portón: en Odoo "Hecha" no quiere
+ * decir que salió. Una orden validada desde este corte sigue pendiente hasta
+ * que su egreso se despache en el panel; las validadas antes ya salieron sin
+ * pasar por el panel. 30/9/2026 00:00 de Caracas, en UTC como `date_done`.
  */
-export function motivoOrdenNoLista(estado: string): { codigo: string; mensaje: string } | null {
+export const CORTE_VALIDADAS_ODOO = "2026-09-30 04:00:00";
+
+/** Validada en Odoo antes del corte: ya salió sin pasar por el panel. */
+export function validadaAntesDelCorte(estado: string, fechaHecho: string | null | undefined): boolean {
+  return estado === "done" && !(String(fechaHecho || "") >= CORTE_VALIDADAS_ODOO);
+}
+
+/**
+ * Dominio de Odoo de las órdenes que pueden estar por salir: Lista, o ya
+ * validada (Hecha) desde el corte. Lo que el panel ya despachó se descarta
+ * aparte, con los egresos (`sqlEgresoOcupaOrden`).
+ */
+export function dominioOrdenesPorDespachar(): any[] {
+  return ["|", ["state", "=", "assigned"], "&", ["state", "=", "done"], ["date_done", ">=", CORTE_VALIDADAS_ODOO]];
+}
+
+/**
+ * Por qué una orden de despacho no se puede registrar como egreso según su
+ * estado en Odoo, o null si puede: "Lista" (`assigned`, inventario apartado)
+ * o "Hecha" desde el corte (armada y validada por Almacén, falta que salga).
+ * Es el mismo criterio de la lista de pendientes; sin esto, escribiendo el
+ * número a mano se podía registrar una orden vieja ya despachada o cancelada.
+ * Que no se registre dos veces lo cuida el egreso (una orden, un egreso).
+ */
+export function motivoOrdenNoLista(
+  estado: string,
+  fechaHecho?: string | null,
+): { codigo: string; mensaje: string } | null {
   if (estado === "assigned") return null;
   if (estado === "done") {
-    return { codigo: "orden_despachada", mensaje: "Esta orden ya se despachó en Odoo (está Hecha): no se puede registrar otra vez" };
+    if (!validadaAntesDelCorte(estado, fechaHecho)) return null;
+    return {
+      codigo: "orden_despachada",
+      mensaje: "Esta orden se validó en Odoo antes de que los despachos pasaran por el panel: ya salió",
+    };
   }
   if (estado === "cancel") {
     return { codigo: "orden_cancelada", mensaje: "Esta orden está cancelada en Odoo" };
@@ -592,10 +629,7 @@ export async function motivoOrdenCambioEnOdoo(
 export async function listarPickingsEgresoPendientes(
   cids: number | null,
 ): Promise<{ ordenes: PickingResumen[]; sin_facturar: number }> {
-  const domain: any[] = [
-    ["picking_type_id.code", "=", "outgoing"],
-    ["state", "=", "assigned"],
-  ];
+  const domain: any[] = [["picking_type_id.code", "=", "outgoing"], ...dominioOrdenesPorDespachar()];
   if (cids !== null) domain.push(["company_id", "=", cids]);
 
   // Odoo y MySQL fallan de formas distintas y con causas distintas — se
