@@ -457,9 +457,12 @@ export function GerenteOperacionesView() {
     const end = date.to ? format(date.to, "yyyy-MM-dd") : start;
 
     fetch(`/api/gerente_venta/stats?startDate=${start}&endDate=${end}`)
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
-          setError(`Error ${res.status}: no se pudo cargar la información`);
+          // El motivo que da el servidor ("Permisos insuficientes", "Sin
+          // empresa"...): antes todo 403 se leia como "sin empresa asignada".
+          const j = await res.json().catch(() => ({}));
+          setError(`Error ${res.status}: ${j.error || "no se pudo cargar la información"}`);
           setLoading(false);
           return null;
         }
@@ -492,7 +495,9 @@ export function GerenteOperacionesView() {
     return (
       <div className="p-10 text-center">
         <p className="text-red-500 font-bold uppercase text-sm">{error}</p>
-        <p className="text-slate-400 text-xs mt-2">Verifique que su cuenta tenga empresa asignada</p>
+        {/sin empresa/i.test(error) && (
+          <p className="text-slate-400 text-xs mt-2">Verifique que su cuenta tenga empresa asignada</p>
+        )}
       </div>
     );
 
