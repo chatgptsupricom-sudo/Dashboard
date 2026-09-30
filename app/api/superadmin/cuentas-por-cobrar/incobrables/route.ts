@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -9,6 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
  *
  *   GET                 → registro de marcas (vigentes y revertidas) con el saldo de hoy
  *   GET ?buscar=texto   → facturas abiertas que se pueden marcar (cliente o número)
+ *   GET ?todos=1        → TODOS los incobrables de hoy (automáticos antes de 2025 +
+ *                         marcados), con el mismo cálculo que la tarjeta del Dashboard
  *   POST {accion:"marcar", moveId, justificacion}
  *   POST {accion:"revertir", id, motivo}
  *
@@ -44,12 +47,61 @@ export async function GET(request: NextRequest) {
     if (companyIds.length === 0) return NextResponse.json({ error: "Usuario sin sede asignada" }, { status: 403 });
     const buscar = (searchParams.get("buscar") || "").trim();
 
-    const { rows } = await query(
-      `SELECT * FROM cxc_incobrables WHERE company_id IN (${companyIds.map(() => "?").join(",")}) ORDER BY marcado_en DESC, id DESC`,
-      companyIds,
-    );
-    const registro = rows as any[];
+    // Sin la tabla (sql/cxc_incobrables.sql sin correr) la pantalla sigue
+    // mostrando los incobrables automáticos; marcar sí va a fallar.
+    let registro: any[] = [];
+    try {
+      const { rows } = await query(
+        `SELECT * FROM cxc_incobrables WHERE company_id IN (${companyIds.map(() => "?").join(",")}) ORDER BY marcado_en DESC, id DESC`,
+        companyIds,
+      );
+      registro = rows as any[];
+    } catch (e: any) {
+      console.error("cxc_incobrables no disponible:", e.message);
+    }
     const vigentes = new Set(registro.filter((r) => Number(r.activo) === 1).map((r) => Number(r.move_id)));
+
+    if (searchParams.get("todos")) {
+      const hoy = new Date();
+      hoy.setHours(23, 59, 59, 999);
+      const inicio = new Date(hoy);
+      inicio.setHours(0, 0, 0, 0);
+      const { saldosEn } = await calcularSeriesCxC(companyIds, [{ inicio, fin: hoy }], hoy);
+      const { viejas } = saldosEn(hoy);
+      const ids = [...viejas.keys()];
+      const moves: any[] = [];
+      for (let i = 0; i < ids.length; i += 5000) {
+        moves.push(...((await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], {
+          fields: ["id", "name", "move_type", "partner_id", "company_id", "invoice_user_id", "invoice_date", "invoice_date_due"],
+        })) || []));
+      }
+      const marca = new Map(registro.filter((r) => Number(r.activo) === 1).map((r) => [Number(r.move_id), r]));
+      return NextResponse.json({
+        success: true,
+        data: {
+          todos: moves
+            .map((m) => {
+              const r = marca.get(m.id);
+              return {
+                id: m.id,
+                name: m.name,
+                esNotaCredito: m.move_type === "out_refund",
+                partnerName: m.partner_id?.[1] || "Sin cliente",
+                companyId: m.company_id?.[0],
+                vendedor: m.invoice_user_id?.[1] || "",
+                invoiceDate: m.invoice_date || null,
+                invoiceDateDue: m.invoice_date_due || null,
+                saldo: r2(viejas.get(m.id) || 0),
+                origen: r ? "marcada" : "automatica",
+                justificacion: r?.justificacion || null,
+                marcadoPor: r?.marcado_por || null,
+                marcadoEn: r?.marcado_en || null,
+              };
+            })
+            .sort((a, b) => b.saldo - a.saldo),
+        },
+      });
+    }
 
     if (buscar) {
       if (buscar.length < 3) return NextResponse.json({ success: true, data: { facturas: [] } });

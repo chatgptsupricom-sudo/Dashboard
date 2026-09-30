@@ -19,6 +19,11 @@ type Candidata = {
   invoiceDate: string | null; invoiceDateDue: string | null; amountTotal: number; saldo: number;
   estado: "disponible" | "marcada" | "automatica";
 };
+type Incobrable = {
+  id: number; name: string; esNotaCredito: boolean; partnerName: string; companyId: number; vendedor: string;
+  invoiceDate: string | null; invoiceDateDue: string | null; saldo: number; origen: "automatica" | "marcada";
+  justificacion: string | null; marcadoPor: string | null; marcadoEn: string | null;
+};
 type Registro = {
   id: number; companyId: number; moveId: number; moveName: string; partnerName: string;
   saldoAlMarcar: number; saldoHoy: number | null; vencimiento: string | null; justificacion: string;
@@ -38,7 +43,9 @@ export default function IncobrablesPage() {
   const userCids = user?.cids ? Number(user.cids) : undefined;
   const esSuperadmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
 
-  const [tab, setTab] = useState<"marcar" | "registro">("marcar");
+  const [tab, setTab] = useState<"todos" | "marcar" | "registro">("todos");
+  const [todos, setTodos] = useState<Incobrable[]>([]);
+  const [filtroTodos, setFiltroTodos] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [buscar, setBuscar] = useState("");
   const [buscando, setBuscando] = useState(false);
@@ -63,10 +70,15 @@ export default function IncobrablesPage() {
   const cargarRegistro = useCallback(async () => {
     setCargandoRegistro(true);
     try {
-      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/incobrables?${params()}`);
-      const json = await res.json();
+      const [res, resTodos] = await Promise.all([
+        fetch(`/api/superadmin/cuentas-por-cobrar/incobrables?${params()}`),
+        fetch(`/api/superadmin/cuentas-por-cobrar/incobrables?${params({ todos: "1" })}`),
+      ]);
+      const [json, jsonTodos] = await Promise.all([res.json(), resTodos.json()]);
       if (!res.ok || !json.success) throw new Error(json.error || "No se pudo cargar el registro");
+      if (!resTodos.ok || !jsonTodos.success) throw new Error(jsonTodos.error || "No se pudo cargar los incobrables");
       setRegistro(json.data.registro);
+      setTodos(jsonTodos.data.todos);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -149,7 +161,43 @@ export default function IncobrablesPage() {
   };
 
   const vigentes = registro.filter((r) => r.activo);
-  const totalVigente = vigentes.reduce((s, r) => s + (r.saldoHoy ?? r.saldoAlMarcar), 0);
+  const automaticas = todos.filter((t) => t.origen === "automatica");
+  const marcadas = todos.filter((t) => t.origen === "marcada");
+  const suma = (xs: Incobrable[]) => xs.reduce((s, t) => s + t.saldo, 0);
+  const qTodos = filtroTodos.trim().toLowerCase();
+  const todosFiltrados = todos.filter((t) => !qTodos || t.partnerName.toLowerCase().includes(qTodos) || t.name.toLowerCase().includes(qTodos));
+
+  const exportarTodos = () => {
+    const wb = XLSX.utils.book_new();
+    // Resumen por cliente + cada factura detrás.
+    const porCliente = new Map<string, { saldo: number; facturas: number; marcadas: number }>();
+    for (const t of todosFiltrados) {
+      const c = porCliente.get(t.partnerName) || { saldo: 0, facturas: 0, marcadas: 0 };
+      c.saldo += t.saldo;
+      c.facturas += 1;
+      if (t.origen === "marcada") c.marcadas += 1;
+      porCliente.set(t.partnerName, c);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([...porCliente].sort((a, b) => b[1].saldo - a[1].saldo).map(([cliente, c]) => ({
+      Cliente: cliente, Facturas: c.facturas, "Marcadas a mano": c.marcadas, Saldo: Math.round(c.saldo * 100) / 100,
+    }))), "Por cliente");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todosFiltrados.map((t) => ({
+      Origen: t.origen === "marcada" ? "Marcada a mano" : "Automática (vencida antes de 2025)",
+      Sede: COMPANY_MAP[t.companyId] || t.companyId,
+      Documento: t.name,
+      Tipo: t.esNotaCredito ? "Nota de crédito" : "Factura",
+      Cliente: t.partnerName,
+      Vendedor: t.vendedor,
+      Emisión: t.invoiceDate || "",
+      Vence: t.invoiceDateDue || "",
+      "Días vencida": diasVencida(t.invoiceDateDue),
+      Saldo: t.saldo,
+      Justificación: t.justificacion || "",
+      "Marcado por": t.marcadoPor || "",
+      "Marcado el": t.marcadoEn || "",
+    }))), "Facturas");
+    XLSX.writeFile(wb, "Incobrables.xlsx");
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto tabular-nums">
@@ -184,21 +232,28 @@ export default function IncobrablesPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-sm font-semibold text-slate-600">Marcadas vigentes</p>
-          <p className="text-3xl font-bold text-slate-800 mt-2">{vigentes.length}</p>
-          <p className="text-xs text-slate-500 mt-2">Saldo de hoy: {formatCurrency(totalVigente)}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
+        <div className="bg-slate-800 text-white rounded-2xl p-5">
+          <p className="text-sm font-semibold text-slate-300">Total incobrable</p>
+          <p className="text-3xl font-bold mt-2">{formatCurrency(suma(todos))}</p>
+          <p className="text-xs text-slate-300 mt-2">{todos.length} documentos · el mismo total de la tarjeta Incobrables del Dashboard</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-sm font-semibold text-slate-600">Revertidas</p>
-          <p className="text-3xl font-bold text-slate-800 mt-2">{registro.length - vigentes.length}</p>
-          <p className="text-xs text-slate-500 mt-2">Volvieron a contar en los KPIs</p>
+          <p className="text-sm font-semibold text-slate-600">Automáticos (vencidos antes de 2025)</p>
+          <p className="text-3xl font-bold text-slate-800 mt-2">{formatCurrency(suma(automaticas))}</p>
+          <p className="text-xs text-slate-500 mt-2">{automaticas.length} documentos</p>
         </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 col-span-2 lg:col-span-1 flex gap-2 text-xs text-slate-500">
-          <Info size={14} className="shrink-0 mt-0.5" />
-          <p>Las vencidas antes de 2025 ya son incobrables automáticamente y no hace falta marcarlas. Cada marca y cada reversión quedan registradas con usuario, fecha y motivo.</p>
+        <div className="bg-white border border-red-200 rounded-2xl p-5">
+          <p className="text-sm font-semibold text-red-700">Marcados a mano</p>
+          <p className="text-3xl font-bold text-slate-800 mt-2">{formatCurrency(suma(marcadas))}</p>
+          <p className="text-xs text-slate-500 mt-2">
+            {vigentes.length} vigentes · {registro.length - vigentes.length} revertidas
+          </p>
         </div>
+      </div>
+      <div className="flex gap-2 text-xs text-slate-500 mb-6">
+        <Info size={14} className="shrink-0 mt-0.5" />
+        <p>Las vencidas antes de 2025 ya son incobrables automáticamente y no hace falta marcarlas. Cada marca y cada reversión quedan registradas con usuario, fecha y motivo.</p>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">{error}</div>}
@@ -212,6 +267,9 @@ export default function IncobrablesPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center bg-slate-100 rounded-lg p-1">
+            <button onClick={() => setTab("todos")} className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${tab === "todos" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>
+              Todos los incobrables ({todos.length})
+            </button>
             <button onClick={() => setTab("marcar")} className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${tab === "marcar" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>
               Marcar facturas
             </button>
@@ -219,7 +277,25 @@ export default function IncobrablesPage() {
               Registro ({registro.length})
             </button>
           </div>
-          {tab === "marcar" ? (
+          {tab === "todos" ? (
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={filtroTodos}
+                  onChange={(e) => setFiltroTodos(e.target.value)}
+                  placeholder="Filtrar cliente o documento..."
+                  className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+              {todosFiltrados.length > 0 && (
+                <button onClick={exportarTodos} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+                  <Download size={13} /> Excel
+                </button>
+              )}
+            </div>
+          ) : tab === "marcar" ? (
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -239,7 +315,53 @@ export default function IncobrablesPage() {
           )}
         </div>
 
-        {tab === "marcar" ? (
+        {tab === "todos" ? (
+          cargandoRegistro ? (
+            <div className="text-center py-10 text-slate-400 text-sm">Cargando...</div>
+          ) : todosFiltrados.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm">{todos.length ? "Sin resultados." : "No hay incobrables."}</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-left text-xs text-slate-400 uppercase tracking-wide">
+                    <th className="py-2 pr-3 font-medium">Origen</th>
+                    <th className="py-2 px-3 font-medium">Documento</th>
+                    <th className="py-2 px-3 font-medium">Cliente</th>
+                    <th className="py-2 px-3 font-medium">Sede</th>
+                    <th className="py-2 px-3 font-medium">Vence</th>
+                    <th className="py-2 px-3 font-medium text-right">Días vencida</th>
+                    <th className="py-2 pl-3 font-medium text-right">Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {todosFiltrados.map((t) => (
+                    <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/60" title={t.justificacion ? `${t.marcadoPor}: ${t.justificacion}` : undefined}>
+                      <td className="py-2.5 pr-3">
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${t.origen === "marcada" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+                          {t.origen === "marcada" ? "Marcada" : "Antes de 2025"}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-slate-800">
+                        {t.name}
+                        {t.esNotaCredito && <span className="ml-1 text-[10px] font-bold text-amber-600">NC</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 max-w-[260px] truncate">{t.partnerName}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{COMPANY_MAP[t.companyId] || t.companyId}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{formatDate(t.invoiceDateDue)}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-600">{diasVencida(t.invoiceDateDue) || "—"}</td>
+                      <td className="py-2.5 pl-3 text-right font-medium text-slate-800">{formatCurrency(t.saldo)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-slate-200">
+                    <td colSpan={6} className="py-2.5 pr-3 font-semibold text-slate-600">{todosFiltrados.length} documentos</td>
+                    <td className="py-2.5 pl-3 text-right font-bold text-slate-800">{formatCurrency(suma(todosFiltrados))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : tab === "marcar" ? (
           buscando ? (
             <div className="text-center py-10 text-slate-400 text-sm">Buscando...</div>
           ) : candidatas === null ? (
