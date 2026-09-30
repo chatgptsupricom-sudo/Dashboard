@@ -49,6 +49,20 @@ function getTrafficDot(value: number, thresholds: { green: number; yellow: numbe
   return "bg-red-500";
 }
 
+/**
+ * Umbrales del semáforo a partir de la meta cargada (kpi_targets), con la
+ * misma regla que el Stoplight (lib/stoplight/scoring.ts → getKpiCellColor):
+ * verde al cumplir la meta; amarillo hasta 70% de la meta (o 130% si menos es
+ * mejor); rojo más allá.
+ */
+function umbral(meta: number, menosEsMejor = false): { green: number; yellow: number } {
+  return { green: meta, yellow: menosEsMejor ? meta * 1.3 : meta * 0.7 };
+}
+
+function getTrafficText(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  return getTrafficDot(value, thresholds, invert).replace("bg-", "text-").replace("-500", "-600");
+}
+
 function getTrafficBg(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
   if (invert) {
     if (value <= thresholds.green) return "bg-emerald-50 border-emerald-200";
@@ -93,6 +107,19 @@ function Modal({ open, onClose, title, children, wide }: { open: boolean; onClos
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * SUPER TECHNO LLC fuera de un KPI (lib/cxc/cobros.ts → RELACIONADA): se
+ * muestra su saldo y el motivo, para que no parezca que la deuda desapareció.
+ */
+function AvisoRelacionada({ monto }: { monto?: number }) {
+  if (!monto || monto <= 0.005) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
+      <strong>SUPER TECHNO LLC excluida:</strong> debe {formatCurrency(monto)}. Es una empresa relacionada del grupo, no un cliente: su deuda no se gestiona como cobranza y distorsionaría el indicador.
+    </div>
   );
 }
 
@@ -245,6 +272,9 @@ export default function CxcDashboardPage() {
     setKpiLoading(false);
   }, [empresa, userCids, selectedMonth, selectedYear]);
 
+  // Peso de cada KPI: el cargado en kpi_targets para la sede y el mes, o el de
+  // siempre si no hay uno propio.
+  const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
   const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
   const agingColors: Record<string, string> = {
     "corriente": "bg-emerald-400",
@@ -319,14 +349,14 @@ export default function CxcDashboardPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, { green: 85, yellow: 75 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">35%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("efectividad_cobranza", 35)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.efectividad.value !== null ? `${data.kpis.efectividad.value}%` : "N/A"}
@@ -345,15 +375,16 @@ export default function CxcDashboardPage() {
               {data.kpis.efectividad.parcial && (
                 <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
               )}
+              <AvisoRelacionada monto={data.kpis.efectividad.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, { green: 10, yellow: 20 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cartera Vencida</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">30%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("cartera_vencida", 30)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.carteraVencida.value !== null ? `${data.kpis.carteraVencida.value}%` : "N/A"}
@@ -363,15 +394,16 @@ export default function CxcDashboardPage() {
                 <span>Vencido: {formatCurrency(data.kpis.carteraVencida.saldoVencido)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
+              <AvisoRelacionada monto={data.kpis.carteraVencida.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`}>
+            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, { green: 60, yellow: 30 })}`} />
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Recuperación Vencidos</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">25%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("recuperacion_vencidos", 25)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
@@ -381,25 +413,43 @@ export default function CxcDashboardPage() {
                 <span>Recuperado en el mes: {formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
+              <AvisoRelacionada monto={data.kpis.recuperacion.relacionadas} />
             </div>
 
-            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`}>
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, { green: 45, yellow: 60 }, true)}`} />
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">10%</span>
+                <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
               </div>
               <div className="text-3xl font-bold text-slate-800">
                 {data.kpis.dso.value !== null ? `${data.kpis.dso.value} días` : "N/A"}
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.dso.meta} días</div>
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Saldo clientes: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
+                <span>CxC crédito al cierre: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Ventas netas: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.clientes} clientes</div>
+              <div className="text-xs text-slate-500 mt-1">Ventas crédito del mes: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.dias} días</div>
             </div>
+
+            {/* Informativa: sin meta ni peso. Es la cartera vencida antes de 2025
+                que las otras tarjetas dejan fuera (lib/cxc/carteraVieja.ts). */}
+            {data.kpis.incobrables && (
+              <div onClick={() => fetchKpiDetail("incobrables", "Detalle Incobrables")} className="rounded-xl border p-5 cursor-pointer hover:shadow-md transition bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full bg-slate-400" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Incobrables</span>
+                </div>
+                <div className="text-3xl font-bold text-slate-800">{formatCurrency(data.kpis.incobrables.saldo)}</div>
+                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025</div>
+                <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                  <span>{data.kpis.incobrables.facturas} facturas · {data.kpis.incobrables.clientes} clientes</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">No cuentan en Cartera Vencida, Recuperación ni DSO</div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -417,6 +467,30 @@ export default function CxcDashboardPage() {
                   <span className="text-slate-500">Cartera vencida</span>
                   <span className="font-bold text-red-600">{formatCurrency(data.summary.totalOverdue)}</span>
                 </div>
+                {data.summary.totalOdoo !== undefined && (
+                  <>
+                    <div className="h-px bg-slate-200" />
+                    <div className="text-[11px] text-slate-400">Fuera de los KPIs</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Incobrables (antes de 2025)</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Pagos sin aplicar</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar)}</span>
+                    </div>
+                    {data.summary.relacionadas > 0.005 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">SUPER TECHNO LLC</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.relacionadas)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Total en Odoo</span>
+                      <span className="font-bold text-slate-800">{formatCurrency(data.summary.totalOdoo)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="h-px bg-slate-200" />
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500">Facturas abiertas</span>
@@ -442,7 +516,10 @@ export default function CxcDashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          {/* "Por Sede" solo cuando hay más de una sede (vista consolidada): con
+              una sola repite la tarjeta de resumen. */}
+          <div className={`grid grid-cols-1 ${data.byCompany.length > 1 ? "lg:grid-cols-2" : ""} gap-4 mb-6`}>
+            {data.byCompany.length > 1 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Building2 size={18} className="text-blue-600" />
@@ -465,12 +542,12 @@ export default function CxcDashboardPage() {
                         <td className="py-2.5 font-medium text-slate-700">{co.companyName}</td>
                         <td className="py-2.5 text-right text-slate-600">{formatCurrency(co.totalReceivable)}</td>
                         <td className="py-2.5 text-right">
-                          <span className={`font-medium ${co.overduePct > 20 ? "text-red-600" : co.overduePct > 10 ? "text-amber-600" : "text-emerald-600"}`}>
+                          <span className={`font-medium ${getTrafficText(co.overduePct ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
                             {formatCurrency(co.totalOverdue)} ({co.overduePct}%)
                           </span>
                         </td>
                         <td className="py-2.5 text-right">
-                          <span className={`font-medium ${co.efectividad >= 95 ? "text-emerald-600" : co.efectividad >= 85 ? "text-amber-600" : "text-red-600"}`}>
+                          <span className={`font-medium ${co.efectividad == null ? "text-slate-400" : getTrafficText(co.efectividad, umbral(data.kpis.efectividad.meta))}`}>
                             {co.efectividad != null ? `${co.efectividad}%` : "N/A"}
                           </span>
                         </td>
@@ -481,6 +558,7 @@ export default function CxcDashboardPage() {
                 </table>
               </div>
             </div>
+            )}
 
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-4">
@@ -1080,14 +1158,15 @@ export default function CxcDashboardPage() {
                   </div>
                   <ul className="space-y-1 list-disc pl-4">
                     <li><strong>Solo crédito:</strong> se toman las facturas cuyo plazo de pago tiene días (7, 15, 30…). Las de contado (&quot;Immediate Payment&quot;) quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</li>
-                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes.</li>
+                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes, sin las facturas vencidas antes de 2025 (Incobrables).</li>
                     <li><strong>Ventas crédito:</strong> facturas a crédito del mes menos sus notas de crédito, con IVA.</li>
                     <li><strong>CxC final:</strong> lo que deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"}. La parte <strong>no vencida</strong> se resta del denominador porque todavía no se podía exigir.</li>
-                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos, retenciones y descuentos aplicados. Los anticipos que todavía no se aplicaron a una factura no cuentan.</li>
+                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos (aunque todavía no estén aplicados a una factura), retenciones y descuentos.</li>
                   </ul>
                   <p className="text-slate-500">
-                    Odoo solo guarda el saldo de hoy. La CxC de una fecha pasada se calcula así: saldo de hoy de cada factura + los pagos que recibió después de esa fecha. Es el mismo cálculo que usa Cartera Vencida.
+                    La CxC de cada fecha es el saldo contable de la cuenta de clientes a esa fecha (el mismo del reporte de antigüedad de Odoo), menos la parte de contado y las facturas vencidas antes de 2025. Quedan fuera Supricom y la empresa relacionada SUPER TECHNO LLC.
                   </p>
+                  <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                   <p className="text-slate-500">
                     100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
                     {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}
@@ -1144,6 +1223,7 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-amber-800">{kpiData.summary.overdueCount}</span>
                   </div>
                 </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
                   <div className="grid grid-cols-5 gap-2">
@@ -1213,6 +1293,53 @@ export default function CxcDashboardPage() {
               </>
             )}
 
+            {/* ── Incobrables Detail ── */}
+            {kpiData.type === "incobrables" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Saldo</span>
+                    <span className="text-lg font-bold text-slate-800">{formatCurrency(kpiData.summary.totalReceivable)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.count}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Clientes</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.clientes}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025 que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sede</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-500">{inv.invoiceDateDue || "—"}</td>
+                          <td className="py-2.5 px-3 text-center text-red-600 font-bold">{inv.daysOverdue}d</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
             {/* ── Recuperación Vencidos Detail ── */}
             {kpiData.type === "recuperacion" && (
               <>
@@ -1235,6 +1362,7 @@ export default function CxcDashboardPage() {
                     <span className="text-[10px] text-slate-400 block">{kpiData.summary.recoveredCount}/{kpiData.summary.count} recuperadas</span>
                   </div>
                 </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -1275,26 +1403,29 @@ export default function CxcDashboardPage() {
               <>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Cartera Abierta</span>
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">CxC crédito al cierre</span>
                     <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas Netas</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas crédito del mes</span>
                     <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</span>
-                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.count} clientes</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.dias} días del período</span>
                   </div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
                   <p className="text-xs text-slate-600">
-                    DSO cliente = (Saldo abierto ÷ Ventas netas) × Días desde su primera factura. Ventas netas = facturado − notas de crédito desde esa primera factura.
+                    DSO = CxC a crédito al cierre ÷ Ventas a crédito del mes × Días del mes
+                    {" "}= {formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasNetas)} × {kpiData.summary.dias}
+                    {" "}= <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
                   </p>
-                  <p className="text-xs text-slate-600 mt-1">
-                    DSO global = promedio de los DSO por cliente ponderado por saldo = <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Mismas cifras que Efectividad: saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito del mes menos sus notas de crédito, con IVA. Mes en curso: al día de hoy.
+                    Por cliente, la misma fórmula con su saldo y sus ventas del mes; sin ventas en el mes no hay DSO (—).
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -1302,12 +1433,8 @@ export default function CxcDashboardPage() {
                     <thead>
                       <tr className="bg-slate-50/80">
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">1ª factura</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Facturado</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Notas crédito</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas netas</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo al cierre</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito del mes</th>
                         <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
                       </tr>
                     </thead>
@@ -1315,12 +1442,8 @@ export default function CxcDashboardPage() {
                       {kpiData.clientes.map((c: any) => (
                         <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[200px] truncate">{c.partnerName}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{formatDate(c.primeraFactura)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-500">{c.dias}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.facturado)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.notasCredito)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
                           <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(c.saldo)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
                           <td className="py-2.5 px-3 text-right">
                             <span className={c.dso == null ? "text-slate-400" : c.dso > 60 ? "text-red-600 font-bold" : c.dso > 45 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
                               {c.dso == null ? "—" : c.dso.toLocaleString("es-VE", { maximumFractionDigits: 2 })}

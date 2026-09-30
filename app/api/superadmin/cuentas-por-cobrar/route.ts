@@ -5,6 +5,8 @@ import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
+import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { RELACIONADA } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -179,6 +181,15 @@ export async function GET(request: NextRequest) {
       agingDistribution["91+"] += r.amount_91_plus || 0;
     });
 
+    // Incobrables: la cartera vieja (vencida antes de 2025) que Cartera
+    // Vencida, Recuperación y DSO dejan fuera (lib/cxc/carteraVieja.ts).
+    const viejas = reportInvoices.filter((r: any) => esCarteraVieja(r.date_maturity));
+    const incobrables = {
+      saldo: Math.round(viejas.reduce((s, r: any) => s + (r.amount_residual || 0), 0) * 100) / 100,
+      facturas: viejas.length,
+      clientes: new Set(viejas.map((r: any) => r.partner_id?.[0]).filter(Boolean)).size,
+    };
+
     const carteraVencidaPct = totalReceivable > 0
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
       : null;
@@ -200,6 +211,9 @@ export async function GET(request: NextRequest) {
       });
       return Object.entries(byClient)
         .map(([id, data]) => ({ partnerId: parseInt(id), ...data }))
+        // Solo quien debe (un saldo a favor no es deudor). Total = todo lo que
+        // debe, vencido o no; la columna Vencido muestra la parte ya vencida.
+        .filter((d) => d.total > 0.005)
         .sort((a, b) => b.total - a.total)
         .slice(0, 10);
     })();
@@ -260,15 +274,31 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const [recuperacionCalc, dsoCalc] = await Promise.all([
+    const [recuperacionCalc, sinAplicarGrupo] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
       // puede leer directo de `amount_residual` (issue #189).
       calcularRecuperacion(companyIds, monthStart, monthEnd),
-      // DSO por cliente y global ponderado por saldo (lib/cxc/dso.ts).
-      calcularDSO(companyIds, today),
+      // Pagos todavía no aplicados a una factura (anticipos, saldo a favor):
+      // restan en el reporte de Odoo pero no son de ninguna factura, así que
+      // el Resumen los muestra en su propia fila.
+      callOdooRPC<any[]>(
+        "account.move.line",
+        "read_group",
+        [[
+          ["account_id.account_type", "=", "asset_receivable"],
+          ["parent_state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["move_type", "not in", ["out_invoice", "out_refund"]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+        ], ["amount_residual:sum"], []],
+        { lazy: false },
+      ),
     ]);
+    const sinAplicar = Math.round(Number(sinAplicarGrupo?.[0]?.amount_residual || 0) * 100) / 100;
 
     // ── Efectividad (CEI) y su fila semanal ──
     // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
@@ -283,10 +313,15 @@ export async function GET(request: NextRequest) {
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
     // promedio del KPI y su fila aten entre sí.
-    // El CEI usa la cartera reconstruida al inicio y al final del mes, así
-    // que va después de las series.
+    // El CEI usa el saldo contable al inicio y al final del mes, pero le resta
+    // el contado y la cartera vieja por factura con esas mismas series, así
+    // que va después (seriesSemanales.ts → carteraCEI).
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
-    const efectividadCalc = await calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraEn);
+    // El DSO usa la CxC final y las ventas a crédito del CEI (lib/cxc/dso.ts).
+    const [efectividadCalc, dsoCalc] = await Promise.all([
+      calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI),
+      calcularDSO(companyIds, monthStart, monthEnd, today, seriesCxc),
+    ]);
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -322,6 +357,7 @@ export async function GET(request: NextRequest) {
             pagos: efectividadCalc.pagos,
             facturas: efectividadCalc.facturas,
             parcial: efectividadCalc.parcial,
+            relacionadas: efectividadCalc.relacionadas,
           },
           carteraVencida: {
             // Se calcula con el mismo método que la fila semanal (reconstruyendo
@@ -335,6 +371,8 @@ export async function GET(request: NextRequest) {
             meta: cxcMetas["cartera_vencida"] || 10,
             saldoVencido: seriesCxc.carteraHoy.vencido,
             carteraTotal: seriesCxc.carteraHoy.total,
+            // SUPER TECHNO queda fuera del % pero su saldo se muestra.
+            relacionadas: efectividadCalc.relacionadas,
           },
           recuperacion: {
             value: recuperacion,
@@ -348,28 +386,55 @@ export async function GET(request: NextRequest) {
             saldoVencidoHoy: recuperacionCalc.saldoVencidoHoy,
             conciliadoDesdeElCorte: recuperacionCalc.conciliadoDesdeElCorte,
             facturasConSaldo: recuperacionCalc.facturasConSaldo,
+            relacionadas: efectividadCalc.relacionadas,
           },
           dso: {
             value: dsoCalc.value,
             meta: cxcMetas["dso"] || 45,
             carteraAbierta: dsoCalc.carteraAbierta,
             ventasNetas: dsoCalc.ventasNetas,
+            dias: dsoCalc.dias,
             clientes: dsoCalc.clientesIncluidos,
           },
+          incobrables,
         },
         semanaEfectividad,
         semanaCarteraVencida: seriesCxc.carteraVencidaSemana,
         semanaRecuperacion: seriesCxc.recuperacionSemana,
         pesos: cxcPesos,
-        agingDistribution,
-        byCompany,
+        // Antigüedad del saldo abierto con el cálculo de Cartera Vencida (sin
+        // Incobrables ni SUPER TECHNO): las bandas suman la cartera del Resumen.
+        agingDistribution: seriesCxc.carteraHoy.aging,
+        // Cartera, vencida y facturas por sede con el mismo cálculo que las
+        // tarjetas (sin Incobrables ni SUPER TECHNO); la efectividad es el CEI
+        // de la sede. El aging por sede sigue saliendo del reporte de Odoo.
+        byCompany: byCompany.map((co) => {
+          const sede = seriesCxc.carteraHoyPorSede[co.companyId];
+          return {
+            ...co,
+            totalReceivable: sede?.total ?? co.totalReceivable,
+            totalOverdue: sede?.vencido ?? co.totalOverdue,
+            overduePct: sede?.pct ?? co.overduePct,
+            openInvoices: sede?.facturas ?? co.openInvoices,
+            overdueInvoices: sede?.facturasVencidas ?? co.overdueInvoices,
+            efectividad: companyIds.length > 1 ? efectividadCalc.porSede[co.companyId] ?? null : efectividad,
+            aging: sede?.aging ?? co.aging,
+          };
+        }),
         topDebtors: topDebtorsConDso,
         bySalesperson,
+        // Mismas cifras que la tarjeta de Cartera Vencida. Lo que el reporte de
+        // Odoo suma aparte va en filas propias; las cuatro partes cuadran con
+        // `totalOdoo` (el total del reporte de antigüedad).
         summary: {
-          totalReceivable: Math.round(totalReceivable * 100) / 100,
-          totalOverdue: Math.round(totalOverdue * 100) / 100,
-          openInvoiceCount: reportInvoices.length,
-          overdueInvoiceCount: reportInvoices.filter((r: any) => r.days_overdue > 0).length,
+          totalReceivable: seriesCxc.carteraHoy.total,
+          totalOverdue: seriesCxc.carteraHoy.vencido,
+          openInvoiceCount: seriesCxc.carteraHoy.facturas,
+          overdueInvoiceCount: seriesCxc.carteraHoy.facturasVencidas,
+          incobrables: incobrables.saldo,
+          sinAplicar,
+          relacionadas: efectividadCalc.relacionadas,
+          totalOdoo: Math.round(totalReceivable * 100) / 100,
         },
         filters: {
           empresa,

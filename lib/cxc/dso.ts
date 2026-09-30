@@ -1,160 +1,128 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { facturasDelPeriodo } from "@/lib/cxc/efectividad";
+import type { SeriesCxC } from "@/lib/cxc/seriesSemanales";
 
 /**
- * KPI "DSO" (días promedio de cobro), por cliente y global.
+ * KPI "DSO" (días promedio de cobro) del mes, en su forma estándar:
  *
- *   DSO cliente = (saldo abierto ÷ ventas netas) × días del período
+ *   DSO = CxC a crédito al cierre del mes ÷ ventas a crédito del mes × días del mes
  *
- *   ventas netas     = facturado − notas de crédito, desde su 1ª factura
- *   días del período = días desde la 1ª factura del cliente hasta hoy
+ * Los tres términos son del MISMO período (mezclar ventas de un año con días
+ * de un mes da un número sin sentido). Mes en curso: corte y días a hoy.
  *
- *   DSO global  = Σ (DSO cliente × saldo cliente) ÷ Σ saldo cliente
- *                 (promedio ponderado por saldo, sobre los clientes que deben)
+ *   CxC al cierre   = la CxC final del CEI (seriesSemanales.ts → carteraCEI):
+ *                     saldo contable de la cuenta por cobrar, sin contado,
+ *                     cartera vieja, Supricom ni SUPER TECHNO.
+ *   ventas crédito  = las del CEI (efectividad.ts → facturasDelPeriodo):
+ *                     facturas − notas de crédito a crédito del mes, con IVA.
  *
- * Cada cliente tiene su propio período, así que el global no puede ser una
- * sola división Σ CxC ÷ Σ ventas: eso exigiría un único período para todos
- * (la 1ª factura de la sede, ~2018) y le daría todo el peso a años viejos.
- * Ponderar por saldo hace que pesen más los que más deben.
+ * Así la tarjeta usa exactamente las cifras de Efectividad. Medido en
+ * sep-2026: Valencia 37 días, igual que el tiempo real que tardaron en pagar
+ * (Tiempo de Cobro, 37,6).
  *
- * Montos con IVA y en moneda de la compañía (`amount_total_signed` /
- * `amount_residual_signed`, igual que lib/cxc/efectividad.ts): con la moneda
- * del documento, una factura vieja en bolívares se sumaría a las de dólares.
- * Los `_signed` ya vienen negativos en las notas de crédito. Se agrupa por
- * `commercial_partner_id` para que las facturas a contactos de una empresa
- * cuenten como una sola cuenta.
+ * ── Historia ──
+ * Antes era un DSO por cliente (saldo ÷ ventas desde su 1ª factura × días,
+ * luego 12 meses con Smartbit) promediado ponderando por saldo. Ese promedio
+ * le da más peso a quien más debe respecto de lo que compra y salía 58-88 días
+ * contra ~37 reales, además de no seguir el mes elegido.
  *
- * No depende del mes seleccionado: es la foto de hoy.
+ * El detalle por cliente usa la misma fórmula con su saldo a crédito al cierre
+ * (por factura) y sus ventas a crédito del mes. Un cliente sin ventas en el
+ * mes queda sin DSO (no hay contra qué dividir). La suma de saldos por cliente
+ * no es exactamente la CxC de la tarjeta: la del libro además resta los pagos
+ * sin aplicar, que no son de ninguna factura.
+ *
+ * Antes de abril 2026 Odoo no tiene las ventas (están en Smartbit), así que
+ * esos meses salen sin DSO, igual que el CEI.
  */
 
 export interface DsoCliente {
   partnerId: number;
   partnerName: string;
-  /** Saldo abierto hoy (facturas − notas de crédito abiertas). */
+  /** Saldo a crédito del cliente al cierre (facturas − NC abiertas). */
   saldo: number;
-  facturado: number;
-  notasCredito: number;
+  /** Ventas a crédito del cliente en el mes. */
   ventasNetas: number;
-  /** YYYY-MM-DD de la primera factura del cliente en estas sedes. */
-  primeraFactura: string;
   dias: number;
-  /** `null` si no tiene ventas netas positivas. */
+  /** `null` si no tuvo ventas a crédito en el mes. */
   dso: number | null;
 }
 
 export interface DsoResultado {
-  /** DSO global ponderado por saldo. `null` si nadie debe. */
+  /** DSO del mes. `null` si no hubo ventas a crédito. */
   value: number | null;
-  /** Σ saldo de los clientes que entran al promedio. */
+  /** CxC a crédito al cierre (la CxC final del CEI). */
   carteraAbierta: number;
-  /** Σ ventas netas de esos mismos clientes. */
+  /** Ventas a crédito del mes. */
   ventasNetas: number;
-  /** Nº de clientes que entran al promedio (saldo > 0 y ventas netas > 0). */
+  /** Días del período (del 1 al cierre, o a hoy en el mes en curso). */
+  dias: number;
+  /** Nº de clientes con saldo a crédito al cierre. */
   clientesIncluidos: number;
-  /**
-   * Clientes con saldo > 0, ordenados por saldo. Incluye los de `dso: null`
-   * (ventas netas ≤ 0) para que se vean, aunque no entren al promedio.
-   */
+  /** Clientes con saldo a crédito al cierre, ordenados por saldo. */
   clientes: DsoCliente[];
 }
 
-const PAGE = 5000;
 const DIA_MS = 24 * 60 * 60 * 1000;
+const idDe = (v: any): number | undefined => (Array.isArray(v) ? v[0] : v || undefined);
+const fechaLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-async function paginar(domain: any[], fields: string[]): Promise<any[]> {
-  const out: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await callOdooRPC<any[]>("account.move", "search_read", [domain], {
-      fields, order: "id asc", limit: PAGE, offset,
-    });
-    if (!page || page.length === 0) break;
-    out.push(...page);
-    if (page.length < PAGE) break;
-    offset += PAGE;
+export async function calcularDSO(
+  companyIds: number[],
+  monthStart: Date,
+  monthEnd: Date,
+  hoy: Date,
+  series: Pick<SeriesCxC, "carteraCEI" | "saldosEn">,
+): Promise<DsoResultado> {
+  const finDia = new Date(monthEnd);
+  finDia.setHours(23, 59, 59, 999);
+  const corte = finDia < hoy ? finDia : hoy;
+  const inicio = new Date(monthStart);
+  inicio.setHours(0, 0, 0, 0);
+  const dias = Math.max(1, Math.floor((corte.getTime() - inicio.getTime()) / DIA_MS) + 1);
+
+  const [cxc, ventasMes] = await Promise.all([
+    series.carteraCEI(corte),
+    facturasDelPeriodo(companyIds, fechaLocal(inicio), fechaLocal(corte)),
+  ]);
+  const ventas = ventasMes.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
+
+  // ── Detalle por cliente (empresa) ──
+  const { saldos, credito } = series.saldosEn(corte);
+  const ids = [...saldos.keys()].filter((id) => credito.has(id));
+  const moves: any[] = [];
+  for (let i = 0; i < ids.length; i += 5000) {
+    moves.push(...((await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], { fields: ["id", "commercial_partner_id"] })) || []));
   }
-  return out;
-}
-
-export async function calcularDSO(companyIds: number[], hoy: Date): Promise<DsoResultado> {
-  // Todo el historial: el período arranca en la 1ª factura de cada cliente.
-  const movimientos = await paginar(
-    [
-      ["move_type", "in", ["out_invoice", "out_refund"]],
-      ["state", "=", "posted"],
-      ["company_id", "in", companyIds],
-      // Mismo filtro de internos que los demás KPIs (por contacto) y además
-      // por empresa, porque aquí se agrupa por empresa.
-      ["partner_id.name", "not ilike", "supricom"],
-      ["commercial_partner_id.name", "not ilike", "supricom"],
-      // SUPER TECHNO LLC (Panamá) es empresa relacionada: en sep-2026 debía
-      // 2,5 M sin un solo pago (77% del saldo de la sede) y llevaba el DSO de
-      // Panamá de ~80 a 344 días. Se excluye como a los internos.
-      ["commercial_partner_id.name", "not ilike", "super techno llc"],
-    ],
-    ["commercial_partner_id", "move_type", "invoice_date", "amount_total_signed", "amount_residual_signed"],
-  );
-
-  const porCliente = new Map<number, {
-    name: string; saldo: number; facturado: number; notasCredito: number; primera: string | null;
-  }>();
-  for (const m of movimientos) {
-    const pid = Array.isArray(m.commercial_partner_id) ? m.commercial_partner_id[0] : m.commercial_partner_id;
-    if (!pid) continue;
-    let c = porCliente.get(pid);
-    if (!c) {
-      c = { name: m.commercial_partner_id?.[1] || "Sin cliente", saldo: 0, facturado: 0, notasCredito: 0, primera: null };
-      porCliente.set(pid, c);
-    }
-    c.saldo += Number(m.amount_residual_signed || 0);
-    if (m.move_type === "out_refund") {
-      c.notasCredito -= Number(m.amount_total_signed || 0);
-    } else {
-      c.facturado += Number(m.amount_total_signed || 0);
-      const fecha = m.invoice_date ? String(m.invoice_date).slice(0, 10) : null;
-      if (fecha && (!c.primera || fecha < c.primera)) c.primera = fecha;
-    }
-  }
+  const porCliente = new Map<number, { name: string; saldo: number; ventas: number }>();
+  const cliente = (v: any) => {
+    const pid = idDe(v) || 0;
+    if (!porCliente.has(pid)) porCliente.set(pid, { name: v?.[1] || "Sin cliente", saldo: 0, ventas: 0 });
+    return porCliente.get(pid)!;
+  };
+  for (const m of moves) cliente(m.commercial_partner_id).saldo += saldos.get(m.id) || 0;
+  for (const f of ventasMes) cliente(f.commercial_partner_id).ventas += Number(f.amount_total_signed) || 0;
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const clientes: DsoCliente[] = [];
-  for (const [partnerId, c] of porCliente) {
-    // Sin deuda no hay días de cobro que medir (saldo a favor incluido).
-    if (c.saldo < 0.005 || !c.primera) continue;
-    const ventasNetas = c.facturado - c.notasCredito;
-    const dias = Math.max(1, Math.floor((hoy.getTime() - new Date(c.primera + "T00:00:00").getTime()) / DIA_MS));
-    clientes.push({
-      partnerId,
+  const clientes: DsoCliente[] = [...porCliente]
+    .filter(([pid, c]) => pid && c.saldo >= 0.005)
+    .map(([pid, c]) => ({
+      partnerId: pid,
       partnerName: c.name,
       saldo: r2(c.saldo),
-      facturado: r2(c.facturado),
-      notasCredito: r2(c.notasCredito),
-      ventasNetas: r2(ventasNetas),
-      primeraFactura: c.primera,
+      ventasNetas: r2(c.ventas),
       dias,
-      dso: ventasNetas > 0 ? Math.round((c.saldo / ventasNetas) * dias * 100) / 100 : null,
-    });
-  }
-  clientes.sort((a, b) => b.saldo - a.saldo);
-
-  // Solo los clientes con DSO calculable entran al promedio; la cartera y las
-  // ventas que se muestran junto a la tarjeta son las de ese mismo grupo.
-  let pesoTotal = 0;
-  let ponderado = 0;
-  let ventas = 0;
-  let incluidos = 0;
-  for (const c of clientes) {
-    if (c.dso === null) continue;
-    incluidos++;
-    pesoTotal += c.saldo;
-    ponderado += c.dso * c.saldo;
-    ventas += c.ventasNetas;
-  }
+      dso: c.ventas > 0 ? Math.round((c.saldo / c.ventas) * dias) : null,
+    }))
+    .sort((a, b) => b.saldo - a.saldo);
 
   return {
-    value: pesoTotal > 0 ? Math.round(ponderado / pesoTotal) : null,
-    carteraAbierta: r2(pesoTotal),
+    value: ventas > 0 ? Math.round((cxc.total / ventas) * dias) : null,
+    carteraAbierta: r2(cxc.total),
     ventasNetas: r2(ventas),
-    clientesIncluidos: incluidos,
+    dias,
+    clientesIncluidos: clientes.length,
     clientes,
   };
 }

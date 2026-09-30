@@ -18,6 +18,7 @@ import {
   Search,
   UserRound,
   Landmark,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -37,6 +38,7 @@ const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const PIE_COLORS = ["#10b981", "#3b82f6"];
 const BAR_COLOR = "#3b82f6";
+const BAR_COLOR_ANTERIORES = "#f59e0b";
 const BANCO_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"];
 
 function formatCurrency(value: number): string {
@@ -88,7 +90,9 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
-type Bucket = Acumulado & { dias: number };
+type Bucket = Acumulado & { dias: number; montoDelMes: number; montoAnteriores: number };
+type FilaAparte = { id: number; documento: string; referencia: string; cliente: string; fecha: string | null; vence?: string | null; diario?: string; monto: number };
+type TipoAparte = "incobrables" | "sin_aplicar";
 type Banco = Acumulado & { journalId: number; journalName: string };
 type Parcial = { monto: number; pct: number; facturas: number };
 type Vendedor = { id: number; name: string };
@@ -102,6 +106,8 @@ type ContadoCreditoData = {
   mesesAnteriores: Parcial;
   /** Solo en "cobrado": el total repartido en los tramos que usan los KPIs. */
   cuadre: Cuadre | null;
+  /** Solo en "por_cobrar": corte y lo que queda fuera del reparto (sinAplicar solo si el corte es hoy). */
+  porCobrar?: { corte: string; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
   buckets: Bucket[];
   bancos: Banco[];
   vendedores: Vendedor[];
@@ -109,7 +115,7 @@ type ContadoCreditoData = {
   updatedAt: string;
 };
 type FacturaCliente = { id: number; name: string; invoiceDate: string | null; moveType: string; amountTotal: number; paymentTermName: string };
-type Modo = "facturado" | "cobrado";
+type Modo = "facturado" | "cobrado" | "por_cobrar";
 type Filtro = { tipo?: "contado" | "credito"; dias?: number; journalId?: number };
 
 export default function ContadoCreditoPage() {
@@ -126,13 +132,16 @@ export default function ContadoCreditoPage() {
   // (lib/cxc/cobros.ts), asi que los totales cuadran entre pantallas.
   const [modo, setModo] = useState<Modo>("facturado");
   const esCobrado = modo === "cobrado";
+  // Por cobrar: saldo abierto al cierre del mes (= CxC inicial del mes
+  // siguiente), repartido igual por plazo (lib/cxc/porCobrar.ts).
+  const esPorCobrar = modo === "por_cobrar";
 
   // Toggle para incluir/excluir "Asistente de Ventas" (y demas vendedores
   // internos/de prueba). Cada modo recuerda su propio estado por separado
   // porque tienen defaults distintos: Facturado lo excluye por default
   // (para coincidir con "Ventas del Mes"), Cobrado no (coincide con el
   // numero real que usa cobranza).
-  const [excluirAsistente, setExcluirAsistente] = useState<{ facturado: boolean; cobrado: boolean }>({ facturado: true, cobrado: false });
+  const [excluirAsistente, setExcluirAsistente] = useState<Record<Modo, boolean>>({ facturado: true, cobrado: false, por_cobrar: false });
   const excluirAsistenteActual = excluirAsistente[modo];
   // Solo en Cobrado: marcados (default) es la regla de lib/cxc/cobros.ts,
   // retenciones y pagos del 25% de IVA no cuentan como cobro.
@@ -265,7 +274,32 @@ export default function ContadoCreditoPage() {
 
   // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
   // (mismos datos ya cargados, sin volver a pedirlos).
+  // Detalle de lo que "Por cobrar" deja fuera (Incobrables / Pagos sin aplicar).
+  const [aparteModal, setAparteModal] = useState<{ open: boolean; tipo: TipoAparte; loading: boolean; filas: FilaAparte[] }>({ open: false, tipo: "incobrables", loading: false, filas: [] });
+  const openAparte = async (tipo: TipoAparte) => {
+    setAparteModal({ open: true, tipo, loading: true, filas: [] });
+    try {
+      const params = new URLSearchParams({ tipo });
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      if (usarRangoFechas && startDate && endDate) {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      } else {
+        params.set("month", String(selectedMonth));
+        params.set("year", String(selectedYear));
+      }
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/contado-credito/aparte?${params}`);
+      const json = await res.json();
+      setAparteModal({ open: true, tipo, loading: false, filas: json.success ? json.data.filas : [] });
+    } catch (e) {
+      console.error("Error:", e);
+      setAparteModal({ open: true, tipo, loading: false, filas: [] });
+    }
+  };
+
   const closeAllModals = () => {
+    setAparteModal((prev) => ({ ...prev, open: false }));
     setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: false, partnerId: 0, partnerName: "" });
     setInvoiceModal({ open: false, invoiceId: 0 });
@@ -298,8 +332,10 @@ export default function ContadoCreditoPage() {
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
-  const tituloTotal = esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
-  const tituloFacturasModal = esCobrado ? "Cobros" : "Facturas";
+  const tituloTotal = esPorCobrar
+    ? "Por cobrar al cierre del mes"
+    : esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
+  const tituloFacturasModal = esCobrado ? "Cobros" : esPorCobrar ? "Facturas abiertas" : "Facturas";
   const etiquetaColFecha = esCobrado ? "Fecha de abono" : "Fecha";
 
   const pieData = data ? [
@@ -311,6 +347,8 @@ export default function ContadoCreditoPage() {
     label: `${b.dias}d`,
     fullLabel: bucketLabel(b),
     monto: b.monto,
+    montoDelMes: b.montoDelMes,
+    montoAnteriores: b.montoAnteriores,
   })) : [];
 
   const bancoPieData = data ? data.bancos.map((b) => ({ name: b.journalName, value: b.monto })) : [];
@@ -412,7 +450,7 @@ export default function ContadoCreditoPage() {
         <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
           <button
             onClick={() => setModo("facturado")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${!esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${modo === "facturado" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Facturado
           </button>
@@ -421,6 +459,13 @@ export default function ContadoCreditoPage() {
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esCobrado ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             Cobrado
+          </button>
+          <button
+            onClick={() => setModo("por_cobrar")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${esPorCobrar ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            title="Saldo abierto al cierre del mes (CxC inicial del mes siguiente)"
+          >
+            Por cobrar
           </button>
         </div>
         <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none">
@@ -481,7 +526,12 @@ export default function ContadoCreditoPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
-            {esCobrado ? (
+            {esPorCobrar && data.porCobrar && (
+              <p className="text-xs text-slate-500 mt-1">
+                Saldo con IVA al {data.porCobrar.corte}{data.porCobrar.sinAplicar !== null ? " (hoy, el mes no ha cerrado)" : ""} — es la CxC con la que arranca el mes siguiente.
+              </p>
+            )}
+            {esCobrado || esPorCobrar ? (
               <>
                 <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
                   <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`Facturas del mes: ${data.delMes.pct}%`} />
@@ -497,6 +547,35 @@ export default function ContadoCreditoPage() {
                     Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
                   </span>
                 </div>
+                {esPorCobrar && data.porCobrar && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 mb-2">Fuera de este total, igual que en los KPIs del Dashboard</p>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                      {[
+                        { label: "Incobrables", hint: "Vencidas antes de 2025 · click para ver", monto: data.porCobrar.incobrables, tipo: "incobrables" as TipoAparte },
+                        // Solo en la sede donde tiene saldo (Panamá).
+                        ...(Math.abs(data.porCobrar.relacionadas) > 0.005
+                          ? [{ label: "SUPER TECHNO LLC", hint: "Empresa relacionada del grupo", monto: data.porCobrar.relacionadas, tipo: undefined }]
+                          : []),
+                        ...(data.porCobrar.sinAplicar !== null
+                          ? [{ label: "Pagos sin aplicar", hint: "Entraron pero no están aplicados a una factura · click para ver", monto: data.porCobrar.sinAplicar, tipo: "sin_aplicar" as TipoAparte }]
+                          : []),
+                      ].map((x) => x.tipo ? (
+                        <button key={x.label} onClick={() => openAparte(x.tipo!)} className="text-left rounded-xl bg-slate-50 p-3 min-w-0 hover:bg-slate-100 hover:shadow-sm transition cursor-pointer">
+                          <p className="text-[11px] text-slate-500">{x.label}</p>
+                          <p className="text-base font-semibold text-slate-800 tabular-nums break-words">{formatCurrency(x.monto)}</p>
+                          <p className="text-[10px] text-slate-400">{x.hint}</p>
+                        </button>
+                      ) : (
+                        <div key={x.label} className="rounded-xl bg-slate-50 p-3 min-w-0">
+                          <p className="text-[11px] text-slate-500">{x.label}</p>
+                          <p className="text-base font-semibold text-slate-800 tabular-nums break-words">{formatCurrency(x.monto)}</p>
+                          <p className="text-[10px] text-slate-400">{x.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {data.cuadre && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs text-slate-500 mb-2">
@@ -529,6 +608,25 @@ export default function ContadoCreditoPage() {
 
           {/* Contado vs Credito + grafica de torta */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {esPorCobrar ? (
+              // En "Por cobrar" el contado no es un plazo más: debió cobrarse al
+              // facturar. Si queda saldo es una anomalía (pago sin aplicar o
+              // venta sin cobrar), así que se muestra como aviso para depurar.
+              <button
+                onClick={() => openClientes(`Contado sin cobrar`, data.contado.clientesDetalle, { tipo: "contado" })}
+                className="text-left bg-amber-50 border border-amber-300 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2 text-amber-800">
+                  <AlertTriangle size={18} />
+                  <p className="text-sm font-semibold">Contado sin cobrar</p>
+                </div>
+                <p className="text-3xl font-bold text-amber-800 mt-2">{formatCurrency(data.contado.monto)}</p>
+                <p className="text-xs text-amber-900 mt-2">
+                  Debió cobrarse al facturar. Revisar si el pago no está aplicado a la factura o si de verdad no se cobró.
+                </p>
+                <p className="text-xs text-amber-700 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
+              </button>
+            ) : (
             <button
               onClick={() => openClientes(`Clientes — Contado`, data.contado.clientesDetalle, { tipo: "contado" })}
               className="text-left bg-white border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
@@ -541,6 +639,7 @@ export default function ContadoCreditoPage() {
               <p className="text-lg font-semibold text-slate-700 mt-1">{formatCurrency(data.contado.monto)}</p>
               <p className="text-xs text-slate-500 mt-2">{data.contado.facturas} facturas · {data.contado.clientes} clientes (click para ver)</p>
             </button>
+            )}
             <button
               onClick={() => openClientes(`Clientes — Crédito`, data.credito.clientesDetalle, { tipo: "credito" })}
               className="text-left bg-white border border-blue-200 bg-blue-50/30 rounded-2xl p-5 hover:shadow-md transition cursor-pointer"
@@ -580,6 +679,18 @@ export default function ContadoCreditoPage() {
                       <p className="text-xs text-slate-500 uppercase tracking-wide">{bucketLabel(b)}</p>
                       <p className="text-xl font-bold text-slate-800 mt-1">{b.pct}%</p>
                       <p className="text-xs text-slate-600 mt-1">{formatCurrency(b.monto)}</p>
+                      {esPorCobrar && (
+                        <div className="mt-2 space-y-0.5 text-[11px]">
+                          <p className="flex items-center gap-1.5 text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                            Del mes: <span className="font-semibold">{formatCurrency(b.montoDelMes)}</span>
+                          </p>
+                          <p className="flex items-center gap-1.5 text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                            Anteriores: <span className="font-semibold">{formatCurrency(b.montoAnteriores)}</span>
+                          </p>
+                        </div>
+                      )}
                       <div className="flex items-center gap-1 mt-2 text-xs text-slate-400">
                         <Users size={12} />
                         {b.clientes} cliente{b.clientes !== 1 ? "s" : ""}
@@ -596,7 +707,13 @@ export default function ContadoCreditoPage() {
                     <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
                     <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={50} />
                     <Tooltip formatter={(v: number) => formatCurrency(v)} labelFormatter={(_, p) => p?.[0]?.payload?.fullLabel || ""} />
-                    <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
+                    {/* Lista y no Fragment: Recharts 2 no busca las <Bar> dentro de un Fragment y no las dibuja. */}
+                    {esPorCobrar ? [
+                      <Bar key="mes" dataKey="montoDelMes" name="Facturado del mes" stackId="pc" fill={BAR_COLOR} />,
+                      <Bar key="ant" dataKey="montoAnteriores" name="Meses anteriores" stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />,
+                    ] : (
+                      <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -644,6 +761,62 @@ export default function ContadoCreditoPage() {
           )}
         </div>
       )}
+
+      {/* Detalle de Incobrables / Pagos sin aplicar ("Por cobrar") */}
+      <Modal
+        open={aparteModal.open}
+        onClose={closeAllModals}
+        title={aparteModal.tipo === "incobrables" ? "Incobrables — vencidas antes de 2025" : "Pagos sin aplicar"}
+        wide
+      >
+        {aparteModal.loading ? (
+          <div className="flex items-center justify-center py-16">
+            <RefreshCw size={24} className="animate-spin text-blue-500" />
+          </div>
+        ) : aparteModal.filas.length === 0 ? (
+          <div className="text-center py-8 text-slate-400">Sin registros</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50/80">
+                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Documento</th>
+                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                  <th className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    {aparteModal.tipo === "incobrables" ? "Vence" : "Diario"}
+                  </th>
+                  <th className="text-right py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    {aparteModal.tipo === "incobrables" ? "Saldo" : "Sin aplicar"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {aparteModal.filas.map((f) => (
+                  <tr key={f.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                    <td className="py-2.5 px-4 font-medium text-slate-700">
+                      {f.documento}
+                      {f.referencia && <span className="block text-[10px] text-slate-400">{f.referencia}</span>}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-600 max-w-[220px] truncate">{f.cliente}</td>
+                    <td className="py-2.5 px-4 text-slate-500">{formatDate(f.fecha)}</td>
+                    <td className="py-2.5 px-4 text-slate-500">
+                      {aparteModal.tipo === "incobrables" ? formatDate(f.vence ?? null) : f.diario}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-bold text-slate-800">{formatCurrency(f.monto)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-slate-200">
+                  <td colSpan={4} className="py-2.5 px-4 font-semibold text-slate-600">{aparteModal.filas.length} registros</td>
+                  <td className="py-2.5 px-4 text-right font-bold text-slate-800">
+                    {formatCurrency(aparteModal.filas.reduce((s, f) => s + f.monto, 0))}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal 1: clientes del grupo */}
       <Modal open={clientesModal.open} onClose={closeAllModals} title={clientesModal.titulo}>
