@@ -15,9 +15,13 @@ import { requireRoles } from "@/lib/auth/roles";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  // Gerente de Operaciones usa este mismo dashboard (components/
+  // gerente_operaciones/GerenteOperaciones.tsx): sin el rol aca, su Dashboard
+  // recibia 403 aunque tuviera sucursal (cids).
   const auth = await requireRoles(request, [
     "gerencia de ventas",
     "asistente de ventas",
+    "gerente de operaciones",
   ]);
   if (auth.error) return auth.error;
 

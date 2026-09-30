@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import { CheckCircle2, Loader2, Lock, PenLine, Trash2 } from "lucide-react";
 import SignaturePad from "@/components/seguridad/SignaturePad";
@@ -311,9 +312,12 @@ export default function FirmasActa({
       </div>
 
       {/* Panel de firma. A pantalla completa en movil: el pad necesita todo el
-          ancho que haya para que la firma no salga apretada. */}
-      {abierta && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center">
+          ancho que haya para que la firma no salga apretada.
+          Va en un portal sobre <body> y por encima de la barra lateral
+          (fixed, z-[100]): con z-50 dentro de la pagina, la barra tapaba el
+          lado izquierdo del modal en pantallas de escritorio (~960 px). */}
+      {abierta && createPortal(
+        <div className="fixed inset-0 z-[110] bg-black/40 flex items-end sm:items-center justify-center">
           <div className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -376,7 +380,8 @@ export default function FirmasActa({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );
