@@ -26,6 +26,8 @@ export * from "@/lib/ventas/metodoRetiroTipos";
  *  - sucursal:   el cliente retira en la sucursal (egreso "puerta").
  *  - ruta:       por una de las rutas de la empresa (rma_rutas_despacho).
  *  - encomienda: por agencia, para despachos pequeños.
+ *  - transporte: transporte externo del cliente; la empresa va en `agencia`
+ *    y la descripción (opcional) en `nota`. Para Almacén es "puerta".
  *
  * Es por pedido (sale.order): todas sus órdenes de despacho salen igual. Una
  * vez que Almacén registró el egreso de alguna, ya no se cambia.
@@ -378,7 +380,7 @@ export async function guardarMetodoRetiro(datos: {
   autor: string;
   rol: string;
 }): Promise<FilaMetodo> {
-  if (!esMetodoRetiro(datos.metodo)) throw new ErrorMetodo("Elige retiro en sucursal, ruta o encomienda.");
+  if (!esMetodoRetiro(datos.metodo)) throw new ErrorMetodo("Elige retiro en sucursal, ruta, encomienda o transporte externo.");
   const metodo = datos.metodo;
 
   const [venta] =
@@ -428,6 +430,10 @@ export async function guardarMetodoRetiro(datos: {
     // De la lista de agencias o escrita ("otra"), como en el portal de RMA.
     agencia = (datos.agencia || "").trim().slice(0, 100) || null;
     if (!agencia) throw new ErrorMetodo("Elige la agencia de la encomienda.");
+  } else if (metodo === "transporte") {
+    // La empresa de transporte, escrita por el vendedor (misma columna).
+    agencia = (datos.agencia || "").trim().slice(0, 100) || null;
+    if (!agencia) throw new ErrorMetodo("Indica la compañía de transporte.");
   }
 
   // Ruta gratis o con flete (Valencia y Panamá): con montoRutaGratis y con el

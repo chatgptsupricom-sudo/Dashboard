@@ -141,7 +141,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: [
       "dashboard",
-      "metodo_retiro", // Método de retiro de sus pedidos (sucursal, ruta o encomienda)
+      "metodo_retiro", // Método de retiro de sus pedidos (sucursal, ruta, encomienda o transporte externo)
       "clientes",
       "leads",
       "cierres",

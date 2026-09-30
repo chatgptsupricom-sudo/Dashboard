@@ -12,7 +12,7 @@ import {
   type FilaMetodo,
   type MetodoRetiro as Metodo,
 } from "@/lib/ventas/metodoRetiroTipos";
-import { CheckCircle2, Loader2, Lock, Package, Search, Store, Truck } from "lucide-react";
+import { Building2, CheckCircle2, Loader2, Lock, Package, Search, Store, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 
@@ -42,9 +42,9 @@ type Pedido = {
 
 /** Ruta o agencia, con su sede (null = Venezuela, 7 = Panamá). */
 type Opcion = { id: number; nombre: string; cids?: number | null };
-type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; nota: string };
+type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; empresa: string; nota: string };
 
-const ICONO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package };
+const ICONO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package, transporte: Building2 };
 const usd = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function fecha(v: string | null) {
@@ -55,7 +55,8 @@ function fecha(v: string | null) {
 
 /**
  * Sección "Método de retiro" (lib/ventas/metodoRetiro.ts): el vendedor indica
- * cómo recibe el cliente cada pedido (retiro en sucursal, ruta o encomienda).
+ * cómo recibe el cliente cada pedido (retiro en sucursal, ruta, encomienda o
+ * transporte externo, con la compañía y una descripción opcional).
  * El Asistente de Ventas ve los de todos los vendedores y lo carga por ellos.
  * Almacén no registra el egreso de un pedido sin método.
  */
@@ -115,13 +116,16 @@ export function MetodoRetiro() {
   const borrador = (p: Pedido): Borrador => {
     if (borradores[p.sale_id]) return borradores[p.sale_id];
     const m = p.metodo;
+    // `agencia` guarda la agencia de la encomienda o la compañía del transporte.
+    const agenciaEnc = m?.metodo === "encomienda" ? m.agencia : null;
     const conocida =
-      !!m?.agencia && agencias.some((a) => a.nombre === m.agencia && esDeLaSede(a.cids, p.company_id));
+      !!agenciaEnc && agencias.some((a) => a.nombre === agenciaEnc && esDeLaSede(a.cids, p.company_id));
     return {
       metodo: m?.metodo || "",
       ruta_id: m?.ruta_id ? String(m.ruta_id) : "",
-      agencia: m?.agencia ? (conocida ? m.agencia : "otra") : "",
-      otra: m?.agencia && !conocida ? m.agencia : "",
+      agencia: agenciaEnc ? (conocida ? agenciaEnc : "otra") : "",
+      otra: agenciaEnc && !conocida ? agenciaEnc : "",
+      empresa: m?.metodo === "transporte" ? m.agencia || "" : "",
       nota: m?.nota || "",
     };
   };
@@ -139,6 +143,9 @@ export function MetodoRetiro() {
     if (b.metodo === "encomienda" && !agencia) {
       return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_agencia") }));
     }
+    if (b.metodo === "transporte" && !b.empresa.trim()) {
+      return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_empresa") }));
+    }
     setGuardando(p.sale_id);
     try {
       const r = await fetch("/api/ventas/metodo-retiro", {
@@ -148,7 +155,7 @@ export function MetodoRetiro() {
           sale_id: p.sale_id,
           metodo: b.metodo,
           ruta_id: b.metodo === "ruta" ? Number(b.ruta_id) : null,
-          agencia: b.metodo === "encomienda" ? agencia : null,
+          agencia: b.metodo === "encomienda" ? agencia : b.metodo === "transporte" ? b.empresa.trim() : null,
           nota: b.nota,
         }),
       });
@@ -266,8 +273,8 @@ export function MetodoRetiro() {
                     </p>
                   ) : (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["sucursal", "ruta", "encomienda"] as Metodo[]).map((m) => {
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {(["sucursal", "ruta", "encomienda", "transporte"] as Metodo[]).map((m) => {
                           const Icono = ICONO[m];
                           return (
                             <button
@@ -329,11 +336,21 @@ export function MetodoRetiro() {
                             )}
                           </div>
                         )}
+                        {b.metodo === "transporte" && (
+                          <Input
+                            value={b.empresa}
+                            onChange={(e) => cambiar(p, { empresa: e.target.value.slice(0, 100) })}
+                            placeholder={t("empresa_transporte")}
+                            aria-label={t("empresa_transporte")}
+                          />
+                        )}
                         {b.metodo && (
                           <Input
                             value={b.nota}
                             onChange={(e) => cambiar(p, { nota: e.target.value.slice(0, 500) })}
-                            placeholder={t(b.metodo === "sucursal" ? "nota_sucursal" : "nota_envio")}
+                            placeholder={t(
+                              b.metodo === "sucursal" ? "nota_sucursal" : b.metodo === "transporte" ? "nota_transporte" : "nota_envio",
+                            )}
                             className={b.metodo === "sucursal" ? "sm:col-span-2" : ""}
                           />
                         )}
