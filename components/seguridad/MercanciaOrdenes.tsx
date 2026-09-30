@@ -10,8 +10,9 @@ import { PageHeader, EmptyState } from "./mercancia-ui";
 import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 /**
- * Ordenes de despacho (stock.picking) de Odoo, ya "Listas" para salir y con
- * la orden de venta facturada, que Almacen todavia no proceso como egreso.
+ * Ordenes de despacho (stock.picking) de Odoo, "Listas" o ya validadas desde
+ * CORTE_VALIDADAS_ODOO, con la orden de venta facturada, que Almacen todavia
+ * no proceso como egreso.
  * Vienen ordenadas por fecha de factura, la mas vieja primero: es el orden en
  * que le llegaron a Almacen (issue #298).
  *

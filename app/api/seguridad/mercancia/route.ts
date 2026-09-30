@@ -235,9 +235,9 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
-    // Solo una orden "Lista" en Odoo (la relee por id): ya hecha, cancelada o
-    // esperando inventario, no.
-    const noLista = motivoOrdenNoLista(picking.estado);
+    // Solo una orden Lista, o Hecha desde el corte, en Odoo (la relee por id):
+    // cancelada, esperando inventario o validada antes del corte, no.
+    const noLista = motivoOrdenNoLista(picking.estado, picking.fecha_hecho);
     if (noLista) {
       return NextResponse.json({ error: noLista.mensaje, codigo: noLista.codigo }, { status: 409 });
     }
