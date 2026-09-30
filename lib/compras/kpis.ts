@@ -1,6 +1,7 @@
 import {
   almacenables,
   cachear,
+  catalogo,
   costos,
   diaCaracas,
   diaLocal,
@@ -21,6 +22,7 @@ import {
   type HistorialStock,
 } from "@/lib/compras/historial";
 import { callOdooRPC } from "@/lib/odoo";
+import { CORTE_ODOO } from "@/lib/smartbit";
 
 /**
  * KPIs de Compras del Stoplight, semana por semana, y el detalle de cada uno
@@ -54,14 +56,35 @@ export interface ComprasKpisRaw {
   semanaRotacion: (number | null)[];
   semanaQuiebre: (number | null)[];
   semanaInv90: (number | null)[];
+  /**
+   * Valor del mes con el mismo cálculo que el modal (variación y quiebre del
+   * mes agrupado; rotación e inventario +90 al último cierre). Promediar los
+   * % semanales no cuadraba con el modal y una semana con una compra chica
+   * podía dar 1000% de meta.
+   */
+  mes: { varCosto: number | null; rotacion: number | null; quiebre: number | null; inv90: number | null };
 }
 
 interface SemanaIso {
   ini: string;
   fin: string;
-  /** Día al que se mide: el fin, o hoy si la semana está en curso. null = semana futura. */
+  /**
+   * Día al que se mide: el fin, o hoy si la semana está en curso. null =
+   * semana futura o anterior al paso a Odoo (abr-2026): antes no hay stock ni
+   * movimientos en Odoo, y reconstruirlo daba 0 (quiebre y rotación ~100%).
+   */
   corte: string | null;
 }
+
+/**
+ * La antigüedad del inventario cargado al pasar a Odoo no se conoce: hasta 90
+ * días después del corte no se puede saber qué parte tiene más de 90 días.
+ */
+const INV90_DESDE = (() => {
+  const d = new Date(`${CORTE_ODOO}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 90);
+  return d.toISOString().slice(0, 10);
+})();
 
 interface LineaCompra {
   productoId: number;
@@ -93,7 +116,7 @@ async function leerCompras(companyId: number, desde: string, hasta: string): Pro
   const lineas = await leerTodo(
     "purchase.order.line",
     [
-      ["state", "=", "purchase"],
+      ["state", "in", ["purchase", "done"]],
       ["company_id", "=", companyId],
       ["product_id", "!=", false],
       ["product_id.type", "!=", "service"],
@@ -105,7 +128,12 @@ async function leerCompras(companyId: number, desde: string, hasta: string): Pro
   const pendiente = new Map<number, number>();
   for (let i = 0; i < lineas.length; i += 2000) {
     const g = await callOdooRPC<any[]>("stock.move", "read_group", [
-      [["purchase_line_id", "in", lineas.slice(i, i + 2000).map((l) => l.id)], ["state", "not in", ["draft", "done", "cancel"]]],
+      [
+        ["purchase_line_id", "in", lineas.slice(i, i + 2000).map((l) => l.id)],
+        ["state", "not in", ["draft", "done", "cancel"]],
+        // Una devolución al proveedor sin validar también lleva la línea de compra.
+        ["location_dest_id.usage", "!=", "supplier"],
+      ],
       ["product_uom_qty:sum"],
       ["purchase_line_id"],
     ], { lazy: false });
@@ -129,15 +157,16 @@ function baseCompras(companyId: number, semanasLocales: { inicio: Date; fin: Dat
   const semanas: SemanaIso[] = semanasLocales.map((s) => {
     const ini = diaLocal(s.inicio);
     const fin = diaLocal(s.fin);
-    return { ini, fin, corte: ini > hoy ? null : fin < hoy ? fin : hoy };
+    return { ini, fin, corte: ini > hoy || ini < CORTE_ODOO ? null : fin < hoy ? fin : hoy };
   });
   const primero = semanas[0]?.ini ?? hoy;
   const ultimo = [...semanas].reverse().find((s) => s.corte)?.corte ?? hoy;
   const llave = `stoplight|${companyId}|${primero}|${semanas[semanas.length - 1]?.fin}|${hoy}`;
 
   return cachear(llave, async () => {
-    const [productos, costo, stock, ventas, recepciones, compras, ultima] = await Promise.all([
+    const [productos, cat, costo, stock, ventas, recepciones, comprasTodas, ultima] = await Promise.all([
       almacenables(),
+      catalogo(),
       costos(companyId),
       historialStock(companyId, primero, hoy),
       ventasPorDia(companyId, sumarDias(primero, -120), ultimo).then((v) => v.porProducto),
@@ -145,6 +174,8 @@ function baseCompras(companyId: number, semanasLocales: { inicio: Date; fin: Dat
       leerCompras(companyId, sumarDias(primero, -VENTANA), ultimo),
       ultimaVenta(companyId),
     ]);
+    // Mismo universo en la fila y en el modal: mercancía activa del catálogo.
+    const compras = comprasTodas.filter((l) => cat.has(l.productoId));
 
     const acumulado = new Map<number, { monto: number; cantidad: number }>();
     for (const l of compras) {
@@ -219,13 +250,15 @@ function quiebreSemana(b: BaseCompras, s: SemanaIso) {
  * cuenta neto de lo devuelto al proveedor ese día, como las bandas del modal.
  */
 function unidadesMayor90(b: BaseCompras, id: number, corte: string, stock: number) {
-  const desde = sumarDias(corte, -(VENTANA - 1));
+  // Hasta 90 días de antigüedad inclusive, como la banda "61-90 días".
+  const desde = sumarDias(corte, -VENTANA);
   let recibido = 0;
   for (const [d, q] of b.recepciones.get(id) ?? []) if (q > 0 && d >= desde && d <= corte) recibido += q;
   return Math.max(0, stock - recibido);
 }
 
 function inventario90(b: BaseCompras, corte: string) {
+  if (corte < INV90_DESDE) return null;
   let total = 0;
   let viejo = 0;
   for (const p of b.productos) {
@@ -245,18 +278,28 @@ export async function computeComprasKpis(
   const vacio = Array(semanas.length).fill(null);
   try {
     const b = await baseCompras(companyId, semanas);
+    const quiebres = b.semanas.map((s) => quiebreSemana(b, s));
+    const conCorte = b.semanas.filter((s) => s.corte);
+    const primero = conCorte[0]?.ini ?? null;
+    const ultimo = conCorte.length ? conCorte[conCorte.length - 1].corte! : null;
     return {
       semanaVarCosto: b.semanas.map((s) => (s.corte ? variacionCosto(b, s.ini, s.corte) : null)),
       semanaRotacion: b.semanas.map((s) => (s.corte ? sellThrough(b, s.corte) : null)),
-      semanaQuiebre: b.semanas.map((s) => {
-        const q = quiebreSemana(b, s);
-        return pct(q.sinStock, q.elegibles);
-      }),
+      semanaQuiebre: quiebres.map((q) => pct(q.sinStock, q.elegibles)),
       semanaInv90: b.semanas.map((s) => (s.corte ? inventario90(b, s.corte) : null)),
+      mes: {
+        varCosto: primero && ultimo ? variacionCosto(b, primero, ultimo) : null,
+        rotacion: ultimo ? sellThrough(b, ultimo) : null,
+        quiebre: pct(quiebres.reduce((t, q) => t + q.sinStock, 0), quiebres.reduce((t, q) => t + q.elegibles, 0)),
+        inv90: ultimo ? inventario90(b, ultimo) : null,
+      },
     };
   } catch (e: any) {
     console.error("Error calculando KPIs de Compras:", e?.message);
-    return { semanaVarCosto: vacio, semanaRotacion: vacio, semanaQuiebre: vacio, semanaInv90: vacio };
+    return {
+      semanaVarCosto: vacio, semanaRotacion: vacio, semanaQuiebre: vacio, semanaInv90: vacio,
+      mes: { varCosto: null, rotacion: null, quiebre: null, inv90: null },
+    };
   }
 }
 
@@ -290,6 +333,7 @@ export async function detalleKpiCompras(
   };
 
   if (kpi === "variacion_costo") {
+    const cat = await catalogo();
     const porProducto = new Map<number, { monto: number; cantidad: number; ultima: string }>();
     for (const l of b.compras) {
       if (l.dia < primero || l.dia > corte) continue;
@@ -301,7 +345,7 @@ export async function detalleKpiCompras(
     }
     const items = [...porProducto]
       .map(([id, a]) => {
-        const p = porId.get(id);
+        const p = cat.get(id);
         const base = b.precioBase.get(id);
         if (!p || !base) return null;
         const actual = a.monto / a.cantidad;
@@ -435,7 +479,9 @@ export async function detalleKpiCompras(
   }
 
   // inventario_90: el stock al cierre repartido por antigüedad (FIFO: lo que
-  // queda es lo último que se recibió).
+  // queda es lo último que se recibió). Sin dato hasta 90 días después del
+  // paso a Odoo: la antigüedad de la carga inicial no se conoce.
+  if (corte < INV90_DESDE) return { kpi, resumen: {}, items: [] };
   const bandas = [
     { label: "0-30 días", min: 0, max: 30 },
     { label: "31-60 días", min: 31, max: 60 },

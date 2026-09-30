@@ -203,8 +203,26 @@ export async function recepcionesPorDia(companyId: number, desde: string): Promi
       ["location_id", "in", W], ["location_dest_id.usage", "=", "supplier"],
     ], campos),
   ]);
-  const mapa = new Map<number, PorDia>();
-  for (const m of entradas) if (m.product_id) sumar(mapa, m.product_id[0], diaCaracas(m.date), Number(m.quantity) || 0);
-  for (const m of devoluciones) if (m.product_id) sumar(mapa, m.product_id[0], diaCaracas(m.date), -(Number(m.quantity) || 0));
-  return mapa;
+  const recibido = new Map<number, PorDia>();
+  const devuelto = new Map<number, PorDia>();
+  for (const m of entradas) if (m.product_id) sumar(recibido, m.product_id[0], diaCaracas(m.date), Number(m.quantity) || 0);
+  for (const m of devoluciones) if (m.product_id) sumar(devuelto, m.product_id[0], diaCaracas(m.date), Number(m.quantity) || 0);
+  // Cada devolución se descuenta de las recepciones anteriores o del mismo
+  // día, empezando por la más reciente (se devuelve lo último que llegó).
+  for (const [id, dev] of devuelto) {
+    const rec = recibido.get(id);
+    if (!rec) continue;
+    const dias = [...rec.keys()].sort();
+    for (const [diaDev, q] of [...dev].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+      let resto = q;
+      for (let i = dias.length - 1; i >= 0 && resto > 0; i--) {
+        if (dias[i] > diaDev) continue;
+        const disp = rec.get(dias[i]) ?? 0;
+        const usa = Math.min(disp, resto);
+        rec.set(dias[i], disp - usa);
+        resto -= usa;
+      }
+    }
+  }
+  return recibido;
 }

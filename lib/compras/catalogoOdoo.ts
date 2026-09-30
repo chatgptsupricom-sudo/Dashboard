@@ -171,7 +171,7 @@ export async function getLastPurchasePrices(
     "purchase.order.line",
     "read_group",
     [
-      [["product_id", "in", productIds], ["company_id", "=", companyId], ["state", "=", "purchase"], ["product_qty", ">", 0], ["price_subtotal", ">", 0]],
+      [["product_id", "in", productIds], ["company_id", "=", companyId], ["state", "in", ["purchase", "done"]], ["product_qty", ">", 0], ["price_subtotal", ">", 0]],
       ["id:max"],
       ["product_id"],
     ],

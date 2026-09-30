@@ -101,9 +101,9 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
           )}
           {kpiId === "rotacion_saludable" && (
             <>
-              <p><strong>{t("info_que_mide")}</strong> Qué parte del inventario disponible se vendió (sell-through a 90 días).</p>
+              <p><strong>{t("info_que_mide")}</strong> Qué parte del inventario se vendió (sell-through a 90 días).</p>
               <p><strong>{t("info_formula")}</strong> Unidades vendidas en los 90 días al cierre de la semana ÷ (esas unidades + stock al cierre) × 100.</p>
-              <p><strong>Ventas:</strong> facturas a clientes menos notas de crédito, sin intercompañía. <strong>Stock:</strong> almacén principal de la sede ese día (con la zona de Entrada), reconstruido desde los movimientos de Odoo.</p>
+              <p><strong>Ventas:</strong> facturas a clientes menos notas de crédito, sin intercompañía. <strong>Stock:</strong> físico del almacén principal de la sede ese día (con la zona de Entrada y lo reservado), reconstruido desde los movimientos de Odoo. Sin dato antes de abril 2026 (antes del paso a Odoo no hay movimientos).</p>
             </>
           )}
           {kpiId === "quiebre_inventario" && (
@@ -117,7 +117,7 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
             <>
               <p><strong>{t("info_que_mide")}</strong> Qué parte del valor del inventario tiene más de 90 días en el almacén.</p>
               <p><strong>{t("info_formula")}</strong> Valor del stock que no entró en los últimos 90 días ÷ valor del stock × 100, a costo de Odoo.</p>
-              <p><strong>Antigüedad:</strong> FIFO por recepción de compra: lo que queda en el almacén es lo último que se recibió; lo que no alcanzan a cubrir las recepciones de los últimos 90 días tiene más de 90 días. Lo devuelto al proveedor se descuenta de la recepción.</p>
+              <p><strong>Antigüedad:</strong> FIFO por recepción de compra: lo que queda en el almacén es lo último que se recibió; lo que no alcanzan a cubrir las recepciones de los últimos 90 días tiene más de 90 días. Lo devuelto al proveedor se descuenta de la recepción más reciente. Sin dato hasta fines de junio 2026: de la carga inicial de inventario no se sabe cuándo entró.</p>
             </>
           )}
           {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos", "ciclo_reposicion", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias"].includes(kpiId) && (

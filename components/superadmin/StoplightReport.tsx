@@ -1743,6 +1743,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         companyId={selectedCompanyId}
         mes={modalMes}
         onMesChange={onModalMesChange}
+        rango={customDateRange}
       />
       <CxCDetailModal
         isOpen={cxcModalOpen}

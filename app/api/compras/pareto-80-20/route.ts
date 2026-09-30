@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     const lines = await leerTodo(
       "purchase.order.line",
       [
-        ["state", "=", "purchase"],
+        ["state", "in", ["purchase", "done"]],
         ["product_id", "!=", false],
         ["product_id.type", "!=", "service"],
         ["date_order", ">=", inicioDiaUtc(desde)],
@@ -98,7 +98,11 @@ export async function GET(request: NextRequest) {
     const pendiente = new Map<number, number>();
     for (let i = 0; i < lines.length; i += 2000) {
       const grupos = await callOdooRPC<any[]>("stock.move", "read_group", [
-        [["purchase_line_id", "in", lines.slice(i, i + 2000).map((l) => l.id)], ["state", "not in", ["draft", "done", "cancel"]]],
+        [
+          ["purchase_line_id", "in", lines.slice(i, i + 2000).map((l) => l.id)],
+          ["state", "not in", ["draft", "done", "cancel"]],
+          ["location_dest_id.usage", "!=", "supplier"],
+        ],
         ["product_uom_qty:sum"],
         ["purchase_line_id"],
       ], { lazy: false });

@@ -1,7 +1,7 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { detalleKpiCompras, type KpiCompras } from "@/lib/compras/kpis";
-import { obtenerSemanasDelMes } from "@/lib/feriados";
+import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { NextRequest, NextResponse } from "next/server";
 
 const KPIS: KpiCompras[] = ["variacion_costo", "rotacion", "quiebre", "inventario_90"];
@@ -22,8 +22,12 @@ export async function GET(request: NextRequest) {
     if (!KPIS.includes(kpi)) {
       return NextResponse.json({ error: `KPI inválido. Use: ${KPIS.join(", ")}` }, { status: 400 });
     }
+    // Mismo criterio que la grilla (stoplight/route.ts): solo superadmin y
+    // Compras eligen sede; el resto queda en la de su token.
+    const rol = String(auth.payload.role || "").toLowerCase().trim();
     const companyParam = url.searchParams.get("company_id");
-    const companyId = companyParam ? parseInt(companyParam, 10) : Number(auth.payload.cids);
+    const eligeSede = rol === "superadmin" || rol === "compras";
+    const companyId = eligeSede && companyParam ? parseInt(companyParam, 10) : Number(auth.payload.cids);
     if (!MAIN_WAREHOUSE_BY_COMPANY[companyId]) {
       return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
     }
@@ -35,7 +39,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
     }
 
-    const data = await detalleKpiCompras(companyId, obtenerSemanasDelMes(anio, mesNum), kpi);
+    // Con rango personalizado, las mismas semanas que la grilla.
+    const ini = url.searchParams.get("startDate");
+    const fin = url.searchParams.get("endDate");
+    const semanas = ini && fin ? obtenerSemanasDelRango(new Date(ini), new Date(fin)) : obtenerSemanasDelMes(anio, mesNum);
+    const data = await detalleKpiCompras(companyId, semanas, kpi);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en compras-detail:", error.message);

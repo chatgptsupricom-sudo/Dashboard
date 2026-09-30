@@ -799,6 +799,18 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
+    // Compras: el valor del mes sale del mismo cálculo que el modal (mes
+    // agrupado o último cierre) y la meta se aplica una sola vez. Promediar los
+    // % semanales no cuadraba con el modal y una semana con una compra chica
+    // podía dar 1000% de meta. Con semanas cargadas a mano, el promedio.
+    const mesCompras = (key: string, semanasKpi: (string | null)[], raw: number | null, lowerIsBetter: boolean) => {
+      if (Object.keys(savedMap[key] || {}).length > 0 || raw === null) return avgFromWeeks(semanasKpi);
+      const goal = metasMap[key] || 0;
+      if (goal <= 0) return Math.round(raw);
+      if (lowerIsBetter) return raw > 0 ? Math.round((goal / Math.abs(raw)) * 100) : 100;
+      return raw > 0 ? Math.round((raw / goal) * 100) : 0;
+    };
+
     // Valor del mes: activación del período completo. Como las semanas son
     // acumuladas, promediarlas subestimaría el mes. Si hay semanas cargadas a
     // mano se mantiene el promedio de semanas.
@@ -851,10 +863,10 @@ export async function GET(request: NextRequest) {
         semanaInv90,
         semanaForecast,
         semanaPropuestas,
-        avgVarCosto: avgFromWeeks(semanaVarCosto),
-        avgRotacion: avgFromWeeks(semanaRotacion),
-        avgQuiebre: avgFromWeeks(semanaQuiebre),
-        avgInv90: avgFromWeeks(semanaInv90),
+        avgVarCosto: mesCompras("variacion_costo_compra", semanaVarCosto, comprasRaw.mes.varCosto, false),
+        avgRotacion: mesCompras("rotacion_saludable", semanaRotacion, comprasRaw.mes.rotacion, false),
+        avgQuiebre: mesCompras("quiebre_inventario", semanaQuiebre, comprasRaw.mes.quiebre, true),
+        avgInv90: mesCompras("inventario_90_dias", semanaInv90, comprasRaw.mes.inv90, true),
         avgForecast: avgFromWeeks(semanaForecast),
         avgPropuestas: avgFromWeeks(semanaPropuestas),
         metas: metasMap,

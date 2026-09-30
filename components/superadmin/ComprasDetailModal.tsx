@@ -12,6 +12,8 @@ interface ComprasDetailModalProps {
   companyId: number;
   mes: string;
   onMesChange?: (mes: string) => void;
+  /** Rango personalizado del Stoplight: el modal usa las mismas semanas que la grilla. */
+  rango?: { start: string; end: string } | null;
 }
 
 export default function ComprasDetailModal({
@@ -22,6 +24,7 @@ export default function ComprasDetailModal({
   companyId,
   mes,
   onMesChange,
+  rango,
 }: ComprasDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -95,7 +98,8 @@ export default function ComprasDetailModal({
         .catch(() => setError("Error de conexion"))
         .finally(() => setLoading(false));
     } else {
-      fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}`)
+      const rangoParam = rango ? `&startDate=${rango.start}&endDate=${rango.end}` : "";
+      fetch(`/api/superadmin/stoplight/compras-detail?kpi=${kpiType}&mes=${mes}&company_id=${companyId}${rangoParam}`)
         .then((r) => r.json())
         .then((json) => {
           if (json.success) setData(json.data);
@@ -104,7 +108,7 @@ export default function ComprasDetailModal({
         .catch(() => setError("Error de conexion"))
         .finally(() => setLoading(false));
     }
-  }, [isOpen, kpiType, companyId, mes]);
+  }, [isOpen, kpiType, companyId, mes, rango]);
 
   const startEditWeek = (row: any) => {
     setEditingWeek(row.semanaIndex);
@@ -672,7 +676,7 @@ function renderDetail(kpi: string, item: any, fmt: (n: number | undefined | null
         </div>
         {item.totalComprado3m && (
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-medium">Unidades compradas últimos 3 meses</p>
+            <p className="text-xs text-slate-500 font-medium">Unidades compradas en el mes</p>
             <p className="text-xl font-bold text-slate-700">{item.totalComprado3m}</p>
           </div>
         )}

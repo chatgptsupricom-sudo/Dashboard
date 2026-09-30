@@ -39,6 +39,8 @@ interface ProductoAnalisis {
   ultimaVenta: string | null;
   /** Día en que entró la unidad más vieja del stock. */
   enStockDesde: string | null;
+  /** Última factura a otra empresa del grupo (traspaso, no venta a cliente). */
+  ultimaIntercompania: string | null;
 }
 
 /** "2026-09-23" -> "23/09/2026". */
@@ -152,9 +154,10 @@ export default function MenorRotacionPage() {
       Marca: item.marca,
       Categoría: item.categoria,
       "Stock disponible": item.stockDisponible,
-      "Última venta": item.ultimaVenta ? fechaCorta(item.ultimaVenta) : "Nunca vendido",
+      "Última venta": item.ultimaVenta ? fechaCorta(item.ultimaVenta) : "Sin ventas a clientes",
+      "Último traspaso intercompañía": item.ultimaIntercompania ? fechaCorta(item.ultimaIntercompania) : "",
       "En stock desde": item.enStockDesde ? fechaCorta(item.enStockDesde) : "",
-      "Días Inactivos": item.days_inactive === null ? "Nunca vendido" : item.days_inactive,
+      "Días Inactivos": item.days_inactive === null ? "Sin ventas a clientes" : item.days_inactive,
       "Costo Unitario ($)": item.costo,
       "Capital Estancado ($)": Number(
         (item.stockDisponible * item.costo).toFixed(2),
@@ -238,7 +241,7 @@ export default function MenorRotacionPage() {
               <SelectItem value="30">30 – 59 días sin vender</SelectItem>
               <SelectItem value="60">60 – 89 días sin vender</SelectItem>
               <SelectItem value="90">90+ días sin vender</SelectItem>
-              <SelectItem value="NUNCA">Nunca se ha vendido</SelectItem>
+              <SelectItem value="NUNCA">Sin ventas a clientes</SelectItem>
             </SelectContent>
           </Select>
 
@@ -390,7 +393,7 @@ export default function MenorRotacionPage() {
                       <TableCell className="text-center">
                         <Badge variant="destructive" className="bg-red-600">
                           {item.days_inactive === null
-                            ? "Nunca vendido"
+                            ? "Sin ventas a clientes"
                             : `${item.days_inactive} días`}
                         </Badge>
                         {item.ultimaVenta ? (
@@ -402,6 +405,11 @@ export default function MenorRotacionPage() {
                             En stock desde {fechaCorta(item.enStockDesde)}
                           </div>
                         ) : null}
+                        {item.ultimaIntercompania && (
+                          <div className="text-[10px] text-amber-700 mt-0.5" title="Factura a otra empresa del grupo: no es venta a un cliente">
+                            Últ. traspaso intercompañía {fechaCorta(item.ultimaIntercompania)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-center text-gray-600 font-medium">
                         {item.costo > 0 ? (

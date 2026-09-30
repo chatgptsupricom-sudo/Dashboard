@@ -7,6 +7,7 @@ import {
   disponible,
   hoyCaracas,
   sumarDias,
+  ultimaSalidaIntercompania,
   ultimaVenta,
   unidadesVendidas,
 } from "@/lib/compras/datosOdoo";
@@ -47,6 +48,8 @@ export interface FilaMenorRotacion {
   ultimaVenta: string | null;
   /** Día en que entró la unidad más vieja del stock (para los que nunca se vendieron). */
   enStockDesde: string | null;
+  /** Última factura a otra empresa del grupo (no es venta, pero el producto salió). */
+  ultimaIntercompania: string | null;
 }
 
 /**
@@ -61,11 +64,12 @@ export interface FilaMenorRotacion {
 export function menorRotacion(sedeId: number): Promise<FilaMenorRotacion[]> {
   const hoy = hoyCaracas();
   return cachear(`menor|${sedeId}|${hoy}`, async () => {
-    const [productos, almacen, ultima, costo] = await Promise.all([
+    const [productos, almacen, ultima, costo, ultimaIC] = await Promise.all([
       almacenables(),
       almacenSede(sedeId),
       ultimaVenta(sedeId),
       costos(sedeId),
+      ultimaSalidaIntercompania(sedeId),
     ]);
     const filas: FilaMenorRotacion[] = [];
     for (const p of productos) {
@@ -86,6 +90,7 @@ export function menorRotacion(sedeId: number): Promise<FilaMenorRotacion[]> {
         days_inactive: dias,
         ultimaVenta: u,
         enStockDesde: s.enStockDesde,
+        ultimaIntercompania: ultimaIC.get(p.id) ?? null,
       });
     }
     // Los que nunca se vendieron primero (el que lleva más tiempo en el

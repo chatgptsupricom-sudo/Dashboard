@@ -38,7 +38,7 @@ export const COLUMN_TOOLTIPS: Record<string, string> = {
   // Menor rotación
   "Stock Físico": "Unidades físicas disponibles en el almacén",
   "Días Inactivos":
-    "Días desde la última venta del producto en la sede: la factura o recibo a cliente más reciente (una nota de crédito no es venta), en Odoo o en Smartbit antes de abril 2026. 'Nunca vendido' si no tiene ninguna (solo sale si lleva 30 días o más en el almacén)",
+    "Días desde la última venta del producto en la sede: la factura o recibo a cliente más reciente (una nota de crédito no es venta), en Odoo o en Smartbit antes de abril 2026. Las facturas a otras empresas del grupo no son venta: se muestran aparte como 'traspaso intercompañía'. 'Sin ventas a clientes' si no tiene ninguna (solo sale si lleva 30 días o más en el almacén)",
   "Costo Unid. ($)": "Costo del producto en Odoo para la sede (standard_price); si no tiene, el precio del proveedor",
   "Capital Estancado ($)":
     "Valor del stock sin venta = Stock disponible × Costo unitario. Representa capital inmovilizado",

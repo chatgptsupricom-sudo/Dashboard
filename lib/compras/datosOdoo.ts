@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
-import { sinIntercompania } from "@/lib/intercompania";
+import { partnersIntercompania, sinIntercompania } from "@/lib/intercompania";
 import { claveMarca, SIN_MARCA } from "@/lib/metas-marca/marcas";
 import { callOdooRPC } from "@/lib/odoo";
 import { SQL_SIN_INTERCOMPANIA, desdeOdoo, rangoSmartbit, ultimaVentaSmartbit } from "@/lib/smartbit";
@@ -298,6 +298,50 @@ export function ultimaVenta(companyId: number): Promise<Map<number, string>> {
       const dia = diaLocal(fecha);
       const odoo = mapa.get(id);
       if (!odoo || dia > odoo) mapa.set(id, dia);
+    }
+    return mapa;
+  });
+}
+
+/**
+ * Día de la última venta intercompañía de cada producto en la sede (factura a
+ * otra empresa del grupo, en Odoo o en Smartbit). No es venta a un cliente,
+ * pero dice que el producto salió del almacén: en Valencia hay productos que
+ * nunca se le vendieron a un cliente y solo se le facturaron a Caracas.
+ */
+export function ultimaSalidaIntercompania(companyId: number): Promise<Map<number, string>> {
+  return cachear(`ultima-ic|${companyId}|${hoyCaracas()}`, async () => {
+    const [ic, codigos] = await Promise.all([partnersIntercompania(), idsPorCodigo()]);
+    const [grupos, smartbit] = await Promise.all([
+      agrupar(
+        "account.move.line",
+        [
+          ["move_type", "in", TIPOS_VENTA],
+          ["parent_state", "=", "posted"],
+          ["display_type", "=", "product"],
+          ["company_id", "=", companyId],
+          ["product_id", "!=", false],
+          ["quantity", ">", 0],
+          ["move_id.commercial_partner_id", "in", [...ic.keys()]],
+        ],
+        ["invoice_date:max"],
+        ["product_id"],
+      ),
+      leerSmartbit(
+        `SELECT UPPER(TRIM(codigo_articulo)) AS codigo, DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS ultima
+           FROM ventas_smartbit
+          WHERE company_id = ? AND venta > 0 AND codigo_articulo IS NOT NULL
+            AND NOT (${SQL_SIN_INTERCOMPANIA})
+          GROUP BY UPPER(TRIM(codigo_articulo))`,
+        [companyId],
+      ),
+    ]);
+    const mapa = new Map<number, string>();
+    for (const g of grupos) if (g.product_id && g.invoice_date) mapa.set(g.product_id[0], String(g.invoice_date).slice(0, 10));
+    for (const f of smartbit) {
+      const id = codigos.get(String(f.codigo || ""));
+      const dia = String(f.ultima || "");
+      if (id && dia && (!mapa.has(id) || dia > mapa.get(id)!)) mapa.set(id, dia);
     }
     return mapa;
   });
