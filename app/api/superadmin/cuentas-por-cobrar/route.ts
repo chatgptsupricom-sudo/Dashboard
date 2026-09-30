@@ -6,6 +6,7 @@ import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
 import { RELACIONADA, obtenerCobros } from "@/lib/cxc/cobros";
+import { esResponsableExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -214,6 +215,8 @@ export async function GET(request: NextRequest) {
       reportInvoices.forEach((r: any) => {
         const uid = r.user_id?.[0] || 0;
         if (!uid) return;
+        // Asistentes y quienes no gestionan cobranza no van en esta tabla.
+        if (esResponsableExcluido(r.user_name || r.user_id?.[1], r.company_id?.[0])) return;
         if (!byUser[uid]) {
           byUser[uid] = { name: r.user_name || r.user_id?.[1] || "Sin asignar", total: 0, overdue: 0, count: 0 };
         }
@@ -431,7 +434,7 @@ export async function GET(request: NextRequest) {
         bySalesperson: (() => {
           const cobrado = new Map<number, { name: string; monto: number }>();
           for (const c of cobrosMes) {
-            if (c.interno || !c.vendedorId) continue;
+            if (c.interno || !c.vendedorId || esResponsableExcluido(c.vendedorName, c.companyId)) continue;
             const v = cobrado.get(c.vendedorId) || { name: c.vendedorName, monto: 0 };
             v.monto += c.monto;
             cobrado.set(c.vendedorId, v);
