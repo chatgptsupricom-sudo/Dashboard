@@ -37,6 +37,7 @@ import {
   novedadesDeEscaneo,
 } from "@/lib/seguridad/novedades";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
+import { firmasDeActa } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -476,6 +477,19 @@ async function ejecutar(
       }
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
+
+      // La firma de Seguridad en el acta es obligatoria para que salga (da fe
+      // de lo que salio): sin ella no se aprueba ni se despacha igual. Devolver
+      // o cancelar no la piden, ahi no sale nada.
+      if (despachar) {
+        const firmas = await firmasDeActa("mercancia", id);
+        if (!firmas.some((f) => f.rol === "seguridad")) {
+          return NextResponse.json(
+            { error: "Falta la firma de Seguridad en el acta: firma antes de despachar.", codigo: "falta_firma" },
+            { status: 400 },
+          );
+        }
+      }
 
       // Antes de dejarla salir, Odoo otra vez: al registrar estaba Lista y
       // facturada, pero de una nota de credito o un picking cancelado despues
