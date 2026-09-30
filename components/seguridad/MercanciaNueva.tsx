@@ -8,6 +8,7 @@ import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { describirMetodo, tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 
 /**
@@ -462,6 +463,18 @@ export default function MercanciaNueva({
                     <p className="text-[11px] text-slate-400 mt-1">
                       {tf("metodo_indicado_por", { quien: picking.metodo_retiro.registrado_por || "—" })}
                     </p>
+                    {/* El cliente cambió cómo lo recibe: lo cambia Almacén. */}
+                    {rol === "almacen" && (
+                      <CambiarMetodoRetiro
+                        pickingId={picking.odoo_picking_id}
+                        actual={picking.metodo_retiro}
+                        onGuardado={(m) => {
+                          setPicking((p) => (p ? { ...p, metodo_retiro: m } : p));
+                          setTipoEntrega(tipoEntregaDeMetodo(m.metodo));
+                        }}
+                        className="mt-2"
+                      />
+                    )}
                   </div>
                 ) : picking ? (
                   <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">

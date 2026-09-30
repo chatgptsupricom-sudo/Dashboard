@@ -3327,6 +3327,8 @@
     "sin_fecha_nota": "Purchasing hasn't entered the estimated arrival date yet."
   },
   "metodoRetiro": {
+    "cambiar_titulo": "Change pickup method",
+    "cambiar_desc_almacen": "Use it when the customer changed how they receive the order. The change is recorded under your name on the dispatch and the seller sees it in their section.",
     "recargar": "Refresh",
     "kpi_pendientes": "No method",
     "kpi_con_metodo": "With method",

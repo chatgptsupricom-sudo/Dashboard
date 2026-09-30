@@ -2,12 +2,15 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { CORTE_VALIDADAS_ODOO, facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutasConSede } from "@/lib/rma/rutasEnvio";
+import { enAlmacen, esTipoEntrega, type Etapa } from "@/lib/seguridad/egresoFlujo";
 import {
+  describirMetodo,
   esDeLaSede,
   esMetodoRetiro,
   evaluarRutaGratis,
   montoRutaGratis,
   nombreImpuesto,
+  tipoEntregaDeMetodo,
   type FilaMetodo,
 } from "@/lib/ventas/metodoRetiroTipos";
 
@@ -381,10 +384,19 @@ export class ErrorMetodo extends Error {
   }
 }
 
+/** Egreso del panel que Almacén movió al cambiar el método. */
+export type EgresoCambiado = { id: number; etapa: Etapa };
+
 /**
  * Guarda el método de un pedido. `vendedorUid`: si viene, el pedido tiene
  * que ser de ese vendedor (sesión de vendedor). `cids`: la sucursal de la
  * sesión (null = superadmin).
+ *
+ * `porAlmacen`: el cliente cambió cómo recibe el pedido y Almacén lo cambia
+ * desde su panel. Solo cambia uno que ya cargó el vendedor, y también con el
+ * egreso registrado mientras siga en manos de Almacén (hasta asignar el
+ * despacho): el egreso toma el nuevo tipo de entrega (ver cambiarEgresos).
+ * Cuando ya pasó a Seguridad, no.
  */
 export async function guardarMetodoRetiro(datos: {
   saleId: number;
@@ -396,9 +408,14 @@ export async function guardarMetodoRetiro(datos: {
   vendedorUid: number | null;
   autor: string;
   rol: string;
-}): Promise<FilaMetodo> {
+  porAlmacen?: boolean;
+}): Promise<{ metodo: FilaMetodo; egresos: EgresoCambiado[] }> {
   if (!esMetodoRetiro(datos.metodo)) throw new ErrorMetodo("Elige retiro en sucursal, ruta, encomienda o transporte externo.");
   const metodo = datos.metodo;
+  const anterior = datos.porAlmacen ? (await metodosDePedidos([datos.saleId])).get(datos.saleId) ?? null : null;
+  if (datos.porAlmacen && !anterior) {
+    throw new ErrorMetodo("El vendedor todavía no indicó el método de retiro: Almacén solo puede cambiarlo.", 409);
+  }
 
   const [venta] =
     (await callOdooRPC<any[]>("sale.order", "read", [
@@ -414,20 +431,32 @@ export async function guardarMetodoRetiro(datos: {
     throw new ErrorMetodo("Pedido no encontrado", 404);
   }
 
-  // Ya en manos de Almacén: el egreso salió con el método que tenía.
+  // Ya en manos de Almacén: el egreso salió con el método que tenía. Solo
+  // Almacén lo cambia, y mientras el egreso siga siendo suyo.
   const pickings =
     (await callOdooRPC<any[]>("stock.picking", "search_read", [[["sale_id", "=", datos.saleId]]], { fields: ["id"], limit: 50 })) || [];
+  let egresos: { id: number; etapa: Etapa; empaquetado_at: string | null }[] = [];
   if (pickings.length) {
     const r = await query(
-      `SELECT id FROM seguridad_mercancia
+      `SELECT id, etapa, empaquetado_at,
+              (COALESCE(despachado, 1) = 1 AND COALESCE(etapa, '') IN ('por_calificar', 'cerrado')) AS salio
+         FROM seguridad_mercancia
         WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
-          AND odoo_picking_id IN (${pickings.map(() => "?").join(",")}) LIMIT 1`,
+          AND odoo_picking_id IN (${pickings.map(() => "?").join(",")})`,
       pickings.map((p) => p.id),
     );
     // Sin .catch: si la consulta falla, no se deja cambiar el método a ciegas
     // (antes fallaba abierto y se podía cambiar con el egreso ya en curso).
-    if ((r.rows as any[]).length) {
+    const filas = r.rows as any[];
+    if (filas.length && !datos.porAlmacen) {
       throw new ErrorMetodo("Almacén ya está despachando este pedido: el método ya no se puede cambiar.", 409);
+    }
+    // Almacén: una orden del pedido que ya salió no se toca; el cambio es
+    // para las que faltan.
+    egresos = filas.filter((e) => Number(e.salio) !== 1);
+    // Un egreso de antes del flujo por etapas (sin etapa) tampoco se toca.
+    if (egresos.some((e) => !e.etapa || !enAlmacen(e.etapa))) {
+      throw new ErrorMetodo("Seguridad ya tiene este despacho: el método ya no se puede cambiar.", 409);
     }
   }
 
@@ -499,6 +528,46 @@ export async function guardarMetodoRetiro(datos: {
       montoBase,
     ],
   );
-  const fila = (await metodosDePedidos([datos.saleId])).get(datos.saleId)!;
-  return aplicarEvaluacion(fila, d);
+  const fila = aplicarEvaluacion((await metodosDePedidos([datos.saleId])).get(datos.saleId)!, d);
+  if (!egresos.length) return { metodo: fila, egresos: [] };
+
+  // Con el egreso ya registrado, la ruta gratis se fija ahora (como al
+  // registrarlo) y el egreso toma el nuevo tipo de entrega.
+  await fijarRutaGratisFinal(fila);
+  const cambiados = await cambiarEgresos(egresos, fila, anterior, datos.autor);
+  return { metodo: (await metodosEvaluados([datos.saleId])).get(datos.saleId) || fila, egresos: cambiados };
+}
+
+/**
+ * El egreso toma el tipo de entrega del nuevo método y la etapa se ajusta al
+ * recorrido nuevo: solo la encomienda pasa por empaquetado. Queda anotado en
+ * las observaciones, que es lo que ven Almacén y Seguridad.
+ */
+async function cambiarEgresos(
+  egresos: { id: number; etapa: Etapa; empaquetado_at: string | null }[],
+  fila: FilaMetodo,
+  anterior: FilaMetodo | null,
+  autor: string,
+): Promise<EgresoCambiado[]> {
+  const tipo = tipoEntregaDeMetodo(fila.metodo);
+  if (!esTipoEntrega(tipo)) return [];
+  const nota = `Método cambiado por Almacén (${autor}): ${describirMetodo(fila)}${fila.nota ? ` — ${fila.nota}` : ""}${
+    anterior ? ` (antes: ${describirMetodo(anterior)})` : ""
+  }`;
+  const cambiados: EgresoCambiado[] = [];
+  for (const e of egresos) {
+    let etapa: Etapa = e.etapa;
+    if (tipo !== "encomienda" && etapa === "por_empaquetar") etapa = "por_asignar_despacho";
+    else if (tipo === "encomienda" && etapa === "por_asignar_despacho" && !e.empaquetado_at) etapa = "por_empaquetar";
+    // `etapa = ?` en el WHERE: si otro lo movió mientras tanto, no se pisa.
+    const r = await query(
+      `UPDATE seguridad_mercancia
+          SET tipo_entrega = ?, etapa = ?,
+              observaciones = LEFT(CONCAT_WS(' · ', NULLIF(observaciones, ''), ?), 5000)
+        WHERE id = ? AND etapa = ?`,
+      [tipo, etapa, nota, e.id, e.etapa],
+    );
+    if (Number((r.rows as any)?.affectedRows || 0) > 0) cambiados.push({ id: e.id, etapa });
+  }
+  return cambiados;
 }
