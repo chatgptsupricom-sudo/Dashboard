@@ -101,6 +101,19 @@ export async function GET(
 
     const companyId = inv.company_id?.[0] || 0;
 
+    // Las facturas migradas ("Importación Masiva") no traen vendedor propio.
+    // Como el reporte de CxC (Cartera por Responsable), se usa el vendedor del
+    // cliente.
+    let vendedor = inv.invoice_user_id || false;
+    if (!vendedor && inv.partner_id?.[0]) {
+      try {
+        const [p] = (await callOdooRPC<any[]>("res.partner", "read", [[inv.partner_id[0]]], { fields: ["user_id"] })) || [];
+        vendedor = p?.user_id || false;
+      } catch {
+        // sin vendedor
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -122,8 +135,8 @@ export async function GET(
         amountTotal: totalWithTax,
         amountResidual: residual,
         amountPaid: paid,
-        invoiceUserId: inv.invoice_user_id?.[0] || 0,
-        invoiceUserName: inv.invoice_user_id?.[1] || "Sin asignar",
+        invoiceUserId: vendedor?.[0] || 0,
+        invoiceUserName: vendedor?.[1] || "Sin asignar",
         invoiceOrigin: inv.invoice_origin || "",
         currencyId: inv.currency_id?.[0] || 0,
         currencyName: inv.currency_id?.[1] || "",
