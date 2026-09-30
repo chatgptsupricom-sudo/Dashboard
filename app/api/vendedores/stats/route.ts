@@ -358,12 +358,6 @@ export async function GET(request: Request) {
       leads_exitosos: 0,
     };
 
-    const rankingLeads = await query(`
-      SELECT seller_id, COUNT(*) as total_cerrados
-      FROM leads WHERE motivo_cierre IN ('VENTA', 'GANADO', 'YA_ES_CLIENTE')
-      GROUP BY seller_id ORDER BY total_cerrados DESC
-    `);
-
     // 1. Obtener usuario y empresa
     const [user] = await callOdooRPC<any[]>("res.users", "read", [[uid]], {
       fields: ["name", "company_id"],
@@ -645,7 +639,8 @@ export async function GET(request: Request) {
           leadsParams.push(fechaInicio);
         }
         if (fechaFin) {
-          leadsQuery += " AND fecha_venta <= ?";
+          // fecha_venta es DATETIME: "<= 'YYYY-MM-DD'" dejaba fuera el último día
+          leadsQuery += " AND fecha_venta < DATE_ADD(?, INTERVAL 1 DAY)";
           leadsParams.push(fechaFin);
         }
 
@@ -755,9 +750,11 @@ export async function GET(request: Request) {
               ? 100
               : 0;
 
-        // Ranking leads desde DB (respetando período)
+        // Ranking leads desde DB (respetando período): por monto cerrado,
+        // entre vendedores de todas las sedes.
         let rankingLeadsSQL = `
-          SELECT s.id as seller_id, COUNT(l.id) as total_cerrados
+          SELECT s.id as seller_id, COUNT(l.id) as total_cerrados,
+            COALESCE(SUM(l.monto_cerrado_usd), 0) as monto_cerrado
           FROM sellers s
           LEFT JOIN leads l ON s.id = l.seller_id AND l.motivo_cierre IN ('VENTA', 'GANADO', 'YA_ES_CLIENTE')
             AND l.status = 'CERRADO'
@@ -768,10 +765,10 @@ export async function GET(request: Request) {
           rankingParams.push(fechaInicio);
         }
         if (fechaFin) {
-          rankingLeadsSQL += ` AND l.fecha_venta <= ?`;
+          rankingLeadsSQL += ` AND l.fecha_venta < DATE_ADD(?, INTERVAL 1 DAY)`;
           rankingParams.push(fechaFin);
         }
-        rankingLeadsSQL += ` GROUP BY s.id ORDER BY total_cerrados DESC`;
+        rankingLeadsSQL += ` GROUP BY s.id ORDER BY monto_cerrado DESC, total_cerrados DESC`;
         const rankingLeadsRes: any = await query(
           rankingLeadsSQL,
           rankingParams,
