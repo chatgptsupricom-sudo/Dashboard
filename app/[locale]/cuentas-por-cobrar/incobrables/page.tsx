@@ -46,6 +46,7 @@ export default function IncobrablesPage() {
   const [tab, setTab] = useState<"todos" | "marcar" | "registro">("todos");
   const [todos, setTodos] = useState<Incobrable[]>([]);
   const [filtroTodos, setFiltroTodos] = useState("");
+  const [filtroRegistro, setFiltroRegistro] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [buscar, setBuscar] = useState("");
   const [buscando, setBuscando] = useState(false);
@@ -140,7 +141,7 @@ export default function IncobrablesPage() {
   };
 
   const exportarRegistro = () => {
-    const ws = XLSX.utils.json_to_sheet(registro.map((r) => ({
+    const ws = XLSX.utils.json_to_sheet(registroFiltrado.map((r) => ({
       Estado: r.activo ? "Vigente" : "Revertida",
       Sede: COMPANY_MAP[r.companyId] || r.companyId,
       Factura: r.moveName,
@@ -165,6 +166,9 @@ export default function IncobrablesPage() {
   const marcadas = todos.filter((t) => t.origen === "marcada");
   const suma = (xs: Incobrable[]) => xs.reduce((s, t) => s + t.saldo, 0);
   const qTodos = filtroTodos.trim().toLowerCase();
+  const qReg = filtroRegistro.trim().toLowerCase();
+  const registroFiltrado = registro.filter((r) =>
+    !qReg || [r.moveName, r.partnerName, r.marcadoPor, r.revertidoPor || "", r.justificacion].some((v) => String(v || "").toLowerCase().includes(qReg)));
   const todosFiltrados = todos.filter((t) => !qTodos || t.partnerName.toLowerCase().includes(qTodos) || t.name.toLowerCase().includes(qTodos));
 
   const exportarTodos = () => {
@@ -308,9 +312,21 @@ export default function IncobrablesPage() {
             </div>
           ) : (
             registro.length > 0 && (
+              <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={filtroRegistro}
+                  onChange={(e) => setFiltroRegistro(e.target.value)}
+                  placeholder="Buscar factura, cliente o usuario..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
               <button onClick={exportarRegistro} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
                 <Download size={13} /> Excel
               </button>
+              </div>
             )
           )}
         </div>
@@ -428,7 +444,7 @@ export default function IncobrablesPage() {
                 </tr>
               </thead>
               <tbody>
-                {registro.map((r) => (
+                {registroFiltrado.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 align-top">
                     <td className="py-2.5 pr-3">
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${r.activo ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-500"}`}>

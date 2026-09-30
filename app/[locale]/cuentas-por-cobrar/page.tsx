@@ -152,6 +152,11 @@ export default function CxcDashboardPage() {
   // KPI detail modals
   const [kpiModal, setKpiModal] = useState<{ open: boolean; type: string; title: string }>({ open: false, type: "", title: "" });
   const [kpiData, setKpiData] = useState<any>(null);
+  // Buscador de los modales con lista de facturas (cliente o número).
+  const [busquedaDetalle, setBusquedaDetalle] = useState("");
+  const qDetalle = busquedaDetalle.trim().toLowerCase();
+  const coincideDetalle = (inv: any) =>
+    !qDetalle || String(inv.name || "").toLowerCase().includes(qDetalle) || String(inv.partnerName || "").toLowerCase().includes(qDetalle);
   const [kpiLoading, setKpiLoading] = useState(false);
   // Track where invoice detail was opened from
   const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
@@ -255,6 +260,7 @@ export default function CxcDashboardPage() {
 
   // KPI detail modal handlers
   const fetchKpiDetail = useCallback(async (type: string, title: string) => {
+    setBusquedaDetalle("");
     setKpiModal({ open: true, type, title });
     setKpiLoading(true);
     setKpiData(null);
@@ -1119,6 +1125,27 @@ export default function CxcDashboardPage() {
         ) : (
           <div className="space-y-5">
             {/* ── Efectividad Cobranza Detail ── */}
+            {["cartera", "incobrables", "recuperacion"].includes(kpiData.type) && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaDetalle}
+                  onChange={(e) => setBusquedaDetalle(e.target.value)}
+                  placeholder="Buscar cliente o número de factura..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+                {qDetalle && (
+                  <span className="text-xs text-slate-500">
+                    {kpiData.invoices.filter(coincideDetalle).length} de {kpiData.invoices.length} facturas ·{" "}
+                    {formatCurrency(kpiData.invoices.filter(coincideDetalle).reduce((s: number, i: any) => s + (i.amountResidual || 0), 0))}
+                  </span>
+                )}
+              </div>
+            )}
+
             {kpiData.type === "efectividad" && (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1250,7 +1277,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => {
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => {
                         const cb = COLOR_BANDA[inv.agingBand as Banda];
                         return (
                           <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
@@ -1308,7 +1335,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
                         <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                           <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
@@ -1361,7 +1388,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.map((inv: any) => (
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
                         <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
                           <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>

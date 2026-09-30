@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Calendar, RefreshCw, ThumbsUp, ThumbsDown, Info } from "lucide-react";
+import { Building2, Calendar, RefreshCw, ThumbsUp, ThumbsDown, Info, Search } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
@@ -99,6 +99,9 @@ export default function ClasificacionClientesPage() {
 
   const [empresa, setEmpresa] = useState("");
   const [meses, setMeses] = useState(6);
+  const [busqueda, setBusqueda] = useState("");
+  const q = busqueda.trim().toLowerCase();
+  const filtrar = (cs: Cliente[]) => cs.filter((c) => !q || c.partnerName.toLowerCase().includes(q));
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +165,16 @@ export default function ClasificacionClientesPage() {
               <option value={24}>Últimos 24 meses</option>
             </select>
           </div>
+          <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar cliente..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
           <button onClick={fetchData} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Actualizar
@@ -186,7 +199,7 @@ export default function ClasificacionClientesPage() {
                 <h2 className="font-semibold text-slate-800">Mejor récord de pago</h2>
                 <span className="text-xs text-slate-400">({data.buenaPaga.length})</span>
               </div>
-              <TablaClientes clientes={data.buenaPaga} tono="verde" />
+              <TablaClientes clientes={filtrar(data.buenaPaga)} tono="verde" />
             </div>
 
             <div className="bg-white border border-red-200 rounded-2xl p-5">
@@ -197,7 +210,7 @@ export default function ClasificacionClientesPage() {
                 <h2 className="font-semibold text-slate-800">Con más retrasos</h2>
                 <span className="text-xs text-slate-400">({data.malaPaga.length})</span>
               </div>
-              <TablaClientes clientes={data.malaPaga} tono="rojo" />
+              <TablaClientes clientes={filtrar(data.malaPaga)} tono="rojo" />
             </div>
           </div>
 
