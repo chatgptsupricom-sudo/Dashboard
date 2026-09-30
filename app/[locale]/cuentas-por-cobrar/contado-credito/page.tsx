@@ -19,7 +19,9 @@ import {
   UserRound,
   Landmark,
   AlertTriangle,
+  Download,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import {
   ResponsiveContainer,
   PieChart,
@@ -91,6 +93,10 @@ function Modal({ open, onClose, onBack, title, children, wide }: { open: boolean
 type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; facturas: number };
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number; montoDelMes: number; montoAnteriores: number };
+type Detalle = {
+  factura: string; partnerId: number; cliente: string; fecha: string | null; plazo: number | null;
+  monto: number; vendedor: string; delMes: boolean; journalId: number | null; banco: string;
+};
 type FilaAparte = { id: number; documento: string; referencia: string; cliente: string; fecha: string | null; vence?: string | null; diario?: string; monto: number };
 type TipoAparte = "incobrables" | "sin_aplicar";
 type Banco = Acumulado & { journalId: number; journalName: string };
@@ -109,6 +115,8 @@ type ContadoCreditoData = {
   /** Solo en "por_cobrar": corte y lo que queda fuera del reparto (sinAplicar solo si el corte es hoy). */
   porCobrar?: { corte: string; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
   buckets: Bucket[];
+  /** Cada factura / abono detrás de las tarjetas (para los Excel). */
+  detalle?: Detalle[];
   bancos: Banco[];
   vendedores: Vendedor[];
   bancosDisponibles: Vendedor[];
@@ -296,6 +304,57 @@ export default function ContadoCreditoPage() {
       console.error("Error:", e);
       setAparteModal({ open: true, tipo, loading: false, filas: [] });
     }
+  };
+
+  // ── Excel ──
+  const periodoTxt = usarRangoFechas && startDate && endDate ? `${startDate}_a_${endDate}` : `${MONTHS[selectedMonth - 1]}_${selectedYear}`;
+  const etiquetaModo = esPorCobrar ? "Por_cobrar" : esCobrado ? "Cobrado" : "Facturado";
+  const colMonto = esPorCobrar ? "Saldo por cobrar (con IVA)" : esCobrado ? "Cobrado" : "Monto (sin IVA)";
+  const colFecha = esCobrado ? "Fecha de abono" : "Fecha de emisión";
+  const libro = (nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) => {
+    const wb = XLSX.utils.book_new();
+    for (const h of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(h.filas.length ? h.filas : [{ "": "Sin registros" }]), h.nombre.slice(0, 31));
+    XLSX.writeFile(wb, `${nombre.replace(/[^\w-]+/g, "_")}.xlsx`);
+  };
+  const exportarClientes = () => {
+    const f = clientesModal.filtro;
+    const filas = (data?.detalle || [])
+      .filter((d) => f.journalId !== undefined ? d.journalId === f.journalId
+        : f.dias !== undefined ? d.plazo === f.dias
+        : f.tipo === "contado" ? d.plazo === null
+        : f.tipo === "credito" ? d.plazo !== null
+        : true)
+      .sort((a, b) => a.cliente.localeCompare(b.cliente, "es") || (a.fecha || "").localeCompare(b.fecha || ""));
+    libro(`${etiquetaModo}_${clientesModal.titulo}_${periodoTxt}`, [
+      { nombre: "Clientes", filas: clientesModal.clientes.map((c) => ({ Cliente: c.partnerName, Facturas: c.facturas, [colMonto]: c.monto })) },
+      {
+        nombre: "Detalle",
+        filas: filas.map((d) => ({
+          Cliente: d.cliente,
+          Factura: d.factura,
+          [colFecha]: d.fecha || "",
+          Plazo: d.plazo === null ? "Contado" : `${d.plazo} días`,
+          ...(esCobrado ? { Banco: d.banco } : {}),
+          ...(esPorCobrar ? { Origen: d.delMes ? "Facturada en el mes" : "Meses anteriores" } : {}),
+          Vendedor: d.vendedor,
+          [colMonto]: d.monto,
+        })),
+      },
+    ]);
+  };
+  const exportarAparte = () => {
+    const incob = aparteModal.tipo === "incobrables";
+    libro(`${incob ? "Incobrables" : "Pagos_sin_aplicar"}_${periodoTxt}`, [{
+      nombre: incob ? "Incobrables" : "Pagos sin aplicar",
+      filas: aparteModal.filas.map((f) => ({
+        Documento: f.documento,
+        Referencia: f.referencia,
+        Cliente: f.cliente,
+        Fecha: f.fecha || "",
+        ...(incob ? { Vence: f.vence || "" } : { Diario: f.diario || "" }),
+        [incob ? "Saldo" : "Sin aplicar"]: f.monto,
+      })),
+    }]);
   };
 
   const closeAllModals = () => {
@@ -766,9 +825,16 @@ export default function ContadoCreditoPage() {
       <Modal
         open={aparteModal.open}
         onClose={closeAllModals}
-        title={aparteModal.tipo === "incobrables" ? "Incobrables — vencidas antes de 2025" : "Pagos sin aplicar"}
+        title={aparteModal.tipo === "incobrables" ? "Incobrables — vencidas antes de 2025 o marcadas" : "Pagos sin aplicar"}
         wide
       >
+        {!aparteModal.loading && aparteModal.filas.length > 0 && (
+          <div className="flex justify-end mb-3">
+            <button onClick={exportarAparte} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+              <Download size={13} /> Excel
+            </button>
+          </div>
+        )}
         {aparteModal.loading ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={24} className="animate-spin text-blue-500" />
@@ -820,6 +886,13 @@ export default function ContadoCreditoPage() {
 
       {/* Modal 1: clientes del grupo */}
       <Modal open={clientesModal.open} onClose={closeAllModals} title={clientesModal.titulo}>
+        {clientesModal.clientes.length > 0 && (
+          <div className="flex justify-end mb-3">
+            <button onClick={exportarClientes} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+              <Download size={13} /> Excel con el detalle
+            </button>
+          </div>
+        )}
         {clientesModal.clientes.length === 0 ? (
           <div className="text-center py-8 text-slate-400">Sin clientes</div>
         ) : (
