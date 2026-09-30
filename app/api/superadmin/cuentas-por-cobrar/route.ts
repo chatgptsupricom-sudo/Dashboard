@@ -5,7 +5,6 @@ import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
-import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
@@ -181,15 +180,6 @@ export async function GET(request: NextRequest) {
       agingDistribution["91+"] += r.amount_91_plus || 0;
     });
 
-    // Incobrables: la cartera vieja (vencida antes de 2025) que Cartera
-    // Vencida, Recuperación y DSO dejan fuera (lib/cxc/carteraVieja.ts).
-    const viejas = reportInvoices.filter((r: any) => esCarteraVieja(r.date_maturity));
-    const incobrables = {
-      saldo: Math.round(viejas.reduce((s, r: any) => s + (r.amount_residual || 0), 0) * 100) / 100,
-      facturas: viejas.length,
-      clientes: new Set(viejas.map((r: any) => r.partner_id?.[0]).filter(Boolean)).size,
-    };
-
     const carteraVencidaPct = totalReceivable > 0
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
       : null;
@@ -317,6 +307,19 @@ export async function GET(request: NextRequest) {
     // el contado y la cartera vieja por factura con esas mismas series, así
     // que va después (seriesSemanales.ts → carteraCEI).
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+
+    // Incobrables: la cartera vieja (vencida antes de 2025) que los KPIs dejan
+    // fuera (lib/cxc/carteraVieja.ts), factura por factura con el mismo cálculo
+    // que su modal. El reporte de Odoo metía además pagos sin aplicar viejos.
+    const { viejas } = seriesCxc.saldosEn(today);
+    const clientesViejas = viejas.size
+      ? await callOdooRPC<any[]>("account.move", "read", [[...viejas.keys()]], { fields: ["id", "partner_id"] })
+      : [];
+    const incobrables = {
+      saldo: Math.round([...viejas.values()].reduce((a, b) => a + b, 0) * 100) / 100,
+      facturas: viejas.size,
+      clientes: new Set((clientesViejas || []).map((m: any) => m.partner_id?.[0]).filter(Boolean)).size,
+    };
     // El DSO usa la CxC final y las ventas a crédito del CEI (lib/cxc/dso.ts).
     const [efectividadCalc, dsoCalc] = await Promise.all([
       calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI),
