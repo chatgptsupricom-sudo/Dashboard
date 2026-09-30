@@ -626,6 +626,7 @@ export default function CxcDashboardPage() {
                     <th className="text-left py-2 text-slate-500 font-medium">Responsable</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Cartera total</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
+                    <th className="text-right py-2 text-slate-500 font-medium" title="Pagos que entraron a banco/caja en el mes, de facturas de este vendedor">Cobrado del mes</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Facturas</th>
                     <th className="w-8"></th>
                   </tr>
@@ -642,6 +643,7 @@ export default function CxcDashboardPage() {
                       <td className="py-2.5 text-right">
                         {sp.overdue > 0 ? <span className="text-red-600 font-medium">{formatCurrency(sp.overdue)}</span> : <span className="text-emerald-600">—</span>}
                       </td>
+                      <td className="py-2.5 text-right text-emerald-700 font-medium">{sp.cobrado ? formatCurrency(sp.cobrado) : "—"}</td>
                       <td className="py-2.5 text-right text-slate-500">{sp.count}</td>
                       <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
                     </tr>

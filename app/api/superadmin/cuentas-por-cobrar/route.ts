@@ -5,7 +5,7 @@ import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
-import { RELACIONADA } from "@/lib/cxc/cobros";
+import { RELACIONADA, obtenerCobros } from "@/lib/cxc/cobros";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -264,12 +264,15 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const [recuperacionCalc, sinAplicarGrupo] = await Promise.all([
+    const [recuperacionCalc, cobrosMes, sinAplicarGrupo] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
       // puede leer directo de `amount_residual` (issue #189).
       calcularRecuperacion(companyIds, monthStart, monthEnd),
+      // Cobrado del mes por vendedor (tabla por responsable): dinero que entró
+      // a banco/caja, misma fuente que "Cobrado" de Contado/Crédito.
+      obtenerCobros(companyIds, { desde: monthStart, hasta: monthEnd < today ? monthEnd : today }),
       // Pagos todavía no aplicados a una factura (anticipos, saldo a favor):
       // restan en el reporte de Odoo pero no son de ninguna factura, así que
       // el Resumen los muestra en su propia fila.
@@ -425,7 +428,26 @@ export async function GET(request: NextRequest) {
           };
         }),
         topDebtors: topDebtorsConDso,
-        bySalesperson,
+        bySalesperson: (() => {
+          const cobrado = new Map<number, { name: string; monto: number }>();
+          for (const c of cobrosMes) {
+            if (c.interno || !c.vendedorId) continue;
+            const v = cobrado.get(c.vendedorId) || { name: c.vendedorName, monto: 0 };
+            v.monto += c.monto;
+            cobrado.set(c.vendedorId, v);
+          }
+          const filas = bySalesperson.map((sp) => ({
+            ...sp,
+            cobrado: Math.round((cobrado.get(sp.userId)?.monto || 0) * 100) / 100,
+          }));
+          // Quien cobró en el mes pero ya no tiene cartera también aparece.
+          for (const [userId, v] of cobrado) {
+            if (!filas.some((f) => f.userId === userId)) {
+              filas.push({ userId, name: v.name, total: 0, overdue: 0, count: 0, cobrado: Math.round(v.monto * 100) / 100 });
+            }
+          }
+          return filas;
+        })(),
         // Mismas cifras que la tarjeta de Cartera Vencida. Lo que el reporte de
         // Odoo suma aparte va en filas propias; las cuatro partes cuadran con
         // `totalOdoo` (el total del reporte de antigüedad).

@@ -75,7 +75,8 @@ interface Salesperson {
   name: string;
   total: number;
   overdue: number;
-  count: number;
+  count: number;  /** Cobrado a banco/caja en el mes, de facturas de este vendedor. */
+  cobrado?: number;
 }
 
 interface CxCData {
@@ -499,6 +500,7 @@ export default function CxCReport() {
                     <th className="text-left py-2 text-slate-500 font-medium">{t("responsable")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("cartera_total_label")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("vencido")}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t("cobrado_mes")}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">{t("facturas")}</th>
                   </tr>
                 </thead>
@@ -514,6 +516,7 @@ export default function CxCReport() {
                           <span className="text-emerald-600">—</span>
                         )}
                       </td>
+                      <td className="py-2 text-right text-emerald-700 font-medium">{sp.cobrado ? formatCurrency(sp.cobrado) : "—"}</td>
                       <td className="py-2 text-right text-slate-500">{sp.count}</td>
                     </tr>
                   ))}
