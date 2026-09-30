@@ -5,11 +5,13 @@ import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
 
 export async function GET(req: NextRequest) {
-  // Asistente de Ventas puede consultar las cuotas, pero no editarlas
-  // (el POST más abajo sigue restringido a "gerencia de ventas").
+  // Asistente de Ventas y Gerente de Operaciones pueden consultar las
+  // cuotas, pero no editarlas (el POST más abajo sigue restringido a
+  // "gerencia de ventas"). Operaciones las ve en /gerente_operaciones/cuota.
   const auth = await requireRoles(req, [
     "gerencia de ventas",
     "asistente de ventas",
+    "gerente de operaciones",
   ]);
   if (auth.error) return auth.error;
 

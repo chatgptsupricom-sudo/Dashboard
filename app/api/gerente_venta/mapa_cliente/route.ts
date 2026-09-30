@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["gerencia de ventas"]);
+  // También lo usa /gerente_operaciones/mapa_clientes (solo lectura).
+  const auth = await requireRoles(request, ["gerencia de ventas", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {
