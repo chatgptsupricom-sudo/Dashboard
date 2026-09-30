@@ -25,6 +25,7 @@ import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import Pistola from "@/components/escaneo/Pistola";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
+import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
 import {
   ASPECTOS,
   RESPONSABLE,
@@ -110,6 +111,7 @@ const SERIALES_VISIBLES = 6;
 type Movimiento = {
   id: number;
   fecha: string;
+  odoo_picking_id: number | null;
   odoo_picking_name: string | null;
   contraparte: string | null;
   facturas: string[];
@@ -682,6 +684,16 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   </>
                 )}
               </dl>
+              {/* El cliente cambió cómo lo recibe: Almacén lo cambia mientras el
+                  egreso siga siendo suyo (despues ya lo tiene Seguridad). */}
+              {rol === "almacen" && enAlmacen(mov.etapa) && !!mov.odoo_picking_id && (
+                <CambiarMetodoRetiro
+                  pickingId={mov.odoo_picking_id}
+                  actual={null}
+                  onGuardado={() => void cargar()}
+                  className="mt-3"
+                />
+              )}
               {mov.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
                   {mov.observaciones}

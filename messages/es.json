@@ -3316,6 +3316,8 @@
     "sin_fecha_nota": "Compras todavía no cargó la fecha estimada de llegada."
   },
   "metodoRetiro": {
+    "cambiar_titulo": "Cambiar método de retiro",
+    "cambiar_desc_almacen": "Úsalo cuando el cliente cambió cómo recibe el pedido. El cambio queda a tu nombre en el egreso y el vendedor lo ve en su sección.",
     "recargar": "Actualizar",
     "kpi_pendientes": "Sin método",
     "kpi_con_metodo": "Con método",

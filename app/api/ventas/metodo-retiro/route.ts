@@ -81,7 +81,7 @@ export async function PUT(request: NextRequest) {
     const saleId = parseInt(String(body.sale_id ?? ""), 10);
     if (!saleId) return NextResponse.json({ error: "sale_id requerido" }, { status: 400 });
 
-    const fila = await guardarMetodoRetiro({
+    const { metodo: fila } = await guardarMetodoRetiro({
       saleId,
       metodo: body.metodo,
       rutaId: parseInt(String(body.ruta_id ?? ""), 10) || null,

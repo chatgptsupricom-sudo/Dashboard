@@ -15,20 +15,25 @@ import {
   type MetodoRetiro as Metodo,
 } from "@/lib/ventas/metodoRetiroTipos";
 import {
+  borradorDe,
+  cuerpoBorrador,
+  errorBorrador,
+  ICONO_METODO,
+  MetodoRetiroCampos,
+  type Borrador,
+  type Opcion,
+} from "@/components/ventas/MetodoRetiroCampos";
+import {
   AlertTriangle,
-  Building2,
   CalendarDays,
-  Check,
   CheckCircle2,
   ClipboardList,
   Inbox,
   Loader2,
   Lock,
-  Package,
   Pencil,
   RefreshCw,
   Search,
-  Store,
   Truck,
   UserRound,
   X,
@@ -60,19 +65,12 @@ type Pedido = {
   metodo: FilaMetodo | null;
 };
 
-/** Ruta o agencia, con su sede (null = Venezuela, 7 = Panamá). */
-type Opcion = { id: number; nombre: string; cids?: number | null };
-type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; empresa: string; nota: string };
-
 type Estado = "todos" | "pendientes" | "con_metodo" | "en_despacho";
 type Facturacion = "todas" | "facturados" | "sin_facturar";
 type Orden = "antiguos" | "recientes" | "monto";
 
-const ICONO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package, transporte: Building2 };
 const POR_PAGINA = 20;
 const usd = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const selectCls =
-  "h-10 w-full px-3 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400";
 
 function fecha(v: string | null) {
   if (!v) return "—";
@@ -195,22 +193,7 @@ export function MetodoRetiro() {
     setOrden("antiguos");
   };
 
-  const borrador = (p: Pedido): Borrador => {
-    if (borradores[p.sale_id]) return borradores[p.sale_id];
-    const m = p.metodo;
-    // `agencia` guarda la agencia de la encomienda o la compañía del transporte.
-    const agenciaEnc = m?.metodo === "encomienda" ? m.agencia : null;
-    const conocida =
-      !!agenciaEnc && agencias.some((a) => a.nombre === agenciaEnc && esDeLaSede(a.cids, p.company_id));
-    return {
-      metodo: m?.metodo || "",
-      ruta_id: m?.ruta_id ? String(m.ruta_id) : "",
-      agencia: agenciaEnc ? (conocida ? agenciaEnc : "otra") : "",
-      otra: agenciaEnc && !conocida ? agenciaEnc : "",
-      empresa: m?.metodo === "transporte" ? m.agencia || "" : "",
-      nota: m?.nota || "",
-    };
-  };
+  const borrador = (p: Pedido): Borrador => borradores[p.sale_id] || borradorDe(p.metodo, agencias, p.company_id);
   const cambiar = (p: Pedido, c: Partial<Borrador>) => {
     setBorradores((prev) => ({ ...prev, [p.sale_id]: { ...borrador(p), ...c } }));
     setGuardados((prev) => ({ ...prev, [p.sale_id]: false }));
@@ -227,28 +210,15 @@ export function MetodoRetiro() {
 
   const guardar = async (p: Pedido) => {
     const b = borrador(p);
-    setErrores((prev) => ({ ...prev, [p.sale_id]: "" }));
-    if (!b.metodo) return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_metodo") }));
-    if (b.metodo === "ruta" && !b.ruta_id) return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_ruta") }));
-    const agencia = b.agencia === "otra" ? b.otra.trim() : b.agencia;
-    if (b.metodo === "encomienda" && !agencia) {
-      return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_agencia") }));
-    }
-    if (b.metodo === "transporte" && !b.empresa.trim()) {
-      return setErrores((prev) => ({ ...prev, [p.sale_id]: t("error_empresa") }));
-    }
+    const falta = errorBorrador(b);
+    setErrores((prev) => ({ ...prev, [p.sale_id]: falta ? t(falta) : "" }));
+    if (falta) return;
     setGuardando(p.sale_id);
     try {
       const r = await fetch("/api/ventas/metodo-retiro", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sale_id: p.sale_id,
-          metodo: b.metodo,
-          ruta_id: b.metodo === "ruta" ? Number(b.ruta_id) : null,
-          agencia: b.metodo === "encomienda" ? agencia : b.metodo === "transporte" ? b.empresa.trim() : null,
-          nota: b.nota,
-        }),
+        body: JSON.stringify({ sale_id: p.sale_id, ...cuerpoBorrador(b) }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.success) throw new Error(j.error || t("error_guardar"));
@@ -469,7 +439,7 @@ export function MetodoRetiro() {
             const rutasP = rutas.filter((r) => esDeLaSede(r.cids, p.company_id));
             const agenciasP = agencias.filter((a) => esDeLaSede(a.cids, p.company_id));
             const imp = nombreImpuesto(p.company_id);
-            const IconoActual = p.metodo ? ICONO[p.metodo.metodo] : null;
+            const IconoActual = p.metodo ? ICONO_METODO[p.metodo.metodo] : null;
             const franja =
               est === "pendientes" ? "before:bg-amber-400" : est === "en_despacho" ? "before:bg-sky-400" : "before:bg-violet-500";
             return (
@@ -572,101 +542,7 @@ export function MetodoRetiro() {
                   {/* Formulario */}
                   {abierto && (
                     <div className="space-y-3">
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                        {METODOS_RETIRO.map((m) => {
-                          const Icono = ICONO[m];
-                          const activo = b.metodo === m;
-                          return (
-                            <button
-                              key={m}
-                              type="button"
-                              onClick={() => cambiar(p, { metodo: m })}
-                              aria-pressed={activo}
-                              className={`relative flex items-center gap-2.5 rounded-xl border p-2.5 sm:p-3 text-left transition-all ${
-                                activo
-                                  ? "border-violet-500 bg-violet-50 ring-1 ring-violet-500"
-                                  : "border-slate-200 bg-white hover:border-violet-300 hover:bg-slate-50"
-                              }`}
-                            >
-                              <span
-                                className={`shrink-0 p-1.5 sm:p-2 rounded-lg ${activo ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500"}`}
-                              >
-                                <Icono className="w-4 h-4" />
-                              </span>
-                              <span className="min-w-0">
-                                <span className={`block text-[13px] font-semibold leading-tight ${activo ? "text-violet-800" : "text-slate-700"}`}>
-                                  {t(`metodo_${m}`)}
-                                </span>
-                                <span className="hidden sm:block text-[11px] text-slate-500 leading-tight mt-0.5">{t(`hint_${m}`)}</span>
-                              </span>
-                              {activo && <Check className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-violet-600" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {b.metodo && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {b.metodo === "ruta" && (
-                            <select
-                              value={b.ruta_id}
-                              onChange={(e) => cambiar(p, { ruta_id: e.target.value })}
-                              aria-label={t("ruta")}
-                              className={selectCls}
-                            >
-                              <option value="">{t("elige_ruta")}</option>
-                              {rutasP.map((r) => (
-                                <option key={r.id} value={String(r.id)}>
-                                  {r.nombre}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          {b.metodo === "encomienda" && (
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <select
-                                value={b.agencia}
-                                onChange={(e) => cambiar(p, { agencia: e.target.value })}
-                                aria-label={t("agencia")}
-                                className={`${selectCls} sm:flex-1`}
-                              >
-                                <option value="">{t("elige_agencia")}</option>
-                                {agenciasP.map((a) => (
-                                  <option key={a.id} value={a.nombre}>
-                                    {a.nombre}
-                                  </option>
-                                ))}
-                                <option value="otra">{t("otra_agencia")}</option>
-                              </select>
-                              {b.agencia === "otra" && (
-                                <Input
-                                  value={b.otra}
-                                  onChange={(e) => cambiar(p, { otra: e.target.value.slice(0, 100) })}
-                                  placeholder={t("nombre_agencia")}
-                                  className="h-10 rounded-lg sm:flex-1"
-                                />
-                              )}
-                            </div>
-                          )}
-                          {b.metodo === "transporte" && (
-                            <Input
-                              value={b.empresa}
-                              onChange={(e) => cambiar(p, { empresa: e.target.value.slice(0, 100) })}
-                              placeholder={t("empresa_transporte")}
-                              aria-label={t("empresa_transporte")}
-                              className="h-10 rounded-lg"
-                            />
-                          )}
-                          <Input
-                            value={b.nota}
-                            onChange={(e) => cambiar(p, { nota: e.target.value.slice(0, 500) })}
-                            placeholder={t(
-                              b.metodo === "sucursal" ? "nota_sucursal" : b.metodo === "transporte" ? "nota_transporte" : "nota_envio",
-                            )}
-                            className={`h-10 rounded-lg ${b.metodo === "sucursal" ? "sm:col-span-2" : ""}`}
-                          />
-                        </div>
-                      )}
+                      <MetodoRetiroCampos valor={b} onChange={(c) => cambiar(p, c)} rutas={rutasP} agencias={agenciasP} />
 
                       {b.metodo === "ruta" && b.ruta_id && (() => {
                         const ruta = rutasP.find((r) => String(r.id) === b.ruta_id)?.nombre;
