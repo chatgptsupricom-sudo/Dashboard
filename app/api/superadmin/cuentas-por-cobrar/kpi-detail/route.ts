@@ -4,9 +4,11 @@ import { detalleCEI, saldoRelacionada } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
-import { obtenerCobros, esRelacionada, RELACIONADA } from "@/lib/cxc/cobros";
+import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { calcularDSO } from "@/lib/cxc/dso";
-import { VENCIMIENTO_DESDE, esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
+import { bandaDeDias } from "@/lib/cxc/bandas";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -79,36 +81,44 @@ export async function GET(request: NextRequest) {
 
     // "incobrables" es el complemento de "cartera": solo la cartera vieja.
     if (type === "cartera" || type === "incobrables") {
-      // Todas las facturas abiertas con saldo, agrupadas por aging band
-      // != 0 (no solo > 0): incluye notas de credito abiertas, que en este
-      // modelo traen amount_residual NEGATIVO (verificado contra Odoo real).
+      // Mismo cálculo que la tarjeta (seriesSemanales.ts → saldosEn): saldo de
+      // cada factura / nota de crédito hoy, sin Supricom. Cartera Vencida va
+      // sin la cartera vieja (vencida antes de 2025) ni SUPER TECHNO;
+      // Incobrables es solo esa cartera vieja. Antes leía el reporte de
+      // antigüedad de Odoo, que además trae los pagos sin aplicar (renglones
+      // negativos PCSH1/PBANES...) y asientos manuales: no son facturas y la
+      // tarjeta no los cuenta.
       // Solo informativo: si falla, el modal sigue sin el aviso.
       const relacionadas = saldoRelacionada(companyIds).catch(() => 0);
-      const reportData = await fetchPaginated(
-        "digiflex.cxc.report",
-        [["company_id", "in", companyIds], ["amount_residual", "!=", 0]],
-        ["id", "move_id", "partner_id", "partner_name", "user_id", "user_name",
-         "company_id", "company_name", "invoice_date", "date_maturity",
-         "days_overdue", "amount_residual", "amount_current",
-         "amount_1_30", "amount_31_60", "amount_61_90", "amount_91_plus",
-         "document_number", "transaction_type"],
-      );
-
-      // Cartera Vencida va sin la cartera vieja (vencida antes de 2025) ni la
-      // empresa relacionada SUPER TECHNO, igual que la tarjeta; Incobrables es
-      // solo esa cartera vieja.
-      const filtered = reportData.filter((r: any) =>
-        !((r.partner_name || "").toLowerCase().includes("supricom")) &&
-        (type === "incobrables" || !esRelacionada(r.partner_name || "")) &&
-        esCarteraVieja(r.date_maturity) === (type === "incobrables"));
-
-      function getAgingBand(r: any): string {
-        if (r.days_overdue <= 0) return "corriente";
-        if (r.days_overdue <= 30) return "1-30";
-        if (r.days_overdue <= 60) return "31-60";
-        if (r.days_overdue <= 90) return "61-90";
-        return "91+";
+      const inicioHoy = new Date(today);
+      inicioHoy.setHours(0, 0, 0, 0);
+      const series = await calcularSeriesCxC(companyIds, [{ inicio: inicioHoy, fin: today }], today);
+      const { saldos, viejas } = series.saldosEn(today);
+      const mapa = type === "incobrables" ? viejas : saldos;
+      const ids = [...mapa.keys()];
+      const moves: any[] = [];
+      for (let i = 0; i < ids.length; i += 5000) {
+        moves.push(...((await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], {
+          fields: ["id", "name", "partner_id", "company_id", "invoice_user_id", "invoice_date", "invoice_date_due"],
+        })) || []));
       }
+      const filtered = moves.map((m: any) => {
+        const due = m.invoice_date_due ? new Date(String(m.invoice_date_due).slice(0, 10) + "T00:00:00") : null;
+        return {
+          id: m.id,
+          document_number: m.name,
+          partner_name: m.partner_id?.[1],
+          partner_id: m.partner_id,
+          company_name: m.company_id?.[1],
+          user_name: m.invoice_user_id?.[1],
+          invoice_date: m.invoice_date,
+          date_maturity: m.invoice_date_due,
+          days_overdue: due ? Math.max(0, Math.round((inicioHoy.getTime() - due.getTime()) / 86400000)) : 0,
+          amount_residual: mapa.get(m.id) || 0,
+        };
+      });
+
+      const getAgingBand = (r: any) => bandaDeDias(r.days_overdue || 0);
 
       const invoices = filtered.map((r: any) => ({
         id: r.id,
@@ -172,6 +182,9 @@ export async function GET(request: NextRequest) {
       // cobros en el mes, aunque ya esten cerradas.
       const desdeStr = monthStart.toISOString().split("T")[0];
       const hastaStr = monthEnd.toISOString().split("T")[0];
+      // Incobrables marcados a mano: fuera, igual que en la tarjeta.
+      const manuales = [...(await idsIncobrablesManuales(companyIds))];
+      const sinManuales: any[] = manuales.length ? [["id", "not in", manuales]] : [];
       const dominioVencidas: any[] = [
         ["move_type", "=", "out_invoice"],
         ["state", "=", "posted"],
@@ -180,6 +193,7 @@ export async function GET(request: NextRequest) {
         ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
         ["commercial_partner_id.name", "not ilike", RELACIONADA],
+        ...sinManuales,
       ];
       const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
         "invoice_date_due", "payment_state", "amount_total", "amount_residual"];
@@ -197,6 +211,7 @@ export async function GET(request: NextRequest) {
             ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
             ["partner_id.name", "not ilike", "supricom"],
             ["commercial_partner_id.name", "not ilike", RELACIONADA],
+            ...sinManuales,
           ],
         }),
       ]);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Building2, Calendar, RefreshCw, Clock, X } from "lucide-react";
+import { descargarExcel } from "@/lib/excel";
+import { Building2, Calendar, RefreshCw, Clock, X, Download, Search } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 // Tiempo de cobro: días desde la emisión hasta el pago completo de las
@@ -36,7 +37,98 @@ function tono(real: number, plazo: number) {
   return "text-red-600";
 }
 
-function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onClick?: (g: Grupo, i: number) => void }) {
+// ── Excel ──
+const filaGrupo = (titulo: string) => (g: Grupo) => ({
+  [titulo]: g.clave,
+  "Tarda en pagar (días)": g.promedioDias,
+  "Plazo promedio (días)": g.plazoPromedio,
+  "Pagadas a tiempo (%)": g.aTiempoPct,
+  Facturas: g.facturas,
+  "Monto (con IVA)": g.monto,
+});
+const filaFactura = (f: Factura) => ({
+  Factura: f.name,
+  Cliente: f.cliente,
+  Vendedor: f.vendedor,
+  "Fecha de emisión": f.emision,
+  "Fecha de pago completo": f.pagada,
+  "Días en pagar": f.dias,
+  "Plazo (días)": f.plazo,
+  "Días de atraso": Math.max(0, f.dias - f.plazo),
+  "Monto (con IVA)": f.monto,
+});
+function descargar(nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) {
+  descargarExcel(nombre, hojas);
+}
+
+/** Facturas agrupadas por cliente, con días ponderados por monto (para el detalle). */
+/** Totales de un grupo de facturas (mismo cálculo que el servidor, lib/cxc/tiempoCobro.ts). */
+function resumenDe(fs: Factura[]): Omit<Grupo, "clave"> {
+  const monto = fs.reduce((s, f) => s + f.monto, 0);
+  const pond = (c: "dias" | "plazo") => (monto > 0 ? fs.reduce((s, f) => s + f[c] * f.monto, 0) / monto : 0);
+  return {
+    facturas: fs.length,
+    monto: Math.round(monto * 100) / 100,
+    promedioDias: Math.round(pond("dias") * 10) / 10,
+    plazoPromedio: Math.round(pond("plazo") * 10) / 10,
+    aTiempoPct: fs.length ? Math.round((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 1000) / 10 : 0,
+  };
+}
+
+function agruparPorCliente(fs: Factura[]) {
+  const m = new Map<string, Factura[]>();
+  for (const f of fs) {
+    const k = `${f.partnerId}|${f.cliente}`;
+    if (!m.has(k)) m.set(k, []);
+    m.get(k)!.push(f);
+  }
+  return [...m.entries()]
+    .map(([k, lista]) => {
+      const monto = lista.reduce((s, f) => s + f.monto, 0);
+      const pond = (c: "dias" | "plazo") => (monto > 0 ? lista.reduce((s, f) => s + f[c] * f.monto, 0) / monto : 0);
+      return {
+        clave: k,
+        cliente: lista[0].cliente,
+        facturas: lista.sort((a, b) => b.dias - a.dias),
+        monto: Math.round(monto * 100) / 100,
+        promedioDias: Math.round(pond("dias") * 10) / 10,
+        plazoPromedio: Math.round(pond("plazo") * 10) / 10,
+        aTiempoPct: Math.round((lista.filter((f) => f.dias <= f.plazo).length / lista.length) * 1000) / 10,
+      };
+    })
+    .sort((a, b) => b.monto - a.monto);
+}
+
+/** Excel con desglose: hoja resumen (lo que muestra la tabla) + hoja con cada factura detrás. */
+function descargarDesglose(nombre: string, resumen: { nombre: string; filas: Record<string, unknown>[] }, facturas: Factura[], agrupador?: { titulo: string; valor: (f: Factura) => string }) {
+  const ordenadas = [...facturas].sort((a, b) =>
+    (agrupador ? agrupador.valor(a).localeCompare(agrupador.valor(b), "es", { numeric: true }) : 0) ||
+    a.cliente.localeCompare(b.cliente, "es") || b.dias - a.dias);
+  const porCliente = agruparPorCliente(facturas).map((c) => ({
+    Cliente: c.cliente,
+    "Tarda en pagar (días)": c.promedioDias,
+    "Plazo promedio (días)": c.plazoPromedio,
+    "Pagadas a tiempo (%)": c.aTiempoPct,
+    Facturas: c.facturas.length,
+    "Monto (con IVA)": c.monto,
+  }));
+  descargar(nombre, [
+    resumen,
+    ...(resumen.nombre === "Por cliente" ? [] : [{ nombre: "Por cliente", filas: porCliente }]),
+    { nombre: "Facturas", filas: ordenadas.map((f) => ({ ...(agrupador ? { [agrupador.titulo]: agrupador.valor(f) } : {}), ...filaFactura(f) })) },
+  ]);
+}
+
+function BotonExcel({ onClick, texto = "Excel" }: { onClick: () => void; texto?: string }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+      <Download size={13} />
+      {texto}
+    </button>
+  );
+}
+
+function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onClick?: (g: any, i: number) => void }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -81,7 +173,11 @@ export default function TiempoCobroPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detalle, setDetalle] = useState<{ titulo: string; facturas: Factura[] } | null>(null);
+  // agrupar: el detalle se muestra por cliente con sus facturas dentro (por plazo, por vendedor).
+  const [detalle, setDetalle] = useState<{ titulo: string; facturas: Factura[]; agrupar?: boolean } | null>(null);
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"clientes" | "vendedores">("clientes");
+  const [busqueda, setBusqueda] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -110,6 +206,40 @@ export default function TiempoCobroPage() {
   }, [detalle]);
 
   const r = data?.resumen;
+  const periodo = `${MONTHS[mes - 1]}_${anio}`;
+  const q = busqueda.trim().toLowerCase();
+  const clientesFiltrados = useMemo(
+    () => (data?.clientes || []).filter((c) => !q || c.clave.toLowerCase().includes(q)),
+    [data, q],
+  );
+  const vendedoresFiltrados = useMemo(
+    () => (data?.vendedores || []).filter((v) => !q || v.clave.toLowerCase().includes(q)),
+    [data, q],
+  );
+
+  const exportarTodo = () => {
+    if (!data || !r) return;
+    descargar(`Tiempo_de_cobro_${periodo}`, [
+      {
+        nombre: "Resumen",
+        filas: [
+          { Indicador: "Tardan en pagar (días, ponderado por monto)", Resultado: r.promedioDias },
+          { Indicador: "Plazo promedio (días)", Resultado: r.plazoPromedio },
+          { Indicador: "Factura típica / mediana (días)", Resultado: r.mediana },
+          { Indicador: "Promedio simple (días)", Resultado: r.promedioSimple },
+          { Indicador: "Pagadas a tiempo (%)", Resultado: r.aTiempoPct },
+          { Indicador: "Facturas pagadas", Resultado: r.facturas },
+          { Indicador: "Monto pagado (con IVA)", Resultado: r.monto },
+          { Indicador: "Período", Resultado: `${data.filters.desde} a ${data.filters.hasta}` },
+        ],
+      },
+      { nombre: "Tramos de días", filas: data.tramos.map((t) => ({ Tramo: t.label, Facturas: t.facturas, "Monto (con IVA)": t.monto, "% del monto": t.pct })) },
+      { nombre: "Por plazo", filas: data.porPlazo.map(filaGrupo("Plazo")) },
+      { nombre: "Por cliente", filas: data.clientes.map(filaGrupo("Cliente")) },
+      { nombre: "Por vendedor", filas: data.vendedores.map(filaGrupo("Vendedor")) },
+      { nombre: "Facturas", filas: data.facturas.map(filaFactura) },
+    ]);
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto tabular-nums">
@@ -151,6 +281,12 @@ export default function TiempoCobroPage() {
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Actualizar
           </button>
+          {data && data.resumen.facturas > 0 && (
+            <button onClick={exportarTodo} className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-emerald-700 transition" title="Resumen, tramos, por plazo, por cliente, por vendedor y todas las facturas">
+              <Download size={14} />
+              Exportar todo
+            </button>
+          )}
         </div>
       </div>
 
@@ -212,32 +348,85 @@ export default function TiempoCobroPage() {
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
-                  <h2 className="font-semibold text-slate-800 mb-4">Por plazo de la factura</h2>
-                  <Tabla filas={data.porPlazo} titulo="Plazo" />
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="font-semibold text-slate-800">Por plazo de la factura</h2>
+                      <p className="text-xs text-slate-400">Click para ver sus facturas</p>
+                    </div>
+                    <BotonExcel onClick={() => descargarDesglose(
+                      `Tiempo_de_cobro_por_plazo_${periodo}`,
+                      { nombre: "Por plazo", filas: data.porPlazo.map(filaGrupo("Plazo")) },
+                      data.facturas,
+                      { titulo: "Plazo", valor: (f) => `${f.plazo} días` },
+                    )} />
+                  </div>
+                  <Tabla
+                    filas={data.porPlazo}
+                    titulo="Plazo"
+                    onClick={(g) => { setAbiertos(new Set()); setDetalle({ titulo: `Plazo ${g.clave}`, facturas: data.facturas.filter((f) => f.plazo === g.plazo), agrupar: true }); }}
+                  />
                 </div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-2xl p-5">
-                <h2 className="font-semibold text-slate-800">Por cliente</h2>
-                <p className="text-xs text-slate-400 mb-4">Ordenados por monto pagado · click para ver sus facturas</p>
-                <Tabla
-                  filas={data.clientes}
-                  titulo="Cliente"
-                  onClick={(g, i) => setDetalle({
-                    titulo: g.clave,
-                    facturas: data.facturas.filter((f) => f.partnerId === data.clientes[i].partnerId),
-                  })}
-                />
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-2xl p-5">
-                <h2 className="font-semibold text-slate-800">Por vendedor</h2>
-                <p className="text-xs text-slate-400 mb-4">Click para ver sus facturas</p>
-                <Tabla
-                  filas={data.vendedores}
-                  titulo="Vendedor"
-                  onClick={(g) => setDetalle({ titulo: g.clave, facturas: data.facturas.filter((f) => f.vendedor === g.clave) })}
-                />
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                    {(["clientes", "vendedores"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => { setTab(t); setBusqueda(""); }}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${tab === t ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+                      >
+                        {t === "clientes" ? `Por cliente (${data.clientes.length})` : `Por vendedor (${data.vendedores.length})`}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={busqueda}
+                        onChange={(e) => setBusqueda(e.target.value)}
+                        placeholder={tab === "clientes" ? "Buscar cliente..." : "Buscar vendedor..."}
+                        className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-56"
+                      />
+                    </div>
+                    <BotonExcel
+                      onClick={() => {
+                        if (tab === "clientes") {
+                          const ids = new Set(clientesFiltrados.map((c) => c.partnerId));
+                          descargarDesglose(`Tiempo_de_cobro_por_cliente_${periodo}`,
+                            { nombre: "Por cliente", filas: clientesFiltrados.map(filaGrupo("Cliente")) },
+                            data.facturas.filter((f) => ids.has(f.partnerId)));
+                        } else {
+                          const nombres = new Set(vendedoresFiltrados.map((v) => v.clave));
+                          descargarDesglose(`Tiempo_de_cobro_por_vendedor_${periodo}`,
+                            { nombre: "Por vendedor", filas: vendedoresFiltrados.map(filaGrupo("Vendedor")) },
+                            data.facturas.filter((f) => nombres.has(f.vendedor)),
+                            { titulo: "Vendedor", valor: (f) => f.vendedor });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">Ordenados por monto pagado · click para ver sus facturas</p>
+                {tab === "clientes" ? (
+                  <Tabla
+                    filas={clientesFiltrados}
+                    titulo="Cliente"
+                    onClick={(g) => setDetalle({ titulo: g.clave, facturas: data.facturas.filter((f) => f.partnerId === g.partnerId) })}
+                  />
+                ) : (
+                  <Tabla
+                    filas={vendedoresFiltrados}
+                    titulo="Vendedor"
+                    onClick={(g) => { setAbiertos(new Set()); setDetalle({ titulo: g.clave, facturas: data.facturas.filter((f) => f.vendedor === g.clave), agrupar: true }); }}
+                  />
+                )}
+                {(tab === "clientes" ? clientesFiltrados : vendedoresFiltrados).length === 0 && (
+                  <p className="text-center text-sm text-slate-400 py-6">Sin resultados para "{busqueda}"</p>
+                )}
               </div>
 
               <p className="text-[11px] text-slate-400">
@@ -254,17 +443,34 @@ export default function TiempoCobroPage() {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[90vh] w-full max-w-4xl flex flex-col tabular-nums" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-              <h3 className="font-semibold text-slate-800 truncate">{detalle.titulo}</h3>
-              <button onClick={() => setDetalle(null)} className="p-1.5 rounded-lg hover:bg-slate-100 transition" title="Cerrar">
-                <X size={18} className="text-slate-500" />
-              </button>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-slate-800 truncate">{detalle.titulo} · {detalle.facturas.length} facturas</h3>
+                {detalle.agrupar && (
+                  <button
+                    onClick={() => setAbiertos(abiertos.size ? new Set() : new Set(agruparPorCliente(detalle.facturas).map((c) => c.clave)))}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    {abiertos.size ? "Contraer todo" : "Expandir todo"} · ordenado por cliente (click para ver sus facturas)
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <BotonExcel onClick={() => descargarDesglose(
+                  `Tiempo_de_cobro_${detalle.titulo.replace(/[^\w]+/g, "_")}_${periodo}`,
+                  { nombre: "Resumen", filas: [filaGrupo("Detalle")({ clave: detalle.titulo, ...resumenDe(detalle.facturas) })] },
+                  detalle.facturas,
+                )} />
+                <button onClick={() => setDetalle(null)} className="p-1.5 rounded-lg hover:bg-slate-100 transition" title="Cerrar">
+                  <X size={18} className="text-slate-500" />
+                </button>
+              </div>
             </div>
             <div className="overflow-auto p-4">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     <th className="text-left py-2.5 px-3">Factura</th>
-                    <th className="text-left py-2.5 px-3">Cliente</th>
+                    <th className="text-left py-2.5 px-3">{detalle.agrupar ? "Cliente / vendedor" : "Cliente"}</th>
                     <th className="text-left py-2.5 px-3">Emitida</th>
                     <th className="text-left py-2.5 px-3">Pagada</th>
                     <th className="text-right py-2.5 px-3">Días</th>
@@ -273,7 +479,39 @@ export default function TiempoCobroPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detalle.facturas.map((f) => (
+                  {detalle.agrupar
+                    ? agruparPorCliente(detalle.facturas).map((c) => {
+                        const abierto = abiertos.has(c.clave);
+                        return [
+                          <tr
+                            key={c.clave}
+                            onClick={() => setAbiertos((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(c.clave)) n.delete(c.clave); else n.add(c.clave);
+                              return n;
+                            })}
+                            className="border-t border-slate-100 bg-slate-50/70 hover:bg-blue-50/40 cursor-pointer"
+                          >
+                            <td className="py-2 px-3 font-semibold text-slate-700">{abierto ? "▾" : "▸"} {c.facturas.length} fact.</td>
+                            <td className="py-2 px-3 font-semibold text-blue-700 max-w-[260px] truncate" colSpan={3}>{c.cliente}</td>
+                            <td className={`py-2 px-3 text-right font-bold ${tono(c.promedioDias, c.plazoPromedio)}`}>{c.promedioDias}</td>
+                            <td className="py-2 px-3 text-right text-slate-500">{c.plazoPromedio}</td>
+                            <td className="py-2 px-3 text-right font-semibold text-slate-800">{formatCurrency(c.monto)}</td>
+                          </tr>,
+                          ...(abierto ? c.facturas.map((f) => (
+                            <tr key={f.id} className="border-t border-slate-50">
+                              <td className="py-2 px-3 pl-8 font-medium text-slate-700">{f.name}</td>
+                              <td className="py-2 px-3 text-slate-400">{f.vendedor}</td>
+                              <td className="py-2 px-3 text-slate-500">{formatDate(f.emision)}</td>
+                              <td className="py-2 px-3 text-slate-500">{formatDate(f.pagada)}</td>
+                              <td className={`py-2 px-3 text-right font-semibold ${tono(f.dias, f.plazo)}`}>{f.dias}</td>
+                              <td className="py-2 px-3 text-right text-slate-500">{f.plazo}</td>
+                              <td className="py-2 px-3 text-right text-slate-700">{formatCurrency(f.monto)}</td>
+                            </tr>
+                          )) : []),
+                        ];
+                      })
+                    : detalle.facturas.map((f) => (
                     <tr key={f.id} className="border-t border-slate-50">
                       <td className="py-2 px-3 font-medium text-slate-700">{f.name}</td>
                       <td className="py-2 px-3 text-slate-600 max-w-[200px] truncate">{f.cliente}</td>

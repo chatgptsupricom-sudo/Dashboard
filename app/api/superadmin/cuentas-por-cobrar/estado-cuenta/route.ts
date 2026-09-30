@@ -435,7 +435,7 @@ async function excel(
   cabecera.fill = {
     type: "pattern",
     pattern: "solid",
-    fgColor: { argb: "FF741DFE" }, // el morado de Supricom
+    fgColor: { argb: "FF2563EB" }, // azul, igual que el resto de los Excel del panel (lib/excel.ts)
   };
   cabecera.height = 22;
   ws.views = [{ state: "frozen", ySplit: 1 }];
@@ -443,6 +443,12 @@ async function excel(
   // mueve una columna en COLUMNAS hay que mover esto con ella.
   ["D", "E", "F", "H"].forEach((col) => {
     ws.getColumn(col).numFmt = "#,##0.00";
+    // Montos resaltados en azul claro (sin tocar el encabezado).
+    ws.getColumn(col).eachCell((celda, fila) => {
+      if (fila === 1) return;
+      celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+      celda.font = { ...(celda.font || {}), bold: true };
+    });
   });
 
   const buffer = await wb.xlsx.writeBuffer();

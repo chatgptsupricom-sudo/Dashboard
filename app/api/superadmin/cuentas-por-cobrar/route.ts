@@ -5,8 +5,8 @@ import { calcularCEI } from "@/lib/cxc/efectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
-import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
-import { RELACIONADA } from "@/lib/cxc/cobros";
+import { RELACIONADA, obtenerCobros } from "@/lib/cxc/cobros";
+import { esResponsableExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
@@ -181,15 +181,6 @@ export async function GET(request: NextRequest) {
       agingDistribution["91+"] += r.amount_91_plus || 0;
     });
 
-    // Incobrables: la cartera vieja (vencida antes de 2025) que Cartera
-    // Vencida, Recuperación y DSO dejan fuera (lib/cxc/carteraVieja.ts).
-    const viejas = reportInvoices.filter((r: any) => esCarteraVieja(r.date_maturity));
-    const incobrables = {
-      saldo: Math.round(viejas.reduce((s, r: any) => s + (r.amount_residual || 0), 0) * 100) / 100,
-      facturas: viejas.length,
-      clientes: new Set(viejas.map((r: any) => r.partner_id?.[0]).filter(Boolean)).size,
-    };
-
     const carteraVencidaPct = totalReceivable > 0
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
       : null;
@@ -211,10 +202,10 @@ export async function GET(request: NextRequest) {
       });
       return Object.entries(byClient)
         .map(([id, data]) => ({ partnerId: parseInt(id), ...data }))
-        // Solo quien debe (un saldo a favor no es deudor). Total = todo lo que
-        // debe, vencido o no; la columna Vencido muestra la parte ya vencida.
-        .filter((d) => d.total > 0.005)
-        .sort((a, b) => b.total - a.total)
+        // Top de deudores VENCIDOS: solo quien tiene algo vencido, ordenados
+        // por lo vencido. Total sigue mostrando todo lo que debe.
+        .filter((d) => d.overdue > 0.005)
+        .sort((a, b) => b.overdue - a.overdue)
         .slice(0, 10);
     })();
 
@@ -224,6 +215,8 @@ export async function GET(request: NextRequest) {
       reportInvoices.forEach((r: any) => {
         const uid = r.user_id?.[0] || 0;
         if (!uid) return;
+        // Asistentes y quienes no gestionan cobranza no van en esta tabla.
+        if (esResponsableExcluido(r.user_name || r.user_id?.[1], r.company_id?.[0])) return;
         if (!byUser[uid]) {
           byUser[uid] = { name: r.user_name || r.user_id?.[1] || "Sin asignar", total: 0, overdue: 0, count: 0 };
         }
@@ -274,12 +267,15 @@ export async function GET(request: NextRequest) {
     // propio modal de detalle siempre coincidan (antes cada uno calculaba
     // algo distinto con el mismo nombre y el mismo semáforo/meta).
     // ═══════════════════════════════════════════════════════════════════
-    const [recuperacionCalc, sinAplicarGrupo] = await Promise.all([
+    const [recuperacionCalc, cobrosMes, sinAplicarGrupo] = await Promise.all([
       // Recuperación Vencidos: reconstruye el saldo vencido al inicio del mes
       // y lo compara con los pagos conciliados durante el mes. Ver
       // lib/cxc/recuperacion.ts para el detalle del método y por qué no se
       // puede leer directo de `amount_residual` (issue #189).
       calcularRecuperacion(companyIds, monthStart, monthEnd),
+      // Cobrado del mes por vendedor (tabla por responsable): dinero que entró
+      // a banco/caja, misma fuente que "Cobrado" de Contado/Crédito.
+      obtenerCobros(companyIds, { desde: monthStart, hasta: monthEnd < today ? monthEnd : today }),
       // Pagos todavía no aplicados a una factura (anticipos, saldo a favor):
       // restan en el reporte de Odoo pero no son de ninguna factura, así que
       // el Resumen los muestra en su propia fila.
@@ -317,6 +313,19 @@ export async function GET(request: NextRequest) {
     // el contado y la cartera vieja por factura con esas mismas series, así
     // que va después (seriesSemanales.ts → carteraCEI).
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+
+    // Incobrables: la cartera vieja (vencida antes de 2025) que los KPIs dejan
+    // fuera (lib/cxc/carteraVieja.ts), factura por factura con el mismo cálculo
+    // que su modal. El reporte de Odoo metía además pagos sin aplicar viejos.
+    const { viejas } = seriesCxc.saldosEn(today);
+    const clientesViejas = viejas.size
+      ? await callOdooRPC<any[]>("account.move", "read", [[...viejas.keys()]], { fields: ["id", "partner_id"] })
+      : [];
+    const incobrables = {
+      saldo: Math.round([...viejas.values()].reduce((a, b) => a + b, 0) * 100) / 100,
+      facturas: viejas.size,
+      clientes: new Set((clientesViejas || []).map((m: any) => m.partner_id?.[0]).filter(Boolean)).size,
+    };
     // El DSO usa la CxC final y las ventas a crédito del CEI (lib/cxc/dso.ts).
     const [efectividadCalc, dsoCalc] = await Promise.all([
       calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI),
@@ -422,7 +431,26 @@ export async function GET(request: NextRequest) {
           };
         }),
         topDebtors: topDebtorsConDso,
-        bySalesperson,
+        bySalesperson: (() => {
+          const cobrado = new Map<number, { name: string; monto: number }>();
+          for (const c of cobrosMes) {
+            if (c.interno || !c.vendedorId || esResponsableExcluido(c.vendedorName, c.companyId)) continue;
+            const v = cobrado.get(c.vendedorId) || { name: c.vendedorName, monto: 0 };
+            v.monto += c.monto;
+            cobrado.set(c.vendedorId, v);
+          }
+          const filas = bySalesperson.map((sp) => ({
+            ...sp,
+            cobrado: Math.round((cobrado.get(sp.userId)?.monto || 0) * 100) / 100,
+          }));
+          // Quien cobró en el mes pero ya no tiene cartera también aparece.
+          for (const [userId, v] of cobrado) {
+            if (!filas.some((f) => f.userId === userId)) {
+              filas.push({ userId, name: v.name, total: 0, overdue: 0, count: 0, cobrado: Math.round(v.monto * 100) / 100 });
+            }
+          }
+          return filas;
+        })(),
         // Mismas cifras que la tarjeta de Cartera Vencida. Lo que el reporte de
         // Odoo suma aparte va en filas propias; las cuatro partes cuadran con
         // `totalOdoo` (el total del reporte de antigüedad).
