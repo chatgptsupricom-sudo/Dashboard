@@ -7,9 +7,10 @@
 -- pedido sin metodo, y el tipo de entrega del egreso sale de aqui
 -- (lib/ventas/metodoRetiro.ts).
 --
---   metodo  sucursal (retiro en sucursal) | ruta | encomienda
+--   metodo  sucursal (retiro en sucursal) | ruta | encomienda | transporte
 --   ruta_id / ruta_nombre   la ruta de rma_rutas_despacho, si es por ruta
---   agencia                 la agencia, si es encomienda
+--   agencia                 la agencia, si es encomienda; la compania, si es
+--                           transporte externo (la descripcion va en nota)
 --
 -- La app crea la tabla sola la primera vez (CREATE TABLE IF NOT EXISTS);
 -- este script es para crearla a mano en el phpMyAdmin de EasyPanel.

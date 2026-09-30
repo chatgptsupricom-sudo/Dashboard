@@ -4,16 +4,25 @@ import type { TipoEntrega } from "@/lib/seguridad/egresoFlujo";
  * Tipos y etiquetas del método de retiro de un pedido, sin dependencias de
  * servidor: los usan las pantallas y lib/ventas/metodoRetiro.ts.
  */
-export const METODOS_RETIRO = ["sucursal", "ruta", "encomienda"] as const;
+/**
+ * transporte: transporte externo que manda el cliente (su propio flete o una
+ * empresa que contrata). Va con la empresa (en `agencia`) y una descripción
+ * opcional (en `nota`).
+ */
+export const METODOS_RETIRO = ["sucursal", "ruta", "encomienda", "transporte"] as const;
 export type MetodoRetiro = (typeof METODOS_RETIRO)[number];
 
 export function esMetodoRetiro(v: unknown): v is MetodoRetiro {
   return typeof v === "string" && (METODOS_RETIRO as readonly string[]).includes(v);
 }
 
-/** El tipo de entrega del egreso (lib/seguridad/egresoFlujo) que le corresponde. */
+/**
+ * El tipo de entrega del egreso (lib/seguridad/egresoFlujo) que le corresponde.
+ * El transporte externo retira en la sucursal como el cliente: "puerta" (sin
+ * vehículo propio ni empaquetado).
+ */
 export function tipoEntregaDeMetodo(m: MetodoRetiro): TipoEntrega {
-  return m === "sucursal" ? "puerta" : m;
+  return m === "sucursal" || m === "transporte" ? "puerta" : m;
 }
 
 export type FilaMetodo = {
@@ -162,5 +171,6 @@ export function describirMetodo(m: Pick<FilaMetodo, "metodo" | "ruta_nombre" | "
     return `Ruta${m.ruta_nombre ? ` · ${m.ruta_nombre}` : ""}${flete}`;
   }
   if (m.metodo === "encomienda") return `Encomienda${m.agencia ? ` · ${m.agencia}` : ""}`;
+  if (m.metodo === "transporte") return `Transporte externo${m.agencia ? ` · ${m.agencia}` : ""}`;
   return "Retiro en sucursal";
 }

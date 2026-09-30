@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** PUT: { sale_id, metodo: sucursal|ruta|encomienda, ruta_id?, agencia?, nota? } */
+/** PUT: { sale_id, metodo: sucursal|ruta|encomienda|transporte, ruta_id?, agencia?, nota? } */
 export async function PUT(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
