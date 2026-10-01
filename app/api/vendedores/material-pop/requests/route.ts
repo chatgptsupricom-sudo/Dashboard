@@ -52,13 +52,16 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const cids = cidsDe(auth.payload);
-    const clientId = Number(body?.clientId);
-    if (!Number.isInteger(clientId) || clientId <= 0) {
+    // Uso interno: material para la oficina o para quien lo pide, sin cliente
+    // ni orden de venta.
+    const usoInterno = body?.usoInterno === true;
+    const clientId = usoInterno ? null : Number(body?.clientId);
+    if (clientId !== null && (!Number.isInteger(clientId) || clientId <= 0)) {
       return NextResponse.json({ error: "Selecciona un cliente de Odoo" }, { status: 400 });
     }
 
     const condicion = body?.deliveryCondition === "al_comprar" ? "al_comprar" : "inmediata";
-    const ordenNombre = String(body?.odooOrderName || "").trim() || null;
+    const ordenNombre = usoInterno ? null : String(body?.odooOrderName || "").trim() || null;
 
     // La orden se valida contra Odoo: que exista, que sea de la sede y que sea
     // del mismo cliente. Si no, la referencia no sirve para nada cuando el

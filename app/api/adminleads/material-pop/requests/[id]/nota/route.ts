@@ -50,18 +50,28 @@ export async function GET(
     }
     if (origen !== "office" && origen !== "warehouse") origen = "warehouse";
 
+    // Uso interno sale como una salida de uso interno: destino = para qué es,
+    // y lo recibe quien lo pidió.
+    const interno = solicitud.usoInterno;
     const html = notaEntregaHtml({
       codigo: solicitud.code,
+      tipoSalida: interno ? "uso_interno" : "cliente",
+      destino: interno ? solicitud.notes : null,
+      entregadoA: interno ? solicitud.sellerName : null,
       cliente: solicitud.clientName,
       vendedor: solicitud.sellerName,
       autorizadoPor: solicitud.reviewedByName || "",
       fecha: solicitud.reviewedAt,
       ordenOdoo: solicitud.odooOrderName,
-      condicion:
-        solicitud.deliveryCondition === "al_comprar"
+      condicion: interno
+        ? null
+        : solicitud.deliveryCondition === "al_comprar"
           ? "Contra la compra del cliente"
           : "Entrega inmediata",
-      observaciones: [solicitud.notes, solicitud.reviewNotes].filter(Boolean).join(" · ") || null,
+      observaciones: (interno
+        ? [solicitud.reviewNotes]
+        : [solicitud.notes, solicitud.reviewNotes]
+      ).filter(Boolean).join(" · ") || null,
       // Solo lo aprobado: lo pedido de más no sale del almacén.
       items: solicitud.items
         .filter((it) => (it.approvedQuantity ?? 0) > 0)
