@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, PackagePlus, Send } from "lucide-react";
+import { AlertTriangle, Building2, Loader2, PackagePlus, Send, UserRound } from "lucide-react";
 import {
   MovementLines,
   lineaVacia,
@@ -77,6 +77,8 @@ export function SellerPopPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
+  // Para un cliente de Odoo o de uso interno (la oficina, quien lo pide).
+  const [destino, setDestino] = useState<"cliente" | "interno">("cliente");
   const [client, setClient] = useState<any>(null);
   const [condicion, setCondicion] = useState<"inmediata" | "al_comprar">("inmediata");
   const [orden, setOrden] = useState("");
@@ -137,11 +139,16 @@ export function SellerPopPage() {
       setFormError("Cantidad inválida");
       return;
     }
-    if (!client) {
+    const interno = destino === "interno";
+    if (interno && !notes.trim()) {
+      setFormError("Indica para qué es el material");
+      return;
+    }
+    if (!interno && !client) {
       setFormError("Selecciona el cliente que recibe el material");
       return;
     }
-    if (condicion === "al_comprar" && !orden.trim()) {
+    if (!interno && condicion === "al_comprar" && !orden.trim()) {
       setFormError("Indica la orden de Odoo: el material se entrega contra la compra");
       return;
     }
@@ -151,14 +158,18 @@ export function SellerPopPage() {
       const res = await fetch("/api/vendedores/material-pop/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          clientId: client.id,
-          clientName: client.name,
-          deliveryCondition: condicion,
-          odooOrderName: orden.trim() || null,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify(
+          interno
+            ? { items, usoInterno: true, notes: notes.trim() }
+            : {
+                items,
+                clientId: client.id,
+                clientName: client.name,
+                deliveryCondition: condicion,
+                odooOrderName: orden.trim() || null,
+                notes: notes.trim() || null,
+              },
+        ),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -174,6 +185,7 @@ export function SellerPopPage() {
       setOrden("");
       setNotes("");
       setCondicion("inmediata");
+      setDestino("cliente");
       await cargar();
     } catch (e: any) {
       setFormError(e.message || "Error de conexión");
@@ -202,7 +214,7 @@ export function SellerPopPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Material POP</h1>
         <p className="text-sm text-slate-500">
-          Solicita material publicitario para tus clientes · lo aprueba AdminLeads
+          Solicita material publicitario para tus clientes o para uso interno · lo aprueba AdminLeads
         </p>
       </div>
 
@@ -229,78 +241,118 @@ export function SellerPopPage() {
             <MovementLines products={products} lines={lines} onChange={setLines} />
 
             <div>
-              <Label>Cliente que recibe el material</Label>
-              <div className="mt-1.5">
-                <OdooClientSelect value={client} onChange={setClient} />
-              </div>
-            </div>
-
-            <div>
-              <Label>¿Cuándo se entrega?</Label>
+              <Label>¿Para quién es?</Label>
               <div className="mt-1.5 grid grid-cols-2 gap-2">
                 {(
                   [
-                    ["inmediata", "De una vez"],
-                    ["al_comprar", "Cuando compre"],
+                    ["cliente", "Para un cliente", UserRound],
+                    ["interno", "Uso interno", Building2],
                   ] as const
-                ).map(([valor, etiqueta]) => (
+                ).map(([valor, etiqueta, Icono]) => (
                   <button
                     key={valor}
                     type="button"
-                    onClick={() => setCondicion(valor)}
+                    onClick={() => setDestino(valor)}
                     className={cn(
-                      "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-                      condicion === valor
+                      "flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
+                      destino === valor
                         ? "border-violet-300 bg-violet-50 text-violet-700"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                     )}
                   >
+                    <Icono className="h-4 w-4" />
                     {etiqueta}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div>
-              <Label>
-                Orden en Odoo {condicion === "al_comprar" ? "(obligatoria)" : "(opcional)"}
-              </Label>
-              {ordenes.length > 0 && (
-                <select
-                  value={ordenes.some((o) => o.name === orden) ? orden : ""}
-                  onChange={(e) => setOrden(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                >
-                  <option value="">Elegir una de mis órdenes…</option>
-                  {ordenes.map((o) => (
-                    <option key={o.id} value={o.name}>
-                      {o.name} · {o.estado} · $ {o.total.toLocaleString("es-VE")} ·{" "}
-                      {fmtFecha(o.fecha)}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <Input
-                value={orden}
-                onChange={(e) => setOrden(e.target.value)}
-                placeholder="Ej: S-05457"
-                className="mt-1.5"
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                {client
-                  ? "Se valida contra Odoo: tiene que existir y ser de este cliente."
-                  : "Elige primero el cliente para ver tus órdenes."}
-              </p>
-            </div>
+            {destino === "cliente" && (
+              <>
+                <div>
+                  <Label>Cliente que recibe el material</Label>
+                  <div className="mt-1.5">
+                    <OdooClientSelect value={client} onChange={setClient} />
+                  </div>
+                </div>
+
+                <div>
+                  <Label>¿Cuándo se entrega?</Label>
+                  <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ["inmediata", "De una vez"],
+                        ["al_comprar", "Cuando compre"],
+                      ] as const
+                    ).map(([valor, etiqueta]) => (
+                      <button
+                        key={valor}
+                        type="button"
+                        onClick={() => setCondicion(valor)}
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
+                          condicion === valor
+                            ? "border-violet-300 bg-violet-50 text-violet-700"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                        )}
+                      >
+                        {etiqueta}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label>
+                    Orden en Odoo {condicion === "al_comprar" ? "(obligatoria)" : "(opcional)"}
+                  </Label>
+                  {ordenes.length > 0 && (
+                    <select
+                      value={ordenes.some((o) => o.name === orden) ? orden : ""}
+                      onChange={(e) => setOrden(e.target.value)}
+                      className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                    >
+                      <option value="">Elegir una de mis órdenes…</option>
+                      {ordenes.map((o) => (
+                        <option key={o.id} value={o.name}>
+                          {o.name} · {o.estado} · $ {o.total.toLocaleString("es-VE")} ·{" "}
+                          {fmtFecha(o.fecha)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <Input
+                    value={orden}
+                    onChange={(e) => setOrden(e.target.value)}
+                    placeholder="Ej: S-05457"
+                    className="mt-1.5"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    {client
+                      ? "Se valida contra Odoo: tiene que existir y ser de este cliente."
+                      : "Elige primero el cliente para ver tus órdenes."}
+                  </p>
+                </div>
+              </>
+            )}
 
             <div>
-              <Label>Notas</Label>
+              <Label>{destino === "interno" ? "¿Para qué es? (obligatorio)" : "Notas"}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Para qué es, cuándo lo necesitas…"
+                placeholder={
+                  destino === "interno"
+                    ? "Ej: gorra para usar en la visita a clientes de Canon"
+                    : "Para qué es, cuándo lo necesitas…"
+                }
                 className="mt-1.5"
               />
+              {destino === "interno" && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Se entrega a tu nombre: lo firmas tú en la nota de entrega.
+                </p>
+              )}
             </div>
 
             {formError && (

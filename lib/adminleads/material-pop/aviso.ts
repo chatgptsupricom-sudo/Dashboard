@@ -65,8 +65,11 @@ async function procesarAviso(
         codigo: solicitud.code,
         vendedor: solicitud.sellerName,
         cliente: solicitud.clientName,
-        condicion:
-          solicitud.deliveryCondition === "al_comprar"
+        // Sin cliente: el correo dice "para uso interno" en vez del cliente.
+        uso_interno: solicitud.usoInterno,
+        condicion: solicitud.usoInterno
+          ? null
+          : solicitud.deliveryCondition === "al_comprar"
             ? "Contra la compra del cliente"
             : "Entrega inmediata",
         orden_odoo: solicitud.odooOrderName,

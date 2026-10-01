@@ -1,6 +1,7 @@
 import { query, getConnection } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { cambiarStock, leerStock } from "@/lib/adminleads/material-pop/stock";
+import { hayColumnaRecipiente } from "@/lib/adminleads/material-pop/columnas";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -8,6 +9,10 @@ import { randomUUID } from "node:crypto";
  *
  * Flujo: el vendedor crea la solicitud (pendiente), el adminLeads la aprueba
  * —pudiendo recortar cantidades— o la rechaza, y más tarde la marca entregada.
+ *
+ * Una solicitud es para un cliente de Odoo o de USO INTERNO (material para la
+ * oficina o para quien la pide). Uso interno = `client_id` NULL: no hace falta
+ * columna nueva, y todas las solicitudes anteriores tienen cliente.
  *
  * Aprobar RESERVA, no descuenta. La reserva no se guarda: es la suma de
  * `approved_quantity` de las solicitudes en estado 'aprobada'. Así no hay dos
@@ -42,6 +47,9 @@ export interface SolicitudItem {
   reservadoOtras: number;
 }
 
+/** Lo que se guarda como cliente en una solicitud de uso interno. */
+export const NOMBRE_USO_INTERNO = "Uso interno";
+
 export interface Solicitud {
   id: number;
   code: string;
@@ -49,6 +57,8 @@ export interface Solicitud {
   sellerName: string;
   clientId: number | null;
   clientName: string;
+  /** Sin cliente: material para la oficina o para quien lo pide. */
+  usoInterno: boolean;
   deliveryCondition: "inmediata" | "al_comprar";
   odooOrderName: string | null;
   status: EstadoSolicitud;
@@ -190,7 +200,8 @@ export async function listarSolicitudes(opts: {
     sellerUserId: r.seller_user_id == null ? null : Number(r.seller_user_id),
     sellerName: r.seller_name || "",
     clientId: r.client_id == null ? null : Number(r.client_id),
-    clientName: r.client_name || "",
+    clientName: r.client_id == null ? r.client_name || NOMBRE_USO_INTERNO : r.client_name || "",
+    usoInterno: r.client_id == null,
     deliveryCondition: r.delivery_condition,
     odooOrderName: r.odoo_order_name || null,
     status: r.status,
@@ -219,7 +230,8 @@ export async function crearSolicitud(opts: {
   sellerUserId: number | null;
   sellerName: string;
   sellerOdooId: number | null;
-  clientId: number;
+  /** `null` = uso interno. */
+  clientId: number | null;
   clientName: string;
   deliveryCondition: "inmediata" | "al_comprar";
   odooOrderName: string | null;
@@ -233,7 +245,11 @@ export async function crearSolicitud(opts: {
   if (new Set(opts.items.map((it) => it.productId)).size !== opts.items.length) {
     throw new ErrorSolicitud("Hay un producto repetido en la solicitud");
   }
-  if (opts.deliveryCondition === "al_comprar" && !opts.odooOrderName) {
+  const usoInterno = opts.clientId === null;
+  if (usoInterno && !opts.notes) {
+    throw new ErrorSolicitud("Indica para qué es el material de uso interno");
+  }
+  if (!usoInterno && opts.deliveryCondition === "al_comprar" && !opts.odooOrderName) {
     throw new ErrorSolicitud("Indica la orden de Odoo: el material se entrega contra la compra");
   }
 
@@ -252,9 +268,10 @@ export async function crearSolicitud(opts: {
         opts.sellerName.slice(0, 255),
         opts.sellerOdooId,
         opts.clientId,
-        opts.clientName.slice(0, 255),
-        opts.deliveryCondition,
-        opts.odooOrderName ? opts.odooOrderName.slice(0, 50) : null,
+        usoInterno ? NOMBRE_USO_INTERNO : opts.clientName.slice(0, 255),
+        // Sin cliente no hay compra contra la cual entregar ni orden de venta.
+        usoInterno ? "inmediata" : opts.deliveryCondition,
+        !usoInterno && opts.odooOrderName ? opts.odooOrderName.slice(0, 50) : null,
         opts.notes,
         opts.cids,
       ],
@@ -422,6 +439,12 @@ export async function entregarSolicitud(opts: {
   const hoy = new Date();
   const movementDate = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
   const movementGroupId = randomUUID();
+  // Uso interno sale como una salida de uso interno cualquiera: destino = para
+  // qué es, y lo recibe quien lo pidió (su nombre sale en la nota de entrega).
+  const conRecipiente = solicitud.usoInterno && (await hayColumnaRecipiente());
+  const destino = solicitud.usoInterno
+    ? `Solicitud ${solicitud.code}${solicitud.notes ? ` · ${solicitud.notes}` : ""}`.slice(0, 255)
+    : null;
 
   let conn: any;
   try {
@@ -447,23 +470,26 @@ export async function entregarSolicitud(opts: {
       await conn.execute(
         `INSERT INTO pop_movements
           (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
-           client_id, client_name, client_cids, created_by_user_id, created_by_name,
-           cids, movement_date, notes)
-         VALUES (?, 'exit', ?, ?, ?, 'cliente', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           client_id, client_name, client_cids, destination, created_by_user_id, created_by_name,
+           cids, movement_date, notes${conRecipiente ? ", recipient_name" : ""})
+         VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${conRecipiente ? ", ?" : ""})`,
         [
           movementGroupId,
           item.productId,
           opts.location,
           cantidad,
+          solicitud.usoInterno ? "uso_interno" : "cliente",
           `Solicitud ${solicitud.code}`,
           solicitud.clientId,
-          solicitud.clientName,
+          solicitud.usoInterno ? null : solicitud.clientName,
           null,
+          destino,
           opts.revisorId,
           opts.revisorNombre.slice(0, 255),
           opts.cids ?? 9,
           movementDate,
           `Entrega de la solicitud ${solicitud.code} · vendedor ${solicitud.sellerName}`,
+          ...(conRecipiente ? [solicitud.sellerName.slice(0, 255)] : []),
         ],
       );
     }
