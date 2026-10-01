@@ -34,6 +34,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { DateRange } from "react-day-picker";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
+import { fechaDeInput, rangoInicialMapa } from "@/lib/mapaClientes/fechas";
 
 const COMPANY_NAMES: Record<number, string> = {
   9: "Valencia",
@@ -80,10 +81,7 @@ export default function MapsClientsPage() {
   const [isTotalHistory, setIsTotalHistory] = useState(false);
 
   // Estado del calendario
-  const [date, setDate] = useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date(),
-  });
+  const [date, setDate] = useState<DateRange | undefined>(rangoInicialMapa);
 
   const PRIMARY_BLUE = "#2563eb";
 
@@ -112,7 +110,7 @@ export default function MapsClientsPage() {
         setData(d.summary || []);
         setAvailableSellers(d.sellers || []);
         // Auto-detect country based on company
-        if (d.company_id && COMPANY_TO_COUNTRY[d.company_id]) {
+        if (d.country_locked && COMPANY_TO_COUNTRY[d.company_id]) {
           setCurrentCountry(COMPANY_TO_COUNTRY[d.company_id]);
           setUserCompanyId(d.company_id);
           setIsCountryLocked(true);
@@ -213,7 +211,7 @@ export default function MapsClientsPage() {
               className="text-xs font-bold text-slate-600 border-none focus:ring-0 bg-transparent cursor-pointer"
               value={format(date?.from || new Date(), "yyyy-MM-dd")}
               onChange={(e) =>
-                setDate((prev) => ({ ...prev, from: new Date(e.target.value) }))
+                setDate((prev) => ({ from: fechaDeInput(e.target.value), to: prev?.to }))
               }
               disabled={isTotalHistory}
             />
@@ -223,7 +221,7 @@ export default function MapsClientsPage() {
               className="text-xs font-bold text-slate-600 border-none focus:ring-0 bg-transparent cursor-pointer"
               value={format(date?.to || new Date(), "yyyy-MM-dd")}
               onChange={(e) =>
-                setDate((prev) => ({ ...prev, to: new Date(e.target.value) }))
+                setDate((prev) => ({ from: prev?.from, to: fechaDeInput(e.target.value) }))
               }
               disabled={isTotalHistory}
             />
