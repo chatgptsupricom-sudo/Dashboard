@@ -11,6 +11,8 @@ import {
   revertirEntrega,
   revisarSolicitud,
 } from "@/lib/adminleads/material-pop/requests";
+import { avisarSolicitud } from "@/lib/adminleads/material-pop/aviso";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +75,11 @@ export async function PATCH(
         revisorId,
         revisorNombre,
       });
+      // Correo al vendedor, con copia a almacén y a Gabriel Camacho.
+      avisarSolicitud("entregada", solicitudId, cids, getPublicOrigin(request), {
+        ubicacion: String(body?.location || "office"),
+        entregadoPor: revisorNombre,
+      });
       return NextResponse.json({ success: true, ...salida });
     }
 
@@ -104,6 +111,11 @@ export async function PATCH(
         revisorId,
         revisorNombre,
       });
+      // Al aprobar, correo al vendedor con copia a Gabriel Camacho. El
+      // rechazo no avisa por ahora: el vendedor lo ve en su lista.
+      if (body.action === "aprobar") {
+        avisarSolicitud("aprobada", solicitudId, cids, getPublicOrigin(request));
+      }
       return NextResponse.json({ success: true });
     }
 
