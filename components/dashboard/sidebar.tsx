@@ -332,6 +332,7 @@ export function Sidebar({
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
+    { id: "frecuencia_cpm", label: "Frecuencia CPM", icon: Calendar, slug: "/plan-contenido/frecuencia" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
     // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
     // fecha y productos.
@@ -1499,6 +1500,7 @@ export function Sidebar({
                     >
                       {[
                         { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Frecuencia CPM", href: `${basePath}/plan-contenido/frecuencia` },
                         { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
                         { label: "KPI de Diseños", href: `${basePath}/disenos` },
                         // Material POP vive en /adminleads (no hay copia bajo

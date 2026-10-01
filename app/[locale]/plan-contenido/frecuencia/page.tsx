@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { getLocale } from "next-intl/server";
 import { headers } from "next/headers";
 import { jwtVerify } from "jose";
-import { FrecuenciaPanel } from "@/components/plan-contenido/frecuencia-panel";
+import FrecuenciaPanel from "@/components/plan-contenido/frecuencia-panel";
 
 async function getUserRole(): Promise<string | null> {
   try {
@@ -30,7 +30,6 @@ export default async function FrecuenciaPage() {
   const locale = await getLocale();
   const role = await getUserRole();
 
-  // Solo marketing y superadmin
   if (!role || !["marketing", "superadmin"].includes(role.toLowerCase())) {
     redirect(`/${locale}/plan-contenido`);
   }

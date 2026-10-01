@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SUPRICOM — Frecuencia CPM</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--blue:#1565C0;--blue2:#1976D2;--blue-l:#E3F2FD;--blue-m:#BBDEFB;--blue-d:#0D47A1;--green:#2E7D32;--green-l:#E8F5E9;--orange:#EF6C00;--orange-l:#FFF3E0;--gray:#546E7A;--gray-l:#ECEFF1;--purple:#7B1FA2;--purple-l:#F3E5F5;--red:#C62828;--red-l:#FFEBEE;--yellow:#F9A825;--yellow-l:#FFF9C4;--bg:#f0f4f8;--card:#fff;--card2:#f5f8fb;--text:#1a237e;--text2:#546e7a;--text3:#90a4ae;--border:#dde3ea;--border2:#c5ced8}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.5}
+.app{max-width:1400px;margin:0 auto;padding:16px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--blue);border-radius:12px;margin-bottom:16px;color:#fff}
+.header-left{display:flex;align-items:center;gap:12px}
+.logo{width:40px;height:40px;background:#fff;color:var(--blue);border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px}
+.header h1{font-size:16px;font-weight:700;color:#fff}.header h1 span{color:#bbdefb}
+.header-sub{font-size:11px;color:#bbdefb}
+.section{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.section-header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);transition:background .15s}
+.section-header:hover{background:var(--card2)}
+.section-header h2{font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px;color:var(--text)}
+.section-num{width:24px;height:24px;background:var(--blue);color:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+.section-body{padding:18px}.section-body.hidden{display:none}
+.arrow{transition:transform .2s;color:var(--text2);font-size:11px}.arrow.open{transform:rotate(180deg)}
+label{display:block;font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500}
+input,select,textarea{background:#fff;border:1px solid var(--border2);border-radius:7px;color:var(--text);padding:8px 10px;font-size:13px;font-family:inherit;outline:none;transition:border-color .15s;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(21,101,192,.1)}
+input[type=number]{width:60px;text-align:center}
+textarea{resize:vertical;min-height:80px;font-family:'Cascadia Code',Consolas,monospace;font-size:11px;line-height:1.5}
+.row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}.row>*{flex:1;min-width:100px}
+.btn{padding:8px 16px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--blue2)}
+.btn-blue{background:var(--blue2);color:#fff}.btn-blue:hover{background:var(--blue)}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover{background:#1B5E20}
+.btn-purple{background:var(--purple);color:#fff}.btn-purple:hover{background:#6A1B9A}
+.btn-outline{background:#fff;border:1px solid var(--border2);color:var(--text2)}.btn-outline:hover{border-color:var(--blue);color:var(--blue)}
+.btn-danger{background:var(--red-l);color:var(--red);border:1px solid #ffcdd2}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px}
+.stat{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.stat-value{font-size:18px;font-weight:800;color:var(--blue)}.stat-label{font-size:10px;color:var(--text2);margin-top:1px}
+.stat.warn .stat-value{color:var(--orange)}.stat.error .stat-value{color:var(--red)}.stat.ok .stat-value{color:var(--green)}
+.cpm-table{width:100%;border-collapse:collapse;margin-top:8px}
+.cpm-table th{background:var(--blue-l);padding:8px;text-align:left;font-size:10px;color:var(--blue-d);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--blue-m);font-weight:700}
+.cpm-table td{padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px}.cpm-table tr:hover{background:var(--blue-l)}
+.cpm-table input{width:55px;text-align:center}.cpm-name-input{width:100%!important;text-align:left!important}
+.total-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;border-radius:5px;font-weight:700;font-size:12px;padding:0 6px}.total-badge.ok{background:var(--green-l);color:var(--green)}
+.cal-legend{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}.cal-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);font-weight:500}.cal-legend-dot{width:11px;height:11px;border-radius:3px}
+.cal-grid{display:flex;flex-direction:column;gap:5px}.cal-week{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.cal-day-header{font-size:11px;color:var(--blue-d);text-align:center;padding:7px;font-weight:700;text-transform:uppercase;letter-spacing:1px;background:var(--blue-l);border-radius:7px}
+.cal-day{background:#fff;border:2px solid var(--border);border-radius:9px;padding:8px;min-height:100px;cursor:pointer;transition:all .15s;position:relative}
+.cal-day:hover{border-color:var(--blue);box-shadow:0 2px 6px rgba(21,101,192,.12)}.cal-day.empty{background:#fafbfc;border-color:#eef1f4;cursor:default;min-height:100px}
+.cal-day.holiday{border-color:var(--red);background:var(--red-l)}
+.cal-day.drag-over{border-color:var(--green)!important;background:var(--green-l)!important;box-shadow:0 0 12px rgba(46,125,50,.3)}
+.cal-day .day-num{font-size:16px;font-weight:800;color:var(--text);margin-bottom:1px}.cal-day .day-name{font-size:9px;color:var(--text3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.cal-day.holiday .day-name{color:var(--red)}.cal-day.holiday .day-num{color:var(--red)}
+.holiday-tag{font-size:8px;background:var(--red);color:#fff;padding:2px 7px;border-radius:8px;display:inline-block;margin-bottom:3px;font-weight:700;letter-spacing:.5px}
+.cal-pieces{display:flex;flex-direction:column;gap:4px}
+.cal-piece{padding:5px 7px;border-radius:6px;font-size:10px;cursor:grab;transition:all .12s;display:flex;flex-direction:column;gap:1px;border:1px solid transparent}
+.cal-piece:active{cursor:grabbing;opacity:.7;transform:scale(.95)}
+.cal-piece:hover{filter:brightness(.93);transform:translateY(-1px)}.cal-piece .cpm-tag{font-weight:700;font-size:10px}.cal-piece .fmt-tag{font-size:8px;opacity:.75;font-weight:500}.cal-piece .topic-tag{font-size:8px;font-style:italic;opacity:.7;margin-top:2px}
+.cal-piece.supri{background:#E3F2FD;border-left:3px solid #1565C0;color:#0D47A1}
+.cal-piece.persona{background:#E8F5E9;border-left:3px solid #2E7D32;color:#1B5E20}
+.cal-piece.carrusel{background:#FFF3E0;border-left:3px solid #EF6C00;color:#E65100}
+.cal-piece.post{background:#ECEFF1;border-left:3px solid #546E7A;color:#37474F}
+.cal-piece.saved{background:#FFF9C4;border-left:3px solid #F9A825;color:#F57F17;border:2px dashed #F9A825}
+.empty-slot{border:2px dashed var(--border2);border-radius:6px;padding:4px 7px;font-size:9px;color:var(--text3);text-align:center;cursor:pointer;transition:all .15s;font-weight:500}
+.empty-slot:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-l)}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:#fff;border-radius:14px;padding:24px;width:94%;max-width:700px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto;position:relative}
+.modal h3{font-size:16px;margin-bottom:16px}
+.modal-close{position:absolute;top:12px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)}
+.val-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px}
+.val-item{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:7px;font-size:11px;font-weight:500}
+.val-item.pass{background:var(--green-l);color:var(--green);border:1px solid #c8e6c9}.val-item.fail{background:var(--red-l);color:var(--red);border:1px solid #ffcdd2}
+.val-icon{font-size:13px;font-weight:800}
+.topic-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;transition:all .15s}
+.topic-item:hover{border-color:var(--purple);background:var(--purple-l)}
+.topic-item .fmt-badge{font-size:9px;padding:1px 6px;border-radius:10px;font-weight:600}
+.topic-item .fmt-badge.supri{background:var(--blue-l);color:var(--blue-d)}.topic-item .fmt-badge.persona{background:var(--green-l);color:var(--green)}.topic-item .fmt-badge.carrusel{background:var(--orange-l);color:var(--orange)}.topic-item .fmt-badge.post{background:var(--gray-l);color:var(--gray)}.topic-item .fmt-badge.saved{background:var(--yellow-l);color:#F57F17}
+.flow-steps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.flow-step{flex:1;min-width:120px;background:var(--card2);border:2px solid var(--border);border-radius:8px;padding:8px 12px;text-align:center;transition:all .2s}
+.flow-step.active{border-color:var(--blue);background:var(--blue-l)}.flow-step.done{border-color:var(--green);background:var(--green-l)}
+.flow-step .step-num{font-size:14px;font-weight:800;color:var(--blue)}.flow-step.done .step-num{color:var(--green)}.flow-step .step-label{font-size:9px;color:var(--text2);font-weight:600;margin-top:2px}
+.drag-hint{font-size:11px;color:var(--text3);margin-bottom:8px;padding:6px 10px;background:var(--blue-l);border-radius:6px;border:1px solid var(--blue-m)}
+.saved-content-item{display:flex;align-items:center;gap:8px;background:var(--yellow-l);border:1px dashed var(--yellow);border-radius:7px;padding:8px 12px;margin-bottom:6px}
+.saved-content-item .name{font-weight:700;font-size:12px;color:#F57F17;min-width:100px}
+.saved-content-item .date-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:var(--blue-l);color:var(--blue-d)}
+.saved-content-item .fmt{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.saved-content-item .just{font-size:11px;color:var(--text2);flex:1;font-style:italic}
+.odoo-product{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card2);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;transition:all .15s}
+.odoo-product:hover{border-color:var(--blue)}
+.odoo-product.selected{border-color:var(--green);background:var(--green-l)}
+.odoo-product input[type=checkbox]{width:auto}
+.odoo-product .p-name{flex:1;font-size:12px;font-weight:500}
+.odoo-product .p-stock{font-size:11px;font-weight:700;color:var(--green);min-width:60px;text-align:right}
+.odoo-product .p-price{font-size:11px;color:var(--text2);min-width:60px;text-align:right}
+.cpm-list-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--card2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px}
+.cpm-list-item .name{font-weight:700;font-size:13px;min-width:120px}
+.cpm-list-item .type{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.cpm-list-item .type.categoria{background:var(--blue-l);color:var(--blue-d)}
+.cpm-list-item .type.producto{background:var(--orange-l);color:var(--orange)}
+.cpm-list-item .type.marca{background:var(--green-l);color:var(--green)}
+.cpm-list-item .type.empresa{background:var(--purple-l);color:var(--purple)}
+.cpm-list-item .stock{font-size:11px;color:var(--text2);flex:1}
+.week-pattern{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px}.week-pattern h4{font-size:12px;color:var(--blue);margin-bottom:8px;font-weight:700}
+.week-pattern-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.week-pattern-day{text-align:center;padding:8px 4px;border-radius:6px;font-size:11px;font-weight:600}
+.week-pattern-day.mon{background:#E3F2FD;color:#0D47A1}.week-pattern-day.tue{background:#FFF3E0;color:#E65100}.week-pattern-day.wed{background:#E3F2FD;color:#0D47A1}.week-pattern-day.thu{background:#FFF3E0;color:#E65100}.week-pattern-day.fri{background:#E8F5E9;color:#1B5E20}
+.week-pattern-day .day-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}.week-pattern-day .day-content{font-size:10px;line-height:1.4}
+.saved-list{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.saved-item{display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:8px 12px}
+.saved-item .info{flex:1;font-size:12px}.saved-item .date{font-size:10px;color:var(--text3)}
+.toast{position:fixed;top:16px;right:16px;z-index:2000;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.15);display:flex;align-items:center;gap:8px}
+.toast.ok{background:#E8F5E9;color:#1B5E20;border:1px solid #c8e6c9}
+.toast.err{background:#FFEBEE;color:#B71C1C;border:1px solid #ffcdd2}
+@media(max-width:768px){.cal-week{grid-template-columns:1fr}.cal-day,.cal-day.empty{min-height:auto}.row{flex-direction:column}.header{flex-direction:column;gap:8px}.flow-steps{flex-direction:column}.week-pattern-grid{grid-template-columns:1fr}.modal{width:98%}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="header">
+<div class="header-left"><div class="logo">SC</div><div><h1>SUPRICOM — <span>Frecuencia CPM</span></h1><div class="header-sub">Planificación mensual de contenido B2B</div></div></div>
+<div class="btn-group" style="margin:0">
+<button class="btn btn-outline btn-sm" onclick="saveToServer()">💾 Guardar</button>
+<button class="btn btn-primary btn-sm" onclick="exportInventoryExcel()">📋 Exportar Inventario</button>
+<button class="btn btn-green btn-sm" onclick="exportCalendarExcel()">📅 Exportar Calendario</button>
+</div>
+</div>
+
+<div class="flow-steps" id="flowSteps">
+<div class="flow-step active" id="fs1"><div class="step-num">1</div><div class="step-label">Configurar mes</div></div>
+<div class="flow-step" id="fs2"><div class="step-num">2</div><div class="step-label">Crear CPMs</div></div>
+<div class="flow-step" id="fs3"><div class="step-num">3</div><div class="step-label">Frecuencia</div></div>
+<div class="flow-step" id="fs4"><div class="step-num">4</div><div class="step-label">Distribución</div></div>
+<div class="flow-step" id="fs5"><div class="step-num">5</div><div class="step-label">Temas</div></div>
+</div>
+
+<!-- 1. CONFIGURACIÓN -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">1</span> Configuración del Mes</h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div class="row">
+<div style="max-width:180px"><label>Mes</label><select id="month" onchange="updateMonth()"><option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10" selected>Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+<div style="max-width:100px"><label>Año</label><input type="number" id="year" value="2026" onchange="updateMonth()"></div>
+<div style="max-width:170px"><label>Feriado — Fecha</label><input type="date" id="holDate"></div>
+<div style="max-width:200px"><label>Feriado — Nombre</label><input type="text" id="holName" placeholder="Ej: Resistencia Indígena"></div>
+<div style="max-width:170px"><label>&nbsp;</label><div style="display:flex;gap:5px;align-items:center"><button class="btn btn-blue btn-sm" onclick="addHoliday()">+ Agregar</button><label style="margin:0;display:flex;align-items:center;gap:3px;font-size:10px;white-space:nowrap"><input type="checkbox" id="holProg" style="width:auto"> Con contenido</label></div></div>
+</div>
+<div id="holList"></div>
+<div class="stats" id="monthStats"></div>
+<div class="week-pattern"><h4>📅 Estructura semanal fija</h4><div class="week-pattern-grid">
+<div class="week-pattern-day mon"><div class="day-label">Lunes</div><div class="day-content">🎬 Supri<br>🖼 Carrusel</div></div>
+<div class="week-pattern-day tue"><div class="day-label">Martes</div><div class="day-content">🖼 Carrusel<br>📝 Post</div></div>
+<div class="week-pattern-day wed"><div class="day-label">Miércoles</div><div class="day-content">🎬 Supri<br>🖼 Carrusel</div></div>
+<div class="week-pattern-day thu"><div class="day-label">Jueves</div><div class="day-content">🖼 Carrusel<br>📝 Post</div></div>
+<div class="week-pattern-day fri"><div class="day-label">Viernes</div><div class="day-content">🎬🎬 2× Persona</div></div>
+</div></div>
+</div></div>
+
+<!-- 2. CREAR CPMs -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">2</span> Crear CPMs <span style="font-size:11px;color:var(--text3);font-weight:400">(inventario Odoo)</span></h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div class="btn-group" style="margin-bottom:12px">
+<button class="btn btn-primary" onclick="openCPMCreator()">+ Nuevo CPM</button>
+</div>
+<div id="cpmList"></div>
+</div></div>
+
+<!-- 2.5 CONTENIDO GUARDADO -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">2.5</span> Contenido Guardado <span style="font-size:11px;color:var(--text3);font-weight:400">(videos pregrabados)</span></h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Agrega contenido ya grabado con su fecha de publicación.</div>
+<div class="row">
+<div style="max-width:200px"><label>Nombre</label><input type="text" id="scName" placeholder="Ej: Video logitech"></div>
+<div style="max-width:130px"><label>Formato</label><select id="scFormat"><option value="supri">Video Supri</option><option value="persona">Video Persona</option><option value="carrusel">Carrusel</option><option value="post">Post</option></select></div>
+<div style="max-width:150px"><label>Fecha</label><input type="date" id="scDate"></div>
+<div style="flex:2"><label>Justificación</label><input type="text" id="scJust" placeholder="Ej: Grabado en evento"></div>
+<div style="max-width:80px"><label>&nbsp;</label><button class="btn btn-purple btn-sm" onclick="addSavedContent()">+ Agregar</button></div>
+</div>
+<div id="savedContentList"></div>
+</div></div>
+
+<!-- 3. FRECUENCIA -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">3</span> Frecuencia por CPM</h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div class="stats" id="freqStats"></div>
+<table class="cpm-table"><thead><tr>
+<th style="width:22%">Nombre</th><th style="width:12%">Tipo</th><th style="width:10%">Stock</th><th style="width:9%">Supri</th><th style="width:9%">Persona</th><th style="width:11%">Carrusel</th><th style="width:9%">Post</th><th style="width:9%">Total</th><th style="width:9%"></th>
+</tr></thead><tbody id="cpmBody"></tbody></table>
+<div class="btn-group"><button class="btn btn-green btn-sm" onclick="autoFrequency()">⚡ Generar Frecuencia</button></div>
+</div></div>
+
+<!-- 4. CALENDARIO -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">4</span> Calendario</h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div class="cal-legend">
+<div class="cal-legend-item"><div class="cal-legend-dot" style="background:#1565C0"></div> Video Supri</div>
+<div class="cal-legend-item"><div class="cal-legend-dot" style="background:#2E7D32"></div> Video Persona</div>
+<div class="cal-legend-item"><div class="cal-legend-dot" style="background:#EF6C00"></div> Carrusel</div>
+<div class="cal-legend-item"><div class="cal-legend-dot" style="background:#546E7A"></div> Post</div>
+<div class="cal-legend-item"><div class="cal-legend-dot" style="background:#F9A825;border:2px dashed #F9A825"></div> Guardado</div>
+</div>
+<div class="drag-hint">💡 Arrastra las piezas entre días. Click para editar.</div>
+<div class="btn-group" style="margin-bottom:12px">
+<button class="btn btn-green btn-sm" onclick="autoDistribute()">📅 Generar Distribución</button>
+<button class="btn btn-blue btn-sm" onclick="autoAssignTopics()">🏷 Asignar Temas</button>
+<button class="btn btn-outline btn-sm" onclick="clearCalendar()">🗑 Limpiar</button>
+</div>
+<div class="cal-grid" id="calendarGrid"></div>
+</div></div>
+
+<!-- 5. TEMAS -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">5</span> Temas</h2><span class="arrow open">▼</span></div>
+<div class="section-body"><div id="topicsPanel"><div style="font-size:12px;color:var(--text2)">Primero genera la distribución y luego asigna temas.</div></div></div></div>
+
+<!-- 6. VALIDACIÓN -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">6</span> Validación</h2><span class="arrow open">▼</span></div>
+<div class="section-body"><div class="val-grid" id="valGrid"></div><div id="valErrors" style="margin-top:10px"></div></div></div>
+
+<!-- 7. GUARDADAS -->
+<div class="section"><div class="section-header" onclick="toggleSection(this)"><h2><span class="section-num">7</span> Guardadas</h2><span class="arrow open">▼</span></div>
+<div class="section-body">
+<div class="btn-group" style="margin-bottom:10px">
+<button class="btn btn-primary btn-sm" onclick="saveToServer()">💾 Guardar configuración actual</button>
+</div>
+<div id="savedList" class="saved-list"></div>
+</div></div>
+</div>
+
+<!-- MODAL: CREAR CPM -->
+<div id="cpmModal" class="modal-overlay" style="display:none" onclick="closeCPMModalBg(event)">
+<div class="modal">
+<button class="modal-close" onclick="closeCPMModal()">✕</button>
+<h3>Nuevo CPM</h3>
+<div class="row">
+<div><label>Nombre del CPM</label><input type="text" id="cpmName" placeholder="Ej: Laptops"></div>
+<div><label>Tipo</label><select id="cpmType" onchange="onCPMTypeChange()">
+<option value="categoria">Categoría</option>
+<option value="producto">Producto</option>
+<option value="marca">Marca</option>
+<option value="empresa">Marca Empresarial (sin Odoo)</option>
+</select></div>
+</div>
+<div id="odooSection" style="margin-top:12px">
+<div style="display:flex;gap:8px;align-items:end;margin-bottom:8px">
+<div style="flex:1"><label>Buscar en Odoo (marca o categoría)</label><input type="text" id="odooSearch" placeholder="Ej: HP, Laptops, Linksys"></div>
+<button class="btn btn-blue btn-sm" onclick="searchOdoo()">🔍 Buscar</button>
+</div>
+<div id="odooResults"></div>
+</div>
+<div id="empresaInfo" style="display:none;margin-top:12px;padding:12px;background:var(--purple-l);border:1px solid #ce93d8;border-radius:8px;font-size:12px;color:var(--purple)">
+ℹ️ Contenido corporativo. No se busca inventario en Odoo.
+</div>
+<div class="btn-group" style="justify-content:flex-end;margin-top:16px">
+<button class="btn btn-outline btn-sm" onclick="closeCPMModal()">Cancelar</button>
+<button class="btn btn-green btn-sm" onclick="confirmCPM()">✓ Agregar CPM</button>
+</div>
+</div>
+</div>
+
+<!-- MODAL: EDITAR PIEZA -->
+<div id="editModal" class="modal-overlay" style="display:none" onclick="closeEditModalBg(event)">
+<div class="modal" style="max-width:480px">
+<button class="modal-close" onclick="closeEditModal()">✕</button>
+<h3>Editar pieza</h3>
+<div class="row">
+<div><label>CPM</label><select id="editCPM"></select></div>
+<div><label>Formato</label><select id="editFormat"><option value="supri">Video Supri</option><option value="persona">Video Persona</option><option value="carrusel">Carrusel</option><option value="post">Post</option></select></div>
+</div>
+<div style="margin-bottom:10px"><label>Tema</label><input type="text" id="editTopic" placeholder="Tema del contenido"></div>
+<div class="btn-group" style="justify-content:flex-end">
+<button class="btn btn-outline btn-sm" onclick="clearEditSlot()">Vaciar</button>
+<button class="btn btn-outline btn-sm" onclick="closeEditModal()">Cancelar</button>
+<button class="btn btn-primary btn-sm" onclick="saveEditSlot()">Guardar</button>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// ESTADO
+// ═══════════════════════════════════════════════
+let state={month:10,year:2026,holidays:[],cpms:[],calendar:{},savedContent:[],inventoryProducts:{}};
+let odooSelected=[];
+let editingSlot={key:null,index:null};
+let dragData=null;
+const MONTH_NAMES=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DAY_NAMES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const MONTH_SHORT=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const API_BASE='/api/plan-contenido/frecuencia';
+
+document.addEventListener('DOMContentLoaded',()=>{document.getElementById('month').value=state.month;document.getElementById('year').value=state.year;updateMonth();notifyParent('loaded')});
+
+function notifyParent(status,data){if(window.parent!==window){window.parent.postMessage({type:'SUPRICOM_FRECUENCIA_STATUS',status,data},'*')}}
+
+function toggleSection(h){const b=h.nextElementSibling;const a=h.querySelector('.arrow');b.classList.toggle('hidden');a.classList.toggle('open')}
+function updateFlow(s){[1,2,3,4,5].forEach(i=>{const el=document.getElementById('fs'+i);if(!el)return;el.classList.remove('active','done');if(i<s)el.classList.add('done');if(i===s)el.classList.add('active')})}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function showToast(type,msg){const t=document.createElement('div');t.className='toast '+type;t.innerHTML=(type==='ok'?'✅ ':'⚠️ ')+msg;document.body.appendChild(t);setTimeout(()=>t.remove(),4000)}
+
+// ═══════════════════════════════════════════════
+// DATE HELPERS
+// ═══════════════════════════════════════════════
+function getDaysInMonth(m,y){return new Date(y,m,0).getDate()}
+function getDow(m,y,d){return new Date(y,m-1,d).getDay()}
+function isWeekday(m,y,d){const w=getDow(m,y,d);return w>=1&&w<=5}
+function isHoliday(m,y,d){const k=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;return state.holidays.find(h=>h.date===k)}
+function isPublishable(m,y,d){if(!isWeekday(m,y,d))return false;const h=isHoliday(m,y,d);if(h&&!h.programmed)return false;return true}
+function countWorkdays(){const n=getDaysInMonth(state.month,state.year);let c=0;for(let d=1;d<=n;d++)if(isWeekday(state.month,state.year,d))c++;return c}
+function countPublishable(){const n=getDaysInMonth(state.month,state.year);let c=0;for(let d=1;d<=n;d++)if(isPublishable(state.month,state.year,d))c++;return c}
+function totalPieces(){return countPublishable()*2}
+function dateKey(m,y,d){return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
+function fmtDate(s){const p=s.split('-');return `${p[2]}/${p[1]}`}
+function fmtDateShort(s){const p=s.split('-');return `${p[2]} ${MONTH_SHORT[parseInt(p[1])]}`}
+function parseDateKey(key){const p=key.split('-');return{y:parseInt(p[0]),m:parseInt(p[1]),d:parseInt(p[2])}}
+function calculateSlots(){const days=getDaysInMonth(state.month,state.year);let supriSlots=[],personaSlots=[],carrSlots=[],postSlots=[];for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const dow=getDow(state.month,state.year,d);const key=dateKey(state.month,state.year,d);if(dow===1||dow===3)supriSlots.push({key,d,dow});if(dow===5)personaSlots.push({key,d,dow});if(dow>=1&&dow<=4)carrSlots.push({key,d,dow});if(dow===2||dow===4)postSlots.push({key,d,dow})}return{supriSlots,personaSlots,carrSlots,postSlots}}
+
+function updateMonth(){state.month=parseInt(document.getElementById('month').value);state.year=parseInt(document.getElementById('year').value);renderHolidays();renderMonthStats();renderCalendar();renderValidation();renderFreqStats();renderTopicsPanel();renderCPMList();renderSavedContent();updateFlow(1)}
+
+// ═══════════════════════════════════════════════
+// HOLIDAYS
+// ═══════════════════════════════════════════════
+function renderHolidays(){document.getElementById('holList').innerHTML=state.holidays.map((h,i)=>`<div style="display:flex;align-items:center;gap:10px;background:#FFEBEE;border:1px solid #ffcdd2;border-radius:7px;padding:7px 12px;margin-bottom:4px"><span style="font-size:11px;color:#C62828;font-weight:700;min-width:80px">${fmtDate(h.date)}</span><span style="flex:1;font-size:12px">${h.name}</span>${h.programmed?'<span style="font-size:10px;background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:20px;font-weight:600">con contenido</span>':''}<span style="cursor:pointer;color:#90a4ae;font-size:14px" onclick="removeHoliday(${i})">✕</span></div>`).join('')}
+function addHoliday(){const d=document.getElementById('holDate').value;const n=document.getElementById('holName').value;const p=document.getElementById('holProg').checked;if(!d||!n)return showToast('err','Completa fecha y nombre');state.holidays.push({date:d,name:n,programmed:p});document.getElementById('holDate').value='';document.getElementById('holName').value='';document.getElementById('holProg').checked=false;renderHolidays();renderMonthStats();renderCalendar();renderValidation()}
+function removeHoliday(i){state.holidays.splice(i,1);renderHolidays();renderMonthStats();renderCalendar();renderValidation()}
+function renderMonthStats(){const s=calculateSlots();document.getElementById('monthStats').innerHTML=`<div class="stat"><div class="stat-value">${countWorkdays()}</div><div class="stat-label">Días hábiles</div></div><div class="stat"><div class="stat-value">${countPublishable()}</div><div class="stat-label">Días publicables</div></div><div class="stat"><div class="stat-value">${totalPieces()}</div><div class="stat-label">Total piezas</div></div><div class="stat"><div class="stat-value">${s.supriSlots.length}</div><div class="stat-label">Slots Supri</div></div><div class="stat"><div class="stat-value">${s.personaSlots.length*2}</div><div class="stat-label">Slots Persona</div></div><div class="stat"><div class="stat-value">${s.carrSlots.length}</div><div class="stat-label">Slots Carrusel</div></div><div class="stat"><div class="stat-value">${s.postSlots.length}</div><div class="stat-label">Slots Post</div></div>`}
+
+// ═══════════════════════════════════════════════
+// ODOO SEARCH (API call)
+// ═══════════════════════════════════════════════
+async function searchOdoo(){
+  const query=document.getElementById('odooSearch').value.trim();
+  if(!query)return;
+  const cpmType=document.getElementById('cpmType').value;
+  const tipo=cpmType==='categoria'?'categoria':cpmType==='producto'?'producto':'marca';
+  document.getElementById('odooResults').innerHTML='<div style="padding:12px;text-align:center"><span style="color:var(--text3);font-size:12px">Buscando en Odoo...</span></div>';
+  try{
+    const res=await fetch(`${API_BASE}/odoo?tipo=${tipo}&valor=${encodeURIComponent(query)}`);
+    const data=await res.json();
+    if(data.error){document.getElementById('odooResults').innerHTML=`<div style="padding:12px;color:var(--red);font-size:12px">⚠️ ${data.error}</div>`;return}
+    odooProducts=data.products||[];
+    odooSelected=new Set(odooProducts.map(p=>p.id));
+    renderOdooResults();
+  }catch(err){
+    document.getElementById('odooResults').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px">⚠️ Error de conexión con Odoo</div>';
+  }
+}
+let odooProducts=[];
+function renderOdooResults(){
+  const el=document.getElementById('odooResults');
+  if(!odooProducts.length){el.innerHTML='<div style="padding:12px;color:var(--text3);font-size:12px">No se encontraron productos.</div>';return}
+  const total=odooSelected.size;
+  const totalStock=odooProducts.filter(p=>odooSelected.has(p.id)).reduce((s,p)=>s+p.stock,0);
+  el.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:6px">Productos (${odooProducts.length}) — Seleccionados: ${total} — Stock: ${totalStock.toLocaleString()}</div>`+
+    odooProducts.map((p,i)=>`<div class="odoo-product ${odooSelected.has(p.id)?'selected':''}" onclick="toggleOdooProduct(${i})">
+      <input type="checkbox" ${odooSelected.has(p.id)?'checked':''} onclick="event.stopPropagation();toggleOdooProduct(${i})">
+      <span class="p-name">${p.name}</span>
+      <span class="p-stock">${p.stock} uds</span>
+      <span class="p-price">$${p.price}</span>
+    </div>`).join('');
+}
+function toggleOdooProduct(i){const id=odooProducts[i].id;if(odooSelected.has(id))odooSelected.delete(id);else odooSelected.add(id);renderOdooResults()}
+
+// ═══════════════════════════════════════════════
+// CPM CREATOR
+// ═══════════════════════════════════════════════
+function openCPMCreator(){odooSelected=new Set();odooProducts=[];document.getElementById('cpmName').value='';document.getElementById('cpmType').value='categoria';document.getElementById('odooSearch').value='';document.getElementById('odooResults').innerHTML='';document.getElementById('odooSection').style.display='block';document.getElementById('empresaInfo').style.display='none';document.getElementById('cpmModal').style.display='flex'}
+function closeCPMModal(){document.getElementById('cpmModal').style.display='none'}
+function closeCPMModalBg(e){if(e.target===document.getElementById('cpmModal'))closeCPMModal()}
+function onCPMTypeChange(){const t=document.getElementById('cpmType').value;if(t==='empresa'){document.getElementById('odooSection').style.display='none';document.getElementById('empresaInfo').style.display='block'}else{document.getElementById('odooSection').style.display='block';document.getElementById('empresaInfo').style.display='none'}}
+function confirmCPM(){const name=document.getElementById('cpmName').value.trim();const type=document.getElementById('cpmType').value;if(!name)return showToast('err','Escribe el nombre del CPM');let stockTotal=0;let products=[];if(type!=='empresa'){const sel=odooProducts.filter(p=>odooSelected.has(p.id));if(sel.length===0)return showToast('err','Selecciona al menos un producto');stockTotal=sel.reduce((s,p)=>s+p.stock,0);products=sel.map(p=>({odooProductId:p.id,sku:p.sku,productName:p.name,brand:p.brand,stock:p.stock,price:p.price,included:true}))}state.cpms.push({name,type,stockTotal,products,supriCount:0,personaCount:0,carruselCount:0,postCount:0,sortOrder:state.cpms.length});state.inventoryProducts[name]=products;closeCPMModal();renderCPMList();renderCPMTable();renderFreqStats();updateFlow(2);showToast('ok','CPM "'+name+'" agregado')}
+function removeCPM(i){state.cpms.splice(i,1);renderCPMList();renderCPMTable();renderFreqStats()}
+function renderCPMList(){const el=document.getElementById('cpmList');if(!state.cpms.length){el.innerHTML='<div style="text-align:center;color:var(--text3);font-size:12px;padding:16px">No hay CPMs creados. Haz click en "+ Nuevo CPM".</div>';return}el.innerHTML=state.cpms.map((c,i)=>`<div class="cpm-list-item"><div class="name">${c.name}</div><div class="type ${c.type}">${c.type.charAt(0).toUpperCase()+c.type.slice(1)}</div><div class="stock">${c.type==='empresa'?'Corporativo':c.stockTotal.toLocaleString()+' uds · '+(c.products?.length||0)+' productos'}</div><button class="btn btn-danger btn-sm" onclick="removeCPM(${i})">✕</button></div>`).join('')}
+
+// ═══════════════════════════════════════════════
+// SAVED CONTENT
+// ═══════════════════════════════════════════════
+function addSavedContent(){const name=document.getElementById('scName').value;const fmt=document.getElementById('scFormat').value;const date=document.getElementById('scDate').value;const just=document.getElementById('scJust').value;if(!name)return showToast('err','Escribe el nombre');if(!date)return showToast('err','Selecciona la fecha');state.savedContent.push({name,format:fmt,publishDate:date,justification:just});document.getElementById('scName').value='';document.getElementById('scJust').value='';document.getElementById('scDate').value='';renderSavedContent();showToast('ok','Contenido guardado agregado')}
+function removeSavedContent(i){state.savedContent.splice(i,1);renderSavedContent()}
+function renderSavedContent(){const el=document.getElementById('savedContentList');if(!state.savedContent.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);margin-top:8px">No hay contenido guardado.</div>';return}el.innerHTML=state.savedContent.map((c,i)=>`<div class="saved-content-item"><div class="name">${c.name}</div><div class="fmt" style="background:var(--${c.format==='supri'?'blue':c.format==='persona'?'green':c.format==='carrusel'?'orange':'gray'}-l);color:var(--${c.format==='supri'?'blue-d':c.format==='persona'?'green':c.format==='carrusel'?'orange':'gray'})">${({supri:'Video Supri',persona:'Video Persona',carrusel:'Carrusel',post:'Post'})[c.format]}</div><div class="date-badge">📅 ${fmtDateShort(c.publishDate)}</div><div class="just">${c.justification||''}</div><button class="btn btn-danger btn-sm" onclick="removeSavedContent(${i})">✕</button></div>`).join('')}
+
+// ═══════════════════════════════════════════════
+// CPM TABLE (FREQUENCY)
+// ═══════════════════════════════════════════════
+function renderCPMTable(){document.getElementById('cpmBody').innerHTML=state.cpms.map((c,i)=>{const t=c.supriCount+c.personaCount+c.carruselCount+c.postCount;return`<tr><td><input class="cpm-name-input" value="${c.name}" onchange="state.cpms[${i}].name=this.value;renderFreqStats()"></td><td style="text-align:center"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--${c.type==='categoria'?'blue':c.type==='producto'?'orange':c.type==='empresa'?'purple':'green'}-l);color:var(--${c.type==='categoria'?'blue-d':c.type==='producto'?'orange':c.type==='empresa'?'purple':'green'})">${c.type.charAt(0).toUpperCase()+c.type.slice(1)}</span></td><td style="text-align:center">${c.type==='empresa'?'—':c.stockTotal.toLocaleString()}</td><td style="text-align:center"><input type="number" min="0" value="${c.supriCount}" onchange="state.cpms[${i}].supriCount=Math.max(0,parseInt(this.value)||0);renderCPMTable();renderFreqStats()"></td><td style="text-align:center"><input type="number" min="0" value="${c.personaCount}" onchange="state.cpms[${i}].personaCount=Math.max(0,parseInt(this.value)||0);renderCPMTable();renderFreqStats()"></td><td style="text-align:center"><input type="number" min="0" value="${c.carruselCount}" onchange="state.cpms[${i}].carruselCount=Math.max(0,parseInt(this.value)||0);renderCPMTable();renderFreqStats()"></td><td style="text-align:center"><input type="number" min="0" value="${c.postCount}" onchange="state.cpms[${i}].postCount=Math.max(0,parseInt(this.value)||0);renderCPMTable();renderFreqStats()"></td><td style="text-align:center"><span class="total-badge ${t>0?'ok':''}">${t}</span></td><td><button class="btn btn-danger btn-sm" onclick="removeCPM(${i})">✕</button></td></tr>`}).join('');renderFreqStats()}
+
+function renderFreqStats(){const tp=totalPieces();const s=calculateSlots();let ss=0,sp=0,sc=0,spt=0;state.cpms.forEach(c=>{ss+=c.supriCount;sp+=c.personaCount;sc+=c.carruselCount;spt+=c.postCount});const st=ss+sp+sc+spt;const diff=st-tp;const n=state.cpms.length;const supriS=s.supriSlots.length;document.getElementById('freqStats').innerHTML=`<div class="stat"><div class="stat-value">${n}</div><div class="stat-label">CPMs</div></div><div class="stat ${ss>supriS?'error':''}"><div class="stat-value">${ss}/${supriS}</div><div class="stat-label">Supri/slots</div></div><div class="stat ${sp>s.personaSlots.length*2?'error':''}"><div class="stat-value">${sp}/${s.personaSlots.length*2}</div><div class="stat-label">Persona/slots</div></div><div class="stat ${sc>s.carrSlots.length?'error':''}"><div class="stat-value">${sc}/${s.carrSlots.length}</div><div class="stat-label">Carrusel/slots</div></div><div class="stat ${spt>s.postSlots.length?'error':''}"><div class="stat-value">${spt}/${s.postSlots.length}</div><div class="stat-label">Post/slots</div></div><div class="stat ${diff===0?'ok':diff>0?'warn':'error'}"><div class="stat-value">${st}/${tp}</div><div class="stat-label">${diff===0?'✅ Cuadra':diff>0?'❌ Sobran '+diff:'❌ Faltan '+Math.abs(diff)}</div></div>`}
+
+function autoFrequency(){if(!state.cpms.length)return showToast('err','Crea CPMs primero');const n=state.cpms.length;const s=calculateSlots();const totalSupri=s.supriSlots.length;const totalPersona=s.personaSlots.length*2;const totalCarr=s.carrSlots.length;const totalPost=s.postSlots.length;const total=totalSupri+totalPersona+totalCarr+totalPost;let idx=state.cpms.map((c,i)=>({i,stock:c.stockTotal||0}));idx.sort((a,b)=>b.stock-a.stock);const nc=[...state.cpms];idx.forEach(({i})=>nc[i].supriCount=0);let sc=0;for(let k=0;k<idx.length&&sc<totalSupri;k++){nc[idx[k].i].supriCount=1;sc++}idx.forEach(({i})=>nc[i].personaCount=0);let pr=totalPersona;let pi=0;while(pr>0){nc[idx[pi%idx.length].i].personaCount++;pr--;pi++}idx.forEach(({i})=>{nc[i].carruselCount=0;nc[i].postCount=0});const baseCarr=Math.floor(totalCarr/n);const basePost=Math.floor(totalPost/n);let carrLeft=totalCarr-baseCarr*n;let postLeft=totalPost-basePost*n;idx.forEach(({i})=>{nc[i].carruselCount=baseCarr;nc[i].postCount=basePost});let ci=0;while(carrLeft>0){nc[idx[ci%idx.length].i].carruselCount++;carrLeft--;ci++}let qi=0;while(postLeft>0){nc[idx[qi%idx.length].i].postCount++;postLeft--;qi++}let ss2=0,sp2=0,sc2=0,spt2=0;nc.forEach(c=>{ss2+=c.supriCount;sp2+=c.personaCount;sc2+=c.carruselCount;spt2+=c.postCount});let assigned=ss2+sp2+sc2+spt2;let diff=total-assigned;let fi=0;while(diff>0){nc[idx[fi%idx.length].i].carruselCount++;diff--;fi++}while(diff<0){const c=nc[idx[fi%idx.length].i];if(c.carruselCount>0){c.carruselCount--;diff++}fi++}state.cpms=nc;renderCPMTable();updateFlow(3);showToast('ok','Frecuencia generada')}
+
+// ═══════════════════════════════════════════════
+// CALENDAR
+// ═══════════════════════════════════════════════
+function getPieceNumber(key,idx){const days=getDaysInMonth(state.month,state.year);let counter=1;for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const k=dateKey(state.month,state.year,d);const pieces=state.calendar[k]||[];for(let pi=0;pi<pieces.length;pi++){if(k===key&&pi===idx)return counter;counter++}}return 0}
+
+function renderCalendar(){
+  const grid=document.getElementById('calendarGrid');
+  const days=getDaysInMonth(state.month,state.year);
+  let weekdays=[];for(let d=1;d<=days;d++){if(isWeekday(state.month,state.year,d))weekdays.push(d)}
+  if(!weekdays.length){grid.innerHTML='';return}
+  const firstDow=getDow(state.month,state.year,weekdays[0]);const offset=firstDow===0?6:firstDow-1;
+  let cells=[];for(let i=0;i<offset;i++)cells.push(null);weekdays.forEach(d=>cells.push(d));while(cells.length%5!==0)cells.push(null);
+  let html='<div class="cal-week">';['Lun','Mar','Mié','Jue','Vie'].forEach(d=>{html+=`<div class="cal-day-header">${d}</div>`});html+='</div>';
+  for(let w=0;w<cells.length;w+=5){html+='<div class="cal-week">';for(let i=w;i<w+5&&i<cells.length;i++){const d=cells[i];if(d===null){html+='<div class="cal-day empty"></div>';continue}const dow=getDow(state.month,state.year,d);const hol=isHoliday(state.month,state.year,d);const pub=isPublishable(state.month,state.year,d);const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];let cls='cal-day';if(hol&&!hol.programmed)cls+=' holiday';let ph='';if(hol&&!hol.programmed){ph=`<div class="holiday-tag">FERIADO</div><div style="font-size:9px;color:var(--red);font-weight:600">${hol.name}</div>`}else{ph='<div class="cal-pieces">';pieces.forEach((p,pi)=>{const c=p.saved?'saved':p.format;const fl=p.saved?'Guardado':({supri:'Video Supri',persona:'Video Persona',carrusel:'Carrusel',post:'Post'})[p.format]||p.format;const pNum=getPieceNumber(key,pi);ph+=`<div class="cal-piece ${c}" draggable="true" ondragstart="handleDragStart(event,'${key}',${pi})" onclick="editPiece('${key}',${pi});event.stopPropagation()"><span style="display:flex;align-items:center;gap:4px"><span style="font-size:8px;background:var(--blue);color:#fff;padding:1px 4px;border-radius:3px;font-weight:700">${pNum}</span><span class="cpm-tag">${p.cpm}</span></span><span class="fmt-tag">${fl}</span>${p.topic?`<span class="topic-tag">🏷 ${p.topic.substring(0,35)}${p.topic.length>35?'...':''}</span>`:''}</div>`});if(pub&&pieces.length<2)ph+=`<div class="empty-slot" onclick="addPiece('${key}');event.stopPropagation()">+ agregar</div>`;ph+='</div>'}html+=`<div class="${cls}" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event,'${key}');this.classList.remove('drag-over')" onclick="${pub?`addPiece('${key}')`:''}"><div class="day-num">${d}</div><div class="day-name">${DAY_NAMES[dow]}${hol&&hol.programmed?' 🔵':''}</div>${ph}</div>`}html+='</div>'}grid.innerHTML=html;
+}
+
+function handleDragStart(e,srcKey,srcIdx){dragData={srcKey,srcIdx};e.dataTransfer.effectAllowed='move';e.target.style.opacity='0.4'}
+function handleDrop(e,tgtKey){e.preventDefault();e.stopPropagation();if(!dragData)return;const{srcKey,srcIdx}=dragData;if(srcKey===tgtKey){dragData=null;renderCalendar();return}const srcPieces=state.calendar[srcKey]||[];const tgtPieces=state.calendar[tgtKey]||[];const draggedPiece=srcPieces[srcIdx];if(tgtPieces.length>=2){const removedPiece=tgtPieces[0];srcPieces.splice(srcIdx,1);if(srcPieces.length===0)delete state.calendar[srcKey];tgtPieces[0]=draggedPiece;if(!state.calendar[srcKey])state.calendar[srcKey]=[];state.calendar[srcKey].push(removedPiece)}else{srcPieces.splice(srcIdx,1);if(srcPieces.length===0)delete state.calendar[srcKey];if(!state.calendar[tgtKey])state.calendar[tgtKey]=[];state.calendar[tgtKey].push(draggedPiece)}dragData=null;renderCalendar();renderValidation()}
+
+function addPiece(key){if(!state.calendar[key])state.calendar[key]=[];if(state.calendar[key].length>=2)return;openEditModal(key,state.calendar[key].length)}
+function editPiece(key,idx){openEditModal(key,idx)}
+function openEditModal(key,idx){editingSlot={key,index:idx};const sel=document.getElementById('editCPM');sel.innerHTML=state.cpms.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');sel.innerHTML+='<option value="Contenido Guardado">Contenido Guardado</option>';const piece=state.calendar[key]&&state.calendar[key][idx];if(piece){sel.value=piece.cpm;document.getElementById('editFormat').value=piece.format;document.getElementById('editTopic').value=piece.topic||''}else{document.getElementById('editFormat').value='carrusel';document.getElementById('editTopic').value=''}document.getElementById('editModal').style.display='flex'}
+function closeEditModal(){document.getElementById('editModal').style.display='none'}
+function closeEditModalBg(e){if(e.target===document.getElementById('editModal'))closeEditModal()}
+function saveEditSlot(){const cpm=document.getElementById('editCPM').value;const fmt=document.getElementById('editFormat').value;const topic=document.getElementById('editTopic').value;if(!cpm)return;if(!state.calendar[editingSlot.key])state.calendar[editingSlot.key]=[];state.calendar[editingSlot.key][editingSlot.index]={cpm,format:fmt,topic:topic||'',saved:cpm==='Contenido Guardado'};closeEditModal();renderCalendar();renderValidation();renderTopicsPanel()}
+function clearEditSlot(){if(state.calendar[editingSlot.key]){state.calendar[editingSlot.key].splice(editingSlot.index,1);if(state.calendar[editingSlot.key].length===0)delete state.calendar[editingSlot.key]}closeEditModal();renderCalendar();renderValidation();renderTopicsPanel()}
+
+// ═══════════════════════════════════════════════
+// AUTO DISTRIBUTE
+// ═══════════════════════════════════════════════
+function autoDistribute(){
+  if(!state.cpms.length)return showToast('err','Crea CPMs primero');
+  state.calendar={};
+  const days=getDaysInMonth(state.month,state.year);
+  let dayCPMs={};let lastDay={};
+  function canPlace(cpm,d,key){if(dayCPMs[key]&&dayCPMs[key].has(cpm))return false;if(lastDay[cpm]!==undefined&&Math.abs(d-lastDay[cpm])===1)return false;return true}
+  function place(p,d,key){if(!state.calendar[key])state.calendar[key]=[];if(state.calendar[key].length>=2)return;state.calendar[key].push(p);if(!dayCPMs[key])dayCPMs[key]=new Set();dayCPMs[key].add(p.cpm);lastDay[p.cpm]=d}
+  let pools={supri:[],persona:[],carrusel:[],post:[]};
+  state.cpms.forEach(c=>{const n=c.name||'Sin nombre';for(let i=0;i<c.supriCount;i++)pools.supri.push({cpm:n,format:'supri'});for(let i=0;i<c.personaCount;i++)pools.persona.push({cpm:n,format:'persona'});for(let i=0;i<c.carruselCount;i++)pools.carrusel.push({cpm:n,format:'carrusel'});for(let i=0;i<c.postCount;i++)pools.post.push({cpm:n,format:'post'})});
+  state.savedContent.forEach(sc=>{const scDate=parseDateKey(sc.publishDate);if(scDate.y===state.year&&scDate.m===state.month){const scKey=dateKey(scDate.m,scDate.y,scDate.d);if(!state.calendar[scKey])state.calendar[scKey]=[];if(state.calendar[scKey].length<2){state.calendar[scKey].push({cpm:sc.name,format:sc.format,saved:true,justification:sc.justification});if(!dayCPMs[scKey])dayCPMs[scKey]=new Set();dayCPMs[scKey].add(sc.name);lastDay[sc.name]=scDate.d}}});
+  shuffle(pools.supri);shuffle(pools.persona);shuffle(pools.carrusel);shuffle(pools.post);
+  for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const dow=getDow(state.month,state.year,d);const key=dateKey(state.month,state.year,d);let current=(state.calendar[key]||[]).length;let needed=[];if(dow===1||dow===3)needed=['supri','carrusel'];else if(dow===2||dow===4)needed=['carrusel','post'];else if(dow===5)needed=['persona','persona'];needed.forEach(fmt=>{if(current>=2)return;const pool=pools[fmt];if(!pool||pool.length===0)return;let idx=-1;pool.forEach((p,i)=>{if(idx>=0)return;if(canPlace(p.cpm,d,key))idx=i});if(idx>=0){const piece=pool.splice(idx,1)[0];place(piece,d,key);current++}})}
+  for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const dow=getDow(state.month,state.year,d);const key=dateKey(state.month,state.year,d);let cur=(state.calendar[key]||[]).length;while(cur<2){let piece=null;let tryPools=[];if(dow===1||dow===3)tryPools=[pools.carrusel,pools.supri];else if(dow===2||dow===4)tryPools=[pools.carrusel,pools.post];else if(dow===5)tryPools=[pools.persona];for(let pi=0;pi<tryPools.length&&!piece;pi++){const pool=tryPools[pi];if(!pool||pool.length===0)continue;let idx=-1;pool.forEach((p,i)=>{if(idx>=0)return;if(canPlace(p.cpm,d,key))idx=i});if(idx>=0)piece=pool.splice(idx,1)[0]}if(!piece)break;place(piece,d,key);cur++}}
+  renderCalendar();renderValidation();renderTopicsPanel();updateFlow(4);showToast('ok','Distribución generada');
+}
+
+function clearCalendar(){if(!confirm('¿Limpiar calendario?'))return;state.calendar={};renderCalendar();renderValidation();renderTopicsPanel()}
+
+// ═══════════════════════════════════════════════
+// TOPICS
+// ═══════════════════════════════════════════════
+function autoAssignTopics(){let assigned=0;const days=getDaysInMonth(state.month,state.year);for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const key=dateKey(state.month,state.year,d);if(!state.calendar[key])continue;for(let idx=0;idx<state.calendar[key].length;idx++){const piece=state.calendar[key][idx];if(piece.topic||piece.saved)continue;const cpm=state.cpms.find(c=>c.name===piece.cpm);const type=cpm?cpm.type:'marca';const topics=getTopics(type,piece.format);if(topics.length===0)continue;state.calendar[key][idx].topic=topics[assigned%topics.length];assigned++}}renderCalendar();renderTopicsPanel();showToast('ok',assigned+' tema(s) asignados')}
+function getTopics(type,format){const T={categoria:{carrusel:['Las más buscadas del mes','Top 5 para tu vitrina','Lo que tus clientes piden','3 perfiles que lo necesitan','vs: cuál conviene','El mercado actual','Para tu sector','De básico a premium','3 errores comunes','El combo que más sube ticket'],post:['Lo que tu vitrina necesita','La que más rota','¿Tienes esto en catálogo?','Para tu sector','Lo que buscarán'],supri:['Lo que tu cliente pide','¿Qué le ofreces?','No puede faltar','3 tipos','Si no lo tienes, tu competidor sí'],persona:['Por qué necesitas esto','El error de no tenerlo','La oportunidad','Cómo venderlo','Lo que cambió']},producto:{carrusel:['Todo lo que necesitas','Por qué lo va a pedir','En 5 beneficios','El que tu competidor tiene','Para quién es','Lo que lo hace diferente','La historia','3 razones','Lo que preguntan','Cómo presentarlo'],post:['Disponible ahora','Lo que busca','Stock listo','La solución','Lo diferente'],supri:['La solución','Conoce esto','En todas las vitrinas','Lo que necesitas','Se vende solo'],persona:['Conoce esto','La apuesta','Por qué se vende solo','Lo diferente','La historia']},marca:{carrusel:['Todo el portafolio','De básico a premium','La que piden','Los 3 que rotan','Lo que la diferencia','La historia','Lo que dicen expertos','3 razones','Lo que preguntan','Cómo presentarla'],post:['Confianza y calidad','El portafolio','Disponible al mayor','Lo diferente','Garantía'],supri:['Lo que nos hace diferentes','La que tu cliente pide','En SUPRICOM tenemos','Lo diferente','Se vende solo'],persona:['Por qué es mejor','Lo que saber antes','La que confía en SUPRICOM','Lo diferente','La historia']},supricom:{carrusel:['Así trabajamos','Tu mayorista de confianza','Por qué eligen SUPRICOM','Nuestro compromiso','Años distribuyendo','5 razones','Detrás de cada pedido','Cómo garantizamos','Red de distribución','Lo que nos hace diferentes'],post:['Tu mayorista','¿Por qué comprar?','Stock y garantía','La marca que confía','Disponible al mayor'],supri:['Así trabajamos','¿Por qué SUPRICOM?','Tu mayorista','Lo diferente','Calidad y garantía'],persona:['La historia','Qué nos hace diferentes','Comprometidos','Por qué eligen','Más que un proveedor']}};return(T[type]&&T[type][format])||[]}
+
+function renderTopicsPanel(){const panel=document.getElementById('topicsPanel');let all=[];const days=getDaysInMonth(state.month,state.year);let counter=1;for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];pieces.forEach((p,idx)=>{all.push({...p,key,idx,num:counter});counter++})}if(!all.length){panel.innerHTML='<div style="font-size:12px;color:var(--text2)">Primero genera la distribución y luego asigna temas.</div>';return}panel.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:8px">Piezas (${all.length}):</div>`+all.map(p=>{const d=parseInt(p.key.split('-')[2]);const dow=DAY_NAMES[getDow(state.month,state.year,d)];return`<div class="topic-item" onclick="editPiece('${p.key}',${p.idx})"><span style="font-weight:700;min-width:60px;display:flex;align-items:center;gap:4px"><span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 5px;border-radius:3px">${p.num}</span>${dow} ${d}</span><span class="fmt-badge ${p.saved?'saved':p.format}">${p.saved?'Guardado':({supri:'Supri',persona:'Persona',carrusel:'Carrusel',post:'Post'})[p.format]}</span><span style="font-weight:600">${p.cpm}</span><span style="flex:1;color:${p.topic?'var(--text)':'var(--text3)'};font-style:${p.topic?'normal':'italic'}">${p.topic||'(sin tema)'}</span></div>`}).join('');updateFlow(5)}
+
+// ═══════════════════════════════════════════════
+// VALIDATION
+// ═══════════════════════════════════════════════
+function renderValidation(){const errors=[];const checks=[];const days=getDaysInMonth(state.month,state.year);let totalAssigned=0,hasTwo=true,noSameDay=true,noConsec=true,supriOK=true,persOK=true;let cpmLastDay={};for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const dow=getDow(state.month,state.year,d);const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];totalAssigned+=pieces.length;if(pieces.length>2){hasTwo=false;errors.push(`${key}: ${pieces.length} piezas`)}const cps=pieces.map(p=>p.cpm);if(new Set(cps).size!==cps.length){noSameDay=false;errors.push(`${key}: CPM repetido en un día`)}pieces.forEach(p=>{if(p.saved)return;if(cpmLastDay[p.cpm]!==undefined&&(d-cpmLastDay[p.cpm])===1){noConsec=false;errors.push(`${key}: "${p.cpm}" repetido el día anterior`)}cpmLastDay[p.cpm]=d;if(p.format==='supri'&&dow!==1&&dow!==3){supriOK=false;errors.push(`${key}: Supri en ${DAY_NAMES[dow]}`)}if(p.format==='persona'&&dow!==5){persOK=false;errors.push(`${key}: Persona en ${DAY_NAMES[dow]}`)}})}const tp=totalPieces();let sf=0;state.cpms.forEach(c=>{sf+=c.supriCount+c.personaCount+c.carruselCount+c.postCount});const savedInCal=Object.values(state.calendar).flat().filter(p=>p.saved).length;checks.push({l:'2 piezas por día',p:hasTwo});checks.push({l:'Sin CPM repetido en un día',p:noSameDay});checks.push({l:'Sin CPM 2 días seguidos',p:noConsec});checks.push({l:'Supri solo Lun/Mié',p:supriOK});checks.push({l:'Persona solo Vie',p:persOK});checks.push({l:`Frecuencia + Guardados (${sf+savedInCal}/${tp})`,p:sf+savedInCal===tp});checks.push({l:`Calendario completo (${totalAssigned}/${tp})`,p:totalAssigned===tp});document.getElementById('valGrid').innerHTML=checks.map(c=>`<div class="val-item ${c.p?'pass':'fail'}"><span class="val-icon">${c.p?'✅':'❌'}</span><span>${c.l}</span></div>`).join('');document.getElementById('valErrors').innerHTML=errors.length>0?`<div style="background:var(--red-l);border:1px solid #ffcdd2;border-radius:8px;padding:12px;margin-top:8px"><div style="font-size:12px;color:var(--red);font-weight:600;margin-bottom:6px">⚠ ${errors.length} error(es):</div><div style="font-size:11px;color:var(--text2);max-height:200px;overflow-y:auto">${errors.map(e=>`<div style="padding:2px 0">• ${e}</div>`).join('')}</div></div>`:(totalAssigned>0?'<div style="color:var(--green);font-size:12px;margin-top:8px;font-weight:500">✅ Todas las reglas se cumplen.</div>':'')}
+
+// ═══════════════════════════════════════════════
+// SAVE / LOAD (via API)
+// ═══════════════════════════════════════════════
+async function saveToServer(){
+  if(!state.cpms.length)return showToast('err','No hay CPMs para guardar');
+  try{
+    const calendarArr=[];let counter=1;const days=getDaysInMonth(state.month,state.year);
+    for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];pieces.forEach(p=>{calendarArr.push({pieceNumber:counter,dateKey:key,cpmName:p.cpm,format:p.format,topic:p.topic||'',isSaved:p.saved||false});counter++})}
+    const res=await fetch(API_BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:state.year,month:state.month,cpms:state.cpms,savedContent:state.savedContent,calendar:calendarArr})});
+    const data=await res.json();
+    if(data.success){showToast('ok','Plan guardado correctamente');notifyParent('saved')}
+    else showToast('err',data.error||'Error al guardar');
+  }catch{showToast('err','Error de conexión')}
+}
+
+async function loadFromServer(){
+  try{
+    const res=await fetch(`${API_BASE}?year=${state.year}&month=${state.month}`);
+    const data=await res.json();
+    if(data.plan){
+      state.cpms=data.plan.cpms||[];
+      state.savedContent=data.plan.savedContent||[];
+      state.calendar={};
+      (data.plan.calendar||[]).forEach(c=>{
+        if(!state.calendar[c.dateKey])state.calendar[c.dateKey]=[];
+        state.calendar[c.dateKey].push({cpm:c.cpmName,format:c.format,topic:c.topic||'',saved:c.isSaved||false});
+      });
+      state.cpms.forEach(c=>{state.inventoryProducts[c.name]=c.products||[]});
+      renderCPMList();renderCPMTable();renderCalendar();renderValidation();renderTopicsPanel();renderSavedContent();renderFreqStats();
+      showToast('ok','Plan cargado desde servidor');
+    }
+  }catch{showToast('err','Error al cargar plan')}
+}
+
+// ═══════════════════════════════════════════════
+// EXPORT EXCEL
+// ═══════════════════════════════════════════════
+function exportInventoryExcel(){if(!state.cpms.length)return showToast('err','No hay CPMs para exportar');const wb=XLSX.utils.book_new();const invData=[['CPM','Tipo','Stock Total','SKU','Producto','Stock','Precio']];state.cpms.forEach(c=>{if(c.type==='empresa'){invData.push([c.name,'empresa',0,'-','Contenido corporativo',0,0]);return}c.products.forEach(p=>{invData.push([c.name,c.type,c.stockTotal,p.sku,p.productName,p.stock,p.price])})});const ws1=XLSX.utils.aoa_to_sheet(invData);XLSX.utils.book_append_sheet(wb,ws1,'Inventario');const resData=[['CPM','Tipo','Stock','Productos','Supri','Persona','Carrusel','Post','Total']];state.cpms.forEach(c=>{resData.push([c.name,c.type,c.stockTotal,c.products?.length||0,c.supriCount,c.personaCount,c.carruselCount,c.postCount,c.supriCount+c.personaCount+c.carruselCount+c.postCount])});const ws2=XLSX.utils.aoa_to_sheet(resData);XLSX.utils.book_append_sheet(wb,ws2,'Resumen');XLSX.writeFile(wb,`inventario_CPM_${MONTH_NAMES[state.month]}_${state.year}.xlsx`);showToast('ok','Inventario exportado')}
+
+function exportCalendarExcel(){const days=getDaysInMonth(state.month,state.year);const data=[['Pieza','Día','Fecha','CPM','Formato','Tema']];let counter=1;for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];pieces.forEach(p=>{const dow=DAY_NAMES[getDow(state.month,state.year,d)];const fmt=p.saved?'Guardado':({supri:'Video Supri',persona:'Video Persona',carrusel:'Carrusel',post:'Post'})[p.format];data.push([counter,dow,fmtDate(key),p.cpm,fmt,p.topic||'']);counter++})}const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet(data);XLSX.utils.book_append_sheet(wb,ws,'Calendario');XLSX.writeFile(wb,`calendario_${MONTH_NAMES[state.month]}_${state.year}.xlsx`);showToast('ok','Calendario exportado')}
+</script>
+</body>
+</html>
