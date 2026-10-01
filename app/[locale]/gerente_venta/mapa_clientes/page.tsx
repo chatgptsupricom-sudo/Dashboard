@@ -30,6 +30,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DateRange } from "react-day-picker";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { fechaDeInput, rangoInicialMapa } from "@/lib/mapaClientes/fechas";
 
 const COMPANY_NAMES: Record<number, string> = {
   9: "Valencia",
@@ -71,15 +72,14 @@ export default function MapsClientsPage() {
   const [userCompanyId, setUserCompanyId] = useState<number | null>(null);
   const [selSeller, setSelSeller] = useState("all");
   const [availableSellers, setAvailableSellers] = useState<any[]>([]);
+  // Con sede (cids) solo se ve el país de esa sede: sin selector VE/PA.
+  const [isCountryLocked, setIsCountryLocked] = useState(!!user?.cids);
 
   // Estado para el Historial Total
   const [isTotalHistory, setIsTotalHistory] = useState(false);
 
   // Estado del calendario
-  const [date, setDate] = useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date(),
-  });
+  const [date, setDate] = useState<DateRange | undefined>(rangoInicialMapa);
 
   const PRIMARY_BLUE = "#2563eb";
 
@@ -108,6 +108,10 @@ export default function MapsClientsPage() {
         setData(d.summary || []);
         setUserCompanyId(d.company_id);
         setAvailableSellers(d.sellers || []);
+        setIsCountryLocked(!!d.country_locked);
+        if (d.country_locked && CID_TO_COUNTRY[d.company_id]) {
+          setCurrentCountry(CID_TO_COUNTRY[d.company_id]);
+        }
         setLoading(false);
       } catch (e) {
         setLoading(false);
@@ -200,7 +204,7 @@ export default function MapsClientsPage() {
               className="text-xs font-bold text-slate-600 border-none focus:ring-0 bg-transparent cursor-pointer"
               value={format(date?.from || new Date(), "yyyy-MM-dd")}
               onChange={(e) =>
-                setDate((prev) => ({ ...prev, from: new Date(e.target.value) }))
+                setDate((prev) => ({ from: fechaDeInput(e.target.value), to: prev?.to }))
               }
               disabled={isTotalHistory}
             />
@@ -210,7 +214,7 @@ export default function MapsClientsPage() {
               className="text-xs font-bold text-slate-600 border-none focus:ring-0 bg-transparent cursor-pointer"
               value={format(date?.to || new Date(), "yyyy-MM-dd")}
               onChange={(e) =>
-                setDate((prev) => ({ ...prev, to: new Date(e.target.value) }))
+                setDate((prev) => ({ from: prev?.from, to: fechaDeInput(e.target.value) }))
               }
               disabled={isTotalHistory}
             />
@@ -230,6 +234,8 @@ export default function MapsClientsPage() {
               ))}
             </select>
 
+            {!isCountryLocked && (
+            <>
             <div className="w-px bg-slate-200 my-1.5" />
 
             <div className="flex gap-1.5">
@@ -250,6 +256,8 @@ export default function MapsClientsPage() {
                 </button>
               ))}
             </div>
+            </>
+            )}
           </div>
         </div>
       </header>
