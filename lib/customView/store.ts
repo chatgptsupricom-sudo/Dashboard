@@ -14,7 +14,14 @@ export const VIEW_NAME = "adminleads";
  */
 export const SANDBOX_VIEW_NAME = "adminleads__sandbox";
 
-const VISTAS_PERMITIDAS = new Set([VIEW_NAME, SANDBOX_VIEW_NAME]);
+/**
+ * Frecuencia CPM: otro HTML con el mismo flujo de carga, pero es una app que
+ * guarda su propio estado (`/api/plan-contenido/frecuencia`). Se sirve sin el
+ * runtime de overlay: ese clona el DOM y no sabe nada del `state` de la app.
+ */
+export const FRECUENCIA_VIEW_NAME = "frecuencia_cpm";
+
+const VISTAS_PERMITIDAS = new Set([VIEW_NAME, SANDBOX_VIEW_NAME, FRECUENCIA_VIEW_NAME]);
 
 /** Lista blanca: nunca se acepta un nombre arbitrario desde la URL. */
 export function resolveView(raw?: string | null): string {

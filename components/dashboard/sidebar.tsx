@@ -332,6 +332,7 @@ export function Sidebar({
     { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
     { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
+    { id: "frecuencia_cpm", label: "Frecuencia CPM", icon: Calendar, slug: "/frecuencia-cpm" },
     { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
     // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
     // fecha y productos.
@@ -445,7 +446,7 @@ export function Sidebar({
         // coincide. superAdmin (sin cids) siempre lo ve.
         ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
-        !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
+        !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y
         // con un basePath que no existe (/superadmin/material-pop).
         !(userRole === "superAdmin" && item.id === "material_pop_seller") &&
@@ -1499,6 +1500,7 @@ export function Sidebar({
                     >
                       {[
                         { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Frecuencia CPM", href: `${basePath}/frecuencia-cpm` },
                         { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
                         { label: "KPI de Diseños", href: `${basePath}/disenos` },
                         // Material POP vive en /adminleads (no hay copia bajo

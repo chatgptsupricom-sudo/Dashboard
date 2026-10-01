@@ -24,8 +24,11 @@ const API = "/api/adminleads/custom-view";
 
 interface FileMeta {
   exists: boolean;
-  /** "react" = la SPA maneja su propio estado; "overlay" = runtime de DOM. */
-  mode?: "react" | "overlay";
+  /**
+   * "react" = la SPA maneja su propio estado; "overlay" = runtime de DOM;
+   * "app" = HTML que guarda por su cuenta (Frecuencia CPM), sin historial.
+   */
+  mode?: "react" | "overlay" | "app";
   filename?: string;
   updatedAt?: string;
   size?: number;
@@ -68,10 +71,22 @@ const formatSize = (bytes?: number) => {
 export default function PlanContenidoPanel({
   canUpload,
   emptyHint,
+  view,
+  title = "Plan de Contenido",
 }: {
   canUpload: boolean;
   emptyHint?: string;
+  /** Vista de `custom_views` (lista blanca en lib/customView/store.ts). Sin ella, el plan. */
+  view?: string;
+  title?: string;
 }) {
+  // Todas las llamadas a la API llevan la vista; sin `view` el server usa el plan.
+  const url = (path = "", params = "") => {
+    const qs = [view && `view=${view}`, params].filter(Boolean).join("&");
+    return `${API}${path}${qs ? `?${qs}` : ""}`;
+  };
+  const myView = view || "adminleads";
+
   const fileRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -91,7 +106,7 @@ export default function PlanContenidoPanel({
   };
 
   const loadMeta = useCallback(() => {
-    fetch(`${API}/meta`)
+    fetch(url("/meta"))
       .then((r) => r.json())
       .then(setMeta)
       .catch(() => setMeta({ exists: false }));
@@ -103,6 +118,11 @@ export default function PlanContenidoPanel({
   // sesion). Aqui solo se refleja el estado para el usuario.
   useEffect(() => {
     const handler = (e: MessageEvent) => {
+      // Frecuencia CPM solo avisa cuando guardo con su boton.
+      if (e.data?.type === "SUPRICOM_FRECUENCIA_STATUS" && e.data.status === "saved") {
+        setStatus("saved");
+        return;
+      }
       if (!e.data || e.data.type !== "SUPRICOM_PLAN_STATUS") return;
       setStatus(e.data.status as SaveStatus);
       if (e.data.status === "saved") {
@@ -121,13 +141,18 @@ export default function PlanContenidoPanel({
     const socket = io(url, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
-    socket.on("vista-html-updated", (payload: { meta?: FileMeta }) => {
+    // Los eventos son globales: se ignoran los de otras vistas.
+    const otraVista = (p?: { view?: string }) => (p?.view || "adminleads") !== myView;
+
+    socket.on("vista-html-updated", (payload: { view?: string; meta?: FileMeta }) => {
+      if (otraVista(payload)) return;
       if (payload?.meta) setMeta((m) => ({ ...m, exists: true, ...payload.meta }));
       else loadMeta();
       setIframeKey((k) => k + 1);
     });
 
-    socket.on("vista-state-updated", (payload: { revision?: number; by?: string }) => {
+    socket.on("vista-state-updated", (payload: { view?: string; revision?: number; by?: string }) => {
+      if (otraVista(payload)) return;
       setMeta((m) => ({
         ...m,
         revision: payload?.revision ?? m.revision,
@@ -138,7 +163,8 @@ export default function PlanContenidoPanel({
 
     // Panel React: el estado lo sincroniza la propia app dentro del iframe;
     // aqui solo se refleja el contador de cambios y quien guardo.
-    socket.on("plan-state-updated", (payload: { revision?: number; by?: string }) => {
+    socket.on("plan-state-updated", (payload: { view?: string; revision?: number; by?: string }) => {
+      if (otraVista(payload)) return;
       setMeta((m) => ({
         ...m,
         revision: payload?.revision ?? m.revision,
@@ -151,7 +177,7 @@ export default function PlanContenidoPanel({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [loadMeta]);
+  }, [loadMeta, myView]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -169,13 +195,18 @@ export default function PlanContenidoPanel({
 
       const form = new FormData();
       form.append("html", file);
-      const res = await fetch(API, { method: "POST", body: form });
+      const res = await fetch(url(), { method: "POST", body: form });
       const data = await res.json();
       if (data.success) {
         setMeta((m) => ({ ...m, exists: true, ...data.meta }));
         setIframeKey((k) => k + 1);
         setVersions(null);
-        showToast("ok", "HTML actualizado. Los cambios del panel se reaplicaron encima.");
+        showToast(
+          "ok",
+          meta.mode === "app"
+            ? "HTML actualizado."
+            : "HTML actualizado. Los cambios del panel se reaplicaron encima.",
+        );
       } else {
         showToast("err", data.error || "Error al subir el archivo");
       }
@@ -192,7 +223,7 @@ export default function PlanContenidoPanel({
   const openHistory = async () => {
     setShowHistory(true);
     try {
-      const r = await fetch(isReact ? `${API}/plan-state?mode=history` : `${API}/history`);
+      const r = await fetch(isReact ? url("/plan-state", "mode=history") : url("/history"));
       const d = await r.json();
       // El historial React trae { id, revision, hasState, ... }; el overlay
       // ademas { kind, hasSnapshot }. Se normaliza para la misma tabla.
@@ -213,7 +244,7 @@ export default function PlanContenidoPanel({
   const restore = async (id: number) => {
     setRestoring(id);
     try {
-      const r = await fetch(isReact ? `${API}/plan-state` : `${API}/history`, {
+      const r = await fetch(isReact ? url("/plan-state") : url("/history"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isReact ? { restore: id } : { id }),
@@ -256,7 +287,7 @@ export default function PlanContenidoPanel({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900">Plan de Contenido</h1>
+              <h1 className="text-xl font-bold text-slate-900">{title}</h1>
               {statusPill()}
             </div>
             {meta.exists && (
@@ -264,7 +295,7 @@ export default function PlanContenidoPanel({
                 {meta.filename && <span className="font-medium text-slate-500">{meta.filename}</span>}
                 {!!meta.size && <span> · {formatSize(meta.size)}</span>}
                 {meta.updatedAt && <span> · HTML {formatDate(meta.updatedAt)}</span>}
-                {!!meta.revision && <span> · {meta.revision} cambios guardados</span>}
+                {!!meta.revision && meta.mode !== "app" && <span> · {meta.revision} cambios guardados</span>}
               </p>
             )}
           </div>
@@ -275,7 +306,7 @@ export default function PlanContenidoPanel({
             <>
               <Button
                 variant="outline" size="sm"
-                onClick={() => window.open(API, "_blank")}
+                onClick={() => window.open(url(), "_blank")}
                 className="gap-1.5 text-slate-600"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
@@ -285,13 +316,15 @@ export default function PlanContenidoPanel({
                 variant="outline" size="sm"
                 onClick={() =>
                   window.open(
-                    isReact ? `${API}?mode=base&download=1` : `${API}?mode=snapshot&download=1`,
+                    isReact || meta.mode === "app"
+                      ? url("", "mode=base&download=1")
+                      : url("", "mode=snapshot&download=1"),
                     "_blank",
                   )
                 }
                 className="gap-1.5 text-slate-600"
                 title={
-                  isReact
+                  isReact || meta.mode === "app"
                     ? "Descarga el HTML del panel tal como se subio"
                     : "Descarga el HTML completo con todos los cambios del panel"
                 }
@@ -313,10 +346,12 @@ export default function PlanContenidoPanel({
 
           {canUpload && (
             <>
-              <Button variant="outline" size="sm" onClick={openHistory} className="gap-1.5 text-slate-600">
-                <History className="w-3.5 h-3.5" />
-                Historial
-              </Button>
+              {meta.mode !== "app" && (
+                <Button variant="outline" size="sm" onClick={openHistory} className="gap-1.5 text-slate-600">
+                  <History className="w-3.5 h-3.5" />
+                  Historial
+                </Button>
+              )}
               <input ref={fileRef} type="file" accept=".html,.htm" className="hidden" onChange={handleUpload} />
               <Button
                 size="sm"
@@ -352,7 +387,7 @@ export default function PlanContenidoPanel({
           <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 gap-4">
             <Globe className="w-16 h-16 opacity-20" />
             <div className="text-center">
-              <p className="text-lg font-semibold text-slate-600">Sin plan de contenido</p>
+              <p className="text-lg font-semibold text-slate-600">Sin HTML de {title}</p>
               <p className="text-sm mt-1">
                 {canUpload
                   ? 'Sube un archivo HTML con el boton "Actualizar HTML"'
@@ -364,9 +399,9 @@ export default function PlanContenidoPanel({
           <iframe
             ref={iframeRef}
             key={iframeKey}
-            src={`${API}?t=${iframeKey}`}
+            src={url("", `t=${iframeKey}`)}
             className="w-full h-full border-0"
-            title="Plan de Contenido"
+            title={title}
           />
         )}
       </div>
@@ -422,7 +457,7 @@ export default function PlanContenidoPanel({
                       <Button
                         variant="outline" size="sm"
                         className="gap-1 text-slate-600 h-8"
-                        onClick={() => window.open(`${API}/history?id=${v.id}`, "_blank")}
+                        onClick={() => window.open(url("/history", `id=${v.id}`), "_blank")}
                       >
                         <Download className="w-3.5 h-3.5" />
                       </Button>

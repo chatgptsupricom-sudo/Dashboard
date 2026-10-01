@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { addHistory, ensureTables, getState, getView, resolveView } from "@/lib/customView/store";
+import { addHistory, ensureTables, FRECUENCIA_VIEW_NAME, getState, getView, resolveView } from "@/lib/customView/store";
 import { buildInjection } from "@/lib/customView/runtime";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 import { buildReactInjection, detectReactPlan } from "@/lib/customView/reactInjection";
@@ -64,6 +64,8 @@ export async function GET(request: NextRequest) {
     await ensureTables();
     const viewName = resolveView(request.nextUrl.searchParams.get("view"));
     const mode = request.nextUrl.searchParams.get("mode");
+    const nombreDescarga =
+      viewName === FRECUENCIA_VIEW_NAME ? "frecuencia-cpm.html" : "plan-de-contenido.html";
 
     if (mode === "snapshot") {
       const state = await getState(viewName);
@@ -74,7 +76,7 @@ export async function GET(request: NextRequest) {
         headers: download
           ? {
               ...HTML_HEADERS,
-              "Content-Disposition": `attachment; filename="plan-de-contenido.html"`,
+              "Content-Disposition": `attachment; filename="${nombreDescarga}"`,
             }
           : HTML_HEADERS,
       });
@@ -85,11 +87,12 @@ export async function GET(request: NextRequest) {
       return new Response(PLACEHOLDER_HTML, { headers: HTML_HEADERS });
     }
 
-    if (mode === "base") {
+    // Frecuencia CPM guarda su propio estado: se sirve tal cual se subio.
+    if (mode === "base" || viewName === FRECUENCIA_VIEW_NAME) {
       const download = request.nextUrl.searchParams.get("download") === "1";
       return new Response(view.html_content, {
         headers: download
-          ? { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="plan-de-contenido.html"` }
+          ? { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="${nombreDescarga}"` }
           : HTML_HEADERS,
       });
     }
