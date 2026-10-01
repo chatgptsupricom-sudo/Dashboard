@@ -54,7 +54,7 @@ type Renglon = {
   invoiceName: string;
   /** Fecha del renglón para el Excel: emisión (facturado, por cobrar) o abono (cobrado). */
   fecha?: string | null;
-  /** Solo en "cobrado": vencimiento de la factura e interno, para el cuadre. */
+  /** Vencimiento de la factura ("cobrado": cuadre; "por_cobrar": detalle). */
   vencimiento?: string | null;
   interno?: boolean;
 };
@@ -158,6 +158,7 @@ async function renglonesPorCobrar(
         sellerName: r.sellerName,
         invoiceName: r.name,
         fecha: r.invoiceDate,
+        vencimiento: r.invoiceDateDue,
       })),
   };
 }
@@ -380,6 +381,7 @@ export async function GET(request: NextRequest) {
         partnerId: r.partnerId,
         cliente: r.partnerName,
         fecha: r.fecha ?? null,
+        vencimiento: r.vencimiento ?? null,
         plazo: d ? parseInt(d[1], 10) : null,
         monto: round2(r.monto),
         vendedor: r.sellerName,

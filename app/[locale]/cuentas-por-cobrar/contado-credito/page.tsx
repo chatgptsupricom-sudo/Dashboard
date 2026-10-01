@@ -94,7 +94,7 @@ type ClienteDetalle = { partnerId: number; partnerName: string; monto: number; f
 type Acumulado = { monto: number; pct: number; facturas: number; clientes: number; clientesDetalle: ClienteDetalle[] };
 type Bucket = Acumulado & { dias: number; montoDelMes: number; montoAnteriores: number };
 type Detalle = {
-  factura: string; partnerId: number; cliente: string; fecha: string | null; plazo: number | null;
+  factura: string; partnerId: number; cliente: string; fecha: string | null; vencimiento?: string | null; plazo: number | null;
   monto: number; vendedor: string; delMes: boolean; journalId: number | null; banco: string;
 };
 type FilaAparte = { id: number; documento: string; referencia: string; cliente: string; fecha: string | null; vence?: string | null; diario?: string; monto: number };
@@ -372,7 +372,25 @@ export default function ContadoCreditoPage() {
   const filasAparte = aparteModal.filas.filter((f) =>
     !qModal || [f.cliente, f.documento, f.referencia, f.diario || ""].some((v) => v.toLowerCase().includes(qModal)));
 
+  // Click en un mes de la barra de Por cobrar: sus facturas.
+  const [mesModal, setMesModal] = useState<{ open: boolean; label: string; meses: string[] }>({ open: false, label: "", meses: [] });
+  const filasMes = (data?.detalle || [])
+    .filter((d) => mesModal.meses.includes((d.fecha || "").slice(0, 7) || "sin-fecha"))
+    .filter((d) => !qModal || [d.cliente, d.factura, d.vendedor].some((v) => v.toLowerCase().includes(qModal)))
+    .sort((a, b) => b.monto - a.monto);
+  const plazoTxt = (p: number | null) => (p ? `${p} días` : "Contado");
+  const exportarMes = () => {
+    libro(`Por_cobrar_${mesModal.label.replace(/\s+/g, "_")}_${periodoTxt}`, [{
+      nombre: mesModal.label,
+      filas: filasMes.map((d) => ({
+        Factura: d.factura, Cliente: d.cliente, Emisión: d.fecha || "", Vence: d.vencimiento || "",
+        Plazo: plazoTxt(d.plazo), Vendedor: d.vendedor, Saldo: d.monto,
+      })),
+    }]);
+  };
+
   const closeAllModals = () => {
+    setMesModal((prev) => ({ ...prev, open: false }));
     setAparteModal((prev) => ({ ...prev, open: false }));
     setClientesModal((prev) => ({ ...prev, open: false }));
     setFacturasModal({ open: false, partnerId: 0, partnerName: "" });
@@ -422,8 +440,8 @@ export default function ContadoCreditoPage() {
     const antes = meses.slice(6).reduce((s, k) => s + (m.get(k) || 0), 0) + (m.get("sin-fecha") || 0);
     const total = [...m.values()].reduce((s, v) => s + v, 0);
     const nombre = (k: string) => `${MONTHS[parseInt(k.slice(5, 7), 10) - 1]?.slice(0, 3)} ${k.slice(0, 4)}`;
-    const filas = recientes.reverse().map((k) => ({ label: nombre(k), monto: m.get(k) || 0 }));
-    if (Math.abs(antes) > 0.005) filas.unshift({ label: meses[6] ? `Antes de ${nombre(recientes[0])}` : "Sin fecha", monto: antes });
+    const filas = recientes.reverse().map((k) => ({ label: nombre(k), monto: m.get(k) || 0, meses: [k] }));
+    if (Math.abs(antes) > 0.005) filas.unshift({ label: meses[6] ? `Antes de ${nombre(recientes[0])}` : "Sin fecha", monto: antes, meses: [...meses.slice(6), "sin-fecha"] });
     const colores = ["#94a3b8", "#f59e0b", "#f97316", "#ef4444", "#a855f7", "#14b8a6", "#3b82f6"];
     return filas.map((f, i) => ({
       ...f,
@@ -633,7 +651,7 @@ export default function ContadoCreditoPage() {
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
             {proyeccion && data.porCobrar && (
               <p className="text-xs text-slate-500 mt-1">
-                Saldo con IVA de hoy ({data.porCobrar.corte}) de las facturas que vencen hasta el fin de este mes: lo que vence en el mes más lo que ya venía vencido. Si se cobra en meses anteriores, baja.
+                Saldo con IVA de hoy ({data.porCobrar.corte}) de las facturas que vencen dentro de este mes. Lo vencido y lo que vence antes está en el mes en curso; cuando este mes empiece, mostrará todo el saldo abierto.
               </p>
             )}
             {esPorCobrar && !proyeccion && data.porCobrar && (
@@ -645,13 +663,13 @@ export default function ContadoCreditoPage() {
               <>
                 <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
                   {porMesEmision.map((f) => (
-                    <div key={f.label} className="h-full" style={{ width: `${f.pct}%`, background: f.color }} title={`${f.label}: ${formatCurrency(f.monto)}`} />
+                    <div key={f.label} onClick={() => { setBusquedaModal(""); setMesModal({ open: true, label: f.label, meses: f.meses }); }} className="h-full cursor-pointer hover:opacity-80" style={{ width: `${f.pct}%`, background: f.color }} title={`${f.label}: ${formatCurrency(f.monto)}`} />
                   ))}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
                   <span className="text-slate-400">Facturado en:</span>
                   {porMesEmision.map((f) => (
-                    <span key={f.label} className="flex items-center gap-1.5">
+                    <span key={f.label} onClick={() => { setBusquedaModal(""); setMesModal({ open: true, label: f.label, meses: f.meses }); }} className="flex items-center gap-1.5 cursor-pointer hover:text-slate-700">
                       <span className="w-2 h-2 rounded-full inline-block" style={{ background: f.color }} />
                       {f.label}: <span className="font-semibold text-slate-700">{formatCurrency(f.monto)}</span> ({f.pct.toFixed(1)}%)
                     </span>
@@ -891,6 +909,58 @@ export default function ContadoCreditoPage() {
           )}
         </div>
       )}
+
+      {/* Por cobrar: facturas de un mes de emisión (click en la barra) */}
+      <Modal open={mesModal.open} onClose={closeAllModals} title={`Por cobrar — facturado en ${mesModal.label}`} wide>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={busquedaModal}
+              onChange={(e) => setBusquedaModal(e.target.value)}
+              placeholder="Buscar cliente, factura o vendedor..."
+              className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+            />
+          </div>
+          <button onClick={exportarMes} className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition">
+            <Download size={13} /> Excel
+          </button>
+        </div>
+        {filasMes.length === 0 ? (
+          <div className="text-center py-8 text-slate-400">Sin registros</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50/80">
+                  {["Factura", "Cliente", "Emisión", "Vence", "Plazo", "Vendedor"].map((h) => (
+                    <th key={h} className="text-left py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+                  ))}
+                  <th className="text-right py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filasMes.map((d, i) => (
+                  <tr key={`${d.factura}-${i}`} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                    <td className="py-2.5 px-4 font-medium text-slate-700">{d.factura}</td>
+                    <td className="py-2.5 px-4 text-slate-600 max-w-[220px] truncate">{d.cliente}</td>
+                    <td className="py-2.5 px-4 text-slate-500">{formatDate(d.fecha)}</td>
+                    <td className="py-2.5 px-4 text-slate-500">{formatDate(d.vencimiento ?? null)}</td>
+                    <td className="py-2.5 px-4 text-slate-500">{plazoTxt(d.plazo)}</td>
+                    <td className="py-2.5 px-4 text-slate-500 max-w-[160px] truncate">{d.vendedor}</td>
+                    <td className="py-2.5 px-4 text-right font-bold text-slate-800">{formatCurrency(d.monto)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-slate-200">
+                  <td colSpan={6} className="py-2.5 px-4 font-semibold text-slate-600">{filasMes.length} facturas</td>
+                  <td className="py-2.5 px-4 text-right font-bold text-slate-800">{formatCurrency(filasMes.reduce((s, d) => s + d.monto, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
 
       {/* Detalle de Incobrables / Pagos sin aplicar ("Por cobrar") */}
       <Modal

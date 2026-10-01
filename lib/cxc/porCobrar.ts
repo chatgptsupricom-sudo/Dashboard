@@ -17,9 +17,9 @@ import { esInterno } from "@/lib/cxc/cobros";
  * son saldos, con IVA (Facturado muestra la base sin IVA).
  *
  * Mes futuro (proyección): no hay cierre que reconstruir. Se toma el saldo de
- * hoy y se dejan solo las facturas que vencen hasta el fin de ese mes: lo que
- * hay que cobrar para cerrarlo al día (vence en el mes + lo que ya venía de
- * antes). Las que vencen después quedan para los meses siguientes.
+ * hoy y se dejan solo las facturas que vencen dentro de ese mes. Lo vencido y
+ * lo que vence antes se ve en el mes en curso; cuando el mes futuro pasa a ser
+ * el mes en curso, vuelve a mostrar todo el saldo abierto.
  */
 
 export interface RenglonPorCobrar {
@@ -65,6 +65,7 @@ export async function porCobrarAlCierre(
   const proyeccion = new Date(finDia.getFullYear(), finDia.getMonth(), 1) > hoy;
   const pad = (n: number) => String(n).padStart(2, "0");
   const finStr = `${finDia.getFullYear()}-${pad(finDia.getMonth() + 1)}-${pad(finDia.getDate())}`;
+  const inicioMesStr = `${finStr.slice(0, 8)}01`;
   const inicioCorte = new Date(corte);
   inicioCorte.setHours(0, 0, 0, 0);
 
@@ -99,7 +100,11 @@ export async function porCobrarAlCierre(
   const renglones = moves
     .filter((m) => m.partner_id && !esInterno(m.partner_id[1] || ""))
     .filter((m) => partnerId === undefined || m.partner_id[0] === partnerId)
-    .filter((m) => !proyeccion || (m.invoice_date_due || m.invoice_date || "") <= finStr)
+    .filter((m) => {
+      if (!proyeccion) return true;
+      const vence = m.invoice_date_due || m.invoice_date || "";
+      return vence >= inicioMesStr && vence <= finStr;
+    })
     .map((m) => ({
       id: m.id,
       name: m.name || "",
