@@ -408,6 +408,29 @@ export default function ContadoCreditoPage() {
 
   // Mes futuro en Por cobrar: lo que vence hasta fin de ese mes (lib/cxc/porCobrar.ts).
   const proyeccion = esPorCobrar && !!data?.porCobrar?.proyeccion;
+  // Por cobrar: de qué mes de emisión viene la deuda. Los 6 meses más recientes
+  // por separado y el resto junto en "Antes".
+  const porMesEmision = (() => {
+    if (!esPorCobrar || !data?.detalle) return [];
+    const m = new Map<string, number>();
+    for (const d of data.detalle) {
+      const k = (d.fecha || "").slice(0, 7) || "sin-fecha";
+      m.set(k, (m.get(k) || 0) + d.monto);
+    }
+    const meses = [...m.keys()].filter((k) => k !== "sin-fecha").sort().reverse();
+    const recientes = meses.slice(0, 6);
+    const antes = meses.slice(6).reduce((s, k) => s + (m.get(k) || 0), 0) + (m.get("sin-fecha") || 0);
+    const total = [...m.values()].reduce((s, v) => s + v, 0);
+    const nombre = (k: string) => `${MONTHS[parseInt(k.slice(5, 7), 10) - 1]?.slice(0, 3)} ${k.slice(0, 4)}`;
+    const filas = recientes.reverse().map((k) => ({ label: nombre(k), monto: m.get(k) || 0 }));
+    if (Math.abs(antes) > 0.005) filas.unshift({ label: meses[6] ? `Antes de ${nombre(recientes[0])}` : "Sin fecha", monto: antes });
+    const colores = ["#94a3b8", "#f59e0b", "#f97316", "#ef4444", "#a855f7", "#14b8a6", "#3b82f6"];
+    return filas.map((f, i) => ({
+      ...f,
+      pct: total > 0 ? Math.max(0, (f.monto / total) * 100) : 0,
+      color: colores[colores.length - filas.length + i] ?? colores[i % colores.length],
+    }));
+  })();
   const etDelMes = proyeccion ? "Vence en el mes" : "Facturas del mes";
   const etAnteriores = proyeccion ? "Ya vencido antes" : "Meses anteriores";
   const tituloTotal = proyeccion
@@ -618,8 +641,27 @@ export default function ContadoCreditoPage() {
                 Saldo con IVA al {data.porCobrar.corte}{data.porCobrar.sinAplicar !== null ? " (hoy, el mes no ha cerrado)" : ""} — es la CxC con la que arranca el mes siguiente.
               </p>
             )}
+            {esPorCobrar && porMesEmision.length > 0 ? (
+              <>
+                <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
+                  {porMesEmision.map((f) => (
+                    <div key={f.label} className="h-full" style={{ width: `${f.pct}%`, background: f.color }} title={`${f.label}: ${formatCurrency(f.monto)}`} />
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
+                  <span className="text-slate-400">Facturado en:</span>
+                  {porMesEmision.map((f) => (
+                    <span key={f.label} className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ background: f.color }} />
+                      {f.label}: <span className="font-semibold text-slate-700">{formatCurrency(f.monto)}</span> ({f.pct.toFixed(1)}%)
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : null}
             {esCobrado || esPorCobrar ? (
               <>
+                {!esPorCobrar && <>
                 <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
                   <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`${etDelMes}: ${data.delMes.pct}%`} />
                   <div className="h-full bg-amber-500" style={{ width: `${data.mesesAnteriores.pct}%` }} title={`${etAnteriores}: ${data.mesesAnteriores.pct}%`} />
@@ -634,6 +676,7 @@ export default function ContadoCreditoPage() {
                     {etAnteriores}: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
                   </span>
                 </div>
+                </>}
                 {esPorCobrar && data.porCobrar && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs text-slate-500 mb-2">Fuera de este total, igual que en los KPIs del Dashboard</p>
