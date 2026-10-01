@@ -1,0 +1,109 @@
+import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
+import { NextRequest, NextResponse } from "next/server";
+import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinIntercompania } from "@/lib/intercompania";
+
+export async function GET(request: NextRequest) {
+  try {
+    const acceso = await accesoStoplight(request);
+    if (acceso.error) return acceso.error;
+    const { rol, companyId } = acceso;
+
+    const url = new URL(request.url);
+    const seller_user_id = url.searchParams.get("seller_user_id");
+
+    // `company_id` ya no es obligatorio: gerente de operaciones no lo manda
+    // (usa la empresa del token) y la ruta le respondía 400.
+    if (!seller_user_id) {
+      return NextResponse.json({ error: "Faltan parámetros" }, { status: 400 });
+    }
+
+    const userId = parseInt(seller_user_id);
+
+    // Fuera de superadmin, solo vendedores de la propia empresa.
+    if (rol !== "superadmin") {
+      const propio = await query("SELECT 1 FROM sellers WHERE user_id = ? AND cids = ? LIMIT 1", [userId, companyId]);
+      if ((propio.rows as any[]).length === 0) {
+        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      }
+    }
+    console.log(`[SellerClients] company=${companyId}, seller_user_id=${userId}`);
+
+    const clientSet = new Map<number, string>();
+    // Misma cartera que Activación: sin la otra sede (lib/intercompania).
+    const noIC = await sinIntercompania();
+
+    const byUser = (await callOdooRPC<any[]>(
+      "res.partner",
+      "search_read",
+      [
+        [
+          ["user_id", "=", userId],
+          ["customer_rank", ">", 0],
+          ["active", "=", true],
+          noIC,
+        ],
+      ],
+      {
+        fields: ["id", "name", "user_id"],
+        limit: 10000,
+      }
+    )) || [];
+
+    console.log(`[SellerClients] By user_id: ${byUser.length} clients`);
+    byUser.forEach((c: any) => {
+      console.log(`  - ${c.name} (user_id=${c.user_id})`);
+      clientSet.set(c.id, c.name);
+    });
+
+    if (clientSet.size === 0) {
+      console.log(`[SellerClients] No clients by user_id, trying invoices...`);
+      const invoices = (await callOdooRPC<any[]>(
+        "account.move",
+        "search_read",
+        [
+          [
+            ["invoice_user_id", "=", userId],
+            ["move_type", "=", "out_invoice"],
+            ["state", "in", ["posted", "draft"]],
+            noIC,
+          ],
+        ],
+        {
+          fields: ["partner_id", "invoice_user_id"],
+          limit: 10000,
+        }
+      )) || [];
+
+      console.log(`[SellerClients] Invoices found: ${invoices.length}`);
+      const partnerIds = [...new Set(
+        invoices.map((inv: any) => inv.partner_id?.[0]).filter(Boolean)
+      )];
+
+      console.log(`[SellerClients] Unique partners from invoices: ${partnerIds.length}`);
+
+      if (partnerIds.length > 0) {
+        const partners = (await callOdooRPC<any[]>(
+          "res.partner",
+          "search_read",
+          [[["id", "in", partnerIds], ["active", "=", true]]],
+          { fields: ["id", "name"] }
+        )) || [];
+        console.log(`[SellerClients] Partners resolved: ${partners.length}`);
+        partners.forEach((p: any) => clientSet.set(p.id, p.name));
+      }
+    }
+
+    const result = [...clientSet.entries()].map(([id, name]) => ({ id, name }));
+    console.log(`[SellerClients] Final result: ${result.length} clients`);
+
+    return NextResponse.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Error fetching seller clients:", error.message);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}

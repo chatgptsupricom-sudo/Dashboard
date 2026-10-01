@@ -1,0 +1,956 @@
+import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
+import { jwtVerify } from "jose";
+import { NextRequest, NextResponse } from "next/server";
+import { contarDiasUtiles, obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
+import { computeComprasKpis } from "@/lib/compras/kpis";
+import { ensureKpiTargetsPeso, pesoDeFila, pesoParaGuardar } from "@/lib/kpiTargets";
+import { jwtSecretBytes } from "@/lib/secretos";
+import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
+import { sinIntercompania } from "@/lib/intercompania";
+
+const JWT_SECRET = jwtSecretBytes();
+
+function normalize(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\./g, "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+async function ensureTables() {
+  await query(`CREATE TABLE IF NOT EXISTS kpi_targets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    kpi_key VARCHAR(100) NOT NULL,
+    company_id INT NOT NULL,
+    meta_mensual DECIMAL(15,2) NOT NULL DEFAULT 0,
+    peso DECIMAL(5,2) NULL DEFAULT NULL,
+    mes VARCHAR(7) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_kpi (kpi_key, company_id, mes)
+  )`);
+  // `peso` se agregó después (issue #131): en bases que ya tenían la tabla,
+  // el CREATE de arriba no la toca.
+  await ensureKpiTargetsPeso();
+  await query(`CREATE TABLE IF NOT EXISTS kpi_weekly_data (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    kpi_key VARCHAR(100) NOT NULL,
+    company_id INT NOT NULL,
+    mes VARCHAR(7) NOT NULL,
+    semana_index INT NOT NULL,
+    semana_label VARCHAR(50),
+    valor DECIMAL(15,2) DEFAULT 0,
+    meta DECIMAL(15,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_kpi_week (kpi_key, company_id, mes, semana_index)
+  )`);
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.cookies.get("token")?.value;
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    const isCxC = userRole === "cuentas por cobrar";
+    const isGerenteOps = userRole === "gerente de operaciones";
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
+
+    await ensureTables();
+
+    const url = new URL(request.url);
+    const companyIdParam = url.searchParams.get("company_id");
+    const mesParam = url.searchParams.get("mes");
+    const startDateParam = url.searchParams.get("startDate");
+    const endDateParam = url.searchParams.get("endDate");
+    // Gerencia de Ventas tampoco elige sede: su página ya manda su propio
+    // `cids`, pero sin esto podía leer otra sede cambiando `company_id`.
+    const empresaFija = isCxC || isGerenteOps || userRole === "gerencia de ventas";
+    const companyId = empresaFija ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
+
+    const now = new Date();
+    const mes = mesParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [anioStr, mesStr] = mes.split("-");
+    const anio = parseInt(anioStr, 10);
+    const mesNum = parseInt(mesStr, 10);
+
+    const fechaInicio = startDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+    const fechaFin = endDateParam || `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+
+    const semanas = startDateParam && endDateParam
+      ? obtenerSemanasDelRango(new Date(startDateParam), new Date(endDateParam))
+      : obtenerSemanasDelMes(anio, mesNum);
+    const numSemanas = semanas.length;
+
+    // 1. Load saved weekly data from DB
+    const savedData = await query(
+      "SELECT kpi_key, semana_index, valor, meta FROM kpi_weekly_data WHERE company_id = ? AND mes = ?",
+      [companyId, mes]
+    );
+    const savedMap: Record<string, Record<number, { valor: number; meta: number }>> = {};
+    (savedData.rows as any[]).forEach((row) => {
+      if (!savedMap[row.kpi_key]) savedMap[row.kpi_key] = {};
+      savedMap[row.kpi_key][row.semana_index] = { valor: Number(row.valor), meta: Number(row.meta) };
+    });
+
+    // 2. Fetch cuota data
+    let sellers: any[] = [];
+    let totalCuotaMensual = 0;
+    try {
+      const cuotaResult = await query(
+        `SELECT s.id as seller_id, s.name, s.user_id, COALESCE(c.cuota, 0) as cuota 
+         FROM sellers s 
+         LEFT JOIN (
+           SELECT seller_id, cuota FROM cuota 
+           WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
+         ) c ON s.id = c.seller_id
+         WHERE s.cids = ?`,
+        [companyId]
+      );
+      sellers = cuotaResult.rows as any[];
+      totalCuotaMensual = sellers.reduce((sum, s) => sum + Number(s.cuota || 0), 0);
+    } catch (e: any) {
+      console.error("Error cuota:", e.message);
+    }
+
+    // 3. Fetch invoices for the date range
+    // Sin intercompañía (lib/intercompania): en Panamá se emiten a nombre de un
+    // vendedor y le sumaban ~$950k a su cuota en sep-2026; además la otra sede
+    // aparecía como cliente nuevo o activo. Mismo filtro en Margen, Cobertura,
+    // Efectividad y Ciclo de reposición, y en los modales de detalle.
+    const noIC = await sinIntercompania();
+
+    const invoices = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [
+        [
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["company_id", "=", companyId],
+          ["invoice_date", ">=", fechaInicio],
+          ["invoice_date", "<=", fechaFin],
+          ["invoice_user_id", "!=", false],
+          noIC,
+        ],
+      ],
+      {
+        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date", "partner_id"],
+        limit: 10000,
+      }
+    );
+
+    // 4. Normalize seller names
+    const normalizedSellerMap: Record<string, string> = {};
+    const sellerMap: Record<string, { nombre: string; user_id: number; cuotaMensual: number; facturadoMensual: number; semanas: { facturado: number; cuotaSemanal: number }[] }> = {};
+    sellers.forEach((s) => {
+      const norm = normalize(s.name);
+      normalizedSellerMap[norm] = s.name;
+      sellerMap[s.name] = {
+        nombre: s.name,
+        user_id: s.user_id,
+        cuotaMensual: Number(s.cuota || 0),
+        facturadoMensual: 0,
+        semanas: semanas.map(() => ({ facturado: 0, cuotaSemanal: 0 })),
+      };
+    });
+
+    // 5. Distribute invoices
+    (invoices || []).forEach((inv: any) => {
+      const sellerName = inv.invoice_user_id?.[1];
+      if (!sellerName) return;
+      const invNorm = normalize(sellerName);
+      const matchedName = normalizedSellerMap[invNorm];
+      const amount = Number(inv.amount_untaxed) || 0;
+
+      if (matchedName && sellerMap[matchedName]) {
+        sellerMap[matchedName].facturadoMensual += amount;
+        const invDate = new Date(inv.invoice_date);
+        for (let i = 0; i < semanas.length; i++) {
+          if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+            sellerMap[matchedName].semanas[i].facturado += amount;
+            break;
+          }
+        }
+      }
+    });
+
+    // 6. Calculate weekly quota by business days
+    const totalDiasUtilesMes = contarDiasUtiles(new Date(anio, mesNum - 1, 1), new Date(anio, mesNum, 0));
+    // Días hábiles transcurridos del mes hasta hoy — para el "avance del mes":
+    // facturado vs. la cuota prorrateada a esta altura (100% = al día).
+    const finMes = new Date(anio, mesNum, 0);
+    const hoyOFin = now < finMes ? now : finMes;
+    const diasUtilesTranscurridos = contarDiasUtiles(new Date(anio, mesNum - 1, 1), hoyOFin);
+    const factorTranscurrido = totalDiasUtilesMes > 0 ? diasUtilesTranscurridos / totalDiasUtilesMes : 1;
+    Object.values(sellerMap).forEach((seller) => {
+      semanas.forEach((semana, i) => {
+        seller.semanas[i].cuotaSemanal = totalDiasUtilesMes > 0
+          ? (seller.cuotaMensual * semana.diasUtiles) / totalDiasUtilesMes
+          : seller.cuotaMensual / numSemanas;
+      });
+    });
+
+    // 7. Calculate visitas (activities per seller from Odoo)
+    let visitasPorSeller: Record<string, number> = {};
+    try {
+      const sellerUserIds = sellers.map((s) => s.user_id).filter(Boolean);
+      if (sellerUserIds.length > 0) {
+        const allSellerInvoices = invoices || [];
+        const invoiceIds = allSellerInvoices.map((inv: any) => inv.id);
+        if (invoiceIds.length > 0) {
+          const activities = await callOdooRPC<any[]>(
+            "mail.message",
+            "search_read",
+            [
+              [
+                ["model", "=", "account.move"],
+                ["subtype_id", "=", 2], // mail.mt_comment or activity
+                ["create_date", ">=", fechaInicio],
+                ["create_date", "<=", fechaFin],
+              ],
+            ],
+            {
+              fields: ["author_id", "create_date"],
+              limit: 5000,
+            }
+          );
+          (activities || []).forEach((act: any) => {
+            const authorName = act.author_id?.[1];
+            if (!authorName) return;
+            const norm = normalize(authorName);
+            const matchedName = normalizedSellerMap[norm];
+            if (matchedName) {
+              visitasPorSeller[matchedName] = (visitasPorSeller[matchedName] || 0) + 1;
+            }
+          });
+        }
+      }
+    } catch (_) {}
+
+    // 8. Calculate new clients
+    // A "cliente nuevo" = partner whose FIRST invoice in Odoo is in the current month.
+    // Goal = meta per seller (e.g. 10 means each seller must capture 10 new clients).
+    // Weekly % = (new clients that week) / (goal_per_seller * num_sellers * dias_utiles_semana / dias_utiles_mes) * 100
+
+    const clientesNuevosPorSeller: Record<string, number> = {};
+    const clientesNuevosPorSellerPorSemana: Record<string, Record<number, number>> = {};
+
+    try {
+      // Collect unique partner_ids from current month invoices
+      const currentMonthPartnerIds = [...new Set(
+        (invoices || [])
+          .map((inv: any) => inv.partner_id?.[0])
+          .filter(Boolean)
+      )];
+
+      if (currentMonthPartnerIds.length > 0) {
+        // For each partner, check if they have ANY invoice before the current month
+        // Use Odoo RPC to find invoices for these partners before fechaInicio
+        const historicalInvoices = await callOdooRPC<any[]>(
+          "account.move",
+          "search_read",
+          [
+            [
+              ["partner_id", "in", currentMonthPartnerIds],
+              ["invoice_date", "<", fechaInicio],
+              ["move_type", "in", ["out_invoice", "out_refund"]],
+              ["state", "=", "posted"],
+              ["company_id", "=", companyId],
+            ],
+          ],
+          {
+            fields: ["partner_id"],
+            limit: 50000,
+          }
+        );
+
+        // Build set of partners who already existed (had invoices before this month)
+        const existingPartnerIds = new Set<number>();
+        (historicalInvoices || []).forEach((inv: any) => {
+          const pid = inv.partner_id?.[0];
+          if (pid) existingPartnerIds.add(pid);
+        });
+
+        // Now determine new clients from current month invoices
+        // A partner is "new" if they are NOT in existingPartnerIds
+        // Each partner is counted only once (first invoice in the current month)
+        const partnerAlreadyCounted = new Set<number>();
+
+        (invoices || []).forEach((inv: any) => {
+          const partnerId = inv.partner_id?.[0];
+          if (!partnerId) return;
+          if (existingPartnerIds.has(partnerId)) return;
+          if (partnerAlreadyCounted.has(partnerId)) return;
+
+          partnerAlreadyCounted.add(partnerId);
+
+          const sellerName = inv.invoice_user_id?.[1];
+          if (!sellerName) return;
+          const norm = normalize(sellerName);
+          const matchedName = normalizedSellerMap[norm];
+          if (!matchedName) return;
+
+          clientesNuevosPorSeller[matchedName] = (clientesNuevosPorSeller[matchedName] || 0) + 1;
+
+          // Track by week
+          const invDate = new Date(inv.invoice_date);
+          for (let i = 0; i < semanas.length; i++) {
+            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+              if (!clientesNuevosPorSellerPorSemana[matchedName]) {
+                clientesNuevosPorSellerPorSemana[matchedName] = {};
+              }
+              clientesNuevosPorSellerPorSemana[matchedName][i] =
+                (clientesNuevosPorSellerPorSemana[matchedName][i] || 0) + 1;
+              break;
+            }
+          }
+        });
+
+        console.log(`[Stoplight] Clientes nuevos: ${partnerAlreadyCounted.size} de ${currentMonthPartnerIds.length} partners del mes (${existingPartnerIds.size} ya existian)`);
+      }
+    } catch (e: any) {
+      console.error("Error calculating new clients:", e.message);
+    }
+
+    // 9. Build week headers
+    const weekHeaders = semanas.map((s) => {
+      const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+      return `${s.inicio.toLocaleDateString("es-VE", opts)} - ${s.fin.toLocaleDateString("es-VE", opts)}`;
+    });
+
+    // 10. Build KPI data
+    const totalFacturadoMensual = Object.values(sellerMap).reduce((sum, s) => sum + s.facturadoMensual, 0);
+
+    // Load metas first (needed for weekly calculations)
+    const kpiKeys = ["cumplimiento_cuota_ventas", "margen_bruto", "visitas_semanales", "efectividad_cierre", "activacion_cartera", "clientes_nuevos", "cobertura_marcas", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias", "forecast_semanal", "propuestas_calificadas"];
+    const metasResult = await query(
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
+      [companyId, mes]
+    );
+    const metasMap: Record<string, number> = {};
+    const pesosMap: Record<string, number> = {};
+    (metasResult.rows as any[]).forEach((r) => {
+      metasMap[r.kpi_key] = Number(r.meta_mensual);
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
+    });
+
+    const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
+    const effectiveCuotaMensual = metaCuota > 0 ? metaCuota : totalCuotaMensual;
+    const porcentajeCumplimiento = effectiveCuotaMensual > 0 ? Math.round((totalFacturadoMensual / effectiveCuotaMensual) * 100) : 0;
+    // Avance del mes (opción B): facturado ÷ cuota prorrateada a los días
+    // hábiles transcurridos. 100% = vas al día para llegar a la cuota.
+    const cuotaProrrateada = effectiveCuotaMensual * factorTranscurrido;
+    const avanceMesCuota = cuotaProrrateada > 0
+      ? Math.round((totalFacturadoMensual / cuotaProrrateada) * 100)
+      : null;
+
+    const semanaCuota = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const facturadoSemana = Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].facturado, 0);
+      const cuotaSemana = metaCuota > 0
+        ? (metaCuota * semana.diasUtiles) / totalDiasUtilesMes
+        : Object.values(sellerMap).reduce((sum, s) => sum + s.semanas[i].cuotaSemanal, 0);
+      const pct = cuotaSemana > 0 ? Math.round((facturadoSemana / cuotaSemana) * 100) : 0;
+      return `${pct}%`;
+    });
+
+    const totalVisitasMes = Object.values(visitasPorSeller).reduce((sum, v) => sum + v, 0);
+
+    const totalClientesNuevos = Object.values(clientesNuevosPorSeller).reduce((sum, v) => sum + v, 0);
+    const numSellers = sellers.length || 1;
+
+    const metaClientesNuevos = metasMap["clientes_nuevos"] || 0; // goal per seller
+
+    // Calculate weekly % for clientes nuevos:
+    // Goal per week for the whole team = meta_per_seller * num_sellers * (diasUtilesSemana / diasUtilesMes)
+    const semanaClientes = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+
+      const newClientsThisWeek = Object.values(clientesNuevosPorSellerPorSemana).reduce(
+        (sum, semanaMap) => sum + (semanaMap[i] || 0), 0
+      );
+
+      if (metaClientesNuevos <= 0) {
+        return newClientsThisWeek > 0 ? String(newClientsThisWeek) : null;
+      }
+
+      const goalThisWeek = metaClientesNuevos * numSellers * (semana.diasUtiles / totalDiasUtilesMes);
+      if (goalThisWeek <= 0) return null;
+
+      const pct = Math.round((newClientsThisWeek / goalThisWeek) * 100);
+      return `${pct}%`;
+    });
+
+    const fromSavedOrComputed = (key: string, computed: (number | null)[], lowerIsBetter: boolean = false) =>
+      semanas.map((semana, i) => {
+        const esFuturo = semana.inicio > now;
+        if (esFuturo) return null;
+        const saved = savedMap[key]?.[i];
+        const raw = saved ? saved.valor : computed[i];
+        if (raw === null || raw === undefined) return null;
+        const goal = metasMap[key] || 0;
+        if (goal <= 0) return `${Math.round(raw)}%`;
+        let pct: number;
+        if (lowerIsBetter) {
+          pct = raw > 0 ? Math.round((goal / Math.abs(raw)) * 100) : 100;
+        } else {
+          pct = raw > 0 ? Math.round((raw / goal) * 100) : 0;
+        }
+        return `${pct}%`;
+      });
+
+    const metaVisitasSemanal = metasMap["visitas_semanales"] || 0;
+    const metaMargen = metasMap["margen_bruto"] || 0;
+    const metaEfectividad = metasMap["efectividad_cierre"] || 0;
+    const metaActivacion = metasMap["activacion_cartera"] || 0;
+    const metaCantidad = metasMap["cobertura_marcas"] || 0;
+
+    // --- Margen Bruto (gross margin per week) ---
+    // Mismo cálculo que el modal (`margen-detail`), vía lib/stoplight/margen.
+    const margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
+    // Las mismas líneas alimentan Cobertura de marcas (más abajo).
+    let lineasVentas: LineaMargen[] = [];
+    try {
+      lineasVentas = await obtenerLineasMargen(companyId, fechaInicio, fechaFin);
+      for (const linea of lineasVentas) {
+        const i = semanas.findIndex((s) => linea.fecha >= s.inicio && linea.fecha <= s.fin);
+        if (i === -1) continue;
+        margenPorSemana[i].revenue += linea.ingreso;
+        margenPorSemana[i].costo += linea.costo;
+      }
+    } catch (e: any) {
+      console.error("Error calculating margin:", e.message);
+    }
+
+    const semanaMargen = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const saved = savedMap["margen_bruto"]?.[i];
+      if (saved) {
+        const goal = metasMap["margen_bruto"] || 0;
+        if (goal <= 0) return `${Math.round(saved.valor)}%`;
+        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+        return `${pct}%`;
+      }
+      const sem = margenPorSemana[i];
+      if (sem.revenue <= 0) return null;
+      const margenActual = ((sem.revenue - sem.costo) / sem.revenue) * 100;
+      if (metaMargen <= 0) return `${Math.round(margenActual)}%`;
+      const pct = Math.round((margenActual / metaMargen) * 100);
+      return `${pct}%`;
+    });
+
+    // --- Efectividad de cierre de cotizaciones (por semana) ---
+    // Confirmadas ÷ emitidas, por semana de emisión (lib/stoplight/cotizaciones).
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
+    try {
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((s) => c.fecha >= s.inicio && c.fecha <= s.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
+    } catch (e: any) {
+      console.error("Error calculating efectividad:", e.message);
+    }
+
+    const semanaEfectividad = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const saved = savedMap["efectividad_cierre"]?.[i];
+      if (saved) {
+        const goal = metasMap["efectividad_cierre"] || 0;
+        if (goal <= 0) return `${Math.round(saved.valor)}%`;
+        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+        return `${pct}%`;
+      }
+      const sem = efectividadPorSemana[i];
+      if (sem.total <= 0) return null;
+      const efectividadActual = (sem.facturacion / sem.total) * 100;
+      if (metaEfectividad <= 0) return `${Math.round(efectividadActual)}%`;
+      const pct = Math.round((efectividadActual / metaEfectividad) * 100);
+      return `${pct}%`;
+    });
+
+    // --- Activacion de cartera (client activation per week) ---
+    // `clientes`: clientes distintos que compraron en esa semana (antes se
+    // contaban facturas: un cliente con 3 facturas sumaba 3).
+    let semanaActivacionData: { total: number; activos: number; clientes: Set<number> }[] = semanas.map(() => ({ total: 0, activos: 0, clientes: new Set<number>() }));
+    let totalClientsActivacion = 0;
+    let totalActiveClients = 0;
+    const sellerAllClients: Record<string, Set<number>> = {};
+    const sellerActiveClients: Record<string, Set<number>> = {};
+    Object.keys(sellerMap).forEach(name => {
+      sellerAllClients[name] = new Set();
+      sellerActiveClients[name] = new Set();
+    });
+    try {
+      for (const seller of sellers) {
+        if (!seller.user_id) continue;
+        const norm = normalize(seller.name);
+        const matchedSellerName = normalizedSellerMap[norm];
+        if (!matchedSellerName || !sellerAllClients[matchedSellerName]) continue;
+
+        const clients = (await callOdooRPC<any[]>(
+          "res.partner",
+          "search_read",
+          [
+            [
+              ["user_id", "=", seller.user_id],
+              ["customer_rank", ">", 0],
+              ["active", "=", true],
+              noIC,
+            ],
+          ],
+          { fields: ["id"], limit: 10000 }
+        )) || [];
+
+        clients.forEach((c: any) => sellerAllClients[matchedSellerName].add(c.id));
+      }
+
+      const invActivacionMap: Record<number, { sellerName: string; partnerId: number; date: Date }> = {};
+      (invoices || []).forEach((inv: any) => {
+        const sellerName = inv.invoice_user_id?.[1];
+        const partnerId = inv.partner_id?.[0];
+        if (!sellerName || !partnerId) return;
+        const norm = normalize(sellerName);
+        const matchedName = normalizedSellerMap[norm];
+        if (matchedName) {
+          invActivacionMap[inv.id] = { sellerName: matchedName, partnerId, date: fechaLocal(inv.invoice_date) };
+        }
+      });
+
+      const allInvIds = (invoices || []).map((inv: any) => inv.id);
+      if (allInvIds.length > 0) {
+        const actLines = (await callOdooRPC<any[]>(
+          "account.move.line",
+          "search_read",
+          [
+            [
+              ["move_id", "in", allInvIds],
+              ["display_type", "=", "product"],
+            ],
+          ],
+          { fields: ["move_id"], limit: 50000 }
+        )) || [];
+
+        const invoicesWithProducts = new Set((actLines || []).map((l: any) => l.move_id?.[0]));
+
+        (invoices || []).forEach((inv: any) => {
+          if (!invoicesWithProducts.has(inv.id)) return;
+
+          const info = invActivacionMap[inv.id];
+          if (!info) return;
+
+          if (sellerAllClients[info.sellerName]?.has(info.partnerId)) {
+            sellerActiveClients[info.sellerName].add(info.partnerId);
+
+            for (let i = 0; i < semanas.length; i++) {
+              if (info.date >= semanas[i].inicio && info.date <= semanas[i].fin) {
+                semanaActivacionData[i].clientes.add(info.partnerId);
+                break;
+              }
+            }
+          }
+        });
+      }
+
+      Object.keys(sellerAllClients).forEach(name => {
+        const total = sellerAllClients[name].size;
+        const activos = sellerActiveClients[name].size;
+        totalClientsActivacion += total;
+        totalActiveClients += activos;
+      });
+
+      // La meta es un % mensual de la cartera, así que cada semana muestra el
+      // acumulado del mes hasta ahí: clientes distintos activos desde el día 1.
+      const acumulados = new Set<number>();
+      semanaActivacionData.forEach(sem => {
+        sem.clientes.forEach((c) => acumulados.add(c));
+        sem.activos = acumulados.size;
+        sem.total = totalClientsActivacion;
+      });
+    } catch (e: any) {
+      console.error("Error calculating activacion:", e.message);
+    }
+
+    // --- Ciclo de reposicion del cliente (dias promedio entre compras) ---
+    // KPI nuevo, informativo (peso 0 por defecto): promedio de los dias que
+    // transcurren entre compras consecutivas de cada cliente. El mes en curso
+    // no alcanza para medir un ciclo (la mayoria de clientes compra 0 o 1 vez
+    // al mes), asi que usa una ventana propia de 12 meses hacia atras en vez
+    // de `invoices` (que esta acotado a `fechaInicio`/`fechaFin` del mes).
+    let avgCicloReposicion: number | null = null;
+    try {
+      const fechaFinLookback = new Date(fechaFin);
+      const fechaInicioLookback = new Date(fechaFinLookback);
+      fechaInicioLookback.setMonth(fechaInicioLookback.getMonth() - 12);
+      const fechaInicioLookbackStr = fechaInicioLookback.toISOString().slice(0, 10);
+
+      const invoicesLookback = (await callOdooRPC<any[]>(
+        "account.move",
+        "search_read",
+        [
+          [
+            ["move_type", "=", "out_invoice"],
+            ["state", "=", "posted"],
+            ["company_id", "=", companyId],
+            ["invoice_date", ">=", fechaInicioLookbackStr],
+            ["invoice_date", "<=", fechaFin],
+            ["partner_id", "!=", false],
+            noIC,
+          ],
+        ],
+        { fields: ["partner_id", "invoice_date"], limit: 50000 }
+      )) || [];
+
+      const fechasPorCliente: Record<number, Date[]> = {};
+      invoicesLookback.forEach((inv: any) => {
+        const partnerId = inv.partner_id?.[0];
+        if (!partnerId || !inv.invoice_date) return;
+        (fechasPorCliente[partnerId] ||= []).push(new Date(inv.invoice_date));
+      });
+
+      const ciclosPorCliente: number[] = [];
+      Object.values(fechasPorCliente).forEach((fechas) => {
+        if (fechas.length < 2) return;
+        fechas.sort((a, b) => a.getTime() - b.getTime());
+        let sumaGaps = 0;
+        for (let i = 1; i < fechas.length; i++) {
+          sumaGaps += (fechas[i].getTime() - fechas[i - 1].getTime()) / (1000 * 60 * 60 * 24);
+        }
+        ciclosPorCliente.push(sumaGaps / (fechas.length - 1));
+      });
+
+      if (ciclosPorCliente.length > 0) {
+        avgCicloReposicion = Math.round(
+          ciclosPorCliente.reduce((a, b) => a + b, 0) / ciclosPorCliente.length
+        );
+      }
+    } catch (e: any) {
+      console.error("Error calculating ciclo de reposicion:", e.message);
+    }
+
+    const semanaActivacion = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const saved = savedMap["activacion_cartera"]?.[i];
+      if (saved) {
+        const goal = metasMap["activacion_cartera"] || 0;
+        if (goal <= 0) return `${Math.round(saved.valor)}%`;
+        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+        return `${pct}%`;
+      }
+      const sem = semanaActivacionData[i];
+      if (sem.total <= 0) return null;
+      // La meta es un % (se muestra con "%"): se compara la tasa de activación
+      // (activos ÷ cartera) contra ella. Antes se dividía la CANTIDAD de
+      // activos por la meta como si fuera un número de clientes.
+      const tasa = (sem.activos / sem.total) * 100;
+      if (metaActivacion > 0) return `${Math.round((tasa / metaActivacion) * 100)}%`;
+      return `${Math.round(tasa)}%`;
+    });
+
+
+    // --- Cobertura de marcas ---
+    // Con metas por marca en el mes (lib/stoplight/metasMarca): promedio
+    // ponderado de venta real ÷ meta por marca, con tope de 100% por marca.
+    // Sin metas por marca: fórmula anterior, cantidad de marcas distintas
+    // vendidas por semana contra la meta de la columna META.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    let semanaCobertura: (string | null)[];
+    try {
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineasVentas, semanas, anio, mesNum, 1, now);
+      }
+    } catch (e: any) {
+      console.error("Error leyendo metas por marca:", e.message);
+    }
+    if (coberturaMarcas) {
+      semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+    } else {
+      const marcasPorSemana: Set<number>[] = semanas.map(() => new Set());
+      for (const l of lineasVentas) {
+        if (l.marcaId == null || l.ingreso <= 0) continue;
+        const i = semanas.findIndex((w) => l.fecha >= w.inicio && l.fecha <= w.fin);
+        if (i !== -1) marcasPorSemana[i].add(l.marcaId);
+      }
+      semanaCobertura = semanas.map((semana, i) => {
+        if (semana.inicio > now) return null;
+        const saved = savedMap["cobertura_marcas"]?.[i];
+        if (saved) {
+          const goal = metasMap["cobertura_marcas"] || 0;
+          if (goal <= 0) return `${Math.round(saved.valor)}%`;
+          const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+          return `${pct}%`;
+        }
+        const brandCount = marcasPorSemana[i].size;
+        if (metaCantidad > 0) return `${Math.round((brandCount / metaCantidad) * 100)}%`;
+        return brandCount > 0 ? String(brandCount) : null;
+      });
+    }
+
+    // --- Visitas semanales (from weekly_visits table) ---
+    let visitasPorSemana: number[] = semanas.map(() => 0);
+    try {
+      const visitasResult = await query(
+        `SELECT visit_date, COUNT(*) as cnt FROM weekly_visits WHERE company_id = ? AND visit_date >= ? AND visit_date <= ? GROUP BY visit_date`,
+        [companyId, fechaInicio, fechaFin]
+      );
+      (visitasResult.rows as any[]).forEach((row: any) => {
+        const vDate = new Date(row.visit_date);
+        for (let i = 0; i < semanas.length; i++) {
+          if (vDate >= semanas[i].inicio && vDate <= semanas[i].fin) {
+            visitasPorSemana[i] += Number(row.cnt);
+            break;
+          }
+        }
+      });
+    } catch (_) {}
+
+    const semanaVisitas = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const saved = savedMap["visitas_semanales"]?.[i];
+      if (saved) {
+        const goal = metasMap["visitas_semanales"] || 0;
+        if (goal <= 0) return `${Math.round(saved.valor)}%`;
+        const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
+        return `${pct}%`;
+      }
+      const total = visitasPorSemana[i];
+      if (metaVisitasSemanal > 0) {
+        const pct = Math.round((total / metaVisitasSemanal) * 100);
+        return `${pct}%`;
+      }
+      return total > 0 ? String(total) : null;
+    });
+
+    // Cobertura territorial (planificación de visitas, lib/visitas/planificacion):
+    // si el mes tiene planes, la fila de visitas pasa a medir foráneas
+    // realizadas ÷ planificadas.
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
+    try {
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, undefined, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial:", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
+
+    // 10.5. KPIs del Departamento de Compras (semanal)
+    const comprasRaw = await computeComprasKpis(companyId, semanas);
+    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
+    const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
+    const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
+    const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90, true);
+    const semanaForecast = await (async () => {
+      try {
+        const checklistRows = await query(
+          "SELECT semana_index, reunion_realizada, forecast_actualizado, quiebres_revisados, decisiones_registradas FROM forecast_checklist WHERE company_id = ? AND mes = ?",
+          [companyId, mes]
+        );
+        const checkMap: Record<number, any> = {};
+        (checklistRows.rows as any[]).forEach((r: any) => { checkMap[r.semana_index] = r; });
+        return semanas.map((semana, i) => {
+          const esFuturo = semana.inicio > now;
+          if (esFuturo) return null;
+          const saved = savedMap["forecast_semanal"]?.[i];
+          if (saved) return `${Math.round(saved.valor)}%`;
+          const row = checkMap[i];
+          if (!row) return null;
+          const checked = [row.reunion_realizada, row.forecast_actualizado, row.quiebres_revisados, row.decisiones_registradas].filter(Boolean).length;
+          return `${Math.round((checked / 4) * 100)}%`;
+        });
+      } catch {
+        return Array(semanas.length).fill(null);
+      }
+    })();
+    const semanaPropuestas = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      const saved = savedMap["propuestas_calificadas"]?.[i];
+      return saved ? `${saved.valor}` : null;
+    });
+
+    // Average for each KPI
+    const avgFromWeeks = (weeks: (string | null)[]) => {
+      const vals = weeks.filter(Boolean).map((w) => parseInt(w!)).filter((n) => !isNaN(n));
+      return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+    };
+
+    // Valor del mes: activación del período completo. Como las semanas son
+    // acumuladas, promediarlas subestimaría el mes. Si hay semanas cargadas a
+    // mano se mantiene el promedio de semanas.
+    const hayActivacionManual = Object.keys(savedMap["activacion_cartera"] || {}).length > 0;
+    const tasaActivacionMes = totalClientsActivacion > 0 ? (totalActiveClients / totalClientsActivacion) * 100 : null;
+    const avgActivacionMes = hayActivacionManual || tasaActivacionMes == null
+      ? avgFromWeeks(semanaActivacion)
+      : Math.round(metaActivacion > 0 ? (tasaActivacionMes / metaActivacion) * 100 : tasaActivacionMes);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        metaMensual: effectiveCuotaMensual,
+        totalCuotaMensual,
+        totalFacturadoMensual,
+        porcentajeCumplimiento,
+        avanceMesCuota,
+        diasUtilesTranscurridos,
+        totalDiasUtilesMes,
+        totalVisitasMes,
+        totalClientesNuevos,
+        numSemanas,
+        weekHeaders,
+        sellers: Object.values(sellerMap),
+        semanaGlobal: semanaCuota,
+        semanaVisitas,
+        semanaClientes,
+        semanaMargen,
+        semanaEfectividad,
+        semanaActivacion,
+        semanaCobertura,
+        avgCumplimiento: avgFromWeeks(semanaCuota),
+        avgMargen: avgFromWeeks(semanaMargen),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
+        avgEfectividad: avgFromWeeks(semanaEfectividad),
+        avgActivacion: avgActivacionMes,
+        avgClientes: avgFromWeeks(semanaClientes),
+        // Con metas por marca: el mes contra la meta prorrateada a hoy.
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        // Resumen de las metas por marca (null = el mes no tiene): el front
+        // cambia la fila de Cobertura y su META pasa a editarse por marca.
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
+        avgCicloReposicion,
+        semanaVarCosto,
+        semanaRotacion,
+        semanaQuiebre,
+        semanaInv90,
+        semanaForecast,
+        semanaPropuestas,
+        avgVarCosto: avgFromWeeks(semanaVarCosto),
+        avgRotacion: avgFromWeeks(semanaRotacion),
+        avgQuiebre: avgFromWeeks(semanaQuiebre),
+        avgInv90: avgFromWeeks(semanaInv90),
+        avgForecast: avgFromWeeks(semanaForecast),
+        avgPropuestas: avgFromWeeks(semanaPropuestas),
+        metas: metasMap,
+        pesos: pesosMap,
+        sellersVisitas: visitasPorSeller,
+        sellersClientes: clientesNuevosPorSeller,
+        metaClientesNuevos,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error en API Stoplight:", error.message);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const token = request.cookies.get("token")?.value;
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    const isCxC = userRole === "cuentas por cobrar";
+    const isGerenteOps = userRole === "gerente de operaciones";
+    if (userRole !== "superadmin" && !isCxC && !isGerenteOps) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
+
+    if (isCxC || isGerenteOps) {
+      return NextResponse.json({ error: "Acceso de solo lectura" }, { status: 403 });
+    }
+
+    await ensureTables();
+
+    const body = await request.json();
+    const { type } = body;
+
+    if (type === "save_meta") {
+      const { kpi_key, company_id, meta_mensual, mes } = body;
+      if (!kpi_key || !company_id || !mes) {
+        return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
+      }
+      await query(
+        `INSERT INTO kpi_targets (kpi_key, company_id, meta_mensual, mes)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE meta_mensual = VALUES(meta_mensual)`,
+        [kpi_key, company_id, meta_mensual || 0, mes]
+      );
+      return NextResponse.json({ success: true });
+    }
+
+    // Peso del KPI para el puntaje ponderado del grupo (issue #131). Antes
+    // estaba hardcodeado en el componente; ahora sale de kpi_targets, por
+    // company_id + mes, con los valores previos como fallback.
+    if (type === "save_peso") {
+      const { kpi_key, company_id, peso, mes } = body;
+      if (!kpi_key || !company_id || !mes) {
+        return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
+      }
+      await query(
+        `INSERT INTO kpi_targets (kpi_key, company_id, peso, mes)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE peso = VALUES(peso)`,
+        // Vacío = volver al peso por defecto; 0 = el KPI no cuenta.
+        [kpi_key, company_id, pesoParaGuardar(peso), mes]
+      );
+      // Se relee lo que quedó guardado: si la tabla no tiene la clave única o
+      // el ALTER de `peso` no se pudo hacer, el guardado "funciona" pero la
+      // pantalla sigue mostrando el valor viejo. Devolverlo deja que el
+      // front avise en vez de revertir en silencio.
+      const guardadoRes = await query(
+        "SELECT peso FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ? ORDER BY id DESC LIMIT 1",
+        [kpi_key, company_id, mes],
+      );
+      const guardado = (guardadoRes.rows as any[])[0]?.peso;
+      return NextResponse.json({ success: true, peso: guardado === null || guardado === undefined ? null : Number(guardado) });
+    }
+
+    if (type === "save_weekly") {
+      const { kpi_key, company_id, mes, semana_index, semana_label, valor, meta } = body;
+      if (!kpi_key || !company_id || !mes || semana_index === undefined) {
+        return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
+      }
+      await query(
+        `INSERT INTO kpi_weekly_data (kpi_key, company_id, mes, semana_index, semana_label, valor, meta)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE valor = VALUES(valor), meta = VALUES(meta), semana_label = VALUES(semana_label)`,
+        [kpi_key, company_id, mes, semana_index, semana_label || "", valor || 0, meta || 0]
+      );
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "Tipo de accion no valido" }, { status: 400 });
+  } catch (error: any) {
+    console.error("Error guardando KPI:", error.message);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}

@@ -1,0 +1,108 @@
+import { query } from "@/lib/db";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { leerProductos } from "@/lib/rma/items";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ case_number: string }> },
+) {
+  try {
+    const auth = await requireSeguridad(request);
+    if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
+    const { case_number } = await params;
+    if (!case_number || case_number.length > 20) {
+      return NextResponse.json({ error: "case_number invalido" }, { status: 400 });
+    }
+
+    let rmaResult;
+    try {
+      // `model` es el nombre del producto y `hardware` la categoria, segun la
+      // convencion del modulo RMA. Sin traer `model`, el alta se prellenaba
+      // con la categoria: el acta de recepcion decia "PERIFERICOS" en vez de
+      // "Mouse HP". Eso es lo que se firma y lo que se mira cuando un cliente
+      // reclama que faltaba algo, asi que tiene que nombrar el equipo.
+      //
+      // El portal ya hacia esta misma distincion para lo que ve el cliente
+      // (`product_name: row.model || row.hardware`); faltaba de este lado.
+      //
+      // `company_id` en vez de `cids`: `rma_cases` no tiene columna `cids`,
+      // usa `company_id` en el mismo espacio numerico (9/10/7).
+      //
+      // `SELECT *` y no una lista: `producto_externo` y las columnas de
+      // garantía las crea el portal la primera vez, y una base que todavía no
+      // las tiene no debe tumbar la búsqueda.
+      rmaResult = await query(`SELECT * FROM rma_cases WHERE case_number = ?`, [case_number]);
+    } catch (e: any) {
+      console.error("Error buscando caso RMA:", e?.message);
+      return NextResponse.json({ error: "Error al buscar el ticket" }, { status: 500 });
+    }
+
+    if (rmaResult.rows.length === 0) {
+      return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
+    }
+
+    const caso = rmaResult.rows[0] as any;
+
+    // 404 y no 403: adivinar el case_number de un ticket de otra sucursal no
+    // debe ni confirmar que existe.
+    if (cids !== null && Number(caso.company_id) !== cids) {
+      return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
+    }
+
+    // `hardware` sale ya resuelto al nombre del producto, para que quien lo
+    // consuma no tenga que repetir esta decision. La categoria queda aparte
+    // por si alguna pantalla la necesita.
+    // Productos del envío (issue #331): con más de uno, el ingreso lleva la
+    // lista para marcar cuáles llegaron. [] sin la migración.
+    let items: any[] = [];
+    try {
+      items = (await leerProductos(caso.id)).map((p) => ({
+        id: p.id,
+        producto: p.model || p.hardware || "",
+        serial: p.serial,
+        reported_fault: p.reported_fault,
+        status: p.status,
+        despachado_at: p.despachado_at,
+        garantia_estado: p.garantia_estado,
+        garantia_meses: p.garantia_meses,
+        garantia_vence: p.garantia_vence,
+        garantia_marca: p.garantia_marca,
+      }));
+    } catch (e: any) {
+      console.warn("rma_case_items no disponible:", e?.message);
+    }
+
+    // Solo lo que Seguridad necesita ver en el mostrador (no el token de
+    // seguimiento, datos de entrega, notas internas...).
+    return NextResponse.json({
+      success: true,
+      case: {
+        id: caso.id,
+        case_number: caso.case_number,
+        client_name: caso.client_name,
+        serial: caso.serial,
+        invoice_number: caso.invoice_number,
+        reported_fault: caso.reported_fault,
+        company_id: caso.company_id,
+        created_at: caso.created_at,
+        hardware: caso.model || caso.hardware || "",
+        categoria: caso.hardware || null,
+        // Equipo que no se compró en Supricom: sin factura nuestra ni garantía.
+        producto_externo: Number(caso.producto_externo) === 1,
+        garantia_estado: caso.garantia_estado ?? null,
+        garantia_meses: caso.garantia_meses ?? null,
+        garantia_vence: caso.garantia_vence ?? null,
+        garantia_marca: caso.garantia_marca ?? null,
+        items,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error buscando ticket:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

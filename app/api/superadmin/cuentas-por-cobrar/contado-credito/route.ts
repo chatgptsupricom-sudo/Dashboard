@@ -1,0 +1,483 @@
+import { callOdooRPC } from "@/lib/odoo";
+import { cuadrarCobros, obtenerCobros } from "@/lib/cxc/cobros";
+import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
+import { RELACIONADA } from "@/lib/cxc/cobros";
+import { NextRequest, NextResponse } from "next/server";
+
+const COMPANY_MAP: Record<string, number> = {
+  valencia: 9,
+  caracas: 10,
+  panama: 7,
+};
+
+
+function getMonthStart(year: number, month: number): Date {
+  return new Date(year, month, 1);
+}
+
+async function fetchPaginated(model: string, domain: any[], fields: string[]): Promise<any[]> {
+  let result: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await callOdooRPC<any[]>(
+      model, "search_read", [domain],
+      { fields, order: "id asc", limit: 5000, offset },
+    );
+    if (!page || page.length === 0) break;
+    result = result.concat(page);
+    if (page.length < 5000) break;
+    offset += 5000;
+  }
+  return result;
+}
+
+const isSupricom = (partner: any) => (partner?.[1] || "").toLowerCase().includes("supricom");
+
+// Forma comun que alimenta la clasificacion contado/credito, sin importar
+// si el monto viene de una factura entera o de un abono conciliado
+// puntual. esDelMes distingue, para el modo "cobrado", si lo cobrado
+// corresponde a una factura emitida ese mismo mes o a una de un mes
+// anterior (deuda vieja que se termino de cobrar ahora) -- es lo que
+// pidio cobranza para no confundir "cuanto entro" con "de que factura".
+type Renglon = {
+  monto: number;
+  partnerId: number;
+  partnerName: string;
+  paymentTermId: number | undefined;
+  esDelMes: boolean;
+  journalId: number | undefined;
+  journalName: string;
+  sellerId: number | undefined;
+  sellerName: string;
+  invoiceName: string;
+  /** Fecha del renglón para el Excel: emisión (facturado, por cobrar) o abono (cobrado). */
+  fecha?: string | null;
+  /** Solo en "cobrado": vencimiento de la factura e interno, para el cuadre. */
+  vencimiento?: string | null;
+  interno?: boolean;
+};
+
+async function renglonesFacturado(companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean): Promise<Renglon[]> {
+  const invoicesRaw = await fetchPaginated(
+    "account.move",
+    [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["company_id", "in", companyIds],
+      ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
+      ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
+    ],
+    ["id", "name", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id", "invoice_date"],
+  );
+
+  return invoicesRaw
+    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
+    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
+    .map((inv) => ({
+      // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
+      // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
+      // con esa tarjeta.
+      monto: inv.move_type === "out_refund" ? -(inv.amount_untaxed || 0) : (inv.amount_untaxed || 0),
+      partnerId: inv.partner_id[0],
+      partnerName: inv.partner_id[1] || "Sin cliente",
+      paymentTermId: inv.invoice_payment_term_id?.[0],
+      esDelMes: true,
+      journalId: undefined,
+      journalName: "",
+      sellerId: inv.invoice_user_id?.[0],
+      sellerName: inv.invoice_user_id?.[1] || "Sin vendedor",
+      invoiceName: inv.name || "",
+      fecha: inv.invoice_date || null,
+    }));
+}
+
+// Dinero que efectivamente entro en el periodo, sin importar cuando se emitio
+// la factura que salda. Sale de lib/cxc/cobros.ts, la fuente unica de
+// "cobrado" de todo CxC (Integracion de Pagos, Clasificacion, Efectividad y
+// Recuperacion leen lo mismo), con la regla que se valido fila por fila contra
+// el export real de cobranza: solo diarios banco/caja reales, fecha de
+// CONFIRMACION del pago, y notas de credito/retenciones/ajustes fuera.
+// A diferencia de "Facturado", "Cobrado" NO excluye partner supricom ni
+// vendedores internos por defecto: mide plata real que entro a un banco.
+// excluirAsistente es el toggle opcional del usuario.
+async function renglonesCobradoDinero(
+  companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
+  excluirRetenciones: boolean, excluirIva25: boolean,
+): Promise<Renglon[]> {
+  const startStr = monthStart.toISOString().split("T")[0];
+  const endStr = monthEnd.toISOString().split("T")[0];
+  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr, excluirRetenciones, excluirIva25 });
+
+  return cobros
+    .filter((c) => !excluirAsistente || !esVendedorExcluido(c.vendedorName, c.companyId))
+    .map((c) => ({
+      monto: c.monto,
+      partnerId: c.partnerId ?? 0,
+      partnerName: c.partnerName || "Sin cliente",
+      paymentTermId: c.plazoId,
+      // "Del mes" = factura emitida en el periodo (o despues, pago adelantado).
+      // "Anterior" = deuda de un mes previo que se termino de cobrar ahora.
+      esDelMes: !c.fechaFactura || c.fechaFactura >= startStr,
+      journalId: c.journalId,
+      journalName: c.journalName,
+      sellerId: c.vendedorId,
+      sellerName: c.vendedorName,
+      invoiceName: c.facturaNombre,
+      fecha: c.fecha,
+      vencimiento: c.vencimiento,
+      interno: c.interno,
+    }));
+}
+
+// Lo que quedó abierto al cierre del período (lib/cxc/porCobrar.ts), con el
+// saldo de cada factura como monto. "Del mes" = factura emitida en el
+// período; "anterior" = deuda de meses previos que sigue abierta.
+async function renglonesPorCobrar(
+  companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
+): Promise<{ renglones: Renglon[]; corte: string; incobrables: number; relacionadas: number }> {
+  const { corte, renglones, incobrables, relacionadas } = await porCobrarAlCierre(companyIds, monthEnd);
+  const startStr = monthStart.toISOString().split("T")[0];
+  return {
+    corte, incobrables, relacionadas,
+    renglones: renglones
+      .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
+      .map((r) => ({
+        monto: r.saldo,
+        partnerId: r.partnerId,
+        partnerName: r.partnerName,
+        paymentTermId: r.plazoId,
+        esDelMes: !!r.invoiceDate && r.invoiceDate >= startStr,
+        journalId: undefined,
+        journalName: "",
+        sellerId: r.sellerId,
+        sellerName: r.sellerName,
+        invoiceName: r.name,
+        fecha: r.invoiceDate,
+      })),
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const empresa = searchParams.get("empresa")?.toLowerCase() || "";
+    const userCidsParam = searchParams.get("userCids");
+    const monthParam = searchParams.get("month");
+    const yearParam = searchParams.get("year");
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
+    const modoParam = searchParams.get("modo");
+    const modo = modoParam === "cobrado" || modoParam === "por_cobrar" ? modoParam : "facturado";
+    // Toggle del usuario para incluir/excluir "Asistente de Ventas" (y
+    // demas vendedores internos/de prueba). Si no viene explicito, se
+    // usa el default historico de cada modo: Facturado siempre lo excluia
+    // (para coincidir con "Ventas del Mes"), Cobrado nunca lo excluia
+    // (coincide con el export real de cobranza).
+    const excluirAsistenteParam = searchParams.get("excluirAsistente");
+    // "Por cobrar" es saldo real, como Cobrado: no excluye asistentes por defecto.
+    const excluirAsistente = excluirAsistenteParam !== null ? excluirAsistenteParam === "true" : modo === "facturado";
+    // Solo en Cobrado. Default true = la regla historica de lib/cxc/cobros.ts
+    // (retenciones y pagos del 25% de IVA no son cobro).
+    const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
+    const excluirIva25 = searchParams.get("excluirIva25") !== "false";
+    // Filtros adicionales, iguales a los que ya tiene "Integracion de
+    // Pagos" en Odoo: vendedor puntual, busqueda libre (cliente o numero
+    // de factura), y banco/diario puntual (solo aplica en Cobrado).
+    const vendedorIdParam = searchParams.get("vendedorId");
+    const vendedorId = vendedorIdParam ? parseInt(vendedorIdParam, 10) : undefined;
+    const search = (searchParams.get("search") || "").trim().toLowerCase();
+    const bancoIdParam = searchParams.get("bancoId");
+    const bancoId = bancoIdParam ? parseInt(bancoIdParam, 10) : undefined;
+
+    const now = new Date();
+    let monthStart: Date, monthEnd: Date, currentYear: number, currentMonth: number;
+
+    if (startDateParam && endDateParam) {
+      monthStart = new Date(startDateParam + "T00:00:00");
+      monthEnd = new Date(endDateParam + "T23:59:59");
+      currentYear = monthStart.getFullYear();
+      currentMonth = monthStart.getMonth();
+    } else {
+      currentYear = yearParam ? parseInt(yearParam) : now.getFullYear();
+      currentMonth = monthParam ? parseInt(monthParam) - 1 : now.getMonth();
+      monthStart = getMonthStart(currentYear, currentMonth);
+      monthEnd = new Date(currentYear, currentMonth + 1, 0);
+    }
+
+    const companyIds = empresa && COMPANY_MAP[empresa]
+      ? [COMPANY_MAP[empresa]]
+      : userCidsParam
+        ? [parseInt(userCidsParam, 10)]
+        : [7, 9, 10];
+
+    const porCobrar = modo === "por_cobrar"
+      ? await renglonesPorCobrar(companyIds, monthStart, monthEnd, excluirAsistente)
+      : null;
+    const renglonesSinFiltrar = porCobrar
+      ? porCobrar.renglones
+      : modo === "cobrado"
+        ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25)
+        : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
+
+    // Solo en "Por cobrar" y si el corte es hoy: pagos que entraron pero no
+    // están aplicados a ninguna factura. Restan de la cartera en Odoo; en un
+    // corte pasado no se pueden reconstruir, así que ahí no se muestran.
+    const h = new Date();
+    const hoyStr = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
+    let sinAplicar: number | null = null;
+    if (porCobrar && porCobrar.corte >= hoyStr) {
+      const g = await callOdooRPC<any[]>(
+        "account.move.line",
+        "read_group",
+        [[
+          ["account_id.account_type", "=", "asset_receivable"],
+          ["parent_state", "=", "posted"],
+          ["company_id", "in", companyIds],
+          ["move_type", "not in", ["out_invoice", "out_refund"]],
+          ["amount_residual", "!=", 0],
+          ["partner_id.name", "not ilike", "supricom"],
+          ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+        ], ["amount_residual:sum"], []],
+        { lazy: false },
+      );
+      sinAplicar = Math.round(Number(g?.[0]?.amount_residual || 0) * 100) / 100;
+    }
+
+    // Vendedores para el dropdown: todos los que aparecen en el periodo,
+    // sin aplicar todavia el filtro de vendedor/busqueda/banco -- para que
+    // la lista de opciones no se vacie a medida que el usuario filtra.
+    const vendedoresMap = new Map<number, string>();
+    renglonesSinFiltrar.forEach((r) => {
+      if (r.sellerId !== undefined) vendedoresMap.set(r.sellerId, r.sellerName);
+    });
+    const vendedores = [...vendedoresMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Igual que vendedores: bancos para el dropdown, sin aplicar todavia
+    // el filtro de vendedor/busqueda/banco (si no, al elegir un banco el
+    // propio dropdown se reduciria a esa unica opcion).
+    const bancosMap = new Map<number, string>();
+    renglonesSinFiltrar.forEach((r) => {
+      if (r.journalId !== undefined) bancosMap.set(r.journalId, r.journalName);
+    });
+    const bancosDisponibles = [...bancosMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const renglones = renglonesSinFiltrar.filter((r) => {
+      if (vendedorId !== undefined && r.sellerId !== vendedorId) return false;
+      if (bancoId !== undefined && r.journalId !== bancoId) return false;
+      if (search && !r.partnerName.toLowerCase().includes(search) && !r.invoiceName.toLowerCase().includes(search)) return false;
+      return true;
+    });
+
+    // ── Nombres de los plazos de pago vistos ──
+    const ptIds = [...new Set(renglones.map((r) => r.paymentTermId).filter((id): id is number => Boolean(id)))];
+    let ptMap: Record<number, string> = {};
+    if (ptIds.length > 0) {
+      try {
+        const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
+        (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
+      } catch (_) {}
+    }
+
+    // ── Clasificar contado/credito + acumular por plazo exacto ──
+    // Un card por cada plazo real que aparezca (7, 15, 21, 30, 45...),
+    // sin agrupar los que no matchean una lista fija en un "Otros" opaco.
+    type ClientAcum = { partnerId: number; partnerName: string; monto: number; facturas: number };
+    type Acum = {
+      monto: number;
+      facturas: number;
+      clientesMap: Map<number, ClientAcum>;
+    };
+    const nuevoAcum = (): Acum => ({ monto: 0, facturas: 0, clientesMap: new Map() });
+
+    const contado = nuevoAcum();
+    const credito = nuevoAcum();
+    const bucketsPorDias = new Map<number, Acum>();
+    // Parte de cada plazo que es de facturas del período (el resto, de meses
+    // anteriores). Lo usa "Por cobrar" para partir la distribución en dos.
+    const delMesPorDias = new Map<number, number>();
+    // Solo relevante en modo "cobrado": por que diario/banco entro el
+    // dinero (journal_id del lado pago de la conciliacion).
+    const bancosPorJournal = new Map<number, Acum>();
+    const bancoNombres = new Map<number, string>();
+    // Solo relevante en modo "cobrado": de lo cobrado, cuanto es de
+    // facturas de este mes vs de meses anteriores (deuda vieja cobrada
+    // ahora). Alimenta la barra de progreso del total en ese modo.
+    let delMesMonto = 0;
+    let delMesFacturas = 0;
+    let anterioresMonto = 0;
+    let anterioresFacturas = 0;
+
+    const acumular = (acum: Acum, monto: number, partnerId: number, partnerName: string) => {
+      acum.monto += monto;
+      acum.facturas += 1;
+      const c = acum.clientesMap.get(partnerId);
+      if (c) {
+        c.monto += monto;
+        c.facturas += 1;
+      } else {
+        acum.clientesMap.set(partnerId, { partnerId, partnerName, monto, facturas: 1 });
+      }
+    };
+
+    renglones.forEach((r) => {
+      if (r.esDelMes) {
+        delMesMonto += r.monto;
+        delMesFacturas += 1;
+      } else {
+        anterioresMonto += r.monto;
+        anterioresFacturas += 1;
+      }
+
+      if (r.journalId !== undefined) {
+        bancoNombres.set(r.journalId, r.journalName);
+        if (!bancosPorJournal.has(r.journalId)) bancosPorJournal.set(r.journalId, nuevoAcum());
+        acumular(bancosPorJournal.get(r.journalId)!, r.monto, r.partnerId, r.partnerName);
+      }
+
+      const ptName = ptMap[r.paymentTermId ?? -1] || "Contado";
+      const diasMatch = ptName.match(/(\d+)/);
+
+      if (!diasMatch) {
+        acumular(contado, r.monto, r.partnerId, r.partnerName);
+        return;
+      }
+
+      const dias = parseInt(diasMatch[1], 10);
+      acumular(credito, r.monto, r.partnerId, r.partnerName);
+
+      if (!bucketsPorDias.has(dias)) bucketsPorDias.set(dias, nuevoAcum());
+      acumular(bucketsPorDias.get(dias)!, r.monto, r.partnerId, r.partnerName);
+      if (r.esDelMes) delMesPorDias.set(dias, (delMesPorDias.get(dias) || 0) + r.monto);
+    });
+
+    const totalFacturado = contado.monto + credito.monto;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const pct = (parte: number, total: number) => (total > 0 ? round2((parte / total) * 100) : 0);
+
+    const clientesDe = (acum: Acum) =>
+      [...acum.clientesMap.values()]
+        .map((c) => ({ ...c, monto: round2(c.monto) }))
+        .sort((a, b) => b.monto - a.monto);
+
+    // Desglose renglón por renglón para los Excel de la pantalla (cada tarjeta
+    // exporta las facturas o abonos que la forman, no solo el total).
+    const detalle = renglones.map((r) => {
+      const d = (ptMap[r.paymentTermId ?? -1] || "Contado").match(/(\d+)/);
+      return {
+        factura: r.invoiceName,
+        partnerId: r.partnerId,
+        cliente: r.partnerName,
+        fecha: r.fecha ?? null,
+        plazo: d ? parseInt(d[1], 10) : null,
+        monto: round2(r.monto),
+        vendedor: r.sellerName,
+        delMes: r.esDelMes,
+        journalId: r.journalId ?? null,
+        banco: r.journalName || "",
+      };
+    });
+
+    const buckets = [...bucketsPorDias.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([dias, acum]) => ({
+        dias,
+        monto: round2(acum.monto),
+        montoDelMes: round2(delMesPorDias.get(dias) || 0),
+        montoAnteriores: round2(acum.monto - (delMesPorDias.get(dias) || 0)),
+        pct: pct(acum.monto, credito.monto),
+        facturas: acum.facturas,
+        clientes: acum.clientesMap.size,
+        clientesDetalle: clientesDe(acum),
+      }));
+
+    const bancos = [...bancosPorJournal.entries()]
+      .sort((a, b) => b[1].monto - a[1].monto)
+      .map(([journalId, acum]) => ({
+        journalId,
+        journalName: bancoNombres.get(journalId) || "Sin diario",
+        monto: round2(acum.monto),
+        pct: pct(acum.monto, totalFacturado),
+        facturas: acum.facturas,
+        clientes: acum.clientesMap.size,
+        clientesDetalle: clientesDe(acum),
+      }));
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        totalFacturado: round2(totalFacturado),
+        contado: {
+          monto: round2(contado.monto),
+          pct: pct(contado.monto, totalFacturado),
+          facturas: contado.facturas,
+          clientes: contado.clientesMap.size,
+          clientesDetalle: clientesDe(contado),
+        },
+        credito: {
+          monto: round2(credito.monto),
+          pct: pct(credito.monto, totalFacturado),
+          facturas: credito.facturas,
+          clientes: credito.clientesMap.size,
+          clientesDetalle: clientesDe(credito),
+        },
+        delMes: {
+          monto: round2(delMesMonto),
+          pct: pct(delMesMonto, totalFacturado),
+          facturas: delMesFacturas,
+        },
+        mesesAnteriores: {
+          monto: round2(anterioresMonto),
+          pct: pct(anterioresMonto, totalFacturado),
+          facturas: anterioresFacturas,
+        },
+        // Solo en "cobrado": reparto del total en los tramos que usan los KPIs.
+        // vencidasAlInicio = "Recuperado" de Recuperacion; vencenEnPeriodo =
+        // lo cobrado en el mes de Efectividad. Los cuatro suman el total.
+        cuadre: modo === "cobrado"
+          ? cuadrarCobros(
+              renglones.map((r) => ({ monto: r.monto, vencimiento: r.vencimiento ?? null, interno: !!r.interno })),
+              monthStart.toISOString().split("T")[0],
+              monthEnd.toISOString().split("T")[0],
+            )
+          : null,
+        // Solo en "por_cobrar": corte usado y lo que queda fuera del reparto.
+        porCobrar: porCobrar
+          ? { corte: porCobrar.corte, incobrables: porCobrar.incobrables, relacionadas: porCobrar.relacionadas, sinAplicar }
+          : null,
+        buckets,
+        detalle,
+        bancos,
+        vendedores,
+        bancosDisponibles,
+        filters: {
+          empresa,
+          month: currentMonth + 1,
+          year: currentYear,
+          startDate: startDateParam || undefined,
+          endDate: endDateParam || undefined,
+          companyIds,
+          modo,
+          excluirAsistente,
+          excluirRetenciones,
+          excluirIva25,
+          vendedorId,
+          search: search || undefined,
+          bancoId,
+        },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error CxC contado-credito API:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

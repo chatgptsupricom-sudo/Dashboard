@@ -1,0 +1,1475 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import {
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  DollarSign,
+  Clock,
+  Users,
+  BarChart3,
+  RefreshCw,
+  Building2,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  Target,
+  Activity,
+  X,
+  Search,
+  ChevronRight,
+  FileText,
+  Package,
+} from "lucide-react";
+import { useAuthStore } from "@/lib/stores/auth.store";
+import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
+
+const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
+const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split(" ")[0].split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function getTrafficDot(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  if (invert) {
+    if (value <= thresholds.green) return "bg-emerald-500";
+    if (value <= thresholds.yellow) return "bg-amber-500";
+    return "bg-red-500";
+  }
+  if (value >= thresholds.green) return "bg-emerald-500";
+  if (value >= thresholds.yellow) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+/**
+ * Umbrales del semáforo a partir de la meta cargada (kpi_targets), con la
+ * misma regla que el Stoplight (lib/stoplight/scoring.ts → getKpiCellColor):
+ * verde al cumplir la meta; amarillo hasta 70% de la meta (o 130% si menos es
+ * mejor); rojo más allá.
+ */
+function umbral(meta: number, menosEsMejor = false): { green: number; yellow: number } {
+  return { green: meta, yellow: menosEsMejor ? meta * 1.3 : meta * 0.7 };
+}
+
+function getTrafficText(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  return getTrafficDot(value, thresholds, invert).replace("bg-", "text-").replace("-500", "-600");
+}
+
+function getTrafficBg(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
+  if (invert) {
+    if (value <= thresholds.green) return "bg-emerald-50 border-emerald-200";
+    if (value <= thresholds.yellow) return "bg-amber-50 border-amber-200";
+    return "bg-red-50 border-red-200";
+  }
+  if (value >= thresholds.green) return "bg-emerald-50 border-emerald-200";
+  if (value >= thresholds.yellow) return "bg-amber-50 border-amber-200";
+  return "bg-red-50 border-red-200";
+}
+
+function AgingBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-20 text-xs text-slate-500 text-right">{label}</span>
+      <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <span className="w-24 text-xs text-slate-600 text-right">{formatCurrency(value)}</span>
+      <span className="w-12 text-xs text-slate-400 text-right">{Math.round(pct)}%</span>
+    </div>
+  );
+}
+
+function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className={`relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col ${wide ? "w-full max-w-6xl" : "w-full max-w-3xl"}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition">
+            <X size={18} className="text-slate-500" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * SUPER TECHNO LLC fuera de un KPI (lib/cxc/cobros.ts → RELACIONADA): se
+ * muestra su saldo y el motivo, para que no parezca que la deuda desapareció.
+ */
+function AvisoRelacionada({ monto }: { monto?: number }) {
+  if (!monto || monto <= 0.005) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
+      <strong>SUPER TECHNO LLC excluida:</strong> debe {formatCurrency(monto)}. Es una empresa relacionada del grupo, no un cliente: su deuda no se gestiona como cobranza y distorsionaría el indicador.
+    </div>
+  );
+}
+
+export default function CxcDashboardPage() {
+  const { user } = useAuthStore();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [empresa, setEmpresa] = useState("");
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [salespersonFilter, setSalespersonFilter] = useState("");
+
+  const userCids = user?.cids;
+
+  // Modal state - Flow: salesperson → invoices → invoice detail → client invoices
+  const [invoicesModal, setInvoicesModal] = useState<{ open: boolean; userId: number; userName: string }>({ open: false, userId: 0, userName: "" });
+  const [invoiceDetailModal, setInvoiceDetailModal] = useState<{ open: boolean; invoiceId: number }>({ open: false, invoiceId: 0 });
+  const [clientInvoicesModal, setClientInvoicesModal] = useState<{ open: boolean; partnerId: number; partnerName: string; userId: number; userName: string }>({ open: false, partnerId: 0, partnerName: "", userId: 0, userName: "" });
+
+  // Detail data
+  const [invoicesData, setInvoicesData] = useState<any[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoiceDetail, setInvoiceDetail] = useState<any>(null);
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
+  const [clientInvoicesData, setClientInvoicesData] = useState<any[]>([]);
+  const [clientInvoicesLoading, setClientInvoicesLoading] = useState(false);
+
+  // KPI detail modals
+  const [kpiModal, setKpiModal] = useState<{ open: boolean; type: string; title: string }>({ open: false, type: "", title: "" });
+  const [kpiData, setKpiData] = useState<any>(null);
+  // Buscador de los modales con lista de facturas (cliente o número).
+  const [busquedaDetalle, setBusquedaDetalle] = useState("");
+  const qDetalle = busquedaDetalle.trim().toLowerCase();
+  const coincideDetalle = (inv: any) =>
+    !qDetalle || String(inv.name || "").toLowerCase().includes(qDetalle) || String(inv.partnerName || "").toLowerCase().includes(qDetalle);
+  const [kpiLoading, setKpiLoading] = useState(false);
+  // Track where invoice detail was opened from
+  const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      params.set("month", String(selectedMonth));
+      params.set("year", String(selectedYear));
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar?${params}`);
+      const json = await res.json();
+      if (json.success) setData(json.data);
+    } catch (e) {
+      console.error("Error:", e);
+    }
+    setLoading(false);
+  }, [empresa, userCids, selectedMonth, selectedYear]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // STEP 1: Click salesperson → show ALL invoices for that salesperson
+  const fetchSalespersonInvoices = useCallback(async (userId: number, userName: string) => {
+    setInvoicesModal({ open: true, userId, userName });
+    setInvoicesLoading(true);
+    setInvoicesData([]);
+    try {
+      const params = new URLSearchParams({ user_id: String(userId) });
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/detail?${params}`);
+      const json = await res.json();
+      if (json.success) setInvoicesData(json.data.invoices || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setInvoicesLoading(false);
+  }, [empresa, userCids]);
+
+  // STEP 2: Click invoice → show invoice detail
+  const fetchInvoiceDetail = useCallback(async (invoiceId: number, from: "invoices" | "clientInvoices" = "invoices") => {
+    setDetailOrigin(from);
+    setInvoiceDetailModal({ open: true, invoiceId });
+    setInvoicesModal((prev) => ({ ...prev, open: false }));
+    setClientInvoicesModal((prev) => ({ ...prev, open: false }));
+    setInvoiceDetailLoading(true);
+    setInvoiceDetail(null);
+    try {
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/invoice/${invoiceId}`);
+      const json = await res.json();
+      if (json.success) setInvoiceDetail(json.data);
+    } catch (e) {
+      console.error(e);
+    }
+    setInvoiceDetailLoading(false);
+  }, []);
+
+  // STEP 3: Click client name in invoice detail → show all invoices for that client
+  const fetchClientInvoices = useCallback(async (partnerId: number, partnerName: string, userId: number, userName: string) => {
+    setClientInvoicesModal({ open: true, partnerId, partnerName, userId, userName });
+    setInvoiceDetailModal((prev) => ({ ...prev, open: false }));
+    setInvoicesModal((prev) => ({ ...prev, open: false }));
+    setKpiModal((prev) => ({ ...prev, open: false }));
+    setClientInvoicesLoading(true);
+    setClientInvoicesData([]);
+    try {
+      const params = new URLSearchParams({ partner_id: String(partnerId) });
+      if (userId > 0) params.set("user_id", String(userId));
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/detail?${params}`);
+      const json = await res.json();
+      if (json.success) setClientInvoicesData(json.data.invoices || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setClientInvoicesLoading(false);
+  }, [empresa, userCids]);
+
+  // Close handlers - navigate back through the chain
+  const closeClientInvoicesModal = () => {
+    const prevUserId = clientInvoicesModal.userId;
+    setClientInvoicesModal({ open: false, partnerId: 0, partnerName: "", userId: 0, userName: "" });
+    if (prevUserId > 0) {
+      setInvoicesModal((prev) => ({ ...prev, open: true }));
+    }
+  };
+  const closeInvoiceDetail = () => {
+    setInvoiceDetailModal({ open: false, invoiceId: 0 });
+    if (detailOrigin === "clientInvoices") {
+      setClientInvoicesModal((prev) => ({ ...prev, open: true }));
+    } else {
+      setInvoicesModal((prev) => ({ ...prev, open: true }));
+    }
+  };
+  const closeInvoicesModal = () => {
+    setInvoicesModal({ open: false, userId: 0, userName: "" });
+  };
+
+  // KPI detail modal handlers
+  const fetchKpiDetail = useCallback(async (type: string, title: string) => {
+    setBusquedaDetalle("");
+    setKpiModal({ open: true, type, title });
+    setKpiLoading(true);
+    setKpiData(null);
+    try {
+      const params = new URLSearchParams({ type });
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      params.set("month", String(selectedMonth));
+      params.set("year", String(selectedYear));
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/kpi-detail?${params}`);
+      const json = await res.json();
+      if (json.success) setKpiData(json.data);
+    } catch (e) {
+      console.error(e);
+    }
+    setKpiLoading(false);
+  }, [empresa, userCids, selectedMonth, selectedYear]);
+
+  // Peso de cada KPI: el cargado en kpi_targets para la sede y el mes, o el de
+  // siempre si no hay uno propio.
+  const peso = (kpi: string, porDefecto: number) => `${data?.pesos?.[kpi] ?? porDefecto}%`;
+  const agingTotal = data ? Object.values(data.agingDistribution).reduce((a: number, b: any) => a + b, 0) as number : 0;
+  const agingColors: Record<string, string> = Object.fromEntries(BANDAS.map((b) => [b.key, COLOR_BANDA[b.key].barra]));
+
+  const filteredSalespersons = data?.bySalesperson
+    ? data.bySalesperson.filter((sp: any) =>
+        sp.name.toLowerCase().includes(salespersonFilter.toLowerCase())
+      )
+    : [];
+
+  return (
+    <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Cuentas por Cobrar</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Supricom — {MONTHS[selectedMonth - 1]} {selectedYear}
+            {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {!userCids && (
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+              <Building2 size={14} className="text-slate-400" />
+              <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} className="text-sm bg-transparent border-none outline-none text-slate-700">
+                <option value="">Todas las sedes</option>
+                <option value="caracas">Caracas</option>
+                <option value="valencia">Valencia</option>
+                <option value="panama">Panamá</option>
+              </select>
+            </div>
+          )}
+          {userCids && (
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+              <Building2 size={14} className="text-slate-400" />
+              <span className="text-sm text-slate-700">{COMPANY_MAP[userCids] || `Sede ${userCids}`}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+            <Calendar size={14} className="text-slate-400" />
+            <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
+              {MONTHS.map((m, i) => {
+                const isFuture = selectedYear === now.getFullYear() && i > now.getMonth();
+                return <option key={i} value={i + 1} disabled={isFuture}>{m}</option>;
+              })}
+            </select>
+            <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700 ml-1">
+              <option value={2025}>2025</option>
+              <option value={2026}>2026</option>
+            </select>
+          </div>
+          <button onClick={fetchData} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Actualizar
+          </button>
+        </div>
+      </div>
+
+      {loading && !data && (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <RefreshCw size={32} className="animate-spin text-blue-500 mx-auto mb-2" />
+            <p className="text-slate-500">Cargando datos de cuentas por cobrar...</p>
+          </div>
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+            <div onClick={() => fetchKpiDetail("efectividad", "Detalle Efectividad Cobranza")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`} />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">{peso("efectividad_cobranza", 35)}</span>
+              </div>
+              <div className="text-3xl font-bold text-slate-800">
+                {data.kpis.efectividad.value !== null ? `${data.kpis.efectividad.value}%` : "N/A"}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
+              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                Exigible: {formatCurrency(data.kpis.efectividad.exigible)}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Recuperado ÷ exigible (solo crédito) · clic para ver el detalle</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                CxC inicial {formatCurrency(data.kpis.efectividad.carteraInicial)} + ventas crédito {formatCurrency(data.kpis.efectividad.ventasCredito)} − CxC final {formatCurrency(data.kpis.efectividad.carteraFinal)}
+              </div>
+              {data.kpis.efectividad.parcial && (
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
+              )}
+              <AvisoRelacionada monto={data.kpis.efectividad.relacionadas} />
+            </div>
+
+            <div onClick={() => fetchKpiDetail("cartera", "Detalle Cartera Vencida")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`} />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cartera Vencida</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">{peso("cartera_vencida", 30)}</span>
+              </div>
+              <div className="text-3xl font-bold text-slate-800">
+                {data.kpis.carteraVencida.value !== null ? `${data.kpis.carteraVencida.value}%` : "N/A"}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.carteraVencida.meta}%</div>
+              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                <span>Vencido: {formatCurrency(data.kpis.carteraVencida.saldoVencido)}</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
+              <AvisoRelacionada monto={data.kpis.carteraVencida.relacionadas} />
+            </div>
+
+            <div onClick={() => fetchKpiDetail("recuperacion", "Detalle Recuperación Vencidos")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${getTrafficBg(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.recuperacion.value ?? 0, umbral(data.kpis.recuperacion.meta))}`} />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Recuperación Vencidos</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">{peso("recuperacion_vencidos", 25)}</span>
+              </div>
+              <div className="text-3xl font-bold text-slate-800">
+                {data.kpis.recuperacion.value !== null ? `${data.kpis.recuperacion.value}%` : "N/A"}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.recuperacion.meta}%</div>
+              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                <span>Recuperado en el mes: {formatCurrency(data.kpis.recuperacion.recuperadoEnElMes)}</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Vencido al inicio: {formatCurrency(data.kpis.recuperacion.saldoVencidoInicial)}</div>
+              <AvisoRelacionada monto={data.kpis.recuperacion.relacionadas} />
+            </div>
+
+            <div onClick={() => fetchKpiDetail("dso", "Detalle DSO (Días Cobro)")} className={`rounded-xl border p-5 cursor-pointer hover:shadow-md transition ${data.kpis.dso.value === null ? "bg-slate-50 border-slate-200" : getTrafficBg(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
+              </div>
+              <div className="text-3xl font-bold text-slate-800">
+                {data.kpis.dso.value !== null ? `${data.kpis.dso.value} días` : "N/A"}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Meta: ≤{data.kpis.dso.meta} días</div>
+              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                <span>CxC crédito al cierre: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Ventas crédito del mes: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.dias} días</div>
+            </div>
+
+            {/* Informativa: sin meta ni peso. Es la cartera vencida antes de 2025
+                que las otras tarjetas dejan fuera (lib/cxc/carteraVieja.ts). */}
+            {data.kpis.incobrables && (
+              <div onClick={() => fetchKpiDetail("incobrables", "Detalle Incobrables")} className="rounded-xl border p-5 cursor-pointer hover:shadow-md transition bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full bg-slate-400" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Incobrables</span>
+                </div>
+                <div className="text-3xl font-bold text-slate-800">{formatCurrency(data.kpis.incobrables.saldo)}</div>
+                <div className="text-xs text-slate-500 mt-1">Vencidas antes de 2025 o marcadas a mano</div>
+                <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
+                  <span>{data.kpis.incobrables.facturas} facturas · {data.kpis.incobrables.clientes} clientes</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">No cuentan en Cartera Vencida, Recuperación ni DSO</div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <DollarSign size={18} className="text-blue-600" />
+                <h3 className="font-semibold text-slate-700 text-sm">Resumen Cartera</h3>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Cartera total abierta</span>
+                  <span className="font-bold text-slate-800">{formatCurrency(data.summary.totalReceivable)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Cartera vencida</span>
+                  <span className="font-bold text-red-600">{formatCurrency(data.summary.totalOverdue)}</span>
+                </div>
+                {data.summary.totalOdoo !== undefined && (
+                  <>
+                    <div className="h-px bg-slate-200" />
+                    <div className="text-[11px] text-slate-400">Fuera de los KPIs</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Incobrables (antes de 2025)</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Pagos sin aplicar</span>
+                      <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar)}</span>
+                    </div>
+                    {data.summary.relacionadas > 0.005 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">SUPER TECHNO LLC</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.relacionadas)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Total en Odoo</span>
+                      <span className="font-bold text-slate-800">{formatCurrency(data.summary.totalOdoo)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="h-px bg-slate-200" />
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Facturas abiertas</span>
+                  <span className="font-bold text-slate-800">{data.summary.openInvoiceCount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Facturas vencidas</span>
+                  <span className="font-bold text-red-600">{data.summary.overdueInvoiceCount.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5 lg:col-span-2">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 size={18} className="text-blue-600" />
+                <h3 className="font-semibold text-slate-700 text-sm">Antigüedad de Cartera</h3>
+              </div>
+              <div className="space-y-2">
+                {Object.entries(data.agingDistribution).map(([band, value]) => (
+                  <AgingBar key={band} label={band} value={value as number} total={agingTotal} color={agingColors[band] || "bg-slate-300"} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* "Por Sede" solo cuando hay más de una sede (vista consolidada): con
+              una sola repite la tarjeta de resumen. */}
+          <div className={`grid grid-cols-1 ${data.byCompany.length > 1 ? "lg:grid-cols-2" : ""} gap-4 mb-6`}>
+            {data.byCompany.length > 1 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 size={18} className="text-blue-600" />
+                <h3 className="font-semibold text-slate-700 text-sm">Por Sede</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-2 text-slate-500 font-medium">Sede</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Cartera</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Efectiv.</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byCompany.map((co: any) => (
+                      <tr key={co.companyId} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="py-2.5 font-medium text-slate-700">{co.companyName}</td>
+                        <td className="py-2.5 text-right text-slate-600">{formatCurrency(co.totalReceivable)}</td>
+                        <td className="py-2.5 text-right">
+                          <span className={`font-medium ${getTrafficText(co.overduePct ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`}>
+                            {formatCurrency(co.totalOverdue)} ({co.overduePct}%)
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={`font-medium ${co.efectividad == null ? "text-slate-400" : getTrafficText(co.efectividad, umbral(data.kpis.efectividad.meta))}`}>
+                            {co.efectividad != null ? `${co.efectividad}%` : "N/A"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right text-slate-500">{co.openInvoices}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            )}
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Users size={18} className="text-blue-600" />
+                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores Vencidos</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-2 text-slate-500 font-medium">Cliente</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Total</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Días</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
+                      <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.topDebtors.map((d: any) => (
+                      <tr
+                        key={d.partnerId}
+                        onClick={() => fetchClientInvoices(d.partnerId, d.name, 0, "")}
+                        className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                      >
+                        <td className="py-2.5 font-medium text-slate-700 max-w-[200px] truncate">{d.name}</td>
+                        <td className="py-2.5 text-right text-slate-600">{formatCurrency(d.total)}</td>
+                        <td className="py-2.5 text-right">
+                          {d.overdue > 0 ? <span className="text-red-600 font-medium">{formatCurrency(d.overdue)}</span> : <span className="text-emerald-600">—</span>}
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={d.oldest > 60 ? "text-red-600 font-medium" : d.oldest > 30 ? "text-amber-600" : "text-slate-500"}>{d.oldest}</span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className={d.dso == null ? "text-slate-400" : d.dso > 60 ? "text-red-600 font-medium" : d.dso > 45 ? "text-amber-600" : "text-emerald-600"}>{d.dso == null ? "—" : Math.round(d.dso)}</span>
+                        </td>
+                        <td className="py-2.5 text-right text-slate-500">{d.count}</td>
+                        <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Cartera por Responsable de Cobranza */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users size={18} className="text-blue-600" />
+                <h3 className="font-semibold text-slate-700 text-sm">Cartera por Responsable de Cobranza</h3>
+              </div>
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filtrar vendedor..."
+                  value={salespersonFilter}
+                  onChange={(e) => setSalespersonFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-48"
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 text-slate-500 font-medium">Responsable</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">Cartera total</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">Vencida</th>
+                    <th className="text-right py-2 text-slate-500 font-medium" title="Pagos que entraron a banco/caja en el mes, de facturas de este vendedor">Cobrado del mes</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">Facturas</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSalespersons.map((sp: any) => (
+                    <tr
+                      key={sp.userId}
+                      onClick={() => fetchSalespersonInvoices(sp.userId, sp.name)}
+                      className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                    >
+                      <td className="py-2.5 font-medium text-slate-700">{sp.name}</td>
+                      <td className="py-2.5 text-right text-slate-600">{formatCurrency(sp.total)}</td>
+                      <td className="py-2.5 text-right">
+                        {sp.overdue > 0 ? <span className="text-red-600 font-medium">{formatCurrency(sp.overdue)}</span> : <span className="text-emerald-600">—</span>}
+                      </td>
+                      <td className="py-2.5 text-right text-emerald-700 font-medium">{sp.cobrado ? formatCurrency(sp.cobrado) : "—"}</td>
+                      <td className="py-2.5 text-right text-slate-500">{sp.count}</td>
+                      <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* MODAL 1: Invoices for a salesperson (click salesperson → see all their invoices) */}
+      <Modal open={invoicesModal.open} onClose={closeInvoicesModal} title={`Facturas — ${invoicesModal.userName}`} wide>
+        {invoicesLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw size={24} className="animate-spin text-blue-500 mr-2" />
+            <span className="text-slate-500 text-sm">Cargando facturas...</span>
+          </div>
+        ) : invoicesData.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">Sin facturas abiertas</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-2 text-slate-500 font-medium">Factura</th>
+                  <th className="text-left py-2 text-slate-500 font-medium">Cliente</th>
+                  <th className="text-left py-2 text-slate-500 font-medium">Tipo</th>
+                  <th className="text-left py-2 text-slate-500 font-medium">Fecha</th>
+                  <th className="text-left py-2 text-slate-500 font-medium">Vencimiento</th>
+                  <th className="text-center py-2 text-slate-500 font-medium">Estado</th>
+                  <th className="text-right py-2 text-slate-500 font-medium">Total</th>
+                  <th className="text-right py-2 text-slate-500 font-medium">Pendiente</th>
+                  <th className="text-center py-2 text-slate-500 font-medium">Días</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoicesData.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    onClick={() => fetchInvoiceDetail(inv.moveId || inv.id, "invoices")}
+                    className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                  >
+                    <td className="py-2.5 font-medium text-slate-700">{inv.name}</td>
+                    <td className="py-2.5 text-slate-600 text-xs max-w-[180px] truncate">{inv.partnerName}</td>
+                    <td className="py-2.5 text-slate-500 text-xs">{inv.moveType === "out_refund" ? "NC" : "Factura"}</td>
+                    <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDate)}</td>
+                    <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDateDue)}</td>
+                    <td className="py-2.5 text-center">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.paymentState === "paid" ? "bg-emerald-50 text-emerald-600" : inv.paymentState === "partial" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
+                        {inv.paymentState === "paid" ? "Pagada" : inv.paymentState === "partial" ? "Parcial" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
+                    <td className="py-2.5 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                    <td className="py-2.5 text-center">
+                      <span className={inv.agingDays > 60 ? "text-red-600 font-bold text-xs" : inv.agingDays > 30 ? "text-amber-600 font-medium text-xs" : "text-slate-500 text-xs"}>
+                        {inv.agingDays > 0 ? `${inv.agingDays}d` : "Al día"}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL 2: Invoice detail — full modern design */}
+      <Modal open={invoiceDetailModal.open} onClose={closeInvoiceDetail} title={`Factura ${invoiceDetail?.name || ""}`} wide>
+        {invoiceDetailLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <RefreshCw size={28} className="animate-spin text-blue-500 mx-auto mb-3" />
+              <span className="text-slate-400 text-sm">Cargando documento...</span>
+            </div>
+          </div>
+        ) : !invoiceDetail ? (
+          <div className="text-center py-16 text-slate-400">Error al cargar</div>
+        ) : (
+          <div className="space-y-5">
+            {/* ── STATUS BANNER ── */}
+            {(() => {
+              const isPaid = invoiceDetail.paymentState === "paid" || invoiceDetail.amountResidual <= 0;
+              const isPartial = !isPaid && (invoiceDetail.paymentState === "partial" || (invoiceDetail.amountPaid > 0 && invoiceDetail.amountResidual > 0));
+              const isOverdue = !isPaid && !isPartial && invoiceDetail.amountResidual > 0 && invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date();
+              return (
+                <div className={`flex items-center justify-between px-5 py-3.5 rounded-xl border ${
+                  isPaid ? "bg-emerald-50 border-emerald-200"
+                    : isPartial ? "bg-amber-50 border-amber-200"
+                      : isOverdue ? "bg-red-50 border-red-200"
+                        : "bg-blue-50 border-blue-200"
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${
+                      isPaid ? "bg-emerald-500" : isPartial ? "bg-amber-500" : "bg-red-500"
+                    }`} />
+                    <span className="text-sm font-bold text-slate-800">
+                      {isPaid ? "Factura Pagada" : isPartial ? "Pago Parcial" : "Pendiente de Pago"}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                    {invoiceDetail.moveType === "out_refund" ? "Nota de Crédito" : "Factura de Venta"}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* ── PAYMENT PROGRESS ── */}
+            {invoiceDetail.amountTotal > 0 && (
+              <div className="bg-white border border-slate-100 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Progreso de Pago</span>
+                  <span className="text-xs font-bold text-slate-700">
+                    {Math.round((invoiceDetail.amountPaid / invoiceDetail.amountTotal) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${invoiceDetail.paymentState === "paid" ? "bg-emerald-500" : invoiceDetail.paymentState === "partial" ? "bg-amber-500" : "bg-blue-500"}`}
+                    style={{ width: `${Math.min((invoiceDetail.amountPaid / invoiceDetail.amountTotal) * 100, 100)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-medium">
+                  <span>Pagado: {formatCurrency(invoiceDetail.amountPaid)}</span>
+                  <span>Pendiente: {formatCurrency(invoiceDetail.amountResidual)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ── INFO GRID ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Cliente</span>
+                <button
+                  onClick={() => fetchClientInvoices(invoiceDetail.partnerId, invoiceDetail.partnerName, invoiceDetail.invoiceUserId, invoiceDetail.invoiceUserName)}
+                  className="text-sm font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left leading-tight"
+                >
+                  {invoiceDetail.partnerName}
+                </button>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Sede</span>
+                <p className="text-sm font-bold text-slate-800">{invoiceDetail.companyName}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Vendedor</span>
+                <p className="text-sm font-medium text-slate-700">{invoiceDetail.invoiceUserName}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Moneda</span>
+                <p className="text-sm font-medium text-slate-700">{invoiceDetail.currencyName || "USD"}</p>
+              </div>
+            </div>
+
+            {/* ── DATES ROW ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                  <Calendar size={14} className="text-blue-600" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Emisión</span>
+                  <p className="text-xs font-bold text-slate-800">{formatDate(invoiceDetail.invoiceDate)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date() && invoiceDetail.amountResidual > 0 ? "bg-red-50" : "bg-amber-50"
+                }`}>
+                  <Clock size={14} className={invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date() && invoiceDetail.amountResidual > 0 ? "text-red-600" : "text-amber-600"} />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Vencimiento</span>
+                  <p className={`text-xs font-bold ${invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date() && invoiceDetail.amountResidual > 0 ? "text-red-600" : "text-slate-800"}`}>
+                    {formatDate(invoiceDetail.invoiceDateDue)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+                  <FileText size={14} className="text-purple-600" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Diario</span>
+                  <p className="text-xs font-medium text-slate-700">{invoiceDetail.journalName || "—"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
+                  <Target size={14} className="text-slate-500" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Ref. Pago</span>
+                  <p className="text-xs font-medium text-slate-700 truncate max-w-[120px]">{invoiceDetail.paymentReference || "—"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── TOTALS CARDS ── */}
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                { label: "Subtotal", value: invoiceDetail.totals.subtotal, bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-100" },
+                { label: "Impuesto", value: invoiceDetail.totals.tax, bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-100" },
+                { label: "Total", value: invoiceDetail.totals.total, bg: "bg-blue-50", text: "text-blue-800", border: "border-blue-100" },
+                { label: "Pagado", value: invoiceDetail.totals.paid, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-100" },
+                { label: "Pendiente", value: invoiceDetail.totals.residual, bg: "bg-red-50", text: "text-red-700", border: "border-red-100" },
+              ].map((item) => (
+                <div key={item.label} className={`${item.bg} border ${item.border} rounded-xl p-3 text-center`}>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-1">{item.label}</span>
+                  <span className={`text-sm font-bold ${item.text}`}>{formatCurrency(item.value)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── LINE ITEMS ── */}
+            {invoiceDetail.lines.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Package size={14} className="text-slate-400" />
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detalle de Productos</h4>
+                  <span className="text-[10px] text-slate-400 font-medium ml-auto">{invoiceDetail.lines.length} ítems</span>
+                </div>
+                <div className="border border-slate-100 rounded-xl overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">#</th>
+                        <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Producto</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cant.</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Precio Unit.</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Desc.</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subtotal</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceDetail.lines.map((line: any, idx: number) => (
+                        <tr key={line.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-4 text-slate-400 font-medium">{idx + 1}</td>
+                          <td className="py-2.5 px-4">
+                            <p className="font-semibold text-slate-800 text-xs">{line.productName || line.name}</p>
+                            {line.productName && line.name !== line.productName && (
+                              <p className="text-[10px] text-slate-400 mt-0.5">{line.name}</p>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-medium text-slate-700">{line.quantity}</td>
+                          <td className="py-2.5 px-4 text-right text-slate-600">{formatCurrency(line.priceUnit)}</td>
+                          <td className="py-2.5 px-4 text-right">
+                            {line.discount > 0 ? (
+                              <span className="inline-block px-1.5 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100 rounded">{line.discount}%</span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4 text-right text-slate-600">{formatCurrency(line.priceSubtotal)}</td>
+                          <td className="py-2.5 px-4 text-right font-bold text-slate-800">{formatCurrency(line.priceTotal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50/80 border-t border-slate-200">
+                        <td colSpan={5} className="py-2.5 px-4 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subtotal</td>
+                        <td colSpan={2} className="py-2.5 px-4 text-right font-bold text-slate-800 text-xs">{formatCurrency(invoiceDetail.totals.subtotal)}</td>
+                      </tr>
+                      <tr className="bg-slate-50/80">
+                        <td colSpan={5} className="py-2 px-4 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Impuesto</td>
+                        <td colSpan={2} className="py-2 px-4 text-right font-medium text-slate-600 text-xs">{formatCurrency(invoiceDetail.totals.tax)}</td>
+                      </tr>
+                      <tr className="bg-blue-50/60 border-t border-blue-100">
+                        <td colSpan={5} className="py-3 px-4 text-right text-[10px] font-bold text-blue-700 uppercase tracking-widest">Total</td>
+                        <td colSpan={2} className="py-3 px-4 text-right font-black text-blue-900 text-sm">{formatCurrency(invoiceDetail.totals.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── PAYMENT HISTORY ── */}
+            {invoiceDetail.payments && invoiceDetail.payments.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <DollarSign size={14} className="text-emerald-500" />
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Historial de Pagos</h4>
+                  <span className="text-[10px] text-slate-400 font-medium ml-auto">{invoiceDetail.payments.length} movimientos</span>
+                </div>
+                <div className="border border-slate-100 rounded-xl overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Referencia</th>
+                        <th className="text-left py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Débito</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Crédito</th>
+                        <th className="text-right py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                        <th className="text-center py-2.5 px-4 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Conciliado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceDetail.payments.map((p: any) => (
+                        <tr key={p.id} className="border-t border-slate-50 hover:bg-emerald-50/20 transition-colors">
+                          <td className="py-2.5 px-4 font-medium text-slate-700">{p.name}</td>
+                          <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
+                          <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
+                          <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
+                          <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                          <td className="py-2.5 px-4 text-center">
+                            {p.reconciled ? (
+                              <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span>
+                            ) : (
+                              <span className="inline-block w-5 h-5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold leading-5 text-center">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── NOTES / ORIGIN ── */}
+            {(invoiceDetail.invoiceOrigin || invoiceDetail.narration) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {invoiceDetail.invoiceOrigin && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Origen</span>
+                    <p className="text-xs text-slate-700 leading-relaxed">{invoiceDetail.invoiceOrigin}</p>
+                  </div>
+                )}
+                {invoiceDetail.narration && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Notas Internas</span>
+                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{invoiceDetail.narration.replace(/<[^>]*>/g, "")}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL 3: Client invoices / Estado de Cuenta */}
+      <Modal open={clientInvoicesModal.open} onClose={closeClientInvoicesModal} title={clientInvoicesModal.userId > 0 ? `${clientInvoicesModal.partnerName} — Historial de Facturas` : `${clientInvoicesModal.partnerName} — Estado de Cuenta`} wide>
+        {clientInvoicesLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw size={24} className="animate-spin text-blue-500 mr-2" />
+            <span className="text-slate-500 text-sm">Cargando historial...</span>
+          </div>
+        ) : clientInvoicesData.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">Sin facturas abiertas</div>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary cards for estado de cuenta */}
+            {clientInvoicesModal.userId === 0 && (() => {
+              const total = clientInvoicesData.reduce((s, i) => s + i.amountResidual, 0);
+              const overdue = clientInvoicesData.filter((i) => i.agingDays > 0).reduce((s, i) => s + i.amountResidual, 0);
+              const bands: Record<string, { count: number; total: number }> = {};
+              clientInvoicesData.forEach((i) => {
+                const band = i.agingBand || "corriente";
+                if (!bands[band]) bands[band] = { count: 0, total: 0 };
+                bands[band].count++;
+                bands[band].total += i.amountResidual;
+              });
+              const bandColors: Record<string, { bg: string; text: string }> = {
+                corriente: { bg: "bg-emerald-50", text: "text-emerald-700" },
+                "1-30": { bg: "bg-amber-50", text: "text-amber-700" },
+                "31-60": { bg: "bg-orange-50", text: "text-orange-700" },
+                "61-90": { bg: "bg-red-50", text: "text-red-700" },
+                "91+": { bg: "bg-red-100", text: "text-red-800" },
+              };
+              return (
+                <div className="grid grid-cols-5 gap-2">
+                  {["corriente", "1-30", "31-60", "61-90", "91+"].map((band) => {
+                    const b = bands[band] || { count: 0, total: 0 };
+                    const c = bandColors[band];
+                    return (
+                      <div key={band} className={`${c.bg} border rounded-xl p-3 text-center`}>
+                        <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{band === "corriente" ? "Corriente" : `${band} días`}</span>
+                        <span className={`text-base font-bold ${c.text}`}>{formatCurrency(b.total)}</span>
+                        <span className="text-[10px] text-slate-400 block">{b.count} fact.</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 text-slate-500 font-medium">Factura</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Tipo</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Fecha</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">Vencimiento</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Band</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Estado</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">Pendiente</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">Días</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientInvoicesData.map((inv) => {
+                    const bandColors: Record<string, string> = {
+                      corriente: "bg-emerald-50 text-emerald-700",
+                      "1-30": "bg-amber-50 text-amber-700",
+                      "31-60": "bg-orange-50 text-orange-700",
+                      "61-90": "bg-red-50 text-red-700",
+                      "91+": "bg-red-100 text-red-800",
+                    };
+                    return (
+                      <tr
+                        key={inv.id}
+                        onClick={() => fetchInvoiceDetail(inv.moveId || inv.id, "clientInvoices")}
+                        className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition"
+                      >
+                        <td className="py-2.5 font-medium text-slate-700">{inv.name}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{inv.transactionType === "out_refund" ? "NC" : "Factura"}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDate)}</td>
+                        <td className="py-2.5 text-slate-500 text-xs">{formatDate(inv.invoiceDateDue)}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bandColors[inv.agingBand] || "bg-slate-50 text-slate-600"}`}>
+                            {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.amountResidual <= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                            {inv.amountResidual <= 0 ? "Pagada" : "Pendiente"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={inv.agingDays > 60 ? "text-red-600 font-bold text-xs" : inv.agingDays > 30 ? "text-amber-600 font-medium text-xs" : "text-slate-500 text-xs"}>
+                            {inv.agingDays > 0 ? `${inv.agingDays}d` : "Al día"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right"><ChevronRight size={14} className="text-slate-400" /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50/80 border-t border-slate-200">
+                    <td colSpan={6} className="py-2.5 px-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Pendiente</td>
+                    <td className="py-2.5 px-4 text-right font-bold text-slate-800 text-sm">
+                      {formatCurrency(clientInvoicesData.reduce((s, i) => s + i.amountResidual, 0))}
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* KPI DETAIL MODALS */}
+      <Modal open={kpiModal.open} onClose={() => setKpiModal({ open: false, type: "", title: "" })} title={kpiModal.title} wide>
+        {kpiLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <RefreshCw size={28} className="animate-spin text-blue-500 mx-auto mb-3" />
+              <span className="text-slate-400 text-sm">Cargando detalle...</span>
+            </div>
+          </div>
+        ) : !kpiData ? (
+          <div className="text-center py-16 text-slate-400">Error al cargar</div>
+        ) : (
+          <div className="space-y-5">
+            {/* ── Efectividad Cobranza Detail ── */}
+            {["cartera", "incobrables", "recuperacion"].includes(kpiData.type) && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaDetalle}
+                  onChange={(e) => setBusquedaDetalle(e.target.value)}
+                  placeholder="Buscar cliente o número de factura..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-64"
+                />
+              </div>
+                {qDetalle && (
+                  <span className="text-xs text-slate-500">
+                    {kpiData.invoices.filter(coincideDetalle).length} de {kpiData.invoices.length} facturas ·{" "}
+                    {formatCurrency(kpiData.invoices.filter(coincideDetalle).reduce((s: number, i: any) => s + (i.amountResidual || 0), 0))}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {kpiData.type === "efectividad" && (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible del mes</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.exigible)}</span>
+                    <span className="text-[10px] text-blue-500/80 block">CxC inicial + ventas crédito − CxC final no vencida</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Recuperado del mes</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.recuperado)}</span>
+                    <span className="text-[10px] text-emerald-500/80 block">CxC inicial + ventas crédito − CxC final</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Componentes</span>
+                    <span className="text-xs font-semibold text-slate-700 block">CxC inicial {formatCurrency(kpiData.summary.carteraInicial)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">+ Ventas crédito {formatCurrency(kpiData.summary.ventasCredito)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">CxC final {formatCurrency(kpiData.summary.carteraFinal)}</span>
+                    <span className="text-xs font-semibold text-slate-700 block">· no vencida {formatCurrency(kpiData.summary.carteraFinalNoVencida)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad (CEI)</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</span>
+                    <span className="text-[10px] text-slate-400 block">recuperado ÷ exigible</span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-[11px] text-slate-600 space-y-2">
+                  <div className="text-xs font-bold text-slate-700">¿Cómo se calcula?</div>
+                  <div className="font-mono text-slate-700 bg-white border border-slate-100 rounded-lg p-2 overflow-x-auto">
+                    CEI = (CxC inicial + Ventas crédito − CxC final) ÷ (CxC inicial + Ventas crédito − CxC final no vencida) × 100
+                    <br />
+                    = ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinal)}) ÷ ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinalNoVencida)})
+                    {" "}= <strong>{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</strong>
+                  </div>
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li><strong>Solo crédito:</strong> se toman las facturas cuyo plazo de pago tiene días (7, 15, 30…). Las de contado (&quot;Immediate Payment&quot;) quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</li>
+                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes, sin las facturas vencidas antes de 2025 (Incobrables).</li>
+                    <li><strong>Ventas crédito:</strong> facturas a crédito del mes menos sus notas de crédito, con IVA.</li>
+                    <li><strong>CxC final:</strong> lo que deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"}. La parte <strong>no vencida</strong> se resta del denominador porque todavía no se podía exigir.</li>
+                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos (aunque todavía no estén aplicados a una factura), retenciones y descuentos.</li>
+                  </ul>
+                  <p className="text-slate-500">
+                    La CxC de cada fecha es el saldo contable de la cuenta de clientes a esa fecha (el mismo del reporte de antigüedad de Odoo), menos la parte de contado y las facturas vencidas antes de 2025. Quedan fuera Supricom y la empresa relacionada SUPER TECHNO LLC.
+                  </p>
+                  <AvisoRelacionada monto={kpiData.summary.relacionadas} />
+                  <p className="text-slate-500">
+                    100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
+                    {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vendedor</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos registrados</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos ÷ ventas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(kpiData.clientes || []).map((c: any) => (
+                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[260px] truncate" title={c.nombre}>{c.nombre}</td>
+                          <td className="py-2.5 px-3 text-slate-500 max-w-[160px] truncate">{c.vendedor || "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{c.facturado ? formatCurrency(c.facturado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{c.cobrado ? formatCurrency(c.cobrado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">
+                            {c.facturado > 0 ? `${Math.round((c.cobrado / c.facturado) * 100)}%` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── Cartera Vencida Detail ── */}
+            {kpiData.type === "cartera" && (
+              <>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Cartera Total</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.totalReceivable)}</span>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Vencida</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.totalOverdue)}</span>
+                    <span className="text-[10px] text-red-400 block">{kpiData.summary.overduePct}%</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.count}</span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest block mb-1">Vencidas</span>
+                    <span className="text-lg font-bold text-amber-800">{kpiData.summary.overdueCount}</span>
+                  </div>
+                </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+                    {BANDAS.map(({ key: band, label }) => {
+                      const bandData = kpiData.byBand[band] || { count: 0, total: 0 };
+                      const c = COLOR_BANDA[band];
+                      return (
+                        <div key={band} className={`${c.fondo} border rounded-xl p-3 text-center`}>
+                          <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{label}</span>
+                          <span className={`text-sm font-bold ${c.texto}`}>{formatCurrency(bandData.total)}</span>
+                          <span className="text-[10px] text-slate-400 block">{bandData.count} fact.</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sede</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Band</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => {
+                        const cb = COLOR_BANDA[inv.agingBand as Banda];
+                        return (
+                          <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                            <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                            <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${cb ? `${cb.fondo} ${cb.texto}` : "bg-slate-50 text-slate-600"}`}>
+                                {inv.agingBand === "corriente" ? "Corriente" : inv.agingBand}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={inv.daysOverdue > 60 ? "text-red-600 font-bold" : inv.daysOverdue > 30 ? "text-amber-600 font-medium" : "text-slate-500"}>
+                                {inv.daysOverdue > 0 ? `${inv.daysOverdue}d` : "0d"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── Incobrables Detail ── */}
+            {kpiData.type === "incobrables" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Saldo</span>
+                    <span className="text-lg font-bold text-slate-800">{formatCurrency(kpiData.summary.totalReceivable)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Facturas</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.count}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Clientes</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.clientes}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">Facturas con vencimiento anterior a 2025, o marcadas como incobrables en la sección Incobrables, que siguen con saldo. No cuentan en Cartera Vencida, Recuperación ni DSO.</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sede</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{inv.companyName}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-500">{inv.invoiceDateDue || "—"}</td>
+                          <td className="py-2.5 px-3 text-center text-red-600 font-bold">{inv.daysOverdue}d</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── Recuperación Vencidos Detail ── */}
+            {kpiData.type === "recuperacion" && (
+              <>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Vencido Inicial</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.vencidoInicial)}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Recuperado</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.recuperado)}</span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest block mb-1">Restante</span>
+                    <span className="text-lg font-bold text-amber-800">{formatCurrency(kpiData.summary.vencidoRestante)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Recuperación</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.recuperacion}%</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.recoveredCount}/{kpiData.summary.count} recuperadas</span>
+                  </div>
+                </div>
+                <AvisoRelacionada monto={kpiData.summary.relacionadas} />
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Factura</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                        <th className="text-center py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagado</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => (
+                        <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700">{inv.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">{inv.partnerName}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{formatDate(inv.invoiceDateDue)}</td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${inv.status === "Recuperado" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(inv.amountTotal)}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.amountPaid)}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(inv.amountResidual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── DSO Detail ── */}
+            {kpiData.type === "dso" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">CxC crédito al cierre</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas crédito del mes</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
+                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</span>
+                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.dias} días del período</span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
+                  <p className="text-xs text-slate-600">
+                    DSO = CxC a crédito al cierre ÷ Ventas a crédito del mes × Días del mes
+                    {" "}= {formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasNetas)} × {kpiData.summary.dias}
+                    {" "}= <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Mismas cifras que Efectividad: saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito del mes menos sus notas de crédito, con IVA. Mes en curso: al día de hoy.
+                    Por cliente, la misma fórmula con su saldo y sus ventas del mes; sin ventas en el mes no hay DSO (—).
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80">
+                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo al cierre</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito del mes</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpiData.clientes.map((c: any) => (
+                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[200px] truncate">{c.partnerName}</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(c.saldo)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className={c.dso == null ? "text-slate-400" : c.dso > 60 ? "text-red-600 font-bold" : c.dso > 45 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                              {c.dso == null ? "—" : c.dso.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

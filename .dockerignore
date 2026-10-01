@@ -1,0 +1,24 @@
+# Sin .dockerignore, el `COPY . .` de la etapa de construccion metia en la
+# imagen todo el contexto: node_modules del host, el .next local y el .git
+# completo con su historial. Ademas, cualquier .env que estuviera en la maquina
+# de build habria acabado dentro de la imagen.
+node_modules
+.next
+.git
+.gitignore
+
+# Nunca dentro de la imagen: los secretos se inyectan en ejecucion.
+.env
+.env.local
+.env*.local
+
+# Ruido que no aporta al build
+.DS_Store
+npm-debug.log*
+*.log
+.vscode
+.idea
+
+# OJO: no excluir public/uploads — hay imagenes versionadas del Banco de
+# Flyers que la app sirve desde ahi. Excluirlas rompe esa seccion en
+# produccion sin dar ningun error de build.

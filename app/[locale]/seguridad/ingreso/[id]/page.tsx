@@ -1,0 +1,728 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  ExternalLink,
+  Image as ImageIcon,
+  Loader2,
+  Printer,
+  ShieldCheck,
+  Ticket as TicketIcon,
+  Video,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/stores/auth.store";
+import FirmasActa from "@/components/seguridad/FirmasActa";
+import { GarantiaBadge } from "@/components/seguridad/GarantiaIngreso";
+import ProductosEnvioLista, { type FilaProducto } from "@/components/seguridad/ProductosEnvioLista";
+
+type Ingreso = {
+  id: number;
+  rma_case_id: number | null;
+  fecha_entrega: string;
+  factura_numero: string | null;
+  cliente_nombre: string;
+  hardware: string | null;
+  serial: string | null;
+  descripcion_falla: string | null;
+  accesorios_integros: number;
+  sin_manipulacion: number;
+  recibido_por: string;
+  recibido_seguridad_nombre: string | null;
+  recibido_rma_nombre: string | null;
+  nd_numero: string | null;
+  foto_estado_url: string | null;
+  created_at: string;
+};
+
+type RmaCase = {
+  id: number;
+  case_number: string;
+  status: string;
+  invoice_number: string;
+  /** Se lee del ticket, no se copia al ingreso: si el cliente lo corrige en
+   *  RMA, el acta tiene que mostrar el corregido. */
+  client_phone: string | null;
+  /** Garantía CONGELADA al momento del reporte (#48). Seguridad ya no la
+   *  evalúa en el mostrador: se muestra tal cual la resolvió el portal. */
+  garantia_estado: string | null;
+  garantia_meses: number | null;
+  garantia_vence: string | null;
+  garantia_marca: string | null;
+  producto_externo?: boolean;
+} | null;
+
+type Adjunto = {
+  id: number;
+  filename: string;
+  mime: string;
+  size: number;
+  created_at: string;
+  url: string;
+};
+
+function fmtDate(value: string) {
+  if (!value) return "—";
+  const s = String(value).slice(0, 10);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return s;
+  return `${d}/${m}/${y}`;
+}
+
+function fmtDateTime(value: string) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleString("es-VE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const statusLabels: Record<string, string> = {
+  recibido: "Recibido",
+  reparado: "Reparado",
+  nota_credito: "Nota de Crédito",
+  no_procesado: "No Procesado",
+  reingresado: "Reingresado",
+  nc_revision: "NC en revisión",
+};
+
+const statusColors: Record<string, string> = {
+  recibido: "bg-blue-100 text-blue-700 border-blue-200",
+  reparado: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
+  no_procesado: "bg-red-100 text-red-700 border-red-200",
+  reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
+};
+
+export default function IngresoDetailPage() {
+  const t = useTranslations("seguridad");
+  const tf = useTranslations("seguridad.ingreso.form");
+  const td = useTranslations("seguridad.ingreso.detail");
+  const params = useParams();
+  const locale = (params?.locale as string) || "es";
+  const id = params?.id as string;
+  const base = `/${locale}/seguridad`;
+
+  const { user } = useAuthStore();
+  // RMA llega aqui para verificar el ingreso (llama al cliente, confirma que
+  // el acta tenga las 4 firmas y los 4 checks) antes de intervenir el
+  // equipo — pero no firma ni califica, eso sigue siendo de Seguridad. Mismo
+  // patron que `esAlmacen` en MercanciaDetalle.tsx: todo el contenido de
+  // lectura queda visible, solo se ocultan los controles de captura.
+  const esRma = (user?.role || "").toLowerCase().trim() === "rma";
+  // Solo superadmin puede rehacer una firma ya guardada (#49).
+  const esSuperadmin =
+    (user?.role || "").toLowerCase().trim() === "superadmin";
+
+  const [ingreso, setIngreso] = useState<Ingreso | null>(null);
+  const [rmaCase, setRmaCase] = useState<RmaCase>(null);
+  const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
+  const [productos, setProductos] = useState<FilaProducto[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Nombre del tecnico que firma como OSC. Viene de seguridad_config,
+  // no del codigo, para no tener que desplegar el dia que cambie.
+  const [tecnico, setTecnico] = useState<{ nombre: string; cargo: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/seguridad/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.tecnico && setTecnico(j.tecnico))
+      .catch(() => {});
+  }, []);
+  const [error, setError] = useState<string | null>(null);
+
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancel = false;
+    const run = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/seguridad/ingreso/${id}`);
+        const data = await res.json();
+        if (cancel) return;
+        if (!res.ok || !data.success) {
+          setError(data.error || td("not_found"));
+          setLoading(false);
+          return;
+        }
+        setIngreso(data.ingreso);
+        setRmaCase(data.rma_case);
+        setProductos(data.productos ?? []);
+
+        if (data.ingreso?.rma_case_id) {
+          const adjRes = await fetch(`/api/seguridad/ingreso/${id}/adjuntos`);
+          if (!cancel) {
+            const adjData = await adjRes.json().catch(() => ({}));
+            if (adjData.success) {
+              setAdjuntos(adjData.adjuntos || []);
+            }
+          }
+        }
+      } catch {
+        if (!cancel) setError(td("not_found"));
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    };
+    run();
+    return () => {
+      cancel = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelado = false;
+    let url: string | null = null;
+    fetch(`/api/seguridad/ingreso/${id}/foto`)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (cancelado || !blob) return;
+        if (blob.size === 0) return;
+        url = URL.createObjectURL(blob);
+        setFotoUrl(url);
+      })
+      .catch(() => {
+        // ignore — no photo
+      });
+    return () => {
+      cancelado = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-slate-500 gap-2 font-sans">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span className="text-sm">{td("loading")}</span>
+      </div>
+    );
+  }
+
+  if (error || !ingreso) {
+    return (
+      <div className="min-h-screen font-sans">
+        <header className="bg-white border-b border-slate-200">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+            <Link
+              href={`${base}/ingreso`}
+              className="p-2 rounded-[10px] text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+              aria-label={t("back")}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <h1 className="text-base sm:text-lg font-bold text-slate-900">
+              {td("not_found")}
+            </h1>
+          </div>
+        </header>
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 text-center text-slate-500 text-sm">
+          {error || td("not_found")}
+        </main>
+      </div>
+    );
+  }
+
+  const statusKey = rmaCase?.status ? statusLabels[rmaCase.status] || rmaCase.status : "";
+  const statusClass = rmaCase?.status
+    ? statusColors[rmaCase.status] || "bg-slate-100 text-slate-600 border-slate-200"
+    : "";
+
+  return (
+    <div className="min-h-screen bg-slate-50/50 font-sans">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+          <Link
+            href={`${base}/ingreso`}
+            className="p-2 rounded-[10px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+            aria-label={t("back")}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="p-2 rounded-xl bg-violet-100 shrink-0">
+              <ClipboardList className="w-5 h-5 text-violet-600" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+                {td("title", { id: ingreso.id })}
+              </h1>
+              <p className="text-xs text-slate-500 truncate">
+                {td("subtitle")}
+              </p>
+            </div>
+          </div>
+          {/* Comprobante del acta de recepcion. Antes solo el despacho tenia
+              uno, asi que el cliente dejaba su equipo y se iba sin nada que
+              dijera en que estado lo entrego. */}
+          <a
+            href={`/api/seguridad/ingreso/${ingreso.id}/comprobante`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-10 px-3 sm:px-4 inline-flex items-center gap-2 rounded-[10px] text-sm font-semibold text-white transition-colors shrink-0"
+            style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">{td("print")}</span>
+          </a>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+        {/* Data card */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-4">
+            {td("section_data")}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <DataField label={td("label_fecha")} value={fmtDate(ingreso.fecha_entrega)} />
+            <DataField
+              label={td("label_nd")}
+              value={ingreso.nd_numero || td("no_value")}
+            />
+            <DataField
+              label={td("label_factura")}
+              value={
+                rmaCase?.producto_externo
+                  ? tf("producto_externo")
+                  : ingreso.factura_numero || td("no_value")
+              }
+            />
+            <DataField
+              label={td("label_cliente")}
+              value={ingreso.cliente_nombre}
+              full
+            />
+            <DataField
+              label={td("label_hardware")}
+              value={ingreso.hardware || td("no_value")}
+            />
+            <DataField
+              label={td("label_serial")}
+              value={ingreso.serial || td("no_value")}
+              mono
+            />
+            <div className="sm:col-span-2">
+              <dt className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+                {td("label_descripcion")}
+              </dt>
+              <dd className="text-slate-800 whitespace-pre-wrap text-sm bg-slate-50/60 border border-slate-200 rounded-[10px] p-3 min-h-[60px]">
+                {ingreso.descripcion_falla || td("no_value")}
+              </dd>
+            </div>
+            <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+              <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+                {td("label_created")}
+              </dt>
+              <dd className="text-xs text-slate-500 mt-0.5">
+                {fmtDateTime(ingreso.created_at)}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        {/* Las 4 firmas de la planilla, arriba del todo y no al final.
+            Es lo que hay que hacer AHORA, con el cliente todavia en el
+            mostrador: enterrado bajo la foto, el ticket y los adjuntos, en un
+            telefono no lo ve nadie. */}
+        <FirmasActa
+          tipo="ingreso"
+          actaId={ingreso.id}
+          nombresSugeridos={{
+            // Quien recibio por cada lado en el formulario (#50); antes se
+            // sugeria el usuario de la sesion y el tecnico de la config.
+            tecnico: ingreso.recibido_rma_nombre || tecnico?.nombre,
+            almacen: ingreso.recibido_por,
+            seguridad: ingreso.recibido_seguridad_nombre || user?.name,
+            cliente: ingreso.cliente_nombre,
+          }}
+          readOnly={esRma || esSuperadmin}
+          permitirRehacer={esSuperadmin}
+          // La firma de Almacén es opcional en el ingreso y el despacho.
+          opcionales={["almacen"]}
+          // Seguridad firma la suya y, si el cliente retira en persona, la del
+          // cliente en esta computadora. RMA y Almacén firman en su panel.
+          puedeFirmar={["seguridad", "cliente"]}
+        />
+
+        <ProductosEnvioLista
+          productos={productos}
+          titulo={t("productos_envio.titulo", { n: productos.length })}
+          conRecibido
+        />
+
+        {/* Checks card */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-4">
+            {td("section_checks")}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <CheckField
+              label={tf("check_accesorios")}
+              value={ingreso.accesorios_integros}
+              yes={tf("yes")}
+              no={tf("no")}
+            />
+            <CheckField
+              label={tf("check_manipulacion")}
+              value={ingreso.sin_manipulacion}
+              yes={tf("yes")}
+              no={tf("no")}
+            />
+          </div>
+        </section>
+
+        {/* Garantía — CONGELADA en el ticket del portal al momento del reporte
+            (#48). Seguridad ya no la evalúa en el mostrador; acá se muestra
+            tal cual la resolvió el portal para que el cliente y el técnico
+            vean el mismo dato. */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              {td("section_garantia")}
+            </h2>
+            {ingreso.rma_case_id && (
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                {td("garantia_desde_ticket")}
+              </span>
+            )}
+          </div>
+          {ingreso.rma_case_id && rmaCase ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <GarantiaBadge estado={rmaCase.producto_externo ? "no_aplica" : rmaCase.garantia_estado} />
+              {rmaCase.garantia_marca && (
+                <span className="text-xs text-slate-500">
+                  {rmaCase.garantia_marca}
+                  {rmaCase.garantia_meses ? ` · ${rmaCase.garantia_meses}m` : ""}
+                </span>
+              )}
+              {rmaCase.garantia_vence && (
+                <span className="text-xs text-slate-500">
+                  · {td("garantia_vence")}{" "}
+                  {String(rmaCase.garantia_vence).slice(0, 10)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{td("garantia_sin_ticket")}</p>
+          )}
+        </section>
+
+        {/* Received by card — dos firmantes, uno por lado del mostrador (#50).
+            Filas viejas sin los campos nuevos caen al `recibido_por` de antes. */}
+        <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-3">
+            {td("section_recibido")}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RecibidoPor
+              label={td("recibido_seguridad")}
+              nombre={
+                ingreso.recibido_seguridad_nombre || ingreso.recibido_por || "—"
+              }
+            />
+            <RecibidoPor
+              label={td("recibido_rma")}
+              nombre={ingreso.recibido_rma_nombre || "—"}
+            />
+          </div>
+        </section>
+
+        {/* La calificación del Seguridad que recibió salió de esta vista (#49):
+            el ingreso es un acta, no un momento para puntuar a un compañero. */}
+
+        {/* Foto del estado */}
+        {fotoUrl && (
+          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-500" />
+                {t("foto_estado.title")}
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                {t("foto_estado.click_to_enlarge")}
+              </span>
+            </div>
+            <div
+              className="cursor-zoom-in rounded-[10px] border border-slate-200 bg-slate-50/40 p-2 flex items-center justify-center"
+              onClick={() => setLightboxOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setLightboxOpen(true);
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={fotoUrl}
+                alt="Foto del estado del equipo"
+                className="max-w-full max-h-96 object-contain rounded-lg"
+              />
+            </div>
+          </section>
+        )}
+
+        {/* Ticket card (if linked) */}
+        {ingreso.rma_case_id && (
+          <section className="bg-white border border-violet-200 rounded-[10px] p-5">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
+                <TicketIcon className="w-4 h-4 text-violet-600" />
+                {td("section_ticket")}
+              </h2>
+              {rmaCase && (
+                <Link
+                  href={`/${locale}/rma/casos/${rmaCase.id}`}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+                >
+                  {td("open_ticket")}
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
+              )}
+            </div>
+            {rmaCase ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <DataField
+                  label={td("case_number")}
+                  value={`#${rmaCase.case_number}`}
+                  mono
+                />
+                <div>
+                  <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+                    {td("ticket_status")}
+                  </dt>
+                  <dd className="mt-1">
+                    <span
+                      className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md border ${statusClass}`}
+                    >
+                      {statusKey}
+                    </span>
+                  </dd>
+                </div>
+                <DataField
+                  label={td("ticket_hardware")}
+                  value={ingreso.hardware || td("no_value")}
+                />
+                <DataField
+                  label={td("ticket_serial")}
+                  value={ingreso.serial || td("no_value")}
+                  mono
+                />
+                <DataField
+                  label={td("ticket_factura")}
+                  value={rmaCase.invoice_number || td("no_value")}
+                />
+                {/* Telefono del cliente, leido del ticket. Es para llamarlo
+                    cuando el equipo lleva dias sin retirar, sin salir del
+                    modulo a buscarlo. Va como enlace tel: porque esto se abre
+                    desde un telefono en el mostrador. */}
+                {rmaCase.client_phone && (
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+                      {td("ticket_telefono")}
+                    </dt>
+                    <dd className="mt-1">
+                      <a
+                        href={`tel:${rmaCase.client_phone}`}
+                        className="text-sm font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+                      >
+                        {rmaCase.client_phone}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <p className="text-sm text-slate-500">{td("no_ticket")}</p>
+            )}
+          </section>
+        )}
+
+        {/* Adjuntos (if linked and has any) */}
+        {ingreso.rma_case_id && (
+          <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h2 className="text-sm font-bold text-slate-900 inline-flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-500" />
+                {td("section_adjuntos")}
+              </h2>
+              <span className="text-xs text-slate-400">
+                {td("adjuntos_count", { count: adjuntos.length })}
+              </span>
+            </div>
+            {adjuntos.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">
+                {td("no_adjuntos")}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {adjuntos.map((adj) => {
+                  const isVideo = adj.mime?.startsWith("video/");
+                  return (
+                    <a
+                      key={adj.id}
+                      href={adj.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group block"
+                    >
+                      <div className="relative aspect-square rounded-[10px] border border-slate-200 overflow-hidden bg-slate-50">
+                        {isVideo ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-1">
+                            <Video className="w-8 h-8" />
+                            <span className="text-[10px] font-semibold uppercase">
+                              {td("adjunto_video")}
+                            </span>
+                          </div>
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={adj.url}
+                            alt={adj.filename}
+                            loading="lazy"
+                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        )}
+                        <div className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 bg-white/90 border border-slate-200 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                          {isVideo ? (
+                            <Video className="w-3 h-3" />
+                          ) : (
+                            <ImageIcon className="w-3 h-3" />
+                          )}
+                          {isVideo ? td("adjunto_video") : td("adjunto_imagen")}
+                        </div>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-slate-500 truncate">
+                        {adj.filename}
+                      </p>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+      </main>
+
+      {lightboxOpen && fotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fotoUrl}
+            alt=""
+            className="max-w-full max-h-full object-contain"
+          />
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-10 h-10 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl leading-none"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DataField({
+  label,
+  value,
+  full,
+  mono,
+}: {
+  label: string;
+  value: string;
+  full?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <div className={full ? "sm:col-span-2" : ""}>
+      <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+        {label}
+      </dt>
+      <dd
+        className={`mt-1 text-slate-800 ${mono ? "font-mono" : ""} break-words`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function RecibidoPor({ label, nombre }: { label: string; nombre: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
+      <div className="p-2 rounded-xl bg-violet-100 shrink-0">
+        <ShieldCheck className="w-4 h-4 text-violet-600" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          {label}
+        </p>
+        <p className="text-sm text-slate-800 font-medium truncate">{nombre}</p>
+      </div>
+    </div>
+  );
+}
+
+
+function CheckField({
+  label,
+  value,
+  yes,
+  no,
+}: {
+  label: string;
+  value: number | boolean;
+  yes: string;
+  no: string;
+}) {
+  const ok = value === 1 || value === true;
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2.5 ${
+        ok
+          ? "border-emerald-200 bg-emerald-50/50"
+          : "border-red-200 bg-red-50/50"
+      }`}
+    >
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span
+        className={`inline-flex items-center gap-1 text-xs font-bold ${
+          ok ? "text-emerald-700" : "text-red-600"
+        }`}
+      >
+        {ok ? (
+          <CheckCircle2 className="w-4 h-4" />
+        ) : (
+          <XCircle className="w-4 h-4" />
+        )}
+        {ok ? yes : no}
+      </span>
+    </div>
+  );
+}

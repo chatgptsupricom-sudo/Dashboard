@@ -1,0 +1,272 @@
+================================================================================
+           KPIs DE CUENTAS POR COBRAR (CxC) - DOCUMENTACION COMPLETA
+================================================================================
+
+ENFOQUE HIBRIDO (actualizado):
+  - FUENTE PRINCIPAL: digiflex.cxc.report (aging, balances, top deudores)
+  - COMPLEMENTO: account.move (KPIs que necesitan historial)
+  - API: GET /api/superadmin/cuentas-por-cobrar
+  - Archivo: app/api/superadmin/cuentas-por-cobrar/route.ts
+
+================================================================================
+FUENTE 1: digiflex.cxc.report (modelo custom en Odoo)
+================================================================================
+
+Campos del modelo:
+  - id                    (integer)  ID del registro
+  - move_id               (many2one)  Referencia a account.move
+  - partner_id            (many2one)  Cliente
+  - partner_name          (char)      Nombre del cliente
+  - user_id               (many2one)  Vendedor
+  - user_name             (char)      Nombre del vendedor
+  - company_id            (many2one)  Compañía
+  - company_name          (char)      Nombre de la compañía
+  - invoice_date          (date)      Fecha de factura
+  - date_maturity         (date)      Fecha de vencimiento
+  - days_overdue          (integer)  Días vencidos
+  - amount_residual       (monetary)  Saldo pendiente
+  - amount_current        (monetary)  Por vencer (no vencido)
+  - amount_1_30           (monetary)  Vencido 1-30 días
+  - amount_31_60          (monetary)  Vencido 31-60 días
+  - amount_61_90          (monetary)  Vencido 61-90 días
+  - amount_91_plus        (monetary)  Vencido 91+ días
+  - transaction_type      (char)      Tipo (Factura, Asiento, Nota de Crédito)
+  - document_number       (char)      Número de documento
+  - nro_ctrl              (char)      Número de control
+  - currency_id           (many2one)  Moneda
+  - display_name          (char)      Nombre de display
+
+Usado para:
+  - Aging distribution (buckets pre-calculados)
+  - Cartera Vencida %
+  - Top deudores
+  - Por vendedor
+  - Por compañía
+  - Detalle de facturas (detail endpoint)
+  - Alertas de vencimiento
+  - Búsqueda de facturas
+
+================================================================================
+FUENTE 2: account.move (Odoo estándar)
+================================================================================
+
+Usado SOLO para KPIs que necesitan datos históricos:
+  - Efectividad Cobranza (exigible del mes vs cobrado)
+  - Recuperación Vencidos (cohorte mensual)
+  - DSO (ventas crédito últimos 90 días)
+
+Campos usados:
+  - invoice_date_due      Fecha de vencimiento
+  - invoice_date          Fecha de emisión
+  - amount_total          Total con impuesto
+  - amount_untaxed        Subtotal sin impuesto
+  - amount_residual       Saldo pendiente
+  - move_type             Tipo (out_invoice / out_refund)
+  - payment_state         Estado de pago
+
+================================================================================
+1. EFECTIVIDAD COBRANZA (account.move)
+================================================================================
+
+PESO EN SEMAFORO: 35%
+DIRECCION: Mayor es mejor
+SEMAFORO: Verde >= 95% | Amarillo >= 85% | Rojo < 85%
+META DEFAULT: 95%
+
+FORMULA:
+  Efectividad (%) = (cobradoEnPeriodo / montoExigible) * 100
+
+COMO SE CALCULA:
+  1) montoExigible:
+     - Facturas donde invoice_date_due cae en el mes seleccionado
+     - Se suma amount_total (notas de crédito se restan)
+
+  2) cobradoEnPeriodo:
+     - De las facturas exigibles: pagado = amount_total - |amount_residual|
+     - Se suma lo pagado (valores positivos)
+
+  3) Resultado:
+     - Si montoExigible > 0: (cobradoEnPeriodo / montoExigible) * 100
+     - Si montoExigible = 0: null
+
+
+================================================================================
+2. CARTERA VENCIDA (digiflex.cxc.report)
+================================================================================
+
+PESO EN SEMAFORO: 30%
+DIRECCION: Menor es mejor (invertido)
+SEMAFORO: Verde <= 10% | Amarillo <= 20% | Rojo > 20%
+META DEFAULT: 10%
+
+FORMULA:
+  Cartera Vencida (%) = (totalVencido / carteraTotal) * 100
+
+COMO SE CALCULA:
+  1) carteraTotal:
+     - SUM(|amount_residual|) de digiflex.cxc.report
+     - Excluyendo partners "supricom"
+
+  2) totalVencido:
+     - SUM(|amount_residual|) donde days_overdue > 0
+
+  3) Resultado:
+     - Si carteraTotal > 0: (totalVencido / carteraTotal) * 100
+     - Si carteraTotal = 0: null
+
+DISTRIBUCION POR ANTIGUEDAD (rangos del reporte Odoo):
+  - Corriente:   amount_current      (no vencido)
+  - 1-30:        amount_1_30
+  - 31-60:       amount_31_60
+  - 61-90:       amount_61_90
+  - 91+:         amount_91_plus
+
+
+================================================================================
+3. RECUPERACION VENCIDOS (account.move)
+================================================================================
+
+PESO EN SEMAFORO: 25%
+DIRECCION: Mayor es mejor
+SEMAFORO: Verde >= 60% | Amarillo >= 30% | Rojo < 30%
+META DEFAULT: 60%
+
+FORMULA:
+  Recuperacion (%) = (cohortRecuperado / cohortTotalInicial) * 100
+
+COMO SE CALCULA (enfoque COHORTE):
+  1) cohortStart = primer día del mes seleccionado
+
+  2) cohortAll = facturas con invoice_date_due < cohortStart
+     (facturas vencidas antes del inicio del mes)
+
+  3) cohortTotalInicial = SUM(amount_total) de cohortAll
+     (monto original que estaba vencido al inicio)
+
+  4) cohortRestante = SUM(|amount_residual|) de cohortAll
+     (lo que aún queda pendiente)
+
+  5) cohortRecuperado = cohortTotalInicial - cohortRestante
+
+  6) Resultado:
+     - Si cohortTotalInicial > 0: (cohortRecuperado / cohortTotalInicial) * 100
+     - Si cohortTotalInicial = 0: null
+
+
+================================================================================
+4. DSO (Days Sales Outstanding) (account.move)
+================================================================================
+
+PESO EN SEMAFORO: 10%
+DIRECCION: Menor es mejor (invertido)
+SEMAFORO: Verde <= 45 días | Amarillo <= 60 días | Rojo > 60 días
+META DEFAULT: 45 días
+
+FORMULA:
+  DSO = (carteraAbierta / ventasCredito90d) * 90
+
+COMO SE CALCULA:
+  1) carteraAbierta:
+     - SUM(|amount_residual|) de digiflex.cxc.report
+     (misma carteraTotal de Cartera Vencida)
+
+  2) ventasCredito90d:
+     - SUM(|amount_untaxed|) de account.move
+     - Solo out_invoice (no notas de crédito)
+     - invoice_date >= (hoy - 90 días)
+
+  3) Resultado:
+     - Si ventasCredito90d > 0: ROUND((carteraAbierta / ventasCredito90d) * 90)
+     - Si ventasCredito90d = 0: null
+
+
+================================================================================
+RESUMEN COMPARATIVO
+================================================================================
+
+KPI                  | Fuente                | Fórmula                           | Mejor
+---------------------|-----------------------|-----------------------------------|-------
+Efectividad Cobranza | account.move          | (cobrado / exigible) * 100        | Mayor
+Cartera Vencida      | digiflex.cxc.report   | (vencido / total) * 100           | Menor
+Recuperación         | account.move          | (recuperado / vencido_inicial) * 100 | Mayor
+DSO                  | digiflex + account    | (cartera / ventas_90d) * 90       | Menor
+
+PESOS EN SEMAFORO:
+  - Efectividad Cobranza: 35%
+  - Cartera Vencida:      30%
+  - Recuperación Vencidos: 25%
+  - DSO:                  10%
+
+METAS (configurables en tabla kpi_targets de MySQL):
+  - Efectividad: 95%     (default)
+  - Cartera Vencida: 10%  (default)
+  - Recuperación: 60%     (default)
+  - DSO: 45 días          (default)
+
+TABLA MySQL PARA METAS:
+  kpi_targets (kpi_key, company_id, mes, meta_mensual)
+  - kpi_key: "efectividad_cobranza" | "cartera_vencida" | "recuperacion_vencidos" | "dso"
+  - company_id: 7 (Panamá), 9 (Valencia), 10 (Caracas)
+  - mes: formato "YYYY-MM"
+
+================================================================================
+ENDPOINTS API
+================================================================================
+
+GET /api/superadmin/cuentas-por-cobrar
+  Params: empresa, userCids, month, year, startDate, endDate
+  Retorna: kpis, agingDistribution, byCompany, topDebtors, bySalesperson, summary
+
+GET /api/superadmin/cuentas-por-cobrar/detail
+  Params: empresa, userCids, partner_id, user_id, aging_band
+  Retorna: invoices[], total, count
+
+GET /api/superadmin/cuentas-por-cobrar/alerts
+  Params: empresa, userCids
+  Retorna: facturasPorVencer[], facturasVencidas[], summary
+
+GET /api/superadmin/cuentas-por-cobrar/search
+  Params: q, empresa, userCids, page, limit
+  Retorna: invoices[], count, page, totalPages, total
+
+GET /api/superadmin/cuentas-por-cobrar/invoice/[id]
+  Retorna: invoice detail con líneas y pagos
+
+GET /api/superadmin/cuentas-por-cobrar/partners
+  Params: companyId
+  Retorna: partner list
+
+GET /api/superadmin/cuentas-por-cobrar/top-clients
+  Params: empresa, userCids
+  Retorna: salespersons con clients nested
+
+================================================================================
+EXTRACCION DE ODOO
+================================================================================
+
+FUENTE PRINCIPAL: digiflex.cxc.report
+  - Modelo: "digiflex.cxc.report"
+  - Método: "search_read"
+  - Dominio: [["company_id", "in", [7, 9, 10]]]
+  - Campos: ["id", "move_id", "partner_id", "partner_name", "user_id",
+             "user_name", "company_id", "company_name", "invoice_date",
+             "date_maturity", "days_overdue", "amount_residual",
+             "amount_current", "amount_1_30", "amount_31_60",
+             "amount_61_90", "amount_91_plus", "transaction_type",
+             "document_number"]
+
+COMPLEMENTO: account.move (solo para KPIs históricos)
+  - Modelo: "account.move"
+  - Método: "search_read"
+  - Dominio: [
+      ["move_type", "in", ["out_invoice", "out_refund"]],
+      ["state", "=", "posted"],
+      ["company_id", "in", [7, 9, 10]]
+    ]
+
+AUTENTICACION:
+  - DB: ODOO_DB
+  - User ID: 388
+  - API Key: ODOO_API_KEY
+
+================================================================================

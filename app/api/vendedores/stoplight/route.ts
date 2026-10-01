@@ -1,0 +1,610 @@
+import { query } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
+import { jwtVerify } from "jose";
+import { NextRequest, NextResponse } from "next/server";
+import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
+import { jwtSecretBytes } from "@/lib/secretos";
+import { fechaLocal, obtenerLineasMargen } from "@/lib/stoplight/margen";
+import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
+import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
+import { coberturaTerritorial } from "@/lib/visitas/planificacion";
+import { sinIntercompania } from "@/lib/intercompania";
+
+const JWT_SECRET = jwtSecretBytes();
+
+function normalize(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\./g, "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.cookies.get("token")?.value;
+    if (!token)
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const uid = payload.uid as number;
+
+    const url = new URL(request.url);
+    const companyIdParam = url.searchParams.get("company_id");
+    const mesParam = url.searchParams.get("mes");
+    const companyId = companyIdParam
+      ? parseInt(companyIdParam, 10)
+      : (payload.cids as number);
+
+    const now = new Date();
+    const mes =
+      mesParam ||
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [anioStr, mesStr] = mes.split("-");
+    const anio = parseInt(anioStr, 10);
+    const mesNum = parseInt(mesStr, 10);
+
+    const fechaInicio = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
+    const fechaFin = `${anio}-${String(mesNum).padStart(2, "0")}-${new Date(anio, mesNum, 0).getDate()}`;
+
+    // Get weeks
+    const semanas = (() => {
+      const result: { inicio: Date; fin: Date; diasUtiles: number; label: string }[] = [];
+      let inicio = new Date(anio, mesNum - 1, 1);
+      const ultimoDiaMes = new Date(anio, mesNum, 0);
+      while (inicio <= ultimoDiaMes) {
+        let fin = new Date(inicio);
+        fin.setDate(fin.getDate() + 6);
+        if (fin > ultimoDiaMes) fin = new Date(ultimoDiaMes);
+        const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+        const label = `${inicio.toLocaleDateString("es-VE", opts)} - ${fin.toLocaleDateString("es-VE", opts)}`;
+        const DIAS_LABORALES = [1, 2, 3, 4, 5];
+        let du = 0;
+        for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+          if (DIAS_LABORALES.includes(d.getDay())) du++;
+        }
+        result.push({ inicio: new Date(inicio), fin: new Date(fin), diasUtiles: du, label });
+        inicio = new Date(fin);
+        inicio.setDate(inicio.getDate() + 1);
+      }
+      return result;
+    })();
+
+    const contarDiasLaborales = (desde: Date, hasta: Date) => {
+      const DIAS_LABORALES = [1, 2, 3, 4, 5];
+      let count = 0;
+      for (let d = new Date(desde); d <= hasta; d.setDate(d.getDate() + 1)) {
+        if (DIAS_LABORALES.includes(d.getDay())) count++;
+      }
+      return count;
+    };
+    const totalDiasUtilesMes = contarDiasLaborales(
+      new Date(anio, mesNum - 1, 1),
+      new Date(anio, mesNum, 0),
+    );
+    // Días hábiles transcurridos hasta hoy — para el "avance del mes" (facturado
+    // vs. cuota prorrateada a esta altura; 100% = al día).
+    const finDelMes = new Date(anio, mesNum, 0);
+    const hoyOFin = now < finDelMes ? now : finDelMes;
+    const diasUtilesTranscurridos = contarDiasLaborales(new Date(anio, mesNum - 1, 1), hoyOFin);
+    const factorTranscurrido = totalDiasUtilesMes > 0 ? diasUtilesTranscurridos / totalDiasUtilesMes : 1;
+
+    const numSemanas = semanas.length;
+    const weekHeaders = semanas.map((s) => {
+      const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+      return `${s.inicio.toLocaleDateString("es-VE", opts)} - ${s.fin.toLocaleDateString("es-VE", opts)}`;
+    });
+
+    // Find the seller record for this user
+    const sellerResult = await query(
+      `SELECT s.id as seller_id, s.name, s.user_id, c.cuota
+       FROM sellers s
+       INNER JOIN (
+         SELECT seller_id, cuota FROM cuota
+         WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)
+       ) c ON s.id = c.seller_id
+       WHERE s.cids = ? AND s.user_id = ?`,
+      [companyId, uid]
+    );
+
+    const sellers = sellerResult.rows as any[];
+    if (sellers.length === 0) {
+      return NextResponse.json({ success: true, data: { sellerName: "", semanaGlobal: [], semanaMargen: [], semanaVisitas: [], semanaEfectividad: [], semanaActivacion: [], semanaClientes: [], semanaCobertura: [], avgCumplimiento: 0, avgMargen: 0, avgVisitas: 0, avgEfectividad: 0, avgActivacion: 0, avgClientes: 0, avgCobertura: 0, weekHeaders, numSemanas, metas: {} } });
+    }
+
+    const seller = sellers[0];
+    const sellerName = seller.name;
+    const cuotaNum = Number(seller.cuota || 0);
+
+    // Fetch invoices for this seller only
+    const invoices = await callOdooRPC<any[]>(
+      "account.move",
+      "search_read",
+      [
+        [
+          ["move_type", "=", "out_invoice"],
+          ["state", "=", "posted"],
+          ["company_id", "=", companyId],
+          ["invoice_date", ">=", fechaInicio],
+          ["invoice_date", "<=", fechaFin],
+          ["invoice_user_id", "=", uid],
+          // Sin intercompañía, igual que el Stoplight de superadmin (lib/intercompania).
+          await sinIntercompania(),
+        ],
+      ],
+      {
+        fields: ["id", "invoice_user_id", "amount_untaxed", "invoice_date", "partner_id", "move_type"],
+        limit: 10000,
+      }
+    );
+
+    // Calculate daily facturado
+    const dailyMap: Record<string, number> = {};
+    let totalFacturado = 0;
+    (invoices || []).forEach((inv: any) => {
+      const dateStr = inv.invoice_date;
+      const amount = Number(inv.amount_untaxed) || 0;
+      dailyMap[dateStr] = (dailyMap[dateStr] || 0) + amount;
+      totalFacturado += amount;
+    });
+
+    // Load metas + pesos
+    await ensureKpiTargetsPeso();
+    const metasResult = await query(
+      "SELECT kpi_key, meta_mensual, peso FROM kpi_targets WHERE company_id = ? AND mes = ? ORDER BY id",
+      [companyId, mes]
+    );
+    const metasMap: Record<string, number> = {};
+    const pesosMap: Record<string, number> = {};
+    (metasResult.rows as any[]).forEach((r) => {
+      metasMap[r.kpi_key] = Number(r.meta_mensual);
+      // null = sin peso propio (valor por defecto); 0 = no cuenta.
+      const p = pesoDeFila(r.peso);
+      if (p !== null) pesosMap[r.kpi_key] = p;
+    });
+
+    // === CUMPLIMIENTO CUOTA ===
+    const metaCuotaVenta = metasMap["cumplimiento_cuota_ventas"] || 0;
+    const effectiveCuota = metaCuotaVenta > 0 ? metaCuotaVenta : cuotaNum;
+    const semanaCuota = semanas.map((sem) => {
+      const esFuturo = sem.inicio > now;
+      if (esFuturo) return null;
+      let facturadoSemana = 0;
+      for (let d = new Date(sem.inicio); d <= sem.fin; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split("T")[0];
+        facturadoSemana += dailyMap[dateStr] || 0;
+      }
+      // Sin cuota asignada no hay meta que incumplir: la semana se da por
+      // cumplida (100%). Mismo criterio para el resto de KPIs de abajo.
+      if (effectiveCuota <= 0) return "100%";
+      const cuotaSemanal = (effectiveCuota * sem.diasUtiles) / totalDiasUtilesMes;
+      const pct = cuotaSemanal > 0 ? Math.round((facturadoSemana / cuotaSemanal) * 100) : 0;
+      return `${pct}%`;
+    });
+
+    // === MARGEN ===
+    let totalRevenueMes = 0;
+    let totalCostoMes = 0;
+    const margenPorSemana: { revenue: number; costo: number }[] = semanas.map(() => ({ revenue: 0, costo: 0 }));
+    let productCostMap: Record<number, number> = {};
+
+    if ((invoices || []).length > 0) {
+      const invoiceIds = (invoices || []).map((inv: any) => inv.id);
+      const lines = (await callOdooRPC<any[]>(
+        "account.move.line",
+        "search_read",
+        [
+          [
+            ["move_id", "in", invoiceIds],
+            ["display_type", "=", "product"],
+            ["product_id", "!=", false],
+          ],
+        ],
+        { fields: ["move_id", "product_id", "quantity", "price_subtotal"], limit: 50000 }
+      )) || [];
+
+      const productIds = [...new Set(lines.map((l: any) => l.product_id?.[0]).filter(Boolean))];
+
+      if (productIds.length > 0) {
+        const variants = (await callOdooRPC<any[]>(
+          "product.product", "search_read",
+          [[["id", "in", productIds], ["active", "=", true]]],
+          { fields: ["id", "product_tmpl_id"] }
+        )) || [];
+        const varToTmpl: Record<number, number> = {};
+        variants.forEach((v: any) => { if (v.product_tmpl_id?.[0]) varToTmpl[v.id] = v.product_tmpl_id[0]; });
+        const tmplIds = [...new Set(variants.map((v: any) => v.product_tmpl_id?.[0]).filter(Boolean))];
+        if (tmplIds.length > 0) {
+          const templates = (await callOdooRPC<any[]>(
+            "product.template", "search_read",
+            [[["id", "in", tmplIds]]],
+            { fields: ["id", "standard_price"] }
+          )) || [];
+          const tmplCost: Record<number, number> = {};
+          templates.forEach((t: any) => { tmplCost[t.id] = Number(t.standard_price) || 0; });
+          productIds.forEach((pid) => { const tid = varToTmpl[pid]; productCostMap[pid] = tid ? (tmplCost[tid] || 0) : 0; });
+        }
+      }
+
+      const invDateMap: Record<number, Date> = {};
+      const invoiceMap: Record<number, any> = {};
+      (invoices || []).forEach((inv: any) => {
+        invDateMap[inv.id] = fechaLocal(inv.invoice_date);
+        invoiceMap[inv.id] = inv;
+      });
+
+      (lines || []).forEach((line: any) => {
+        const moveId = line.move_id?.[0];
+        const invDate = invDateMap[moveId];
+        if (!invDate) return;
+        const productId = line.product_id?.[0];
+        const qty = Math.abs(Number(line.quantity) || 0);
+        const revenue = Math.abs(Number(line.price_subtotal) || 0);
+        const unitCost = productId ? (productCostMap[productId] || 0) : 0;
+        const costo = qty * unitCost;
+        const inv = invoiceMap[moveId];
+        const isRefund = inv?.move_type === "out_refund";
+        const rFinal = isRefund ? -revenue : revenue;
+        const cFinal = isRefund ? -costo : costo;
+        totalRevenueMes += rFinal;
+        totalCostoMes += cFinal;
+        for (let i = 0; i < semanas.length; i++) {
+          if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+            margenPorSemana[i].revenue += rFinal;
+            margenPorSemana[i].costo += cFinal;
+            break;
+          }
+        }
+      });
+    }
+
+    const metaMargen = metasMap["margen_bruto"] || 0;
+    const semanaMargen = margenPorSemana.map((sem, i) => {
+      const esFuturo = semanas[i].inicio > now;
+      if (esFuturo) return null;
+      if (sem.revenue <= 0) return null;
+      if (metaMargen <= 0) return "100%";
+      const margenActual = ((sem.revenue - sem.costo) / sem.revenue) * 100;
+      const pct = Math.round((margenActual / metaMargen) * 100);
+      return `${pct}%`;
+    });
+
+    // === VISITAS ===
+    let visitasPorSemana: number[] = semanas.map(() => 0);
+    try {
+      const visitasResult = await query(
+        `SELECT visit_date, COUNT(*) as cnt FROM weekly_visits WHERE company_id = ? AND seller_name = ? AND visit_date >= ? AND visit_date <= ? GROUP BY visit_date`,
+        [companyId, sellerName, fechaInicio, fechaFin]
+      );
+      (visitasResult.rows as any[]).forEach((row: any) => {
+        const vDate = new Date(row.visit_date);
+        for (let i = 0; i < semanas.length; i++) {
+          if (vDate >= semanas[i].inicio && vDate <= semanas[i].fin) {
+            visitasPorSemana[i] += Number(row.cnt);
+            break;
+          }
+        }
+      });
+    } catch (_) {}
+
+    const metaVisitasSemanal = metasMap["visitas_semanales"] || 0;
+    const semanaVisitas = semanas.map((sem, i) => {
+      const esFuturo = sem.inicio > now;
+      if (esFuturo) return null;
+      if (metaVisitasSemanal <= 0) return "100%";
+      const total = visitasPorSemana[i];
+      const pct = Math.round((total / metaVisitasSemanal) * 100);
+      return `${pct}%`;
+    });
+
+    // Cobertura territorial del asesor (planificación de visitas).
+    let coberturaTerr: Awaited<ReturnType<typeof coberturaTerritorial>> = null;
+    try {
+      coberturaTerr = await coberturaTerritorial(companyId, fechaInicio, fechaFin, semanas, uid, now);
+    } catch (e: any) {
+      console.error("Error en cobertura territorial (vendedor):", e.message);
+    }
+    if (coberturaTerr) {
+      coberturaTerr.semanas.forEach((v, i) => { semanaVisitas[i] = v == null ? null : `${v}%`; });
+    }
+
+    // === EFECTIVIDAD === cotizaciones confirmadas ÷ emitidas (lib/stoplight/cotizaciones)
+    const efectividadPorSemana: { total: number; facturacion: number }[] = semanas.map(() => ({ total: 0, facturacion: 0 }));
+    try {
+      const cotizaciones = await obtenerCotizaciones(companyId, fechaInicio, fechaFin, [["user_id", "=", uid]]);
+      for (const c of cotizaciones) {
+        const i = semanas.findIndex((w) => c.fecha >= w.inicio && c.fecha <= w.fin);
+        if (i === -1) continue;
+        efectividadPorSemana[i].total++;
+        if (c.estado === "confirmada") efectividadPorSemana[i].facturacion++;
+      }
+    } catch (_) {}
+
+    const metaEfectividad = metasMap["efectividad_cierre"] || 0;
+    const semanaEfectividad = efectividadPorSemana.map((sem, i) => {
+      const esFuturo = semanas[i].inicio > now;
+      if (esFuturo) return null;
+      if (sem.total <= 0) return null;
+      if (metaEfectividad <= 0) return "100%";
+      const efectividadActual = (sem.facturacion / sem.total) * 100;
+      const pct = Math.round((efectividadActual / metaEfectividad) * 100);
+      return `${pct}%`;
+    });
+
+    // === ACTIVACION DE CARTERA ===
+    let semanaActivacionData: { total: number; activos: number }[] = semanas.map(() => ({ total: 0, activos: 0 }));
+    let totalClientsActivacion = 0;
+    let totalActiveClients = 0;
+    try {
+      // Get all clients assigned to this seller
+      const allClients = (await callOdooRPC<any[]>(
+        "res.partner",
+        "search_read",
+        [
+          [
+            ["user_id", "=", uid],
+            ["customer_rank", ">", 0],
+            ["active", "=", true],
+            await sinIntercompania(),
+          ],
+        ],
+        { fields: ["id"], limit: 10000 }
+      )) || [];
+
+      const clientIds = allClients.map((c: any) => c.id);
+      totalClientsActivacion = clientIds.length;
+
+      if (clientIds.length > 0 && (invoices || []).length > 0) {
+        // Get unique partners from current invoices
+        const invoicePartnerIds = [...new Set(
+          (invoices || []).map((inv: any) => inv.partner_id?.[0]).filter(Boolean)
+        )];
+
+        // Find intersection: clients that have invoices this month
+        const activePartnerIds = invoicePartnerIds.filter((pid: number) => clientIds.includes(pid));
+        totalActiveClients = activePartnerIds.length;
+
+        // Por semana: clientes distintos acumulados desde el inicio del mes
+        // (la meta es un % mensual de la cartera). Antes se contaban
+        // facturas de esa semana sola.
+        const semanaDe = new Map<number, number>(); // partner -> primera semana con compra
+        (invoices || []).forEach((inv: any) => {
+          const partnerId = inv.partner_id?.[0];
+          if (!partnerId || !activePartnerIds.includes(partnerId)) return;
+          const invDate = fechaLocal(inv.invoice_date);
+          const i = semanas.findIndex((sem) => invDate >= sem.inicio && invDate <= sem.fin);
+          if (i === -1) return;
+          semanaDe.set(partnerId, Math.min(semanaDe.get(partnerId) ?? i, i));
+        });
+        semanaActivacionData.forEach((sem, i) => {
+          sem.activos = [...semanaDe.values()].filter((w) => w <= i).length;
+        });
+      }
+
+      semanaActivacionData.forEach(sem => { sem.total = totalClientsActivacion; });
+    } catch (e: any) {
+      console.error("Error calculating activacion:", e.message);
+    }
+
+    const metaActivacion = metasMap["activacion_cartera"] || 0;
+    const semanaActivacion = semanaActivacionData.map((sem, i) => {
+      const esFuturo = semanas[i].inicio > now;
+      if (esFuturo) return null;
+      if (sem.total <= 0) return null;
+      if (metaActivacion <= 0) return "100%";
+      // La meta es un %: tasa (activos ÷ cartera) contra la meta, no la
+      // cantidad de activos dividida por la meta.
+      const tasa = (sem.activos / sem.total) * 100;
+      return `${Math.round((tasa / metaActivacion) * 100)}%`;
+    });
+
+    // === CLIENTES NUEVOS ===
+    let clientesNuevosPorSemana: number[] = semanas.map(() => 0);
+    let totalClientesNuevos = 0;
+    try {
+      const currentMonthPartnerIds = [...new Set(
+        (invoices || []).map((inv: any) => inv.partner_id?.[0]).filter(Boolean)
+      )];
+
+      if (currentMonthPartnerIds.length > 0) {
+        const historicalInvoices = await callOdooRPC<any[]>(
+          "account.move",
+          "search_read",
+          [
+            [
+              ["partner_id", "in", currentMonthPartnerIds],
+              ["invoice_date", "<", fechaInicio],
+              ["move_type", "in", ["out_invoice", "out_refund"]],
+              ["state", "=", "posted"],
+              ["company_id", "=", companyId],
+            ],
+          ],
+          { fields: ["partner_id"], limit: 50000 }
+        );
+
+        const existingPartnerIds = new Set<number>();
+        (historicalInvoices || []).forEach((inv: any) => {
+          const pid = inv.partner_id?.[0];
+          if (pid) existingPartnerIds.add(pid);
+        });
+
+        const partnerAlreadyCounted = new Set<number>();
+        (invoices || []).forEach((inv: any) => {
+          const partnerId = inv.partner_id?.[0];
+          if (!partnerId) return;
+          if (existingPartnerIds.has(partnerId)) return;
+          if (partnerAlreadyCounted.has(partnerId)) return;
+          partnerAlreadyCounted.add(partnerId);
+          totalClientesNuevos++;
+          const invDate = fechaLocal(inv.invoice_date);
+          for (let i = 0; i < semanas.length; i++) {
+            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+              clientesNuevosPorSemana[i]++;
+              break;
+            }
+          }
+        });
+      }
+    } catch (e: any) {
+      console.error("Error calculating clientes nuevos:", e.message);
+    }
+
+    const metaClientesNuevos = metasMap["clientes_nuevos"] || 0;
+    const semanaClientes = semanas.map((semana, i) => {
+      const esFuturo = semana.inicio > now;
+      if (esFuturo) return null;
+      if (metaClientesNuevos <= 0) return "100%";
+      const newClientsThisWeek = clientesNuevosPorSemana[i];
+      const goalThisWeek = metaClientesNuevos * (semana.diasUtiles / totalDiasUtilesMes);
+      if (goalThisWeek <= 0) return null;
+      const pct = Math.round((newClientsThisWeek / goalThisWeek) * 100);
+      return `${pct}%`;
+    });
+
+    // === COBERTURA DE MARCAS ===
+    let semanaCoberturaData: { cantidad: number }[] = semanas.map(() => ({ cantidad: 0 }));
+    try {
+      if ((invoices || []).length > 0) {
+        const allInvoiceIds = (invoices || []).map((inv: any) => inv.id);
+        const brandLines = (await callOdooRPC<any[]>(
+          "account.move.line",
+          "search_read",
+          [
+            [
+              ["move_id", "in", allInvoiceIds],
+              ["display_type", "=", "product"],
+              ["product_id", "!=", false],
+            ],
+          ],
+          { fields: ["move_id", "product_id", "quantity", "price_subtotal"], limit: 50000 }
+        )) || [];
+
+        const invDateMap: Record<number, Date> = {};
+        (invoices || []).forEach((inv: any) => {
+          invDateMap[inv.id] = fechaLocal(inv.invoice_date);
+        });
+
+        (brandLines || []).forEach((line: any) => {
+          const moveId = line.move_id?.[0];
+          const invDate = invDateMap[moveId];
+          if (!invDate) return;
+          const qty = Math.abs(Number(line.quantity) || 0);
+          const inv = (invoices || []).find((i: any) => i.id === moveId);
+          const isRefund = inv?.move_type === "out_refund";
+          const qtyFinal = isRefund ? -qty : qty;
+
+          for (let i = 0; i < semanas.length; i++) {
+            if (invDate >= semanas[i].inicio && invDate <= semanas[i].fin) {
+              semanaCoberturaData[i].cantidad += qtyFinal;
+              break;
+            }
+          }
+        });
+      }
+    } catch (e: any) {
+      console.error("Error calculating cobertura:", e.message);
+    }
+
+    const metaCantidad = metasMap["cobertura_marcas"] || 0;
+    let semanaCobertura: (string | null)[] = semanaCoberturaData.map((sem, i) => {
+      const esFuturo = semanas[i].inicio > now;
+      if (esFuturo) return null;
+      if (metaCantidad <= 0) return "100%";
+      const pct = Math.round((sem.cantidad / metaCantidad) * 100);
+      return `${pct}%`;
+    });
+
+    // Con metas por marca en el mes (lib/stoplight/metasMarca), la cobertura
+    // del vendedor usa la meta de cada marca × su parte de la cuota de la sede.
+    let coberturaMarcas: CoberturaMarcas | null = null;
+    try {
+      const metasMarca = await leerMetasMarca(companyId, mes);
+      if (metasMarca.length > 0) {
+        const cuotaSede = await query(
+          `SELECT COALESCE(SUM(c.cuota), 0) AS total FROM sellers s
+           INNER JOIN (SELECT seller_id, cuota FROM cuota WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)) c
+             ON s.id = c.seller_id
+           WHERE s.cids = ?`,
+          [companyId],
+        );
+        const totalCuota = Number((cuotaSede.rows as any[])[0]?.total) || 0;
+        const factor = totalCuota > 0 ? cuotaNum / totalCuota : 0;
+        if (factor > 0) {
+          const lineas = (await obtenerLineasMargen(companyId, fechaInicio, fechaFin)).filter((l) => l.vendedorId === uid);
+          coberturaMarcas = calcularCoberturaMarcas(metasMarca, lineas, semanas, anio, mesNum, factor, now);
+          semanaCobertura = coberturaMarcas.semanas.map((v) => (v == null ? null : `${v}%`));
+        }
+      }
+    } catch (e: any) {
+      console.error("Error en cobertura por marca (vendedor):", e.message);
+    }
+
+    // === AVERAGES ===
+    const avgFromWeeks = (weeks: (string | null)[]) => {
+      const vals = weeks.filter(Boolean).map((w) => parseInt(w!)).filter((n) => !isNaN(n));
+      return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+    };
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        sellerName,
+        metaMensual: effectiveCuota,
+        cuotaMensual: cuotaNum,
+        // Cumplimiento del mes hasta la fecha (facturado / cuota). El
+        // componente lo usa para el icono de tendencia del KPI de cuota; sin
+        // esto quedaba undefined y siempre pintaba el triangulo de alerta.
+        porcentajeCumplimiento:
+          effectiveCuota > 0
+            ? Math.round((totalFacturado / effectiveCuota) * 100)
+            : 100,
+        // Avance del mes (opción B): facturado ÷ cuota prorrateada a los días
+        // hábiles transcurridos. 100% = vas al día.
+        avanceMesCuota:
+          effectiveCuota > 0 && factorTranscurrido > 0
+            ? Math.round((totalFacturado / (effectiveCuota * factorTranscurrido)) * 100)
+            : null,
+        diasUtilesTranscurridos,
+        totalDiasUtilesMes,
+        totalFacturadoMensual: Math.round(totalFacturado * 100) / 100,
+        totalRevenueMes: Math.round(totalRevenueMes * 100) / 100,
+        totalCostoMes: Math.round(totalCostoMes * 100) / 100,
+        totalClientsActivacion,
+        totalActiveClients,
+        totalClientesNuevos,
+        numSemanas,
+        weekHeaders,
+        semanaGlobal: semanaCuota,
+        semanaMargen,
+        semanaVisitas,
+        semanaEfectividad,
+        semanaActivacion,
+        semanaClientes,
+        semanaCobertura,
+        avgCumplimiento: avgFromWeeks(semanaCuota),
+        avgMargen: avgFromWeeks(semanaMargen),
+        avgVisitas: coberturaTerr ? (coberturaTerr.mes ?? 0) : avgFromWeeks(semanaVisitas),
+        // Con planes de visita en el mes la fila de visitas es "Cobertura
+        // territorial" (null = sin planes, sigue "visitas semanales").
+        coberturaTerritorial: coberturaTerr ? { planificadas: coberturaTerr.planificadas, realizadas: coberturaTerr.realizadas } : null,
+        avgEfectividad: avgFromWeeks(semanaEfectividad),
+        // Mes completo: las semanas son acumuladas, promediarlas subestima.
+        avgActivacion: totalClientsActivacion <= 0
+          ? avgFromWeeks(semanaActivacion)
+          : metaActivacion <= 0
+          ? 100
+          : Math.round((((totalActiveClients / totalClientsActivacion) * 100) / metaActivacion) * 100),
+        avgClientes: avgFromWeeks(semanaClientes),
+        avgCobertura: coberturaMarcas ? coberturaMarcas.mes : avgFromWeeks(semanaCobertura),
+        metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
+        metas: metasMap,
+        pesos: pesosMap,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error en API stoplight-vendedor:", error.message);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}

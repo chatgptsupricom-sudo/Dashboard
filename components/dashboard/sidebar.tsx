@@ -1,0 +1,1620 @@
+"use client";
+
+import { useAuthStore } from "@/lib/stores/auth.store";
+import { rolePermissions, UserRole } from "@/lib/types";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+import {
+  Activity,
+  Wallet,
+  AlertTriangle,
+  Award,
+  BarChart3,
+  Bell,
+  Boxes,
+  BrainCircuit,
+  Calendar,
+  Camera,
+  Car,
+  Container,
+  ChevronDown,
+  ClipboardList,
+  CreditCard,
+  DollarSign,
+  FileText,
+  Globe,
+  IdCard,
+  LayoutDashboard,
+  LogOut,
+  Map,
+  MapPin,
+  Megaphone,
+  MessageSquareHeart,
+  Package,
+  Palette,
+  PieChart,
+  Search,
+  Settings2,
+  Shield,
+  Send,
+  Inbox,
+  PackageCheck,
+  Sparkles,
+  Star,
+  ShieldCheck,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+  Truck,
+  UserCheck,
+  Hourglass,
+  Ban,
+  Users,
+  Wrench,
+  X,
+} from "lucide-react";
+import Link from "next/link";
+import { useParams, usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import { connectSocket, getSocket } from "@/lib/socket-client";
+
+function SortableItem({ id, isActive, accentColor, bgColor, children }: {
+  id: string;
+  isActive: boolean;
+  accentColor: string;
+  bgColor: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : "auto" as const,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-center gap-1 rounded-xl ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}>
+      <button
+        {...attributes}
+        {...listeners}
+        className="p-1.5 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing flex-shrink-0"
+        tabIndex={-1}
+      >
+        <GripVertical size={14} />
+      </button>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+export function Sidebar({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { user, logout } = useAuthStore();
+  const pathname = usePathname();
+  const t = useTranslations("sidebar");
+
+  // Estados para los menús desplegables
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [isLeadsOpen, setIsLeadsOpen] = useState(false);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isComprasOpen, setIsComprasOpen] = useState(false);
+  const [isVentasOpen, setIsVentasOpen] = useState(false);
+  const [isCxCOpen, setIsCxCOpen] = useState(false);
+  const [isMarketingOpen, setIsMarketingOpen] = useState(false);
+  const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
+  const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
+  const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
+  const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
+  const [isAlmacenOpen, setIsAlmacenOpen] = useState(false);
+
+  useEffect(() => {
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (open && isMobile) {
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    };
+  }, [open]);
+
+  const [isEditingSidebar, setIsEditingSidebar] = useState(false);
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>([]);
+  // Acceso a "Reportes Comerciales": se pregunta al servidor (lista de correos
+  // en una env NO pública) para no depender del bundle del cliente.
+  const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
+
+  // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
+  // del menú RMA).
+  const [ncPendientes, setNcPendientes] = useState(0);
+  useEffect(() => {
+    if (user?.role !== "superAdmin") return;
+    const cargar = () =>
+      fetch("/api/rma/nota-credito?conteo=1")
+        .then((r) => r.json())
+        .then((j) => setNcPendientes(Number(j?.pendientes) || 0))
+        .catch(() => {});
+    cargar();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/reportes-comerciales/acceso")
+      .then((r) => r.json())
+      .then((j) => setPuedeReportesComerciales(Boolean(j?.puede)))
+      .catch(() => {});
+  }, [user]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  useEffect(() => {
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    fetch(`/api/user/sidebar-order?userId=${uid}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data.order?.length > 0) {
+          setSidebarOrder(json.data.order);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    const socket = connectSocket(uid);
+    const handler = (data: { order: string[] }) => setSidebarOrder(data.order);
+    socket.on("sidebar_order_updated", handler);
+    return () => { socket.off("sidebar_order_updated", handler); };
+  }, [user]);
+
+  const params = useParams();
+  const locale = params?.locale || "es";
+  const userName = user?.name || "Usuario";
+  const router = useRouter();
+  const navRef = useRef<HTMLElement>(null);
+
+  const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    const atTop = scrollTop === 0 && e.deltaY < 0;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
+    if (!atTop && !atBottom) {
+      e.preventDefault();
+      nav.scrollTop += e.deltaY;
+    }
+  }, []);
+
+  // Prevención de renderizado si no hay usuario
+  if (!user) return null;
+
+  const userRole = user.role;
+  const userCids = (user as any).cids;
+  const permissions = rolePermissions[userRole as UserRole];
+  if (!permissions) return null;
+
+  // Extraemos las secciones permitidas de forma segura
+  const allowedSections = [...(permissions.sections || [])];
+
+  // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
+  // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
+  // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
+  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+    allowedSections.push("reportes_comerciales");
+  }
+
+  // Definición del menú base
+  const menuItems = [
+    { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
+    { id: "cxc_alerts", label: "Alertas CxC", icon: AlertTriangle, slug: "/alertas" },
+    { id: "dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
+    { id: "actividad", label: t("actividades"), icon: Calendar, slug: "/actividad" },
+    { id: "stoplight_reports", label: t("stoplight_report"), icon: BarChart3, slug: "/StoplightReport" },
+    { id: "users", label: t("usuarios"), icon: Users, slug: "/usuarios" },
+    { id: "seller_map", label: t("mapa_clientes"), icon: Map, slug: "/vendedores" },
+    { id: "cuota", label: t("cuota"), icon: FileText, slug: "/cuota" },
+    { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
+    { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
+    { id: "integraciondepago", label: t("integracion_pago"), icon: CreditCard, slug: "/integraciondepago" },
+    { id: "clientes", label: t("clientes"), icon: UserCheck, slug: "/clientes" },
+    { id: "catalogo", label: t("catalogo"), icon: Boxes, slug: "/catalogo" },
+    { id: "leads", label: t("leads"), icon: UserCheck, slug: "/leads" },
+    { id: "MapaClientes", label: t("mapa_de_clientes"), icon: Map, slug: "/mapa_clientes" },
+    { id: "cierres", label: t("cierres"), icon: FileText, slug: "/Cierres" },
+    { id: "top_clientes", label: t("top_clientes"), icon: Trophy, slug: "/top-clientes" },
+    { id: "cuentas_por_cobrar", label: t("cuentas_por_cobrar"), icon: DollarSign, slug: "/cuentas-por-cobrar" },
+    { id: "cxc_contado_credito", label: t("cxc_contado_credito"), icon: PieChart, slug: "/cuentas-por-cobrar/contado-credito", absoluteHref: true },
+    { id: "cxc_pago_clientes", label: "Pago de Clientes", icon: Wallet, slug: "/pago-clientes" },
+    // El menú del rol Cuentas por Cobrar sale de esta lista (el submenú de más
+    // abajo es el de SuperAdmin): sin estas dos entradas, esas páginas solo
+    // se alcanzaban escribiendo la URL.
+    { id: "cxc_clasificacion_clientes", label: "Clasificación de Clientes", icon: UserCheck, slug: "/cuentas-por-cobrar/clasificacion-clientes", absoluteHref: true },
+    { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
+    { id: "cxc_incobrables", label: "Incobrables", icon: Ban, slug: "/cuentas-por-cobrar/incobrables", absoluteHref: true },
+    { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
+    { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
+    { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
+    { id: "cxc_top_clients", label: "Top Clientes / Vendedor", icon: Users, slug: "/top-clientes-vendedor" },
+    { id: "spiff", label: t("spiff"), icon: Award, slug: "/spiff" },
+    { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
+    { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
+    { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
+    { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
+    // Respuestas de la encuesta pública a clientes (landing "Queremos conocer su opinión").
+    { id: "opiniones", label: t("opiniones"), icon: MessageSquareHeart, slug: "/opiniones" },
+    { id: "reportes_comerciales", label: t("reportes_comerciales"), icon: BarChart3, slug: "/reportes-comerciales", absoluteHref: true },
+    { id: "ordenes_compra", label: "Órdenes de compra", icon: PackageCheck, slug: "/ordenes" },
+    // Packing lists: Compras los carga y Almacen los recibe (antes iban por correo).
+    { id: "recepcion_packing", label: t("recepcion_packing"), icon: Container, slug: "/compras/packing-list", absoluteHref: true },
+    { id: "sugeridos", label: t("sugerencia_compras"), icon: Package, slug: "/sugeridos" },
+    { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
+    { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
+    { id: "pareto_80_20", label: t("pareto_80_20"), icon: PieChart, slug: "/pareto-80-20" },
+    { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
+    { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
+    { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
+    { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
+    // Cómo recibe el cliente cada pedido: lo carga el vendedor (o el asistente
+    // de ventas por él) y Almacén lo usa en el egreso (lib/ventas/metodoRetiro).
+    { id: "metodo_retiro", label: t("metodo_retiro"), icon: Truck, slug: "/metodo-retiro" },
+    { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
+    // Inventario de RMA separado por procedencia del equipo.
+    { id: "rma_inventario_supricom", label: t("rma_inventario_supricom"), icon: PackageCheck, slug: "/rma/inventario/supricom", absoluteHref: true },
+    { id: "rma_inventario_externo", label: t("rma_inventario_externo"), icon: Globe, slug: "/rma/inventario/externo", absoluteHref: true },
+    // Personal de RMA: lo registra RMA ("Recibio por RMA" del ingreso), no Seguridad.
+    { id: "rma_personal", label: t("seg_personal"), icon: Users, slug: "/rma/personal", absoluteHref: true },
+    // Rol Almacen (issue #42): entradas planas, no un desplegable. Seguridad
+    // ve la misma ruta de egresos dentro de su grupo "Mercancia"; esta es la
+    // version que ve Almacen, que no tiene el resto de ese grupo ni el de RMA.
+    { id: "almacen_recepcion", label: t("almacen_recepcion"), icon: Container, slug: "/seguridad/mercancia/recepcion", absoluteHref: true },
+    { id: "almacen_egresos", label: t("almacen_egresos"), icon: Truck, slug: "/seguridad/mercancia/egreso", absoluteHref: true },
+    { id: "almacen_ordenes", label: t("almacen_ordenes"), icon: ClipboardList, slug: "/seguridad/mercancia/ordenes", absoluteHref: true },
+    // Catalogos que alimentan los selects del formulario de egreso — antes
+    // solo se llegaba con el enlace "Gestionar..." dentro del formulario, se
+    // agregan tambien al menu para que se puedan administrar sin tener que
+    // empezar un registro primero.
+    // Personal de Almacen (almacenistas + choferes): cada rol registra solo a
+    // su propia gente, en su propia seccion "Personal".
+    { id: "almacen_personal", label: t("seg_personal"), icon: IdCard, slug: "/seguridad/mercancia/personal", absoluteHref: true },
+    { id: "almacen_unidades", label: t("almacen_unidades"), icon: Car, slug: "/seguridad/mercancia/unidades", absoluteHref: true },
+    // Almacén firma su parte (opcional) de las actas de RMA desde su panel.
+    { id: "almacen_actas_rma", label: t("almacen_actas_rma"), icon: FileText, slug: "/seguridad/mercancia/actas-rma", absoluteHref: true },
+    // Seguridad vive en /seguridad, fuera del dashboard, igual que RMA. Se
+    // llega desde el panel en vez de por un subdominio propio.
+    { id: "rma_nota_credito", label: t("nota_credito"), icon: FileText, slug: "/rma/nota-credito", absoluteHref: true },
+    { id: "rma_salida", label: t("salida_rma"), icon: Truck, slug: "/rma/salida", absoluteHref: true },
+    { id: "sales_dashboard", label: "Dashboard", icon: LayoutDashboard, slug: "/dashboard" },
+    { id: "adminleads", label: t("dashboard_leads"), icon: Target, slug: "", adminLeadsOnly: true },
+    { id: "catalogo_adminleads", label: t("catalogo"), icon: Boxes, slug: "/catalogo", adminLeadsOnly: true },
+    { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
+    { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
+    { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
+    // Material POP: inventario de material publicitario. Solo lo ve AdminLeads
+    // de Valencia (cids=9) y superAdmin — el middleware impone el corte.
+    { id: "material_pop", label: t("material_pop"), icon: Package, slug: "/material-pop", adminLeadsOnly: true, cidsOnly: 9 },
+    // El vendedor de Valencia no administra el inventario: solo solicita
+    // material. Misma ruta relativa, distinto basePath.
+    { id: "material_pop_seller", label: t("material_pop"), icon: Package, slug: "/material-pop", cidsOnly: 9 },
+    { id: "banco_imagenes_seller", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    { id: "banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    { id: "vista_custom", label: "Plan de Contenido", icon: Calendar, slug: "/vista-custom" },
+    { id: "catalogo_disenador", label: "Productos", icon: Boxes, slug: "/productos" },
+    // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
+    // fecha y productos.
+    // Diseñador y AdminLeads de Valencia; misma pagina para los dos roles.
+    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
+    { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
+    { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
+    // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
+    // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
+    // /superadmin y generaria enlaces rotos con slugs relativos.
+    // El id se mantiene ("salud_financiera") porque es la clave de permiso en
+    // lib/types.ts; solo cambia la etiqueta, que ahora cubre el indice completo.
+    { id: "salud_financiera", label: "Salud Administrativa", icon: Activity, slug: "/administracion", absoluteHref: true },
+    { id: "gastos_presupuesto", label: "Gastos y Presupuesto", icon: Wallet, slug: "/administracion/gastos", absoluteHref: true },
+  ];
+
+  const getBasePath = () => {
+    const normalizedRole = userRole?.toLowerCase().trim();
+    switch (normalizedRole) {
+      case "superadmin":
+        return `/${locale}/superadmin`;
+      case "seller":
+      case "vendedor":
+        return `/${locale}/vendedores`;
+      case "adminleads":
+        return `/${locale}/adminleads`;
+      case "gerente_venta":
+      case "gerenciaventas":
+      case "gerencia de ventas":
+        return `/${locale}/gerente_venta`;
+      case "asistente de ventas":
+        return `/${locale}/gerente_venta`;
+      case "gerente_operaciones":
+      case "gerencia de operaciones":
+      case "gerente de operaciones":
+        return `/${locale}/gerente_operaciones`;
+      case "compras":
+        return `/${locale}/compras`;
+      case "rma":
+        return `/${locale}/rma`;
+      // Su Dashboard es el de Seguridad (/seguridad), no el general.
+      case "seguridad":
+        return `/${locale}/seguridad`;
+      case "cuentas por cobrar":
+        return `/${locale}/cuentas-por-cobrar`;
+      case "diseñador":
+        return `/${locale}/disenador`;
+      case "administración":
+        // El basePath solo lo usa el item "Dashboard", que es la pantalla de
+        // inicio del rol. Salud Financiera y Gastos y Presupuesto apuntan a
+        // /administracion con absoluteHref, asi que no dependen de esto.
+        // Antes basePath era /administracion y colisionaba con Salud
+        // Financiera: ambos items resolvian a la misma URL y el sidebar los
+        // marcaba activos al mismo tiempo.
+        return `/${locale}/dashboard`;
+      default:
+        return `/${locale}/dashboard`;
+    }
+  };
+
+  const basePath = getBasePath();
+
+  // Verificamos permisos para desplegables específicos
+  const hasReportsPermission = allowedSections.includes("reports");
+  const hasAdminLeadsPermission = allowedSections.includes("adminleads"); // Controla si se ve el menú "Leads"
+  const hasAuditPermission =
+    allowedSections.includes("audit") ||
+    allowedSections.includes("auditoria_panel") ||
+    allowedSections.includes("auditoria_nc");
+  const hasComprasPermission =
+    allowedSections.includes("compras") ||
+    allowedSections.includes("sugeridos") ||
+    allowedSections.includes("menor_rotacion") ||
+    allowedSections.includes("mayor_rotacion") ||
+    allowedSections.includes("cobertura") ||
+    allowedSections.includes("rotacion_categoria") ||
+    allowedSections.includes("tendencia") ||
+    allowedSections.includes("pareto_80_20");
+  const isComprasRole = userRole === "compras";
+  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
+  const isSuperAdminRole = userRole === "superAdmin";
+  const normalizedUserRole = userRole?.toLowerCase().trim();
+  const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca"];
+  const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
+  const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables"];
+  const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
+  const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
+  // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
+  // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
+  // de quedar sueltos en la lista plana.
+  const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
+  // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
+  // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
+  const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
+  const ventasSuperAdminIds = ["reportes_comerciales"];
+
+  const isSellerPausado =
+    (userRole?.toLowerCase().trim() === "seller" ||
+      userRole?.toLowerCase().trim() === "vendedor") &&
+    (user as any).activo === 0;
+
+  // Filtramos los items base
+  const availableItems = menuItems
+    .filter(
+      (item) =>
+        allowedSections.includes(item.id) &&
+        ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
+        // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
+        // coincide. superAdmin (sin cids) siempre lo ve.
+        ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
+        !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads"].includes(item.id)) &&
+        !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom"].includes(item.id)) &&
+        // El item del vendedor duplicaria a "material_pop" para superAdmin, y
+        // con un basePath que no existe (/superadmin/material-pop).
+        !(userRole === "superAdmin" && item.id === "material_pop_seller") &&
+        // "Servicio Tecnico" (id: "rma") pasa a vivir dentro del desplegable
+        // "RMA" (seg_grupo_rma) para superAdmin, en vez de como item plano
+        // aparte -- quedaban dos entradas separadas para el mismo dominio.
+        !(userRole === "superAdmin" && item.id === "rma") &&
+        (isComprasRole ||
+          !hasComprasPermission ||
+          !comprasDropdownIds.includes(item.id)) &&
+        (!showVentasDropdown || !ventasDropdownIds.includes(item.id)) &&
+        (!showCxCDropdown || !cxcDropdownIds.includes(item.id)) &&
+        (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
+        (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
+        !(isSuperAdminRole &&
+          [...administracionDropdownIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
+        !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
+    )
+    .map((item) => {
+      if (item.id === "actividad") {
+        return {
+          ...item,
+          href: `/${locale}/gestion/actividades?userId=${user?.uid || user?.id}`,
+        };
+      }
+      if ((item as any).absoluteHref) {
+        return {
+          ...item,
+          href: `/${locale}${item.slug}`,
+        };
+      }
+      // Gerencia de Ventas: "Cuentas por Cobrar" es su cobranza por vendedor.
+      // Con el slug normal caía en /gerente_venta/cuentas-por-cobrar, que no
+      // existe y que el middleware redirige al dashboard.
+      if (item.id === "cuentas_por_cobrar" && basePath.endsWith("/gerente_venta")) {
+        return { ...item, href: `${basePath}/cobranza` };
+      }
+      if (item.id === "catalogo_disenador" && userRole?.toLowerCase().trim() === "adminleads") {
+        return {
+          ...item,
+          href: `/${locale}/disenador/productos`,
+        };
+      }
+      return {
+        ...item,
+        href: item.slug ? `${basePath}${item.slug}` : basePath,
+      };
+    });
+
+  const sortedAvailableItems = sidebarOrder.length > 0
+    ? [...availableItems].sort((a, b) => {
+        const aIdx = sidebarOrder.indexOf(a.id);
+        const bIdx = sidebarOrder.indexOf(b.id);
+        const aPos = aIdx >= 0 ? aIdx : availableItems.length;
+        const bPos = bIdx >= 0 ? bIdx : availableItems.length;
+        return aPos - bPos;
+      })
+    : userRole?.toLowerCase().trim() === "diseñador"
+      ? [
+          ...availableItems.filter((i) => i.id === "sales_dashboard"),
+          ...availableItems.filter((i) => i.id !== "sales_dashboard"),
+        ]
+      : availableItems;
+
+  const saveSidebarOrder = async (newOrder: string[]) => {
+    setSidebarOrder(newOrder);
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+    try {
+      await fetch("/api/user/sidebar-order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: uid, order: newOrder }),
+      });
+    } catch (e) {
+      console.error("Error saving sidebar order:", e);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedAvailableItems.findIndex((i) => i.id === active.id);
+    const newIndex = sortedAvailableItems.findIndex((i) => i.id === over.id);
+    const reordered = arrayMove(sortedAvailableItems, oldIndex, newIndex);
+    saveSidebarOrder(reordered.map((i) => i.id));
+  };
+
+  const roleAccentColors = {
+    superAdmin: "text-blue-400 border-blue-500 bg-blue-500",
+    seller: "text-red-400 border-red-500 bg-red-500",
+    marketing: "text-amber-400 border-amber-500 bg-amber-500",
+    default: "text-blue-400 border-blue-500 bg-blue-500",
+  };
+
+  const colorConfig =
+    roleAccentColors[userRole as keyof typeof roleAccentColors] ||
+    roleAccentColors.default;
+  const [accentColor, , bgColor] = colorConfig.split(" ");
+
+  const handleLogout = () => {
+    logout();
+    router.push("/login");
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ x: -280 }}
+          animate={{ x: 0 }}
+          exit={{ x: -280 }}
+          transition={{ type: "spring", damping: 20, stiffness: 100 }}
+          className="w-72 bg-[#0F172A] border-r border-slate-800 text-slate-300 fixed h-dvh z-[100] flex flex-col shadow-2xl overflow-hidden"
+          onWheel={handleSidebarWheel}
+        >
+          {/* Header */}
+          <div className="p-6 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 bg-white rounded-xl flex items-center justify-center p-1">
+                <img
+                  src="/supricom.png"
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <h2 className="text-white font-bold text-lg leading-tight">
+                SUPRICOM
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsEditingSidebar(!isEditingSidebar)}
+                className={`p-2 rounded-xl transition-colors ${isEditingSidebar ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                title={isEditingSidebar ? "Guardar orden" : "Editar orden del menú"}
+              >
+                <GripVertical size={18} />
+              </button>
+              <button
+                onClick={onToggle}
+                className="md:hidden p-2.5 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors"
+                aria-label="Cerrar menú"
+              >
+                <X size={22} />
+              </button>
+            </div>
+          </div>
+
+          {/* Menú de Navegación */}
+          <nav ref={navRef} className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto overscroll-contain">
+            {/* Renderizado de Opciones Simples */}
+            {isEditingSidebar ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={sortedAvailableItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                  {sortedAvailableItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
+                    return (
+                      <SortableItem key={item.id} id={item.id} isActive={isActive} accentColor={accentColor} bgColor={bgColor}>
+                        <Link href={item.href} onClick={() => { if (window.matchMedia("(max-width: 767px)").matches) onToggle(); }}>
+                          <div className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative ${isActive ? `bg-white/5 ${accentColor} font-semibold` : "hover:bg-slate-800/50 hover:text-white"}`}>
+                            {isActive && <motion.div layoutId="active-pill" className={`absolute left-0 w-1 h-6 ${bgColor} rounded-r-full`} />}
+                            <Icon size={20} className={isActive ? accentColor : "text-slate-400"} />
+                            <span className="text-sm">{item.label}</span>
+                          </div>
+                        </Link>
+                      </SortableItem>
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              sortedAvailableItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname.replace(/\/+$/, "") === item.href.replace(/\/+$/, "");
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    onClick={() => { if (window.matchMedia("(max-width: 767px)").matches) onToggle(); }}
+                  >
+                    <div className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative ${isActive ? `bg-white/5 ${accentColor} font-semibold` : "hover:bg-slate-800/50 hover:text-white"}`}>
+                      {isActive && <motion.div layoutId="active-pill" className={`absolute left-0 w-1 h-6 ${bgColor} rounded-r-full`} />}
+                      <Icon size={20} className={isActive ? accentColor : "text-slate-400"} />
+                      <span className="text-sm">{item.label}</span>
+                    </div>
+                  </Link>
+                );
+              })
+            )}
+
+            {/* NUEVO: Submenú Desplegable de LEADS */}
+            {hasAdminLeadsPermission && userRole !== "adminLeads" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsLeadsOpen(!isLeadsOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Target size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("leads")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isLeadsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isLeadsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        // Las rutas apuntan al directorio /adminleads ignorando el basePath
+                        {
+                          label: t("dashboard_leads"),
+                          href: `/${locale}/adminleads`,
+                          permission: "adminleads",
+                        },
+                        {
+                          label: t("monitoreo_leads"),
+                          href: `/${locale}/adminleads/monitoreo_leads`,
+                          permission: "monitoreo_leads",
+                        },
+                        {
+                          label: t("cierres"),
+                          href: `/${locale}/adminleads/cierres`,
+                          permission: "cierres_adminleads",
+                        },
+                        {
+                          label: t("configuracion"),
+                          href: `/${locale}/adminleads/configuracion`,
+                          permission: "configuracion_leads",
+                        },
+                      ].map((subItem, index) => {
+                        // Verificamos si el usuario tiene permiso específico para esta sub-sección
+                        if (!allowedSections.includes(subItem.permission))
+                          return null;
+
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de AUDITORIA */}
+            {hasAuditPermission && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsAuditOpen(!isAuditOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("auditoria")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isAuditOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isAuditOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: t("auditoria_odoo"),
+                          href: `${basePath}/auditoria`,
+                          permission: "audit",
+                        },
+                        {
+                          label: t("auditoria_panel"),
+                          href: `${basePath}/auditoria_panel`,
+                          permission: "auditoria_panel",
+                        },
+                        {
+                          label: t("auditoria_nc"),
+                          href: `${basePath}/auditoria-nc`,
+                          permission: "auditoria_nc",
+                        },
+                      ].map((subItem, index) => {
+                        if (!allowedSections.includes(subItem.permission))
+                          return null;
+
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Recepcion y despacho de equipos RMA del almacen. */}
+            {allowedSections.includes("seguridad") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsRmaAlmacenOpen(!isRmaAlmacenOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <ClipboardList size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_rma")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isRmaAlmacenOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isRmaAlmacenOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {(userRole === "superAdmin"
+                        ? [
+                            // Para superAdmin este desplegable es solo el dominio de
+                            // tickets de RMA: "Servicio Tecnico" vivia como item plano
+                            // aparte (id: "rma", ver el filtro de availableItems mas
+                            // arriba que ahora lo excluye para este rol). Ingreso/Egreso/
+                            // Estadisticas/Por-llegar (operacion de almacen) se mudaron
+                            // al desplegable "Seguridad" aparte, mas abajo.
+                            { label: t("rma"), href: `/${locale}/rma` },
+                            { label: t("rma_inventario_supricom"), href: `/${locale}/rma/inventario/supricom` },
+                            { label: t("rma_inventario_externo"), href: `/${locale}/rma/inventario/externo` },
+                            { label: t("nota_credito"), href: `/${locale}/rma/nota-credito` },
+                            // Las solicitudes de nota de crédito de RMA le llegan a superAdmin.
+                            {
+                              label: `${t("rma_aprobar_nc")}${ncPendientes ? ` (${ncPendientes})` : ""}`,
+                              href: `/${locale}/superadmin/rma-notas-credito`,
+                            },
+                            // Personal de RMA: lo administra RMA en su propia
+                            // seccion; superAdmin llega desde aca.
+                            { label: t("seg_personal_rma"), href: `/${locale}/rma/personal` },
+                          ]
+                        : [
+                            { label: t("seg_ingreso"), href: `/${locale}/seguridad/ingreso` },
+                            { label: t("seg_egreso"), href: `/${locale}/seguridad/despacho` },
+                            // Sin "Estadísticas de RMA": /seguridad es el Dashboard
+                            // de Seguridad y ya está en el item "Dashboard".
+                            { label: t("seguridad_por_llegar"), href: `/${locale}/seguridad/por-llegar` },
+                          ]
+                      ).map((sub, index) => {
+                        // Coincidencia por prefijo para que el detalle de un
+                        // registro siga marcando su seccion. El panel (y el
+                        // Dashboard de RMA, que es prefijo de sus inventarios)
+                        // se compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad") || sub.href.endsWith("/rma");
+                        const isSubActive = esPanel
+                          ? pathname === sub.href
+                          : pathname.startsWith(sub.href);
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Vista de solo lectura para superAdmin: mismos Ingreso/Egreso que
+                opera el rol Seguridad arriba, en un desplegable propio y
+                separado de "RMA" (que para superAdmin ya quedo reducido a
+                Servicio Tecnico). El "solo lectura" lo aplican las paginas de
+                destino segun el rol de la sesion (userRole === "superAdmin"),
+                no un chequeo de permisos nuevo — superAdmin ya podia entrar a
+                esas rutas; ahora ya no ve los botones de crear/calificar. */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsSeguridadOpen(!isSeguridadOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Shield size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seguridad")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isSeguridadOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isSeguridadOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("seg_dashboard"), href: `/${locale}/seguridad` },
+                        // Ingreso y despacho de RMA, y el despacho de mercancia.
+                        // Ingreso de mercancia no: Seguridad no lo maneja (es
+                        // la recepcion por packing list de Almacen).
+                        { label: t("seg_ingreso_rma"), href: `/${locale}/seguridad/ingreso` },
+                        { label: t("seg_despacho_rma"), href: `/${locale}/seguridad/despacho` },
+                        { label: t("seg_despacho_mercancia"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        // Para superAdmin el Personal de Seguridad va aca y no
+                        // suelto (el rol Seguridad lo sigue viendo suelto, abajo).
+                        ...(allowedSections.includes("seguridad")
+                          ? [{ label: t("seg_personal_seguridad"), href: `/${locale}/seguridad/config/personal` }]
+                          : []),
+                      ].map((sub, index) => {
+                        const isSubActive = pathname === sub.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Personal de Seguridad / RMA: seccion propia, no cuelga de RMA —
+                alimenta los selects "Recibio por" del ingreso. El superAdmin
+                lo ve dentro del desplegable "Seguridad". */}
+            {allowedSections.includes("seguridad") && !isSuperAdminRole && (
+              <Link
+                href={`/${locale}/seguridad/config/personal`}
+                onClick={() => {
+                  if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                }}
+              >
+                <div
+                  className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                    pathname.startsWith(`/${locale}/seguridad/config/personal`)
+                      ? `${accentColor} font-medium bg-white/5`
+                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                  }`}
+                >
+                  <Users size={20} className="text-slate-400" />
+                  <span className="text-sm">{t("seg_personal")}</span>
+                </div>
+              </Link>
+            )}
+
+            {/* Carga y descarga de camiones, con la calificacion del
+                almacenista. Es la vista de Seguridad; el superAdmin ve el
+                grupo "Almacen" de mas abajo, que ademas trae la recepcion,
+                las ordenes por llegar, el personal y las unidades. */}
+            {allowedSections.includes("seguridad") && !isSuperAdminRole && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsMercanciaOpen(!isMercanciaOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Truck size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_mercancia")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isMercanciaOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isMercanciaOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        // Sin "Ingresos": el ingreso de mercancia ahora es por
+                        // packing list (Compras lo carga, Almacen lo recibe).
+                        { label: t("seg_merc_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                        // Personal de Almacen: lo administra Almacen. El superAdmin
+                        // lo tiene en su grupo "Almacen" (este grupo no se le muestra).
+                      ].map((sub, index) => {
+                        // Coincidencia por prefijo para que el detalle de un
+                        // registro siga marcando su seccion. El panel (y el
+                        // Dashboard de RMA, que es prefijo de sus inventarios)
+                        // se compara exacto o marcaria siempre.
+                        const esPanel = sub.href.endsWith("/seguridad") || sub.href.endsWith("/rma");
+                        const isSubActive = esPanel
+                          ? pathname === sub.href
+                          : pathname.startsWith(sub.href);
+
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches)
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Lo que opera el rol Almacen, en un solo desplegable: para el
+                rol Almacen son items planos, y el superAdmin no los tenia en
+                ningun lado. */}
+            {isSuperAdminRole && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsAlmacenOpen(!isAlmacenOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Container size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("seg_grupo_almacen")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isAlmacenOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isAlmacenOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("almacen_recepcion"), href: `/${locale}/seguridad/mercancia/recepcion` },
+                        { label: t("almacen_egresos"), href: `/${locale}/seguridad/mercancia/egreso` },
+                        { label: t("almacen_ordenes"), href: `/${locale}/seguridad/mercancia/ordenes` },
+                        { label: t("seguridad_almacenistas"), href: `/${locale}/seguridad/almacenista` },
+                        { label: t("seg_personal_almacen"), href: `/${locale}/seguridad/mercancia/personal` },
+                        { label: t("almacen_unidades"), href: `/${locale}/seguridad/mercancia/unidades` },
+                        { label: t("almacen_actas_rma"), href: `/${locale}/seguridad/mercancia/actas-rma` },
+                      ].map((sub, index) => {
+                        const isSubActive = pathname.startsWith(sub.href);
+                        return (
+                          <Link
+                            key={index}
+                            href={sub.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {sub.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de COMPRAS (solo para roles que no son Compras) */}
+            {hasComprasPermission && !isComprasRole && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsComprasOpen(!isComprasOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Package size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("compras")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isComprasOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isComprasOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: "Órdenes de compra",
+                          href: isSuperAdminRole
+                            ? `/${locale}/superadmin/ordenes-compra`
+                            : `/${locale}/compras/ordenes`,
+                          permission: "ordenes_compra",
+                        },
+                        {
+                          // Los packing list son de Compras (los carga) aunque
+                          // quien los reciba sea Almacen.
+                          label: t("recepcion_packing"),
+                          href: `/${locale}/compras/packing-list`,
+                          permission: "recepcion_packing",
+                        },
+                        {
+                          label: t("sugerencia_compras"),
+                          href: `/${locale}/compras/sugeridos`,
+                          permission: "sugeridos",
+                        },
+                        {
+                          label: t("menor_rotacion"),
+                          href: `/${locale}/compras/menor_rotacion`,
+                          permission: "menor_rotacion",
+                        },
+                        {
+                          label: t("mayor_rotacion"),
+                          href: `/${locale}/compras/mayor_rotacion`,
+                          permission: "mayor_rotacion",
+                        },
+                        {
+                          label: t("pareto_80_20"),
+                          href: `/${locale}/compras/pareto-80-20`,
+                          permission: "pareto_80_20",
+                        },
+                        {
+                          label: t("cobertura_stock"),
+                          href: `/${locale}/compras/cobertura`,
+                          permission: "cobertura",
+                        },
+                        {
+                          label: t("rotacion_categoria"),
+                          href: `/${locale}/compras/rotacion-categoria`,
+                          permission: "rotacion_categoria",
+                        },
+                        {
+                          label: t("tendencia_ventas"),
+                          href: `/${locale}/compras/tendencia`,
+                          permission: "tendencia",
+                        },
+                      ].map((subItem, index) => {
+                        if (
+                          !allowedSections.includes(subItem.permission) &&
+                          !allowedSections.includes("compras")
+                        )
+                          return null;
+
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de VENTAS */}
+            {showVentasDropdown && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsVentasOpen(!isVentasOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <TrendingUp size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("ventas")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isVentasOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isVentasOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: t("reporte_diario"),
+                          href: `${basePath}/reporte-diario`,
+                          permission: "reporte_diario",
+                        },
+                        {
+                          label: t("reporte_ventas"),
+                          href: `${basePath}/reporte-ventas`,
+                          permission: "reporte_ventas",
+                        },
+                        {
+                          label: t("cuota"),
+                          href: `${basePath}/cuota`,
+                          permission: "cuota",
+                        },
+                        // Solo existe en /superadmin (el gerente de operaciones comparte este menú).
+                        ...(isSuperAdminRole
+                          ? [{
+                              label: t("metas_marca"),
+                              href: `${basePath}/metas-marca`,
+                              permission: "metas_marca",
+                            }]
+                          : []),
+                        // El Sorteo pasó a Marketing. Reportes Comerciales vive
+                        // en /reportes-comerciales (fuera de /superadmin).
+                        ...(isSuperAdminRole && allowedSections.includes("reportes_comerciales")
+                          ? [{
+                              label: t("reportes_comerciales"),
+                              href: `/${locale}/reportes-comerciales`,
+                              permission: "reportes_comerciales",
+                            }]
+                          : []),
+                        {
+                          label: t("mapa_de_clientes"),
+                          href: isGerenteOperaciones ? `${basePath}/mapa_clientes` : `${basePath}/vendedores`,
+                          permission: "seller_map",
+                        },
+                        {
+                          label: t("spiff"),
+                          href: `${basePath}/spiff`,
+                          permission: "spiff",
+                        },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de CUENTAS POR COBRAR */}
+            {showCxCDropdown && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsCxCOpen(!isCxCOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <DollarSign size={20} className="text-slate-400" />
+                    <span className="text-sm">Cuentas por Cobrar</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isCxCOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isCxCOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: "Cuentas por cobrar",
+                          href: `/${locale}/cuentas-por-cobrar`,
+                          permission: "cuentas_por_cobrar",
+                        },
+                        {
+                          label: "Alertas",
+                          href: `/${locale}/cuentas-por-cobrar/alertas`,
+                          permission: "cxc_alerts",
+                        },
+                        {
+                          label: "Contado/Crédito",
+                          href: `/${locale}/cuentas-por-cobrar/contado-credito`,
+                          permission: "cxc_contado_credito",
+                        },
+                        {
+                          label: "Pago de Clientes",
+                          href: `/${locale}/cuentas-por-cobrar/pago-clientes`,
+                          permission: "cxc_pago_clientes",
+                        },
+                        {
+                          label: "Clasificación de Clientes",
+                          href: `/${locale}/cuentas-por-cobrar/clasificacion-clientes`,
+                          permission: "cxc_clasificacion_clientes",
+                        },
+                        {
+                          label: "Tiempo de Cobro",
+                          href: `/${locale}/cuentas-por-cobrar/tiempo-cobro`,
+                          permission: "cxc_tiempo_cobro",
+                        },
+                        {
+                          label: "Incobrables",
+                          href: `/${locale}/cuentas-por-cobrar/incobrables`,
+                          permission: "cxc_incobrables",
+                        },
+                        {
+                          label: "Stoplight Report",
+                          href: `/${locale}/cuentas-por-cobrar/StoplightReport`,
+                          permission: "stoplight_reports",
+                        },
+                        {
+                          label: "Integración De Pago",
+                          href: `/${locale}/cuentas-por-cobrar/integraciondepago`,
+                          permission: "integraciondepago",
+                        },
+                        {
+                          label: "Referencia Comercial",
+                          href: `/${locale}/cuentas-por-cobrar/referencia-comercial`,
+                          permission: "referencia_comercial",
+                        },
+                        {
+                          label: "Buscar Facturas",
+                          href: `/${locale}/cuentas-por-cobrar/buscar`,
+                          permission: "cxc_search",
+                        },
+                        {
+                          label: "Top Clientes / Vendedor",
+                          href: `/${locale}/cuentas-por-cobrar/top-clientes-vendedor`,
+                          permission: "cxc_top_clients",
+                        },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de REPORTES Original */}
+            {hasReportsPermission && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsReportsOpen(!isReportsOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <BarChart3 size={20} className="text-slate-400" />
+                    <span className="text-sm">{t("reportes")}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isReportsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isReportsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: t("inventario"), slug: "/reports/inventory" },
+                        { label: t("por_vendedor"), slug: "/reports/sellers" },
+                        { label: t("por_cliente"), slug: "/reports/clients" },
+                      ].map((subItem, index) => {
+                        const subHref = `${basePath}${subItem.slug}`;
+                        const isSubActive = pathname === subHref;
+
+                        return (
+                          <Link
+                            key={index}
+                            href={subHref}
+                            onClick={() => {
+                              if (
+                                window.matchMedia("(max-width: 767px)").matches
+                              )
+                                onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsMarketingOpen(!isMarketingOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone size={20} className="text-slate-400" />
+                    <span className="text-sm">Marketing</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isMarketingOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isMarketingOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Plan de Contenido", href: `${basePath}/vista-custom` },
+                        { label: "Banco de Flyers", href: `${basePath}/banco-imagenes` },
+                        { label: "KPI de Diseños", href: `${basePath}/disenos` },
+                        // Material POP vive en /adminleads (no hay copia bajo
+                        // /superadmin): el enlace va a esa ruta.
+                        { label: t("material_pop"), href: `/${locale}/adminleads/material-pop` },
+                        ...(allowedSections.includes("sorteo_caracas")
+                          ? [{ label: t("sorteo_caracas"), href: `${basePath}/sorteo` }]
+                          : []),
+                        ...(allowedSections.includes("opiniones")
+                          ? [{ label: t("opiniones"), href: `${basePath}/opiniones` }]
+                          : []),
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de ADMINISTRACIÓN (solo superadmin) */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsAdministracionOpen(!isAdministracionOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Activity size={20} className="text-slate-400" />
+                    <span className="text-sm">Administración</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isAdministracionOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isAdministracionOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Salud Administrativa", href: `/${locale}/administracion` },
+                        { label: "Gastos y Presupuesto", href: `/${locale}/administracion/gastos` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </nav>
+
+          {/* Footer del Sidebar */}
+          <div className="p-4 bg-slate-900/50 border-t border-slate-800/50">
+            <div className="flex items-center gap-3 px-2 py-3 mb-2">
+              <div
+                className={`h-9 w-9 rounded-full ${bgColor} flex items-center justify-center text-xs font-bold text-white uppercase shadow-inner`}
+              >
+                {userName.substring(0, 2)}
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <p className="text-sm font-bold text-white truncate">
+                  {userName}
+                </p>
+                <p
+                  className={`text-[10px] ${accentColor} truncate uppercase font-bold`}
+                >
+                  {userRole === "superAdmin" ? t("super_admin") : user.role}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-red-400/5 rounded-lg transition-colors"
+            >
+              <LogOut size={18} /> <span>{t("cerrar_sesion")}</span>
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

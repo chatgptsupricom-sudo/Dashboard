@@ -1,0 +1,325 @@
+import { db } from "@/lib/db";
+import { callOdooRPC } from "@/lib/odoo";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoles } from "@/lib/auth/roles";
+
+const COMPANY_IDS_ALL = [9, 10, 7];
+const COMPANY_NAME_MAP: Record<number, string> = {
+  9: "Valencia",
+  10: "Caracas",
+  7: "Panamá",
+};
+
+// Usuarios de Odoo que no son vendedores del equipo (no están en `sellers`)
+// pero cuya facturación sí pertenece a la sede. Su monto suma en las tarjetas
+// de VENTA / PEDIDOS / VENTA + PEDIDOS, pero NO aparecen como fila en la tabla
+// de vendedores ni compiten por cuota.
+const EXTRA_USER_IDS_BY_COMPANY: Record<number, number[]> = {
+  10: [392], // ANTONELLA ZAMPETTI
+};
+
+// Filas de `sellers` que no cuentan como vendedor del equipo (se comparan
+// contra el nombre ya normalizado, por coincidencia parcial). Mismo criterio
+// que `sellerExclusions` en app/api/gerente_venta/stats/route.ts, para que el
+// reporte diario y el dashboard midan lo mismo.
+const SELLER_EXCLUDE = ["MARIA AUXILIADORA TOVAR CARO", "ASISTENTE"];
+
+function isBusinessDay(date: Date): boolean {
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function getBusinessDaysInMonth(year: number, month: number): number {
+  let count = 0;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    if (isBusinessDay(new Date(year, month, d))) count++;
+  }
+  return count;
+}
+
+function getBusinessDaysElapsed(
+  year: number,
+  month: number,
+  day: number,
+): number {
+  let count = 0;
+  for (let d = 1; d <= day; d++) {
+    if (isBusinessDay(new Date(year, month, d))) count++;
+  }
+  return count;
+}
+
+const normalize = (s: string) =>
+  (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\./g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+export async function GET(req: NextRequest) {
+  const auth = await requireRoles(req, [
+    "gerencia de ventas",
+    "asistente de ventas",
+  ]);
+  if (auth.error) return auth.error;
+
+  try {
+    const payload = auth.payload!;
+    const userRole = ((payload.role as string) || "").toLowerCase().trim();
+    const userCids = payload.cids as number;
+
+    const isSuperAdmin =
+      userRole === "superadmin" || userRole === "super admin";
+
+    const { searchParams } = new URL(req.url);
+    const dateParam =
+      searchParams.get("date") || new Date().toISOString().split("T")[0];
+    const sedeParam = searchParams.get("sede");
+
+    let companyIds: number[];
+    if (isSuperAdmin && sedeParam && sedeParam !== "all") {
+      companyIds = [parseInt(sedeParam)];
+    } else if (isSuperAdmin) {
+      companyIds = COMPANY_IDS_ALL;
+    } else {
+      companyIds = [userCids];
+    }
+
+    const selectedDate = new Date(dateParam + "T12:00:00");
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth();
+
+    const diasHabiles = getBusinessDaysInMonth(year, month);
+    const diasTranscurridos = getBusinessDaysElapsed(
+      year,
+      month,
+      selectedDate.getDate(),
+    );
+    const porcentajeDias =
+      diasHabiles > 0 ? Math.round((diasTranscurridos / diasHabiles) * 100) : 0;
+
+    const placeholders = companyIds.map(() => "?").join(",");
+    const [resultSellers]: any = await db.query(
+      `SELECT id, name, user_id, cids FROM sellers WHERE cids IN (${placeholders})`,
+      companyIds,
+    );
+    const sellers = (resultSellers || []).filter((s: any) => {
+      const key = normalize(s.name);
+      return !SELLER_EXCLUDE.some((rule) => key.includes(rule));
+    });
+
+    if (sellers.length === 0) {
+      return NextResponse.json({
+        fecha: dateParam,
+        diasHabiles,
+        diasTranscurridos,
+        porcentajeDias,
+        meta: 0,
+        cuotaAlDia: 0,
+        ventas: 0,
+        pedidos: 0,
+        ventaMasPedidos: 0,
+        vendedores: [],
+        sedes: isSuperAdmin
+          ? COMPANY_IDS_ALL.map((id) => ({
+              id,
+              name: COMPANY_NAME_MAP[id] || `Sede ${id}`,
+            }))
+          : [],
+      });
+    }
+
+    const sellerIds = sellers.map((s: any) => s.id);
+    const cuotaPlaceholders = sellerIds.map(() => "?").join(",");
+    const [resultCuotas]: any = await db.query(
+      `
+      SELECT c.seller_id, c.cuota FROM cuota c
+      INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota GROUP BY seller_id) latest
+      ON c.seller_id = latest.seller_id AND c.created_at = latest.max_date
+      WHERE c.seller_id IN (${cuotaPlaceholders})
+    `,
+      sellerIds,
+    );
+    const cuotas = resultCuotas || [];
+
+    const meta = cuotas.reduce(
+      (sum: number, c: any) => sum + (parseFloat(c.cuota) || 0),
+      0,
+    );
+    const cuotaDiariaMes = diasHabiles > 0 ? meta / diasHabiles : 0;
+    const cuotaAlDiaGlobal = cuotaDiariaMes * diasTranscurridos;
+
+    const dateStr = selectedDate.toISOString().split("T")[0];
+    const dayStart = `${dateStr} 00:00:00`;
+    const dayEnd = `${dateStr} 23:59:59`;
+
+    const firstDayOfMonth = new Date(year, month, 1)
+      .toISOString()
+      .split("T")[0];
+
+    const sellerUserIds = sellers.map((s: any) => s.user_id).filter(Boolean);
+    // Extras de la(s) sede(s) consultada(s), sin pisar a un vendedor real.
+    const extraUserIds = Array.from(
+      new Set(
+        companyIds.flatMap((cid) => EXTRA_USER_IDS_BY_COMPANY[cid] || []),
+      ),
+    ).filter((id) => !sellerUserIds.includes(id));
+    const odooUserIds = [...sellerUserIds, ...extraUserIds];
+
+    // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
+    const allInvoices =
+      (await callOdooRPC<any[]>(
+        "account.move",
+        "search_read",
+        [
+          [
+            ["move_type", "in", ["out_invoice", "out_refund"]],
+            ["state", "=", "posted"],
+            ["invoice_date", ">=", firstDayOfMonth],
+            ["invoice_date", "<=", dateStr],
+            ["invoice_user_id", "in", odooUserIds],
+            ["company_id", "in", companyIds],
+          ],
+        ],
+        {
+          fields: ["amount_untaxed", "invoice_user_id", "move_type"],
+        },
+      )) || [];
+
+    // Se cruza solo por `user_id`: es la clave real y es la misma con la que se
+    // construyó el dominio de Odoo. Cruzar por nombre permitía que dos sellers
+    // con el mismo nombre normalizado cobraran el mismo monto, y que en la
+    // vista superadmin de todas las sedes un seller capturara la facturación
+    // del homónimo de otra sede.
+    const odooUserIdMap: Record<number, number> = {};
+    allInvoices.forEach((inv: any) => {
+      const userId = inv.invoice_user_id?.[0] || 0;
+      const amount =
+        inv.move_type === "out_refund"
+          ? -(inv.amount_untaxed || 0)
+          : inv.amount_untaxed || 0;
+      if (userId) odooUserIdMap[userId] = (odooUserIdMap[userId] || 0) + amount;
+    });
+
+    // ── PEDIDOS: mismo criterio que el filtro "Pedidos Activos" de Odoo ──
+    // Pedidos confirmados (no cotización, no cancelado) que todavía no están
+    // facturados por completo, de los vendedores del equipo, excluyendo
+    // clientes internos. Acotado por `date_order` al mes en curso hasta la
+    // fecha (Venezuela = UTC-4: la medianoche local del día 1 es 04:00 UTC y
+    // el fin del día seleccionado es el día siguiente 03:59:59 UTC). El monto
+    // es `amount_total` (con IVA), para que cuadre con la medida "Total" del
+    // pivot de Odoo agrupado por "Fecha de la orden".
+    const finDiaUtc = new Date(`${dateStr}T23:59:59-04:00`)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    const allOrders =
+      (await callOdooRPC<any[]>(
+        "sale.order",
+        "search_read",
+        [
+          [
+            ["state", "not in", ["draft", "cancel"]],
+            ["invoice_status", "!=", "invoiced"],
+            ["date_order", ">=", `${firstDayOfMonth} 04:00:00`],
+            ["date_order", "<=", finDiaUtc],
+            ["user_id", "in", odooUserIds],
+            ["company_id", "in", companyIds],
+            ["partner_id.name", "not ilike", "office solution"],
+            ["partner_id.name", "not ilike", "supricom"],
+          ],
+        ],
+        { fields: ["amount_total", "user_id"] },
+      )) || [];
+
+    const orderUserIdMap: Record<number, number> = {};
+    allOrders.forEach((order: any) => {
+      const userId = order.user_id?.[0] || 0;
+      const amount = order.amount_total || 0;
+      if (userId)
+        orderUserIdMap[userId] = (orderUserIdMap[userId] || 0) + amount;
+    });
+
+    // ── Cruzar datos ──
+    const vendedores = sellers
+      .map((seller: any) => {
+        const cuota = parseFloat(
+          (
+            cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0
+          ).toString(),
+        );
+        const cuotaDiaria = diasHabiles > 0 ? cuota / diasHabiles : 0;
+        const cuotaVendedorAlDia = cuotaDiaria * diasTranscurridos;
+
+        const venta = parseFloat(
+          (odooUserIdMap[seller.user_id] ?? 0).toFixed(2),
+        );
+        const pedido = parseFloat(
+          (orderUserIdMap[seller.user_id] ?? 0).toFixed(2),
+        );
+        const ventaMasPedidos = venta + pedido;
+        const porcentaje =
+          cuotaVendedorAlDia > 0
+            ? Math.round((venta / cuotaVendedorAlDia) * 100)
+            : 0;
+
+        return {
+          name: seller.name,
+          cuota,
+          cuotaDiaria: Math.round(cuotaDiaria),
+          cuotaAlDia: Math.round(cuotaVendedorAlDia),
+          venta,
+          pedidos: pedido,
+          ventaMasPedidos: parseFloat(ventaMasPedidos.toFixed(2)),
+          porcentaje,
+          posicion: 0,
+        };
+      })
+      .sort((a: any, b: any) => b.venta - a.venta)
+      .map((v: any, i: number) => ({ ...v, posicion: i + 1 }));
+
+    // Los extras suman al total por user_id (nunca por nombre: no tienen fila
+    // en `sellers` contra la que cruzar).
+    const extraVentas = extraUserIds.reduce(
+      (sum: number, id: number) => sum + (odooUserIdMap[id] || 0),
+      0,
+    );
+    const extraPedidos = extraUserIds.reduce(
+      (sum: number, id: number) => sum + (orderUserIdMap[id] || 0),
+      0,
+    );
+
+    const totalVentas =
+      vendedores.reduce((sum: number, v: any) => sum + v.venta, 0) +
+      extraVentas;
+    const totalPedidos =
+      vendedores.reduce((sum: number, v: any) => sum + v.pedidos, 0) +
+      extraPedidos;
+    const totalVentaMasPedidos = totalVentas + totalPedidos;
+
+    return NextResponse.json({
+      fecha: dateStr,
+      diasHabiles,
+      diasTranscurridos,
+      porcentajeDias,
+      meta: Math.round(meta),
+      cuotaAlDia: Math.round(cuotaAlDiaGlobal),
+      ventas: parseFloat(totalVentas.toFixed(2)),
+      pedidos: parseFloat(totalPedidos.toFixed(2)),
+      ventaMasPedidos: parseFloat(totalVentaMasPedidos.toFixed(2)),
+      vendedores,
+      sedes: isSuperAdmin
+        ? COMPANY_IDS_ALL.map((id) => ({
+            id,
+            name: COMPANY_NAME_MAP[id] || `Sede ${id}`,
+          }))
+        : [],
+    });
+  } catch (error: any) {
+    console.error("Error en reporte-diario:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

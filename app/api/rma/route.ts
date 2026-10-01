@@ -1,0 +1,196 @@
+import { query } from "@/lib/db";
+import { requireRoles } from "@/lib/auth/roles";
+import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
+import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
+import { filtroProcedencia, hayColumnaExterno, leerProcedencia } from "@/lib/rma/procedencia";
+
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search") || "";
+    const status = searchParams.get("status") || "";
+    const companyId = searchParams.get("company_id") || "";
+    const origen = searchParams.get("origen") || "";
+    // supricom = vendido por Supricom, externo = no comprado en Supricom.
+    const procedencia = leerProcedencia(searchParams.get("procedencia"));
+    const page = parseInt(searchParams.get("page") || "1", 10);
+    const limit = parseInt(searchParams.get("limit") || "20", 10);
+    const offset = (page - 1) * limit;
+
+    let where = "WHERE 1=1";
+    const params: any[] = [];
+    // Envíos con varios productos (issue #331): la búsqueda mira también los
+    // productos que no son el primero, y la lista dice cuántos trae.
+    const conProductos = await hayTablaProductos();
+
+    if (search) {
+      const s = `%${search}%`;
+      where += " AND (c.case_number LIKE ? OR c.client_name LIKE ? OR c.product_code LIKE ? OR c.hardware LIKE ? OR c.brand LIKE ? OR c.model LIKE ? OR c.serial_quantity LIKE ?";
+      params.push(s, s, s, s, s, s, s);
+      if (conProductos) {
+        where += ` OR EXISTS (SELECT 1 FROM rma_case_items i WHERE i.case_id = c.id
+                    AND (i.product_code LIKE ? OR i.hardware LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.serial LIKE ?))`;
+        params.push(s, s, s, s, s);
+      }
+      where += ")";
+    }
+
+    if (status) {
+      where += " AND c.status = ?";
+      params.push(status);
+    }
+
+    if (companyId) {
+      where += " AND c.company_id = ?";
+      params.push(parseInt(companyId, 10));
+    }
+
+    if (origen) {
+      where += " AND c.origen = ?";
+      params.push(origen);
+    }
+
+    where += filtroProcedencia(procedencia, await hayColumnaExterno(), "c");
+
+    // Grupos de las tarjetas del Dashboard de RMA (app/api/rma/stats).
+    const grupo = searchParams.get("grupo") || "";
+    if (grupo === "pendientes") {
+      where += " AND c.status IN ('recibido','reingresado','nc_revision')";
+    } else if (grupo === "completados_mes") {
+      where += ` AND c.status IN ('reparado','nota_credito','no_procesado') AND EXISTS (
+                   SELECT 1 FROM rma_history h
+                    WHERE h.case_id = c.id AND h.to_status = c.status
+                      AND h.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01'))`;
+    }
+    if (searchParams.get("mes") === "1") {
+      where += " AND c.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')";
+    }
+
+    const countResult = await query(`SELECT COUNT(*) as total FROM rma_cases c ${where}`, params);
+    const total = countResult.rows[0]?.total || 0;
+
+    const casesResult = await query(
+      `SELECT c.*${conProductos ? ", (SELECT COUNT(*) FROM rma_case_items i WHERE i.case_id = c.id) AS productos_count" : ""}
+         FROM rma_cases c ${where} ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      params
+    );
+
+    return NextResponse.json({
+      success: true,
+      cases: casesResult.rows,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error: any) {
+    console.error("Error fetching RMA cases:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ["rma"]);
+  if (auth.error) return auth.error;
+
+  try {
+    const body = await request.json();
+    const {
+      product_code,
+      hardware,
+      brand,
+      model,
+      invoice_number,
+      client_name,
+      client_phone,
+      serial_quantity,
+      reported_fault,
+      company_id,
+      created_by,
+      notes,
+      // Opcional: crear el caso con origen='portal' (con su propio
+      // tracking_token) en vez del default interno. Sirve para armar
+      // casos sinteticos de prueba del flujo publico de entrega
+      // (issue #121) sin depender de un ticket real creado por un
+      // cliente real -- nunca se toca account.move ni res.partner de
+      // Odoo con esto, todo el caso es freeform.
+      origen,
+    } = body;
+    const origenFinal = origen === "portal" ? "portal" : undefined;
+    const trackingToken = origenFinal === "portal" ? randomBytes(32).toString("hex") : null;
+
+    if (!client_name || !reported_fault || !created_by) {
+      return NextResponse.json(
+        { error: "Faltan campos obligatorios: client_name, reported_fault, created_by" },
+        { status: 400 }
+      );
+    }
+
+    // Generate sequential case number
+    const lastCase = await query(
+      `SELECT case_number FROM rma_cases ORDER BY id DESC LIMIT 1`
+    );
+
+    let nextNum = 1;
+    if (lastCase.rows.length > 0) {
+      const lastNum = parseInt(lastCase.rows[0].case_number, 10);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
+    }
+    const case_number = String(nextNum).padStart(4, "0");
+
+    const columnasOrigen = origenFinal ? ", origen, tracking_token" : "";
+    const placeholdersOrigen = origenFinal ? ", ?, ?" : "";
+    const valoresOrigen = origenFinal ? [origenFinal, trackingToken] : [];
+
+    const result = await query(
+      `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, client_phone, serial_quantity, reported_fault, status, notes, company_id, created_by${columnasOrigen})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?${placeholdersOrigen})`,
+      [
+        case_number,
+        product_code || null,
+        hardware || null,
+        brand || null,
+        model || null,
+        invoice_number || null,
+        client_name,
+        client_phone || null,
+        serial_quantity || null,
+        reported_fault,
+        notes || null,
+        company_id || null,
+        created_by,
+        ...valoresOrigen,
+      ]
+    );
+
+    const caseId = result.rows.insertId;
+
+    await query(
+      `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
+       VALUES (?, NULL, 'recibido', ?, 'Caso creado')`,
+      [caseId, created_by]
+    );
+
+    // El producto del envío (issue #331): el caso interno trae uno solo.
+    await crearProductos(caseId, [
+      {
+        product_code: product_code || null,
+        hardware: hardware || null,
+        brand: brand || null,
+        model: model || null,
+        serial: serial_quantity || null,
+        reported_fault,
+      },
+    ]);
+
+    return NextResponse.json({ success: true, id: caseId, case_number, tracking_token: trackingToken }, { status: 201 });
+  } catch (error: any) {
+    console.error("Error creating RMA case:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

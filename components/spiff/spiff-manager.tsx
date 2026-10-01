@@ -1,0 +1,900 @@
+"use client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Award,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  Save,
+  ToggleLeft,
+  ToggleRight,
+  Package,
+  Building2,
+  Trophy,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  AlertTriangle,
+} from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useTranslations, useLocale } from "next-intl";
+
+interface SpiffRule {
+  id: number;
+  company_id: number;
+  brand_name: string;
+  tipo: string;
+  product_name: string | null;
+  product_id: number | null;
+  target_amount: number;
+  spiff_amount: number;
+  modo: string;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  active: number;
+  created_at: string;
+}
+
+interface OdooProduct {
+  id: number;
+  name: string;
+  marca: string;
+}
+
+interface Company {
+  cid: string;
+  name: string;
+}
+
+interface SpiffManagerProps {
+  companyId?: number;
+  showCompanyFilter?: boolean;
+  title?: string;
+  subtitle?: string;
+  /** Solo lectura: oculta crear / editar / eliminar / activar (Asistente de Ventas). */
+  readonly?: boolean;
+}
+
+// Estado de una regla según hoy: las vencidas se siguen mostrando (su ranking
+// y el resumen de meses pasados las usan) pero al final y en gris.
+type EstadoRegla = "vigente" | "proxima" | "vencida" | "inactiva";
+const hoyISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const dia = (v: string | null) => (v ? String(v).slice(0, 10) : null);
+function estadoRegla(rule: { active: number; fecha_inicio: string | null; fecha_fin: string | null }, hoy = hoyISO()): EstadoRegla {
+  const ini = dia(rule.fecha_inicio);
+  const fin = dia(rule.fecha_fin);
+  if (fin && fin < hoy) return "vencida";
+  if (!rule.active) return "inactiva";
+  if (ini && ini > hoy) return "proxima";
+  return "vigente";
+}
+const ORDEN_ESTADO: Record<EstadoRegla, number> = { vigente: 0, proxima: 1, inactiva: 2, vencida: 3 };
+/** Vigentes primero; dentro de cada estado, la más reciente arriba. */
+function ordenarReglas<T extends { active: number; fecha_inicio: string | null; fecha_fin: string | null; brand_name: string }>(rs: T[]): T[] {
+  return [...rs].sort((a, b) =>
+    ORDEN_ESTADO[estadoRegla(a)] - ORDEN_ESTADO[estadoRegla(b)]
+    || String(dia(b.fecha_inicio) || "").localeCompare(String(dia(a.fecha_inicio) || ""))
+    || a.brand_name.localeCompare(b.brand_name));
+}
+/** Primer y último día del mes siguiente al fin de la regla (o del mes actual, si es más reciente). */
+function fechasMesSiguiente(fechaFin: string | null): { inicio: string; fin: string } {
+  const hoy = new Date();
+  let y = hoy.getFullYear(), m = hoy.getMonth() + 1;
+  const f = dia(fechaFin);
+  if (f) {
+    const [fy, fm] = f.split("-").map(Number);
+    const sy = fm === 12 ? fy + 1 : fy, sm = fm === 12 ? 1 : fm + 1;
+    if (sy > y || (sy === y && sm > m)) { y = sy; m = sm; }
+  }
+  const mm = String(m).padStart(2, "0");
+  return { inicio: `${y}-${mm}-01`, fin: `${y}-${mm}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` };
+}
+
+const emptyForm = {
+  company_id: "",
+  brand_name: "",
+  target_amount: "",
+  spiff_amount: "",
+  tipo: "marca",
+  product_name: "",
+  product_id: null as number | null,
+  modo: "monto",
+  fecha_inicio: "",
+  fecha_fin: "",
+};
+
+export default function SpiffManager({
+  companyId,
+  showCompanyFilter = false,
+  title = "",
+  subtitle = "",
+  readonly = false,
+}: SpiffManagerProps) {
+  const t = useTranslations("spiff");
+  const locale = useLocale();
+  const [rules, setRules] = useState<SpiffRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingRule, setEditingRule] = useState<SpiffRule | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [filterCompany, setFilterCompany] = useState<string>(companyId?.toString() || "");
+  const [brands, setBrands] = useState<string[]>([]);
+  const [products, setProducts] = useState<OdooProduct[]>([]);
+  const [brandsLoading, setBrandsLoading] = useState(true);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; mes: string; data: any[]; loading: boolean } | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<"todas" | EstadoRegla>("todas");
+
+  useEffect(() => {
+    if (showCompanyFilter) {
+      fetch("/api/superadmin/empresas", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setCompanies(Array.isArray(data) ? data : []))
+        .catch(() => setCompanies([]));
+    }
+  }, [showCompanyFilter]);
+
+  useEffect(() => {
+    setBrandsLoading(true);
+    fetch("/api/spiff/brands", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setBrands(Array.isArray(data) ? data : []))
+      .catch(() => setBrands([]))
+      .finally(() => setBrandsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (form.tipo === "producto") {
+      const params = new URLSearchParams();
+      if (form.brand_name) params.append("brand", form.brand_name);
+      fetch(`/api/spiff/products?${params.toString()}`, { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setProducts(Array.isArray(data) ? data : []))
+        .catch(() => setProducts([]));
+    }
+  }, [form.tipo, form.brand_name]);
+
+  const fetchRules = useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (showCompanyFilter && filterCompany) params.append("company_id", filterCompany);
+    else if (companyId) params.append("company_id", companyId.toString());
+
+    fetch(`/api/spiff/rules?${params.toString()}`, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Error fetching rules");
+        return res.json();
+      })
+      .then((data) => setRules(Array.isArray(data) ? data : []))
+      .catch(() => setRules([]))
+      .finally(() => setLoading(false));
+  }, [companyId, filterCompany, showCompanyFilter]);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  const handleSave = async () => {
+    if (!form.brand_name || !form.target_amount || !form.spiff_amount) return;
+
+    let selectedCompanyId: number | undefined;
+    if (showCompanyFilter) {
+      selectedCompanyId = form.company_id ? parseInt(form.company_id) : undefined;
+    } else {
+      selectedCompanyId = companyId;
+    }
+
+    const body: any = {
+      company_id: selectedCompanyId,
+      brand_name: form.brand_name,
+      target_amount: parseFloat(form.target_amount),
+      spiff_amount: parseFloat(form.spiff_amount),
+      tipo: form.tipo,
+      modo: form.modo,
+      product_name: form.tipo === "producto" ? form.product_name : null,
+      product_id: form.tipo === "producto" ? form.product_id : null,
+      fecha_inicio: form.fecha_inicio || null,
+      fecha_fin: form.fecha_fin || null,
+    };
+
+    if (editingRule) {
+      await fetch("/api/spiff/rules", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: editingRule.id, ...body }),
+      });
+    } else {
+      await fetch("/api/spiff/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+    }
+    setForm(emptyForm);
+    setEditingRule(null);
+    setShowForm(false);
+    fetchRules();
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm(t("confirm_delete"))) return;
+    await fetch("/api/spiff/rules", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id }),
+    });
+    fetchRules();
+  };
+
+  const handleToggle = async (rule: SpiffRule) => {
+    await fetch("/api/spiff/rules", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: rule.id, active: rule.active ? 0 : 1 }),
+    });
+    fetchRules();
+  };
+
+  const startEdit = (rule: SpiffRule) => {
+    setEditingRule(rule);
+    setForm({
+      company_id: rule.company_id?.toString() || "",
+      brand_name: rule.brand_name,
+      target_amount: rule.target_amount.toString(),
+      spiff_amount: rule.spiff_amount.toString(),
+      tipo: rule.tipo || "marca",
+      product_name: rule.product_name || "",
+      product_id: rule.product_id || null,
+      modo: rule.modo || "monto",
+      fecha_inicio: rule.fecha_inicio ? rule.fecha_inicio.split("T")[0] : "",
+      fecha_fin: rule.fecha_fin ? rule.fecha_fin.split("T")[0] : "",
+    });
+    setShowForm(true);
+  };
+
+  // Duplicar: abre el formulario como regla NUEVA con los mismos datos y las
+  // fechas del mes siguiente, para revisar antes de guardar.
+  const startDuplicate = (rule: SpiffRule) => {
+    const { inicio, fin } = fechasMesSiguiente(rule.fecha_fin);
+    setEditingRule(null);
+    setForm({
+      company_id: rule.company_id?.toString() || "",
+      brand_name: rule.brand_name,
+      target_amount: rule.target_amount.toString(),
+      spiff_amount: rule.spiff_amount.toString(),
+      tipo: rule.tipo || "marca",
+      product_name: rule.product_name || "",
+      product_id: rule.product_id || null,
+      modo: rule.modo || "monto",
+      fecha_inicio: inicio,
+      fecha_fin: fin,
+    });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Otra regla de la misma marca (o producto) cuyas fechas se pisan con las
+  // del formulario: el spiff se pagaría dos veces por la misma venta.
+  const solapadas = (() => {
+    if (!showForm || !form.brand_name) return [] as SpiffRule[];
+    const ini = form.fecha_inicio || "0000-01-01";
+    const fin = form.fecha_fin || "9999-12-31";
+    const cid = showCompanyFilter ? parseInt(form.company_id || "0") : companyId;
+    return rules.filter((r) =>
+      r.id !== editingRule?.id &&
+      !!r.active &&
+      (!cid || r.company_id === cid) &&
+      r.brand_name.trim().toLowerCase() === form.brand_name.trim().toLowerCase() &&
+      (r.tipo || "marca") === form.tipo &&
+      (form.tipo !== "producto" || (r.product_id || null) === (form.product_id || null)) &&
+      (dia(r.fecha_inicio) || "0000-01-01") <= fin &&
+      (dia(r.fecha_fin) || "9999-12-31") >= ini);
+  })();
+
+  const conteo = rules.reduce((acc, r) => { acc[estadoRegla(r)]++; return acc; }, { vigente: 0, proxima: 0, vencida: 0, inactiva: 0 } as Record<EstadoRegla, number>);
+  const reglasVisibles = ordenarReglas(filtroEstado === "todas" ? rules : rules.filter((r) => estadoRegla(r) === filtroEstado));
+
+  const formatDate = (d: string | null) => {
+    if (!d) return t("no_end_date");
+    const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return d;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    return date.toLocaleDateString(locale, { day: "2-digit", month: "short" });
+  };
+
+  const getCompanyName = (companyId: number) => {
+    const company = companies.find((c) => parseInt(c.cid) === companyId);
+    return company?.name || `CID ${companyId}`;
+  };
+
+  const isMontoMode = form.modo === "monto";
+
+  // Mes del ranking: el actual si la regla está vigente; si no, el último
+  // mes de su vigencia (o el primero, si todavía no empieza).
+  const mesInicialRanking = (rule: SpiffRule): string => {
+    const hoy = new Date();
+    let mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+    const ini = rule.fecha_inicio ? String(rule.fecha_inicio).slice(0, 7) : null;
+    const fin = rule.fecha_fin ? String(rule.fecha_fin).slice(0, 7) : null;
+    if (fin && mes > fin) mes = fin;
+    if (ini && mes < ini) mes = ini;
+    return mes;
+  };
+  const moverMesRanking = (mes: string, delta: number) => {
+    const [y, m] = mes.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const reglaVigenteEn = (rule: SpiffRule, mes: string) => {
+    const ini = rule.fecha_inicio ? String(rule.fecha_inicio).slice(0, 7) : null;
+    const fin = rule.fecha_fin ? String(rule.fecha_fin).slice(0, 7) : null;
+    return (!ini || mes >= ini) && (!fin || mes <= fin);
+  };
+
+  const handleViewRanking = async (rule: SpiffRule, mes = mesInicialRanking(rule)) => {
+    setRankingModal({ rule, mes, data: [], loading: true });
+    try {
+      const [y, m] = mes.split("-").map(Number);
+      const params = new URLSearchParams({ company_id: String(rule.company_id), regla_id: String(rule.id), year: String(y), month: String(m) });
+      const res = await fetch(`/api/vendedores/spiff?${params}`, { credentials: "include" });
+      const json = await res.json();
+      // Mismo cálculo que el resumen de gerencia (lib/spiff/calculo.ts):
+      // monto/unidades y spiff de ESTA regla por vendedor, respetando sus
+      // fechas y, en reglas de producto, solo ese producto. Asistentes y
+      // cuentas internas ya vienen fuera.
+      const sellerRuleData = json.sellerRuleData || {};
+      const rows = Object.entries(sellerRuleData)
+        .map(([nombre, reglas]: [string, any]) => {
+          const r = reglas?.[rule.id];
+          if (!r) return null;
+          return { nombre, unidades: r.cantidad, monto: r.monto, metaAlcanzadas: r.metas, spiff: r.spiff };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .filter((r) => r.monto > 0 || r.unidades > 0)
+        .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto);
+
+      setRankingModal({ rule, mes, data: rows, loading: false });
+    } catch {
+      setRankingModal((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  };
+
+  const groupedRules = showCompanyFilter
+    ? reglasVisibles.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
+        const cid = rule.company_id;
+        if (!acc[cid]) acc[cid] = [];
+        acc[cid].push(rule);
+        return acc;
+      }, {})
+    : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-amber-50 rounded-2xl">
+            <Award size={28} className="text-amber-600" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-slate-900">{title || t("title")}</h1>
+            <p className="text-sm text-slate-400 font-medium">{subtitle || t("subtitle")}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {showCompanyFilter && (
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+            >
+              <option value="">{t("all_companies")}</option>
+              {companies.map((c) => (
+                <option key={c.cid} value={c.cid}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          {!readonly && (
+            <button
+              onClick={() => { setShowForm(!showForm); setEditingRule(null); setForm(emptyForm); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
+            >
+              <Plus size={16} /> {t("new_rule")}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showForm && (
+        <Card className="rounded-2xl border border-amber-200 shadow-sm bg-amber-50/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-slate-700">{editingRule ? t("edit_rule") : t("new_rule_title")}</h3>
+              <button onClick={() => setShowForm(false)} className="p-1 hover:bg-slate-200 rounded-lg"><X size={16} /></button>
+            </div>
+
+            {/* Row 0: Empresa (superAdmin only) */}
+            {showCompanyFilter && (
+              <div className="mb-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("company")}</label>
+                <select
+                  value={form.company_id}
+                  onChange={(e) => setForm({ ...form, company_id: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                >
+                  <option value="">{t("select_company")}</option>
+                  {companies.map((c) => (
+                    <option key={c.cid} value={c.cid}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Row 1: Tipo + Modo */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("rule_type")}</label>
+                <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-0.5">
+                  <button
+                    onClick={() => setForm({ ...form, tipo: "marca", product_name: "", product_id: null })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.tipo === "marca" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    {t("by_brand")}
+                  </button>
+                  <button
+                    onClick={() => setForm({ ...form, tipo: "producto" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.tipo === "producto" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    {t("by_product")}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("calc_mode")}</label>
+                <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-0.5">
+                  <button
+                    onClick={() => setForm({ ...form, modo: "monto" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "monto" ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    {t("amount")}
+                  </button>
+                  <button
+                    onClick={() => setForm({ ...form, modo: "cantidad" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${form.modo === "cantidad" ? "bg-blue-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    {t("quantity")}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Marca + Producto + Meta */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                  {form.tipo === "producto" ? t("brand_filter") : t("brand")}
+                </label>
+                <select
+                  value={form.brand_name}
+                  onChange={(e) => setForm({ ...form, brand_name: e.target.value, product_name: "", product_id: null })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                >
+                  <option value="">{brandsLoading ? t("loading_brands") : t("select_brand")}</option>
+                  {brands.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+              {form.tipo === "producto" && (
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("product")}</label>
+                  <select
+                    value={form.product_id || ""}
+                    onChange={(e) => {
+                      const selected = products.find((p) => p.id === parseInt(e.target.value));
+                      setForm({
+                        ...form,
+                        product_id: selected ? selected.id : null,
+                        product_name: selected ? selected.name : "",
+                      });
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                  >
+                    <option value="">{!form.brand_name ? t("select_brand_first") : products.length === 0 ? t("loading_products") : t("select_product")}</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                  {isMontoMode ? t("sales_goal_amount") : t("sales_goal_units")}
+                </label>
+                <input
+                  type="number"
+                  value={form.target_amount}
+                  onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
+                  placeholder={isMontoMode ? "5000" : "100"}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            {/* Row 3: Spiff + Fechas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("spiff_per_goal")}</label>
+                <input
+                  type="number"
+                  value={form.spiff_amount}
+                  onChange={(e) => setForm({ ...form, spiff_amount: e.target.value })}
+                  placeholder="100"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("start_date")}</label>
+                <input
+                  type="date"
+                  value={form.fecha_inicio}
+                  onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t("end_date")}</label>
+                <input
+                  type="date"
+                  value={form.fecha_fin}
+                  onChange={(e) => setForm({ ...form, fecha_fin: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-white outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 p-2.5 bg-white rounded-xl border border-slate-100">
+              <p className="text-[10px] text-slate-400 font-medium">
+                {isMontoMode
+                  ? t("help_amount")
+                  : t("help_quantity")}
+                {form.fecha_inicio || form.fecha_fin ? ` | ${t("validity")} ${form.fecha_inicio || t("no_start")} → ${form.fecha_fin || t("no_end")}` : ` | ${t("no_date_range")}`}
+              </p>
+            </div>
+
+            {solapadas.length > 0 && (
+              <div className="mt-3 flex items-start gap-2 p-2.5 rounded-xl border border-amber-300 bg-amber-100/60 text-[11px] text-amber-800">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  {t("aviso_solapamiento")}{" "}
+                  {solapadas.map((r) => `${formatDate(r.fecha_inicio)} → ${formatDate(r.fecha_fin)}`).join(", ")}
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={handleSave}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
+              >
+                <Save size={14} /> {editingRule ? t("update") : t("create")}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="rounded-3xl border-none shadow-sm bg-white overflow-hidden">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-slate-900 text-sm font-black uppercase tracking-wider flex items-center gap-2">
+            <Award size={16} className="text-amber-500" /> {t("rules_title")}
+          </CardTitle>
+          {rules.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {(["todas", "vigente", "proxima", "vencida", "inactiva"] as const)
+                .filter((f) => f === "todas" || conteo[f] > 0)
+                .map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFiltroEstado(f)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                      filtroEstado === f ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {t(`filtro_${f}`)} {f === "todas" ? rules.length : conteo[f]}
+                  </button>
+                ))}
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 font-medium">{t("loading")}</div>
+          ) : rules.length === 0 ? (
+            <div className="py-12 text-center">
+              <Award size={40} className="mx-auto text-slate-200 mb-3" />
+              <p className="text-sm text-slate-400 font-medium">{t("no_rules")}</p>
+            </div>
+          ) : reglasVisibles.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">{t("filtro_vacio")}</div>
+          ) : showCompanyFilter && groupedRules ? (
+            <div className="flex flex-col">
+              {Object.entries(groupedRules)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([companyIdStr, groupRules]) => (
+                  <div key={companyIdStr} className="border-b last:border-none">
+                    <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <Building2 size={14} className="text-slate-400" />
+                      <span className="text-xs font-black text-slate-600 uppercase">{getCompanyName(parseInt(companyIdStr))}</span>
+                      <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md">{groupRules.length} {t("rules_count")}</span>
+                    </div>
+                    {groupRules.map((rule) => (
+                      <RuleRow
+                        key={rule.id}
+                        rule={rule}
+                        onEdit={startEdit}
+                        onDelete={handleDelete}
+                        onToggle={handleToggle}
+                        onViewRanking={handleViewRanking}
+                        onDuplicate={startDuplicate}
+                        formatDate={formatDate}
+                        readonly={readonly}
+                      />
+                    ))}
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <div className="bg-slate-50 px-5 py-2.5 flex items-center text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                <span className="flex-1">{t("col_type_name")}</span>
+                <span className="w-16 text-center">{t("col_mode")}</span>
+                <span className="w-24 text-center">{t("col_goal")}</span>
+                <span className="w-20 text-center">{t("col_spiff")}</span>
+                <span className="w-24 text-center">{t("col_validity")}</span>
+                <span className="w-16 text-center">{t("col_status")}</span>
+                {!readonly && (
+                  <span className="w-28 text-center">{t("col_actions")}</span>
+                )}
+              </div>
+              {reglasVisibles.map((rule) => (
+                <RuleRow
+                  key={rule.id}
+                  rule={rule}
+                  onEdit={startEdit}
+                  onDelete={handleDelete}
+                  onToggle={handleToggle}
+                  onViewRanking={handleViewRanking}
+                  onDuplicate={startDuplicate}
+                  formatDate={formatDate}
+                  readonly={readonly}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Ranking Modal */}
+      {rankingModal && createPortal(
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setRankingModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-h-[80vh] overflow-hidden shadow-2xl w-fit"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <Trophy size={20} className="text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-800">{t("ranking_title")}</h2>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    {rankingModal.rule.brand_name}
+                    {rankingModal.rule.tipo === "producto" && rankingModal.rule.product_name ? ` · ${rankingModal.rule.product_name}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center rounded-lg border border-slate-200 mx-3">
+                <button
+                  onClick={() => handleViewRanking(rankingModal.rule, moverMesRanking(rankingModal.mes, -1))}
+                  className="p-1.5 hover:bg-slate-50 rounded-l-lg text-slate-500"
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="px-2 text-xs font-bold text-slate-700 whitespace-nowrap">
+                  {new Date(Number(rankingModal.mes.slice(0, 4)), Number(rankingModal.mes.slice(5, 7)) - 1, 1)
+                    .toLocaleDateString(locale, { month: "short", year: "numeric" })}
+                </span>
+                <button
+                  onClick={() => handleViewRanking(rankingModal.rule, moverMesRanking(rankingModal.mes, 1))}
+                  className="p-1.5 hover:bg-slate-50 rounded-r-lg text-slate-500"
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+              <button
+                onClick={() => setRankingModal(null)}
+                className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(80vh-80px)]">
+              {rankingModal.loading ? (
+                <div className="py-12 text-center text-slate-400 font-medium">{t("loading_ranking")}</div>
+              ) : rankingModal.data.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Trophy size={36} className="mx-auto text-slate-200 mb-3" />
+                  <p className="text-sm text-slate-400">{t("no_ranking_data")}</p>
+                  {/* Por qué está vacío: antes de alinearse con el resumen de
+                      gerencia el ranking sumaba la marca sin mirar la regla. */}
+                  <p className="text-xs text-slate-400 mt-1 max-w-[260px] mx-auto">
+                    {!reglaVigenteEn(rankingModal.rule, rankingModal.mes)
+                      ? t("ranking_fuera_de_vigencia")
+                      : rankingModal.rule.tipo === "producto"
+                        ? t("ranking_sin_ventas_producto")
+                        : t("ranking_sin_ventas")}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col max-h-[50vh] overflow-y-auto">
+                  <table className="w-full border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 z-10">
+                      <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                        <th className="w-10 py-2 text-center">#</th>
+                        <th className="py-2 text-left px-3">{t("seller")}</th>
+                        <th className="w-16 py-2 text-center">{t("unit")}</th>
+                        <th className="w-24 py-2 text-center">{t("col_amount")}</th>
+                        <th className="w-16 py-2 text-center">{t("goals")}</th>
+                        <th className="w-20 py-2 text-center">{t("col_spiff")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rankingModal.data
+                        .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
+                        .map((seller, i) => (
+                          <tr key={seller.nombre} className="border-b last:border-none hover:bg-slate-50/50 transition-all">
+                            <td className="py-3 text-center">
+                              {i === 0 ? <Trophy size={16} className="text-yellow-500 inline" /> :
+                               i === 1 ? <Trophy size={16} className="text-slate-400 inline" /> :
+                               i === 2 ? <Trophy size={16} className="text-amber-600 inline" /> :
+                               <span className="text-xs font-black text-slate-300">{i + 1}</span>}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="text-xs font-bold text-slate-700">{seller.nombre}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className="text-[10px] font-bold text-slate-600">{seller.unidades}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className="text-[10px] font-bold text-slate-700 tabular-nums">${seller.monto.toLocaleString()}</span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className={`text-[10px] font-black ${seller.metaAlcanzadas > 0 ? "text-emerald-600" : "text-slate-400"}`}>
+                                {seller.metaAlcanzadas}x
+                              </span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className={`text-xs font-black ${seller.spiff > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                                ${seller.spiff.toLocaleString()}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function RuleRow({
+  rule,
+  onEdit,
+  onDelete,
+  onToggle,
+  onViewRanking,
+  onDuplicate,
+  formatDate,
+  readonly = false,
+}: {
+  rule: SpiffRule;
+  onEdit: (rule: SpiffRule) => void;
+  onDelete: (id: number) => void;
+  onToggle: (rule: SpiffRule) => void;
+  onViewRanking: (rule: SpiffRule) => void;
+  onDuplicate: (rule: SpiffRule) => void;
+  formatDate: (d: string | null) => string;
+  readonly?: boolean;
+}) {
+  const t = useTranslations("spiff");
+  const estado = estadoRegla(rule);
+  const apagada = estado === "vencida" || estado === "inactiva";
+  const chip: Record<EstadoRegla, string> = {
+    vigente: "bg-emerald-50 text-emerald-700",
+    proxima: "bg-blue-50 text-blue-700",
+    vencida: "bg-slate-100 text-slate-500",
+    inactiva: "bg-slate-100 text-slate-500",
+  };
+  return (
+    <div
+      className={`flex items-center px-5 py-3 border-b last:border-none hover:bg-slate-50/50 cursor-pointer transition-all ${apagada ? "opacity-60" : ""}`}
+      onClick={() => onViewRanking(rule)}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          {rule.tipo === "producto" ? (
+            <Package size={12} className="text-blue-500 flex-shrink-0" />
+          ) : (
+            <Award size={12} className="text-amber-500 flex-shrink-0" />
+          )}
+          <p className="text-xs font-bold text-slate-700 uppercase truncate">{rule.brand_name}</p>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${chip[estado]}`}>{t(`estado_${estado}`)}</span>
+        </div>
+        {rule.tipo === "producto" && rule.product_name && (
+          <p className="text-[10px] text-slate-400 truncate pl-5">{rule.product_name}</p>
+        )}
+      </div>
+      <div className="w-16 text-center">
+        <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${rule.modo === "monto" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+          {rule.modo === "monto" ? t("mode_amount") : t("mode_quantity_short")}
+        </span>
+      </div>
+      <div className="w-24 text-center">
+        <span className="text-xs font-black text-slate-600 tabular-nums">
+          {rule.modo === "monto" ? `$${rule.target_amount.toLocaleString()}` : `${rule.target_amount} uds`}
+        </span>
+      </div>
+      <div className="w-20 text-center">
+        <span className="text-xs font-black text-amber-600 tabular-nums">${rule.spiff_amount.toLocaleString()}</span>
+      </div>
+      <div className="w-24 text-center">
+        <span className="text-[9px] font-bold text-slate-500">
+          {rule.fecha_inicio || rule.fecha_fin ? `${formatDate(rule.fecha_inicio)} → ${formatDate(rule.fecha_fin)}` : t("always")}
+        </span>
+      </div>
+      <div className="w-16 text-center">
+        {readonly ? (
+          <span className={rule.active ? "text-emerald-500" : "text-slate-300"}>
+            {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+          </span>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); onToggle(rule); }} className={`${rule.active ? "text-emerald-500" : "text-slate-300"}`}>
+            {rule.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+          </button>
+        )}
+      </div>
+      {!readonly && (
+        <div className="w-28 flex gap-1 justify-center">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(rule); }} title={t("editar")} className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors">
+            <Pencil size={14} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDuplicate(rule); }} title={t("duplicar_mes_siguiente")} className="p-1.5 hover:bg-amber-50 rounded-lg text-slate-400 hover:text-amber-600 transition-colors">
+            <Copy size={14} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }} className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

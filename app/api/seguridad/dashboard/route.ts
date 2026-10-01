@@ -1,0 +1,325 @@
+import { query } from "@/lib/db";
+import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { JOIN_MERCANCIA, columnasPorOrigen, sqlOrigen } from "@/lib/seguridad/calificaciones";
+import { ORIGENES, leerPorOrigen } from "@/lib/seguridad/origenes";
+import { NextRequest, NextResponse } from "next/server";
+import { hayTablaProductos } from "@/lib/rma/items";
+import { metricasDelMes } from "@/lib/seguridad/dashboardMes";
+
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await requireSeguridad(request);
+    if (auth.error) return auth.error;
+
+    const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
+    if (cidsError) return cidsError;
+
+    // null = superadmin, ve todas las sucursales. El dashboard es la pantalla
+    // principal del modulo: si no refleja solo la sucursal de quien lo mira,
+    // el resto del filtro (listados, exports) no sirve de mucho.
+    const paramCids = cids !== null ? [cids] : [];
+
+    // El mostrador (#39) solo muestra los 3 contadores del dia y se abre desde
+    // el telefono en el almacen. Pedirle las 14 consultas del dashboard para
+    // pintar 3 numeros es lo que hace que tarde en 4G, asi que ese modo corta
+    // por aqui. Vive en esta ruta y no en una nueva a proposito: cada ruta
+    // nueva es un sitio mas donde olvidar el guard, que fue justo lo que paso
+    // con /api/seguridad/almacenistas.
+    if (new URL(request.url).searchParams.get("resumen") === "1") {
+      const [ingresosHoyRes, despachosHoyRes, pendientesRes] = await Promise.all([
+        query(
+          `SELECT COUNT(*) AS total FROM seguridad_ingresos
+            WHERE fecha_entrega = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+          paramCids,
+        ),
+        query(
+          `SELECT COUNT(*) AS total FROM seguridad_despachos
+            WHERE fecha_despacho = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+          paramCids,
+        ),
+        query(
+          `SELECT COUNT(*) AS total
+           FROM seguridad_ingresos i
+           LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+           WHERE d.id IS NULL${cids !== null ? " AND i.cids = ?" : ""}`,
+          paramCids,
+        ),
+      ]);
+
+      const resumen = NextResponse.json({
+        success: true,
+        ingresos_hoy: Number(ingresosHoyRes.rows[0]?.total || 0),
+        despachos_hoy: Number(despachosHoyRes.rows[0]?.total || 0),
+        pendientes: Number(pendientesRes.rows[0]?.total || 0),
+      });
+      resumen.headers.set("Cache-Control", "no-store");
+      return resumen;
+    }
+
+    // Las notas se agrupan por origen (RMA, picking y despacho del egreso) en
+    // vez de mezclarse en un solo promedio: son trabajos distintos, y desde
+    // #302 cada egreso trae dos notas.
+    const origen = await sqlOrigen();
+
+    const [
+      ingresosHoyRes,
+      ingresosAyerRes,
+      despachosHoyRes,
+      despachosAyerRes,
+      enTallerRes,
+      promedioCalRes,
+      totalCalRes,
+      ingresosPendientesCountRes,
+      ingresosRecientesRes,
+      despachosRecientesRes,
+      ingresosPendientesRes,
+      topAlmacenistasRes,
+      ingresosSinDespachoRes,
+    ] = await Promise.all([
+      query(
+        `SELECT COUNT(*) AS total FROM seguridad_ingresos
+          WHERE fecha_entrega = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total FROM seguridad_ingresos
+          WHERE fecha_entrega = CURDATE() - INTERVAL 1 DAY${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total FROM seguridad_despachos
+          WHERE fecha_despacho = CURDATE()${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total FROM seguridad_despachos
+          WHERE fecha_despacho = CURDATE() - INTERVAL 1 DAY${cids !== null ? " AND cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_ingresos i
+         LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+         WHERE d.id IS NULL AND i.fecha_entrega < CURDATE() - INTERVAL 7 DAY
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT AVG(c.calificacion) AS promedio,
+                ${columnasPorOrigen(origen)}
+         FROM seguridad_calificaciones c
+         ${JOIN_MERCANCIA}
+         WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND c.cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_calificaciones
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_ingresos i
+         LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+         WHERE d.id IS NULL
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
+      ),
+      query(
+        `SELECT * FROM seguridad_ingresos
+         ${cids !== null ? "WHERE cids = ?" : ""}
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        paramCids,
+      ),
+      query(
+        `SELECT d.*, i.cliente_nombre AS cliente_nombre
+         FROM seguridad_despachos d
+         LEFT JOIN seguridad_ingresos i ON i.id = d.ingreso_id
+         ${cids !== null ? "WHERE d.cids = ?" : ""}
+         ORDER BY d.created_at DESC
+         LIMIT 10`,
+        paramCids,
+      ),
+      query(
+        // DATEDIFF explicito: el front pinta el badge "N dias en taller" y con
+        // `SELECT i.*` ese campo no existia, asi que el badge salia vacio.
+        `SELECT i.*, DATEDIFF(CURDATE(), i.fecha_entrega) AS dias_en_taller
+         FROM seguridad_ingresos i
+         LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+         WHERE d.id IS NULL
+         ${cids !== null ? "AND i.cids = ?" : ""}
+         ORDER BY i.fecha_entrega DESC
+         LIMIT 10`,
+        paramCids,
+      ),
+      query(
+        `SELECT
+            c.almacenista_nombre AS nombre,
+            AVG(c.calificacion) AS promedio,
+            COUNT(*) AS calificaciones,
+            (SELECT COUNT(*) FROM seguridad_ingresos
+             WHERE recibido_por = c.almacenista_nombre
+               AND fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+               ${cids !== null ? "AND cids = ?" : ""}) AS ingresos_mes,
+            (SELECT COUNT(*) FROM seguridad_despachos
+             WHERE almacenista_nombre = c.almacenista_nombre
+               AND fecha_despacho >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+               ${cids !== null ? "AND cids = ?" : ""}) AS despachos_mes,
+            ${columnasPorOrigen(origen)}
+         FROM seguridad_calificaciones c
+         ${JOIN_MERCANCIA}
+         WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+         ${cids !== null ? "AND c.cids = ?" : ""}
+         GROUP BY c.almacenista_nombre`,
+        cids !== null ? [cids, cids, cids] : [],
+      ),
+      query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_ingresos i
+         LEFT JOIN seguridad_despachos d ON d.ingreso_id = i.id
+         WHERE d.id IS NULL AND i.fecha_entrega < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+         ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
+      ),
+    ]);
+
+    // Seguridad ya no marca "falla cubierta por garantía" en el ingreso (#48).
+    // La señal equivalente ahora es el estado de garantía CONGELADO en el
+    // ticket de RMA: ingresos cuyo ticket llegó con garantía vencida. Va aparte
+    // del Promise.all y con su propio catch: si esta base no tiene todavía las
+    // columnas de garantía del portal, el resto del panel no debe caerse.
+    let garantiasDenegadasRes: any = { rows: [{ total: 0 }] };
+    try {
+      // Con envíos de varios productos (issue #331) la garantía es de cada
+      // producto: cuenta el ingreso si alguno llegó vencido.
+      const porProducto = await hayTablaProductos();
+      garantiasDenegadasRes = await query(
+        `SELECT COUNT(*) AS total
+         FROM seguridad_ingresos i
+         JOIN rma_cases rc ON rc.id = i.rma_case_id
+         WHERE (rc.garantia_estado = 'vencida'${porProducto ? `
+                OR EXISTS (SELECT 1 FROM rma_case_items ci
+                            WHERE ci.case_id = rc.id AND ci.garantia_estado = 'vencida')` : ""})
+           AND i.fecha_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+           ${cids !== null ? "AND i.cids = ?" : ""}`,
+        paramCids,
+      );
+    } catch (e: any) {
+      console.warn("garantías denegadas no disponible:", e?.message);
+    }
+
+    // Métricas del mes del Dashboard de Seguridad. Con su propio catch: si
+    // alguna tabla (egresos de mercancía) no existe en esta base, el resto del
+    // panel sigue.
+    let mes: Awaited<ReturnType<typeof metricasDelMes>> | null = null;
+    try {
+      mes = await metricasDelMes(cids);
+    } catch (e: any) {
+      console.warn("métricas del mes de seguridad no disponibles:", e?.message);
+    }
+
+    const ingresosHoy = Number(ingresosHoyRes.rows[0]?.total || 0);
+    const ingresosAyer = Number(ingresosAyerRes.rows[0]?.total || 0);
+    const despachosHoy = Number(despachosHoyRes.rows[0]?.total || 0);
+    const despachosAyer = Number(despachosAyerRes.rows[0]?.total || 0);
+
+    const promedioRaw = promedioCalRes.rows[0]?.promedio;
+    const promedioCalificacion =
+      promedioRaw === null || promedioRaw === undefined
+        ? null
+        : Math.round(Number(promedioRaw) * 10) / 10;
+
+    const alertas: any[] = [];
+
+    const ingresosSinDespacho = Number(ingresosSinDespachoRes.rows[0]?.total || 0);
+    if (ingresosSinDespacho > 0) {
+      alertas.push({
+        tipo: "ingresos_sin_despacho",
+        cantidad: ingresosSinDespacho,
+        dias: 7,
+        severidad: "warning",
+        mensaje: `${ingresosSinDespacho} ingresos sin despacho por más de 7 días`,
+      });
+    }
+
+    const garantiasDenegadas = Number(garantiasDenegadasRes.rows[0]?.total || 0);
+    if (garantiasDenegadas > 5) {
+      alertas.push({
+        tipo: "garantias_denegadas",
+        cantidad: garantiasDenegadas,
+        dias: 30,
+        severidad: "info",
+        mensaje: `${garantiasDenegadas} ingresos con garantía denegada en los últimos 30 días`,
+      });
+    }
+
+    const response = NextResponse.json({
+      success: true,
+      kpis: {
+        ingresos_hoy: ingresosHoy,
+        ingresos_hoy_delta: ingresosHoy - ingresosAyer,
+        despachos_hoy: despachosHoy,
+        despachos_hoy_delta: despachosHoy - despachosAyer,
+        en_taller_mas_7d: Number(enTallerRes.rows[0]?.total || 0),
+        promedio_calificacion: promedioCalificacion,
+        total_calificaciones_mes: Number(totalCalRes.rows[0]?.total || 0),
+        calificaciones_por_origen: leerPorOrigen(promedioCalRes.rows[0]),
+        ingresos_pendientes_despacho: Number(
+          ingresosPendientesCountRes.rows[0]?.total || 0,
+        ),
+      },
+      ingresos_recientes: ingresosRecientesRes.rows,
+      despachos_recientes: despachosRecientesRes.rows,
+      ingresos_pendientes: ingresosPendientesRes.rows,
+      top_almacenistas: rankingPorOrigen(topAlmacenistasRes.rows as any[]),
+      mes,
+      alertas,
+    });
+
+    // no-store y no `max-age=300`: con la cache de 5 minutos, el almacenista
+    // registraba un ingreso y el panel le seguia mostrando los numeros de
+    // antes, porque el navegador servia la respuesta guardada sin volver a
+    // preguntar. En una pantalla cuyo uso es registrar y comprobar en el acto,
+    // ese retraso se lee como que el registro no se guardo.
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  } catch (error: any) {
+    console.error("Error cargando dashboard de seguridad:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Ranking de los 10 mejores del mes. Se ordena por el promedio de sus
+ * promedios por origen, cada origen con el mismo peso: quien tiene muchas
+ * notas de un tipo no queda arriba o abajo solo por eso, y un egreso con dos
+ * notas no pesa el doble que un despacho de RMA.
+ */
+function rankingPorOrigen(filas: any[]) {
+  return filas
+    .map((r) => {
+      const por_origen = leerPorOrigen(r);
+      const promedios = ORIGENES.map((o) => por_origen[o].promedio).filter(
+        (p): p is number => p !== null,
+      );
+      return {
+        nombre: r.nombre,
+        ingresos_mes: Number(r.ingresos_mes || 0),
+        despachos_mes: Number(r.despachos_mes || 0),
+        promedio: promedios.length
+          ? Math.round((promedios.reduce((a, b) => a + b, 0) / promedios.length) * 10) / 10
+          : null,
+        calificaciones: Number(r.calificaciones || 0),
+        por_origen,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (b.promedio ?? -1) - (a.promedio ?? -1) || b.calificaciones - a.calificaciones,
+    )
+    .slice(0, 10);
+}

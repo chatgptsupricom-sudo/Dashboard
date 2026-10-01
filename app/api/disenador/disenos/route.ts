@@ -1,0 +1,293 @@
+import { query } from "@/lib/db";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { requireRoles } from "@/lib/auth/roles";
+import { CATEGORIAS_DISENO, esCategoriaValida } from "@/lib/disenos/categorias";
+import { COLUMNA_FECHA, aISO, fechaValida } from "@/lib/disenos/fecha";
+import { NextRequest, NextResponse } from "next/server";
+
+// El matcher del middleware excluye /api, asi que el guard va aqui.
+// superadmin siempre pasa via requireRoles.
+const ROLES = ["diseñador"];
+
+// Catálogo de diseños del Diseñador. Las imágenes viven en MySQL (LONGBLOB) para
+// que sobrevivan a los deploys, igual que el Banco de Flyers (product_images).
+const ensureTable = ensureDesignerDesignsTable;
+
+// GET: lista paginada del catálogo (sin el binario, que es pesado).
+export async function GET(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
+  try {
+    await ensureTable();
+
+    const url = new URL(request.url);
+    const search = url.searchParams.get("search") || "";
+    const folder = url.searchParams.get("folder") || "";
+    const category = url.searchParams.get("category") || "";
+    // Papelera: los diseños borrados no se eliminan, se marcan (deleted_at).
+    const papelera = url.searchParams.get("papelera") === "1";
+    // `?dia=YYYY-MM-DD`: los diseños de ese día, para el detalle del calendario.
+    const dia = fechaValida(url.searchParams.get("dia"));
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limit") || "24", 10)));
+    const offset = (page - 1) * limit;
+
+    let where = papelera ? "WHERE d.deleted_at IS NOT NULL" : "WHERE d.deleted_at IS NULL";
+    const params: any[] = [];
+
+    if (search) {
+      where += " AND (d.title LIKE ? OR d.folder LIKE ? OR d.created_by LIKE ?)";
+      const s = `%${search}%`;
+      params.push(s, s, s);
+    }
+    if (folder) {
+      where += " AND d.folder = ?";
+      params.push(folder);
+    }
+    // "sin_categoria" es el filtro para los diseños viejos, cargados antes de
+    // que la categoría fuera obligatoria.
+    if (dia) {
+      where += ` AND ${COLUMNA_FECHA} = ?`;
+      params.push(dia);
+    }
+    if (category === "sin_categoria") {
+      where += " AND (d.category IS NULL OR d.category = '')";
+    } else if (category) {
+      where += " AND d.category = ?";
+      params.push(category);
+    }
+
+    const countResult = await query(
+      `SELECT COUNT(*) AS total FROM designer_designs d ${where}`,
+      params
+    );
+    const total = countResult.rows[0]?.total || 0;
+
+    const result = await query(
+      `SELECT d.id, d.title, d.folder, d.category, d.created_by, d.created_at,
+              d.deleted_at, d.deleted_by, ${COLUMNA_FECHA} AS design_date,
+              CONCAT('/api/disenador/disenos/image/', d.id) AS image_path
+       FROM designer_designs d ${where}
+       ORDER BY ${papelera ? "d.deleted_at" : dia ? `${COLUMNA_FECHA} DESC, d.id` : "d.created_at"} DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      params
+    );
+
+    const foldersResult = await query(
+      `SELECT DISTINCT folder FROM designer_designs
+       WHERE deleted_at IS NULL AND folder IS NOT NULL AND folder <> '' ORDER BY folder ASC`
+    );
+    const folders = (foldersResult.rows || []).map((r: any) => r.folder);
+
+    // Conteo por categoría de TODO el catálogo (sin los filtros de la vista):
+    // alimenta los chips de filtro, que no deben vaciarse al filtrar.
+    const porCategoriaResult = await query(
+      `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
+       FROM designer_designs WHERE deleted_at IS NULL GROUP BY categoria`
+    );
+    const conteoPorCategoria: Record<string, number> = {};
+    for (const r of porCategoriaResult.rows || []) {
+      conteoPorCategoria[r.categoria] = Number(r.n) || 0;
+    }
+
+    return NextResponse.json({
+      success: true,
+      designs: (result.rows || []).map((r: any) => ({ ...r, design_date: aISO(r.design_date) })),
+      folders,
+      categorias: CATEGORIAS_DISENO,
+      conteoPorCategoria,
+      enPapelera: Number(
+        (await query(`SELECT COUNT(*) AS n FROM designer_designs WHERE deleted_at IS NOT NULL`)).rows?.[0]?.n || 0
+      ),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error: any) {
+    console.error("GET /api/disenador/disenos:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// POST: sube uno o varios diseños en una sola petición (carga masiva por carpeta).
+// FormData:
+//   images    -> uno o más File
+//   titles    -> JSON string[] alineado por índice con images
+//   folders    -> JSON string[] alineado por índice con images
+//   categories -> JSON string[] alineado por índice con images (obligatorio,
+//                 ids de lib/disenos/categorias.ts)
+//   dates      -> JSON string[] "YYYY-MM-DD" alineado por índice (opcional):
+//                 el día del diseño, que es el que cuenta para los KPIs. Sin
+//                 él, queda el día de la subida.
+//   created_by
+export async function POST(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
+  try {
+    await ensureTable();
+
+    const formData = await request.formData();
+    const files = formData.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
+    const created_by = (formData.get("created_by") as string | null) || "";
+
+    if (files.length === 0) {
+      return NextResponse.json({ error: "No se recibió ninguna imagen" }, { status: 400 });
+    }
+    if (!created_by) {
+      return NextResponse.json({ error: "created_by es obligatorio" }, { status: 400 });
+    }
+
+    let titles: string[] = [];
+    let folders: string[] = [];
+    let categories: string[] = [];
+    let dates: string[] = [];
+    try {
+      titles = JSON.parse((formData.get("titles") as string) || "[]");
+    } catch { titles = []; }
+    try {
+      folders = JSON.parse((formData.get("folders") as string) || "[]");
+    } catch { folders = []; }
+    try {
+      categories = JSON.parse((formData.get("categories") as string) || "[]");
+    } catch { categories = []; }
+    try {
+      dates = JSON.parse((formData.get("dates") as string) || "[]");
+    } catch { dates = []; }
+
+    // La categoría es obligatoria: se valida ANTES de insertar, para no dejar
+    // media carga guardada y media rechazada.
+    const sinCategoria = files
+      .map((f, i) => (esCategoriaValida(categories[i]) ? null : (titles[i] || f.name)))
+      .filter(Boolean);
+    if (sinCategoria.length > 0) {
+      return NextResponse.json(
+        { error: `Falta la categoría en: ${sinCategoria.slice(0, 5).join(", ")}${sinCategoria.length > 5 ? "…" : ""}` },
+        { status: 400 }
+      );
+    }
+
+    let inserted = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const mime = file.type || "image/png";
+      const title = (titles[i] || file.name.replace(/\.[^.]+$/, "") || "Sin título").slice(0, 255);
+      const folder = (folders[i] || "").slice(0, 255) || null;
+
+      // Sin fecha válida se usa el día de la subida (NOW en la base), que es
+      // el comportamiento anterior.
+      const designDate = fechaValida(dates[i]);
+
+      await query(
+        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by, design_date)
+         VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURDATE()))`,
+        [title, folder, categories[i], buffer, mime, created_by, designDate]
+      );
+      inserted++;
+    }
+
+    return NextResponse.json({ success: true, inserted }, { status: 201 });
+  } catch (error: any) {
+    console.error("POST /api/disenador/disenos:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// PATCH: renombrar / recategorizar un diseño. JSON { id, title?, folder?, category? }
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
+  try {
+    await ensureTable();
+    const body = await request.json();
+    const id = Number(body.id);
+    if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
+
+    // Restaurar desde la papelera.
+    if (body.restaurar === true) {
+      await query(`UPDATE designer_designs SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`, [id]);
+      return NextResponse.json({ success: true, restaurado: id });
+    }
+
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (typeof body.title === "string") {
+      sets.push("title = ?");
+      params.push(body.title.slice(0, 255));
+    }
+    if (typeof body.folder === "string") {
+      sets.push("folder = ?");
+      params.push(body.folder.trim().slice(0, 255) || null);
+    }
+    if (body.category !== undefined) {
+      if (!esCategoriaValida(body.category)) {
+        return NextResponse.json({ error: "Categoría inválida" }, { status: 400 });
+      }
+      sets.push("category = ?");
+      params.push(body.category);
+    }
+    // Fecha del diseño: la cambia el formulario de edición y, sobre todo,
+    // arrastrar el flyer a otro día en el calendario.
+    if (body.design_date !== undefined) {
+      const fecha = fechaValida(body.design_date);
+      if (!fecha) return NextResponse.json({ error: "Fecha inválida" }, { status: 400 });
+      sets.push("design_date = ?");
+      params.push(fecha);
+    }
+    if (sets.length === 0) {
+      return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
+    }
+    params.push(id);
+    await query(`UPDATE designer_designs SET ${sets.join(", ")} WHERE id = ?`, params);
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("PATCH /api/disenador/disenos:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// DELETE: ?id=1  ó  ?ids=1,2,3
+// Por defecto manda a la PAPELERA (marca deleted_at); con ?definitivo=1
+// elimina la fila de verdad. Así un borrado por error se puede deshacer:
+// los diseños viven en MySQL y, una vez borrada la fila, la imagen no se
+// recupera de ningún lado (la auditoría guarda el registro, no el binario).
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES);
+  if (auth.error) return auth.error;
+
+  try {
+    await ensureTable();
+    const url = new URL(request.url);
+    const single = url.searchParams.get("id");
+    const multi = url.searchParams.get("ids");
+
+    const definitivo = url.searchParams.get("definitivo") === "1";
+    const quien = (url.searchParams.get("por") || "").slice(0, 255) || null;
+
+    const ids = (multi ? multi.split(",") : single ? [single] : [])
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Falta id" }, { status: 400 });
+    }
+
+    const placeholders = ids.map(() => "?").join(",");
+    if (definitivo) {
+      await query(`DELETE FROM designer_designs WHERE id IN (${placeholders})`, ids);
+      return NextResponse.json({ success: true, deleted: ids.length, definitivo: true });
+    }
+
+    await query(
+      `UPDATE designer_designs SET deleted_at = NOW(), deleted_by = ? WHERE id IN (${placeholders})`,
+      [quien, ...ids]
+    );
+    return NextResponse.json({ success: true, deleted: ids.length, papelera: true });
+  } catch (error: any) {
+    console.error("DELETE /api/disenador/disenos:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
