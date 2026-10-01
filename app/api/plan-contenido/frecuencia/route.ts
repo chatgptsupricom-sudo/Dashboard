@@ -61,8 +61,12 @@ export async function GET(request: NextRequest) {
       [plan.id],
     );
 
+    // Parse holidays from plan
+    let holidays = [];
+    try { if (plan.holidays_json) holidays = JSON.parse(plan.holidays_json); } catch {}
+
     return NextResponse.json({
-      plan: { ...plan, cpms, savedContent, calendar },
+      plan: { ...plan, holidays, cpms, savedContent, calendar },
     });
   } catch (error) {
     console.error("[plan-contenido/frecuencia GET]", error);
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { year, month, cpms, savedContent, calendar } = body;
+    const { year, month, holidays, cpms, savedContent, calendar } = body;
 
     if (!year || !month) {
       return NextResponse.json(
@@ -97,7 +101,11 @@ export async function POST(request: NextRequest) {
     let planId: number;
     if (existing.length > 0) {
       planId = existing[0].id;
-      await query("UPDATE cpm_plans SET updated_at = NOW() WHERE id = ?", [planId]);
+      const holidaysJson = holidays ? JSON.stringify(holidays) : "[]";
+      await query(
+        "UPDATE cpm_plans SET updated_at = NOW(), holidays_json = ? WHERE id = ?",
+        [holidaysJson, planId],
+      );
       // Clean old data
       await query("DELETE FROM plan_calendar WHERE plan_id = ?", [planId]);
       await query("DELETE FROM plan_saved_content WHERE plan_id = ?", [planId]);
@@ -107,9 +115,10 @@ export async function POST(request: NextRequest) {
       );
       await query("DELETE FROM plan_cpms WHERE plan_id = ?", [planId]);
     } else {
+      const holidaysJson = holidays ? JSON.stringify(holidays) : "[]";
       const result = await query(
-        "INSERT INTO cpm_plans (year, month, status) VALUES (?, ?, 'borrador')",
-        [year, month],
+        "INSERT INTO cpm_plans (year, month, status, holidays_json) VALUES (?, ?, 'borrador', ?)",
+        [year, month, holidaysJson],
       );
       planId = result.insertId;
     }

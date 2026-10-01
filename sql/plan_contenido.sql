@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS cpm_plans (
   year INT NOT NULL,
   month INT NOT NULL,
   status ENUM('borrador','activo','cerrado') DEFAULT 'borrador',
+  holidays_json TEXT,
   created_by INT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

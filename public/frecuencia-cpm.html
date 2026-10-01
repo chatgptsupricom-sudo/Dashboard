@@ -222,6 +222,7 @@ textarea{resize:vertical;min-height:80px;font-family:'Cascadia Code',Consolas,mo
 <div class="section-body">
 <div class="btn-group" style="margin-bottom:10px">
 <button class="btn btn-primary btn-sm" onclick="saveToServer()">💾 Guardar configuración actual</button>
+<button class="btn btn-blue btn-sm" onclick="loadFromServer()">📂 Cargar plan del servidor</button>
 </div>
 <div id="savedList" class="saved-list"></div>
 </div></div>
@@ -458,9 +459,9 @@ async function saveToServer(){
   try{
     const calendarArr=[];let counter=1;const days=getDaysInMonth(state.month,state.year);
     for(let d=1;d<=days;d++){if(!isPublishable(state.month,state.year,d))continue;const key=dateKey(state.month,state.year,d);const pieces=state.calendar[key]||[];pieces.forEach(p=>{calendarArr.push({pieceNumber:counter,dateKey:key,cpmName:p.cpm,format:p.format,topic:p.topic||'',isSaved:p.saved||false});counter++})}
-    const res=await fetch(API_BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:state.year,month:state.month,cpms:state.cpms,savedContent:state.savedContent,calendar:calendarArr})});
+    const res=await fetch(API_BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year:state.year,month:state.month,holidays:state.holidays,cpms:state.cpms,savedContent:state.savedContent,calendar:calendarArr})});
     const data=await res.json();
-    if(data.success){showToast('ok','Plan guardado correctamente');notifyParent('saved')}
+    if(data.success){showToast('ok','Plan guardado correctamente');notifyParent('saved');loadSavedList()}
     else showToast('err',data.error||'Error al guardar');
   }catch{showToast('err','Error de conexión')}
 }
@@ -470,6 +471,7 @@ async function loadFromServer(){
     const res=await fetch(`${API_BASE}?year=${state.year}&month=${state.month}`);
     const data=await res.json();
     if(data.plan){
+      state.holidays=data.plan.holidays||[];
       state.cpms=data.plan.cpms||[];
       state.savedContent=data.plan.savedContent||[];
       state.calendar={};
@@ -478,11 +480,13 @@ async function loadFromServer(){
         state.calendar[c.dateKey].push({cpm:c.cpmName,format:c.format,topic:c.topic||'',saved:c.isSaved||false});
       });
       state.cpms.forEach(c=>{state.inventoryProducts[c.name]=c.products||[]});
-      renderCPMList();renderCPMTable();renderCalendar();renderValidation();renderTopicsPanel();renderSavedContent();renderFreqStats();
+      renderCPMList();renderCPMTable();renderCalendar();renderValidation();renderTopicsPanel();renderSavedContent();renderFreqStats();renderHolidays();renderMonthStats();
       showToast('ok','Plan cargado desde servidor');
-    }
+    }else{showToast('err','No hay plan guardado para este mes')}
   }catch{showToast('err','Error al cargar plan')}
 }
+
+function loadSavedList(){loadFromServer()}
 
 // ═══════════════════════════════════════════════
 // EXPORT EXCEL
