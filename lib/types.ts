@@ -83,6 +83,7 @@ export const rolePermissions: RolePermissions = {
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
       "vista_custom", // Vista HTML personalizada de AdminLeads
+      "frecuencia_cpm", // HTML de Frecuencia CPM (mismo flujo que vista_custom)
       "catalogo_disenos", // Catálogo de Diseños del Diseñador
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
@@ -178,6 +179,7 @@ export const rolePermissions: RolePermissions = {
       "banco_imagenes",
       "actividad",
       "vista_custom",
+      "frecuencia_cpm",
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
     ],
   },
@@ -338,6 +340,7 @@ export const rolePermissions: RolePermissions = {
       "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
       "editor_ia_disenador", // Editor con IA (Seedream vía KIE)
       "vista_custom",
+      "frecuencia_cpm",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
     ],
   },

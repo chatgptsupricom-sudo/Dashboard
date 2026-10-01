@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { ensureTables, getViewMeta, resolveView } from "@/lib/customView/store";
+import { ensureTables, FRECUENCIA_VIEW_NAME, getViewMeta, resolveView } from "@/lib/customView/store";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,17 @@ export async function GET(request: NextRequest) {
     const viewName = resolveView(new URL(request.url).searchParams.get("view"));
     const view = await getViewMeta(viewName);
     if (!view) return NextResponse.json({ exists: false });
+
+    if (viewName === FRECUENCIA_VIEW_NAME) {
+      return NextResponse.json({
+        exists: true,
+        mode: "app",
+        filename: view.filename,
+        size: view.file_size,
+        updatedAt: view.updated_at,
+        baseRevision: Number(view.base_revision) || 1,
+      });
+    }
 
     // ¿El HTML subido es la SPA de React? (marca en un <meta>)
     const rk = await query(
