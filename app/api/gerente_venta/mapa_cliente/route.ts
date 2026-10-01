@@ -55,12 +55,15 @@ export async function GET(request: NextRequest) {
         ["invoice_date", "<=", endDate],
       ];
 
-      // Agrupamos las facturas por cliente y sumamos el monto
+      // Agrupamos las facturas por cliente y sumamos el monto. Por
+      // commercial_partner_id: una factura hecha a un contacto de la empresa
+      // ("Empresa X, Juan Pérez") cuenta para la empresa, no se pierde en el
+      // filtro is_company de abajo.
       const invoiceGroupData =
         (await callOdooRPC<any[]>("account.move", "read_group", [
           invoiceDomain,
-          ["amount_total", "partner_id"],
-          ["partner_id"],
+          ["amount_total", "commercial_partner_id"],
+          ["commercial_partner_id"],
           0,
           0,
           "amount_total desc",
@@ -68,9 +71,9 @@ export async function GET(request: NextRequest) {
 
       const partnerIds: number[] = [];
       invoiceGroupData.forEach((inv) => {
-        if (inv.partner_id && inv.partner_id[0]) {
-          partnerIds.push(inv.partner_id[0]);
-          periodTotals.set(inv.partner_id[0], inv.amount_total || 0);
+        if (inv.commercial_partner_id && inv.commercial_partner_id[0]) {
+          partnerIds.push(inv.commercial_partner_id[0]);
+          periodTotals.set(inv.commercial_partner_id[0], inv.amount_total || 0);
         }
       });
 
@@ -217,6 +220,8 @@ export async function GET(request: NextRequest) {
       currency: "USD",
       applied_company_id: effectiveCompanyId,
       company_id: effectiveCompanyId,
+      // Usuario con sede (cids): solo ve el país de su sede, sin selector.
+      country_locked: userCompanyId !== 0,
       sellers: sellers,
     });
   } catch (error: any) {
