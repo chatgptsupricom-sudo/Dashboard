@@ -373,9 +373,11 @@ export default function ContadoCreditoPage() {
     !qModal || [f.cliente, f.documento, f.referencia, f.diario || ""].some((v) => v.toLowerCase().includes(qModal)));
 
   // Click en un mes de la barra de Por cobrar: sus facturas.
-  const [mesModal, setMesModal] = useState<{ open: boolean; label: string; meses: string[] }>({ open: false, label: "", meses: [] });
+  // plazo: click en la gráfica Monto por plazo (solo ese plazo).
+  const [mesModal, setMesModal] = useState<{ open: boolean; label: string; meses: string[]; plazo?: number }>({ open: false, label: "", meses: [] });
   const filasMes = (data?.detalle || [])
     .filter((d) => mesModal.meses.includes((d.fecha || "").slice(0, 7) || "sin-fecha"))
+    .filter((d) => mesModal.plazo === undefined || d.plazo === mesModal.plazo)
     .filter((d) => !qModal || [d.cliente, d.factura, d.vendedor].some((v) => v.toLowerCase().includes(qModal)))
     .sort((a, b) => b.monto - a.monto);
   const plazoTxt = (p: number | null) => (p ? `${p} días` : "Contado");
@@ -466,10 +468,16 @@ export default function ContadoCreditoPage() {
 
   const barData = data ? data.buckets.map((b) => ({
     label: `${b.dias}d`,
+    dias: b.dias,
     fullLabel: bucketLabel(b),
     monto: b.monto,
     montoDelMes: b.montoDelMes,
     montoAnteriores: b.montoAnteriores,
+    // Por cobrar: el plazo partido por mes de emisión, con los mismos grupos que la barra del total.
+    ...Object.fromEntries(porMesEmision.map((g, i) => [`m${i}`,
+      (data.detalle || [])
+        .filter((d) => d.plazo === b.dias && g.meses.includes((d.fecha || "").slice(0, 7) || "sin-fecha"))
+        .reduce((s, d) => s + d.monto, 0)])),
   })) : [];
 
   const bancoPieData = data ? data.bancos.map((b) => ({ name: b.journalName, value: b.monto })) : [];
@@ -856,10 +864,17 @@ export default function ContadoCreditoPage() {
                     <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={50} />
                     <Tooltip formatter={(v: number) => formatCurrency(v)} labelFormatter={(_, p) => p?.[0]?.payload?.fullLabel || ""} />
                     {/* Lista y no Fragment: Recharts 2 no busca las <Bar> dentro de un Fragment y no las dibuja. */}
-                    {esPorCobrar ? [
-                      <Bar key="mes" dataKey="montoDelMes" name={proyeccion ? "Vence en el mes" : "Facturado del mes"} stackId="pc" fill={BAR_COLOR} />,
-                      <Bar key="ant" dataKey="montoAnteriores" name={etAnteriores} stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />,
-                    ] : (
+                    {esPorCobrar ? porMesEmision.map((g, i) => (
+                      <Bar
+                        key={g.label}
+                        dataKey={`m${i}`}
+                        name={g.label}
+                        stackId="pc"
+                        fill={g.color}
+                        cursor="pointer"
+                        onClick={(p: any) => { setBusquedaModal(""); setMesModal({ open: true, label: g.label, meses: g.meses, plazo: p?.payload?.dias }); }}
+                      />
+                    )) : (
                       <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
                     )}
                   </BarChart>
@@ -911,7 +926,7 @@ export default function ContadoCreditoPage() {
       )}
 
       {/* Por cobrar: facturas de un mes de emisión (click en la barra) */}
-      <Modal open={mesModal.open} onClose={closeAllModals} title={`Por cobrar — facturado en ${mesModal.label}`} wide>
+      <Modal open={mesModal.open} onClose={closeAllModals} title={`Por cobrar — facturado en ${mesModal.label}${mesModal.plazo ? ` · ${mesModal.plazo} días` : ""}`} wide>
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
