@@ -15,6 +15,11 @@ import { esInterno } from "@/lib/cxc/cobros";
  * anteriores, contado y crédito, sin Supricom, sin Incobrables (vencidas
  * antes de 2025) ni SUPER TECHNO; esos dos se devuelven aparte. Los montos
  * son saldos, con IVA (Facturado muestra la base sin IVA).
+ *
+ * Mes futuro (proyección): no hay cierre que reconstruir. Se toma el saldo de
+ * hoy y se dejan solo las facturas que vencen hasta el fin de ese mes: lo que
+ * hay que cobrar para cerrarlo al día (vence en el mes + lo que ya venía de
+ * antes). Las que vencen después quedan para los meses siguientes.
  */
 
 export interface RenglonPorCobrar {
@@ -23,6 +28,7 @@ export interface RenglonPorCobrar {
   partnerId: number;
   partnerName: string;
   invoiceDate: string | null;
+  invoiceDateDue: string | null;
   moveType: string;
   saldo: number;
   /** Plazo de la factura; una nota de crédito sin plazo toma el de la factura que revierte. */
@@ -35,6 +41,8 @@ export interface RenglonPorCobrar {
 export interface PorCobrar {
   /** YYYY-MM-DD del corte. */
   corte: string;
+  /** Mes que todavía no empieza: renglones = saldo de hoy que vence hasta su fin. */
+  proyeccion: boolean;
   renglones: RenglonPorCobrar[];
   /** Incobrables en el corte, factura por factura (id → saldo), para su detalle. */
   viejas: Map<number, number>;
@@ -54,6 +62,9 @@ export async function porCobrarAlCierre(
   const finDia = new Date(periodoFin);
   finDia.setHours(23, 59, 59, 999);
   const corte = finDia < hoy ? finDia : hoy;
+  const proyeccion = new Date(finDia.getFullYear(), finDia.getMonth(), 1) > hoy;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const finStr = `${finDia.getFullYear()}-${pad(finDia.getMonth() + 1)}-${pad(finDia.getDate())}`;
   const inicioCorte = new Date(corte);
   inicioCorte.setHours(0, 0, 0, 0);
 
@@ -68,7 +79,7 @@ export async function porCobrarAlCierre(
   const moves: any[] = [];
   for (let i = 0; i < ids.length; i += 5000) {
     const page = await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], {
-      fields: ["id", "name", "partner_id", "invoice_date", "move_type", "invoice_payment_term_id",
+      fields: ["id", "name", "partner_id", "invoice_date", "invoice_date_due", "move_type", "invoice_payment_term_id",
         "reversed_entry_id", "invoice_user_id", "company_id"],
     });
     moves.push(...(page || []));
@@ -88,12 +99,14 @@ export async function porCobrarAlCierre(
   const renglones = moves
     .filter((m) => m.partner_id && !esInterno(m.partner_id[1] || ""))
     .filter((m) => partnerId === undefined || m.partner_id[0] === partnerId)
+    .filter((m) => !proyeccion || (m.invoice_date_due || m.invoice_date || "") <= finStr)
     .map((m) => ({
       id: m.id,
       name: m.name || "",
       partnerId: m.partner_id[0],
       partnerName: m.partner_id[1] || "Sin cliente",
       invoiceDate: m.invoice_date || null,
+      invoiceDateDue: m.invoice_date_due || null,
       moveType: m.move_type,
       saldo: r2(saldos.get(m.id) || 0),
       plazoId: idDe(m.invoice_payment_term_id) ?? plazoDeOrigen.get(idDe(m.reversed_entry_id) ?? -1),
@@ -102,6 +115,5 @@ export async function porCobrarAlCierre(
       companyId: idDe(m.company_id),
     }));
 
-  const y = corte.getFullYear(), mo = String(corte.getMonth() + 1).padStart(2, "0"), d = String(corte.getDate()).padStart(2, "0");
-  return { corte: `${y}-${mo}-${d}`, renglones, viejas, incobrables: r2(incobrables), relacionadas: r2(relacionadas) };
+  return { corte: `${corte.getFullYear()}-${pad(corte.getMonth() + 1)}-${pad(corte.getDate())}`, proyeccion, renglones, viejas, incobrables: r2(incobrables), relacionadas: r2(relacionadas) };
 }

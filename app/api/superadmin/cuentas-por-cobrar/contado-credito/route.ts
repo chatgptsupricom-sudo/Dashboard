@@ -133,14 +133,15 @@ async function renglonesCobradoDinero(
 
 // Lo que quedó abierto al cierre del período (lib/cxc/porCobrar.ts), con el
 // saldo de cada factura como monto. "Del mes" = factura emitida en el
-// período; "anterior" = deuda de meses previos que sigue abierta.
+// período; "anterior" = deuda de meses previos que sigue abierta. En un mes
+// futuro (proyección), "del mes" = vence en ese mes; "anterior" = ya vencía antes.
 async function renglonesPorCobrar(
   companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
-): Promise<{ renglones: Renglon[]; corte: string; incobrables: number; relacionadas: number }> {
-  const { corte, renglones, incobrables, relacionadas } = await porCobrarAlCierre(companyIds, monthEnd);
+): Promise<{ renglones: Renglon[]; corte: string; proyeccion: boolean; incobrables: number; relacionadas: number }> {
+  const { corte, proyeccion, renglones, incobrables, relacionadas } = await porCobrarAlCierre(companyIds, monthEnd);
   const startStr = monthStart.toISOString().split("T")[0];
   return {
-    corte, incobrables, relacionadas,
+    corte, proyeccion, incobrables, relacionadas,
     renglones: renglones
       .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
       .map((r) => ({
@@ -148,7 +149,9 @@ async function renglonesPorCobrar(
         partnerId: r.partnerId,
         partnerName: r.partnerName,
         paymentTermId: r.plazoId,
-        esDelMes: !!r.invoiceDate && r.invoiceDate >= startStr,
+        esDelMes: proyeccion
+          ? !!r.invoiceDateDue && r.invoiceDateDue >= startStr
+          : !!r.invoiceDate && r.invoiceDate >= startStr,
         journalId: undefined,
         journalName: "",
         sellerId: r.sellerId,
@@ -451,7 +454,7 @@ export async function GET(request: NextRequest) {
           : null,
         // Solo en "por_cobrar": corte usado y lo que queda fuera del reparto.
         porCobrar: porCobrar
-          ? { corte: porCobrar.corte, incobrables: porCobrar.incobrables, relacionadas: porCobrar.relacionadas, sinAplicar }
+          ? { corte: porCobrar.corte, proyeccion: porCobrar.proyeccion, incobrables: porCobrar.incobrables, relacionadas: porCobrar.relacionadas, sinAplicar }
           : null,
         buckets,
         detalle,

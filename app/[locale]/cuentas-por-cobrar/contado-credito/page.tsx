@@ -113,7 +113,7 @@ type ContadoCreditoData = {
   /** Solo en "cobrado": el total repartido en los tramos que usan los KPIs. */
   cuadre: Cuadre | null;
   /** Solo en "por_cobrar": corte y lo que queda fuera del reparto (sinAplicar solo si el corte es hoy). */
-  porCobrar?: { corte: string; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
+  porCobrar?: { corte: string; proyeccion?: boolean; incobrables: number; relacionadas: number; sinAplicar: number | null } | null;
   buckets: Bucket[];
   /** Cada factura / abono detrás de las tarjetas (para los Excel). */
   detalle?: Detalle[];
@@ -235,6 +235,14 @@ export default function ContadoCreditoPage() {
   }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, excluirRetenciones, excluirIva25, vendedorId, searchDebounced, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  // Facturado y Cobrado no tienen meses futuros: al salir de Por cobrar se vuelve al mes en curso.
+  useEffect(() => {
+    if (esPorCobrar) return;
+    if (selectedYear > now.getFullYear() || (selectedYear === now.getFullYear() && selectedMonth > now.getMonth() + 1)) {
+      setSelectedYear(now.getFullYear());
+      setSelectedMonth(now.getMonth() + 1);
+    }
+  }, [esPorCobrar, selectedYear, selectedMonth]);
 
   const openClientes = (titulo: string, clientes: ClienteDetalle[], filtro: Filtro = {}) => {
     setBusquedaModal("");
@@ -339,7 +347,7 @@ export default function ContadoCreditoPage() {
           [colFecha]: d.fecha || "",
           Plazo: d.plazo === null ? "Contado" : `${d.plazo} días`,
           ...(esCobrado ? { Banco: d.banco } : {}),
-          ...(esPorCobrar ? { Origen: d.delMes ? "Facturada en el mes" : "Meses anteriores" } : {}),
+          ...(esPorCobrar ? { Origen: d.delMes ? (proyeccion ? "Vence en el mes" : "Facturada en el mes") : etAnteriores } : {}),
           Vendedor: d.vendedor,
           [colMonto]: d.monto,
         })),
@@ -398,7 +406,13 @@ export default function ContadoCreditoPage() {
 
   const bucketLabel = (b: Bucket) => `${b.dias} días`;
 
-  const tituloTotal = esPorCobrar
+  // Mes futuro en Por cobrar: lo que vence hasta fin de ese mes (lib/cxc/porCobrar.ts).
+  const proyeccion = esPorCobrar && !!data?.porCobrar?.proyeccion;
+  const etDelMes = proyeccion ? "Vence en el mes" : "Facturas del mes";
+  const etAnteriores = proyeccion ? "Ya vencido antes" : "Meses anteriores";
+  const tituloTotal = proyeccion
+    ? "Por cobrar en el mes (proyección)"
+    : esPorCobrar
     ? "Por cobrar al cierre del mes"
     : esCobrado ? "Total Cobrado del Mes" : "Total Facturado del Mes";
   const tituloFacturasModal = esCobrado ? "Cobros" : esPorCobrar ? "Facturas abiertas" : "Facturas";
@@ -452,13 +466,15 @@ export default function ContadoCreditoPage() {
               <Calendar size={14} className="text-slate-400" />
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
                 {MONTHS.map((m, i) => {
-                  const isFuture = selectedYear === now.getFullYear() && i > now.getMonth();
+                  // Por cobrar admite meses futuros (proyección de vencimientos).
+                  const isFuture = !esPorCobrar && (selectedYear > now.getFullYear() || (selectedYear === now.getFullYear() && i > now.getMonth()));
                   return <option key={i} value={i + 1} disabled={isFuture}>{m}</option>;
                 })}
               </select>
               <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700 ml-1">
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
+                {esPorCobrar && <option value={2027}>2027</option>}
               </select>
               <button onClick={() => setUsarRangoFechas(true)} className="text-xs text-blue-600 hover:underline ml-1" title="Usar un rango de fechas especifico en vez de mes/año">
                 Rango
@@ -592,7 +608,12 @@ export default function ContadoCreditoPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">{tituloTotal}</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(data.totalFacturado)}</p>
-            {esPorCobrar && data.porCobrar && (
+            {proyeccion && data.porCobrar && (
+              <p className="text-xs text-slate-500 mt-1">
+                Saldo con IVA de hoy ({data.porCobrar.corte}) de las facturas que vencen hasta el fin de este mes: lo que vence en el mes más lo que ya venía vencido. Si se cobra en meses anteriores, baja.
+              </p>
+            )}
+            {esPorCobrar && !proyeccion && data.porCobrar && (
               <p className="text-xs text-slate-500 mt-1">
                 Saldo con IVA al {data.porCobrar.corte}{data.porCobrar.sinAplicar !== null ? " (hoy, el mes no ha cerrado)" : ""} — es la CxC con la que arranca el mes siguiente.
               </p>
@@ -600,17 +621,17 @@ export default function ContadoCreditoPage() {
             {esCobrado || esPorCobrar ? (
               <>
                 <div className="mt-4 h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
-                  <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`Facturas del mes: ${data.delMes.pct}%`} />
-                  <div className="h-full bg-amber-500" style={{ width: `${data.mesesAnteriores.pct}%` }} title={`Meses anteriores: ${data.mesesAnteriores.pct}%`} />
+                  <div className="h-full bg-blue-500" style={{ width: `${data.delMes.pct}%` }} title={`${etDelMes}: ${data.delMes.pct}%`} />
+                  <div className="h-full bg-amber-500" style={{ width: `${data.mesesAnteriores.pct}%` }} title={`${etAnteriores}: ${data.mesesAnteriores.pct}%`} />
                 </div>
                 <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                    Facturas del mes: <span className="font-semibold text-slate-700">{formatCurrency(data.delMes.monto)}</span> ({data.delMes.pct}%)
+                    {etDelMes}: <span className="font-semibold text-slate-700">{formatCurrency(data.delMes.monto)}</span> ({data.delMes.pct}%)
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                    Meses anteriores: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
+                    {etAnteriores}: <span className="font-semibold text-slate-700">{formatCurrency(data.mesesAnteriores.monto)}</span> ({data.mesesAnteriores.pct}%)
                   </span>
                 </div>
                 {esPorCobrar && data.porCobrar && (
@@ -749,11 +770,11 @@ export default function ContadoCreditoPage() {
                         <div className="mt-2 space-y-0.5 text-[11px]">
                           <p className="flex items-center gap-1.5 text-slate-600">
                             <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                            Del mes: <span className="font-semibold">{formatCurrency(b.montoDelMes)}</span>
+                            {proyeccion ? "Vence en el mes" : "Del mes"}: <span className="font-semibold">{formatCurrency(b.montoDelMes)}</span>
                           </p>
                           <p className="flex items-center gap-1.5 text-slate-600">
                             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                            Anteriores: <span className="font-semibold">{formatCurrency(b.montoAnteriores)}</span>
+                            {proyeccion ? "Ya vencido" : "Anteriores"}: <span className="font-semibold">{formatCurrency(b.montoAnteriores)}</span>
                           </p>
                         </div>
                       )}
@@ -775,8 +796,8 @@ export default function ContadoCreditoPage() {
                     <Tooltip formatter={(v: number) => formatCurrency(v)} labelFormatter={(_, p) => p?.[0]?.payload?.fullLabel || ""} />
                     {/* Lista y no Fragment: Recharts 2 no busca las <Bar> dentro de un Fragment y no las dibuja. */}
                     {esPorCobrar ? [
-                      <Bar key="mes" dataKey="montoDelMes" name="Facturado del mes" stackId="pc" fill={BAR_COLOR} />,
-                      <Bar key="ant" dataKey="montoAnteriores" name="Meses anteriores" stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />,
+                      <Bar key="mes" dataKey="montoDelMes" name={proyeccion ? "Vence en el mes" : "Facturado del mes"} stackId="pc" fill={BAR_COLOR} />,
+                      <Bar key="ant" dataKey="montoAnteriores" name={etAnteriores} stackId="pc" fill={BAR_COLOR_ANTERIORES} radius={[0, 4, 4, 0]} />,
                     ] : (
                       <Bar dataKey="monto" fill={BAR_COLOR} radius={[0, 4, 4, 0]} />
                     )}
