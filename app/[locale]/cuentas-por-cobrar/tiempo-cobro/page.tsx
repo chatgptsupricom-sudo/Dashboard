@@ -127,23 +127,53 @@ function BotonExcel({ onClick, texto = "Excel" }: { onClick: () => void; texto?:
   );
 }
 
+type ColumnaOrden = Exclude<keyof Grupo, "clave"> | "clave";
+
 function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onClick?: (g: any, i: number) => void }) {
+  // Sin orden elegido se respeta el del servidor (por monto). Click en un
+  // encabezado ordena por esa columna; otro click invierte.
+  const [orden, setOrden] = useState<{ col: ColumnaOrden; asc: boolean } | null>(null);
+  const ordenadas = useMemo(() => {
+    if (!orden) return filas;
+    const { col, asc } = orden;
+    return [...filas].sort((a, b) => {
+      const r = col === "clave"
+        ? a.clave.localeCompare(b.clave, "es", { numeric: true, sensitivity: "base" })
+        : a[col] - b[col];
+      return asc ? r : -r;
+    });
+  }, [filas, orden]);
+  // Nombre empieza A→Z; los números, de mayor a menor.
+  const ordenarPor = (col: ColumnaOrden) =>
+    setOrden((o) => (o?.col === col ? { col, asc: !o.asc } : { col, asc: col === "clave" }));
+
+  const Th = ({ col, label, ayuda, className = "py-2 px-3 text-right" }: { col: ColumnaOrden; label: string; ayuda?: string; className?: string }) => (
+    <th className={`${className} font-medium`} aria-sort={orden?.col === col ? (orden.asc ? "ascending" : "descending") : "none"}>
+      <div className={`flex items-center gap-1 ${className.includes("text-right") ? "justify-end" : ""}`}>
+        <button type="button" onClick={() => ordenarPor(col)} className={`uppercase tracking-wide hover:text-slate-700 ${orden?.col === col ? "text-slate-700" : ""}`}>
+          {label} <span className="inline-block w-2">{orden?.col === col ? (orden.asc ? "▲" : "▼") : ""}</span>
+        </button>
+        {ayuda && <ColumnHeader label="" tooltip={ayuda} />}
+      </div>
+    </th>
+  );
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-100 text-left text-xs text-slate-400 uppercase tracking-wide">
-            <th className="py-2 pr-3 font-medium">{titulo}</th>
-            <th className="py-2 px-3 font-medium text-right"><ColumnHeader label="Tarda en pagar" tooltip={AYUDA.promedio} className="justify-end" /></th>
-            <th className="py-2 px-3 font-medium text-right"><ColumnHeader label="Ponderado" tooltip={AYUDA.ponderado} className="justify-end" /></th>
-            <th className="py-2 px-3 font-medium text-right"><ColumnHeader label="Plazo" tooltip={AYUDA.plazo} className="justify-end" /></th>
-            <th className="py-2 px-3 font-medium text-right"><ColumnHeader label="A tiempo" tooltip={AYUDA.aTiempo} className="justify-end" /></th>
-            <th className="py-2 px-3 font-medium text-right">Facturas</th>
-            <th className="py-2 pl-3 font-medium text-right">Monto</th>
+          <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+            <Th col="clave" label={titulo} className="py-2 pr-3" />
+            <Th col="promedioDias" label="Tarda en pagar" ayuda={AYUDA.promedio} />
+            <Th col="promedioPonderado" label="Ponderado" ayuda={AYUDA.ponderado} />
+            <Th col="plazoPromedio" label="Plazo" ayuda={AYUDA.plazo} />
+            <Th col="aTiempoPct" label="A tiempo" ayuda={AYUDA.aTiempo} />
+            <Th col="facturas" label="Facturas" />
+            <Th col="monto" label="Monto" className="py-2 pl-3 text-right" />
           </tr>
         </thead>
         <tbody>
-          {filas.map((g, i) => (
+          {ordenadas.map((g, i) => (
             <tr
               key={g.clave + i}
               onClick={onClick ? () => onClick(g, i) : undefined}
