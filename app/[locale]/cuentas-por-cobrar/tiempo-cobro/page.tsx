@@ -104,8 +104,6 @@ function agruparPorCliente(fs: Factura[]) {
 
 const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const ANIO_COMPLETO = 0;
-const RANGO = -1;
 
 /** Excel con desglose: hoja resumen (lo que muestra la tabla) + hoja con cada factura detrás. */
 function descargarDesglose(nombre: string, resumen: { nombre: string; filas: Record<string, unknown>[] }, facturas: Factura[], agrupador?: { titulo: string; valor: (f: Factura) => string }) {
@@ -171,15 +169,15 @@ export default function TiempoCobroPage() {
   const userCids = user?.cids ? Number(user.cids) : undefined;
   const now = new Date();
   const [empresa, setEmpresa] = useState("");
-  // mes: 1-12, ANIO_COMPLETO o RANGO (usa rangoDesde/rangoHasta).
+  const [modo, setModo] = useState<"mes" | "anio" | "rango">("mes");
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [anio, setAnio] = useState(now.getFullYear());
   const [rangoDesde, setRangoDesde] = useState(fechaLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
   const [rangoHasta, setRangoHasta] = useState(fechaLocal(now));
-  const rangoInvalido = mes === RANGO && (!rangoDesde || !rangoHasta || rangoDesde > rangoHasta);
+  const rangoInvalido = modo === "rango" && (!rangoDesde || !rangoHasta || rangoDesde > rangoHasta);
   const [desde, hasta] =
-    mes === RANGO ? [rangoDesde, rangoHasta]
-    : mes === ANIO_COMPLETO ? [`${anio}-01-01`, `${anio}-12-31`]
+    modo === "rango" ? [rangoDesde, rangoHasta]
+    : modo === "anio" ? [`${anio}-01-01`, `${anio}-12-31`]
     : [fechaLocal(new Date(anio, mes - 1, 1)), fechaLocal(new Date(anio, mes, 0))];
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
@@ -218,9 +216,9 @@ export default function TiempoCobroPage() {
   }, [detalle]);
 
   const r = data?.resumen;
-  const periodo = mes === RANGO ? `${desde}_a_${hasta}` : mes === ANIO_COMPLETO ? String(anio) : `${MONTHS[mes - 1]}_${anio}`;
-  const periodoTexto = mes === RANGO ? `del ${formatDate(desde)} al ${formatDate(hasta)}`
-    : mes === ANIO_COMPLETO ? `en ${anio}` : `en ${MONTHS[mes - 1]} ${anio}`;
+  const periodo = modo === "rango" ? `${desde}_a_${hasta}` : modo === "anio" ? String(anio) : `${MONTHS[mes - 1]}_${anio}`;
+  const periodoTexto = modo === "rango" ? `del ${formatDate(desde)} al ${formatDate(hasta)}`
+    : modo === "anio" ? `en ${anio}` : `en ${MONTHS[mes - 1]} ${anio}`;
   const q = busqueda.trim().toLowerCase();
   const clientesFiltrados = useMemo(
     () => (data?.clientes || []).filter((c) => !q || c.clave.toLowerCase().includes(q)),
@@ -282,21 +280,33 @@ export default function TiempoCobroPage() {
               <span className="text-sm text-slate-700">{COMPANY_MAP[userCids] || `Sede ${userCids}`}</span>
             </div>
           )}
+          <div className="flex items-center bg-slate-100 rounded-lg p-1" role="group" aria-label="Tipo de período">
+            {(["mes", "anio", "rango"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setModo(m)}
+                aria-pressed={modo === m}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${modo === m ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+              >
+                {m === "mes" ? "Mes" : m === "anio" ? "Año" : "Rango de fechas"}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
             <Calendar size={14} className="text-slate-400" />
-            <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
-              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-              <option value={ANIO_COMPLETO}>Año completo</option>
-              <option value={RANGO}>Rango de fechas</option>
-            </select>
-            {mes === RANGO ? (
+            {modo === "mes" && (
+              <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))} aria-label="Mes" className="text-sm bg-transparent border-none outline-none text-slate-700">
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            )}
+            {modo === "rango" ? (
               <>
                 <input type="date" value={rangoDesde} max={rangoHasta} onChange={(e) => setRangoDesde(e.target.value)} aria-label="Fecha inicio" className="text-sm bg-transparent border-none outline-none text-slate-700" />
                 <span className="text-xs text-slate-400">a</span>
                 <input type="date" value={rangoHasta} min={rangoDesde} onChange={(e) => setRangoHasta(e.target.value)} aria-label="Fecha fin" className="text-sm bg-transparent border-none outline-none text-slate-700" />
               </>
             ) : (
-              <select value={anio} onChange={(e) => setAnio(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
+              <select value={anio} onChange={(e) => setAnio(parseInt(e.target.value))} aria-label="Año" className="text-sm bg-transparent border-none outline-none text-slate-700">
                 {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             )}
