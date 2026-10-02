@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import {
   cargarFiltros,
   cargarDesglose,
+  cargarComparativo,
   clientesInactivos,
   COMPANY_IDS_ALL,
   COMPANY_NAME,
@@ -14,6 +15,8 @@ import {
  *   ?tipo=filtros                       -> selectores (vendedores / clientes / marcas)
  *   ?tipo=desglose&desde&hasta&...      -> desglose agregado + totales
  *   ?tipo=inactivos&meses=3|6&vendedor  -> cartera sin compras en N meses
+ *   ?tipo=comparativo&vendedor&cliente&marca -> facturación por mes de toda la
+ *                                         historia (Smartbit antes del corte)
  *
  * Alcance: gerencia de ventas ve su compañía (payload.cids); superadmin ve las
  * tres sedes y puede acotar con ?sede=. El rango de fechas se limita a 12 meses.
@@ -102,6 +105,18 @@ export async function GET(req: NextRequest) {
         vendedorUserId,
       });
       return NextResponse.json({ meses, clientes, sedes });
+    }
+
+    if (tipo === "comparativo") {
+      const vendedorRaw = searchParams.get("vendedor");
+      const clienteRaw = searchParams.get("cliente");
+      const serie = await cargarComparativo({
+        companyIds,
+        vendedorUserId: vendedorRaw && /^\d+$/.test(vendedorRaw) ? parseInt(vendedorRaw, 10) : null,
+        clienteId: clienteRaw && /^\d+$/.test(clienteRaw) ? parseInt(clienteRaw, 10) : null,
+        marca: searchParams.get("marca"),
+      });
+      return NextResponse.json({ serie, sedes });
     }
 
     // tipo === "desglose"
