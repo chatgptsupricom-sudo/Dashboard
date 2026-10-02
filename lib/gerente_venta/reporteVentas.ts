@@ -7,8 +7,10 @@
  *  2. Clientes inactivos: la cartera asignada a cada vendedor (res.partner.user_id
  *     en Odoo) que no registra compras en los últimos 3 o 6 meses.
  *
- * Fuente: `account.move.line` de facturas de cliente (`out_invoice`) menos notas
- * de crédito (`out_refund`), estado `posted`, de las compañías en alcance
+ * Fuente: `account.move.line` de facturas de cliente (`out_invoice`), estado
+ * `posted`, de las compañías en alcance. Sin notas de crédito: es un reporte
+ * de lo vendido, y una devolución de una factura de otro mes salía como fila
+ * negativa (ej. RFCLIE/2026/00152 de sept. revirtiendo la 5035619 de mayo)
  * (7 Panamá · 9 Valencia · 10 Caracas), `invoice_date` dentro del rango pedido.
  * La marca sale de `product.(product).x_studio_marca` (mismo patrón que el
  * reporte trimestral).
@@ -215,7 +217,7 @@ export async function cargarDesglose(opts: {
   }
 
   const dom: any[] = [
-    ["move_id.move_type", "in", ["out_invoice", "out_refund"]],
+    ["move_id.move_type", "=", "out_invoice"],
     ["move_id.state", "=", "posted"],
     ["move_id.company_id", "in", opts.companyIds],
     ["move_id.invoice_date", ">=", opts.desde],
@@ -241,7 +243,7 @@ export async function cargarDesglose(opts: {
   const moveIds = [...new Set(crudas.map((l: any) => l.move_id?.[0]).filter(Boolean))] as number[];
   const productIds = [...new Set(crudas.map((l: any) => l.product_id?.[0]).filter(Boolean))] as number[];
 
-  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id", "move_type"]);
+  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id"]);
   const prods = await readEnLotes("product.product", productIds, ["x_studio_marca"]);
 
   const marcaDe = (id: number | undefined): string => {
@@ -261,12 +263,11 @@ export async function cargarDesglose(opts: {
     if (clienteExcluido(nombreCliente)) continue;
 
     const mv = moves.get(l.move_id?.[0]) || {};
-    const signo = mv.move_type === "out_refund" ? -1 : 1;
     const vendedor = limpiarVendedor(mv.invoice_user_id?.[1] || "") || "(sin vendedor)";
     const marcaProd = marcaDe(l.product_id?.[0]);
     const producto = limpiarProducto(l.product_id?.[1] || "") || "(sin producto)";
-    const cantidad = signo * (Number(l.quantity) || 0);
-    const total = signo * (Number(l.price_subtotal) || 0);
+    const cantidad = Number(l.quantity) || 0;
+    const total = Number(l.price_subtotal) || 0;
 
     const k = `${vendedor}|||${nombreCliente}|||${marcaProd}|||${producto}`;
     const acc =
@@ -308,7 +309,8 @@ export interface PuntoMensual {
 }
 
 /**
- * Facturación por mes con los mismos filtros del desglose (marca, vendedor,
+ * Facturación por mes (sin notas de crédito, igual que el desglose) con los
+ * mismos filtros del desglose (marca, vendedor,
  * cliente, sede), desde el primer mes con datos hasta hoy. Antes de
  * CORTE_ODOO sale del histórico de Smartbit (lib/smartbit.ts), después de
  * Odoo: allá Odoo solo tiene las facturas abiertas migradas.
@@ -337,7 +339,7 @@ export async function cargarComparativo(opts: {
 
   // Odoo, desde el corte: agrupado por mes y tipo en el servidor.
   const dom: any[] = [
-    ["move_type", "in", ["out_invoice", "out_refund"]],
+    ["move_type", "=", "out_invoice"],
     ["parent_state", "=", "posted"],
     ["company_id", "in", opts.companyIds],
     ["invoice_date", ">=", CORTE_ODOO],
@@ -350,18 +352,20 @@ export async function cargarComparativo(opts: {
   if (filtraMarca) dom.push(["product_id", "in", productos.map((p: any) => p.id)]);
   const grupos =
     (await callOdooRPC<any[]>("account.move.line", "read_group", [
-      dom, ["price_subtotal:sum"], ["invoice_date:month", "move_type"],
+      dom, ["price_subtotal:sum"], ["invoice_date:month"],
     ], { lazy: false })) || [];
   for (const g of grupos) {
     const mes = String(g.__range?.["invoice_date:month"]?.from || "").slice(0, 7);
     if (!mes) continue;
-    sumar(mes, (g.move_type === "out_refund" ? -1 : 1) * (Number(g.price_subtotal) || 0));
+    sumar(mes, Number(g.price_subtotal) || 0);
   }
 
   // Smartbit, antes del corte.
   const where = [
     `company_id IN (${opts.companyIds.map(() => "?").join(",")})`,
     "fecha < ?",
+    // En Smartbit las notas de crédito vienen como venta negativa.
+    "venta > 0",
     SQL_SIN_INTERCOMPANIA,
   ];
   const params: any[] = [...opts.companyIds, CORTE_ODOO];
@@ -463,7 +467,7 @@ export async function clientesInactivos(opts: {
   const grupos =
     (await callOdooRPC<any[]>("account.move", "read_group", [
       [
-        ["move_type", "in", ["out_invoice", "out_refund"]],
+        ["move_type", "=", "out_invoice"], // una nota de crédito no es una compra
         ["state", "=", "posted"],
         ["company_id", "in", opts.companyIds],
         ["partner_id", "in", partnerIds],
