@@ -59,7 +59,10 @@ export interface SeriesCxC {
   carteraVencidaSemana: (string | null)[];
   /** % recuperado en cada semana. */
   recuperacionSemana: (string | null)[];
-  /** Cartera vencida de HOY, con el mismo método que las semanas. */
+  /**
+   * Cartera vencida en `corteCartera` (hoy, o el cierre del mes elegido si ya
+   * terminó), con el mismo método que las semanas.
+   */
   carteraHoy: CarteraHoy;
   /** Lo mismo, por sede (company_id). */
   carteraHoyPorSede: Record<number, CarteraHoy>;
@@ -160,6 +163,8 @@ export async function calcularSeriesCxC(
   companyIds: number[],
   semanas: SemanaRango[],
   hoy: Date,
+  /** Corte de `carteraHoy`: el cierre del mes elegido si ya pasó; si no, hoy. */
+  corteCartera: Date = hoy,
 ): Promise<SeriesCxC> {
   const vacio: SeriesCxC = {
     carteraVencidaSemana: semanas.map(() => null),
@@ -302,7 +307,9 @@ export async function calcularSeriesCxC(
     const dia = new Date(corte);
     dia.setHours(0, 0, 0, 0);
     for (const f of todas) {
-      if (f.vieja || f.relacionada) continue;
+      // Solo crédito: el contado no tiene plazo, así que "vencido" no le aplica
+      // (y es lo que separaba el total de la CxC final del CEI).
+      if (f.vieja || f.relacionada || !f.credito) continue;
       if (companyId !== undefined && f.companyId !== companyId) continue;
       // Una factura emitida después del corte no formaba parte de la cartera
       // en ese momento: sin este filtro, las semanas pasadas salen infladas.
@@ -419,7 +426,7 @@ export async function calcularSeriesCxC(
     return `${Math.round((recuperado / denominador) * 100)}%`;
   });
 
-  const hoyCartera = carteraVencidaEn(hoy);
+  const hoyCartera = carteraVencidaEn(corteCartera);
   const redondear = (c: CarteraHoy): CarteraHoy => ({
     ...c,
     vencido: Math.round(c.vencido * 100) / 100,
@@ -432,7 +439,7 @@ export async function calcularSeriesCxC(
     carteraVencidaSemana,
     recuperacionSemana,
     carteraHoy: redondear(hoyCartera),
-    carteraHoyPorSede: Object.fromEntries(companyIds.map((cid) => [cid, redondear(carteraVencidaEn(hoy, cid))])),
+    carteraHoyPorSede: Object.fromEntries(companyIds.map((cid) => [cid, redondear(carteraVencidaEn(corteCartera, cid))])),
     carteraCEI,
     saldosEn: (corte) => {
       const saldos = new Map<number, number>();

@@ -88,6 +88,13 @@ export async function GET(request: NextRequest) {
 
     const today = new Date();
     today.setHours(23, 59, 59, 999);
+    // Corte de Cartera Vencida (tarjeta, antigüedad, por sede y su modal): el
+    // cierre del período elegido si ya terminó; si no, hoy. Antes era siempre
+    // hoy y no se podía comparar con la CxC final del CEI, que corta al cierre.
+    const finPeriodo = new Date(monthEnd);
+    finPeriodo.setHours(23, 59, 59, 999);
+    const corteCartera = finPeriodo < today ? finPeriodo : today;
+    const carteraAlCierre = corteCartera !== today;
 
     const companyIds = empresa && COMPANY_MAP[empresa]
       ? [COMPANY_MAP[empresa]]
@@ -312,12 +319,15 @@ export async function GET(request: NextRequest) {
     // El CEI usa el saldo contable al inicio y al final del mes, pero le resta
     // el contado y la cartera vieja por factura con esas mismas series, así
     // que va después (seriesSemanales.ts → carteraCEI).
-    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today);
+    const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today, corteCartera);
 
     // Incobrables: la cartera vieja (vencida antes de 2025) que los KPIs dejan
     // fuera (lib/cxc/carteraVieja.ts), factura por factura con el mismo cálculo
     // que su modal. El reporte de Odoo metía además pagos sin aplicar viejos.
-    const { viejas } = seriesCxc.saldosEn(today);
+    const { viejas, saldos: saldosHoy, credito: creditoHoy } = seriesCxc.saldosEn(today);
+    // Contado abierto hoy: fuera de Cartera Vencida (solo crédito), pero es
+    // parte del total de Odoo, así que va como fila propia del cuadre.
+    const contadoAbierto = Math.round([...saldosHoy].reduce((s, [id, v]) => (creditoHoy.has(id) ? s : s + v), 0) * 100) / 100;
     const clientesViejas = viejas.size
       ? await callOdooRPC<any[]>("account.move", "read", [[...viejas.keys()]], { fields: ["id", "partner_id"] })
       : [];
@@ -380,6 +390,9 @@ export async function GET(request: NextRequest) {
             meta: cxcMetas["cartera_vencida"] || 10,
             saldoVencido: seriesCxc.carteraHoy.vencido,
             carteraTotal: seriesCxc.carteraHoy.total,
+            // YYYY-MM-DD del corte; `alCierre` = período ya cerrado (no es hoy).
+            corte: `${corteCartera.getFullYear()}-${String(corteCartera.getMonth() + 1).padStart(2, "0")}-${String(corteCartera.getDate()).padStart(2, "0")}`,
+            alCierre: carteraAlCierre,
             // SUPER TECHNO queda fuera del % pero su saldo se muestra.
             relacionadas: efectividadCalc.relacionadas,
           },
@@ -459,10 +472,15 @@ export async function GET(request: NextRequest) {
           totalOverdue: seriesCxc.carteraHoy.vencido,
           openInvoiceCount: seriesCxc.carteraHoy.facturas,
           overdueInvoiceCount: seriesCxc.carteraHoy.facturasVencidas,
-          incobrables: incobrables.saldo,
-          sinAplicar,
-          relacionadas: efectividadCalc.relacionadas,
-          totalOdoo: Math.round(totalReceivable * 100) / 100,
+          // El cuadre contra el total de Odoo es de HOY: con un mes cerrado la
+          // cartera de arriba es al cierre y no cuadraría, así que no se manda.
+          ...(carteraAlCierre ? {} : {
+            incobrables: incobrables.saldo,
+            contado: contadoAbierto,
+            sinAplicar,
+            relacionadas: efectividadCalc.relacionadas,
+            totalOdoo: Math.round(totalReceivable * 100) / 100,
+          }),
         },
         filters: {
           empresa,

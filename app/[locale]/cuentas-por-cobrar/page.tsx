@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
+import { ColumnHeader } from "@/components/compras/column-header";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -38,6 +39,19 @@ function formatDate(dateStr: string | null): string {
   const [y, m, d] = dateStr.split(" ")[0].split("-");
   return `${d}/${m}/${y}`;
 }
+
+/** ⓘ con burbuja dentro de una tarjeta clicable: el click en el ícono no abre el detalle. */
+function Ayuda({ texto }: { texto: string }) {
+  return (
+    <span onClick={(e) => e.stopPropagation()} className="normal-case tracking-normal font-normal">
+      <ColumnHeader label="" tooltip={texto} />
+    </span>
+  );
+}
+
+const AYUDA_CXC =
+  "CxC = saldo contable de la cuenta por cobrar en el corte, solo crédito: resta los pagos sin aplicar y suma los asientos manuales; " +
+  "sin contado, incobrables, Supricom ni SUPER TECHNO. Por eso difiere un poco del total de Cartera Vencida, que solo suma facturas a crédito abiertas.";
 
 function getTrafficDot(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
   if (invert) {
@@ -356,6 +370,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
+                  <Ayuda texto={`CEI = (CxC inicial + ventas a crédito − CxC final) ÷ (CxC inicial + ventas a crédito − CxC final no vencida). CxC final = al cierre del mes (o hoy si el mes sigue abierto). ${AYUDA_CXC}`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("efectividad_cobranza", 35)}</span>
               </div>
@@ -384,6 +399,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cartera Vencida</span>
+                  <Ayuda texto={`% del saldo abierto que ya pasó su fecha de vencimiento, al ${formatDate(data.kpis.carteraVencida.corte)}${data.kpis.carteraVencida.alCierre ? " (cierre del mes elegido)" : " (hoy)"}. Total = facturas y notas de crédito abiertas A CRÉDITO (el contado no tiene plazo, no entra), sin incobrables ni SUPER TECHNO. Casi igual a la CxC final de Efectividad: esa además resta los pagos sin aplicar y suma los asientos manuales.`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("cartera_vencida", 30)}</span>
               </div>
@@ -395,6 +411,7 @@ export default function CxcDashboardPage() {
                 <span>Vencido: {formatCurrency(data.kpis.carteraVencida.saldoVencido)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Total: {formatCurrency(data.kpis.carteraVencida.carteraTotal)}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Al {formatDate(data.kpis.carteraVencida.corte)}{data.kpis.carteraVencida.alCierre ? " (cierre del mes)" : " (hoy)"}</div>
               <AvisoRelacionada monto={data.kpis.carteraVencida.relacionadas} />
             </div>
 
@@ -422,6 +439,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
+                  <Ayuda texto={`DSO = CxC crédito al cierre ÷ ventas a crédito del mes × días del mes. Usa la misma CxC final que Efectividad. En el mes en curso se calcula con los días que van del mes: los primeros días hay pocas ventas contra toda la cartera y el DSO sale alto; se estabiliza hacia mitad de mes. ${AYUDA_CXC}`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
               </div>
@@ -458,6 +476,7 @@ export default function CxcDashboardPage() {
               <div className="flex items-center gap-2 mb-4">
                 <DollarSign size={18} className="text-blue-600" />
                 <h3 className="font-semibold text-slate-700 text-sm">Resumen Cartera</h3>
+                <span className="text-[11px] text-slate-400">al {formatDate(data.kpis.carteraVencida.corte)}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
@@ -476,6 +495,12 @@ export default function CxcDashboardPage() {
                       <span className="text-slate-500">Incobrables (antes de 2025)</span>
                       <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables)}</span>
                     </div>
+                    {data.summary.contado !== undefined && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Contado abierto</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.contado)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Pagos sin aplicar</span>
                       <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar)}</span>
@@ -508,6 +533,7 @@ export default function CxcDashboardPage() {
               <div className="flex items-center gap-2 mb-4">
                 <BarChart3 size={18} className="text-blue-600" />
                 <h3 className="font-semibold text-slate-700 text-sm">Antigüedad de Cartera</h3>
+                <span className="text-[11px] text-slate-400">al {formatDate(data.kpis.carteraVencida.corte)} · días vencidos</span>
               </div>
               <div className="space-y-2">
                 {Object.entries(data.agingDistribution).map(([band, value]) => (
@@ -1248,6 +1274,11 @@ export default function CxcDashboardPage() {
                   </div>
                 </div>
                 <AvisoRelacionada monto={kpiData.summary.relacionadas} />
+                {kpiData.summary.corte && (
+                  <p className="text-[11px] text-slate-500">
+                    Saldos al {formatDate(kpiData.summary.corte)}{kpiData.summary.alCierre ? " (cierre del mes elegido)" : " (hoy)"} · bandas por días vencidos a esa fecha.
+                  </p>
+                )}
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
                   <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
