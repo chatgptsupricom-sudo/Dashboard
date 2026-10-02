@@ -25,7 +25,7 @@ import {
   Search,
   UserX,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { useAutoRefreshVentas } from "@/lib/hooks/useAutoRefreshVentas";
 import { HistorialFacturacion } from "@/components/dashboard/HistorialFacturacion";
@@ -115,6 +115,7 @@ export function ReporteVentas() {
   } | null>(null);
   const [inactivos, setInactivos] = useState<ClienteInactivo[]>([]);
   const [serie, setSerie] = useState<{ month: string; total: number }[]>([]);
+  const graficaRef = useRef<HTMLDivElement>(null);
 
   const [cargandoFiltros, setCargandoFiltros] = useState(true);
   const [cargando, setCargando] = useState(false);
@@ -234,30 +235,57 @@ export function ReporteVentas() {
   });
 
   // ── Export ──
-  const exportar = () => {
+  const exportar = async () => {
     if (tab === "desglose") {
-      const rows = filas.map((f) => ({
-        Vendedor: f.vendedor,
-        Cliente: f.cliente,
-        Marca: f.marca,
-        Producto: f.producto,
-        Cantidad: f.cantidad,
-        "Precio de Venta": f.precioVenta,
-        "Total ($)": f.total,
-      }));
-      rows.push({
-        Vendedor: "",
-        Cliente: "",
-        Marca: "",
-        Producto: "TOTAL",
-        Cantidad: totales?.cantidad ?? 0,
-        "Precio de Venta": 0,
-        "Total ($)": totales?.total ?? 0,
-      } as any);
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Desglose");
-      XLSX.writeFile(wb, `reporte_ventas_${desde}_a_${hasta}.xlsx`);
+      // ExcelJS (no SheetJS): la hoja "Comparativo" lleva la imagen de la grafica.
+      const [{ default: ExcelJS }, { saveAs }] = await Promise.all([import("exceljs"), import("file-saver")]);
+      const wb = new ExcelJS.Workbook();
+      const money = '"$"#,##0.00';
+
+      const ws = wb.addWorksheet("Desglose");
+      ws.columns = [
+        { header: "Vendedor", key: "vendedor", width: 24 },
+        { header: "Cliente", key: "cliente", width: 38 },
+        { header: "Marca", key: "marca", width: 16 },
+        { header: "Producto", key: "producto", width: 48 },
+        { header: "Cantidad", key: "cantidad", width: 12 },
+        { header: "Precio de Venta", key: "precioVenta", width: 16, style: { numFmt: money } },
+        { header: "Total ($)", key: "total", width: 16, style: { numFmt: money } },
+      ];
+      ws.getRow(1).font = { bold: true };
+      ws.addRows(filas);
+      const filaTotal = ws.addRow({ producto: "TOTAL", cantidad: totales?.cantidad ?? 0, total: totales?.total ?? 0 });
+      filaTotal.font = { bold: true };
+
+      if (serie.length > 0) {
+        const wc = wb.addWorksheet("Comparativo");
+        wc.getCell("A1").value = `Comparativo mensual${marca !== MARCA_TODAS ? ` · ${marca}` : ""}`;
+        wc.getCell("A1").font = { bold: true, size: 14 };
+        wc.getRow(3).values = ["Mes", "Total ($)", "Vs mes anterior", "Vs mismo mes año anterior"];
+        wc.getRow(3).font = { bold: true };
+        wc.columns = [{ width: 10 }, { width: 16 }, { width: 16 }, { width: 24 }];
+        const porMes = new Map(serie.map((p) => [p.month, p.total]));
+        const pct = (actual: number, base?: number) => (base ? (actual - base) / Math.abs(base) : null);
+        serie.forEach((p, i) => {
+          const [y, m] = p.month.split("-").map(Number);
+          const r = wc.addRow([p.month, p.total, pct(p.total, serie[i - 1]?.total), pct(p.total, porMes.get(`${y - 1}-${String(m).padStart(2, "0")}`))]);
+          r.getCell(2).numFmt = money;
+          r.getCell(3).numFmt = "0.0%";
+          r.getCell(4).numFmt = "0.0%";
+        });
+        const png = graficaRef.current ? await graficaComoPng(graficaRef.current) : null;
+        if (png) {
+          const img = wb.addImage({ base64: png.base64, extension: "png" });
+          const ancho = 760;
+          wc.addImage(img, { tl: { col: 5, row: 2 }, ext: { width: ancho, height: (ancho * png.alto) / png.ancho } });
+        }
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      saveAs(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `reporte_ventas_${desde}_a_${hasta}.xlsx`,
+      );
     } else {
       const rows = inactivos.map((c) => ({
         Vendedor: c.vendedor,
@@ -493,10 +521,12 @@ export function ReporteVentas() {
       {tab === "desglose" && serie.length > 0 && (
         <div className="space-y-2">
           <ResumenComparativo serie={serie} mes={hasta.slice(0, 7)} />
+          <div ref={graficaRef}>
           <HistorialFacturacion
             title={`Comparativo mensual${marca !== MARCA_TODAS ? ` · ${marca}` : ""}`}
             data={serie}
           />
+          </div>
         </div>
       )}
 
@@ -712,4 +742,37 @@ function ResumenComparativo({ serie, mes }: { serie: { month: string; total: num
       </span>
     </div>
   );
+}
+
+/**
+ * La grafica de recharts (SVG) que esta en pantalla, como PNG en base64, para
+ * insertarla en el Excel. Se dibuja al doble de resolucion y con fondo blanco.
+ */
+async function graficaComoPng(contenedor: HTMLElement): Promise<{ base64: string; ancho: number; alto: number } | null> {
+  const svg = contenedor.querySelector("svg.recharts-surface") as SVGSVGElement | null;
+  if (!svg) return null;
+  const { width, height } = svg.getBoundingClientRect();
+  if (!width || !height) return null;
+  const clon = svg.cloneNode(true) as SVGSVGElement;
+  clon.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clon.setAttribute("width", String(width));
+  clon.setAttribute("height", String(height));
+  clon.style.fontFamily = getComputedStyle(svg).fontFamily || "sans-serif";
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clon));
+  try {
+    await img.decode();
+  } catch {
+    return null;
+  }
+  const escala = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * escala;
+  canvas.height = height * escala;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { base64: canvas.toDataURL("image/png").split(",")[1], ancho: width, alto: height };
 }
