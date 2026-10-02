@@ -51,7 +51,7 @@ function Ayuda({ texto }: { texto: string }) {
 
 const AYUDA_CXC =
   "CxC = saldo contable de la cuenta por cobrar en el corte, solo crédito: resta los pagos sin aplicar y suma los asientos manuales; " +
-  "sin contado, incobrables, Supricom ni SUPER TECHNO. Por eso no es igual al total de Cartera Vencida, que suma las facturas abiertas de contado y crédito y no resta pagos sin aplicar.";
+  "sin contado, incobrables, Supricom ni SUPER TECHNO. Por eso difiere un poco del total de Cartera Vencida, que solo suma facturas a crédito abiertas.";
 
 function getTrafficDot(value: number, thresholds: { green: number; yellow: number }, invert = false): string {
   if (invert) {
@@ -399,7 +399,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.carteraVencida.value ?? 0, umbral(data.kpis.carteraVencida.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cartera Vencida</span>
-                  <Ayuda texto={`% del saldo abierto que ya pasó su fecha de vencimiento, al ${formatDate(data.kpis.carteraVencida.corte)}${data.kpis.carteraVencida.alCierre ? " (cierre del mes elegido)" : " (hoy)"}. Total = facturas y notas de crédito abiertas, de contado y crédito, sin incobrables ni SUPER TECHNO. No es igual a la CxC final de Efectividad: aquí entra el contado y no se restan los pagos sin aplicar.`} />
+                  <Ayuda texto={`% del saldo abierto que ya pasó su fecha de vencimiento, al ${formatDate(data.kpis.carteraVencida.corte)}${data.kpis.carteraVencida.alCierre ? " (cierre del mes elegido)" : " (hoy)"}. Total = facturas y notas de crédito abiertas A CRÉDITO (el contado no tiene plazo, no entra), sin incobrables ni SUPER TECHNO. Casi igual a la CxC final de Efectividad: esa además resta los pagos sin aplicar y suma los asientos manuales.`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("cartera_vencida", 30)}</span>
               </div>
@@ -439,7 +439,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
-                  <Ayuda texto={`DSO = CxC crédito al cierre ÷ ventas a crédito del mes × días del mes. Usa la misma CxC final que Efectividad. ${AYUDA_CXC}`} />
+                  <Ayuda texto={`DSO = CxC crédito al cierre ÷ ventas a crédito del mes × días del mes. Usa la misma CxC final que Efectividad. En el mes en curso se calcula con los días que van del mes: los primeros días hay pocas ventas contra toda la cartera y el DSO sale alto; se estabiliza hacia mitad de mes. ${AYUDA_CXC}`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
               </div>
@@ -495,6 +495,12 @@ export default function CxcDashboardPage() {
                       <span className="text-slate-500">Incobrables (antes de 2025)</span>
                       <span className="font-medium text-slate-700">{formatCurrency(data.summary.incobrables)}</span>
                     </div>
+                    {data.summary.contado !== undefined && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Contado abierto</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(data.summary.contado)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Pagos sin aplicar</span>
                       <span className="font-medium text-slate-700">{formatCurrency(data.summary.sinAplicar)}</span>

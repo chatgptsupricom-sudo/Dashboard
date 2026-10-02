@@ -324,7 +324,10 @@ export async function GET(request: NextRequest) {
     // Incobrables: la cartera vieja (vencida antes de 2025) que los KPIs dejan
     // fuera (lib/cxc/carteraVieja.ts), factura por factura con el mismo cálculo
     // que su modal. El reporte de Odoo metía además pagos sin aplicar viejos.
-    const { viejas } = seriesCxc.saldosEn(today);
+    const { viejas, saldos: saldosHoy, credito: creditoHoy } = seriesCxc.saldosEn(today);
+    // Contado abierto hoy: fuera de Cartera Vencida (solo crédito), pero es
+    // parte del total de Odoo, así que va como fila propia del cuadre.
+    const contadoAbierto = Math.round([...saldosHoy].reduce((s, [id, v]) => (creditoHoy.has(id) ? s : s + v), 0) * 100) / 100;
     const clientesViejas = viejas.size
       ? await callOdooRPC<any[]>("account.move", "read", [[...viejas.keys()]], { fields: ["id", "partner_id"] })
       : [];
@@ -473,6 +476,7 @@ export async function GET(request: NextRequest) {
           // cartera de arriba es al cierre y no cuadraría, así que no se manda.
           ...(carteraAlCierre ? {} : {
             incobrables: incobrables.saldo,
+            contado: contadoAbierto,
             sinAplicar,
             relacionadas: efectividadCalc.relacionadas,
             totalOdoo: Math.round(totalReceivable * 100) / 100,

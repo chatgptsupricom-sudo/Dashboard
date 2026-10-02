@@ -98,8 +98,9 @@ export async function GET(request: NextRequest) {
       const inicioCorte = new Date(corte);
       inicioCorte.setHours(0, 0, 0, 0);
       const series = await calcularSeriesCxC(companyIds, [{ inicio: inicioCorte, fin: corte }], today);
-      const { saldos, viejas } = series.saldosEn(corte);
-      const mapa = type === "incobrables" ? viejas : saldos;
+      const { saldos, credito, viejas } = series.saldosEn(corte);
+      // Cartera Vencida es solo crédito, igual que la tarjeta (seriesSemanales.ts → carteraVencidaEn).
+      const mapa = type === "incobrables" ? viejas : new Map([...saldos].filter(([id]) => credito.has(id)));
       const ids = [...mapa.keys()];
       const moves: any[] = [];
       for (let i = 0; i < ids.length; i += 5000) {

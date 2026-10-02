@@ -307,7 +307,9 @@ export async function calcularSeriesCxC(
     const dia = new Date(corte);
     dia.setHours(0, 0, 0, 0);
     for (const f of todas) {
-      if (f.vieja || f.relacionada) continue;
+      // Solo crédito: el contado no tiene plazo, así que "vencido" no le aplica
+      // (y es lo que separaba el total de la CxC final del CEI).
+      if (f.vieja || f.relacionada || !f.credito) continue;
       if (companyId !== undefined && f.companyId !== companyId) continue;
       // Una factura emitida después del corte no formaba parte de la cartera
       // en ese momento: sin este filtro, las semanas pasadas salen infladas.
