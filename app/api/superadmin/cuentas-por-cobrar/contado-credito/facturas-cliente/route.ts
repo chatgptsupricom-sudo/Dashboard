@@ -3,6 +3,7 @@ import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
+import { nombresPlazos } from "@/lib/cxc/credito";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -24,6 +25,17 @@ function diasDeTermino(ptName: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** Nombre en español de cada plazo (lib/cxc/credito.ts → nombresPlazos). */
+async function mapaPlazos(ids: (number | undefined)[]): Promise<Record<number, string>> {
+  const unicos = [...new Set(ids.filter((id): id is number => Boolean(id)))];
+  if (!unicos.length) return {};
+  try {
+    return Object.fromEntries(await nombresPlazos(unicos));
+  } catch (_) {
+    return {};
+  }
+}
+
 async function facturasDelMes(companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean, vendedorId: number | undefined): Promise<Factura[]> {
   const invoicesRaw = await callOdooRPC<any[]>(
     "account.move",
@@ -42,14 +54,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
   const invoices = (invoicesRaw || [])
     .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .filter((inv) => vendedorId === undefined || inv.invoice_user_id?.[0] === vendedorId);
-  const ptIds = [...new Set(invoices.map((f) => f.invoice_payment_term_id?.[0]).filter(Boolean))];
-  let ptMap: Record<number, string> = {};
-  if (ptIds.length > 0) {
-    try {
-      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
-      (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
-    } catch (_) {}
-  }
+  const ptMap = await mapaPlazos(invoices.map((f) => f.invoice_payment_term_id?.[0]));
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -86,14 +91,7 @@ async function cobrosDelMes(
     return true;
   });
 
-  const ptIds = [...new Set(filtrados.map((c) => c.plazoId).filter((id): id is number => Boolean(id)))];
-  const ptMap: Record<number, string> = {};
-  if (ptIds.length > 0) {
-    try {
-      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
-      (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
-    } catch (_) {}
-  }
+  const ptMap = await mapaPlazos(filtrados.map((c) => c.plazoId));
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
   return filtrados
@@ -117,14 +115,7 @@ async function porCobrarDelCliente(
   const filtrados = renglones
     .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
     .filter((r) => vendedorId === undefined || r.sellerId === vendedorId);
-  const ptIds = [...new Set(filtrados.map((r) => r.plazoId).filter((id): id is number => Boolean(id)))];
-  const ptMap: Record<number, string> = {};
-  if (ptIds.length > 0) {
-    try {
-      const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
-      (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
-    } catch (_) {}
-  }
+  const ptMap = await mapaPlazos(filtrados.map((r) => r.plazoId));
   return filtrados
     .map((r) => ({
       id: r.id,

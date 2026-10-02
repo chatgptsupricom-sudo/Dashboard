@@ -32,6 +32,7 @@ Panel administrativo SUPRICOM. Next.js 16 (App Router) + TypeScript + MySQL + Od
 
 Gotchas:
 - `JWT_SECRET`/`ODOO_API_KEY` no tienen fallback hardcodeado: `lib/secretos.ts` falla cerrado (secreto aleatorio de un solo uso / string vacío) si la env var falta, y loguea el error. No reintroducir un fallback fijo — es lo que este archivo reemplazó.
+- Plazos de pago (`account.payment.term`): sin `context.lang` la API devuelve el nombre en inglés, que quedó viejo en varios plazos (el "30 días" en español es "21 días (copia)" en inglés; "90 dias" es "30 Days"). Leer nombres con `nombresPlazos()` de `lib/cxc/credito.ts` (lang `es_VE`); para días exactos, `invoice_date_due − invoice_date`.
 - `target_company_id` (cids) en agentes/reportes: 9=Valencia (default), 10=Caracas, 7=Panamá (`lib/tools.ts`).
 - Ninguna ruta desactiva la verificación TLS globalmente (`NODE_TLS_REJECT_UNAUTHORIZED`) — las que antes lo hacían (inventario ×3) usan `callOdooRPCInsecure()` en `lib/odoo.ts`, que aplica un `https.Agent({rejectUnauthorized:false})` scoped a esa llamada puntual, no al proceso.
 - `META_ACCESS_TOKEN` es un token de **system user** con `instagram_basic` pero **sin** `instagram_manage_insights`: perfil y listado de publicaciones de Instagram funcionan, pero Insights (views, reach, profile_views, demografía, insights por publicación) devuelve `(#10) Application does not have permission`. `lib/instagram.ts` degrada por bloque (`{ available, reason }`) en vez de fallar; cuando Meta apruebe el permiso empieza a devolver datos sin cambiar código.
