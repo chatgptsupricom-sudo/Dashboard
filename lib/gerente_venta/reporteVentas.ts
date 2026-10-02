@@ -19,6 +19,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { marcasDeSede } from "@/lib/reportes-comerciales/reporteTrimestral";
+import { CORTE_ODOO, normalizarRif, RIF_SQL, SQL_SIN_INTERCOMPANIA } from "@/lib/smartbit";
 
 export const COMPANY_NAME: Record<number, string> = {
   9: "Valencia",
@@ -297,6 +298,124 @@ export async function cargarDesglose(opts: {
       clientes: clientesSet.size,
     },
   };
+}
+
+/* ─────────────────────────── Comparativo mensual ─────────────────────────── */
+
+export interface PuntoMensual {
+  month: string; // "YYYY-MM"
+  total: number;
+}
+
+/**
+ * Facturación por mes con los mismos filtros del desglose (marca, vendedor,
+ * cliente, sede), desde el primer mes con datos hasta hoy. Antes de
+ * CORTE_ODOO sale del histórico de Smartbit (lib/smartbit.ts), después de
+ * Odoo: allá Odoo solo tiene las facturas abiertas migradas.
+ *
+ * Smartbit no guarda la marca: se toma la de Odoo cruzando el código del
+ * artículo con `default_code` (coinciden en ~98% de los vendidos). El
+ * vendedor se cruza por nombre y el cliente por RIF o nombre.
+ */
+export async function cargarComparativo(opts: {
+  companyIds: number[];
+  vendedorUserId?: number | null;
+  clienteId?: number | null;
+  marca?: string | null;
+}): Promise<PuntoMensual[]> {
+  const marca = (opts.marca || MARCA_TODAS).trim();
+  const filtraMarca = marca.toUpperCase() !== MARCA_TODAS;
+  const productos = filtraMarca
+    ? (await callOdooRPC<any[]>("product.product", "search_read", [
+        [["x_studio_marca", "ilike", marca], ["active", "in", [true, false]]],
+      ], { fields: ["id", "default_code"], limit: 0 })) || []
+    : [];
+  if (filtraMarca && productos.length === 0) return [];
+
+  const serie = new Map<string, number>();
+  const sumar = (mes: string, v: number) => serie.set(mes, (serie.get(mes) || 0) + v);
+
+  // Odoo, desde el corte: agrupado por mes y tipo en el servidor.
+  const dom: any[] = [
+    ["move_type", "in", ["out_invoice", "out_refund"]],
+    ["parent_state", "=", "posted"],
+    ["company_id", "in", opts.companyIds],
+    ["invoice_date", ">=", CORTE_ODOO],
+    ["display_type", "=", "product"],
+    ["product_id", "!=", false],
+    ...CLIENTES_EXCLUIDOS_SUBSTR.map((s) => ["partner_id.name", "not ilike", s]),
+  ];
+  if (opts.vendedorUserId) dom.push(["move_id.invoice_user_id", "=", opts.vendedorUserId]);
+  if (opts.clienteId) dom.push(["partner_id", "=", opts.clienteId]);
+  if (filtraMarca) dom.push(["product_id", "in", productos.map((p: any) => p.id)]);
+  const grupos =
+    (await callOdooRPC<any[]>("account.move.line", "read_group", [
+      dom, ["price_subtotal:sum"], ["invoice_date:month", "move_type"],
+    ], { lazy: false })) || [];
+  for (const g of grupos) {
+    const mes = String(g.__range?.["invoice_date:month"]?.from || "").slice(0, 7);
+    if (!mes) continue;
+    sumar(mes, (g.move_type === "out_refund" ? -1 : 1) * (Number(g.price_subtotal) || 0));
+  }
+
+  // Smartbit, antes del corte.
+  const where = [
+    `company_id IN (${opts.companyIds.map(() => "?").join(",")})`,
+    "fecha < ?",
+    SQL_SIN_INTERCOMPANIA,
+  ];
+  const params: any[] = [...opts.companyIds, CORTE_ODOO];
+  if (filtraMarca) {
+    const codigos = [...new Set(productos.map((p: any) => String(p.default_code || "").trim().toUpperCase()).filter(Boolean))];
+    if (codigos.length === 0) return cerrarSerie(serie);
+    where.push(`UPPER(TRIM(codigo_articulo)) IN (${codigos.map(() => "?").join(",")})`);
+    params.push(...codigos);
+  }
+  if (opts.clienteId) {
+    const [p] =
+      (await callOdooRPC<any[]>("res.partner", "read", [[opts.clienteId]], { fields: ["name", "vat"] })) || [];
+    const rif = normalizarRif(String(p?.vat || ""));
+    where.push(`(UPPER(TRIM(cliente)) = ?${rif ? ` OR ${RIF_SQL} = ?` : ""})`);
+    params.push(String(p?.name || "").trim().toUpperCase(), ...(rif ? [rif] : []));
+  }
+  const porVendedor = !!opts.vendedorUserId;
+  try {
+    const { rows } = await query(
+      `SELECT DATE_FORMAT(fecha, '%Y-%m') AS mes, ${porVendedor ? "vendedor," : ""} SUM(venta) AS total
+         FROM ventas_smartbit WHERE ${where.join(" AND ")}
+        GROUP BY mes${porVendedor ? ", vendedor" : ""}`,
+      params,
+    );
+    const nombreVendedor = porVendedor
+      ? normalizar(limpiarVendedor(
+          (await vendedoresDeSede(opts.companyIds)).find((v) => v.userId === opts.vendedorUserId)?.nombre || "",
+        ))
+      : "";
+    for (const r of rows as any[]) {
+      if (porVendedor && normalizar(limpiarVendedor(r.vendedor || "")) !== nombreVendedor) continue;
+      sumar(r.mes, Number(r.total) || 0);
+    }
+  } catch (e: any) {
+    // Sin la tabla (o sin MySQL) el comparativo sigue con lo de Odoo.
+    console.error("[reporte-ventas] comparativo sin histórico de Smartbit:", e?.message);
+  }
+
+  return cerrarSerie(serie);
+}
+
+/** Serie ordenada y continua: los meses sin ventas dentro del rango van en 0. */
+function cerrarSerie(serie: Map<string, number>): PuntoMensual[] {
+  const meses = [...serie.keys()].sort();
+  if (meses.length === 0) return [];
+  const out: PuntoMensual[] = [];
+  const hoy = new Date().toISOString().slice(0, 7);
+  for (let [y, m] = meses[0].split("-").map(Number); ; m++) {
+    if (m > 12) { m = 1; y++; }
+    const mes = `${y}-${String(m).padStart(2, "0")}`;
+    if (mes > hoy) break;
+    out.push({ month: mes, total: redondear(serie.get(mes) || 0) });
+  }
+  return out;
 }
 
 /* ─────────────────────────── Clientes inactivos ─────────────────────────── */
