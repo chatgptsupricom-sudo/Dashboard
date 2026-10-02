@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { readFile } from "fs/promises";
+import path from "path";
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { companyIdsEnAlcance } from "@/lib/cxc/alcance";
@@ -260,7 +262,7 @@ export async function GET(request: NextRequest) {
       [
         "move_id", "move_name", "move_type", "journal_id",
         "date", "date_maturity", "debit", "credit", "amount_residual",
-        "amount_currency", "currency_id", "blocked",
+        "amount_currency", "currency_id", "blocked", "company_id",
       ],
     );
 
@@ -365,7 +367,10 @@ export async function GET(request: NextRequest) {
     };
 
     if (searchParams.get("formato") === "xlsx") {
-      return excel(partnerId, partner, movimientos, totalCargo, totalAbono);
+      // Membrete de la sede si todo el movimiento es de una sola.
+      const sedes = new Set(lineas.map((l: any) => l.company_id?.[0]));
+      const membrete = sedes.size === 1 ? MEMBRETES[[...sedes][0]] : undefined;
+      return excel(partnerId, partner, movimientos, totalCargo, totalAbono, membrete);
     }
 
     return NextResponse.json({
@@ -394,6 +399,19 @@ const COLUMNAS = [
   { header: "Nota", key: "nota", width: 40 },
 ];
 
+type Membrete = { nombre: string; logo: string; ancho: number; alto: number; columna: number };
+
+/**
+ * Membrete del Excel por sede (company_id): logo y nombre de la empresa, sin
+ * teléfonos ni correos. El logo se lee de /public; `columna` es donde va el
+ * nombre, a la derecha del logo (el de Supricom es ancho y ocupa A y B).
+ */
+const MEMBRETES: Record<number, Membrete> = {
+  9: { nombre: "OFFICE SOLUTIONS CENTER 2004, C.A.", logo: "osclogo.jpg", ancho: 80, alto: 80, columna: 2 },
+  10: { nombre: "SUPRICOM CCS 21, C.A.", logo: "supricom-reporte-logo.png", ancho: 220, alto: 68, columna: 3 },
+  7: { nombre: "SUPRICOM, S.A.", logo: "supricom-reporte-logo.png", ancho: 220, alto: 68, columna: 3 },
+};
+
 /**
  * El Excel se arma en el servidor y de la misma consulta que alimenta la
  * pantalla, para que lo descargado sea exactamente lo que la persona esta
@@ -407,6 +425,7 @@ async function excel(
   movimientos: any[],
   totalCargo: number,
   totalAbono: number,
+  membrete?: Membrete,
 ) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Supricom";
@@ -419,7 +438,31 @@ async function excel(
     .replace(/[:\\/?*[\]]/g, "")
     .slice(0, 31);
   const ws = wb.addWorksheet(hoja);
-  ws.columns = COLUMNAS;
+  ws.columns = COLUMNAS.map(({ key, width }) => ({ key, width }));
+
+  // Membrete: fila 1 alta con el logo y el nombre de la empresa al lado,
+  // fila 2 en blanco y la tabla desde la fila 3.
+  if (membrete) {
+    const fila = ws.getRow(1);
+    fila.height = (membrete.alto + 12) * 0.75; // px → puntos
+    const celda = fila.getCell(membrete.columna);
+    celda.value = membrete.nombre;
+    celda.font = { bold: true, size: 16, color: { argb: "FF1E3A8A" } };
+    celda.alignment = { vertical: "middle" };
+    try {
+      const logo = wb.addImage({
+        buffer: (await readFile(path.join(process.cwd(), "public", membrete.logo))) as any,
+        extension: membrete.logo.endsWith(".png") ? "png" : "jpeg",
+      });
+      ws.addImage(logo, { tl: { col: 0.1, row: 0.1 }, ext: { width: membrete.ancho, height: membrete.alto } } as any);
+    } catch (e: any) {
+      // Sin logo el Excel sale igual, solo con el texto.
+      console.error("Estado de cuenta: no se pudo leer el logo", e.message);
+    }
+    ws.addRow([]);
+  }
+  const cabecera = ws.addRow(COLUMNAS.map((c) => c.header));
+  const filaCabecera = cabecera.number;
 
   movimientos.forEach((m: any) => {
     const fila = ws.addRow({ ...m, fecha: ddmmyyyy(m.fecha) });
@@ -430,7 +473,6 @@ async function excel(
   const totales = ws.addRow({ cargo: totalCargo, abono: totalAbono });
   totales.font = { bold: true };
 
-  const cabecera = ws.getRow(1);
   cabecera.font = { bold: true, color: { argb: "FFFFFFFF" } };
   cabecera.fill = {
     type: "pattern",
@@ -438,14 +480,14 @@ async function excel(
     fgColor: { argb: "FF2563EB" }, // azul, igual que el resto de los Excel del panel (lib/excel.ts)
   };
   cabecera.height = 22;
-  ws.views = [{ state: "frozen", ySplit: 1 }];
+  ws.views = [{ state: "frozen", ySplit: filaCabecera }];
   // Cargo, abono, importe en divisa y saldo. Van por letra, asi que si se
   // mueve una columna en COLUMNAS hay que mover esto con ella.
   ["D", "E", "F", "H"].forEach((col) => {
-    ws.getColumn(col).numFmt = "#,##0.00";
-    // Montos resaltados en azul claro (sin tocar el encabezado).
+    // Montos resaltados en azul claro (sin tocar membrete ni encabezado).
     ws.getColumn(col).eachCell((celda, fila) => {
-      if (fila === 1) return;
+      if (fila <= filaCabecera) return;
+      celda.numFmt = "#,##0.00";
       celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
       celda.font = { ...(celda.font || {}), bold: true };
     });
