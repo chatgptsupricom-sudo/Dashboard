@@ -29,6 +29,25 @@ async function leer(model: string, ids: number[], fields: string[]): Promise<any
 }
 
 /**
+ * Nombres de los plazos de pago en ESPAÑOL, como los ve Odoo en pantalla.
+ * Sin `lang`, la API devuelve el nombre en inglés, que en varios plazos quedó
+ * viejo al duplicarlos: el que en español es "30 días" en inglés sigue siendo
+ * "21 días (copia)", "90 dias" es "30 Days", "60 días" es "45 días (copia)" y
+ * "90 días" es "60 días (copia)". Leer los días de ese nombre daba plazos falsos.
+ */
+export async function nombresPlazos(ids: number[]): Promise<Map<number, string>> {
+  const nombres = new Map<number, string>();
+  for (let i = 0; i < ids.length; i += 1000) {
+    const page = await callOdooRPC<any[]>("account.payment.term", "read", [ids.slice(i, i + 1000)], {
+      fields: ["id", "name"],
+      context: { lang: "es_VE", active_test: false },
+    });
+    for (const t of page || []) nombres.set(t.id, t.name);
+  }
+  return nombres;
+}
+
+/**
  * Devuelve los ids de `moves` que son a crédito. Cada move necesita
  * `id`, `move_type`, `invoice_payment_term_id` y `reversed_entry_id`.
  */
@@ -48,8 +67,7 @@ export async function idsACredito(moves: any[]): Promise<Set<number>> {
   }
 
   const plazoIds = Array.from(new Set(Array.from(plazoDe.values()).filter((id): id is number => Boolean(id))));
-  const nombre = new Map<number, string>();
-  for (const t of await leer("account.payment.term", plazoIds, ["id", "name"])) nombre.set(t.id, t.name);
+  const nombre = await nombresPlazos(plazoIds);
 
   const credito = new Set<number>();
   for (const m of moves) {

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { descargarExcel } from "@/lib/excel";
 import { Building2, Calendar, RefreshCw, Clock, X, Download, Search } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { ColumnHeader } from "@/components/compras/column-header";
 
 // Tiempo de cobro: días desde la emisión hasta el pago completo de las
 // facturas a crédito que se terminaron de pagar en el mes (lib/cxc/tiempoCobro.ts).
@@ -12,10 +13,10 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-type Grupo = { clave: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; aTiempoPct: number };
+type Grupo = { clave: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number };
 type Factura = { id: number; name: string; partnerId: number; cliente: string; vendedor: string; emision: string; pagada: string; dias: number; plazo: number; monto: number };
 type Data = {
-  resumen: Grupo & { promedioSimple: number; mediana: number };
+  resumen: Grupo & { mediana: number };
   tramos: { label: string; facturas: number; monto: number; pct: number }[];
   porPlazo: (Grupo & { plazo: number })[];
   clientes: (Grupo & { partnerId: number })[];
@@ -28,7 +29,18 @@ type Data = {
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 const formatDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("es-VE") : "—");
-const dias = (n: number) => `${n.toLocaleString("es-VE", { maximumFractionDigits: 1 })} días`;
+const dias = (n: number) => `${n.toLocaleString("es-VE", { maximumFractionDigits: 2 })} días`;
+
+const AYUDA = {
+  promedio:
+    "Promedio por factura: se suman los días que tardó cada factura y se divide entre la cantidad de facturas (cada una pesa igual).",
+  ponderado:
+    "Promedio ponderado por monto: cada factura pesa según su monto, así que las grandes mandan. " +
+    "Ej.: una de $76.000 pagada en 15 días y tres más pequeñas en 28-29 días dan 25 días por factura, pero ~21 ponderado. " +
+    "Si el ponderado es menor que el promedio, el dinero grande entra más rápido que las facturas chicas.",
+  plazo: "Días de crédito que dio la factura: fecha de vencimiento − fecha de emisión (no el nombre del término de pago en Odoo). Promedio por factura.",
+  aTiempo: "% de facturas que se terminaron de pagar en o antes de su fecha de vencimiento.",
+};
 
 /** Verde si paga dentro del plazo, ámbar hasta 1,5× el plazo, rojo más allá. */
 function tono(real: number, plazo: number) {
@@ -40,7 +52,8 @@ function tono(real: number, plazo: number) {
 // ── Excel ──
 const filaGrupo = (titulo: string) => (g: Grupo) => ({
   [titulo]: g.clave,
-  "Tarda en pagar (días)": g.promedioDias,
+  "Tarda en pagar (días, promedio por factura)": g.promedioDias,
+  "Tarda en pagar (días, ponderado por monto)": g.promedioPonderado,
   "Plazo promedio (días)": g.plazoPromedio,
   "Pagadas a tiempo (%)": g.aTiempoPct,
   Facturas: g.facturas,
@@ -61,20 +74,22 @@ function descargar(nombre: string, hojas: { nombre: string; filas: Record<string
   descargarExcel(nombre, hojas);
 }
 
-/** Facturas agrupadas por cliente, con días ponderados por monto (para el detalle). */
-/** Totales de un grupo de facturas (mismo cálculo que el servidor, lib/cxc/tiempoCobro.ts). */
+/** Totales de un grupo de facturas (mismo cálculo que agrupar() en lib/cxc/tiempoCobro.ts). */
 function resumenDe(fs: Factura[]): Omit<Grupo, "clave"> {
   const monto = fs.reduce((s, f) => s + f.monto, 0);
-  const pond = (c: "dias" | "plazo") => (monto > 0 ? fs.reduce((s, f) => s + f[c] * f.monto, 0) / monto : 0);
+  const prom = (c: "dias" | "plazo") => (fs.length ? fs.reduce((s, f) => s + f[c], 0) / fs.length : 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
     facturas: fs.length,
-    monto: Math.round(monto * 100) / 100,
-    promedioDias: Math.round(pond("dias") * 10) / 10,
-    plazoPromedio: Math.round(pond("plazo") * 10) / 10,
+    monto: r2(monto),
+    promedioDias: r2(prom("dias")),
+    plazoPromedio: r2(prom("plazo")),
+    promedioPonderado: r2(monto > 0 ? fs.reduce((s, f) => s + f.dias * f.monto, 0) / monto : 0),
     aTiempoPct: fs.length ? Math.round((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 1000) / 10 : 0,
   };
 }
 
+/** Facturas agrupadas por cliente (para el detalle). */
 function agruparPorCliente(fs: Factura[]) {
   const m = new Map<string, Factura[]>();
   for (const f of fs) {
@@ -83,35 +98,19 @@ function agruparPorCliente(fs: Factura[]) {
     m.get(k)!.push(f);
   }
   return [...m.entries()]
-    .map(([k, lista]) => {
-      const monto = lista.reduce((s, f) => s + f.monto, 0);
-      const pond = (c: "dias" | "plazo") => (monto > 0 ? lista.reduce((s, f) => s + f[c] * f.monto, 0) / monto : 0);
-      return {
-        clave: k,
-        cliente: lista[0].cliente,
-        facturas: lista.sort((a, b) => b.dias - a.dias),
-        monto: Math.round(monto * 100) / 100,
-        promedioDias: Math.round(pond("dias") * 10) / 10,
-        plazoPromedio: Math.round(pond("plazo") * 10) / 10,
-        aTiempoPct: Math.round((lista.filter((f) => f.dias <= f.plazo).length / lista.length) * 1000) / 10,
-      };
-    })
+    .map(([k, lista]) => ({ ...resumenDe(lista), clave: k, cliente: lista[0].cliente, facturas: lista.sort((a, b) => b.dias - a.dias) }))
     .sort((a, b) => b.monto - a.monto);
 }
+
+const fechaLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Excel con desglose: hoja resumen (lo que muestra la tabla) + hoja con cada factura detrás. */
 function descargarDesglose(nombre: string, resumen: { nombre: string; filas: Record<string, unknown>[] }, facturas: Factura[], agrupador?: { titulo: string; valor: (f: Factura) => string }) {
   const ordenadas = [...facturas].sort((a, b) =>
     (agrupador ? agrupador.valor(a).localeCompare(agrupador.valor(b), "es", { numeric: true }) : 0) ||
     a.cliente.localeCompare(b.cliente, "es") || b.dias - a.dias);
-  const porCliente = agruparPorCliente(facturas).map((c) => ({
-    Cliente: c.cliente,
-    "Tarda en pagar (días)": c.promedioDias,
-    "Plazo promedio (días)": c.plazoPromedio,
-    "Pagadas a tiempo (%)": c.aTiempoPct,
-    Facturas: c.facturas.length,
-    "Monto (con IVA)": c.monto,
-  }));
+  const porCliente = agruparPorCliente(facturas).map((c) => filaGrupo("Cliente")({ ...c, clave: c.cliente, facturas: c.facturas.length }));
   descargar(nombre, [
     resumen,
     ...(resumen.nombre === "Por cliente" ? [] : [{ nombre: "Por cliente", filas: porCliente }]),
@@ -128,22 +127,53 @@ function BotonExcel({ onClick, texto = "Excel" }: { onClick: () => void; texto?:
   );
 }
 
+type ColumnaOrden = Exclude<keyof Grupo, "clave"> | "clave";
+
 function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onClick?: (g: any, i: number) => void }) {
+  // Sin orden elegido se respeta el del servidor (por monto). Click en un
+  // encabezado ordena por esa columna; otro click invierte.
+  const [orden, setOrden] = useState<{ col: ColumnaOrden; asc: boolean } | null>(null);
+  const ordenadas = useMemo(() => {
+    if (!orden) return filas;
+    const { col, asc } = orden;
+    return [...filas].sort((a, b) => {
+      const r = col === "clave"
+        ? a.clave.localeCompare(b.clave, "es", { numeric: true, sensitivity: "base" })
+        : a[col] - b[col];
+      return asc ? r : -r;
+    });
+  }, [filas, orden]);
+  // Nombre empieza A→Z; los números, de mayor a menor.
+  const ordenarPor = (col: ColumnaOrden) =>
+    setOrden((o) => (o?.col === col ? { col, asc: !o.asc } : { col, asc: col === "clave" }));
+
+  const Th = ({ col, label, ayuda, className = "py-2 px-3 text-right" }: { col: ColumnaOrden; label: string; ayuda?: string; className?: string }) => (
+    <th className={`${className} font-medium`} aria-sort={orden?.col === col ? (orden.asc ? "ascending" : "descending") : "none"}>
+      <div className={`flex items-center gap-1 ${className.includes("text-right") ? "justify-end" : ""}`}>
+        <button type="button" onClick={() => ordenarPor(col)} className={`uppercase tracking-wide hover:text-slate-700 ${orden?.col === col ? "text-slate-700" : ""}`}>
+          {label} <span className="inline-block w-2">{orden?.col === col ? (orden.asc ? "▲" : "▼") : ""}</span>
+        </button>
+        {ayuda && <ColumnHeader label="" tooltip={ayuda} />}
+      </div>
+    </th>
+  );
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-100 text-left text-xs text-slate-400 uppercase tracking-wide">
-            <th className="py-2 pr-3 font-medium">{titulo}</th>
-            <th className="py-2 px-3 font-medium text-right">Tarda en pagar</th>
-            <th className="py-2 px-3 font-medium text-right">Plazo</th>
-            <th className="py-2 px-3 font-medium text-right">A tiempo</th>
-            <th className="py-2 px-3 font-medium text-right">Facturas</th>
-            <th className="py-2 pl-3 font-medium text-right">Monto</th>
+          <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+            <Th col="clave" label={titulo} className="py-2 pr-3" />
+            <Th col="promedioDias" label="Tarda en pagar" ayuda={AYUDA.promedio} />
+            <Th col="promedioPonderado" label="Ponderado" ayuda={AYUDA.ponderado} />
+            <Th col="plazoPromedio" label="Plazo" ayuda={AYUDA.plazo} />
+            <Th col="aTiempoPct" label="A tiempo" ayuda={AYUDA.aTiempo} />
+            <Th col="facturas" label="Facturas" />
+            <Th col="monto" label="Monto" className="py-2 pl-3 text-right" />
           </tr>
         </thead>
         <tbody>
-          {filas.map((g, i) => (
+          {ordenadas.map((g, i) => (
             <tr
               key={g.clave + i}
               onClick={onClick ? () => onClick(g, i) : undefined}
@@ -151,6 +181,7 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
             >
               <td className={`py-2.5 pr-3 font-medium ${onClick ? "text-blue-600" : "text-slate-800"} max-w-[260px] truncate`}>{g.clave}</td>
               <td className={`py-2.5 px-3 text-right font-semibold ${tono(g.promedioDias, g.plazoPromedio)}`}>{dias(g.promedioDias)}</td>
+              <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.promedioPonderado)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.plazoPromedio)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.aTiempoPct}%</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.facturas}</td>
@@ -168,8 +199,16 @@ export default function TiempoCobroPage() {
   const userCids = user?.cids ? Number(user.cids) : undefined;
   const now = new Date();
   const [empresa, setEmpresa] = useState("");
+  const [modo, setModo] = useState<"mes" | "anio" | "rango">("mes");
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [anio, setAnio] = useState(now.getFullYear());
+  const [rangoDesde, setRangoDesde] = useState(fechaLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
+  const [rangoHasta, setRangoHasta] = useState(fechaLocal(now));
+  const rangoInvalido = modo === "rango" && (!rangoDesde || !rangoHasta || rangoDesde > rangoHasta);
+  const [desde, hasta] =
+    modo === "rango" ? [rangoDesde, rangoHasta]
+    : modo === "anio" ? [`${anio}-01-01`, `${anio}-12-31`]
+    : [fechaLocal(new Date(anio, mes - 1, 1)), fechaLocal(new Date(anio, mes, 0))];
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -180,10 +219,11 @@ export default function TiempoCobroPage() {
   const [busqueda, setBusqueda] = useState("");
 
   const fetchData = useCallback(async () => {
+    if (rangoInvalido) return;
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ month: String(mes), year: String(anio) });
+      const params = new URLSearchParams({ startDate: desde, endDate: hasta });
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/tiempo-cobro?${params}`);
@@ -196,7 +236,7 @@ export default function TiempoCobroPage() {
     } finally {
       setLoading(false);
     }
-  }, [empresa, mes, anio, userCids]);
+  }, [empresa, desde, hasta, rangoInvalido, userCids]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -206,7 +246,9 @@ export default function TiempoCobroPage() {
   }, [detalle]);
 
   const r = data?.resumen;
-  const periodo = `${MONTHS[mes - 1]}_${anio}`;
+  const periodo = modo === "rango" ? `${desde}_a_${hasta}` : modo === "anio" ? String(anio) : `${MONTHS[mes - 1]}_${anio}`;
+  const periodoTexto = modo === "rango" ? `del ${formatDate(desde)} al ${formatDate(hasta)}`
+    : modo === "anio" ? `en ${anio}` : `en ${MONTHS[mes - 1]} ${anio}`;
   const q = busqueda.trim().toLowerCase();
   const clientesFiltrados = useMemo(
     () => (data?.clientes || []).filter((c) => !q || c.clave.toLowerCase().includes(q)),
@@ -223,10 +265,10 @@ export default function TiempoCobroPage() {
       {
         nombre: "Resumen",
         filas: [
-          { Indicador: "Tardan en pagar (días, ponderado por monto)", Resultado: r.promedioDias },
+          { Indicador: "Tardan en pagar (días, promedio por factura)", Resultado: r.promedioDias },
+          { Indicador: "Tardan en pagar (días, ponderado por monto)", Resultado: r.promedioPonderado },
           { Indicador: "Plazo promedio (días)", Resultado: r.plazoPromedio },
           { Indicador: "Factura típica / mediana (días)", Resultado: r.mediana },
-          { Indicador: "Promedio simple (días)", Resultado: r.promedioSimple },
           { Indicador: "Pagadas a tiempo (%)", Resultado: r.aTiempoPct },
           { Indicador: "Facturas pagadas", Resultado: r.facturas },
           { Indicador: "Monto pagado (con IVA)", Resultado: r.monto },
@@ -247,7 +289,7 @@ export default function TiempoCobroPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Tiempo de Cobro</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Días desde que se emite la factura hasta que el cliente la paga por completo · facturas a crédito pagadas en {MONTHS[mes - 1]} {anio}
+            Días desde que se emite la factura hasta que el cliente la paga por completo · facturas a crédito pagadas {periodoTexto}
             {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
@@ -268,15 +310,38 @@ export default function TiempoCobroPage() {
               <span className="text-sm text-slate-700">{COMPANY_MAP[userCids] || `Sede ${userCids}`}</span>
             </div>
           )}
+          <div className="flex items-center bg-slate-100 rounded-lg p-1" role="group" aria-label="Tipo de período">
+            {(["mes", "anio", "rango"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setModo(m)}
+                aria-pressed={modo === m}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${modo === m ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+              >
+                {m === "mes" ? "Mes" : m === "anio" ? "Año" : "Rango de fechas"}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
             <Calendar size={14} className="text-slate-400" />
-            <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
-              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
-            <select value={anio} onChange={(e) => setAnio(parseInt(e.target.value))} className="text-sm bg-transparent border-none outline-none text-slate-700">
-              {[now.getFullYear() - 1, now.getFullYear()].map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
+            {modo === "mes" && (
+              <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))} aria-label="Mes" className="text-sm bg-transparent border-none outline-none text-slate-700">
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            )}
+            {modo === "rango" ? (
+              <>
+                <input type="date" value={rangoDesde} max={rangoHasta} onChange={(e) => setRangoDesde(e.target.value)} aria-label="Fecha inicio" className="text-sm bg-transparent border-none outline-none text-slate-700" />
+                <span className="text-xs text-slate-400">a</span>
+                <input type="date" value={rangoHasta} min={rangoDesde} onChange={(e) => setRangoHasta(e.target.value)} aria-label="Fecha fin" className="text-sm bg-transparent border-none outline-none text-slate-700" />
+              </>
+            ) : (
+              <select value={anio} onChange={(e) => setAnio(parseInt(e.target.value))} aria-label="Año" className="text-sm bg-transparent border-none outline-none text-slate-700">
+                {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            )}
           </div>
+          {rangoInvalido && <span className="text-xs text-red-600">La fecha inicio debe ser anterior a la fecha fin</span>}
           <button onClick={fetchData} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Actualizar
@@ -306,10 +371,14 @@ export default function TiempoCobroPage() {
                 <div className="bg-white border border-blue-200 bg-blue-50/30 rounded-2xl p-5 col-span-2 lg:col-span-1">
                   <div className="flex items-center gap-2 text-blue-700">
                     <Clock size={18} />
-                    <p className="text-sm font-semibold">Tardan en pagar</p>
+                    <ColumnHeader label="Tardan en pagar" tooltip={AYUDA.promedio} className="text-sm font-semibold" />
                   </div>
                   <p className={`text-3xl font-bold mt-2 ${tono(r.promedioDias, r.plazoPromedio)}`}>{dias(r.promedioDias)}</p>
-                  <p className="text-xs text-slate-500 mt-2">Promedio ponderado por monto · plazo promedio {dias(r.plazoPromedio)}</p>
+                  <p className="text-xs text-slate-500 mt-2">Promedio por factura · plazo promedio {dias(r.plazoPromedio)}</p>
+                  <div className="flex items-center gap-1 text-xs text-slate-600 mt-1">
+                    <span>Ponderado por monto: <b>{dias(r.promedioPonderado)}</b></span>
+                    <ColumnHeader label="" tooltip={AYUDA.ponderado} />
+                  </div>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <p className="text-sm font-semibold text-slate-600">Factura típica</p>
@@ -431,6 +500,7 @@ export default function TiempoCobroPage() {
 
               <p className="text-[11px] text-slate-400">
                 Cada factura cuenta desde su fecha de emisión hasta la fecha del último pago que la dejó en cero (fecha del pago, no la de registro en Odoo).
+                El plazo es fecha de vencimiento − fecha de la factura. Los promedios son por factura (cada una pesa igual).
                 Solo crédito; sin Supricom, SUPER TECHNO ni facturas vencidas antes de 2025. Las cerradas solo con nota de crédito no cuentan.
               </p>
             </>

@@ -4,6 +4,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { RELACIONADA } from "@/lib/cxc/cobros";
+import { nombresPlazos } from "@/lib/cxc/credito";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -286,8 +287,7 @@ export async function GET(request: NextRequest) {
     let ptMap: Record<number, string> = {};
     if (ptIds.length > 0) {
       try {
-        const pts = await callOdooRPC<any[]>("account.payment.term", "read", [ptIds], { fields: ["id", "name"] });
-        (pts || []).forEach((pt) => { ptMap[pt.id] = pt.name; });
+        ptMap = Object.fromEntries(await nombresPlazos(ptIds));
       } catch (_) {}
     }
 

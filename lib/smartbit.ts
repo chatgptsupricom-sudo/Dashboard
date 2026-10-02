@@ -355,11 +355,20 @@ async function obtenerToken(forzar = false): Promise<string> {
   if (!BASE_URL || !process.env.SMARTBIT_EMAIL || !process.env.SMARTBIT_PASSWORD) {
     throw new Error("Faltan SMARTBIT_URL / SMARTBIT_EMAIL / SMARTBIT_PASSWORD en el entorno");
   }
-  const res = await fetch(`${BASE_URL}/api/v1/User/Login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: process.env.SMARTBIT_EMAIL, password: process.env.SMARTBIT_PASSWORD }),
-  });
+  let res: Response;
+  for (let intento = 1; ; intento++) {
+    try {
+      res = await fetch(`${BASE_URL}/api/v1/User/Login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: process.env.SMARTBIT_EMAIL, password: process.env.SMARTBIT_PASSWORD }),
+      });
+      break;
+    } catch (e) {
+      if (intento >= 10) throw e;
+      await esperar(30_000 * intento);
+    }
+  }
   const data: any = await res.json().catch(() => null);
   if (!res.ok || !data?.token) {
     throw new Error(`Login Smartbit fallo (${res.status}): ${data?.message || "sin detalle"}`);
@@ -383,17 +392,30 @@ async function paginaVentas(
 ): Promise<{ filas: any[]; paginas: number }> {
   if (pausaHasta > Date.now()) await esperar(pausaHasta - Date.now());
   const url = `${BASE_URL}/api/v1/MovimientoInventario/Ventas?pagina=${pagina}&cantidadRegistroPagina=${POR_PAGINA}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${await obtenerToken(reintento)}`,
-      "X-ClientId": clientId,
-      pagina: String(pagina),
-      cantidadPaginas: String(POR_PAGINA),
-    },
-    body: JSON.stringify(body),
-  });
+  const token = await obtenerToken(reintento);
+  // Una carga completa son miles de llamadas: un corte de red o un 5xx
+  // puntual (visto: ConnectTimeoutError a los 20 min) no debe tirar todo.
+  let res: Response | undefined;
+  for (let intento = 1; ; intento++) {
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-ClientId": clientId,
+          pagina: String(pagina),
+          cantidadPaginas: String(POR_PAGINA),
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.status < 500 || intento >= 10) break;
+    } catch (e) {
+      if (intento >= 10) throw e;
+    }
+    // 30 s, 60 s... ~27 min en total: los cortes de ptyapi duran minutos.
+    await esperar(30_000 * intento);
+  }
   const reset = Date.parse(res.headers.get("x-rate-limit-reset") || "");
   const quedanHeader = res.headers.get("x-rate-limit-remaining");
   const quedan = quedanHeader == null ? Infinity : Number(quedanHeader);
@@ -412,15 +434,10 @@ async function paginaVentas(
   };
 }
 
-function diasDe(desde: string, hasta: string): string[] {
-  const out: string[] = [];
-  for (let d = desde; d <= hasta; ) {
-    out.push(d);
-    const sig = new Date(`${d}T00:00:00Z`);
-    sig.setUTCDate(sig.getUTCDate() + 1);
-    d = sig.toISOString().slice(0, 10);
-  }
-  return out;
+function diaMas(fecha: string, n: number): string {
+  const d = new Date(`${fecha}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 function rangosMensuales(desde: string, hasta: string): [string, string][] {
@@ -431,17 +448,94 @@ function rangosMensuales(desde: string, hasta: string): [string, string][] {
     const finMes = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
     const fin = finMes < hasta ? finMes : hasta;
     out.push([ini, fin]);
-    const sig = new Date(`${fin}T00:00:00Z`);
-    sig.setUTCDate(sig.getUTCDate() + 1);
-    ini = sig.toISOString().slice(0, 10);
+    ini = diaMas(fin, 1);
   }
   return out;
 }
 
+async function todasLasPaginas(clientId: string, body: any): Promise<any[]> {
+  const filas: any[] = [];
+  for (let pagina = 1, total = 1; pagina <= total; pagina++) {
+    const r = await paginaVentas(clientId, body, pagina);
+    filas.push(...r.filas);
+    total = r.paginas;
+    if (r.filas.length === 0) break;
+  }
+  return filas;
+}
+
+const sumaVenta = (filas: any[]) =>
+  filas.reduce((a, f) => a + (f.detalle || []).reduce((b: number, d: any) => b + (Number(d.venta) || 0), 0), 0);
+
+/**
+ * Detalle de ventas de [ini, fin] que cuadra con el total agrupado que calcula
+ * la propia API para esa ventana. Dos trampas de la API (vistas con Panama,
+ * 2026-09-28):
+ *  - Pagina en ~600 renglones sin orden estable: con muchas paginas repite y
+ *    salta renglones (marzo 2026, 12 paginas: 16 diferencias entre corridas).
+ *    Por eso se verifica y se reintenta.
+ *  - El filtro de fecha no usa la fecha que devuelve: para datos viejos, una
+ *    ventana de UN dia devuelve casi nada (junio 2019 dia por dia: 126
+ *    renglones; el mes: 2781 y cuadra con el agrupado). Ventanas contiguas de
+ *    varios dias si reparten bien (dos quincenas = el mes exacto), asi que si
+ *    un mes no cuadra se parte en mitades, nunca en dias sueltos.
+ */
+// Desde aqui los registros de Smartbit (Panama) traen hora real y se consultan
+// dia por dia desde las 00:00; antes estan a las 00:00:00 exactas y un dia
+// suelto no sirve (ver ventasVerificadas). Visto en los datos: nov-2023 dia
+// por dia = 0 renglones, dic-2023 = 3.451.
+const POR_DIA_DESDE = process.env.SMARTBIT_POR_DIA_DESDE || "2023-12-01";
+
+async function ventasVerificadas(
+  sede: { clientId: string; idSucursal: number },
+  ini: string,
+  fin: string,
+  nivel = 0,
+): Promise<any[]> {
+  const cuerpo = (agrupado: boolean) => ({
+    idSucursal: sede.idSucursal,
+    agrupaSucursal: agrupado,
+    agrupaCliente: false,
+    agrupaAgrupadores: false,
+    agruparVendedor: false,
+    agrupaArticulo: false,
+    // Datos viejos: el filtro es "mayor que fechaInicial" (estricto) sobre un
+    // timestamp y los registros estan a las 00:00:00 exactas; con
+    // `${ini}T00:00:00` se perdia el primer dia de cada ventana (feb 2021:
+    // 49.687,38). Datos recientes: con el dia anterior entra ese dia entero.
+    fecha: {
+      fechaInicial: ini >= POR_DIA_DESDE ? `${ini}T00:00:00` : `${diaMas(ini, -1)}T23:59:59`,
+      fechaFinal: `${fin}T23:59:59`,
+    },
+  });
+  const esperado = sumaVenta(await todasLasPaginas(sede.clientId, cuerpo(true)));
+  let mejor: any[] = [];
+  for (let intento = 0; intento < 3; intento++) {
+    const filas = await todasLasPaginas(sede.clientId, cuerpo(false));
+    if (Math.abs(sumaVenta(filas) - esperado) < 0.05) return filas;
+    if (Math.abs(sumaVenta(filas) - esperado) < Math.abs(sumaVenta(mejor) - esperado)) mejor = filas;
+  }
+  const dias = (Date.parse(fin) - Date.parse(ini)) / 864e5 + 1;
+  if (nivel < 2 && dias >= 8) {
+    const mitad = diaMas(ini, Math.floor(dias / 2) - 1);
+    return [
+      ...(await ventasVerificadas(sede, ini, mitad, nivel + 1)),
+      ...(await ventasVerificadas(sede, diaMas(mitad, 1), fin, nivel + 1)),
+    ];
+  }
+  // Sin cortar toda la carga por una ventana: se deja la mas cercana y se avisa.
+  console.warn(
+    `[smartbit] ${ini} a ${fin}: el detalle no cuadra con el agrupado (${sumaVenta(mejor).toFixed(2)} vs ${esperado.toFixed(2)})`,
+  );
+  return mejor;
+}
+
 /**
  * Reemplaza en ventas_smartbit las ventas de una sede en [desde, hasta]
- * (recortado al dia antes del corte) con lo que devuelve Smartbit. Va mes a
- * mes, cada mes en su transaccion: se puede reintentar sin duplicar.
+ * (recortado al dia antes del corte) con lo que devuelve Smartbit. Borra el
+ * rango completo una vez y despues inserta mes a mes: un registro puede venir
+ * con fecha de un mes vecino a su ventana, y un borrado por mes lo perderia.
+ * Si se corta a mitad, se vuelve a correr el mismo rango.
  */
 export async function importarVentasSmartbit(
   companyId: number,
@@ -454,80 +548,80 @@ export async function importarVentasSmartbit(
   const rango = rangoSmartbit(desde, hasta);
   if (!rango) return { meses: 0, renglones: 0 };
 
-  let renglones = 0;
-  const meses = rangosMensuales(rango[0], rango[1]);
-  for (const [ini, fin] of meses) {
-    // Dia por dia: la API corta las paginas en ~600 renglones sin orden
-    // estable, y con muchas paginas repite y salta renglones (marzo 2026 de
-    // Panama, 12 paginas: 16 diferencias entre dos corridas). Un dia casi
-    // siempre cabe en una pagina.
-    const filas: any[] = [];
-    for (const dia of diasDe(ini, fin)) {
-      const body = {
-        idSucursal: sede.idSucursal,
-        agrupaSucursal: false,
-        agrupaCliente: false,
-        agrupaAgrupadores: false,
-        agruparVendedor: false,
-        agrupaArticulo: false,
-        fecha: { fechaInicial: `${dia}T00:00:00`, fechaFinal: `${dia}T23:59:59` },
-      };
-      for (let pagina = 1, total = 1; pagina <= total; pagina++) {
-        const r = await paginaVentas(sede.clientId, body, pagina);
-        filas.push(...r.filas);
-        total = r.paginas;
-        if (r.filas.length === 0) break;
-      }
-    }
+  // Conexion directa (no query()): un DELETE/INSERT de miles de renglones
+  // no debe pasar por la auditoria fila a fila de lib/db.ts.
+  const conn = await getConnection();
+  try {
+    await conn.query("DELETE FROM ventas_smartbit WHERE company_id = ? AND fecha BETWEEN ? AND ?", [
+      companyId,
+      rango[0],
+      rango[1],
+    ]);
 
     // Recortado al largo de cada columna (sql/ventas_smartbit.sql): MySQL
     // estricto rechaza el INSERT completo si un texto sobra.
     const txt = (s: any, max: number) => (s == null || String(s).trim() === "" ? null : String(s).trim().slice(0, max));
-    const valores = filas.flatMap((f) =>
-      (f.detalle || []).map((d: any) => [
-        companyId,
-        String(f.fecha || ini).slice(0, 10),
-        f.idSucursal ?? null,
-        txt(f.sucursal, 120),
-        txt(f.vendedor, 150),
-        txt(f.codigoCliente, 60),
-        txt(f.cliente, 255),
-        txt(d.codigo, 80),
-        txt(d.articulo, 255),
-        txt((d.clasificadores || []).find((c: any) => (c.agrupador || "").toLowerCase() === "linea")?.descripcion, 120),
-        Number(d.venta) || 0,
-        Number(d.unidades) || 0,
-        d.costo == null ? null : Number(d.costo),
-      ]),
-    );
-
-    // Conexion directa (no query()): un DELETE/INSERT de miles de renglones
-    // no debe pasar por la auditoria fila a fila de lib/db.ts.
-    const conn = await getConnection();
-    try {
-      await conn.beginTransaction();
-      await conn.query(
-        "DELETE FROM ventas_smartbit WHERE company_id = ? AND fecha BETWEEN ? AND ?",
-        [companyId, ini, fin],
-      );
-      for (let i = 0; i < valores.length; i += 500) {
-        await conn.query(
-          `INSERT INTO ventas_smartbit
-             (company_id, fecha, id_sucursal, sucursal, vendedor, codigo_cliente, cliente,
-              codigo_articulo, articulo, linea, venta, unidades, costo)
-           VALUES ?`,
-          [valores.slice(i, i + 500)],
-        );
+    let renglones = 0;
+    const meses = rangosMensuales(rango[0], rango[1]);
+    for (const [ini, fin] of meses) {
+      const filas: any[] = [];
+      if (ini >= POR_DIA_DESDE) {
+        for (let dia = ini; dia <= fin; dia = diaMas(dia, 1)) filas.push(...(await ventasVerificadas(sede, dia, dia)));
+      } else {
+        filas.push(...(await ventasVerificadas(sede, ini, fin)));
       }
-      await conn.commit();
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
+      const valores = filas.flatMap((f) =>
+        (f.detalle || []).map((d: any) => [
+          companyId,
+          String(f.fecha || ini).slice(0, 10),
+          f.idSucursal ?? null,
+          txt(f.sucursal, 120),
+          txt(f.vendedor, 150),
+          txt(f.codigoCliente, 60),
+          txt(f.cliente, 255),
+          txt(d.codigo, 80),
+          txt(d.articulo, 255),
+          txt((d.clasificadores || []).find((c: any) => (c.agrupador || "").toLowerCase() === "linea")?.descripcion, 120),
+          Number(d.venta) || 0,
+          Number(d.unidades) || 0,
+          d.costo == null ? null : Number(d.costo),
+        ]),
+      );
+      // Como fechaInicial es el dia anterior, en datos recientes (filtro por
+      // fecha, inclusivo) la ventana trae tambien ese dia, que ya importo la
+      // ventana anterior (2025: +1,66 M). En datos viejos el unico renglon con
+      // fecha anterior era un repetido (31-ene-2021). Se descarta lo anterior a
+      // `ini`; verificado por año contra el agrupado de la API.
+      const unicos = ini >= POR_DIA_DESDE ? valores : valores.filter((v: any[]) => v[1] >= ini);
+      if (unicos.length < valores.length) {
+        console.warn(`[smartbit] ${ini.slice(0, 7)}: ${valores.length - unicos.length} renglones con fecha anterior a la ventana, omitidos`);
+      }
+      // Una fecha fuera del rango borrado duplicaria al volver a correr.
+      const dentro = unicos.filter((v: any[]) => v[1] >= rango[0] && v[1] <= rango[1]);
+      if (dentro.length < unicos.length) {
+        console.warn(`[smartbit] ${ini.slice(0, 7)}: ${unicos.length - dentro.length} renglones con fecha fuera del rango, omitidos`);
+      }
+      await conn.beginTransaction();
+      try {
+        for (let i = 0; i < dentro.length; i += 500) {
+          await conn.query(
+            `INSERT INTO ventas_smartbit
+               (company_id, fecha, id_sucursal, sucursal, vendedor, codigo_cliente, cliente,
+                codigo_articulo, articulo, linea, venta, unidades, costo)
+             VALUES ?`,
+            [dentro.slice(i, i + 500)],
+          );
+        }
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      }
+      renglones += dentro.length;
+      alTerminarMes?.(ini.slice(0, 7), dentro.length);
     }
-    renglones += valores.length;
-    alTerminarMes?.(ini.slice(0, 7), valores.length);
+    return { meses: meses.length, renglones };
+  } finally {
+    conn.release();
   }
-  return { meses: meses.length, renglones };
 }

@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { esPlazoCredito, nombresPlazos } from "@/lib/cxc/credito";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -205,15 +206,7 @@ export async function GET(request: Request) {
     let ptMap: Record<number, string> = {};
     if (ptIds.length > 0) {
       try {
-        const pts = await callOdooRPC<any[]>(
-          "account.payment.term",
-          "read",
-          [ptIds],
-          { fields: ["id", "name"] },
-        );
-        pts.forEach((pt) => {
-          ptMap[pt.id] = pt.name;
-        });
+        ptMap = Object.fromEntries(await nombresPlazos(ptIds));
       } catch (_) {}
     }
 
@@ -239,12 +232,8 @@ export async function GET(request: Request) {
       const zona = partner?.state_id?.[1] || "Sin Zona";
       const ptName =
         ptMap[f.invoice_payment_term_id?.[0]] || "Pago Inmediato";
-      const esCredito =
-        ptName.toLowerCase().includes("crédito") ||
-        ptName.toLowerCase().includes("credito") ||
-        ptName.toLowerCase().includes("credit") ||
-        ptName.toLowerCase().includes("30") ||
-        ptName.toLowerCase().includes("60");
+      // Mismo criterio que CxC: crédito si el plazo tiene días en el nombre.
+      const esCredito = esPlazoCredito(ptMap[f.invoice_payment_term_id?.[0]]);
       const tipoPago = esCredito ? "Crédito" : "Contado";
       const lineas = lineasPorFactura[f.id] || [];
       const clienteNombre = f.partner_id?.[1] || "Sin Cliente";

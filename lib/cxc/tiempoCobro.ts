@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { esPlazoCredito } from "@/lib/cxc/credito";
 
 /**
  * "Tiempo de cobro": cuántos días pasan desde que se emite una factura a
@@ -42,16 +43,18 @@ export interface Grupo {
   clave: string;
   facturas: number;
   monto: number;
-  /** Promedio de días ponderado por monto. */
+  /** Promedio simple de días por factura (cada factura pesa igual). */
   promedioDias: number;
-  /** Plazo promedio ponderado por monto. */
+  /** Plazo promedio simple por factura. */
   plazoPromedio: number;
+  /** Promedio de días ponderado por monto (las facturas grandes pesan más). */
+  promedioPonderado: number;
   /** % de facturas pagadas dentro del plazo. */
   aTiempoPct: number;
 }
 
 export interface TiempoCobro {
-  resumen: Grupo & { promedioSimple: number; mediana: number };
+  resumen: Grupo & { mediana: number };
   tramos: { label: string; facturas: number; monto: number; pct: number }[];
   porPlazo: (Grupo & { plazo: number })[];
   clientes: (Grupo & { partnerId: number })[];
@@ -93,18 +96,19 @@ export const TRAMOS = [
   { label: "Más de 90 días", max: Infinity },
 ];
 
+// Misma fórmula en resumenDe() de la página (tiempo-cobro/page.tsx).
 function agrupar(clave: string, fs: FacturaCobrada[]): Grupo {
   const monto = fs.reduce((s, f) => s + f.monto, 0);
-  const pond = (campo: "dias" | "plazo") =>
-    monto > 0 ? fs.reduce((s, f) => s + f[campo] * f.monto, 0) / monto : 0;
-  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const prom = (campo: "dias" | "plazo") => (fs.length ? fs.reduce((s, f) => s + f[campo], 0) / fs.length : 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
     clave,
     facturas: fs.length,
-    monto: Math.round(monto * 100) / 100,
-    promedioDias: r1(pond("dias")),
-    plazoPromedio: r1(pond("plazo")),
-    aTiempoPct: fs.length ? r1((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 100) : 0,
+    monto: r2(monto),
+    promedioDias: r2(prom("dias")),
+    plazoPromedio: r2(prom("plazo")),
+    promedioPonderado: r2(monto > 0 ? fs.reduce((s, f) => s + f.dias * f.monto, 0) / monto : 0),
+    aTiempoPct: fs.length ? Math.round((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 1000) / 10 : 0,
   };
 }
 
@@ -165,16 +169,20 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
       "invoice_payment_term_id", "amount_total_signed", "invoice_user_id"]),
     callOdooRPC<any[]>("account.payment.term", "search_read", [[]], { fields: ["id", "name"], context: { active_test: false } }),
   ]);
+  // Crédito = plazo con número en el nombre (esPlazoCredito, como el resto de
+  // CxC). Pero los DÍAS del plazo salen del vencimiento de la factura: es lo
+  // que define "a tiempo", y el nombre que devuelve la API (en inglés) quedó
+  // viejo en varios plazos (ver nombresPlazos en lib/cxc/credito.ts).
   const diasPlazo = new Map<number, number>();
   for (const p of plazos || []) {
-    const m = String(p.name || "").match(/\d+/);
-    if (m) diasPlazo.set(p.id, parseInt(m[0], 10));
+    if (esPlazoCredito(p.name)) diasPlazo.set(p.id, parseInt(String(p.name).match(/\d+/)![0], 10));
   }
 
   const facturas: FacturaCobrada[] = [];
   for (const m of moves) {
-    const plazo = diasPlazo.get(idDe(m.invoice_payment_term_id) ?? -1);
-    if (plazo === undefined || !m.invoice_date || esCarteraVieja(m.invoice_date_due)) continue; // contado o vieja
+    const delNombre = diasPlazo.get(idDe(m.invoice_payment_term_id) ?? -1);
+    if (delNombre === undefined || !m.invoice_date || esCarteraVieja(m.invoice_date_due)) continue; // contado o vieja
+    const plazo = m.invoice_date_due ? Math.max(0, diasEntre(m.invoice_date, m.invoice_date_due)) : delNombre;
     const pagada = ultimo.get(m.id)!.fecha;
     facturas.push({
       id: m.id,
@@ -207,11 +215,7 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
 
   const clientesMap = porClave(facturas, (f) => String(f.partnerId));
   return {
-    resumen: {
-      ...agrupar("total", facturas),
-      promedioSimple: facturas.length ? Math.round((facturas.reduce((s, f) => s + f.dias, 0) / facturas.length) * 10) / 10 : 0,
-      mediana,
-    },
+    resumen: { ...agrupar("total", facturas), mediana },
     tramos,
     porPlazo: [...porClave(facturas, (f) => String(f.plazo))]
       .map(([k, fs]) => ({ ...agrupar(`${k} días`, fs), plazo: Number(k) }))

@@ -77,6 +77,8 @@ export async function GET(request: Request) {
           "credit_limit",
           "credit",
         ],
+        // Nombre del plazo en español (en inglés hay plazos con nombre viejo, ver nombresPlazos en lib/cxc/credito.ts).
+        context: { lang: "es_VE" },
       },
     );
 
