@@ -90,10 +90,15 @@ export async function GET(request: NextRequest) {
       // tarjeta no los cuenta.
       // Solo informativo: si falla, el modal sigue sin el aviso.
       const relacionadas = saldoRelacionada(companyIds).catch(() => 0);
-      const inicioHoy = new Date(today);
-      inicioHoy.setHours(0, 0, 0, 0);
-      const series = await calcularSeriesCxC(companyIds, [{ inicio: inicioHoy, fin: today }], today);
-      const { saldos, viejas } = series.saldosEn(today);
+      // Cartera al cierre del mes elegido si ya terminó (igual que la tarjeta,
+      // route.ts → corteCartera); si no, hoy. Incobrables es siempre de hoy.
+      const finMes = new Date(monthEnd);
+      finMes.setHours(23, 59, 59, 999);
+      const corte = type === "cartera" && finMes < today ? finMes : today;
+      const inicioCorte = new Date(corte);
+      inicioCorte.setHours(0, 0, 0, 0);
+      const series = await calcularSeriesCxC(companyIds, [{ inicio: inicioCorte, fin: corte }], today);
+      const { saldos, viejas } = series.saldosEn(corte);
       const mapa = type === "incobrables" ? viejas : saldos;
       const ids = [...mapa.keys()];
       const moves: any[] = [];
@@ -113,7 +118,7 @@ export async function GET(request: NextRequest) {
           user_name: m.invoice_user_id?.[1],
           invoice_date: m.invoice_date,
           date_maturity: m.invoice_date_due,
-          days_overdue: due ? Math.max(0, Math.round((inicioHoy.getTime() - due.getTime()) / 86400000)) : 0,
+          days_overdue: due ? Math.max(0, Math.round((inicioCorte.getTime() - due.getTime()) / 86400000)) : 0,
           amount_residual: mapa.get(m.id) || 0,
         };
       });
@@ -159,6 +164,8 @@ export async function GET(request: NextRequest) {
             count: invoices.length,
             overdueCount: invoices.filter(i => i.daysOverdue > 0).length,
             clientes: new Set(invoices.map(i => i.partnerId).filter(Boolean)).size,
+            corte: `${corte.getFullYear()}-${String(corte.getMonth() + 1).padStart(2, "0")}-${String(corte.getDate()).padStart(2, "0")}`,
+            alCierre: corte !== today,
           },
           byBand,
           invoices: invoices.sort((a, b) => b.daysOverdue - a.daysOverdue),
