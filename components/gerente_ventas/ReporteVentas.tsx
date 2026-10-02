@@ -10,6 +10,9 @@
  * Pestaña "Clientes inactivos": la cartera asignada a cada vendedor que no
  * registra compras en los últimos 3 o 6 meses.
  *
+ * Solo facturas: las notas de crédito no entran (ni en el desglose ni en el
+ * comparativo).
+ *
  * Arriba del desglose, el comparativo mensual con los mismos filtros (sin el
  * rango de fechas): toda la historia, Smartbit antes de abril 2026.
  *
