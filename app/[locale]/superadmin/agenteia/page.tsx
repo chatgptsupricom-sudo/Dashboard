@@ -1,29 +1,39 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowUp,
   BrainCircuit,
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   FileIcon,
   FileSpreadsheet,
   Headphones,
   Loader2,
-  MessageSquarePlus,
+  type LucideIcon,
   Mic,
   MicOff,
+  PackageX,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
   Pencil,
+  PlugZap,
+  RefreshCw,
   RotateCcw,
-  Send,
+  Search,
+  Sparkles,
   Square,
+  SquarePen,
   Trash2,
-  User,
+  TrendingDown,
+  TriangleAlert,
+  Trophy,
+  Users,
   Volume2,
   X,
 } from "lucide-react";
@@ -87,22 +97,76 @@ function TablaConExcel({ node, ...props }: any) {
     XLSX.writeFile(XLSX.utils.table_to_book(ref.current, { sheet: "Datos" }), `supri_ai_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   return (
-    <div className="my-2">
-      <div className="overflow-x-auto">
+    <div className="agente-tabla">
+      <div className="overflow-x-auto agente-scroll">
         <table ref={ref} {...props} />
       </div>
       <button
         type="button"
         onClick={exportar}
-        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
+        className="inline-flex items-center gap-1.5 h-7 px-2 -ml-2 mt-1 rounded-md text-xs font-medium text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
       >
-        <FileSpreadsheet size={12} /> Descargar en Excel
+        <FileSpreadsheet size={13} /> Descargar en Excel
       </button>
     </div>
   );
 }
 
 type ArchivoRef = { id: string; nombre: string };
+
+const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "sugerencia_4"; icono: LucideIcon }[] = [
+  { clave: "sugerencia_1", icono: TrendingDown },
+  { clave: "sugerencia_2", icono: Trophy },
+  { clave: "sugerencia_3", icono: Users },
+  { clave: "sugerencia_4", icono: PackageX },
+];
+
+// La lista de conversaciones se agrupa por antigüedad, como en Claude/ChatGPT.
+type GrupoFecha = "hoy" | "ayer" | "semana" | "mes" | "antes";
+function agruparPorFecha(chats: Chat[]): [GrupoFecha, Chat[]][] {
+  const inicioHoy = new Date().setHours(0, 0, 0, 0);
+  const dia = 86_400_000;
+  const grupo = (t: number): GrupoFecha =>
+    t >= inicioHoy ? "hoy" : t >= inicioHoy - dia ? "ayer" : t >= inicioHoy - 7 * dia ? "semana" : t >= inicioHoy - 30 * dia ? "mes" : "antes";
+  const mapa = new Map<GrupoFecha, Chat[]>();
+  for (const c of chats) {
+    const g = grupo(c.createdAt || 0);
+    mapa.set(g, [...(mapa.get(g) || []), c]);
+  }
+  return (["hoy", "ayer", "semana", "mes", "antes"] as GrupoFecha[]).filter((g) => mapa.has(g)).map((g) => [g, mapa.get(g)!]);
+}
+
+// Botón de icono de la conversación (copiar, rebobinar, adjuntar, dictar).
+function BotonAccion({
+  etiqueta,
+  onClick,
+  disabled,
+  grande,
+  activo,
+  children,
+}: {
+  etiqueta: string;
+  onClick: () => void;
+  disabled?: boolean;
+  grande?: boolean;
+  activo?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={etiqueta}
+      aria-label={etiqueta}
+      className={`grid place-items-center rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+        grande ? "h-8 w-8" : "h-7 w-7"
+      } ${activo ? "bg-red-50 text-red-600 animate-pulse" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 // Tarjeta de un archivo creado por el agente: un clic lo abre en el panel lateral.
 function ArchivoAgente({ id, nombre, activo, onAbrir }: ArchivoRef & { activo: boolean; onAbrir: () => void }) {
@@ -278,6 +342,7 @@ export default function AgenteIAPage() {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -932,609 +997,539 @@ export default function AgenteIAPage() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  const hora = new Date().getHours();
+  const saludo = t(hora < 12 ? "saludo_manana" : hora < 19 ? "saludo_tarde" : "saludo_noche");
+  const nombre = (user?.name || "").trim().split(/\s+/)[0];
+  const q = busqueda.trim().toLowerCase();
+  const gruposChats = agruparPorFecha(q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats);
+  const etiquetaGrupo: Record<GrupoFecha, string> = {
+    hoy: t("hoy"),
+    ayer: t("ayer"),
+    semana: t("ultimos_7"),
+    mes: t("ultimos_30"),
+    antes: t("anteriores"),
+  };
+  const puedeEnviar = (!!input.trim() || attachedFiles.length > 0) && !isGenerating && !isConversationMode;
+
   return (
     // 8rem = barra superior (4rem) + el p-8 del layout: así la página no se desplaza.
-    <div className="w-full h-[calc(100dvh-8rem)] flex font-sans overflow-hidden">
-      {/* ── SIDEBAR ───────────────────────────────────────────────────────── */}
+    <div className="relative w-full h-[calc(100dvh-8rem)] flex font-sans overflow-hidden selection:bg-blue-100 selection:text-blue-900">
+      {/* ── LISTA DE CONVERSACIONES ───────────────────────────────────────── */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
           <motion.aside
             key="sidebar"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 256, opacity: 1 }}
+            animate={{ width: 264, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="h-full bg-white border-r border-slate-100 flex flex-col overflow-hidden shrink-0 z-10"
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute md:relative inset-y-0 left-0 z-30 h-full bg-[#f8fafc] md:bg-transparent border-r border-slate-200/80 flex flex-col overflow-hidden shrink-0 shadow-xl md:shadow-none"
           >
-            {/* Sidebar header */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <img
-                  src="/supricom.png"
-                  alt="Supri"
-                  className="w-7 h-7 rounded-full object-cover"
-                />
-                <span className="text-xs font-black uppercase tracking-tight text-slate-700">
-                  Supri AI
-                </span>
+            <div className="w-[264px] h-full flex flex-col">
+              <div className="h-12 px-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <img src="/supricom.png" alt="" className="w-6 h-6 rounded-md object-cover" />
+                  <span className="text-sm font-semibold text-slate-800">Supri AI</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  title={t("cerrar_chats")}
+                  aria-label={t("cerrar_chats")}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                >
+                  <PanelLeftClose size={16} />
+                </button>
               </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <PanelLeftClose size={16} />
-              </button>
-            </div>
 
-            {/* New chat button */}
-            <div className="p-3 shrink-0">
-              <button
-                onClick={createChat}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-sm"
-              >
-                <MessageSquarePlus size={14} />
-                {t("nuevo_chat")}
-              </button>
-            </div>
+              <div className="px-3 pb-2 space-y-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={createChat}
+                  className="w-full flex items-center gap-2 px-3 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-[13px] font-medium transition-colors shadow-[0_1px_2px_rgba(37,99,235,0.35)]"
+                >
+                  <SquarePen size={15} />
+                  {t("nuevo_chat")}
+                </button>
+                <label className="relative block">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder={t("buscar_chats")}
+                    aria-label={t("buscar_chats")}
+                    className="w-full h-8 pl-8 pr-2 rounded-lg bg-white border border-slate-200 text-[13px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/15 caret-blue-600"
+                  />
+                </label>
+              </div>
 
-            {/* Chat list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-              {chats.length === 0 ? (
-                <p className="text-[10px] text-slate-400 text-center py-4 px-3">
-                  {t("sin_conversaciones")}
-                </p>
-              ) : (
-                chats.map((chat) => (
-                  <div
-                    key={chat.id}
-                    onClick={() => selectChat(chat.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start justify-between gap-2 group transition-colors cursor-pointer ${
-                      chat.id === activeChatId
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {editingChatId === chat.id ? (
-                      <div
-                        className="flex items-center gap-1 flex-1 min-w-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          autoFocus
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={saveEditTitle}
-                          onKeyDown={handleEditTitleKeyDown}
-                          className="flex-1 min-w-0 text-[11px] font-semibold bg-white border border-blue-300 rounded-md px-1.5 py-0.5 outline-none text-slate-800"
-                        />
-                        <button
-                          onClick={saveEditTitle}
-                          className="shrink-0 p-0.5 rounded-md text-blue-500 hover:bg-blue-100"
-                        >
-                          <Check size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] font-semibold leading-snug line-clamp-2 flex-1">
-                        {chat.title}
-                      </span>
-                    )}
-                    {editingChatId !== chat.id && (
-                      <div className="shrink-0 flex items-center gap-0.5 mt-0.5 opacity-0 group-hover:opacity-100">
-                        <span
-                          onClick={(e) => startEditTitle(chat, e)}
-                          className={`p-0.5 rounded-md transition-colors hover:bg-blue-100 hover:text-blue-500 ${
-                            chat.id === activeChatId
-                              ? "text-blue-400"
-                              : "text-slate-300"
-                          }`}
-                          role="button"
-                          title={t("renombrar")}
-                        >
-                          <Pencil size={11} />
-                        </span>
-                        <span
-                          onClick={(e) => deleteChat(chat.id, e)}
-                          className={`p-0.5 rounded-md transition-colors hover:bg-red-100 hover:text-red-500 ${
-                            chat.id === activeChatId
-                              ? "text-blue-400"
-                              : "text-slate-300"
-                          }`}
-                          role="button"
-                          title={t("eliminar_chat")}
-                        >
-                          <Trash2 size={11} />
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))
+              <nav className="flex-1 overflow-y-auto px-2 pb-3 agente-scroll" aria-label={t("titulo")}>
+                {chats.length === 0 ? (
+                  <p className="text-xs text-slate-500 px-3 py-6">{t("sin_conversaciones")}</p>
+                ) : gruposChats.length === 0 ? (
+                  <p className="text-xs text-slate-500 px-3 py-6">{t("sin_resultados")}</p>
+                ) : (
+                  gruposChats.map(([grupo, lista]) => (
+                    <div key={grupo} className="mt-3 first:mt-1">
+                      <p className="px-3 pb-1 text-[11px] font-medium text-slate-500">{etiquetaGrupo[grupo]}</p>
+                      {lista.map((chat) => {
+                        const activo = chat.id === activeChatId;
+                        return (
+                          <div
+                            key={chat.id}
+                            className={`group relative flex items-center rounded-lg transition-colors ${
+                              activo ? "bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-slate-200" : "hover:bg-slate-200/50"
+                            }`}
+                          >
+                            {editingChatId === chat.id ? (
+                              <input
+                                autoFocus
+                                value={editingTitle}
+                                onChange={(e) => setEditingTitle(e.target.value)}
+                                onBlur={saveEditTitle}
+                                onKeyDown={handleEditTitleKeyDown}
+                                aria-label={t("renombrar")}
+                                className="flex-1 min-w-0 m-1 h-7 px-2 text-[13px] bg-white border border-blue-300 rounded-md outline-none text-slate-800 caret-blue-600"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => selectChat(chat.id)}
+                                aria-current={activo ? "page" : undefined}
+                                className={`flex-1 min-w-0 text-left pl-3 pr-14 py-2 text-[13px] truncate ${
+                                  activo ? "text-slate-900 font-medium" : "text-slate-600"
+                                }`}
+                              >
+                                {chat.title}
+                              </button>
+                            )}
+                            {editingChatId !== chat.id && (
+                              <div className="absolute right-1 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => startEditTitle(chat, e)}
+                                  title={t("renombrar")}
+                                  aria-label={t("renombrar")}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => deleteChat(chat.id, e)}
+                                  title={t("eliminar_chat")}
+                                  aria-label={t("eliminar_chat")}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </nav>
+
+              {faltaMcp && (
+                <a
+                  href="/api/superadmin/agenteia/oauth"
+                  className="m-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors shrink-0"
+                >
+                  <PlugZap size={14} />
+                  {t("conectar_odoo")}
+                </a>
               )}
             </div>
-
-            {faltaMcp && (
-              <a
-                href="/api/superadmin/agenteia/oauth"
-                className="m-3 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors shrink-0"
-              >
-                {t("conectar_odoo")}
-              </a>
-            )}
           </motion.aside>
         )}
       </AnimatePresence>
 
-      {/* ── MAIN CHAT AREA ────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col p-2 md:p-4 overflow-hidden min-w-0">
-        {/* Header */}
-        <div className="px-1 pb-3 border-b border-slate-200/70 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
+      {/* ── CONVERSACIÓN ──────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="h-12 px-2 md:px-4 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             {!sidebarOpen && (
               <button
+                type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                title={t("abrir_chats")}
+                aria-label={t("abrir_chats")}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
               >
                 <PanelLeftOpen size={16} />
               </button>
             )}
-            <div className="w-9 h-9 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-              <img
-                src="/supricom.png"
-                alt="Supri"
-                className="w-full h-full object-cover rounded-full"
-              />
-            </div>
-            <div>
-              <Title className="text-base md:text-lg font-black text-slate-900 tracking-tighter uppercase italic">
-                Supri <span className="text-blue-600">AI</span>
-              </Title>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest hidden sm:block">
-                {activeChat?.title ?? t("titulo")}
-              </p>
-            </div>
+            <h1 className="text-sm font-semibold text-slate-800 truncate">{activeChat?.title ?? "Supri AI"}</h1>
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={modelo}
-              onChange={(e) => elegirModelo(e.target.value)}
-              disabled={isGenerating}
-              title={t("modelo")}
-              aria-label={t("modelo")}
-              className="max-w-[9rem] sm:max-w-none px-2 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-[10px] md:text-xs font-bold outline-none hover:bg-slate-200 disabled:opacity-50"
-            >
-              <option value="">{t("modelo_auto")}</option>
-              {modelos.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nombre}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-1 shrink-0">
+            <label className="relative">
+              <span className="sr-only">{t("modelo")}</span>
+              <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+              <select
+                value={modelo}
+                onChange={(e) => elegirModelo(e.target.value)}
+                disabled={isGenerating}
+                title={t("modelo")}
+                className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
+              >
+                <option value="">{t("modelo_auto")}</option>
+                {modelos.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </label>
             <button
+              type="button"
               onClick={toggleConversationMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-bold transition-all ${
-                isConversationMode
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30 animate-pulse"
-                  : "bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+              aria-pressed={isConversationMode}
+              title={isConversationMode ? t("voz_activa") : t("activar_voz")}
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+                isConversationMode ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-200/60"
               }`}
             >
-              <Headphones size={13} />
-              <span className="hidden sm:inline">
-                {isConversationMode ? t("voz_activa") : t("activar_voz")}
-              </span>
+              <Headphones size={15} />
+              <span className="hidden lg:inline">{isConversationMode ? t("voz_activa") : t("activar_voz")}</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Status indicator */}
+        {/* Estado del modo voz */}
         <AnimatePresence>
-          {(isListening || isSpeaking || isGenerating) &&
-            isConversationMode && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex justify-center mt-3"
-              >
-                <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-5 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                  {isSpeaking ? (
-                    <>
-                      <Volume2 size={13} className="animate-pulse" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("supri_hablando")}
-                      </span>
-                    </>
-                  ) : isGenerating ? (
-                    <>
-                      <BrainCircuit size={13} className="animate-spin" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("pensando")}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic size={13} className="animate-bounce" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("escuchando")}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            )}
+          {(isListening || isSpeaking || isGenerating) && isConversationMode && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="flex justify-center"
+            >
+              <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full flex items-center gap-2 text-xs font-medium" role="status">
+                {isSpeaking ? (
+                  <>
+                    <Volume2 size={14} className="animate-pulse" /> {t("supri_hablando")}
+                  </>
+                ) : isGenerating ? (
+                  <>
+                    <BrainCircuit size={14} className="animate-pulse" /> {t("pensando")}
+                  </>
+                ) : (
+                  <>
+                    <Mic size={14} className="animate-pulse" /> {t("escuchando")}
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
-        {/* Chat: sin recuadro, ocupa todo el ancho disponible */}
-        <div className="flex-1 min-h-0 mt-2 overflow-hidden flex flex-col relative">
-          {/* Speaking video background */}
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+          {/* Video de Supri hablando (modo voz) */}
           <div
             className={`absolute inset-0 z-0 bg-[#f1f1f1] transition-opacity duration-700 ${isSpeaking ? "opacity-100" : "opacity-0"}`}
           >
-            <video
-              ref={videoRef}
-              src="/supri-speak.mp4"
-              className="w-full h-full object-contain"
-              muted
-              loop
-              playsInline
-            />
+            <video ref={videoRef} src="/supri-speak.mp4" className="w-full h-full object-contain" muted loop playsInline />
           </div>
 
-          {/* Messages + input always visible */}
-          <>
-            {/* Messages */}
-            <div
-              ref={chatContainerRef}
-              className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 custom-scrollbar relative z-10 transition-all duration-500 ${
-                isSpeaking
-                  ? "opacity-0 pointer-events-none scale-95"
-                  : "opacity-100 scale-100"
-              }`}
-            >
-              <AnimatePresence initial={false}>
-                {messages.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto space-y-4 p-8"
-                  >
-                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-white shadow-2xl shadow-blue-500/20">
-                      <img
-                        src="/supri2.png"
-                        alt="Supri"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-                        {t("listo_ayudar")}
-                      </h3>
-                      <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                        {t("escribe_mensaje")}
-                      </p>
-                    </div>
-                    <div className="w-full grid gap-2 pt-2">
-                      {(["sugerencia_1", "sugerencia_2", "sugerencia_3", "sugerencia_4"] as const).map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => enviar(t(k))}
-                          className="w-full text-left px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                        >
-                          {t(k)}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                ) : (
-                  messages.map((msg, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`flex gap-3 w-full max-w-4xl mx-auto ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          {/* Mensajes */}
+          <div
+            ref={chatContainerRef}
+            className={`flex-1 overflow-y-auto px-3 md:px-6 agente-scroll relative z-10 transition-opacity duration-500 ${
+              isSpeaking ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          >
+            {messages.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="min-h-full flex flex-col justify-center max-w-2xl mx-auto py-10"
+              >
+                <img
+                  src="/supri2.png"
+                  alt=""
+                  className="w-12 h-12 rounded-2xl object-cover shadow-[0_6px_16px_-6px_rgba(37,99,235,0.45)]"
+                />
+                <h2 className="mt-5 text-2xl md:text-3xl font-semibold tracking-[-0.02em] text-slate-900 text-balance">
+                  {saludo}
+                  {nombre ? `, ${nombre}` : ""}
+                </h2>
+                <p className="mt-2 text-[15px] leading-relaxed text-slate-600 max-w-xl">{t("subtitulo_vacio")}</p>
+                <div className="mt-7 flex flex-wrap gap-2">
+                  {SUGERENCIAS.map(({ clave, icono: Icono }) => (
+                    <button
+                      key={clave}
+                      type="button"
+                      onClick={() => enviar(t(clave))}
+                      className="group inline-flex items-center gap-2 h-9 px-3.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-700 hover:border-blue-300 hover:text-blue-700 hover:shadow-[0_2px_8px_-2px_rgba(37,99,235,0.25)] transition-[border-color,color,box-shadow]"
                     >
-                      {msg.role === "assistant" && (
-                        <div className="shrink-0 flex items-start">
-                          <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden border-2 border-white shadow-md">
-                            <img
-                              src="/supri2.png"
-                              alt="Supri"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <div className={`flex flex-col space-y-1 min-w-0 ${msg.role === "user" ? "max-w-[85%] md:max-w-[75%]" : "flex-1"}`}>
-                        <div
-                          className={`text-[13px] md:text-sm font-medium leading-relaxed ${
-                            msg.role === "user"
-                              ? "p-3 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border bg-slate-900 border-slate-950 text-white rounded-br-sm"
-                              : "px-1 text-slate-800"
-                          }`}
-                        >
-                          {msg.proceso && (
-                            <details className="mb-2 text-xs text-slate-500">
-                              <summary className="cursor-pointer select-none font-semibold hover:text-slate-700">
-                                {t("ver_proceso")}
-                              </summary>
-                              <p className="mt-1 pl-3 border-l-2 border-slate-200 whitespace-pre-line font-normal leading-relaxed">
-                                {msg.proceso}
-                              </p>
-                            </details>
-                          )}
-                          {msg.content === "" &&
-                          isGenerating &&
-                          index === messages.length - 1 ? null : (
-                            <div className="space-y-2">
-                              {msg.role === "user" ? (
-                                <p className="whitespace-pre-line">{msg.content}</p>
-                              ) : (
-                                <div data-msg={index} className="agente-md break-words [&_td]:tabular-nums">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
-                                    {sinMarcas(msg.content)}
-                                  </ReactMarkdown>
-                                </div>
-                              )}
-                              {msg.role === "assistant" &&
-                                archivosDe(msg.content).map((a) => (
-                                  <ArchivoAgente
-                                    key={a.id}
-                                    {...a}
-                                    activo={archivoAbierto?.id === a.id}
-                                    onAbrir={() => abrirArchivo(archivoAbierto?.id === a.id ? null : a)}
-                                  />
-                                ))}
-                              {msg.role === "assistant" &&
-                                cambiosDe(msg.content).map(({ token, detalle }) => (
-                                  <div key={token} className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
-                                    <div className="text-[11px] font-black uppercase tracking-wider text-amber-700">
-                                      Cambio en Odoo pendiente
-                                    </div>
-                                    <div className="text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</div>
-                                    {detalle && (
-                                      <pre className="text-[10px] bg-white/70 rounded p-2 overflow-x-auto text-slate-600">
-                                        {JSON.stringify(
-                                          { operacion: detalle.operacion, model: detalle.model, ids: detalle.ids, method: detalle.method, values: detalle.values, args: detalle.args, kwargs: detalle.kwargs },
-                                          null,
-                                          2,
-                                        )}
-                                      </pre>
-                                    )}
-                                    <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        disabled={isGenerating}
-                                        onClick={() => resolverCambio(index, token, true)}
-                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
-                                      >
-                                        Confirmar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={isGenerating}
-                                        onClick={() => resolverCambio(index, token, false)}
-                                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
-                                      >
-                                        Cancelar
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              {msg.files && (
-                                <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100/20">
-                                  {msg.files.map((file, fIdx) => (
-                                    <div
-                                      key={fIdx}
-                                      className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/40 rounded-lg text-[10px] font-bold text-slate-300"
-                                    >
-                                      <FileIcon
-                                        size={10}
-                                        className="text-blue-400"
-                                      />
-                                      <span className="truncate max-w-[120px]">
-                                        {file.name}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        {msg.role === "assistant" && isGenerating && index === messages.length - 1 && (
-                          <div className="flex items-center gap-2 px-1 py-1 text-slate-500" role="status">
-                            <Loader2 className="animate-spin text-blue-600 shrink-0" size={14} />
-                            <span className="text-xs font-semibold">{avance ? `${avance}…` : t("pensando")}</span>
-                            <span className="text-[11px] text-slate-400 tabular-nums">{duracion(segundos)}</span>
+                      <Icono size={14} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                      {t(clave)}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            ) : (
+              <div className="max-w-3xl mx-auto py-6 space-y-8">
+                {messages.map((msg, index) => {
+                  const ultimo = index === messages.length - 1;
+                  const escribiendo = msg.role === "assistant" && isGenerating && ultimo;
+                  return msg.role === "user" ? (
+                    <div key={index} className="group flex flex-col items-end gap-1">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-white border border-slate-200 px-4 py-2.5 text-[14px] leading-relaxed text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+                        <p className="whitespace-pre-line break-words">{msg.content}</p>
+                        {msg.files && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {msg.files.map((file, fIdx) => (
+                              <span
+                                key={fIdx}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-md text-[11px] font-medium text-slate-600"
+                              >
+                                <FileIcon size={11} className="text-blue-600" />
+                                <span className="truncate max-w-[140px]">{file.name}</span>
+                              </span>
+                            ))}
                           </div>
                         )}
-                        <div
-                          className={`flex items-center gap-1 px-2 text-slate-400 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                        >
-                          {msg.content !== "" && (
-                            <button
-                              type="button"
-                              onClick={() => copiar(index, msg.content)}
-                              title={t("copiar")}
-                              aria-label={t("copiar")}
-                              className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                            >
-                              {copiado === index ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                            </button>
-                          )}
-                          {msg.role === "user" && (
-                            <button
-                              type="button"
-                              disabled={isGenerating}
-                              onClick={() => rebobinar(index, msg.content)}
-                              title={t("rebobinar")}
-                              aria-label={t("rebobinar")}
-                              className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-40"
-                            >
-                              <RotateCcw size={12} />
-                            </button>
-                          )}
-                        </div>
                       </div>
-                      {msg.role === "user" && (
-                        <div className="shrink-0 flex items-end">
-                          <div className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shadow-inner">
-                            <User size={16} />
+                      <div className="flex items-center gap-0.5 text-slate-400 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <BotonAccion etiqueta={t("copiar")} onClick={() => copiar(index, msg.content)}>
+                          {copiado === index ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                        </BotonAccion>
+                        <BotonAccion etiqueta={t("rebobinar")} onClick={() => rebobinar(index, msg.content)} disabled={isGenerating}>
+                          <RotateCcw size={14} />
+                        </BotonAccion>
+                      </div>
+                    </div>
+                  ) : (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="group flex gap-3"
+                    >
+                      <img src="/supri2.png" alt="Supri" className="w-7 h-7 mt-0.5 rounded-lg object-cover shrink-0 ring-1 ring-slate-200" />
+                      <div className="flex-1 min-w-0 space-y-3">
+                        {msg.proceso && (
+                          <details className="text-[13px] text-slate-500 group/proceso">
+                            <summary className="inline-flex items-center gap-1 cursor-pointer select-none font-medium hover:text-slate-800 list-none [&::-webkit-details-marker]:hidden">
+                              <ChevronRight size={14} className="transition-transform group-open/proceso:rotate-90" />
+                              {t("ver_proceso")}
+                            </summary>
+                            <p className="mt-2 pl-4 border-l border-slate-200 whitespace-pre-line leading-relaxed">{msg.proceso}</p>
+                          </details>
+                        )}
+                        {msg.content !== "" && (
+                          <div data-msg={index} className="agente-md text-[14.5px] leading-7 text-slate-800 break-words">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
+                              {sinMarcas(msg.content)}
+                            </ReactMarkdown>
                           </div>
-                        </div>
-                      )}
+                        )}
+                        {archivosDe(msg.content).map((a) => (
+                          <ArchivoAgente
+                            key={a.id}
+                            {...a}
+                            activo={archivoAbierto?.id === a.id}
+                            onAbrir={() => abrirArchivo(archivoAbierto?.id === a.id ? null : a)}
+                          />
+                        ))}
+                        {cambiosDe(msg.content).map(({ token, detalle }) => (
+                          <div key={token} className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+                            <div className="flex items-center gap-2 text-[13px] font-semibold text-amber-800">
+                              <TriangleAlert size={15} /> Cambio en Odoo pendiente de confirmar
+                            </div>
+                            <p className="text-sm text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</p>
+                            {detalle && (
+                              <pre className="text-[11px] leading-relaxed bg-white rounded-lg border border-amber-100 p-3 overflow-x-auto text-slate-600 font-mono">
+                                {JSON.stringify(
+                                  {
+                                    operacion: detalle.operacion,
+                                    model: detalle.model,
+                                    ids: detalle.ids,
+                                    method: detalle.method,
+                                    values: detalle.values,
+                                    args: detalle.args,
+                                    kwargs: detalle.kwargs,
+                                  },
+                                  null,
+                                  2,
+                                )}
+                              </pre>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={isGenerating}
+                                onClick={() => resolverCambio(index, token, true)}
+                                className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isGenerating}
+                                onClick={() => resolverCambio(index, token, false)}
+                                className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-[13px] font-medium hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {escribiendo ? (
+                          <div className="flex items-center gap-2.5 text-[13px] text-slate-500" role="status" aria-live="polite">
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60 animate-ping" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
+                            </span>
+                            <span className="font-medium text-slate-600">{avance ? `${avance}…` : t("pensando")}</span>
+                            <span className="text-slate-400 tabular-nums">{duracion(segundos)}</span>
+                          </div>
+                        ) : (
+                          msg.content !== "" && (
+                            <div className="flex items-center gap-0.5 -ml-1.5 text-slate-400 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                              <BotonAccion etiqueta={t("copiar")} onClick={() => copiar(index, msg.content)}>
+                                {copiado === index ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                              </BotonAccion>
+                            </div>
+                          )
+                        )}
+                      </div>
                     </motion.div>
-                  ))
-                )}
-              </AnimatePresence>
-              <div ref={messagesEndRef} />
-            </div>
+                  );
+                })}
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
 
-            {/* Retry banner */}
-            {lastFailedMessage && !isGenerating && (
-              <div className="mx-3 md:mx-4 mt-2 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                <p className="text-[11px] font-semibold text-amber-700">
-                  El agente no respondió. ¿Deseas reintentar?
-                </p>
+          {/* Reintentar */}
+          {lastFailedMessage && !isGenerating && (
+            <div className="w-full max-w-3xl mx-auto px-3 md:px-0 relative z-10">
+              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5" role="alert">
+                <p className="text-[13px] text-amber-800">{t("no_respondio")}</p>
                 <button
+                  type="button"
                   onClick={() => {
                     const { text, type } = lastFailedMessage;
                     setLastFailedMessage(null);
-                    // Remove the failed assistant message before retrying
+                    // Quita el intento fallido antes de reintentar.
                     setMessages((prev) => {
                       const next = [...prev];
-                      if (next[next.length - 1]?.role === "assistant")
-                        next.pop();
+                      if (next[next.length - 1]?.role === "assistant") next.pop();
                       if (next[next.length - 1]?.role === "user") next.pop();
                       return next;
                     });
                     processMessage(text, type);
                   }}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg transition-colors"
+                  className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 bg-amber-600 hover:bg-amber-700 text-white text-[13px] font-medium rounded-lg transition-colors"
                 >
-                  <Loader2 size={11} />
+                  <RefreshCw size={13} />
                   {t("reintentar")}
                 </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Input area */}
-            <div className="p-3 md:p-4 shrink-0 space-y-2">
+          {/* Caja de mensaje */}
+          <div className="px-3 md:px-6 pt-2 pb-3 md:pb-4 shrink-0 relative z-10">
+            <form
+              onSubmit={handleSend}
+              className={`w-full max-w-3xl mx-auto bg-white rounded-2xl border transition-[border-color,box-shadow] shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)] ${
+                isConversationMode
+                  ? "border-indigo-300 ring-4 ring-indigo-500/10"
+                  : "border-slate-200 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10"
+              }`}
+            >
               {attachedFiles.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100 max-h-[80px] overflow-y-auto">
+                <div className="flex flex-wrap gap-1.5 px-3 pt-3">
                   {attachedFiles.map((file, index) => (
-                    <div
+                    <span
                       key={index}
-                      className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border text-[11px] font-bold text-slate-700"
+                      className="inline-flex items-center gap-1.5 h-7 pl-2 pr-1 rounded-lg bg-slate-100 text-xs font-medium text-slate-700"
                     >
-                      <FileIcon size={12} className="text-blue-500" />
-                      <span className="truncate max-w-[140px]">
-                        {file.name}
-                      </span>
+                      <FileIcon size={12} className="text-blue-600" />
+                      <span className="truncate max-w-[160px]">{file.name}</span>
                       <button
                         type="button"
-                        onClick={() =>
-                          setAttachedFiles((p) =>
-                            p.filter((_, i) => i !== index),
-                          )
-                        }
-                        className="text-slate-400 hover:text-red-500"
+                        onClick={() => setAttachedFiles((p) => p.filter((_, i) => i !== index))}
+                        aria-label={`Quitar ${file.name}`}
+                        className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-white"
                       >
                         <X size={12} />
                       </button>
-                    </div>
+                    </span>
                   ))}
                 </div>
               )}
-
-              <form
-                onSubmit={handleSend}
-                className={`relative flex items-center w-full max-w-4xl mx-auto bg-slate-50 rounded-xl md:rounded-2xl border px-2 md:px-3 gap-1 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-500/10 transition-shadow ${
-                  isConversationMode
-                    ? "border-indigo-200 ring-2 ring-indigo-500/10"
-                    : "border-slate-200/60"
-                }`}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  multiple
-                  className="hidden"
-                />
-                <button
-                  type="button"
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden" />
+              {/* Enter envía; Shift+Enter hace salto de línea. Crece hasta ~8 líneas. */}
+              <textarea
+                ref={inputRef}
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder={isConversationMode ? t("habla_espera") : isListening ? t("dictando") : t("mensaje_placeholder")}
+                aria-label={t("mensaje_placeholder")}
+                className="block w-full bg-transparent border-none outline-none resize-none [field-sizing:content] min-h-[3rem] max-h-48 px-4 pt-3.5 pb-1 text-[14.5px] leading-6 text-slate-900 placeholder:text-slate-400 caret-blue-600 agente-scroll"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                disabled={isGenerating || isConversationMode}
+              />
+              <div className="flex items-center gap-1 px-2 pb-2">
+                <BotonAccion
+                  etiqueta={t("adjuntar")}
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isGenerating || isConversationMode}
-                  className="p-1.5 md:p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-100 disabled:opacity-50"
+                  grande
                 >
-                  <Paperclip size={16} />
-                </button>
-                <button
-                  type="button"
+                  <Paperclip size={17} />
+                </BotonAccion>
+                <BotonAccion
+                  etiqueta={t("dictar")}
                   onClick={toggleListening}
                   disabled={isGenerating || isConversationMode}
-                  className={`p-1.5 md:p-2 rounded-lg disabled:opacity-50 ${isListening && !isConversationMode ? "bg-red-50 text-red-500 animate-pulse" : "text-slate-400 hover:text-blue-600 hover:bg-slate-100"}`}
+                  grande
+                  activo={isListening && !isConversationMode}
                 >
-                  {isListening && !isConversationMode ? (
-                    <MicOff size={16} />
-                  ) : (
-                    <Mic size={16} />
-                  )}
-                </button>
-                {/* Enter envía; Shift+Enter hace salto de línea. Crece hasta ~6 líneas. */}
-                <textarea
-                  ref={inputRef}
-                  rows={1}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      e.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    isConversationMode
-                      ? t("habla_espera")
-                      : isListening
-                        ? t("dictando")
-                        : t("mensaje_placeholder")
-                  }
-                  className="w-full bg-transparent border-none outline-none resize-none [field-sizing:content] max-h-36 py-3 md:py-4 px-1 md:px-2 text-xs font-semibold text-slate-700"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  disabled={isGenerating || isConversationMode}
-                />
+                  {isListening && !isConversationMode ? <MicOff size={17} /> : <Mic size={17} />}
+                </BotonAccion>
+                <div className="flex-1" />
                 {isGenerating && abortRef.current && !isConversationMode ? (
                   <button
                     type="button"
                     onClick={() => abortRef.current?.abort()}
-                    title="Detener"
-                    aria-label="Detener"
-                    className="p-2 md:p-2.5 bg-slate-900 hover:bg-red-600 text-white rounded-lg md:rounded-xl shadow-md"
+                    title={t("detener")}
+                    aria-label={t("detener")}
+                    className="h-8 w-8 grid place-items-center rounded-full bg-slate-900 hover:bg-slate-700 text-white transition-colors"
                   >
-                    <Square size={14} fill="currentColor" />
+                    <Square size={11} fill="currentColor" />
                   </button>
                 ) : (
                   <button
                     type="submit"
-                    disabled={
-                      (!input.trim() && attachedFiles.length === 0) ||
-                      isGenerating ||
-                      isConversationMode
-                    }
-                    className="p-2 md:p-2.5 bg-blue-600 hover:bg-slate-950 disabled:bg-slate-200 text-white rounded-lg md:rounded-xl shadow-md disabled:shadow-none"
+                    disabled={!puedeEnviar}
+                    title={t("enviar")}
+                    aria-label={t("enviar")}
+                    className="h-8 w-8 grid place-items-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:bg-slate-200 disabled:text-slate-400"
                   >
-                    {isGenerating && !isConversationMode ? (
-                      <Loader2 className="animate-spin" size={14} />
-                    ) : (
-                      <Send size={14} />
-                    )}
+                    {isGenerating && !isConversationMode ? <Loader2 className="animate-spin" size={15} /> : <ArrowUp size={17} />}
                   </button>
                 )}
-              </form>
-            </div>
-          </>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
 
