@@ -363,22 +363,58 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // Marca de lo vendido en Smartbit que no existe en Odoo.
 const SIN_MARCA_ODOO = "SIN MARCA (NO ESTÁ EN ODOO)";
 
+// Código de artículo comparable: mayúsculas, sin espacios, "/" como "-"
+// (Smartbit "CRG-051D/CF232A" es "CRG-051D-CF232A" en Odoo).
+const normCodigo = (c: string) => String(c).trim().toUpperCase().replace(/\//g, "-");
+
+async function productosOdoo(domain: any[]): Promise<{ codigo: string; marca: string }[]> {
+  const prods =
+    (await callOdooRPCEstricto<any[]>("product.product", "search_read", [domain], {
+      fields: ["default_code", "x_studio_marca"],
+      context: { active_test: false, allowed_company_ids: SEDES },
+    })) || [];
+  return prods
+    .filter((p) => p.default_code)
+    .map((p) => {
+      const m = Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca;
+      return { codigo: normCodigo(p.default_code), marca: m ? String(m).toUpperCase().trim() : "Sin marca" };
+    });
+}
+
 /**
  * Marca de Odoo (product.product.x_studio_marca, la de Metas por marca) por
  * código de artículo: en Smartbit codigo_articulo es el default_code de Odoo.
- * Incluye productos archivados. Clave: código en mayúsculas.
+ * Incluye productos archivados. Clave: normCodigo().
+ *
+ * Si no hay código exacto, se acepta uno que empiece igual en cualquiera de
+ * los dos sentidos ("A-CB435A-CE278A" → "A-CB435A-CE278A-CE285A";
+ * "5U0G1LT-AC8" → "5U0G1LT"; "I62" → "I62BK"/"I62WH"), pero solo si todos los
+ * candidatos son de la misma marca: lo único que se toma es la marca.
  */
 async function marcasPorCodigo(codigos: string[]): Promise<Map<string, string>> {
   const mapa = new Map<string, string>();
-  for (let k = 0; k < codigos.length; k += 1000) {
-    const prods =
-      (await callOdooRPCEstricto<any[]>("product.product", "search_read", [[["default_code", "in", codigos.slice(k, k + 1000)]]], {
-        fields: ["default_code", "x_studio_marca"],
-        context: { active_test: false, allowed_company_ids: SEDES },
-      })) || [];
-    for (const p of prods) {
-      const m = Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca;
-      mapa.set(String(p.default_code).trim().toUpperCase(), m ? String(m).toUpperCase().trim() : "Sin marca");
+  const todos = [...new Set(codigos.map(normCodigo))];
+  for (let k = 0; k < todos.length; k += 1000) {
+    const lote = todos.slice(k, k + 1000);
+    // Odoo compara default_code tal cual: se piden las dos grafías.
+    const variantes = [...new Set([...lote, ...codigos.filter((c) => lote.includes(normCodigo(c))).map((c) => String(c).trim())])];
+    for (const p of await productosOdoo([["default_code", "in", variantes]])) mapa.set(p.codigo, p.marca);
+  }
+
+  const faltan = todos.filter((c) => !mapa.has(c) && c.length >= 3);
+  for (let k = 0; k < faltan.length; k += 60) {
+    const lote = faltan.slice(k, k + 60);
+    // Prefijos del código cortando en cada "-" (para "5U0G1LT-AC8" → "5U0G1LT").
+    const prefijos = [...new Set(lote.flatMap((c) => [...c.matchAll(/-/g)].map((m) => c.slice(0, m.index)).filter((x) => x.length >= 4)))];
+    const terminos: any[] = lote.map((c) => ["default_code", "=ilike", `${c}%`]);
+    if (prefijos.length) terminos.push(["default_code", "in", prefijos]);
+    const domain = [...Array(terminos.length - 1).fill("|"), ...terminos];
+    const candidatos = await productosOdoo(domain);
+    for (const c of lote) {
+      const marcas = new Set(
+        candidatos.filter((p) => p.codigo.startsWith(c) || (p.codigo.length >= 4 && c.startsWith(p.codigo))).map((p) => p.marca),
+      );
+      if (marcas.size === 1) mapa.set(c, [...marcas][0]);
     }
   }
   return mapa;
@@ -433,7 +469,7 @@ async function filasSmartbit(
   for (const r of rows as any[]) {
     let marca = "";
     if (marcas) {
-      marca = (r.codigo && marcas.get(String(r.codigo).toUpperCase())) || SIN_MARCA_ODOO;
+      marca = (r.codigo && marcas.get(normCodigo(r.codigo))) || SIN_MARCA_ODOO;
       if (marca === SIN_MARCA_ODOO) {
         sinCodigos.add(r.codigo || "(sin código)");
         sinVenta += Number(r.total) || 0;
@@ -498,7 +534,7 @@ async function ventasDetalle(i: any): Promise<string> {
           // con filtro de marca quedan fuera del total.
           historico_sin_marca_en_odoo: smartbit.sinMarca ?? undefined,
           nota: smartbit.sinMarca
-            ? "La marca de lo vendido antes del corte sale de Odoo, por el código del artículo (la misma marca que usa el panel)."
+            ? "La marca de lo vendido antes del corte sale de Odoo por el código del artículo (la misma marca que usa el panel): código exacto o, si cambió en la migración, uno que empieza igual y es de la misma marca."
             : undefined,
         },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
