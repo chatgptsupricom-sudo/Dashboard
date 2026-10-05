@@ -557,17 +557,16 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       messages,
     });
 
-    let primerTexto = true;
     stream.on("text", (t) => {
-      // Separa el texto de una vuelta del de la anterior.
-      if (primerTexto && hayTexto) emitir("\n\n");
-      primerTexto = false;
       hayTexto = true;
       ultimoAvance = "";
       emitir(t);
     });
     stream.on("streamEvent", (ev: any) => {
       const b = ev?.type === "content_block_start" ? ev.content_block : null;
+      // Cada bloque de texto es un párrafo aparte: con el MCP hay varios en
+      // una misma vuelta (texto, consulta, texto…) y salían pegados.
+      if (b?.type === "text" && hayTexto) emitir("\n\n");
       if (b?.type !== "tool_use" && b?.type !== "mcp_tool_use") return;
       const etiqueta = etiquetaAvance(String(b.name));
       if (etiqueta === ultimoAvance) return;

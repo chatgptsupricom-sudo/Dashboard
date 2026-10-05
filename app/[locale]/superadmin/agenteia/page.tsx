@@ -39,6 +39,8 @@ interface AttachedFile {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  // Lo que el agente fue contando mientras consultaba, antes de la respuesta.
+  proceso?: string;
   files?: AttachedFile[];
 }
 
@@ -518,19 +520,22 @@ export default function AgenteIAPage() {
         done = d;
         // El servidor manda espacios de ancho cero como latido: no son texto.
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
-        // El estado es la última marca de avance, hasta que llegue texto después.
+        // La respuesta es lo que viene después de la última consulta. Lo que
+        // el agente escribió antes (entre consulta y consulta) es su proceso:
+        // se guarda aparte y se muestra plegado, no como respuesta.
         const marcas = [...crudo.matchAll(MARCA_AVANCE)];
         const ultima = marcas[marcas.length - 1];
-        const pendiente = !!ultima && crudo.slice(ultima.index! + ultima[0].length).trim() === "";
-        setAvance(pendiente ? ultima[1] : "");
-        accumulated = crudo.replace(MARCA_AVANCE, "");
+        const corte = ultima ? ultima.index! + ultima[0].length : 0;
+        const proceso = crudo.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
+        accumulated = crudo.slice(corte).trimStart();
         // Una marca que llegó cortada entre dos trozos no se muestra a medias.
         if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
+        setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
           if (next[last]?.role === "assistant")
-            next[last] = { ...next[last], content: accumulated };
+            next[last] = { ...next[last], content: accumulated, proceso: proceso || undefined };
           return next;
         }, chatId);
       }
@@ -976,6 +981,16 @@ export default function AgenteIAPage() {
                               : "px-1 text-slate-800"
                           }`}
                         >
+                          {msg.proceso && (
+                            <details className="mb-2 text-xs text-slate-500">
+                              <summary className="cursor-pointer select-none font-semibold hover:text-slate-700">
+                                {t("ver_proceso")}
+                              </summary>
+                              <p className="mt-1 pl-3 border-l-2 border-slate-200 whitespace-pre-line font-normal leading-relaxed">
+                                {msg.proceso}
+                              </p>
+                            </details>
+                          )}
                           {msg.content === "" &&
                           isGenerating &&
                           index === messages.length - 1 ? null : (
