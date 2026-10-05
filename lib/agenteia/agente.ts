@@ -44,7 +44,7 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin
 ## Fuentes
 - **Ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero. Usa las mismas líneas de factura que el Reporte de Ventas del panel (netas sin IVA, sin clientes internos), pero aquí las notas de crédito restan; el Reporte de Ventas no las incluye, así que si alguien compara, explica esa diferencia. La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
 - **Odoo 17** (ERP: ventas, facturas, pagos, inventario, compras, contactos, CRM), por el ORM: \`odoo_agrupar\` (read_group: totales, rankings y agrupaciones, p. ej. por mes con \`invoice_date:month\`; úsalo para cualquier suma en vez de traer registros), \`odoo_buscar\` (search_read: listados y detalle), \`odoo_contar\` (search_count). Antes de usar un modelo o campo que no conoces, revisa \`odoo_campos\` (fields_get) u \`odoo_modelos\`; no adivines nombres de campos. Los dominios admiten campos relacionados con punto (\`move_id.state\`).
-- **Ventas antes del 2026-04-01 (corte Smartbit → Odoo)**: hasta esa fecha la empresa facturaba en Smartbit, el sistema anterior. En Odoo, antes del corte, solo están las facturas abiertas que se migraron ("Importación Masiva"), NO la venta real: nunca calcules ventas previas al corte con Odoo. \`ventas_detalle\` ya junta solo el histórico de Smartbit (antes del corte) con Odoo (desde el corte). Para otra pregunta sobre esa época usa \`consultar_panel\` sobre la tabla \`ventas_smartbit\` (un renglón por artículo vendido: company_id, fecha, vendedor, codigo_cliente = RIF, cliente, codigo_articulo, articulo, linea, venta en USD sin IVA, unidades, costo; las devoluciones vienen con venta negativa). Ahí excluye siempre los vendedores que contienen "local" y las ventas entre empresas del grupo (clientes cuyo nombre contiene "supricom", "office solution" u "ofimaster"). Smartbit no tiene marca: usa la línea o busca la marca en el nombre del artículo, y dilo. Si un período cruza el corte, dilo en la respuesta.
+- **Ventas antes del 2026-04-01 (corte Smartbit → Odoo)**: hasta esa fecha la empresa facturaba en Smartbit, el sistema anterior. En Odoo, antes del corte, solo están las facturas abiertas que se migraron ("Importación Masiva"), NO la venta real: nunca calcules ventas previas al corte con Odoo. \`ventas_detalle\` ya junta solo el histórico de Smartbit (antes del corte) con Odoo (desde el corte). Para otra pregunta sobre esa época usa \`consultar_panel\` sobre la tabla \`ventas_smartbit\` (un renglón por artículo vendido: company_id, fecha, vendedor, codigo_cliente = RIF, cliente, codigo_articulo, articulo, linea, venta en USD sin IVA, unidades, costo; las devoluciones vienen con venta negativa). Ahí excluye siempre los vendedores que contienen "local" y las ventas entre empresas del grupo (clientes cuyo nombre contiene "supricom", "office solution" u "ofimaster"). Smartbit no guarda la marca: \`ventas_detalle\` la toma de Odoo cruzando el código del artículo (codigo_articulo = default_code de product.product, marca = x_studio_marca) y te devuelve en \`historico_sin_marca_en_odoo\` cuánto vendieron los artículos que ya no existen en Odoo; si es relevante, dilo con su monto. Si consultas \`ventas_smartbit\` directo y necesitas la marca, haz el mismo cruce con \`odoo_buscar\`; no busques la marca en el nombre del artículo. Si un período cruza el corte, dilo en la respuesta.
 - **MySQL del panel** (\`consultar_panel\`): leads y su seguimiento, vendedores (\`sellers\`), usuarios y roles del panel (\`users_config\`, \`roles\`), metas y KPIs (\`kpi_targets\`, \`kpi_weekly_data\`), actividades, RMA, compras internas, etc. Usa \`SHOW TABLES\` / \`DESCRIBE tabla\` para ubicarte.
 
 ## Empresa
@@ -360,45 +360,97 @@ const MODELO_SECRETO = /^(ir\.config_parameter|res\.users\.apikeys.*|rag_odoo_mc
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+// Marca de lo vendido en Smartbit que no existe en Odoo.
+const SIN_MARCA_ODOO = "SIN MARCA (NO ESTÁ EN ODOO)";
+
+/**
+ * Marca de Odoo (product.product.x_studio_marca, la de Metas por marca) por
+ * código de artículo: en Smartbit codigo_articulo es el default_code de Odoo.
+ * Incluye productos archivados. Clave: código en mayúsculas.
+ */
+async function marcasPorCodigo(codigos: string[]): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  for (let k = 0; k < codigos.length; k += 1000) {
+    const prods =
+      (await callOdooRPCEstricto<any[]>("product.product", "search_read", [[["default_code", "in", codigos.slice(k, k + 1000)]]], {
+        fields: ["default_code", "x_studio_marca"],
+        context: { active_test: false, allowed_company_ids: SEDES },
+      })) || [];
+    for (const p of prods) {
+      const m = Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca;
+      mapa.set(String(p.default_code).trim().toUpperCase(), m ? String(m).toUpperCase().trim() : "Sin marca");
+    }
+  }
+  return mapa;
+}
+
 /**
  * Ventas del histórico de Smartbit (tabla ventas_smartbit) agrupadas en SQL
  * por las mismas dimensiones que ventas_detalle. Sin intercompañía ni
- * vendedores "local", igual que los dashboards (lib/smartbit.ts).
+ * vendedores "local", igual que los dashboards (lib/smartbit.ts). Smartbit no
+ * guarda la marca: si se agrupa o filtra por marca, sale de Odoo por el código
+ * del artículo, y lo que no está en Odoo se informa aparte en `sinMarca`.
  */
 async function filasSmartbit(
   companyIds: number[],
   [desde, hasta]: [string, string],
   dims: (typeof DIMENSIONES)[number][],
   i: any,
-): Promise<{ vendedor: string; cliente: string; marca: string; producto: string; total: number; cantidad: number }[]> {
+): Promise<{
+  filas: { vendedor: string; cliente: string; marca: string; producto: string; total: number; cantidad: number }[];
+  sinMarca: { venta: number; articulos: number } | null;
+}> {
   const columna = {
     vendedor: "COALESCE(vendedor, 'Sin vendedor')",
     cliente: "COALESCE(cliente, 'Desconocido')",
-    marca: "COALESCE(NULLIF(linea, ''), '(sin línea · Smartbit)')",
     producto: "CONCAT('[', COALESCE(codigo_articulo, ''), '] ', COALESCE(articulo, ''))",
+    codigo: "TRIM(codigo_articulo)",
   };
-  let where = `company_id IN (${companyIds.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ?
-    AND ${SQL_SIN_INTERCOMPANIA} AND ${SQL_SIN_VENDEDOR_LOCAL}`;
-  const params: any[] = [...companyIds, desde, hasta];
-  if (i.marca) {
-    where += " AND (linea LIKE ? OR articulo LIKE ?)";
-    params.push(`%${i.marca}%`, `%${i.marca}%`);
-  }
-  // vendedor siempre en el SELECT (exclusiones) y cliente si se filtra por él.
-  const grupo = [...new Set<(typeof DIMENSIONES)[number]>(["vendedor", ...(i.cliente ? ["cliente" as const] : []), ...dims])];
+  const conMarca = dims.includes("marca") || !!i.marca;
+  // vendedor siempre (exclusiones), cliente si se filtra por él, y el código
+  // del artículo cuando hace falta la marca.
+  const grupo = [
+    ...new Set<keyof typeof columna>([
+      "vendedor",
+      ...(i.cliente ? ["cliente" as const] : []),
+      ...dims.filter((d): d is "vendedor" | "cliente" | "producto" => d !== "marca"),
+      ...(conMarca ? ["codigo" as const] : []),
+    ]),
+  ];
   const { rows } = await query(
     `SELECT ${grupo.map((d) => `${columna[d]} AS ${d}`).join(", ")}, SUM(venta) AS total, SUM(unidades) AS cantidad
-       FROM ventas_smartbit WHERE ${where} GROUP BY ${grupo.map((d) => columna[d]).join(", ")}`,
-    params,
+       FROM ventas_smartbit
+      WHERE company_id IN (${companyIds.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ?
+        AND ${SQL_SIN_INTERCOMPANIA} AND ${SQL_SIN_VENDEDOR_LOCAL}
+      GROUP BY ${grupo.map((d) => columna[d]).join(", ")}`,
+    [...companyIds, desde, hasta],
   );
-  return rows.map((r: any) => ({
-    vendedor: r.vendedor ?? "",
-    cliente: r.cliente ?? "",
-    marca: r.marca ?? "",
-    producto: r.producto ?? "",
-    total: Number(r.total) || 0,
-    cantidad: Number(r.cantidad) || 0,
-  }));
+
+  const marcas = conMarca ? await marcasPorCodigo([...new Set(rows.map((r: any) => r.codigo).filter(Boolean))] as string[]) : null;
+  const sinCodigos = new Set<string>();
+  let sinVenta = 0;
+  const filas = [];
+  for (const r of rows as any[]) {
+    let marca = "";
+    if (marcas) {
+      marca = (r.codigo && marcas.get(String(r.codigo).toUpperCase())) || SIN_MARCA_ODOO;
+      if (marca === SIN_MARCA_ODOO) {
+        sinCodigos.add(r.codigo || "(sin código)");
+        sinVenta += Number(r.total) || 0;
+      }
+      // Mismo criterio que el filtro de marca de Odoo (ilike sobre el nombre).
+      if (i.marca && (marca === SIN_MARCA_ODOO || !normalizar(marca).includes(normalizar(String(i.marca))))) continue;
+    }
+    filas.push({
+      vendedor: r.vendedor ?? "",
+      cliente: r.cliente ?? "",
+      marca,
+      producto: r.producto ?? "",
+      total: Number(r.total) || 0,
+      cantidad: Number(r.cantidad) || 0,
+    });
+  }
+  return { filas, sinMarca: marcas ? { venta: r2(sinVenta), articulos: sinCodigos.size } : null };
 }
 
 async function ventasDetalle(i: any): Promise<string> {
@@ -416,9 +468,9 @@ async function ventasDetalle(i: any): Promise<string> {
       desdeO <= i.hasta
         ? cargarDesglose({ companyIds, desde: desdeO, hasta: i.hasta, marca: i.marca || null, conNotasCredito: true }).then((r) => r.filas)
         : [],
-      tramoSb ? filasSmartbit(companyIds, tramoSb, dims, i) : [],
+      tramoSb ? filasSmartbit(companyIds, tramoSb, dims, i) : { filas: [], sinMarca: null },
     ]);
-    const filas = [...odoo, ...smartbit];
+    const filas = [...odoo, ...smartbit.filas];
     const contiene = (valor: string, q: unknown) => !q || normalizar(valor).includes(normalizar(String(q)));
     const grupos = new Map<string, Record<string, any>>();
     const excluido = new Map<string, number>();
@@ -442,8 +494,11 @@ async function ventasDetalle(i: any): Promise<string> {
         fuentes: {
           historico_smartbit: tramoSb ? { desde: tramoSb[0], hasta: tramoSb[1] } : null,
           odoo: desdeO <= i.hasta ? { desde: desdeO, hasta: i.hasta } : null,
-          nota: tramoSb
-            ? "En el histórico de Smartbit no hay marca: se usa la línea del artículo y el filtro de marca busca el texto en la línea o el nombre del artículo."
+          // Venta del histórico cuyos artículos no existen en Odoo (sin marca);
+          // con filtro de marca quedan fuera del total.
+          historico_sin_marca_en_odoo: smartbit.sinMarca ?? undefined,
+          nota: smartbit.sinMarca
+            ? "La marca de lo vendido antes del corte sale de Odoo, por el código del artículo (la misma marca que usa el panel)."
             : undefined,
         },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
