@@ -34,10 +34,13 @@ import {
   TriangleAlert,
   Trophy,
   Users,
+  ShieldCheck,
   Volume2,
   Wrench,
   X,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -116,6 +119,88 @@ function TablaConExcel({ node, ...props }: any) {
 }
 
 type ArchivoRef = { id: string; nombre: string };
+
+// SuperAdmin: qué roles del panel usan el Agente IA (/api/superadmin/agenteia/acceso).
+function DialogoAcceso({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  const [roles, setRoles] = useState<{ rol: string; nombre: string; permitido: boolean }[] | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!abierto) return;
+    setRoles(null);
+    setError("");
+    fetch("/api/superadmin/agenteia/acceso")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => setRoles(j.roles || []))
+      .catch(() => setError("No se pudo cargar la lista de roles."));
+  }, [abierto]);
+  const guardar = async () => {
+    if (!roles) return;
+    setGuardando(true);
+    setError("");
+    try {
+      const r = await fetch("/api/superadmin/agenteia/acceso", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roles: roles.filter((x) => x.permitido).map((x) => x.rol) }),
+      });
+      if (!r.ok) throw new Error();
+      onCerrar();
+    } catch {
+      setError("No se pudo guardar. Reintenta.");
+    } finally {
+      setGuardando(false);
+    }
+  };
+  return (
+    <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Acceso al Agente IA</DialogTitle>
+          <DialogDescription>
+            El SuperAdmin siempre tiene acceso. Los roles que marques verán el agente en su menú y podrán consultar
+            todo lo que el agente lee de Odoo y del panel, pero no pedir cambios en Odoo.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-80 overflow-y-auto agente-scroll -mx-1 px-1">
+          {!roles && !error && (
+            <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+              <Loader2 size={14} className="animate-spin" /> Cargando roles…
+            </div>
+          )}
+          {roles?.length === 0 && <p className="py-6 text-sm text-slate-500">No hay otros roles en el panel.</p>}
+          {roles?.map((r, i) => (
+            <label key={r.rol} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
+              <Checkbox
+                checked={r.permitido}
+                onCheckedChange={(v) => setRoles((prev) => prev!.map((x, j) => (j === i ? { ...x, permitido: v === true } : x)))}
+              />
+              <span className="text-sm text-slate-800">{r.nombre}</span>
+            </label>
+          ))}
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <DialogFooter>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="h-9 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={guardar}
+            disabled={!roles || guardando}
+            className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {guardando && <Loader2 size={14} className="animate-spin" />} Guardar
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const segundosDe = (ms: number) => (ms < 1000 ? `${ms} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : duracion(Math.round(ms / 1000)));
 
@@ -433,6 +518,15 @@ export default function AgenteIAPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
+  const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean } | null>(null);
+  const [dialogoAcceso, setDialogoAcceso] = useState(false);
+  useEffect(() => {
+    fetch("/api/agenteia/acceso")
+      .then((r) => r.json())
+      .then((j) => setAcceso({ puede: !!j?.puede, superadmin: !!j?.superadmin }))
+      .catch(() => setAcceso({ puede: false, superadmin: false }));
+  }, []);
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1137,6 +1231,16 @@ export default function AgenteIAPage() {
   };
   const puedeEnviar = (!!input.trim() || attachedFiles.length > 0) && !isGenerating && !isConversationMode;
 
+  if (acceso && !acceso.puede) {
+    return (
+      <div className="h-[calc(100dvh-8rem)] flex flex-col items-center justify-center text-center gap-3 px-6">
+        <ShieldCheck size={36} className="text-slate-300" />
+        <h2 className="text-lg font-semibold text-slate-900">No tienes acceso al Agente IA</h2>
+        <p className="text-sm text-slate-600 max-w-md">Pídele al SuperAdmin que habilite tu rol desde la pantalla del agente.</p>
+      </div>
+    );
+  }
+
   return (
     // 8rem = barra superior (4rem) + el p-8 del layout: así la página no se desplaza.
     <div className="relative w-full h-[calc(100dvh-8rem)] flex font-sans overflow-hidden selection:bg-blue-100 selection:text-blue-900">
@@ -1311,6 +1415,17 @@ export default function AgenteIAPage() {
               </select>
               <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </label>
+            {acceso?.superadmin && (
+              <button
+                type="button"
+                onClick={() => setDialogoAcceso(true)}
+                title="Qué roles usan el agente"
+                className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium text-slate-600 hover:bg-slate-200/60 transition-colors"
+              >
+                <ShieldCheck size={15} />
+                <span className="hidden lg:inline">Acceso</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleConversationMode}
@@ -1492,7 +1607,7 @@ export default function AgenteIAPage() {
                                 )}
                               </pre>
                             )}
-                            <div className="flex gap-2">
+                            <div className={`flex gap-2 ${acceso?.superadmin ? "" : "hidden"}`}>
                               <button
                                 type="button"
                                 disabled={isGenerating}
@@ -1643,6 +1758,8 @@ export default function AgenteIAPage() {
           </div>
         </div>
       </div>
+
+      {acceso?.superadmin && <DialogoAcceso abierto={dialogoAcceso} onCerrar={() => setDialogoAcceso(false)} />}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (

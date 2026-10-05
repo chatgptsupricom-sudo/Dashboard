@@ -129,7 +129,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/administracion") ||
     pathname.includes("/seguridad") ||
     pathname.includes("/gestion") ||
-    pathname.includes("/reportes-comerciales");
+    pathname.includes("/reportes-comerciales") ||
+    // Agente IA de los roles habilitados por el SuperAdmin (lib/agenteia/acceso.ts).
+    pathname.includes("/agente-ia");
 
   if (isProtectedPath) {
     if (!token) {
