@@ -209,6 +209,8 @@ export async function cargarDesglose(opts: {
   vendedorUserId?: number | null;
   clienteId?: number | null;
   marca?: string | null;
+  /** Restar las notas de crédito (el Agente IA). El Reporte de Ventas no las usa. */
+  conNotasCredito?: boolean;
 }): Promise<DesgloseResult> {
   const marca = (opts.marca || MARCA_TODAS).trim();
   const idsProducto = await idsProductoDeMarca(marca);
@@ -217,7 +219,9 @@ export async function cargarDesglose(opts: {
   }
 
   const dom: any[] = [
-    ["move_id.move_type", "=", "out_invoice"],
+    opts.conNotasCredito
+      ? ["move_id.move_type", "in", ["out_invoice", "out_refund"]]
+      : ["move_id.move_type", "=", "out_invoice"],
     ["move_id.state", "=", "posted"],
     ["move_id.company_id", "in", opts.companyIds],
     ["move_id.invoice_date", ">=", opts.desde],
@@ -243,7 +247,7 @@ export async function cargarDesglose(opts: {
   const moveIds = [...new Set(crudas.map((l: any) => l.move_id?.[0]).filter(Boolean))] as number[];
   const productIds = [...new Set(crudas.map((l: any) => l.product_id?.[0]).filter(Boolean))] as number[];
 
-  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id"]);
+  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id", "move_type"]);
   const prods = await readEnLotes("product.product", productIds, ["x_studio_marca"]);
 
   const marcaDe = (id: number | undefined): string => {
@@ -266,8 +270,10 @@ export async function cargarDesglose(opts: {
     const vendedor = limpiarVendedor(mv.invoice_user_id?.[1] || "") || "(sin vendedor)";
     const marcaProd = marcaDe(l.product_id?.[0]);
     const producto = limpiarProducto(l.product_id?.[1] || "") || "(sin producto)";
-    const cantidad = Number(l.quantity) || 0;
-    const total = Number(l.price_subtotal) || 0;
+    // En una nota de crédito price_subtotal y quantity vienen en positivo.
+    const signo = mv.move_type === "out_refund" ? -1 : 1;
+    const cantidad = signo * (Number(l.quantity) || 0);
+    const total = signo * (Number(l.price_subtotal) || 0);
 
     const k = `${vendedor}|||${nombreCliente}|||${marcaProd}|||${producto}`;
     const acc =

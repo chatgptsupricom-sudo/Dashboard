@@ -42,7 +42,7 @@ const SEDES = [9, 10, 7];
 const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin del panel administrativo. Respondes en español, con cifras verificadas.
 
 ## Fuentes
-- **Ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero. Es la misma fuente que el Reporte de Ventas del panel (líneas de factura netas sin IVA, notas de crédito restan, sin clientes internos). La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
+- **Ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero. Usa las mismas líneas de factura que el Reporte de Ventas del panel (netas sin IVA, sin clientes internos), pero aquí las notas de crédito restan; el Reporte de Ventas no las incluye, así que si alguien compara, explica esa diferencia. La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
 - **Odoo 17** (ERP: ventas, facturas, pagos, inventario, compras, contactos, CRM), por el ORM: \`odoo_agrupar\` (read_group: totales, rankings y agrupaciones, p. ej. por mes con \`invoice_date:month\`; úsalo para cualquier suma en vez de traer registros), \`odoo_buscar\` (search_read: listados y detalle), \`odoo_contar\` (search_count). Antes de usar un modelo o campo que no conoces, revisa \`odoo_campos\` (fields_get) u \`odoo_modelos\`; no adivines nombres de campos. Los dominios admiten campos relacionados con punto (\`move_id.state\`).
 - **Ventas antes del 2026-04-01 (corte Smartbit → Odoo)**: hasta esa fecha la empresa facturaba en Smartbit, el sistema anterior. En Odoo, antes del corte, solo están las facturas abiertas que se migraron ("Importación Masiva"), NO la venta real: nunca calcules ventas previas al corte con Odoo. \`ventas_detalle\` ya junta solo el histórico de Smartbit (antes del corte) con Odoo (desde el corte). Para otra pregunta sobre esa época usa \`consultar_panel\` sobre la tabla \`ventas_smartbit\` (un renglón por artículo vendido: company_id, fecha, vendedor, codigo_cliente = RIF, cliente, codigo_articulo, articulo, linea, venta en USD sin IVA, unidades, costo; las devoluciones vienen con venta negativa). Ahí excluye siempre los vendedores que contienen "local" y las ventas entre empresas del grupo (clientes cuyo nombre contiene "supricom", "office solution" u "ofimaster"). Smartbit no tiene marca: usa la línea o busca la marca en el nombre del artículo, y dilo. Si un período cruza el corte, dilo en la respuesta.
 - **MySQL del panel** (\`consultar_panel\`): leads y su seguimiento, vendedores (\`sellers\`), usuarios y roles del panel (\`users_config\`, \`roles\`), metas y KPIs (\`kpi_targets\`, \`kpi_weekly_data\`), actividades, RMA, compras internas, etc. Usa \`SHOW TABLES\` / \`DESCRIBE tabla\` para ubicarte.
@@ -414,7 +414,7 @@ async function ventasDetalle(i: any): Promise<string> {
     const tramoSb = rangoSmartbit(i.desde, i.hasta);
     const [odoo, smartbit] = await Promise.all([
       desdeO <= i.hasta
-        ? cargarDesglose({ companyIds, desde: desdeO, hasta: i.hasta, marca: i.marca || null }).then((r) => r.filas)
+        ? cargarDesglose({ companyIds, desde: desdeO, hasta: i.hasta, marca: i.marca || null, conNotasCredito: true }).then((r) => r.filas)
         : [],
       tramoSb ? filasSmartbit(companyIds, tramoSb, dims, i) : [],
     ]);
