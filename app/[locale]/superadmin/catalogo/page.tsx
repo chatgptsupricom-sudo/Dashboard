@@ -40,6 +40,16 @@ export default function CatalogoPage() {
     Record<string, boolean>
   >(Object.fromEntries(COLUMNAS_DISPONIBLES.map((c) => [c.key, true])));
   const [unaHoja, setUnaHoja] = useState(false);
+  // Productos marcados: si hay alguno, solo esos se exportan
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
+
+  const alternarSeleccion = (id: number) =>
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     fetch("/api/vendedores/catalogo")
@@ -92,6 +102,7 @@ export default function CatalogoPage() {
         categoria,
         unaHoja: unaHoja ? "1" : "0",
       });
+      if (seleccionados.size) params.set("ids", [...seleccionados].join(","));
       Object.entries(columnasSeleccionadas).forEach(([k, v]) =>
         params.set(k, v ? "1" : "0"),
       );
@@ -158,10 +169,44 @@ export default function CatalogoPage() {
             ) : (
               <Download size={16} />
             )}
-            {exportando ? "Exportando..." : "Exportar Excel"}
+            {exportando
+              ? "Exportando..."
+              : seleccionados.size
+                ? `Exportar ${seleccionados.size} seleccionados`
+                : "Exportar Excel"}
           </button>
         </div>
       </div>
+
+      {/* Selección para exportar */}
+      {!cargando && productosFiltrados.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-zinc-500">
+            {seleccionados.size
+              ? `${seleccionados.size} producto(s) seleccionado(s) — solo se exportarán esos`
+              : "Marca productos para exportar solo los seleccionados"}
+          </span>
+          <button
+            onClick={() =>
+              setSeleccionados(
+                (prev) =>
+                  new Set([...prev, ...productosFiltrados.map((p) => p.id)]),
+              )
+            }
+            className="font-semibold text-blue-600 hover:underline"
+          >
+            Seleccionar los {productosFiltrados.length} filtrados
+          </button>
+          {seleccionados.size > 0 && (
+            <button
+              onClick={() => setSeleccionados(new Set())}
+              className="font-semibold text-zinc-500 hover:text-zinc-800 hover:underline"
+            >
+              Limpiar selección
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Filtro de categorías */}
       {categorias.length > 0 && (
@@ -225,7 +270,13 @@ export default function CatalogoPage() {
       {!cargando && !error && productosFiltrados.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
           {productosFiltrados.map((p, i) => (
-            <ProductoCard key={p.id} producto={p} index={i} />
+            <ProductoCard
+              key={p.id}
+              producto={p}
+              index={i}
+              seleccionado={seleccionados.has(p.id)}
+              onAlternar={() => alternarSeleccion(p.id)}
+            />
           ))}
         </div>
       )}
@@ -268,7 +319,13 @@ export default function CatalogoPage() {
                 </label>
               ))}
             </div>
-            {categoria === "todas" && (
+            {seleccionados.size > 0 && (
+              <p className="px-6 pb-3 text-xs text-zinc-500">
+                Se exportarán solo los {seleccionados.size} productos
+                seleccionados.
+              </p>
+            )}
+            {(categoria === "todas" || seleccionados.size > 0) && (
               <div className="px-6 pb-5">
                 <label className="flex items-center gap-3 cursor-pointer group border-t border-zinc-100 pt-4">
                   <input
@@ -305,7 +362,17 @@ export default function CatalogoPage() {
   );
 }
 
-function ProductoCard({ producto, index }: { producto: any; index: number }) {
+function ProductoCard({
+  producto,
+  index,
+  seleccionado,
+  onAlternar,
+}: {
+  producto: any;
+  index: number;
+  seleccionado: boolean;
+  onAlternar: () => void;
+}) {
   const t = useTranslations("superadmin.catalogo");
   const imagen = producto.image_128
     ? `data:image/png;base64,${producto.image_128}`
@@ -323,10 +390,23 @@ function ProductoCard({ producto, index }: { producto: any; index: number }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.02, 0.4) }}
     >
-      <Card className="rounded-3xl border-zinc-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full">
+      <Card
+        onClick={onAlternar}
+        className={`rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full cursor-pointer ${
+          seleccionado ? "border-blue-500 ring-2 ring-blue-500" : "border-zinc-100"
+        }`}
+      >
         <CardContent className="p-4 space-y-4">
           {/* Imagen */}
           <div className="relative aspect-square rounded-2xl bg-zinc-50 flex items-center justify-center overflow-hidden">
+            <input
+              type="checkbox"
+              checked={seleccionado}
+              onChange={onAlternar}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Seleccionar ${nombreLimpio}`}
+              className="absolute top-2 left-2 z-10 w-5 h-5 rounded accent-blue-600 cursor-pointer"
+            />
             {imagen ? (
               <img
                 src={imagen}

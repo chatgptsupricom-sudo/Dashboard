@@ -1,24 +1,39 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { Card, Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowUp,
   BrainCircuit,
   Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
   FileIcon,
+  FileSpreadsheet,
   Headphones,
   Loader2,
-  MessageSquarePlus,
+  type LucideIcon,
   Mic,
   MicOff,
+  PackageX,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
   Pencil,
-  Send,
+  PlugZap,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Square,
+  SquarePen,
   Trash2,
-  User,
+  TrendingDown,
+  TriangleAlert,
+  Trophy,
+  Users,
   Volume2,
   X,
 } from "lucide-react";
@@ -37,6 +52,8 @@ interface AttachedFile {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  // Lo que el agente fue contando mientras consultaba, antes de la respuesta.
+  proceso?: string;
   files?: AttachedFile[];
 }
 
@@ -64,7 +81,253 @@ function cambiosDe(content: string): { token: string; detalle: any }[] {
   });
 }
 
-const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "");
+// Archivos que creó el agente (Excel, Word, PDF, HTML…): [[archivo:<id>|<nombre>]].
+const MARCA_ARCHIVO = /\n*\[\[archivo:([A-Za-z0-9_-]+)\|([^\]\n]*)\]\]/g;
+const archivosDe = (content: string) => [...content.matchAll(MARCA_ARCHIVO)].map((m) => ({ id: m[1], nombre: m[2] }));
+const urlArchivo = (id: string) => `/api/superadmin/agenteia/archivo?id=${encodeURIComponent(id)}`;
+
+const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "").replace(MARCA_ARCHIVO, "");
+
+// Cada tabla de la respuesta trae su botón para bajarla como Excel.
+function TablaConExcel({ node, ...props }: any) {
+  const ref = useRef<HTMLTableElement>(null);
+  const exportar = async () => {
+    if (!ref.current) return;
+    const XLSX = await import("xlsx");
+    XLSX.writeFile(XLSX.utils.table_to_book(ref.current, { sheet: "Datos" }), `supri_ai_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  return (
+    <div className="agente-tabla">
+      <div className="overflow-x-auto agente-scroll">
+        <table ref={ref} {...props} />
+      </div>
+      <button
+        type="button"
+        onClick={exportar}
+        className="inline-flex items-center gap-1.5 h-7 px-2 -ml-2 mt-1 rounded-md text-xs font-medium text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+      >
+        <FileSpreadsheet size={13} /> Descargar en Excel
+      </button>
+    </div>
+  );
+}
+
+type ArchivoRef = { id: string; nombre: string };
+
+// ── Errores en español ──────────────────────────────────────────────────────
+// Lo que ve el usuario cuando algo falla: qué pasó y qué puede hacer. El
+// servidor manda los errores de Claude ya traducidos (route.ts); aquí van los
+// de la conexión y los códigos HTTP del panel.
+const ERROR_RED =
+  "Se perdió la conexión con el agente antes de que terminara de responder. Suele pasar cuando el servidor del panel se reinicia o la red se cae. Puedes reintentar.";
+
+function errorHttp(status: number, detalle?: string): string {
+  if (status === 401) return "Tu sesión venció. Vuelve a iniciar sesión y reintenta.";
+  if (status === 403) return "Tu usuario no tiene permiso para usar el agente.";
+  if (status === 413) return "El mensaje o los archivos adjuntos son demasiado grandes. Quita algún adjunto o divide la pregunta.";
+  if (status === 429) return "Se hicieron demasiadas consultas seguidas. Espera un minuto y reintenta.";
+  if (status >= 502 && status <= 504)
+    return "El servidor del panel no respondió: puede estar reiniciándose o la consulta tardó demasiado. Reintenta en un minuto.";
+  return detalle ? `El panel respondió con un error: ${detalle}` : `El panel respondió con un error (código ${status}). Reintenta en un momento.`;
+}
+
+// Los mensajes de error se guardan con ⚠️ al final de la respuesta. Los que
+// quedaron guardados en inglés (de antes) se muestran traducidos.
+const traducirError = (c: string) => c.replace(/⚠️ (network error|failed to fetch|load failed|networkerror[^\n]*)$/i, `⚠️ ${ERROR_RED}`);
+const terminaEnError = (c: string) => /⚠️[^\n]*$/.test(c.trim());
+
+const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "sugerencia_4"; icono: LucideIcon }[] = [
+  { clave: "sugerencia_1", icono: TrendingDown },
+  { clave: "sugerencia_2", icono: Trophy },
+  { clave: "sugerencia_3", icono: Users },
+  { clave: "sugerencia_4", icono: PackageX },
+];
+
+// La lista de conversaciones se agrupa por antigüedad, como en Claude/ChatGPT.
+type GrupoFecha = "hoy" | "ayer" | "semana" | "mes" | "antes";
+function agruparPorFecha(chats: Chat[]): [GrupoFecha, Chat[]][] {
+  const inicioHoy = new Date().setHours(0, 0, 0, 0);
+  const dia = 86_400_000;
+  const grupo = (t: number): GrupoFecha =>
+    t >= inicioHoy ? "hoy" : t >= inicioHoy - dia ? "ayer" : t >= inicioHoy - 7 * dia ? "semana" : t >= inicioHoy - 30 * dia ? "mes" : "antes";
+  const mapa = new Map<GrupoFecha, Chat[]>();
+  for (const c of chats) {
+    const g = grupo(c.createdAt || 0);
+    mapa.set(g, [...(mapa.get(g) || []), c]);
+  }
+  return (["hoy", "ayer", "semana", "mes", "antes"] as GrupoFecha[]).filter((g) => mapa.has(g)).map((g) => [g, mapa.get(g)!]);
+}
+
+// Botón de icono de la conversación (copiar, rebobinar, adjuntar, dictar).
+function BotonAccion({
+  etiqueta,
+  onClick,
+  disabled,
+  grande,
+  activo,
+  children,
+}: {
+  etiqueta: string;
+  onClick: () => void;
+  disabled?: boolean;
+  grande?: boolean;
+  activo?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={etiqueta}
+      aria-label={etiqueta}
+      className={`grid place-items-center rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+        grande ? "h-8 w-8" : "h-7 w-7"
+      } ${activo ? "bg-red-50 text-red-600 animate-pulse" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Tarjeta de un archivo creado por el agente: un clic lo abre en el panel lateral.
+function ArchivoAgente({ id, nombre, activo, onAbrir }: ArchivoRef & { activo: boolean; onAbrir: () => void }) {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-xl border p-2.5 transition-colors ${
+        activo ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"
+      }`}
+    >
+      <button type="button" onClick={onAbrir} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+        <FileIcon size={16} className="text-blue-600 shrink-0" />
+        <span className="text-xs font-semibold text-slate-700 truncate">{nombre}</span>
+      </button>
+      <a
+        href={urlArchivo(id)}
+        download={nombre}
+        title="Descargar"
+        aria-label="Descargar"
+        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+      >
+        <Download size={14} />
+      </a>
+    </div>
+  );
+}
+
+// Vista previa en el panel lateral. Lo que escribió el modelo nunca corre en
+// el origen del panel: HTML y Excel van en iframes con sandbox sin
+// allow-same-origin; el PDF va como blob al visor del navegador.
+function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => void }) {
+  const ext = (nombre.split(".").pop() || "").toLowerCase();
+  const [vista, setVista] = useState<
+    | { tipo: "cargando" | "sin_vista" | "error" }
+    | { tipo: "html" | "hojas" | "texto"; texto: string; hojas?: { nombre: string; html: string }[] }
+    | { tipo: "pdf" | "imagen"; url: string }
+  >({ tipo: "cargando" });
+  const [hoja, setHoja] = useState(0);
+
+  useEffect(() => {
+    let url = "";
+    const tipoMime = ext === "pdf" ? "application/pdf" : ext === "svg" ? "image/svg+xml" : `image/${ext === "jpg" ? "jpeg" : ext}`;
+    (async () => {
+      if (["docx", "doc", "pptx", "ppt"].includes(ext)) return setVista({ tipo: "sin_vista" });
+      const r = await fetch(urlArchivo(id));
+      if (!r.ok) return setVista({ tipo: "error" });
+      if (ext === "html" || ext === "htm") return setVista({ tipo: "html", texto: await r.text() });
+      if (["xlsx", "xls", "csv"].includes(ext)) {
+        const XLSX = await import("xlsx");
+        const libro = XLSX.read(await r.arrayBuffer());
+        const hojas = libro.SheetNames.map((n) => ({ nombre: n, html: XLSX.utils.sheet_to_html(libro.Sheets[n]) }));
+        return setVista({ tipo: "hojas", texto: "", hojas });
+      }
+      if (ext === "pdf" || ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+        url = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: tipoMime }));
+        return setVista({ tipo: ext === "pdf" ? "pdf" : "imagen", url });
+      }
+      setVista({ tipo: "texto", texto: await r.text() });
+    })().catch(() => setVista({ tipo: "error" }));
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, ext]);
+
+  const estiloHoja =
+    "<style>body{font:12px system-ui,sans-serif;margin:12px;color:#0f172a}table{border-collapse:collapse}td,th{border:1px solid #e2e8f0;padding:4px 8px;white-space:nowrap}tr:first-child td{background:#f1f5f9;font-weight:600}</style>";
+
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 shrink-0">
+        <FileIcon size={16} className="text-blue-600 shrink-0" />
+        <span className="text-sm font-bold text-slate-800 truncate flex-1">{nombre}</span>
+        <a
+          href={urlArchivo(id)}
+          download={nombre}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+        >
+          <Download size={13} /> Descargar
+        </a>
+        <button
+          type="button"
+          onClick={onCerrar}
+          title="Cerrar"
+          aria-label="Cerrar vista previa"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      {vista.tipo === "hojas" && vista.hojas && vista.hojas.length > 1 && (
+        <div className="flex gap-1 px-3 pt-2 overflow-x-auto shrink-0">
+          {vista.hojas.map((h, i) => (
+            <button
+              key={h.nombre}
+              type="button"
+              onClick={() => setHoja(i)}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap ${
+                i === hoja ? "bg-emerald-50 text-emerald-700" : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              {h.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex-1 min-h-0 overflow-auto">
+        {vista.tipo === "cargando" && (
+          <div className="h-full flex items-center justify-center gap-2 text-slate-400 text-xs font-semibold">
+            <Loader2 size={14} className="animate-spin" /> Abriendo…
+          </div>
+        )}
+        {(vista.tipo === "sin_vista" || vista.tipo === "error") && (
+          <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center text-slate-500 text-sm">
+            <FileIcon size={32} className="text-slate-300" />
+            {vista.tipo === "error"
+              ? "No se pudo abrir el archivo."
+              : "Este tipo de archivo no tiene vista previa aquí. Descárgalo para abrirlo."}
+          </div>
+        )}
+        {vista.tipo === "html" && (
+          <iframe title={nombre} srcDoc={vista.texto} sandbox="allow-scripts" className="w-full h-full bg-white" />
+        )}
+        {vista.tipo === "hojas" && vista.hojas && (
+          <iframe title={nombre} srcDoc={estiloHoja + (vista.hojas[hoja]?.html ?? "")} sandbox="" className="w-full h-full bg-white" />
+        )}
+        {vista.tipo === "pdf" && <iframe title={nombre} src={vista.url} className="w-full h-full" />}
+        {vista.tipo === "imagen" && <img src={vista.url} alt={nombre} className="max-w-full mx-auto p-4" />}
+        {vista.tipo === "texto" && (
+          <pre className="p-4 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">{vista.texto}</pre>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
+// es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
+const MARCA_AVANCE = /\[\[avance:([^\]\n]*)\]\]/g;
+
+const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${s % 60}s`);
 
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -100,13 +363,11 @@ export default function AgenteIAPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [lastFailedMessage, setLastFailedMessage] = useState<{
-    text: string;
-    type: "text" | "voice" | "file" | "image";
-  } | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
@@ -115,6 +376,8 @@ export default function AgenteIAPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -124,7 +387,100 @@ export default function AgenteIAPage() {
   const isGeneratingRef = useRef(false);
   const processMessageRef = useRef<any>(null);
 
-  // ── Load persisted chats on mount ──────────────────────────────────────────
+  // ── Modelo elegido ("" = el del servidor); se recuerda en este navegador ────
+  const [modelo, setModelo] = useState("");
+  useEffect(() => {
+    try {
+      setModelo(localStorage.getItem("agenteia-modelo") || "");
+    } catch {}
+  }, []);
+  const elegirModelo = (m: string) => {
+    setModelo(m);
+    try {
+      localStorage.setItem("agenteia-modelo", m);
+    } catch {}
+  };
+
+  // ── Estado mientras responde: qué está haciendo y cuánto lleva ─────────────
+  const [avance, setAvance] = useState("");
+  const [segundos, setSegundos] = useState(0);
+  useEffect(() => {
+    if (!isGenerating) return;
+    setSegundos(0);
+    const id = setInterval(() => setSegundos((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [isGenerating]);
+
+  // ── Copiar un mensaje / rebobinar la conversación hasta uno enviado ────────
+  const [copiado, setCopiado] = useState<number | null>(null);
+  const copiar = async (index: number, content: string) => {
+    const texto = sinMarcas(content).trim();
+    try {
+      // La respuesta se copia también como HTML: al pegarla en Excel, Word o
+      // un correo las tablas llegan como tablas, no como texto con barras.
+      const nodo = document.querySelector(`[data-msg="${index}"]`)?.cloneNode(true) as HTMLElement | undefined;
+      nodo?.querySelectorAll("button").forEach((b) => b.remove());
+      const html = nodo?.innerHTML;
+      if (html && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([texto], { type: "text/plain" }),
+          }),
+        ]);
+      } else await navigator.clipboard.writeText(texto);
+      setCopiado(index);
+      setTimeout(() => setCopiado(null), 1500);
+    } catch {}
+  };
+  // Quita ese mensaje y todo lo posterior, y lo devuelve a la caja de texto
+  // para corregirlo y reenviarlo. No deshace cambios ya confirmados en Odoo.
+  const rebobinar = (index: number, content: string) => {
+    if (isGenerating) return;
+    setMessages((prev) => prev.slice(0, index));
+    setInput(content);
+    textRef.current = content;
+    inputRef.current?.focus();
+  };
+
+  // ── Conexión OAuth con el MCP de Odoo (SQL directo) ────────────────────────
+  // La misma consulta trae los modelos que este usuario puede elegir.
+  const [faltaMcp, setFaltaMcp] = useState(false);
+  const [modelos, setModelos] = useState<{ id: string; nombre: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/superadmin/agenteia/oauth?estado=1")
+      .then((r) => r.json())
+      .then((e) => {
+        setFaltaMcp(!!e?.configurado && !e?.conectado);
+        if (Array.isArray(e?.modelos)) setModelos(e.modelos);
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Título de la conversación escrito por la IA (editable después) ────────
+  const titularChat = async (chatId: string, pregunta: string) => {
+    try {
+      const r = await fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titular: pregunta }),
+      });
+      const titulo = String((await r.json())?.titulo || "").trim();
+      if (!titulo) return;
+      setChats((prev) => {
+        const updated = prev.map((c) => (c.id === chatId ? { ...c, title: titulo } : c));
+        persistChats(updated);
+        return updated;
+      });
+      pendientes.current.add(chatId);
+    } catch {}
+  };
+
+  // ── Chats: se guardan en el servidor (por usuario) ─────────────────────────
+  // localStorage queda como copia local para pintar al instante; la fuente es
+  // /api/superadmin/agenteia/chats. Los chats que solo estaban en este
+  // navegador (de antes de guardarlos en el servidor) se suben al cargar.
+  const pendientes = useRef(new Set<string>());
   useEffect(() => {
     const stored = loadChats();
     if (stored.length > 0) {
@@ -132,6 +488,28 @@ export default function AgenteIAPage() {
       setActiveChatId(stored[0].id);
     }
     if (window.innerWidth < 768) setSidebarOpen(false);
+
+    fetch("/api/superadmin/agenteia/chats")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ chats: remotos }: { chats: Chat[] }) => {
+        setChats((prev) => {
+          // De cada chat queda la copia con más mensajes: la local si no se
+          // alcanzó a guardar, la del servidor si se siguió en otro equipo.
+          const porId = new Map(remotos.map((c) => [c.id, c]));
+          for (const c of prev) {
+            const r = porId.get(c.id);
+            if (!r || c.messages.length > r.messages.length) {
+              porId.set(c.id, c);
+              pendientes.current.add(c.id);
+            }
+          }
+          const todos = [...porId.values()].sort((a, b) => b.createdAt - a.createdAt);
+          persistChats(todos);
+          return todos;
+        });
+        setActiveChatId((actual) => actual ?? remotos[0]?.id ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   // ── Derived active chat data ───────────────────────────────────────────────
@@ -144,6 +522,7 @@ export default function AgenteIAPage() {
     chatId?: string,
   ) => {
     const targetId = chatId ?? activeChatId;
+    if (targetId) pendientes.current.add(targetId);
     setChats((prev) => {
       const updated = prev.map((c) => {
         if (c.id !== targetId) return c;
@@ -164,17 +543,51 @@ export default function AgenteIAPage() {
   };
 
   // ── Chat CRUD ──────────────────────────────────────────────────────────────
+  // Al abrir un archivo se pliega la lista de chats para dejarle espacio.
+  const abrirArchivo = (a: ArchivoRef | null) => {
+    setArchivoAbierto(a);
+    if (a) setSidebarOpen(false);
+  };
+
   const createChat = () => {
     setActiveChatId(null);
+    setArchivoAbierto(null);
     setInput("");
     setAttachedFiles([]);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     setIsConversationMode(false);
     stopListening();
+    inputRef.current?.focus();
   };
+
+  // Guarda en el servidor los chats que cambiaron, cuando el agente no está
+  // escribiendo (no en cada trozo del streaming).
+  useEffect(() => {
+    if (isGenerating || pendientes.current.size === 0) return;
+    const t = setTimeout(() => {
+      for (const id of [...pendientes.current]) {
+        const chat = chats.find((c) => c.id === id);
+        pendientes.current.delete(id);
+        if (!chat) continue;
+        fetch("/api/superadmin/agenteia/chats", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(chat),
+        })
+          .then((r) => {
+            if (!r.ok && r.status !== 413) pendientes.current.add(id);
+          })
+          .catch(() => pendientes.current.add(id));
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [chats, isGenerating]);
 
   const deleteChat = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!window.confirm("¿Eliminar esta conversación? No se puede deshacer.")) return;
+    pendientes.current.delete(id);
+    fetch(`/api/superadmin/agenteia/chats?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
     setChats((prev) => {
       const updated = prev.filter((c) => c.id !== id);
       persistChats(updated);
@@ -188,6 +601,7 @@ export default function AgenteIAPage() {
   const selectChat = (id: string) => {
     if (id === activeChatId) return;
     setActiveChatId(id);
+    setArchivoAbierto(null);
     setEditingChatId(null);
     setInput("");
     setAttachedFiles([]);
@@ -207,6 +621,7 @@ export default function AgenteIAPage() {
     if (!editingChatId) return;
     const trimmed = editingTitle.trim();
     if (trimmed) {
+      pendientes.current.add(editingChatId);
       setChats((prev) => {
         const updated = prev.map((c) =>
           c.id === editingChatId ? { ...c, title: trimmed } : c,
@@ -380,6 +795,9 @@ export default function AgenteIAPage() {
     messageText: string,
     messageType: "text" | "voice" | "file" | "image" = "text",
     chatIdOverride?: string,
+    // Historial sobre el que se responde. Reintentar lo pasa explícito: el
+    // estado de los chats todavía no refleja que quitó el intento fallido.
+    base?: Message[],
   ) => {
     const chatId = chatIdOverride ?? activeChatId;
     if (!chatId) return;
@@ -396,7 +814,7 @@ export default function AgenteIAPage() {
 
     // Use current messages for this chat (may be [] for a brand-new chat)
     const currentMsgs =
-      chats.find((c) => c.id === chatId)?.messages ?? messages;
+      base ?? chats.find((c) => c.id === chatId)?.messages ?? messages;
     const updatedMessages = [...currentMsgs, userMessage];
     setMessages(updatedMessages, chatId);
     setAttachedFiles([]);
@@ -406,49 +824,80 @@ export default function AgenteIAPage() {
       chatId,
     );
 
-    const fetchAgenteia = () =>
-      fetch("/api/superadmin/agenteia", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
-      });
+    const control = new AbortController();
+    abortRef.current = control;
+    let accumulated = "";
 
     try {
-      const response = await fetchAgenteia();
+      const response = await fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined }),
+        signal: control.signal,
+      });
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
-        setLastFailedMessage({ text: messageText, type: messageType });
-        throw new Error(errBody?.error ?? t("error_respuesta"));
+        throw new Error(errorHttp(response.status, errBody?.error));
       }
-      setLastFailedMessage(null);
       if (!response.body) return;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
-      let accumulated = "";
+      let crudo = "";
 
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
-        accumulated += decoder.decode(value, { stream: !d });
+        // El servidor manda espacios de ancho cero como latido: no son texto.
+        crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
+        // La respuesta es lo que viene después de la última consulta. Lo que
+        // el agente escribió antes (entre consulta y consulta) es su proceso:
+        // se guarda aparte y se muestra plegado, no como respuesta.
+        const marcas = [...crudo.matchAll(MARCA_AVANCE)];
+        const ultima = marcas[marcas.length - 1];
+        const corte = ultima ? ultima.index! + ultima[0].length : 0;
+        const proceso = crudo.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
+        accumulated = crudo.slice(corte).trimStart();
+        // Una marca que llegó cortada entre dos trozos no se muestra a medias.
+        if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
+        setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
           if (next[last]?.role === "assistant")
-            next[last] = { ...next[last], content: accumulated };
+            next[last] = { ...next[last], content: accumulated, proceso: proceso || undefined };
           return next;
         }, chatId);
       }
 
+      // Primer intercambio del chat: el título provisional (el inicio del
+      // mensaje) se cambia por uno escrito por la IA.
+      if (updatedMessages.length === 1) titularChat(chatId, messageText);
+
+      // Como en Claude: el archivo recién creado se abre en el panel lateral.
+      const nuevos = archivosDe(accumulated);
+      if (nuevos.length) abrirArchivo(nuevos[nuevos.length - 1]);
+
       if (isConversationModeRef.current)
         speakText(sinMarcas(accumulated).replace(/[*#|`]/g, ""));
     } catch (err: any) {
-      const errorMsg =
-        err?.message && err.message !== t("error_respuesta")
-          ? `⚠️ ${err.message}`
-          : t("error_respuesta");
+      // Detenido por el usuario: queda lo que alcanzó a escribir.
+      if (control.signal.aborted) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (next[last]?.role === "assistant")
+            next[last] = { ...next[last], content: `${accumulated.trim()}\n\n_Respuesta detenida._`.trim() };
+          return next;
+        }, chatId);
+        return;
+      }
+      // fetch y la lectura del streaming lanzan TypeError cuando se corta la
+      // conexión (red, reinicio del servidor, proxy). Lo ya escrito se conserva.
+      const motivo = err instanceof TypeError ? ERROR_RED : err?.message || "Ocurrió un error inesperado. Puedes reintentar.";
+      const errorMsg = `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ ${motivo}`;
       setMessages((prev) => {
         const next = [...prev];
         const last = next.length - 1;
@@ -458,8 +907,20 @@ export default function AgenteIAPage() {
       }, chatId);
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
     } finally {
+      abortRef.current = null;
       setIsGenerating(false);
+      setAvance("");
     }
+  };
+
+  // Reintenta la pregunta que terminó en error: quita la pregunta y la
+  // respuesta fallida y la vuelve a enviar sobre el historial anterior.
+  const reintentar = (index: number) => {
+    const pregunta = messages[index - 1];
+    if (!activeChatId || isGenerating || pregunta?.role !== "user") return;
+    const base = messages.slice(0, index - 1);
+    setMessages(base, activeChatId);
+    processMessage(pregunta.content, "text", activeChatId, base);
   };
 
   // Confirma o cancela un cambio en Odoo preparado por el agente. La marca se
@@ -488,9 +949,18 @@ export default function AgenteIAPage() {
     processMessageRef.current = processMessage;
   }, [messages, attachedFiles, activeChatId]);
 
-  const handleSend = async (e: React.FormEvent) => {
+  // Al terminar de responder, el cursor vuelve a la caja para seguir preguntando.
+  useEffect(() => {
+    if (!isGenerating && !isConversationMode) inputRef.current?.focus();
+  }, [isGenerating, isConversationMode]);
+
+  const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0) || isGenerating) return;
+    enviar(input.trim());
+  };
+
+  const enviar = async (texto: string) => {
+    if ((!texto && attachedFiles.length === 0) || isGenerating) return;
     setIsConversationMode(false);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
 
@@ -518,7 +988,7 @@ export default function AgenteIAPage() {
           ? "image"
           : "file"
         : "text";
-    await processMessage(input.trim(), type, targetChatId);
+    await processMessage(texto, type, targetChatId);
   };
 
   const clearActiveChat = () => {
@@ -555,514 +1025,530 @@ export default function AgenteIAPage() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  const hora = new Date().getHours();
+  const saludo = t(hora < 12 ? "saludo_manana" : hora < 19 ? "saludo_tarde" : "saludo_noche");
+  const nombre = (user?.name || "").trim().split(/\s+/)[0];
+  const q = busqueda.trim().toLowerCase();
+  const gruposChats = agruparPorFecha(q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats);
+  const etiquetaGrupo: Record<GrupoFecha, string> = {
+    hoy: t("hoy"),
+    ayer: t("ayer"),
+    semana: t("ultimos_7"),
+    mes: t("ultimos_30"),
+    antes: t("anteriores"),
+  };
+  const puedeEnviar = (!!input.trim() || attachedFiles.length > 0) && !isGenerating && !isConversationMode;
+
   return (
-    <div className="w-full h-[calc(100vh-80px)] flex font-sans overflow-hidden">
-      {/* ── SIDEBAR ───────────────────────────────────────────────────────── */}
+    // 8rem = barra superior (4rem) + el p-8 del layout: así la página no se desplaza.
+    <div className="relative w-full h-[calc(100dvh-8rem)] flex font-sans overflow-hidden selection:bg-blue-100 selection:text-blue-900">
+      {/* ── LISTA DE CONVERSACIONES ───────────────────────────────────────── */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
           <motion.aside
             key="sidebar"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 256, opacity: 1 }}
+            animate={{ width: 264, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="h-full bg-white border-r border-slate-100 flex flex-col overflow-hidden shrink-0 z-10"
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute md:relative inset-y-0 left-0 z-30 h-full bg-[#f8fafc] md:bg-transparent border-r border-slate-200/80 flex flex-col overflow-hidden shrink-0 shadow-xl md:shadow-none"
           >
-            {/* Sidebar header */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <img
-                  src="/supricom.png"
-                  alt="Supri"
-                  className="w-7 h-7 rounded-full object-cover"
-                />
-                <span className="text-xs font-black uppercase tracking-tight text-slate-700">
-                  Supri AI
-                </span>
+            <div className="w-[264px] h-full flex flex-col">
+              <div className="h-12 px-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <img src="/supricom.png" alt="" className="w-6 h-6 rounded-md object-cover" />
+                  <span className="text-sm font-semibold text-slate-800">Supri AI</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  title={t("cerrar_chats")}
+                  aria-label={t("cerrar_chats")}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                >
+                  <PanelLeftClose size={16} />
+                </button>
               </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <PanelLeftClose size={16} />
-              </button>
-            </div>
 
-            {/* New chat button */}
-            <div className="p-3 shrink-0">
-              <button
-                onClick={createChat}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-sm"
-              >
-                <MessageSquarePlus size={14} />
-                {t("nuevo_chat")}
-              </button>
-            </div>
+              <div className="px-3 pb-2 space-y-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={createChat}
+                  className="w-full flex items-center gap-2 px-3 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-[13px] font-medium transition-colors shadow-[0_1px_2px_rgba(37,99,235,0.35)]"
+                >
+                  <SquarePen size={15} />
+                  {t("nuevo_chat")}
+                </button>
+                <label className="relative block">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder={t("buscar_chats")}
+                    aria-label={t("buscar_chats")}
+                    className="w-full h-8 pl-8 pr-2 rounded-lg bg-white border border-slate-200 text-[13px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/15 caret-blue-600"
+                  />
+                </label>
+              </div>
 
-            {/* Chat list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-              {chats.length === 0 ? (
-                <p className="text-[10px] text-slate-400 text-center py-4 px-3">
-                  {t("sin_conversaciones")}
-                </p>
-              ) : (
-                chats.map((chat) => (
-                  <div
-                    key={chat.id}
-                    onClick={() => selectChat(chat.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start justify-between gap-2 group transition-colors cursor-pointer ${
-                      chat.id === activeChatId
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {editingChatId === chat.id ? (
-                      <div
-                        className="flex items-center gap-1 flex-1 min-w-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          autoFocus
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={saveEditTitle}
-                          onKeyDown={handleEditTitleKeyDown}
-                          className="flex-1 min-w-0 text-[11px] font-semibold bg-white border border-blue-300 rounded-md px-1.5 py-0.5 outline-none text-slate-800"
-                        />
-                        <button
-                          onClick={saveEditTitle}
-                          className="shrink-0 p-0.5 rounded-md text-blue-500 hover:bg-blue-100"
-                        >
-                          <Check size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] font-semibold leading-snug line-clamp-2 flex-1">
-                        {chat.title}
-                      </span>
-                    )}
-                    {editingChatId !== chat.id && (
-                      <div className="shrink-0 flex items-center gap-0.5 mt-0.5 opacity-0 group-hover:opacity-100">
-                        <span
-                          onClick={(e) => startEditTitle(chat, e)}
-                          className={`p-0.5 rounded-md transition-colors hover:bg-blue-100 hover:text-blue-500 ${
-                            chat.id === activeChatId
-                              ? "text-blue-400"
-                              : "text-slate-300"
-                          }`}
-                          role="button"
-                          title={t("renombrar")}
-                        >
-                          <Pencil size={11} />
-                        </span>
-                        <span
-                          onClick={(e) => deleteChat(chat.id, e)}
-                          className={`p-0.5 rounded-md transition-colors hover:bg-red-100 hover:text-red-500 ${
-                            chat.id === activeChatId
-                              ? "text-blue-400"
-                              : "text-slate-300"
-                          }`}
-                          role="button"
-                          title={t("eliminar_chat")}
-                        >
-                          <Trash2 size={11} />
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))
+              <nav className="flex-1 overflow-y-auto px-2 pb-3 agente-scroll" aria-label={t("titulo")}>
+                {chats.length === 0 ? (
+                  <p className="text-xs text-slate-500 px-3 py-6">{t("sin_conversaciones")}</p>
+                ) : gruposChats.length === 0 ? (
+                  <p className="text-xs text-slate-500 px-3 py-6">{t("sin_resultados")}</p>
+                ) : (
+                  gruposChats.map(([grupo, lista]) => (
+                    <div key={grupo} className="mt-3 first:mt-1">
+                      <p className="px-3 pb-1 text-[11px] font-medium text-slate-500">{etiquetaGrupo[grupo]}</p>
+                      {lista.map((chat) => {
+                        const activo = chat.id === activeChatId;
+                        return (
+                          <div
+                            key={chat.id}
+                            className={`group relative flex items-center rounded-lg transition-colors ${
+                              activo ? "bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-slate-200" : "hover:bg-slate-200/50"
+                            }`}
+                          >
+                            {editingChatId === chat.id ? (
+                              <input
+                                autoFocus
+                                value={editingTitle}
+                                onChange={(e) => setEditingTitle(e.target.value)}
+                                onBlur={saveEditTitle}
+                                onKeyDown={handleEditTitleKeyDown}
+                                aria-label={t("renombrar")}
+                                className="flex-1 min-w-0 m-1 h-7 px-2 text-[13px] bg-white border border-blue-300 rounded-md outline-none text-slate-800 caret-blue-600"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => selectChat(chat.id)}
+                                aria-current={activo ? "page" : undefined}
+                                className={`flex-1 min-w-0 text-left pl-3 pr-3 group-hover:pr-14 group-focus-within:pr-14 py-2 text-[13px] truncate ${
+                                  activo ? "text-slate-900 font-medium" : "text-slate-600"
+                                }`}
+                              >
+                                {chat.title}
+                              </button>
+                            )}
+                            {editingChatId !== chat.id && (
+                              <div className="absolute right-1 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => startEditTitle(chat, e)}
+                                  title={t("renombrar")}
+                                  aria-label={t("renombrar")}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => deleteChat(chat.id, e)}
+                                  title={t("eliminar_chat")}
+                                  aria-label={t("eliminar_chat")}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </nav>
+
+              {faltaMcp && (
+                <a
+                  href="/api/superadmin/agenteia/oauth"
+                  className="m-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors shrink-0"
+                >
+                  <PlugZap size={14} />
+                  {t("conectar_odoo")}
+                </a>
               )}
             </div>
           </motion.aside>
         )}
       </AnimatePresence>
 
-      {/* ── MAIN CHAT AREA ────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col p-2 md:p-4 overflow-hidden min-w-0">
-        {/* Header */}
-        <div className="bg-white px-4 py-3 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
+      {/* ── CONVERSACIÓN ──────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="h-12 px-2 md:px-4 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             {!sidebarOpen && (
               <button
+                type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                title={t("abrir_chats")}
+                aria-label={t("abrir_chats")}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
               >
                 <PanelLeftOpen size={16} />
               </button>
             )}
-            <div className="w-9 h-9 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-              <img
-                src="/supricom.png"
-                alt="Supri"
-                className="w-full h-full object-cover rounded-full"
-              />
-            </div>
-            <div>
-              <Title className="text-base md:text-lg font-black text-slate-900 tracking-tighter uppercase italic">
-                Supri <span className="text-blue-600">AI</span>
-              </Title>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest hidden sm:block">
-                {activeChat?.title ?? t("titulo")}
-              </p>
-            </div>
+            <h1 className="text-sm font-semibold text-slate-800 truncate">{activeChat?.title ?? "Supri AI"}</h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
+            <label className="relative">
+              <span className="sr-only">{t("modelo")}</span>
+              <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+              <select
+                value={modelo}
+                onChange={(e) => elegirModelo(e.target.value)}
+                disabled={isGenerating}
+                title={t("modelo")}
+                className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
+              >
+                <option value="">{t("modelo_auto")}</option>
+                {modelos.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </label>
             <button
+              type="button"
               onClick={toggleConversationMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-bold transition-all ${
-                isConversationMode
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30 animate-pulse"
-                  : "bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+              aria-pressed={isConversationMode}
+              title={isConversationMode ? t("voz_activa") : t("activar_voz")}
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+                isConversationMode ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-200/60"
               }`}
             >
-              <Headphones size={13} />
-              <span className="hidden sm:inline">
-                {isConversationMode ? t("voz_activa") : t("activar_voz")}
-              </span>
+              <Headphones size={15} />
+              <span className="hidden lg:inline">{isConversationMode ? t("voz_activa") : t("activar_voz")}</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Status indicator */}
+        {/* Estado del modo voz */}
         <AnimatePresence>
-          {(isListening || isSpeaking || isGenerating) &&
-            isConversationMode && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex justify-center mt-3"
-              >
-                <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-5 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                  {isSpeaking ? (
-                    <>
-                      <Volume2 size={13} className="animate-pulse" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("supri_hablando")}
-                      </span>
-                    </>
-                  ) : isGenerating ? (
-                    <>
-                      <BrainCircuit size={13} className="animate-spin" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("pensando")}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic size={13} className="animate-bounce" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        {t("escuchando")}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            )}
+          {(isListening || isSpeaking || isGenerating) && isConversationMode && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="flex justify-center"
+            >
+              <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full flex items-center gap-2 text-xs font-medium" role="status">
+                {isSpeaking ? (
+                  <>
+                    <Volume2 size={14} className="animate-pulse" /> {t("supri_hablando")}
+                  </>
+                ) : isGenerating ? (
+                  <>
+                    <BrainCircuit size={14} className="animate-pulse" /> {t("pensando")}
+                  </>
+                ) : (
+                  <>
+                    <Mic size={14} className="animate-pulse" /> {t("escuchando")}
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
-        {/* Chat card */}
-        <Card className="flex-1 mt-3 bg-white rounded-2xl md:rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden p-0 flex flex-col relative">
-          {/* Speaking video background */}
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+          {/* Video de Supri hablando (modo voz) */}
           <div
             className={`absolute inset-0 z-0 bg-[#f1f1f1] transition-opacity duration-700 ${isSpeaking ? "opacity-100" : "opacity-0"}`}
           >
-            <video
-              ref={videoRef}
-              src="/supri-speak.mp4"
-              className="w-full h-full object-contain"
-              muted
-              loop
-              playsInline
-            />
+            <video ref={videoRef} src="/supri-speak.mp4" className="w-full h-full object-contain" muted loop playsInline />
           </div>
 
-          {/* Messages + input always visible */}
-          <>
-            {/* Messages */}
-            <div
-              ref={chatContainerRef}
-              className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 custom-scrollbar relative z-10 transition-all duration-500 ${
-                isSpeaking
-                  ? "opacity-0 pointer-events-none scale-95"
-                  : "opacity-100 scale-100"
-              }`}
-            >
-              <AnimatePresence initial={false}>
-                {messages.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto space-y-4 p-8"
-                  >
-                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-white shadow-2xl shadow-blue-500/20">
-                      <img
-                        src="/supri2.png"
-                        alt="Supri"
-                        className="w-full h-full object-cover"
-                      />
+          {/* Mensajes */}
+          <div
+            ref={chatContainerRef}
+            className={`flex-1 overflow-y-auto px-3 md:px-6 agente-scroll relative z-10 transition-opacity duration-500 ${
+              isSpeaking ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          >
+            {messages.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="min-h-full flex flex-col justify-center max-w-2xl mx-auto py-10"
+              >
+                <img
+                  src="/supri2.png"
+                  alt=""
+                  className="w-12 h-12 rounded-2xl object-cover shadow-[0_6px_16px_-6px_rgba(37,99,235,0.45)]"
+                />
+                <h2 className="mt-5 text-2xl md:text-3xl font-semibold tracking-[-0.02em] text-slate-900 text-balance">
+                  {saludo}
+                  {nombre ? `, ${nombre}` : ""}
+                </h2>
+                <p className="mt-2 text-[15px] leading-relaxed text-slate-600 max-w-xl">{t("subtitulo_vacio")}</p>
+                <div className="mt-7 flex flex-wrap gap-2">
+                  {SUGERENCIAS.map(({ clave, icono: Icono }) => (
+                    <button
+                      key={clave}
+                      type="button"
+                      onClick={() => enviar(t(clave))}
+                      className="group inline-flex items-center gap-2 h-9 px-3.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-700 hover:border-blue-300 hover:text-blue-700 hover:shadow-[0_2px_8px_-2px_rgba(37,99,235,0.25)] transition-[border-color,color,box-shadow]"
+                    >
+                      <Icono size={14} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                      {t(clave)}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            ) : (
+              <div className="max-w-3xl mx-auto py-6 space-y-8">
+                {messages.map((msg, index) => {
+                  const ultimo = index === messages.length - 1;
+                  const escribiendo = msg.role === "assistant" && isGenerating && ultimo;
+                  return msg.role === "user" ? (
+                    <div key={index} className="group flex flex-col items-end gap-1">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-white border border-slate-200 px-4 py-2.5 text-[14px] leading-relaxed text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+                        <p className="whitespace-pre-line break-words">{msg.content}</p>
+                        {msg.files && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {msg.files.map((file, fIdx) => (
+                              <span
+                                key={fIdx}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-md text-[11px] font-medium text-slate-600"
+                              >
+                                <FileIcon size={11} className="text-blue-600" />
+                                <span className="truncate max-w-[140px]">{file.name}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-0.5 text-slate-400 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <BotonAccion etiqueta={t("copiar")} onClick={() => copiar(index, msg.content)}>
+                          {copiado === index ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                        </BotonAccion>
+                        <BotonAccion etiqueta={t("rebobinar")} onClick={() => rebobinar(index, msg.content)} disabled={isGenerating}>
+                          <RotateCcw size={14} />
+                        </BotonAccion>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-                        {t("listo_ayudar")}
-                      </h3>
-                      <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                        {t("escribe_mensaje")}
-                      </p>
-                    </div>
-                  </motion.div>
-                ) : (
-                  messages.map((msg, index) => (
+                  ) : (
                     <motion.div
                       key={index}
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="group flex gap-3"
                     >
-                      {msg.role === "assistant" && (
-                        <div className="shrink-0 flex items-end">
-                          <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden border-2 border-white shadow-md">
-                            <img
-                              src="/supri2.png"
-                              alt="Supri"
-                              className="w-full h-full object-cover"
-                            />
+                      <img src="/supri2.png" alt="Supri" className="w-7 h-7 mt-0.5 rounded-lg object-cover shrink-0 ring-1 ring-slate-200" />
+                      <div className="flex-1 min-w-0 space-y-3">
+                        {msg.proceso && (
+                          <details className="text-[13px] text-slate-500 group/proceso">
+                            <summary className="inline-flex items-center gap-1 cursor-pointer select-none font-medium hover:text-slate-800 list-none [&::-webkit-details-marker]:hidden">
+                              <ChevronRight size={14} className="transition-transform group-open/proceso:rotate-90" />
+                              {t("ver_proceso")}
+                            </summary>
+                            <p className="mt-2 pl-4 border-l border-slate-200 whitespace-pre-line leading-relaxed">{msg.proceso}</p>
+                          </details>
+                        )}
+                        {msg.content !== "" && (
+                          <div data-msg={index} className="agente-md text-[14.5px] leading-7 text-slate-800 break-words">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
+                              {traducirError(sinMarcas(msg.content))}
+                            </ReactMarkdown>
                           </div>
-                        </div>
-                      )}
-                      <div className="max-w-[85%] md:max-w-[75%] flex flex-col space-y-1">
-                        <div
-                          className={`p-3 md:p-4 rounded-2xl md:rounded-3xl text-[13px] md:text-sm font-medium leading-relaxed shadow-sm border ${
-                            msg.role === "user"
-                              ? "bg-slate-900 border-slate-950 text-white rounded-br-sm"
-                              : "bg-white border-slate-100 text-slate-800 rounded-bl-sm"
-                          }`}
-                        >
-                          {msg.content === "" &&
-                          isGenerating &&
-                          index === messages.length - 1 ? (
-                            <div className="flex items-center gap-2 text-slate-400 py-1">
-                              <Loader2
-                                className="animate-spin text-blue-600"
-                                size={14}
-                              />
-                              <span className="text-[10px] font-black uppercase tracking-wider">
-                                {t("pensando")}
-                              </span>
+                        )}
+                        {archivosDe(msg.content).map((a) => (
+                          <ArchivoAgente
+                            key={a.id}
+                            {...a}
+                            activo={archivoAbierto?.id === a.id}
+                            onAbrir={() => abrirArchivo(archivoAbierto?.id === a.id ? null : a)}
+                          />
+                        ))}
+                        {cambiosDe(msg.content).map(({ token, detalle }) => (
+                          <div key={token} className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+                            <div className="flex items-center gap-2 text-[13px] font-semibold text-amber-800">
+                              <TriangleAlert size={15} /> Cambio en Odoo pendiente de confirmar
                             </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {msg.role === "user" ? (
-                                <p className="whitespace-pre-line">{msg.content}</p>
-                              ) : (
-                                <div className="agente-md break-words">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{sinMarcas(msg.content)}</ReactMarkdown>
-                                </div>
-                              )}
-                              {msg.role === "assistant" &&
-                                cambiosDe(msg.content).map(({ token, detalle }) => (
-                                  <div key={token} className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
-                                    <div className="text-[11px] font-black uppercase tracking-wider text-amber-700">
-                                      Cambio en Odoo pendiente
-                                    </div>
-                                    <div className="text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</div>
-                                    {detalle && (
-                                      <pre className="text-[10px] bg-white/70 rounded p-2 overflow-x-auto text-slate-600">
-                                        {JSON.stringify(
-                                          { operacion: detalle.operacion, model: detalle.model, ids: detalle.ids, method: detalle.method, values: detalle.values, args: detalle.args, kwargs: detalle.kwargs },
-                                          null,
-                                          2,
-                                        )}
-                                      </pre>
-                                    )}
-                                    <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        disabled={isGenerating}
-                                        onClick={() => resolverCambio(index, token, true)}
-                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
-                                      >
-                                        Confirmar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={isGenerating}
-                                        onClick={() => resolverCambio(index, token, false)}
-                                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
-                                      >
-                                        Cancelar
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              {msg.files && (
-                                <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100/20">
-                                  {msg.files.map((file, fIdx) => (
-                                    <div
-                                      key={fIdx}
-                                      className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/40 rounded-lg text-[10px] font-bold text-slate-300"
-                                    >
-                                      <FileIcon
-                                        size={10}
-                                        className="text-blue-400"
-                                      />
-                                      <span className="truncate max-w-[120px]">
-                                        {file.name}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                            <p className="text-sm text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</p>
+                            {detalle && (
+                              <pre className="text-[11px] leading-relaxed bg-white rounded-lg border border-amber-100 p-3 overflow-x-auto text-slate-600 font-mono">
+                                {JSON.stringify(
+                                  {
+                                    operacion: detalle.operacion,
+                                    model: detalle.model,
+                                    ids: detalle.ids,
+                                    method: detalle.method,
+                                    values: detalle.values,
+                                    args: detalle.args,
+                                    kwargs: detalle.kwargs,
+                                  },
+                                  null,
+                                  2,
+                                )}
+                              </pre>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={isGenerating}
+                                onClick={() => resolverCambio(index, token, true)}
+                                className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isGenerating}
+                                onClick={() => resolverCambio(index, token, false)}
+                                className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-[13px] font-medium hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Cancelar
+                              </button>
                             </div>
-                          )}
-                        </div>
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider text-slate-400 px-2 ${msg.role === "user" ? "text-right" : "text-left"}`}
-                        >
-                          {msg.role === "user" ? t("tu") : t("supri")}
-                        </span>
+                          </div>
+                        ))}
+                        {escribiendo ? (
+                          <div className="flex items-center gap-2.5 text-[13px] text-slate-500" role="status" aria-live="polite">
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60 animate-ping" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
+                            </span>
+                            <span className="font-medium text-slate-600">{avance ? `${avance}…` : t("pensando")}</span>
+                            <span className="text-slate-400 tabular-nums">{duracion(segundos)}</span>
+                          </div>
+                        ) : (
+                          msg.content !== "" && (
+                            <div className="flex items-center gap-0.5 -ml-1.5 text-slate-400 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                              <BotonAccion etiqueta={t("copiar")} onClick={() => copiar(index, msg.content)}>
+                                {copiado === index ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                              </BotonAccion>
+                            </div>
+                          )
+                        )}
+                        {!escribiendo && ultimo && terminaEnError(msg.content) && (
+                          <button
+                            type="button"
+                            onClick={() => reintentar(index)}
+                            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[13px] font-medium text-slate-700 hover:border-blue-300 hover:text-blue-700 transition-colors"
+                          >
+                            <RefreshCw size={13} />
+                            {t("reintentar")}
+                          </button>
+                        )}
                       </div>
-                      {msg.role === "user" && (
-                        <div className="shrink-0 flex items-end">
-                          <div className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shadow-inner">
-                            <User size={16} />
-                          </div>
-                        </div>
-                      )}
                     </motion.div>
-                  ))
-                )}
-              </AnimatePresence>
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Retry banner */}
-            {lastFailedMessage && !isGenerating && (
-              <div className="mx-3 md:mx-4 mt-2 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                <p className="text-[11px] font-semibold text-amber-700">
-                  El agente no respondió. ¿Deseas reintentar?
-                </p>
-                <button
-                  onClick={() => {
-                    const { text, type } = lastFailedMessage;
-                    setLastFailedMessage(null);
-                    // Remove the failed assistant message before retrying
-                    setMessages((prev) => {
-                      const next = [...prev];
-                      if (next[next.length - 1]?.role === "assistant")
-                        next.pop();
-                      if (next[next.length - 1]?.role === "user") next.pop();
-                      return next;
-                    });
-                    processMessage(text, type);
-                  }}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg transition-colors"
-                >
-                  <Loader2 size={11} />
-                  {t("reintentar")}
-                </button>
+                  );
+                })}
               </div>
             )}
+            <div ref={messagesEndRef} />
+          </div>
 
-            {/* Input area */}
-            <div className="p-3 md:p-4 bg-white border-t border-slate-50 shrink-0 space-y-2">
+          {/* Caja de mensaje */}
+          <div className="px-3 md:px-6 pt-2 pb-3 md:pb-4 shrink-0 relative z-10">
+            <form
+              onSubmit={handleSend}
+              className={`w-full max-w-3xl mx-auto bg-white rounded-2xl border transition-[border-color,box-shadow] shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)] ${
+                isConversationMode
+                  ? "border-indigo-300 ring-4 ring-indigo-500/10"
+                  : "border-slate-200 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10"
+              }`}
+            >
               {attachedFiles.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100 max-h-[80px] overflow-y-auto">
+                <div className="flex flex-wrap gap-1.5 px-3 pt-3">
                   {attachedFiles.map((file, index) => (
-                    <div
+                    <span
                       key={index}
-                      className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border text-[11px] font-bold text-slate-700"
+                      className="inline-flex items-center gap-1.5 h-7 pl-2 pr-1 rounded-lg bg-slate-100 text-xs font-medium text-slate-700"
                     >
-                      <FileIcon size={12} className="text-blue-500" />
-                      <span className="truncate max-w-[140px]">
-                        {file.name}
-                      </span>
+                      <FileIcon size={12} className="text-blue-600" />
+                      <span className="truncate max-w-[160px]">{file.name}</span>
                       <button
                         type="button"
-                        onClick={() =>
-                          setAttachedFiles((p) =>
-                            p.filter((_, i) => i !== index),
-                          )
-                        }
-                        className="text-slate-400 hover:text-red-500"
+                        onClick={() => setAttachedFiles((p) => p.filter((_, i) => i !== index))}
+                        aria-label={`Quitar ${file.name}`}
+                        className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-white"
                       >
                         <X size={12} />
                       </button>
-                    </div>
+                    </span>
                   ))}
                 </div>
               )}
-
-              <form
-                onSubmit={handleSend}
-                className={`relative flex items-center bg-slate-50 rounded-xl md:rounded-2xl border px-2 md:px-3 gap-1 ${
-                  isConversationMode
-                    ? "border-indigo-200 ring-2 ring-indigo-500/10"
-                    : "border-slate-200/60"
-                }`}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  multiple
-                  className="hidden"
-                />
-                <button
-                  type="button"
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden" />
+              {/* Enter envía; Shift+Enter hace salto de línea. Crece hasta ~8 líneas. */}
+              <textarea
+                ref={inputRef}
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder={isConversationMode ? t("habla_espera") : isListening ? t("dictando") : t("mensaje_placeholder")}
+                aria-label={t("mensaje_placeholder")}
+                className="block w-full bg-transparent border-none outline-none resize-none [field-sizing:content] min-h-[3rem] max-h-48 px-4 pt-3.5 pb-1 text-[14.5px] leading-6 text-slate-900 placeholder:text-slate-400 caret-blue-600 agente-scroll"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                disabled={isGenerating || isConversationMode}
+              />
+              <div className="flex items-center gap-1 px-2 pb-2">
+                <BotonAccion
+                  etiqueta={t("adjuntar")}
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isGenerating || isConversationMode}
-                  className="p-1.5 md:p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-100 disabled:opacity-50"
+                  grande
                 >
-                  <Paperclip size={16} />
-                </button>
-                <button
-                  type="button"
+                  <Paperclip size={17} />
+                </BotonAccion>
+                <BotonAccion
+                  etiqueta={t("dictar")}
                   onClick={toggleListening}
                   disabled={isGenerating || isConversationMode}
-                  className={`p-1.5 md:p-2 rounded-lg disabled:opacity-50 ${isListening && !isConversationMode ? "bg-red-50 text-red-500 animate-pulse" : "text-slate-400 hover:text-blue-600 hover:bg-slate-100"}`}
+                  grande
+                  activo={isListening && !isConversationMode}
                 >
-                  {isListening && !isConversationMode ? (
-                    <MicOff size={16} />
-                  ) : (
-                    <Mic size={16} />
-                  )}
-                </button>
-                <input
-                  type="text"
-                  placeholder={
-                    isConversationMode
-                      ? t("habla_espera")
-                      : isListening
-                        ? t("dictando")
-                        : t("mensaje_placeholder")
-                  }
-                  className="w-full bg-transparent border-none outline-none py-3 md:py-4 px-1 md:px-2 text-xs font-semibold text-slate-700"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  disabled={isGenerating || isConversationMode}
-                />
-                <button
-                  type="submit"
-                  disabled={
-                    (!input.trim() && attachedFiles.length === 0) ||
-                    isGenerating ||
-                    isConversationMode
-                  }
-                  className="p-2 md:p-2.5 bg-blue-600 hover:bg-slate-950 disabled:bg-slate-200 text-white rounded-lg md:rounded-xl shadow-md disabled:shadow-none"
-                >
-                  {isGenerating && !isConversationMode ? (
-                    <Loader2 className="animate-spin" size={14} />
-                  ) : (
-                    <Send size={14} />
-                  )}
-                </button>
-              </form>
-            </div>
-          </>
-        </Card>
+                  {isListening && !isConversationMode ? <MicOff size={17} /> : <Mic size={17} />}
+                </BotonAccion>
+                <div className="flex-1" />
+                {isGenerating && abortRef.current && !isConversationMode ? (
+                  <button
+                    type="button"
+                    onClick={() => abortRef.current?.abort()}
+                    title={t("detener")}
+                    aria-label={t("detener")}
+                    className="h-8 w-8 grid place-items-center rounded-full bg-slate-900 hover:bg-slate-700 text-white transition-colors"
+                  >
+                    <Square size={11} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!puedeEnviar}
+                    title={t("enviar")}
+                    aria-label={t("enviar")}
+                    className="h-8 w-8 grid place-items-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:bg-slate-200 disabled:text-slate-400"
+                  >
+                    {isGenerating && !isConversationMode ? <Loader2 className="animate-spin" size={15} /> : <ArrowUp size={17} />}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
+
+      {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
+      {archivoAbierto && (
+        <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[45%] md:min-w-[22rem] md:max-w-3xl md:shrink-0 bg-white md:border-l border-slate-200 flex flex-col">
+          <VistaArchivo key={archivoAbierto.id} {...archivoAbierto} onCerrar={() => setArchivoAbierto(null)} />
+        </aside>
+      )}
     </div>
   );
 }

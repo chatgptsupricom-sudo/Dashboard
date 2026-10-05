@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
-import { CORTE_ODOO, importarVentasSmartbit, sedesSmartbit } from "@/lib/smartbit";
+import { asignarMarcasSmartbit, CORTE_ODOO, importarVentasSmartbit, sedesSmartbit } from "@/lib/smartbit";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +70,8 @@ export async function POST(request: NextRequest) {
         s.error = e?.message || "error";
       }
     }
+    // Los renglones nuevos llegan sin marca: se cruzan con Odoo al terminar.
+    await asignarMarcasSmartbit().catch((e) => console.error("[smartbit] marcas tras importar:", e?.message));
     estado.corriendo = false;
     estado.fin = new Date().toISOString();
   })();

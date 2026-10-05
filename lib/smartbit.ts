@@ -17,7 +17,8 @@
 // Bearer; header X-ClientId obligatorio; paginacion con cantidadPaginas en
 // el header de la respuesta).
 
-import { getConnection, query } from "@/lib/db";
+import { db, getConnection, query } from "@/lib/db";
+import { callOdooRPCEstricto } from "@/lib/odoo";
 
 export const CORTE_ODOO = process.env.SMARTBIT_CORTE || "2026-04-01";
 
@@ -624,4 +625,111 @@ export async function importarVentasSmartbit(
   } finally {
     conn.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Marca (cruce con Odoo)
+//
+// Smartbit no guarda la marca: la API de ventas solo trae el clasificador
+// "Linea" y los exportes de Valencia/Caracas ni eso. Como codigo_articulo es
+// el default_code de Odoo, la marca se toma de product.product.x_studio_marca
+// (la misma de Metas por marca) y se guarda en ventas_smartbit.marca
+// (sql/ventas_smartbit_marca.sql). NULL = sin revisar; '' = revisado y el
+// artículo no existe en Odoo.
+// ---------------------------------------------------------------------------
+
+const SEDES_ODOO = [9, 10, 7];
+
+// Código de artículo comparable: mayúsculas, sin espacios, "/" como "-"
+// (Smartbit "CRG-051D/CF232A" es "CRG-051D-CF232A" en Odoo).
+export const normCodigo = (c: string) => String(c).trim().toUpperCase().replace(/\//g, "-");
+
+async function productosOdoo(domain: any[]): Promise<{ codigo: string; marca: string }[]> {
+  const prods =
+    (await callOdooRPCEstricto<any[]>("product.product", "search_read", [domain], {
+      fields: ["default_code", "x_studio_marca"],
+      context: { active_test: false, allowed_company_ids: SEDES_ODOO },
+    })) || [];
+  return prods
+    .filter((p) => p.default_code)
+    .map((p) => {
+      const m = Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca;
+      return { codigo: normCodigo(p.default_code), marca: m ? String(m).toUpperCase().trim() : "Sin marca" };
+    });
+}
+
+/**
+ * Marca de Odoo por código de artículo, incluidos productos archivados.
+ * Clave: normCodigo(). Si no hay código exacto, se acepta uno que empiece
+ * igual en cualquiera de los dos sentidos ("A-CB435A-CE278A" →
+ * "A-CB435A-CE278A-CE285A"; "5U0G1LT-AC8" → "5U0G1LT"; "I62" → "I62BK"), pero
+ * solo si todos los candidatos son de la misma marca: solo se toma la marca.
+ */
+export async function marcasPorCodigo(codigos: string[]): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  const todos = [...new Set(codigos.map(normCodigo))];
+  for (let k = 0; k < todos.length; k += 1000) {
+    const lote = todos.slice(k, k + 1000);
+    // Odoo compara default_code tal cual: se piden las dos grafías.
+    const variantes = [...new Set([...lote, ...codigos.filter((c) => lote.includes(normCodigo(c))).map((c) => String(c).trim())])];
+    for (const p of await productosOdoo([["default_code", "in", variantes]])) mapa.set(p.codigo, p.marca);
+  }
+
+  const faltan = todos.filter((c) => !mapa.has(c) && c.length >= 3);
+  for (let k = 0; k < faltan.length; k += 60) {
+    const lote = faltan.slice(k, k + 60);
+    // Prefijos del código cortando en cada "-" (para "5U0G1LT-AC8" → "5U0G1LT").
+    const prefijos = [...new Set(lote.flatMap((c) => [...c.matchAll(/-/g)].map((m) => c.slice(0, m.index)).filter((x) => x.length >= 4)))];
+    const terminos: any[] = lote.map((c) => ["default_code", "=ilike", `${c}%`]);
+    if (prefijos.length) terminos.push(["default_code", "in", prefijos]);
+    const domain = [...Array(terminos.length - 1).fill("|"), ...terminos];
+    const candidatos = await productosOdoo(domain);
+    for (const c of lote) {
+      const marcas = new Set(
+        candidatos.filter((p) => p.codigo.startsWith(c) || (p.codigo.length >= 4 && c.startsWith(p.codigo))).map((p) => p.marca),
+      );
+      if (marcas.size === 1) mapa.set(c, [...marcas][0]);
+    }
+  }
+  return mapa;
+}
+
+/**
+ * Llena ventas_smartbit.marca cruzando con Odoo. Por defecto solo los
+ * renglones sin revisar (marca NULL); `todas` vuelve a cruzar todo (p. ej.
+ * después de cargar productos o corregir marcas en Odoo).
+ *
+ * Va por db.query y no por query(): query() audita cada escritura guardando
+ * las filas de antes, y aquí un UPDATE toca miles de renglones.
+ */
+export async function asignarMarcasSmartbit(
+  todas = false,
+  avance?: (hechos: number, total: number) => void,
+): Promise<{ codigos: number; conMarca: number; sinMarca: number; renglones: number }> {
+  const [filas] = await db.query(
+    `SELECT DISTINCT codigo_articulo AS codigo FROM ventas_smartbit
+      WHERE codigo_articulo IS NOT NULL AND TRIM(codigo_articulo) <> ''${todas ? "" : " AND marca IS NULL"}`,
+  );
+  const codigos = (filas as any[]).map((f) => String(f.codigo));
+  const mapa = await marcasPorCodigo(codigos);
+
+  // Un UPDATE por marca y lote de códigos ('' = no está en Odoo).
+  const porMarca = new Map<string, string[]>();
+  for (const c of codigos) {
+    const marca = mapa.get(normCodigo(c)) ?? "";
+    porMarca.set(marca, [...(porMarca.get(marca) || []), c]);
+  }
+  let renglones = 0;
+  let hechos = 0;
+  for (const [marca, lista] of porMarca) {
+    for (let k = 0; k < lista.length; k += 500) {
+      const lote = lista.slice(k, k + 500);
+      const [r] = await db.query("UPDATE ventas_smartbit SET marca = ? WHERE codigo_articulo IN (?)", [marca, lote]);
+      renglones += (r as any).affectedRows || 0;
+      hechos += lote.length;
+      avance?.(hechos, codigos.length);
+    }
+  }
+  const sinMarca = porMarca.get("")?.length || 0;
+  return { codigos: codigos.length, conMarca: codigos.length - sinMarca, sinMarca, renglones };
 }

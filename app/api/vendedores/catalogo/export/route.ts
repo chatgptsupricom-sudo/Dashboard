@@ -10,7 +10,14 @@ const CATEGORIAS_OCULTAS_LOWER = ["juguetes"];
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const categoria = searchParams.get("categoria") || "todas";
+    // ids=1,2,3 → solo esos productos (selección manual en el catálogo)
+    const ids = (searchParams.get("ids") || "")
+      .split(",")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const categoria = ids.length
+      ? "todas"
+      : searchParams.get("categoria") || "todas";
     const unaHoja = searchParams.get("unaHoja") === "1";
     const cols = {
       referencia: searchParams.get("referencia") !== "0",
@@ -58,6 +65,7 @@ export async function GET(request: Request) {
       ["type", "=", "product"],
     ];
     if (categoria !== "todas") domain.push(["categ_id.name", "=", categoria]);
+    if (ids.length) domain.push(["id", "in", ids]);
 
     const productos = await callOdooRPC<any[]>(
       "product.product",
@@ -261,8 +269,9 @@ export async function GET(request: Request) {
     const catSlug = categoria
       .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, "_")
       .replace(/_+/g, "_");
-    const filename =
-      categoria !== "todas"
+    const filename = ids.length
+      ? `catalogo_seleccion_${fecha}.xlsx`
+      : categoria !== "todas"
         ? `catalogo_${catSlug}_${fecha}.xlsx`
         : `catalogo_${fecha}.xlsx`;
 

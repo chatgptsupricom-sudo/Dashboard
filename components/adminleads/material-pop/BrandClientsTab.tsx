@@ -93,6 +93,13 @@ export function BrandClientsTab() {
     );
   }, [clientes, busqueda]);
 
+  // Puesto en el ranking (por monto) según rango y marca: la búsqueda filtra
+  // filas pero no renumera.
+  const puesto = useMemo(
+    () => new Map(clientes.map((c, i) => [c.partnerId, i + 1])),
+    [clientes],
+  );
+
   // Los totales siguen a lo que se ve: con la búsqueda puesta, suman solo las
   // filas que quedaron.
   const totales = useMemo(
@@ -226,9 +233,9 @@ export function BrandClientsTab() {
               </tr>
             )}
             {!loading &&
-              visibles.map((c, i) => (
+              visibles.map((c) => (
                 <tr key={c.partnerId} className="border-t border-slate-100 align-top">
-                  <td className="p-3 text-slate-400">{i + 1}</td>
+                  <td className="p-3 text-slate-400">{puesto.get(c.partnerId)}</td>
                   <td className="p-3">
                     <p className="font-medium text-slate-900">{c.cliente}</p>
                     {c.ciudad && <p className="text-xs text-slate-500">{c.ciudad}</p>}
