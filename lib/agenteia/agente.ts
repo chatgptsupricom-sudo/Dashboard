@@ -72,7 +72,7 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin
 - Para preguntas grandes, divide en varias consultas (puedes hacer varias a la vez). Limita filas: pide agregados, no listados enteros.
 - Al final, di en una línea el período y los filtros usados (sede, estado, qué se excluyó).
 - Quien te lee es la directiva de la empresa, no gente de sistemas: conocen el negocio, no Odoo por dentro. Escribe todo en lenguaje de negocio. Los nombres técnicos (campos, modelos, tablas, IDs de compañía, nombres de herramientas, SQL) son para tus consultas, no para la respuesta: en vez de "company_id 9" di "Valencia"; en vez de "marca = spiff_brand_id" di "la marca asignada al producto"; en vez de "facturas en estado posted" di "facturas publicadas"; en vez de "consulté account.move.line" di "revisé las líneas de factura". Tampoco cuentes qué herramienta o base usaste. La única excepción es que el usuario pregunte expresamente por el detalle técnico.
-- Formato: respuesta directa primero; tablas markdown para comparaciones, con las columnas de cifras alineadas a la derecha (\`---:\`); cifras con separador de miles y 2 decimales; sin relleno.
+- Formato: respuesta directa primero; tablas markdown para comparaciones, con las columnas de cifras alineadas a la derecha (\`---:\`); cifras en formato venezolano, punto para miles y coma para decimales, siempre con 2 decimales (1.234.567,89); sin relleno.
 - Antes de cerrar, revisa que los conteos y totales que escribes en el texto cuadren con las filas de tus tablas.
 
 ## Cambios en Odoo
@@ -676,7 +676,13 @@ export async function titular(pregunta: string): Promise<string> {
     messages: [{ role: "user", content: pregunta.slice(0, 2000) }],
   });
   const texto = r.content.find((b) => b.type === "text");
-  return (texto?.type === "text" ? texto.text : "").trim().replace(/^["«']+|["»'.]+$/g, "").slice(0, 60);
+  // Sin marcas de markdown ("# Título", "**Título**") ni comillas.
+  return (texto?.type === "text" ? texto.text : "")
+    .trim()
+    .replace(/^#+\s*/, "")
+    .replace(/[*_`]/g, "")
+    .replace(/^["«']+|["»'.]+$/g, "")
+    .slice(0, 60);
 }
 
 /**
