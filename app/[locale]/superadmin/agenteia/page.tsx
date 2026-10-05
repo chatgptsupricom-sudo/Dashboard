@@ -35,6 +35,7 @@ import {
   Trophy,
   Users,
   Volume2,
+  Wrench,
   X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -54,6 +55,8 @@ interface Message {
   content: string;
   // Lo que el agente fue contando mientras consultaba, antes de la respuesta.
   proceso?: string;
+  // Herramientas que usó para responder (panel "Usó N herramientas").
+  pasos?: Paso[];
   files?: AttachedFile[];
 }
 
@@ -113,6 +116,52 @@ function TablaConExcel({ node, ...props }: any) {
 }
 
 type ArchivoRef = { id: string; nombre: string };
+
+const segundosDe = (ms: number) => (ms < 1000 ? `${ms} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : duracion(Math.round(ms / 1000)));
+
+// "Usando herramientas…" mientras trabaja y "Usó N herramientas" después:
+// cada consulta con lo que pidió (SQL, búsqueda, URL…), cuánto tardó y si falló.
+function PasosHerramientas({ pasos, activo, segundos }: { pasos: Paso[]; activo: boolean; segundos: number }) {
+  const fallidos = pasos.filter((p) => p.estado === "error").length;
+  return (
+    <details className="group/pasos rounded-xl border border-slate-200 bg-white text-[13px]" open={activo || undefined}>
+      <summary className="flex items-center gap-2 px-3 h-9 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-slate-600 hover:text-slate-900">
+        {activo ? (
+          <Loader2 size={14} className="animate-spin text-blue-600 shrink-0" />
+        ) : (
+          <Wrench size={14} className="text-slate-400 shrink-0" />
+        )}
+        <span className="font-medium">
+          {activo ? "Usando herramientas" : `Usó ${pasos.length} ${pasos.length === 1 ? "herramienta" : "herramientas"}`}
+        </span>
+        {fallidos > 0 && <span className="text-red-600">· {fallidos} con error</span>}
+        {activo && <span className="text-slate-400 tabular-nums">{duracion(segundos)}</span>}
+        <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open/pasos:rotate-180" />
+      </summary>
+      <ol className="border-t border-slate-100 divide-y divide-slate-100">
+        {pasos.map((p) => (
+          <li key={p.id} className="flex items-start gap-2.5 px-3 py-2">
+            {p.estado === "corriendo" ? (
+              <Loader2 size={13} className="mt-0.5 animate-spin text-blue-600 shrink-0" />
+            ) : p.estado === "ok" ? (
+              <Check size={13} className="mt-0.5 text-emerald-600 shrink-0" />
+            ) : (
+              <X size={13} className="mt-0.5 text-red-600 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-800">{p.nombre}</span>
+                {p.estado === "error" && <span className="text-[12px] font-medium text-red-600">Falló</span>}
+                {p.fin && <span className="ml-auto text-[12px] text-slate-400 tabular-nums shrink-0">{segundosDe(p.fin - p.inicio)}</span>}
+              </div>
+              {p.detalle && <p className="mt-0.5 font-mono text-[11.5px] leading-relaxed text-slate-500 break-all line-clamp-3">{p.detalle}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
 
 // ── Errores en español ──────────────────────────────────────────────────────
 // Lo que ve el usuario cuando algo falla: qué pasó y qué puede hacer. El
@@ -321,6 +370,25 @@ function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => v
       </div>
     </>
   );
+}
+
+// Herramientas que va usando el agente: el backend intercala
+// [[paso:<json base64url>]] con { id, fase: inicio|detalle|fin, nombre, detalle, ok }.
+interface Paso {
+  id: string;
+  nombre: string;
+  detalle?: string;
+  estado: "corriendo" | "ok" | "error";
+  inicio: number;
+  fin?: number;
+}
+const MARCA_PASO = /\[\[paso:([A-Za-z0-9_-]+)\]\]/g;
+function leerPaso(b64: string): any {
+  try {
+    return JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/")))));
+  } catch {
+    return null;
+  }
 }
 
 // Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
@@ -846,20 +914,38 @@ export default function AgenteIAPage() {
       const decoder = new TextDecoder();
       let done = false;
       let crudo = "";
+      // Pasos por id, con la hora (en este navegador) en que empezó y terminó cada uno.
+      const pasos = new Map<string, Paso>();
+      let leidos = 0;
 
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
         // El servidor manda espacios de ancho cero como latido: no son texto.
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
+        // Los pasos de herramientas se leen y se sacan del texto.
+        for (const m of [...crudo.matchAll(MARCA_PASO)].slice(leidos)) {
+          const e = leerPaso(m[1]);
+          if (!e?.id) continue;
+          const actual: Paso = pasos.get(e.id) || { id: e.id, nombre: e.nombre || "Herramienta", estado: "corriendo", inicio: Date.now() };
+          if (e.nombre) actual.nombre = e.nombre;
+          if (e.detalle) actual.detalle = e.detalle;
+          if (e.fase === "fin") {
+            actual.estado = e.ok === false ? "error" : "ok";
+            actual.fin = Date.now();
+          }
+          pasos.set(e.id, actual);
+        }
+        leidos = [...crudo.matchAll(MARCA_PASO)].length;
+        const sinPasos = crudo.replace(MARCA_PASO, "");
         // La respuesta es lo que viene después de la última consulta. Lo que
         // el agente escribió antes (entre consulta y consulta) es su proceso:
         // se guarda aparte y se muestra plegado, no como respuesta.
-        const marcas = [...crudo.matchAll(MARCA_AVANCE)];
+        const marcas = [...sinPasos.matchAll(MARCA_AVANCE)];
         const ultima = marcas[marcas.length - 1];
         const corte = ultima ? ultima.index! + ultima[0].length : 0;
-        const proceso = crudo.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
-        accumulated = crudo.slice(corte).trimStart();
+        const proceso = sinPasos.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
+        accumulated = sinPasos.slice(corte).trimStart();
         // Una marca que llegó cortada entre dos trozos no se muestra a medias.
         if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
         setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
@@ -867,7 +953,12 @@ export default function AgenteIAPage() {
           const next = [...prev];
           const last = next.length - 1;
           if (next[last]?.role === "assistant")
-            next[last] = { ...next[last], content: accumulated, proceso: proceso || undefined };
+            next[last] = {
+              ...next[last],
+              content: accumulated,
+              proceso: proceso || undefined,
+              pasos: pasos.size ? [...pasos.values()].map((p) => ({ ...p })) : undefined,
+            };
           return next;
         }, chatId);
       }
@@ -910,6 +1001,13 @@ export default function AgenteIAPage() {
       abortRef.current = null;
       setIsGenerating(false);
       setAvance("");
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next.length - 1;
+        if (next[last]?.pasos?.some((p) => p.estado === "corriendo"))
+          next[last] = { ...next[last], pasos: next[last].pasos!.map((p) => (p.estado === "corriendo" ? { ...p, estado: "error", fin: p.fin ?? Date.now() } : p)) };
+        return next;
+      }, chatId);
     }
   };
 
@@ -1344,6 +1442,9 @@ export default function AgenteIAPage() {
                     >
                       <img src="/supri2.png" alt="Supri" className="w-7 h-7 mt-0.5 rounded-lg object-cover shrink-0 ring-1 ring-slate-200" />
                       <div className="flex-1 min-w-0 space-y-3">
+                        {msg.pasos && msg.pasos.length > 0 && (
+                          <PasosHerramientas pasos={msg.pasos} activo={escribiendo} segundos={segundos} />
+                        )}
                         {msg.proceso && (
                           <details className="text-[13px] text-slate-500 group/proceso">
                             <summary className="inline-flex items-center gap-1 cursor-pointer select-none font-medium hover:text-slate-800 list-none [&::-webkit-details-marker]:hidden">
