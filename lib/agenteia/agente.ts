@@ -243,6 +243,19 @@ export type Cambio = {
 const MARCA = /\n*\[\[confirmar-odoo:[A-Za-z0-9_.-]+\]\]/g;
 const usados = new Set<string>();
 
+// Avisos de avance ("_⏳ Consultando…_") que se emiten mientras corre una
+// herramienta: el usuario ve que el agente sigue trabajando y el proxy no
+// corta la respuesta por inactividad. No vuelven al modelo como historial.
+const AVANCE = /\n*_⏳ [^_\n]*_/g;
+function etiquetaAvance(nombre: string): string {
+  if (nombre === "run_readonly_query") return "Consultando Odoo por SQL";
+  if (/^(describe_table|list_tables|get_table|get_odoo_models)/.test(nombre)) return "Revisando la estructura de Odoo";
+  if (nombre === "ventas_detalle") return "Calculando ventas";
+  if (nombre === "consultar_panel") return "Consultando el panel";
+  if (nombre === "preparar_cambio_odoo") return "Preparando el cambio";
+  return "Consultando Odoo";
+}
+
 const firma = (datos: string) => crypto.createHmac("sha256", Buffer.from(jwtSecretBytes())).update(datos).digest("base64url");
 
 function firmarCambio(cambio: Cambio, uid: string): string {
@@ -442,7 +455,7 @@ async function consultarPanel(sql: unknown): Promise<string> {
 function aMensajesClaude(chat: MensajeChat[]): Anthropic.Beta.BetaMessageParam[] {
   const out: Anthropic.Beta.BetaMessageParam[] = [];
   for (const m of chat) {
-    const texto = (m.content || "").replace(MARCA, "").trim();
+    const texto = (m.content || "").replace(MARCA, "").replace(AVANCE, "").trim();
     if (m.role === "assistant") {
       if (texto) out.push({ role: "assistant", content: texto });
       continue;
@@ -492,6 +505,7 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
   const cambios: string[] = [];
   let hayTexto = false;
   let fallosJson = 0;
+  let ultimoAvance = "";
 
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     const stream = anthropic().beta.messages.stream({
@@ -531,7 +545,18 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       if (primerTexto && hayTexto) emitir("\n\n");
       primerTexto = false;
       hayTexto = true;
+      ultimoAvance = "";
       emitir(t);
+    });
+    stream.on("streamEvent", (ev: any) => {
+      const b = ev?.type === "content_block_start" ? ev.content_block : null;
+      if (b?.type !== "tool_use" && b?.type !== "mcp_tool_use") return;
+      const etiqueta = etiquetaAvance(String(b.name));
+      if (etiqueta === ultimoAvance) return;
+      ultimoAvance = etiqueta;
+      emitir(`${hayTexto ? "\n\n" : ""}_⏳ ${etiqueta}…_`);
+      hayTexto = true;
+      primerTexto = true;
     });
 
     let msg: Anthropic.Beta.BetaMessage;
