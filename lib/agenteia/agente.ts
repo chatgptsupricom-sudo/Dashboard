@@ -54,7 +54,8 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin
 - **Ventas / facturado**: \`account.move\` con \`move_type\` in (out_invoice, out_refund) y \`state = 'posted'\`, por \`invoice_date\`, sumando \`amount_untaxed\` (sin IVA; las notas de crédito restan). Vendedor = \`invoice_user_id\`.
 - **Cobrado**: conciliaciones (\`account.partial.reconcile\`: \`debit_move_id\` = línea de la factura, \`credit_move_id\` = línea del pago) entre una factura de cliente y un pago en diario de tipo bank/cash cuyo nombre NO contiene "retenido", fechadas por \`payment_registration_date\` del pago (fecha de confirmación; si falta, \`create_date\`). No son cobro: retenciones de IVA/ISLR, descuentos, notas de crédito aplicadas, ni los pagos cuya descripción dice "25%" (IVA que retenemos como agentes de retención).
 - **Pagos de clientes**: \`account.payment\` con payment_type inbound y partner_type customer. \`ref\` es el Memo / N° de operación bancaria.
-- **Vendedores excluidos** en reportes (asistentes y cuentas internas): Valencia "asistente", "yusne"; Caracas "asistente", "adriana"; Panamá "hercilio". Menciónalo si los excluyes.
+- **No son vendedores**: "Asistente de Ventas" y "Dameris" (en todas las sedes). Nunca los pongas en rankings ni tablas por vendedor, ni sumes sus ventas al total por vendedor; \`ventas_detalle\` ya los saca y te devuelve cuánto quedó fuera en \`excluidos_del_total\`. Si consultas por otra vía, exclúyelos tú.
+- **Vendedores excluidos** además en reportes (cuentas internas): Valencia "yusne"; Caracas "adriana"; Panamá "hercilio". Menciónalo si los excluyes.
 - **Leads (MySQL)**: \`leads.fecha_venta\` es en realidad la fecha de CIERRE (también en perdidos). Para ventas: \`status = 'CERRADO' AND motivo_cierre IN ('VENTA','GANADO')\`. Leads que entraron en un período: por \`COALESCE(fecha_ingreso, created_at)\`.
 
 ## Preguntas típicas de la directiva
@@ -118,6 +119,10 @@ Cuando el usuario pida un archivo, créalo con la ejecución de código (las ski
 const ARCHIVO = /\n*\[\[archivo:([A-Za-z0-9_-]+)\|([^\]\n]*)\]\]/g;
 
 const DIMENSIONES = ["vendedor", "cliente", "marca", "producto"] as const;
+
+// No son vendedores (cuentas de asistencia), en ninguna sede: ventas_detalle
+// los saca siempre del ranking y del total (comparado con normalizar()).
+const NO_VENDEDORES = ["asistente", "dameris"];
 
 const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
   {
@@ -363,8 +368,13 @@ async function ventasDetalle(i: any): Promise<string> {
     const { filas } = await cargarDesglose({ companyIds, desde: i.desde, hasta: i.hasta, marca: i.marca || null });
     const contiene = (valor: string, q: unknown) => !q || normalizar(valor).includes(normalizar(String(q)));
     const grupos = new Map<string, Record<string, any>>();
+    const excluido = new Map<string, number>();
     for (const f of filas) {
       if (!contiene(f.vendedor, i.vendedor) || !contiene(f.cliente, i.cliente)) continue;
+      if (NO_VENDEDORES.some((n) => normalizar(f.vendedor).includes(normalizar(n)))) {
+        excluido.set(f.vendedor, (excluido.get(f.vendedor) || 0) + f.total);
+        continue;
+      }
       const k = dims.map((d: (typeof DIMENSIONES)[number]) => f[d]).join("|");
       const g = grupos.get(k) || { ...Object.fromEntries(dims.map((d: (typeof DIMENSIONES)[number]) => [d, f[d]])), total: 0, cantidad: 0 };
       g.total += f.total;
@@ -377,6 +387,7 @@ async function ventasDetalle(i: any): Promise<string> {
         periodo: { desde: i.desde, hasta: i.hasta },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
         total_general: r2(lista.reduce((s, g) => s + g.total, 0)),
+        excluidos_del_total: [...excluido].map(([vendedor, total]) => ({ vendedor, total: r2(total) })),
         grupos_totales: lista.length,
         grupos: lista.slice(0, Number(i.limite) || 50).map((g) => ({ ...g, total: r2(g.total), cantidad: r2(g.cantidad) })),
       }),
