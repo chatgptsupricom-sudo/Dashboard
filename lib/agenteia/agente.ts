@@ -467,7 +467,10 @@ function aMensajesClaude(chat: MensajeChat[]): Anthropic.Beta.BetaMessageParam[]
 }
 
 let cliente: Anthropic | null = null;
-const anthropic = () => (cliente ??= new Anthropic());
+// Una API key que no pertenece a un workspace exige decir cuál usar.
+const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+const anthropic = () =>
+  (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 
 /**
  * Corre el agente sobre la conversación y va emitiendo el texto de la
