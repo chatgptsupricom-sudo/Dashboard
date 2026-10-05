@@ -82,9 +82,38 @@ async function guardar(clientId: string, redirectUri: string, tokens: Tokens | n
   );
 }
 
+// ── Descubrimiento ────────────────────────────────────────────────────────────
+// Las rutas OAuth dependen de cómo esté escrita ODOO_MCP_URL (/mcp/<db>, /mcp,
+// /mcp?db=…): se le preguntan al módulo, igual que hace el conector de Claude
+// (RFC 9728 → RFC 8414), en vez de armarlas a mano.
+
+type Rutas = { registro: string; autorizar: string; token: string };
+let rutasCache: Promise<Rutas> | null = null;
+
+async function metadatos(url: string): Promise<any> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`El MCP de Odoo respondió ${r.status} en ${url}`);
+  return r.json();
+}
+
+const rutas = () =>
+  (rutasCache ??= (async () => {
+    const u = new URL(urlMcp());
+    const recurso = await metadatos(`${u.origin}/.well-known/oauth-protected-resource${u.pathname.replace(/\/+$/, "")}${u.search}`);
+    const servidor = String(recurso?.authorization_servers?.[0] || u.origin).replace(/\/+$/, "");
+    const m = await metadatos(`${servidor}/.well-known/oauth-authorization-server${u.search}`);
+    if (!m?.registration_endpoint || !m?.authorization_endpoint || !m?.token_endpoint) {
+      throw new Error("El MCP de Odoo no publica sus rutas OAuth.");
+    }
+    return { registro: m.registration_endpoint, autorizar: m.authorization_endpoint, token: m.token_endpoint };
+  })().catch((e) => {
+    rutasCache = null;
+    throw e;
+  }));
+
 /** POST al token endpoint del módulo. `null` = Odoo rechazó el grant. */
 async function pedirTokens(params: Record<string, string>): Promise<Tokens | null> {
-  const r = await fetch(`${urlMcp()}/oauth/token`, {
+  const r = await fetch((await rutas()).token, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
@@ -107,7 +136,7 @@ export async function iniciarConexion(redirectUri: string): Promise<string> {
   const actual = await leer();
   let clientId = actual?.redirectUri === redirectUri ? actual.clientId : "";
   if (!clientId) {
-    const r = await fetch(`${urlMcp()}/oauth/register`, {
+    const r = await fetch((await rutas()).registro, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: [redirectUri], client_name: "Panel SUPRICOM - Agente IA", token_endpoint_auth_method: "none" }),
@@ -120,15 +149,19 @@ export async function iniciarConexion(redirectUri: string): Promise<string> {
   const verifier = crypto.randomBytes(32).toString("base64url");
   const state = crypto.randomBytes(24).toString("base64url");
   pendiente = { state, verifier, clientId, redirectUri, exp: Date.now() + VIGENCIA_INICIO_MS };
-  const q = new URLSearchParams({
+  // La ruta puede traer ya `?db=`: se le suman los parámetros, no se pisan.
+  const destino = new URL((await rutas()).autorizar);
+  for (const [k, v] of Object.entries({
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
     state,
     code_challenge: crypto.createHash("sha256").update(verifier).digest("base64url"),
     code_challenge_method: "S256",
-  });
-  return `${urlMcp()}/oauth/authorize?${q}`;
+  })) {
+    destino.searchParams.set(k, v);
+  }
+  return destino.toString();
 }
 
 /** Cambia el código que devolvió Odoo por los tokens y los guarda. */
