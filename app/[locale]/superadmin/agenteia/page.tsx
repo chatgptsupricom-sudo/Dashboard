@@ -114,6 +114,28 @@ function TablaConExcel({ node, ...props }: any) {
 
 type ArchivoRef = { id: string; nombre: string };
 
+// ── Errores en español ──────────────────────────────────────────────────────
+// Lo que ve el usuario cuando algo falla: qué pasó y qué puede hacer. El
+// servidor manda los errores de Claude ya traducidos (route.ts); aquí van los
+// de la conexión y los códigos HTTP del panel.
+const ERROR_RED =
+  "Se perdió la conexión con el agente antes de que terminara de responder. Suele pasar cuando el servidor del panel se reinicia o la red se cae. Puedes reintentar.";
+
+function errorHttp(status: number, detalle?: string): string {
+  if (status === 401) return "Tu sesión venció. Vuelve a iniciar sesión y reintenta.";
+  if (status === 403) return "Tu usuario no tiene permiso para usar el agente.";
+  if (status === 413) return "El mensaje o los archivos adjuntos son demasiado grandes. Quita algún adjunto o divide la pregunta.";
+  if (status === 429) return "Se hicieron demasiadas consultas seguidas. Espera un minuto y reintenta.";
+  if (status >= 502 && status <= 504)
+    return "El servidor del panel no respondió: puede estar reiniciándose o la consulta tardó demasiado. Reintenta en un minuto.";
+  return detalle ? `El panel respondió con un error: ${detalle}` : `El panel respondió con un error (código ${status}). Reintenta en un momento.`;
+}
+
+// Los mensajes de error se guardan con ⚠️ al final de la respuesta. Los que
+// quedaron guardados en inglés (de antes) se muestran traducidos.
+const traducirError = (c: string) => c.replace(/⚠️ (network error|failed to fetch|load failed|networkerror[^\n]*)$/i, `⚠️ ${ERROR_RED}`);
+const terminaEnError = (c: string) => /⚠️[^\n]*$/.test(c.trim());
+
 const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "sugerencia_4"; icono: LucideIcon }[] = [
   { clave: "sugerencia_1", icono: TrendingDown },
   { clave: "sugerencia_2", icono: Trophy },
@@ -346,10 +368,6 @@ export default function AgenteIAPage() {
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [lastFailedMessage, setLastFailedMessage] = useState<{
-    text: string;
-    type: "text" | "voice" | "file" | "image";
-  } | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
@@ -420,7 +438,6 @@ export default function AgenteIAPage() {
   const rebobinar = (index: number, content: string) => {
     if (isGenerating) return;
     setMessages((prev) => prev.slice(0, index));
-    setLastFailedMessage(null);
     setInput(content);
     textRef.current = content;
     inputRef.current?.focus();
@@ -778,6 +795,9 @@ export default function AgenteIAPage() {
     messageText: string,
     messageType: "text" | "voice" | "file" | "image" = "text",
     chatIdOverride?: string,
+    // Historial sobre el que se responde. Reintentar lo pasa explícito: el
+    // estado de los chats todavía no refleja que quitó el intento fallido.
+    base?: Message[],
   ) => {
     const chatId = chatIdOverride ?? activeChatId;
     if (!chatId) return;
@@ -794,7 +814,7 @@ export default function AgenteIAPage() {
 
     // Use current messages for this chat (may be [] for a brand-new chat)
     const currentMsgs =
-      chats.find((c) => c.id === chatId)?.messages ?? messages;
+      base ?? chats.find((c) => c.id === chatId)?.messages ?? messages;
     const updatedMessages = [...currentMsgs, userMessage];
     setMessages(updatedMessages, chatId);
     setAttachedFiles([]);
@@ -818,10 +838,8 @@ export default function AgenteIAPage() {
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
-        setLastFailedMessage({ text: messageText, type: messageType });
-        throw new Error(errBody?.error ?? t("error_respuesta"));
+        throw new Error(errorHttp(response.status, errBody?.error));
       }
-      setLastFailedMessage(null);
       if (!response.body) return;
 
       const reader = response.body.getReader();
@@ -876,14 +894,10 @@ export default function AgenteIAPage() {
         }, chatId);
         return;
       }
-      // Se cortó la conexión (red, despliegue, proxy): se ofrece reintentar.
-      const cortada = err instanceof TypeError;
-      if (cortada) setLastFailedMessage({ text: messageText, type: messageType });
-      const errorMsg = cortada
-        ? `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ Se perdió la conexión con el agente antes de terminar.`
-        : err?.message && err.message !== t("error_respuesta")
-          ? `⚠️ ${err.message}`
-          : t("error_respuesta");
+      // fetch y la lectura del streaming lanzan TypeError cuando se corta la
+      // conexión (red, reinicio del servidor, proxy). Lo ya escrito se conserva.
+      const motivo = err instanceof TypeError ? ERROR_RED : err?.message || "Ocurrió un error inesperado. Puedes reintentar.";
+      const errorMsg = `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ ${motivo}`;
       setMessages((prev) => {
         const next = [...prev];
         const last = next.length - 1;
@@ -897,6 +911,16 @@ export default function AgenteIAPage() {
       setIsGenerating(false);
       setAvance("");
     }
+  };
+
+  // Reintenta la pregunta que terminó en error: quita la pregunta y la
+  // respuesta fallida y la vuelve a enviar sobre el historial anterior.
+  const reintentar = (index: number) => {
+    const pregunta = messages[index - 1];
+    if (!activeChatId || isGenerating || pregunta?.role !== "user") return;
+    const base = messages.slice(0, index - 1);
+    setMessages(base, activeChatId);
+    processMessage(pregunta.content, "text", activeChatId, base);
   };
 
   // Confirma o cancela un cambio en Odoo preparado por el agente. La marca se
@@ -1332,7 +1356,7 @@ export default function AgenteIAPage() {
                         {msg.content !== "" && (
                           <div data-msg={index} className="agente-md text-[14.5px] leading-7 text-slate-800 break-words">
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
-                              {sinMarcas(msg.content)}
+                              {traducirError(sinMarcas(msg.content))}
                             </ReactMarkdown>
                           </div>
                         )}
@@ -1405,6 +1429,16 @@ export default function AgenteIAPage() {
                             </div>
                           )
                         )}
+                        {!escribiendo && ultimo && terminaEnError(msg.content) && (
+                          <button
+                            type="button"
+                            onClick={() => reintentar(index)}
+                            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[13px] font-medium text-slate-700 hover:border-blue-300 hover:text-blue-700 transition-colors"
+                          >
+                            <RefreshCw size={13} />
+                            {t("reintentar")}
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   );
@@ -1413,34 +1447,6 @@ export default function AgenteIAPage() {
             )}
             <div ref={messagesEndRef} />
           </div>
-
-          {/* Reintentar */}
-          {lastFailedMessage && !isGenerating && (
-            <div className="w-full max-w-3xl mx-auto px-3 md:px-0 relative z-10">
-              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5" role="alert">
-                <p className="text-[13px] text-amber-800">{t("no_respondio")}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const { text, type } = lastFailedMessage;
-                    setLastFailedMessage(null);
-                    // Quita el intento fallido antes de reintentar.
-                    setMessages((prev) => {
-                      const next = [...prev];
-                      if (next[next.length - 1]?.role === "assistant") next.pop();
-                      if (next[next.length - 1]?.role === "user") next.pop();
-                      return next;
-                    });
-                    processMessage(text, type);
-                  }}
-                  className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 bg-amber-600 hover:bg-amber-700 text-white text-[13px] font-medium rounded-lg transition-colors"
-                >
-                  <RefreshCw size={13} />
-                  {t("reintentar")}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Caja de mensaje */}
           <div className="px-3 md:px-6 pt-2 pb-3 md:pb-4 shrink-0 relative z-10">

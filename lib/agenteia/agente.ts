@@ -454,7 +454,7 @@ async function ventasDetalle(i: any): Promise<string> {
       }),
     );
   } catch (e: any) {
-    return `Error Odoo: ${e.message}`;
+    return `Error al calcular ventas: ${e.message}`;
   }
 }
 
@@ -629,6 +629,7 @@ export async function responder(
   let contenedor: string | undefined;
   const archivos = new Set<string>();
 
+  let terminado = false;
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     if (signal?.aborted) return;
     const stream = anthropic().beta.messages.stream({
@@ -717,43 +718,64 @@ export async function responder(
 
     if (msg.stop_reason === "pause_turn") continue;
     if (msg.stop_reason === "refusal") {
-      emitir("\n\n⚠️ El modelo no pudo responder esta solicitud.");
+      emitir("\n\n⚠️ Claude no quiso responder esta solicitud por sus reglas de seguridad. Reformula la pregunta o prueba con otro modelo.");
+      terminado = true;
       break;
     }
-    if (msg.stop_reason !== "tool_use") break;
+    if (msg.stop_reason === "max_tokens") {
+      emitir("\n\n⚠️ La respuesta quedó cortada porque superó el largo máximo. Pide menos detalle o divide la pregunta.");
+      terminado = true;
+      break;
+    }
+    if (msg.stop_reason !== "tool_use") {
+      terminado = true;
+      break;
+    }
 
     const resultados: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const b of msg.content) {
       if (b.type !== "tool_use") continue;
       let contenido: string;
       let esError = false;
-      if (b.name === "ventas_detalle") {
-        contenido = await ventasDetalle(b.input);
-        esError = contenido.startsWith("Error");
-      } else if (b.name.startsWith("odoo_")) {
-        contenido = await leerOdoo(b.name, b.input);
-        esError = contenido.startsWith("Error");
-      } else if (b.name === "consultar_panel") {
-        contenido = await consultarPanel((b.input as any)?.sql);
-        esError = contenido.startsWith("Error");
-      } else if (b.name === "preparar_cambio_odoo") {
-        const c = validarCambio(b.input);
-        if (typeof c === "string") {
-          contenido = `Error: ${c}`;
-          esError = true;
+      // Un fallo de una herramienta (MySQL caída, Odoo sin respuesta) vuelve al
+      // modelo como error para que lo explique o reintente; no tumba la consulta.
+      try {
+        if (b.name === "ventas_detalle") {
+          contenido = await ventasDetalle(b.input);
+          esError = contenido.startsWith("Error");
+        } else if (b.name.startsWith("odoo_")) {
+          contenido = await leerOdoo(b.name, b.input);
+          esError = contenido.startsWith("Error");
+        } else if (b.name === "consultar_panel") {
+          contenido = await consultarPanel((b.input as any)?.sql);
+          esError = contenido.startsWith("Error");
+        } else if (b.name === "preparar_cambio_odoo") {
+          const c = validarCambio(b.input);
+          if (typeof c === "string") {
+            contenido = `Error: ${c}`;
+            esError = true;
+          } else {
+            cambios.push(firmarCambio(c, uid));
+            contenido =
+              "Cambio preparado y NO ejecutado. El usuario verá un botón para confirmarlo o cancelarlo. Explica brevemente qué se hará y termina tu turno.";
+          }
         } else {
-          cambios.push(firmarCambio(c, uid));
-          contenido =
-            "Cambio preparado y NO ejecutado. El usuario verá un botón para confirmarlo o cancelarlo. Explica brevemente qué se hará y termina tu turno.";
+          contenido = `Error: herramienta desconocida ${b.name}`;
+          esError = true;
         }
-      } else {
-        contenido = `Error: herramienta desconocida ${b.name}`;
+      } catch (e: any) {
+        console.error(`[agenteia] herramienta ${b.name} falló:`, e?.message);
+        contenido = `Error al ejecutar ${b.name}: ${e?.message || e}`;
         esError = true;
       }
       resultados.push({ type: "tool_result", tool_use_id: b.id, content: contenido, is_error: esError });
     }
     messages.push({ role: "user", content: resultados });
   }
+  if (!terminado && !signal?.aborted)
+    emitir(
+      `\n\n⚠️ La consulta necesitó más de ${MAX_VUELTAS} pasos y se detuvo sin terminar. Prueba con una pregunta más acotada (una sede, un período más corto).`,
+    );
 
   for (const id of archivos) {
     // El nombre viaja en la marca para no pedirlo de nuevo al pintar el chat.

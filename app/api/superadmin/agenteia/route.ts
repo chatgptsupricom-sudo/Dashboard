@@ -17,6 +17,38 @@ export const maxDuration = 300;
 
 const LATIDO = "\u200B";
 
+/**
+ * El error para el usuario, en español: qué pasó y qué hacer. El detalle
+ * técnico (en inglés) queda en los logs del servidor.
+ */
+function explicarError(e: any): string {
+  const detalle = String(e?.error?.error?.message || e?.message || "");
+  if (e instanceof Anthropic.APIConnectionTimeoutError)
+    return "Claude tardó demasiado en responder. Reintenta; si se repite, haz una pregunta más acotada.";
+  if (e instanceof Anthropic.APIConnectionError)
+    return "El servidor del panel no pudo conectarse con Claude (falla de red). Reintenta en un momento.";
+  if (e instanceof Anthropic.AuthenticationError)
+    return "La clave de la API de Claude no es válida o venció. Avísale al administrador del panel.";
+  if (e instanceof Anthropic.PermissionDeniedError)
+    return "La cuenta de Claude no tiene permiso para usar este modelo o función. Prueba con otro modelo.";
+  if (e instanceof Anthropic.RateLimitError) return "Se alcanzó el límite de uso de la API de Claude. Espera un minuto y reintenta.";
+  if (e instanceof Anthropic.NotFoundError) return "El modelo elegido no está disponible en la cuenta de Claude. Elige otro modelo.";
+  if (e instanceof Anthropic.BadRequestError) {
+    if (/prompt is too long|too many tokens|context window/i.test(detalle))
+      return "La conversación ya es demasiado larga para el modelo. Empieza un chat nuevo.";
+    if (/credit balance/i.test(detalle)) return "La cuenta de la API de Claude se quedó sin saldo. Avísale al administrador del panel.";
+    if (/mcp/i.test(detalle))
+      return "Falló la conexión con el SQL de Odoo. Reintenta; si se repite, vuelve a conectarlo desde la pantalla del agente.";
+    return `Claude rechazó la consulta por un problema en la solicitud. Detalle técnico: ${detalle}`;
+  }
+  if (e instanceof Anthropic.APIError && (e.status === 529 || e.status === 503))
+    return "Los servidores de Claude están sobrecargados. Reintenta en unos minutos.";
+  if (e instanceof Anthropic.InternalServerError) return "Claude tuvo un error interno. Reintenta en un momento.";
+  if (/ECONNREFUSED|ETIMEDOUT|PROTOCOL_CONNECTION_LOST|ER_/i.test(detalle))
+    return "No se pudo consultar la base de datos del panel. Reintenta en un momento.";
+  return `Ocurrió un error inesperado. Reintenta en un momento. Detalle técnico: ${detalle || "sin detalle"}`;
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin"]);
   if (auth.error) return auth.error;
@@ -88,13 +120,7 @@ export async function POST(request: NextRequest) {
           return;
         }
         console.error("❌ agenteia:", e);
-        const msg =
-          e instanceof Anthropic.RateLimitError
-            ? "El agente está saturado, intenta en un minuto."
-            : e instanceof Anthropic.APIError
-              ? `Error del modelo (${e.status}): ${e.message}`
-              : e?.message || "Error inesperado.";
-        emitir(`\n\n⚠️ ${msg}`);
+        emitir(`\n\n⚠️ ${explicarError(e)}`);
       } finally {
         clearInterval(latido);
         try {
