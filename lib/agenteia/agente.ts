@@ -241,10 +241,10 @@ export type Cambio = {
 const MARCA = /\n*\[\[confirmar-odoo:[A-Za-z0-9_.-]+\]\]/g;
 const usados = new Set<string>();
 
-// Avisos de avance ("_⏳ Consultando…_") que se emiten mientras corre una
-// herramienta: el usuario ve que el agente sigue trabajando y el proxy no
-// corta la respuesta por inactividad. No vuelven al modelo como historial.
-const AVANCE = /\n*_⏳ [^_\n]*_/g;
+// Avisos de avance: mientras corre una herramienta se emite una marca
+// [[avance:texto]] que la pantalla muestra como estado ("Consultando Odoo por
+// SQL…") fuera del mensaje. No es texto de la respuesta ni vuelve al modelo.
+const AVANCE = /\[\[avance:[^\]\n]*\]\]/g;
 function etiquetaAvance(nombre: string): string {
   if (nombre === "run_readonly_query") return "Consultando Odoo por SQL";
   if (/^(describe_table|list_tables|get_table|get_odoo_models)/.test(nombre)) return "Revisando la estructura de Odoo";
@@ -558,9 +558,7 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       const etiqueta = etiquetaAvance(String(b.name));
       if (etiqueta === ultimoAvance) return;
       ultimoAvance = etiqueta;
-      emitir(`${hayTexto ? "\n\n" : ""}_⏳ ${etiqueta}…_`);
-      hayTexto = true;
-      primerTexto = true;
+      emitir(`[[avance:${etiqueta}]]`);
     });
 
     let msg: Anthropic.Beta.BetaMessage;

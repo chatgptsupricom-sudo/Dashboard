@@ -69,6 +69,12 @@ function cambiosDe(content: string): { token: string; detalle: any }[] {
 
 const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "");
 
+// Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
+// es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
+const MARCA_AVANCE = /\[\[avance:([^\]\n]*)\]\]/g;
+
+const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${s % 60}s`);
+
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
 const STORAGE_KEY = "agenteia-chats-v1";
@@ -140,6 +146,16 @@ export default function AgenteIAPage() {
       localStorage.setItem("agenteia-modelo", m);
     } catch {}
   };
+
+  // ── Estado mientras responde: qué está haciendo y cuánto lleva ─────────────
+  const [avance, setAvance] = useState("");
+  const [segundos, setSegundos] = useState(0);
+  useEffect(() => {
+    if (!isGenerating) return;
+    setSegundos(0);
+    const id = setInterval(() => setSegundos((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [isGenerating]);
 
   // ── Copiar un mensaje / rebobinar la conversación hasta uno enviado ────────
   const [copiado, setCopiado] = useState<number | null>(null);
@@ -472,13 +488,22 @@ export default function AgenteIAPage() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
+      let crudo = "";
       let accumulated = "";
 
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
         // El servidor manda espacios de ancho cero como latido: no son texto.
-        accumulated += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
+        crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
+        // El estado es la última marca de avance, hasta que llegue texto después.
+        const marcas = [...crudo.matchAll(MARCA_AVANCE)];
+        const ultima = marcas[marcas.length - 1];
+        const pendiente = !!ultima && crudo.slice(ultima.index! + ultima[0].length).trim() === "";
+        setAvance(pendiente ? ultima[1] : "");
+        accumulated = crudo.replace(MARCA_AVANCE, "");
+        // Una marca que llegó cortada entre dos trozos no se muestra a medias.
+        if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
@@ -505,6 +530,7 @@ export default function AgenteIAPage() {
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
     } finally {
       setIsGenerating(false);
+      setAvance("");
     }
   };
 
@@ -901,27 +927,17 @@ export default function AgenteIAPage() {
                           </div>
                         </div>
                       )}
-                      <div className="max-w-[85%] md:max-w-[75%] flex flex-col space-y-1">
+                      <div className={`flex flex-col space-y-1 min-w-0 ${msg.role === "user" ? "max-w-[85%] md:max-w-[75%]" : "flex-1"}`}>
                         <div
-                          className={`p-3 md:p-4 rounded-2xl md:rounded-3xl text-[13px] md:text-sm font-medium leading-relaxed shadow-sm border ${
+                          className={`text-[13px] md:text-sm font-medium leading-relaxed ${
                             msg.role === "user"
-                              ? "bg-slate-900 border-slate-950 text-white rounded-br-sm"
-                              : "bg-white border-slate-100 text-slate-800 rounded-bl-sm"
+                              ? "p-3 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border bg-slate-900 border-slate-950 text-white rounded-br-sm"
+                              : "px-1 text-slate-800"
                           }`}
                         >
                           {msg.content === "" &&
                           isGenerating &&
-                          index === messages.length - 1 ? (
-                            <div className="flex items-center gap-2 text-slate-400 py-1">
-                              <Loader2
-                                className="animate-spin text-blue-600"
-                                size={14}
-                              />
-                              <span className="text-[10px] font-black uppercase tracking-wider">
-                                {t("pensando")}
-                              </span>
-                            </div>
-                          ) : (
+                          index === messages.length - 1 ? null : (
                             <div className="space-y-2">
                               {msg.role === "user" ? (
                                 <p className="whitespace-pre-line">{msg.content}</p>
@@ -987,6 +1003,13 @@ export default function AgenteIAPage() {
                             </div>
                           )}
                         </div>
+                        {msg.role === "assistant" && isGenerating && index === messages.length - 1 && (
+                          <div className="flex items-center gap-2 px-1 py-1 text-slate-500" role="status">
+                            <Loader2 className="animate-spin text-blue-600 shrink-0" size={14} />
+                            <span className="text-xs font-semibold">{avance ? `${avance}…` : t("pensando")}</span>
+                            <span className="text-[11px] text-slate-400 tabular-nums">{duracion(segundos)}</span>
+                          </div>
+                        )}
                         <div
                           className={`flex items-center gap-1 px-2 text-slate-400 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                         >
