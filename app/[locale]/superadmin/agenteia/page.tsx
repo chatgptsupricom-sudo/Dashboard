@@ -484,12 +484,18 @@ const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${
 
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
-const STORAGE_KEY = "agenteia-chats-v1";
+// Copia local de las conversaciones, una por usuario del panel: en un
+// navegador compartido, el siguiente que entra no ve ni hereda (al subir los
+// chats "solo locales" a su cuenta) las conversaciones del anterior.
+// "agenteia-chats-v1" es la copia de antes, sin usuario: solo la escribía el
+// SuperAdmin (era el único con agente), así que solo él la hereda.
+const CLAVE_VIEJA = "agenteia-chats-v1";
+let claveLocal: string | null = null;
 
-function loadChats(): Chat[] {
+function loadChats(clave: string): Chat[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(clave);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -497,13 +503,14 @@ function loadChats(): Chat[] {
 }
 
 function persistChats(chats: Chat[]) {
+  if (!claveLocal) return;
   try {
     // Strip base64 files before persisting to avoid bloating localStorage
     const slim = chats.map((c) => ({
       ...c,
       messages: c.messages.map((m) => ({ ...m, files: undefined })),
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+    localStorage.setItem(claveLocal, JSON.stringify(slim));
   } catch {}
 }
 
@@ -643,8 +650,17 @@ export default function AgenteIAPage() {
   // /api/superadmin/agenteia/chats. Los chats que solo estaban en este
   // navegador (de antes de guardarlos en el servidor) se suben al cargar.
   const pendientes = useRef(new Set<string>());
+  const uidSesion = user?.uid || user?.id;
   useEffect(() => {
-    const stored = loadChats();
+    if (!uidSesion) return;
+    claveLocal = `agenteia-chats-v2:${uidSesion}`;
+    let stored = loadChats(claveLocal);
+    if (stored.length === 0 && user?.role === "superAdmin") {
+      stored = loadChats(CLAVE_VIEJA);
+      try {
+        localStorage.removeItem(CLAVE_VIEJA);
+      } catch {}
+    }
     if (stored.length > 0) {
       setChats(stored);
       setActiveChatId(stored[0].id);
@@ -672,7 +688,7 @@ export default function AgenteIAPage() {
         setActiveChatId((actual) => actual ?? remotos[0]?.id ?? null);
       })
       .catch(() => {});
-  }, []);
+  }, [uidSesion]);
 
   // ── Derived active chat data ───────────────────────────────────────────────
   const activeChat = chats.find((c) => c.id === activeChatId) ?? null;
