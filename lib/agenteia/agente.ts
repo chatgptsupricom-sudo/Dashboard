@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import crypto from "crypto";
-import { db } from "@/lib/db";
+import { db, query } from "@/lib/db";
+import { desdeOdoo, rangoSmartbit, SQL_SIN_INTERCOMPANIA, SQL_SIN_VENDEDOR_LOCAL } from "@/lib/smartbit";
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
@@ -43,6 +44,7 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin
 ## Fuentes
 - **Ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero. Es la misma fuente que el Reporte de Ventas del panel (líneas de factura netas sin IVA, notas de crédito restan, sin clientes internos). La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
 - **Odoo 17** (ERP: ventas, facturas, pagos, inventario, compras, contactos, CRM), por el ORM: \`odoo_agrupar\` (read_group: totales, rankings y agrupaciones, p. ej. por mes con \`invoice_date:month\`; úsalo para cualquier suma en vez de traer registros), \`odoo_buscar\` (search_read: listados y detalle), \`odoo_contar\` (search_count). Antes de usar un modelo o campo que no conoces, revisa \`odoo_campos\` (fields_get) u \`odoo_modelos\`; no adivines nombres de campos. Los dominios admiten campos relacionados con punto (\`move_id.state\`).
+- **Ventas antes del 2026-04-01 (corte Smartbit → Odoo)**: hasta esa fecha la empresa facturaba en Smartbit, el sistema anterior. En Odoo, antes del corte, solo están las facturas abiertas que se migraron ("Importación Masiva"), NO la venta real: nunca calcules ventas previas al corte con Odoo. \`ventas_detalle\` ya junta solo el histórico de Smartbit (antes del corte) con Odoo (desde el corte). Para otra pregunta sobre esa época usa \`consultar_panel\` sobre la tabla \`ventas_smartbit\` (un renglón por artículo vendido: company_id, fecha, vendedor, codigo_cliente = RIF, cliente, codigo_articulo, articulo, linea, venta en USD sin IVA, unidades, costo; las devoluciones vienen con venta negativa). Ahí excluye siempre los vendedores que contienen "local" y las ventas entre empresas del grupo (clientes cuyo nombre contiene "supricom", "office solution" u "ofimaster"). Smartbit no tiene marca: usa la línea o busca la marca en el nombre del artículo, y dilo. Si un período cruza el corte, dilo en la respuesta.
 - **MySQL del panel** (\`consultar_panel\`): leads y su seguimiento, vendedores (\`sellers\`), usuarios y roles del panel (\`users_config\`, \`roles\`), metas y KPIs (\`kpi_targets\`, \`kpi_weekly_data\`), actividades, RMA, compras internas, etc. Usa \`SHOW TABLES\` / \`DESCRIBE tabla\` para ubicarte.
 
 ## Empresa
@@ -128,7 +130,7 @@ const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
   {
     name: "ventas_detalle",
     description:
-      "Ventas netas (sin IVA) de un período, agregadas por vendedor/cliente/marca/producto, como el Reporte de Ventas del panel. Filtros opcionales por marca, vendedor y cliente (texto parcial). Devuelve total general y los grupos ordenados de mayor a menor.",
+      "Ventas netas (sin IVA) de un período, agregadas por vendedor/cliente/marca/producto, como el Reporte de Ventas del panel. Cualquier rango de fechas: antes del 2026-04-01 lee el histórico de Smartbit y desde ahí Odoo, y dice qué tramo salió de cada fuente. Filtros opcionales por marca, vendedor y cliente (texto parcial). Devuelve total general y los grupos ordenados de mayor a menor.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -358,6 +360,47 @@ const MODELO_SECRETO = /^(ir\.config_parameter|res\.users\.apikeys.*|rag_odoo_mc
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Ventas del histórico de Smartbit (tabla ventas_smartbit) agrupadas en SQL
+ * por las mismas dimensiones que ventas_detalle. Sin intercompañía ni
+ * vendedores "local", igual que los dashboards (lib/smartbit.ts).
+ */
+async function filasSmartbit(
+  companyIds: number[],
+  [desde, hasta]: [string, string],
+  dims: (typeof DIMENSIONES)[number][],
+  i: any,
+): Promise<{ vendedor: string; cliente: string; marca: string; producto: string; total: number; cantidad: number }[]> {
+  const columna = {
+    vendedor: "COALESCE(vendedor, 'Sin vendedor')",
+    cliente: "COALESCE(cliente, 'Desconocido')",
+    marca: "COALESCE(NULLIF(linea, ''), '(sin línea · Smartbit)')",
+    producto: "CONCAT('[', COALESCE(codigo_articulo, ''), '] ', COALESCE(articulo, ''))",
+  };
+  let where = `company_id IN (${companyIds.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ?
+    AND ${SQL_SIN_INTERCOMPANIA} AND ${SQL_SIN_VENDEDOR_LOCAL}`;
+  const params: any[] = [...companyIds, desde, hasta];
+  if (i.marca) {
+    where += " AND (linea LIKE ? OR articulo LIKE ?)";
+    params.push(`%${i.marca}%`, `%${i.marca}%`);
+  }
+  // vendedor siempre en el SELECT (exclusiones) y cliente si se filtra por él.
+  const grupo = [...new Set<(typeof DIMENSIONES)[number]>(["vendedor", ...(i.cliente ? ["cliente" as const] : []), ...dims])];
+  const { rows } = await query(
+    `SELECT ${grupo.map((d) => `${columna[d]} AS ${d}`).join(", ")}, SUM(venta) AS total, SUM(unidades) AS cantidad
+       FROM ventas_smartbit WHERE ${where} GROUP BY ${grupo.map((d) => columna[d]).join(", ")}`,
+    params,
+  );
+  return rows.map((r: any) => ({
+    vendedor: r.vendedor ?? "",
+    cliente: r.cliente ?? "",
+    marca: r.marca ?? "",
+    producto: r.producto ?? "",
+    total: Number(r.total) || 0,
+    cantidad: Number(r.cantidad) || 0,
+  }));
+}
+
 async function ventasDetalle(i: any): Promise<string> {
   const fecha = /^\d{4}-\d{2}-\d{2}$/;
   if (!fecha.test(i?.desde) || !fecha.test(i?.hasta)) return "Error: desde/hasta deben ser YYYY-MM-DD";
@@ -365,7 +408,17 @@ async function ventasDetalle(i: any): Promise<string> {
   if (dims.length === 0) return `Error: agrupar_por debe incluir alguno de ${DIMENSIONES.join(", ")}`;
   const companyIds = Array.isArray(i.companias) && i.companias.length ? i.companias : SEDES;
   try {
-    const { filas } = await cargarDesglose({ companyIds, desde: i.desde, hasta: i.hasta, marca: i.marca || null });
+    // Antes del corte la venta real está en el histórico de Smartbit (MySQL);
+    // Odoo solo desde el corte (antes tiene únicamente facturas migradas).
+    const desdeO = desdeOdoo(i.desde);
+    const tramoSb = rangoSmartbit(i.desde, i.hasta);
+    const [odoo, smartbit] = await Promise.all([
+      desdeO <= i.hasta
+        ? cargarDesglose({ companyIds, desde: desdeO, hasta: i.hasta, marca: i.marca || null }).then((r) => r.filas)
+        : [],
+      tramoSb ? filasSmartbit(companyIds, tramoSb, dims, i) : [],
+    ]);
+    const filas = [...odoo, ...smartbit];
     const contiene = (valor: string, q: unknown) => !q || normalizar(valor).includes(normalizar(String(q)));
     const grupos = new Map<string, Record<string, any>>();
     const excluido = new Map<string, number>();
@@ -375,7 +428,8 @@ async function ventasDetalle(i: any): Promise<string> {
         excluido.set(f.vendedor, (excluido.get(f.vendedor) || 0) + f.total);
         continue;
       }
-      const k = dims.map((d: (typeof DIMENSIONES)[number]) => f[d]).join("|");
+      // Normalizado: Smartbit escribe "GABRIEL SANCHEZ" y Odoo "Gabriel Sánchez".
+      const k = dims.map((d: (typeof DIMENSIONES)[number]) => normalizar(f[d])).join("|");
       const g = grupos.get(k) || { ...Object.fromEntries(dims.map((d: (typeof DIMENSIONES)[number]) => [d, f[d]])), total: 0, cantidad: 0 };
       g.total += f.total;
       g.cantidad += f.cantidad;
@@ -385,6 +439,13 @@ async function ventasDetalle(i: any): Promise<string> {
     return recortar(
       JSON.stringify({
         periodo: { desde: i.desde, hasta: i.hasta },
+        fuentes: {
+          historico_smartbit: tramoSb ? { desde: tramoSb[0], hasta: tramoSb[1] } : null,
+          odoo: desdeO <= i.hasta ? { desde: desdeO, hasta: i.hasta } : null,
+          nota: tramoSb
+            ? "En el histórico de Smartbit no hay marca: se usa la línea del artículo y el filtro de marca busca el texto en la línea o el nombre del artículo."
+            : undefined,
+        },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
         total_general: r2(lista.reduce((s, g) => s + g.total, 0)),
         excluidos_del_total: [...excluido].map(([vendedor, total]) => ({ vendedor, total: r2(total) })),
