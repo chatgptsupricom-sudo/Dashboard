@@ -57,8 +57,18 @@ export async function leerSerialesEgreso(mercanciaId: number): Promise<SerialEgr
   }
 }
 
+/**
+ * El error es de una tabla o columna que no existe (migracion sin correr).
+ * Por el codigo de MySQL y no por el texto: el mensaje sale en el idioma del
+ * servidor (en produccion, en español), y buscar "no existe" en cualquier
+ * error confundia otras fallas con "falta correr sql/egreso_seriales.sql". Y
+ * al asignar el despacho eso es grave: con "falta migracion" se sigue sin
+ * seriales.
+ */
 export function faltaMigracion(e: any): boolean {
-  return /doesn't exist|no existe|Unknown column/i.test(e?.message || "");
+  const codigo = e?.code || "";
+  const numero = Number(e?.errno);
+  return codigo === "ER_NO_SUCH_TABLE" || codigo === "ER_BAD_FIELD_ERROR" || numero === 1146 || numero === 1054;
 }
 
 /**
