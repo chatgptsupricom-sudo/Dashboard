@@ -206,8 +206,22 @@ const segundosDe = (ms: number) => (ms < 1000 ? `${ms} ms` : ms < 60_000 ? `${(m
 
 // "Usando herramientas…" mientras trabaja y "Usó N herramientas" después:
 // cada consulta con lo que pidió (SQL, búsqueda, URL…), cuánto tardó y si falló.
-function PasosHerramientas({ pasos, activo, segundos }: { pasos: Paso[]; activo: boolean; segundos: number }) {
+function PasosHerramientas({
+  pasos,
+  activo,
+  segundos,
+  avance,
+}: {
+  pasos: Paso[];
+  activo: boolean;
+  segundos: number;
+  avance: string;
+}) {
   const fallidos = pasos.filter((p) => p.estado === "error").length;
+  // Mientras trabaja se ven las últimas; al terminar, todas (al desplegar).
+  const MAX_VISIBLES = 5;
+  const ocultos = activo ? Math.max(0, pasos.length - MAX_VISIBLES) : 0;
+  const visibles = ocultos ? pasos.slice(-MAX_VISIBLES) : pasos;
   return (
     <details className="group/pasos rounded-xl border border-slate-200 bg-white text-[13px]" open={activo || undefined}>
       <summary className="flex items-center gap-2 px-3 h-9 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-slate-600 hover:text-slate-900">
@@ -216,15 +230,23 @@ function PasosHerramientas({ pasos, activo, segundos }: { pasos: Paso[]; activo:
         ) : (
           <Wrench size={14} className="text-slate-400 shrink-0" />
         )}
-        <span className="font-medium">
-          {activo ? "Usando herramientas" : `Usó ${pasos.length} ${pasos.length === 1 ? "herramienta" : "herramientas"}`}
+        <span className="font-medium truncate">
+          {activo
+            ? `${avance || "Usando herramientas"}…`
+            : `Usó ${pasos.length} ${pasos.length === 1 ? "herramienta" : "herramientas"}`}
         </span>
+        {activo && pasos.length > 1 && <span className="text-slate-400 shrink-0">· {pasos.length} pasos</span>}
         {fallidos > 0 && <span className="text-red-600">· {fallidos} con error</span>}
         {activo && <span className="text-slate-400 tabular-nums">{duracion(segundos)}</span>}
         <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open/pasos:rotate-180" />
       </summary>
       <ol className="border-t border-slate-100 divide-y divide-slate-100">
-        {pasos.map((p) => (
+        {ocultos > 0 && (
+          <li className="px-3 py-1.5 text-[12px] text-slate-400">
+            {ocultos} {ocultos === 1 ? "paso anterior" : "pasos anteriores"}
+          </li>
+        )}
+        {visibles.map((p) => (
           <li key={p.id} className="flex items-start gap-2.5 px-3 py-2">
             {p.estado === "corriendo" ? (
               <Loader2 size={13} className="mt-0.5 animate-spin text-blue-600 shrink-0" />
@@ -1574,7 +1596,7 @@ export default function AgenteIAPage() {
                       <img src="/supri2.png" alt="Supri" className="w-7 h-7 mt-0.5 rounded-lg object-cover shrink-0 ring-1 ring-slate-200" />
                       <div className="flex-1 min-w-0 space-y-3">
                         {msg.pasos && msg.pasos.length > 0 && (
-                          <PasosHerramientas pasos={msg.pasos} activo={escribiendo} segundos={segundos} />
+                          <PasosHerramientas pasos={msg.pasos} activo={escribiendo} segundos={segundos} avance={avance} />
                         )}
                         {msg.proceso && (
                           <details className="text-[13px] text-slate-500 group/proceso">
@@ -1643,7 +1665,7 @@ export default function AgenteIAPage() {
                             </div>
                           </div>
                         ))}
-                        {escribiendo ? (
+                        {escribiendo && msg.pasos?.length ? null : escribiendo ? (
                           <div className="flex items-center gap-2.5 text-[13px] text-slate-500" role="status" aria-live="polite">
                             <span className="relative flex h-2 w-2">
                               <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60 animate-ping" />
