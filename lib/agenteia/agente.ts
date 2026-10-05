@@ -335,6 +335,8 @@ function resumenPaso(nombre: string, i: any): string {
         .join(" · "),
     );
   if (i.sql || i.query) return corto(i.sql || i.query);
+  // Código que corre el filtrado dinámico de la búsqueda web o la ejecución de código.
+  if (i.code) return corto(i.code);
   if (i.url) return corto(i.url);
   if (i.path) return corto(`${i.command ? `${i.command} ` : ""}${i.path}`);
   if (i.command) return corto(i.command);
