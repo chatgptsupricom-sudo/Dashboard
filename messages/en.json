@@ -1473,6 +1473,7 @@
       "titulo": "Supricom Corporate Intelligence",
       "nueva_conversacion": "New conversation",
       "sin_conversaciones": "No conversations yet.",
+      "conectar_odoo": "Connect Odoo SQL",
       "nuevo_chat": "New chat",
       "permiso_microfono": "Microphone permission denied.",
       "navegador_voz": "Your browser doesn't support direct voice input.",

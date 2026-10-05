@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
+import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { jwtSecretBytes } from "@/lib/secretos";
 
@@ -10,10 +11,12 @@ import { jwtSecretBytes } from "@/lib/secretos";
  *
  * Lee Odoo por el JSON-RPC del panel (lib/odoo.ts, usuario de integración):
  * read_group, search_read, search_count, fields_get e ir.model — cualquier
- * modelo. Si ODOO_MCP_URL/ODOO_MCP_TOKEN están definidas, suma además el MCP
- * de Odoo (rag_odoo_mcp_server) por el conector MCP de la API de Claude, con
- * allowlist de lectura y SQL directo; el módulo tiene que estar en modo API
- * tokens (en OAuth los tokens caducan). Lee además la MySQL del panel.
+ * modelo. Si ODOO_MCP_URL está definida, suma además el MCP de Odoo
+ * (rag_odoo_mcp_server) por el conector MCP de la API de Claude, con
+ * allowlist de lectura y SQL directo. El token sale de ODOO_MCP_TOKEN (módulo
+ * en modo API tokens) o, si no está, de la sesión OAuth del panel
+ * (lib/agenteia/mcpOauth.ts, módulo en modo OAuth). Lee además la MySQL del
+ * panel.
  *
  * Escritura en Odoo: NUNCA directa. Para cambiar algo, Claude llama
  * `preparar_cambio_odoo`, que
@@ -87,7 +90,7 @@ const COMPANIAS = {
 };
 
 // Herramientas de solo lectura del MCP de Odoo (rag_odoo_mcp_server) que se
-// habilitan cuando ODOO_MCP_URL/ODOO_MCP_TOKEN están definidas.
+// habilitan cuando hay ODOO_MCP_URL y un token (fijo u OAuth).
 const MCP_LECTURA = [
   "run_readonly_query",
   "list_tables",
@@ -416,6 +419,8 @@ async function consultarPanel(sql: unknown): Promise<string> {
   if (!/^(select|with|show|describe|desc|explain)\b/i.test(s) || s.includes(";")) {
     return "Error: solo se permite UNA sentencia de lectura (SELECT/WITH/SHOW/DESCRIBE/EXPLAIN).";
   }
+  // Los tokens OAuth del MCP de Odoo no son para el modelo.
+  if (s.toLowerCase().includes(TABLA_OAUTH)) return `Error: la tabla ${TABLA_OAUTH} no está disponible para el agente.`;
   const conn = await db.getConnection();
   try {
     // READ ONLY: aunque la sentencia intentara modificar algo, MySQL la rechaza.
@@ -477,7 +482,7 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
   // MCP de Odoo opcional: si está configurado, suma sus herramientas de
   // lectura (incluido SQL directo) a las propias.
   const mcpUrl = process.env.ODOO_MCP_URL;
-  const mcpToken = process.env.ODOO_MCP_TOKEN;
+  const mcpToken = process.env.ODOO_MCP_TOKEN || (mcpUrl ? await tokenMcp() : null);
   const conMcp = !!(mcpUrl && mcpToken);
   console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 

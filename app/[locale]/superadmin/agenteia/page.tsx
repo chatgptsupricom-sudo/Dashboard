@@ -124,6 +124,15 @@ export default function AgenteIAPage() {
   const isGeneratingRef = useRef(false);
   const processMessageRef = useRef<any>(null);
 
+  // ── Conexión OAuth con el MCP de Odoo (SQL directo) ────────────────────────
+  const [faltaMcp, setFaltaMcp] = useState(false);
+  useEffect(() => {
+    fetch("/api/superadmin/agenteia/oauth?estado=1")
+      .then((r) => r.json())
+      .then((e) => setFaltaMcp(!!e?.configurado && !e?.conectado))
+      .catch(() => {});
+  }, []);
+
   // ── Load persisted chats on mount ──────────────────────────────────────────
   useEffect(() => {
     const stored = loadChats();
@@ -673,6 +682,15 @@ export default function AgenteIAPage() {
                 ))
               )}
             </div>
+
+            {faltaMcp && (
+              <a
+                href="/api/superadmin/agenteia/oauth"
+                className="m-3 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors shrink-0"
+              >
+                {t("conectar_odoo")}
+              </a>
+            )}
           </motion.aside>
         )}
       </AnimatePresence>

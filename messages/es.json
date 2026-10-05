@@ -1669,6 +1669,7 @@
       "titulo": "Inteligencia Corporativa Supricom",
       "nueva_conversacion": "Nueva conversación",
       "sin_conversaciones": "No hay conversaciones aún.",
+      "conectar_odoo": "Conectar SQL de Odoo",
       "nuevo_chat": "Nuevo chat",
       "permiso_microfono": "Permiso denegado para usar el micrófono.",
       "navegador_voz": "Tu navegador no soporta entrada de voz directa.",
