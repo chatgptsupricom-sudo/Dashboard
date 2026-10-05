@@ -136,13 +136,21 @@ export async function iniciarConexion(redirectUri: string): Promise<string> {
   const actual = await leer();
   let clientId = actual?.redirectUri === redirectUri ? actual.clientId : "";
   if (!clientId) {
-    const r = await fetch((await rutas()).registro, {
+    const { registro } = await rutas();
+    const r = await fetch(registro, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: [redirectUri], client_name: "Panel SUPRICOM - Agente IA", token_endpoint_auth_method: "none" }),
     });
-    const j: any = await r.json().catch(() => null);
-    if (!r.ok || !j?.client_id) throw new Error(`El MCP de Odoo no registró el panel (${r.status}).`);
+    const cuerpo = await r.text();
+    let j: any = null;
+    try {
+      j = JSON.parse(cuerpo);
+    } catch {}
+    if (!r.ok || !j?.client_id) {
+      const detalle = cuerpo.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(`El MCP de Odoo no registró el panel (${r.status}) en ${registro}: ${detalle}`);
+    }
     clientId = j.client_id;
     await guardar(clientId, redirectUri, null);
   }
