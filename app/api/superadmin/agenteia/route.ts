@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const LATIDO = "​";
+const LATIDO = "\u200B";
 
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin"]);
