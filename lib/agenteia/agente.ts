@@ -26,10 +26,11 @@ import { jwtSecretBytes } from "@/lib/secretos";
  * JSON-RPC con el usuario de integración del panel.
  */
 
-// Modelo por defecto, configurable por entorno (AGENTE_IA_MODELO), ej.
-// claude-sonnet-5 para abaratar. El SuperAdmin puede elegir otro de
-// MODELOS_AGENTE en la pantalla.
-export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
+// Modelo de "Automático": siempre el mismo, no se elige por la complejidad de
+// la pregunta. Configurable por entorno (AGENTE_IA_MODELO), ej.
+// claude-sonnet-5-5 para abaratar. En la pantalla se puede elegir otro de
+// MODELOS_AGENTE. Opus 5.5 es más nuevo y más barato que Opus 5.
+export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5-5";
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
 const VIGENCIA_CAMBIO_MS = 15 * 60_000;
@@ -68,7 +69,8 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes al SuperAdmin
 - Para preguntas grandes, divide en varias consultas (puedes hacer varias a la vez). Limita filas: pide agregados, no listados enteros.
 - Al final, di en una línea el período y los filtros usados (sede, estado, qué se excluyó).
 - Quien te lee es la directiva de la empresa, no gente de sistemas: conocen el negocio, no Odoo por dentro. Escribe todo en lenguaje de negocio. Los nombres técnicos (campos, modelos, tablas, IDs de compañía, nombres de herramientas, SQL) son para tus consultas, no para la respuesta: en vez de "company_id 9" di "Valencia"; en vez de "marca = spiff_brand_id" di "la marca asignada al producto"; en vez de "facturas en estado posted" di "facturas publicadas"; en vez de "consulté account.move.line" di "revisé las líneas de factura". Tampoco cuentes qué herramienta o base usaste. La única excepción es que el usuario pregunte expresamente por el detalle técnico.
-- Formato: respuesta directa primero; tablas markdown para comparaciones; cifras con separador de miles y 2 decimales; sin relleno.
+- Formato: respuesta directa primero; tablas markdown para comparaciones, con las columnas de cifras alineadas a la derecha (\`---:\`); cifras con separador de miles y 2 decimales; sin relleno.
+- Antes de cerrar, revisa que los conteos y totales que escribes en el texto cuadren con las filas de tus tablas.
 
 ## Cambios en Odoo
 Tú no escribes en Odoo. Si el usuario pide crear, editar, confirmar, anular o borrar algo:
@@ -102,6 +104,18 @@ const MCP_LECTURA = [
 
 const SISTEMA_MCP = `## SQL directo (servidor "odoo")
 También tienes \`run_readonly_query\`: SELECT directo a la PostgreSQL de Odoo. Úsalo cuando haya que cruzar tablas o agrupar por un campo relacionado (ej. ventas por marca: account_move_line → product_product.x_studio_marca → spiff_brand), en vez de encadenar muchas llamadas al ORM. Usa \`describe_table\` / \`list_tables\` antes de adivinar columnas. Los many2one son columnas \`*_id\`; los textos traducibles (name de productos, etc.) son JSON: usa \`name->>'es_VE'\` con respaldo a \`name->>'en_US'\`. Filtra siempre por company_id y estado igual que en las reglas de negocio, y no leas tablas de usuarios, claves ni parámetros del sistema (res_users, ir_config_parameter, res_users_apikeys, tablas rag_odoo_mcp_server_*).`;
+
+// Archivos: las skills de Anthropic (xlsx, docx, pdf, pptx) corren en el
+// contenedor de ejecución de código de Claude. Cada archivo que escribe vuelve
+// como file_id de la Files API; la pantalla lo baja por
+// /api/superadmin/agenteia/archivo.
+const PIDE_ARCHIVO =
+  /\b(excel|xlsx|hoja de c[aá]lculo|word|docx|pdf|power ?point|pptx|presentaci[oó]n|diapositiva|html|p[aá]gina web|c[oó]digo|script|csv|archivo|descargable|documento)\b/i;
+const SKILLS = ["xlsx", "docx", "pdf", "pptx"].map((skill_id) => ({ type: "anthropic" as const, skill_id, version: "latest" }));
+const SISTEMA_ARCHIVOS = `## Archivos (Excel, Word, PDF, PowerPoint, HTML, código)
+Cuando el usuario pida un archivo, créalo con la ejecución de código (las skills xlsx, docx, pdf y pptx te dicen cómo). El contenedor no tiene acceso a Odoo ni al panel: primero consulta los datos con tus herramientas y luego escríbelos en el archivo. Un HTML o un script también es un archivo: escríbelo en disco, no lo pegues entero en la respuesta. Dale al archivo un nombre claro en español (ej. ventas_valencia_sept_2026.xlsx). En la respuesta di en una o dos frases qué contiene; el usuario lo descarga desde el chat. No uses la ejecución de código para otra cosa.`;
+// La pantalla convierte [[archivo:<file_id>|<nombre>]] en un botón de descarga.
+const ARCHIVO = /\n*\[\[archivo:([A-Za-z0-9_-]+)\|([^\]\n]*)\]\]/g;
 
 const DIMENSIONES = ["vendedor", "cliente", "marca", "producto"] as const;
 
@@ -252,6 +266,7 @@ function etiquetaAvance(nombre: string): string {
   if (nombre === "ventas_detalle") return "Calculando ventas";
   if (nombre === "consultar_panel") return "Consultando el panel";
   if (nombre === "preparar_cambio_odoo") return "Preparando el cambio";
+  if (/code_execution/.test(nombre)) return "Creando el archivo";
   return "Consultando Odoo";
 }
 
@@ -454,7 +469,11 @@ async function consultarPanel(sql: unknown): Promise<string> {
 function aMensajesClaude(chat: MensajeChat[]): Anthropic.Beta.BetaMessageParam[] {
   const out: Anthropic.Beta.BetaMessageParam[] = [];
   for (const m of chat) {
-    const texto = (m.content || "").replace(MARCA, "").replace(AVANCE, "").trim();
+    const texto = (m.content || "")
+      .replace(MARCA, "")
+      .replace(AVANCE, "")
+      .replace(ARCHIVO, (_, _id, nombre) => `\n[Archivo entregado: ${nombre}]`)
+      .trim();
     if (m.role === "assistant") {
       if (texto) out.push({ role: "assistant", content: texto });
       continue;
@@ -502,13 +521,24 @@ export async function titular(pregunta: string): Promise<string> {
  * respuesta. Al final emite una marca `[[confirmar-odoo:<token>]]` por cada
  * cambio preparado, que la pantalla convierte en botón.
  */
-export async function responder(chat: MensajeChat[], uid: string, emitir: (t: string) => void, modelo?: string): Promise<void> {
+export async function responder(
+  chat: MensajeChat[],
+  uid: string,
+  emitir: (t: string) => void,
+  modelo?: string,
+  signal?: AbortSignal,
+): Promise<void> {
   // Haiku 4.5 no tiene thinking adaptativo: corre sin thinking. El respaldo
   // automático ante rechazos (`fallbacks`) solo se pide en los modelos para
   // los que está documentado.
   const MODELO = MODELOS_AGENTE.some((m) => m.id === modelo) ? modelo! : MODELO_DEFECTO;
   const THINKING_ADAPTATIVO = !MODELO.startsWith("claude-haiku-4");
-  const CON_FALLBACK = ["claude-opus-5", "claude-fable-5-1", "claude-fable-5"].includes(MODELO);
+  const CON_FALLBACK = ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"].includes(MODELO);
+  // Excel/Word/PDF/PowerPoint/HTML: solo si el último mensaje lo pide (el
+  // contenedor de código cuesta) y no en Haiku (las skills van con los demás).
+  const ultimo = chat[chat.length - 1];
+  const conArchivos =
+    !MODELO.startsWith("claude-haiku") && ultimo?.role === "user" && PIDE_ARCHIVO.test(ultimo.content || "");
   const hoy = new Intl.DateTimeFormat("es-VE", { timeZone: "America/Caracas", dateStyle: "full" }).format(new Date());
   const messages = aMensajesClaude(chat);
   if (messages.length === 0) throw new Error("Mensaje vacío.");
@@ -524,8 +554,11 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
   let hayTexto = false;
   let fallosJson = 0;
   let ultimoAvance = "";
+  let contenedor: string | undefined;
+  const archivos = new Set<string>();
 
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
+    if (signal?.aborted) return;
     const stream = anthropic().beta.messages.stream({
       model: MODELO,
       max_tokens: 64000,
@@ -538,24 +571,31 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       system: [
         { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
         ...(conMcp ? [{ type: "text" as const, text: SISTEMA_MCP }] : []),
+        ...(conArchivos ? [{ type: "text" as const, text: SISTEMA_ARCHIVOS }] : []),
         { type: "text", text: `Hoy es ${hoy} (hora de Caracas).` },
       ],
       ...(conMcp && { mcp_servers: [{ type: "url" as const, url: mcpUrl!, name: "odoo", authorization_token: mcpToken }] }),
-      tools: conMcp
-        ? [
-            {
-              type: "mcp_toolset",
-              mcp_server_name: "odoo",
-              // Allowlist: solo lectura. Escrituras, dashboards, CRM, mailing,
-              // accesos y SEO del MCP quedan apagados aunque el token lo permita.
-              default_config: { enabled: false },
-              configs: Object.fromEntries(MCP_LECTURA.map((n) => [n, { enabled: true }])),
-            },
-            ...HERRAMIENTAS,
-          ]
-        : HERRAMIENTAS,
+      // El mismo contenedor en todas las vueltas: los archivos de una vuelta
+      // siguen ahí en la siguiente.
+      ...(conArchivos && { container: { id: contenedor, skills: SKILLS } }),
+      tools: [
+        ...(conMcp
+          ? [
+              {
+                type: "mcp_toolset" as const,
+                mcp_server_name: "odoo",
+                // Allowlist: solo lectura. Escrituras, dashboards, CRM, mailing,
+                // accesos y SEO del MCP quedan apagados aunque el token lo permita.
+                default_config: { enabled: false },
+                configs: Object.fromEntries(MCP_LECTURA.map((n) => [n, { enabled: true }])),
+              },
+            ]
+          : []),
+        ...(conArchivos ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }] : []),
+        ...HERRAMIENTAS,
+      ],
       messages,
-    });
+    }, { signal });
 
     stream.on("text", (t) => {
       hayTexto = true;
@@ -567,7 +607,7 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       // Cada bloque de texto es un párrafo aparte: con el MCP hay varios en
       // una misma vuelta (texto, consulta, texto…) y salían pegados.
       if (b?.type === "text" && hayTexto) emitir("\n\n");
-      if (b?.type !== "tool_use" && b?.type !== "mcp_tool_use") return;
+      if (b?.type !== "tool_use" && b?.type !== "mcp_tool_use" && b?.type !== "server_tool_use") return;
       const etiqueta = etiquetaAvance(String(b.name));
       if (etiqueta === ultimoAvance) return;
       ultimoAvance = etiqueta;
@@ -580,12 +620,20 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
       fallosJson = 0;
     } catch (e) {
       // Con eager_input_streaming un input de herramienta puede llegar como
-      // JSON roto: se reintenta la vuelta. Los errores de la API se lanzan.
-      if (e instanceof Anthropic.APIError || fallosJson++ >= 2) throw e;
+      // JSON roto: se reintenta la vuelta. Los errores de la API (y el corte
+      // del usuario) se lanzan.
+      if (signal?.aborted || e instanceof Anthropic.APIError || fallosJson++ >= 2) throw e;
       continue;
     }
 
     messages.push({ role: "assistant", content: msg.content });
+    contenedor = msg.container?.id ?? contenedor;
+
+    // Archivos que escribió la ejecución de código en esta vuelta.
+    for (const b of msg.content) {
+      if (b.type === "bash_code_execution_tool_result" && b.content.type === "bash_code_execution_result")
+        for (const o of b.content.content) archivos.add(o.file_id);
+    }
 
     // Traza en los logs del servidor (EasyPanel) de qué herramientas usó.
     for (const b of msg.content) {
@@ -635,5 +683,20 @@ export async function responder(chat: MensajeChat[], uid: string, emitir: (t: st
     messages.push({ role: "user", content: resultados });
   }
 
+  for (const id of archivos) {
+    // El nombre viaja en la marca para no pedirlo de nuevo al pintar el chat.
+    const nombre = await anthropic()
+      .files.retrieveMetadata(id)
+      .then((m) => m.filename.replace(/[|\]\n]/g, "_"))
+      .catch(() => "archivo");
+    emitir(`\n\n[[archivo:${id}|${nombre}]]`);
+  }
   for (const c of cambios) emitir(`\n\n[[confirmar-odoo:${c}]]`);
+}
+
+/** Descarga un archivo creado por el agente (Files API de Anthropic). */
+export async function bajarArchivo(id: string) {
+  const meta = await anthropic().files.retrieveMetadata(id);
+  const res = await anthropic().files.download(id);
+  return { nombre: meta.filename, tipo: meta.mime_type || "application/octet-stream", cuerpo: res.body };
 }

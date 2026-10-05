@@ -45,8 +45,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Los Opus son solo del SuperAdmin: a cualquier otro rol se le da el primer
-  // modelo que sí puede usar, aunque pida otro o el del servidor sea un Opus.
+  // Los modelos reservados (lib/agenteia/modelos.ts) son solo del SuperAdmin:
+  // a otro rol se le da el primer modelo que sí puede usar, aunque pida otro
+  // o el del servidor sea uno reservado.
   const esSuperadmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
   const permitidos: string[] = modelosPara(esSuperadmin).map((m) => m.id);
   const reservado = MODELOS_AGENTE.some((m) => m.soloSuperadmin && m.id === MODELO_DEFECTO);
@@ -61,17 +62,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Formato no válido." }, { status: 400 });
   }
 
+  // Si el usuario detiene la respuesta o cierra la pestaña, se corta también
+  // la llamada a Claude: si no, el agente sigue consultando y gastando tokens.
+  const corte = new AbortController();
+  request.signal.addEventListener("abort", () => corte.abort());
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
+    cancel() {
+      corte.abort();
+    },
     async start(controller) {
-      const emitir = (t: string) => controller.enqueue(encoder.encode(t));
+      const emitir = (t: string) => {
+        if (!corte.signal.aborted) controller.enqueue(encoder.encode(t));
+      };
       // Latido: mientras el modelo piensa o corre una consulta larga no sale
       // texto, y el proxy (EasyPanel) corta la conexión por inactividad. Un
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, modelo);
+        await responder(messages, uid, emitir, modelo, corte.signal);
       } catch (e: any) {
+        if (corte.signal.aborted) {
+          console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);
+          return;
+        }
         console.error("❌ agenteia:", e);
         const msg =
           e instanceof Anthropic.RateLimitError
@@ -82,7 +97,9 @@ export async function POST(request: NextRequest) {
         emitir(`\n\n⚠️ ${msg}`);
       } finally {
         clearInterval(latido);
-        controller.close();
+        try {
+          controller.close();
+        } catch {}
       }
     },
   });

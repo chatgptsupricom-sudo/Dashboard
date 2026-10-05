@@ -7,7 +7,9 @@ import {
   BrainCircuit,
   Check,
   Copy,
+  Download,
   FileIcon,
+  FileSpreadsheet,
   Headphones,
   Loader2,
   MessageSquarePlus,
@@ -19,6 +21,7 @@ import {
   Pencil,
   RotateCcw,
   Send,
+  Square,
   Trash2,
   User,
   Volume2,
@@ -68,7 +71,76 @@ function cambiosDe(content: string): { token: string; detalle: any }[] {
   });
 }
 
-const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "");
+// Archivos que creó el agente (Excel, Word, PDF, HTML…): [[archivo:<id>|<nombre>]].
+const MARCA_ARCHIVO = /\n*\[\[archivo:([A-Za-z0-9_-]+)\|([^\]\n]*)\]\]/g;
+const archivosDe = (content: string) => [...content.matchAll(MARCA_ARCHIVO)].map((m) => ({ id: m[1], nombre: m[2] }));
+const urlArchivo = (id: string) => `/api/superadmin/agenteia/archivo?id=${encodeURIComponent(id)}`;
+
+const sinMarcas = (content: string) => content.replace(MARCA_CAMBIO, "").replace(MARCA_ARCHIVO, "");
+
+// Cada tabla de la respuesta trae su botón para bajarla como Excel.
+function TablaConExcel({ node, ...props }: any) {
+  const ref = useRef<HTMLTableElement>(null);
+  const exportar = async () => {
+    if (!ref.current) return;
+    const XLSX = await import("xlsx");
+    XLSX.writeFile(XLSX.utils.table_to_book(ref.current, { sheet: "Datos" }), `supri_ai_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  return (
+    <div className="my-2">
+      <div className="overflow-x-auto">
+        <table ref={ref} {...props} />
+      </div>
+      <button
+        type="button"
+        onClick={exportar}
+        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
+      >
+        <FileSpreadsheet size={12} /> Descargar en Excel
+      </button>
+    </div>
+  );
+}
+
+// Tarjeta de un archivo creado por el agente. El HTML se puede ver ahí mismo,
+// en un iframe aislado (sandbox sin allow-same-origin: no toca el panel).
+function ArchivoAgente({ id, nombre }: { id: string; nombre: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const esHtml = /\.html?$/i.test(nombre);
+  const ver = async () => {
+    if (html !== null) return setHtml(null);
+    const r = await fetch(urlArchivo(id));
+    setHtml(r.ok ? await r.text() : "<p>No se pudo abrir el archivo.</p>");
+  };
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+      <div className="flex items-center gap-2">
+        <FileIcon size={16} className="text-blue-600 shrink-0" />
+        <span className="text-xs font-semibold text-slate-700 truncate flex-1">{nombre}</span>
+        {esHtml && (
+          <button type="button" onClick={ver} className="text-[11px] font-bold text-slate-600 hover:text-blue-700">
+            {html !== null ? "Ocultar" : "Ver"}
+          </button>
+        )}
+        <a
+          href={urlArchivo(id)}
+          download={nombre}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold"
+        >
+          <Download size={12} /> Descargar
+        </a>
+      </div>
+      {html !== null && (
+        <iframe
+          title={nombre}
+          srcDoc={html}
+          sandbox="allow-scripts"
+          className="mt-2 w-full h-96 rounded-lg border border-slate-200 bg-white"
+        />
+      )}
+    </div>
+  );
+}
 
 // Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
 // es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
@@ -125,6 +197,8 @@ export default function AgenteIAPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -161,8 +235,21 @@ export default function AgenteIAPage() {
   // ── Copiar un mensaje / rebobinar la conversación hasta uno enviado ────────
   const [copiado, setCopiado] = useState<number | null>(null);
   const copiar = async (index: number, content: string) => {
+    const texto = sinMarcas(content).trim();
     try {
-      await navigator.clipboard.writeText(sinMarcas(content).trim());
+      // La respuesta se copia también como HTML: al pegarla en Excel, Word o
+      // un correo las tablas llegan como tablas, no como texto con barras.
+      const nodo = document.querySelector(`[data-msg="${index}"]`)?.cloneNode(true) as HTMLElement | undefined;
+      nodo?.querySelectorAll("button").forEach((b) => b.remove());
+      const html = nodo?.innerHTML;
+      if (html && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([texto], { type: "text/plain" }),
+          }),
+        ]);
+      } else await navigator.clipboard.writeText(texto);
       setCopiado(index);
       setTimeout(() => setCopiado(null), 1500);
     } catch {}
@@ -175,6 +262,7 @@ export default function AgenteIAPage() {
     setLastFailedMessage(null);
     setInput(content);
     textRef.current = content;
+    inputRef.current?.focus();
   };
 
   // ── Conexión OAuth con el MCP de Odoo (SQL directo) ────────────────────────
@@ -206,10 +294,15 @@ export default function AgenteIAPage() {
         persistChats(updated);
         return updated;
       });
+      pendientes.current.add(chatId);
     } catch {}
   };
 
-  // ── Load persisted chats on mount ──────────────────────────────────────────
+  // ── Chats: se guardan en el servidor (por usuario) ─────────────────────────
+  // localStorage queda como copia local para pintar al instante; la fuente es
+  // /api/superadmin/agenteia/chats. Los chats que solo estaban en este
+  // navegador (de antes de guardarlos en el servidor) se suben al cargar.
+  const pendientes = useRef(new Set<string>());
   useEffect(() => {
     const stored = loadChats();
     if (stored.length > 0) {
@@ -217,6 +310,28 @@ export default function AgenteIAPage() {
       setActiveChatId(stored[0].id);
     }
     if (window.innerWidth < 768) setSidebarOpen(false);
+
+    fetch("/api/superadmin/agenteia/chats")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ chats: remotos }: { chats: Chat[] }) => {
+        setChats((prev) => {
+          // De cada chat queda la copia con más mensajes: la local si no se
+          // alcanzó a guardar, la del servidor si se siguió en otro equipo.
+          const porId = new Map(remotos.map((c) => [c.id, c]));
+          for (const c of prev) {
+            const r = porId.get(c.id);
+            if (!r || c.messages.length > r.messages.length) {
+              porId.set(c.id, c);
+              pendientes.current.add(c.id);
+            }
+          }
+          const todos = [...porId.values()].sort((a, b) => b.createdAt - a.createdAt);
+          persistChats(todos);
+          return todos;
+        });
+        setActiveChatId((actual) => actual ?? remotos[0]?.id ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   // ── Derived active chat data ───────────────────────────────────────────────
@@ -229,6 +344,7 @@ export default function AgenteIAPage() {
     chatId?: string,
   ) => {
     const targetId = chatId ?? activeChatId;
+    if (targetId) pendientes.current.add(targetId);
     setChats((prev) => {
       const updated = prev.map((c) => {
         if (c.id !== targetId) return c;
@@ -256,10 +372,37 @@ export default function AgenteIAPage() {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     setIsConversationMode(false);
     stopListening();
+    inputRef.current?.focus();
   };
+
+  // Guarda en el servidor los chats que cambiaron, cuando el agente no está
+  // escribiendo (no en cada trozo del streaming).
+  useEffect(() => {
+    if (isGenerating || pendientes.current.size === 0) return;
+    const t = setTimeout(() => {
+      for (const id of [...pendientes.current]) {
+        const chat = chats.find((c) => c.id === id);
+        pendientes.current.delete(id);
+        if (!chat) continue;
+        fetch("/api/superadmin/agenteia/chats", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(chat),
+        })
+          .then((r) => {
+            if (!r.ok && r.status !== 413) pendientes.current.add(id);
+          })
+          .catch(() => pendientes.current.add(id));
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [chats, isGenerating]);
 
   const deleteChat = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!window.confirm("¿Eliminar esta conversación? No se puede deshacer.")) return;
+    pendientes.current.delete(id);
+    fetch(`/api/superadmin/agenteia/chats?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
     setChats((prev) => {
       const updated = prev.filter((c) => c.id !== id);
       persistChats(updated);
@@ -292,6 +435,7 @@ export default function AgenteIAPage() {
     if (!editingChatId) return;
     const trimmed = editingTitle.trim();
     if (trimmed) {
+      pendientes.current.add(editingChatId);
       setChats((prev) => {
         const updated = prev.map((c) =>
           c.id === editingChatId ? { ...c, title: trimmed } : c,
@@ -491,15 +635,17 @@ export default function AgenteIAPage() {
       chatId,
     );
 
-    const fetchAgenteia = () =>
-      fetch("/api/superadmin/agenteia", {
+    const control = new AbortController();
+    abortRef.current = control;
+    let accumulated = "";
+
+    try {
+      const response = await fetch("/api/superadmin/agenteia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined }),
+        signal: control.signal,
       });
-
-    try {
-      const response = await fetchAgenteia();
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
@@ -513,7 +659,6 @@ export default function AgenteIAPage() {
       const decoder = new TextDecoder();
       let done = false;
       let crudo = "";
-      let accumulated = "";
 
       while (!done) {
         const { value, done: d } = await reader.read();
@@ -547,6 +692,17 @@ export default function AgenteIAPage() {
       if (isConversationModeRef.current)
         speakText(sinMarcas(accumulated).replace(/[*#|`]/g, ""));
     } catch (err: any) {
+      // Detenido por el usuario: queda lo que alcanzó a escribir.
+      if (control.signal.aborted) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (next[last]?.role === "assistant")
+            next[last] = { ...next[last], content: `${accumulated.trim()}\n\n_Respuesta detenida._`.trim() };
+          return next;
+        }, chatId);
+        return;
+      }
       const errorMsg =
         err?.message && err.message !== t("error_respuesta")
           ? `⚠️ ${err.message}`
@@ -560,6 +716,7 @@ export default function AgenteIAPage() {
       }, chatId);
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
     } finally {
+      abortRef.current = null;
       setIsGenerating(false);
       setAvance("");
     }
@@ -591,9 +748,18 @@ export default function AgenteIAPage() {
     processMessageRef.current = processMessage;
   }, [messages, attachedFiles, activeChatId]);
 
-  const handleSend = async (e: React.FormEvent) => {
+  // Al terminar de responder, el cursor vuelve a la caja para seguir preguntando.
+  useEffect(() => {
+    if (!isGenerating && !isConversationMode) inputRef.current?.focus();
+  }, [isGenerating, isConversationMode]);
+
+  const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0) || isGenerating) return;
+    enviar(input.trim());
+  };
+
+  const enviar = async (texto: string) => {
+    if ((!texto && attachedFiles.length === 0) || isGenerating) return;
     setIsConversationMode(false);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
 
@@ -621,7 +787,7 @@ export default function AgenteIAPage() {
           ? "image"
           : "file"
         : "text";
-    await processMessage(input.trim(), type, targetChatId);
+    await processMessage(texto, type, targetChatId);
   };
 
   const clearActiveChat = () => {
@@ -659,7 +825,8 @@ export default function AgenteIAPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="w-full h-[calc(100vh-80px)] flex font-sans overflow-hidden">
+    // 8rem = barra superior (4rem) + el p-8 del layout: así la página no se desplaza.
+    <div className="w-full h-[calc(100dvh-8rem)] flex font-sans overflow-hidden">
       {/* ── SIDEBAR ───────────────────────────────────────────────────────── */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
@@ -943,10 +1110,7 @@ export default function AgenteIAPage() {
                         <button
                           key={k}
                           type="button"
-                          onClick={() => {
-                            setInput(t(k));
-                            textRef.current = t(k);
-                          }}
+                          onClick={() => enviar(t(k))}
                           className="w-full text-left px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                         >
                           {t(k)}
@@ -963,7 +1127,7 @@ export default function AgenteIAPage() {
                       className={`flex gap-3 w-full max-w-4xl mx-auto ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                       {msg.role === "assistant" && (
-                        <div className="shrink-0 flex items-end">
+                        <div className="shrink-0 flex items-start">
                           <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden border-2 border-white shadow-md">
                             <img
                               src="/supri2.png"
@@ -998,10 +1162,14 @@ export default function AgenteIAPage() {
                               {msg.role === "user" ? (
                                 <p className="whitespace-pre-line">{msg.content}</p>
                               ) : (
-                                <div className="agente-md break-words">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{sinMarcas(msg.content)}</ReactMarkdown>
+                                <div data-msg={index} className="agente-md break-words [&_td]:tabular-nums">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
+                                    {sinMarcas(msg.content)}
+                                  </ReactMarkdown>
                                 </div>
                               )}
+                              {msg.role === "assistant" &&
+                                archivosDe(msg.content).map((a) => <ArchivoAgente key={a.id} {...a} />)}
                               {msg.role === "assistant" &&
                                 cambiosDe(msg.content).map(({ token, detalle }) => (
                                   <div key={token} className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
@@ -1200,8 +1368,16 @@ export default function AgenteIAPage() {
                     <Mic size={16} />
                   )}
                 </button>
-                <input
-                  type="text"
+                {/* Enter envía; Shift+Enter hace salto de línea. Crece hasta ~6 líneas. */}
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   placeholder={
                     isConversationMode
                       ? t("habla_espera")
@@ -1209,26 +1385,38 @@ export default function AgenteIAPage() {
                         ? t("dictando")
                         : t("mensaje_placeholder")
                   }
-                  className="w-full bg-transparent border-none outline-none py-3 md:py-4 px-1 md:px-2 text-xs font-semibold text-slate-700"
+                  className="w-full bg-transparent border-none outline-none resize-none [field-sizing:content] max-h-36 py-3 md:py-4 px-1 md:px-2 text-xs font-semibold text-slate-700"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   disabled={isGenerating || isConversationMode}
                 />
-                <button
-                  type="submit"
-                  disabled={
-                    (!input.trim() && attachedFiles.length === 0) ||
-                    isGenerating ||
-                    isConversationMode
-                  }
-                  className="p-2 md:p-2.5 bg-blue-600 hover:bg-slate-950 disabled:bg-slate-200 text-white rounded-lg md:rounded-xl shadow-md disabled:shadow-none"
-                >
-                  {isGenerating && !isConversationMode ? (
-                    <Loader2 className="animate-spin" size={14} />
-                  ) : (
-                    <Send size={14} />
-                  )}
-                </button>
+                {isGenerating && abortRef.current && !isConversationMode ? (
+                  <button
+                    type="button"
+                    onClick={() => abortRef.current?.abort()}
+                    title="Detener"
+                    aria-label="Detener"
+                    className="p-2 md:p-2.5 bg-slate-900 hover:bg-red-600 text-white rounded-lg md:rounded-xl shadow-md"
+                  >
+                    <Square size={14} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={
+                      (!input.trim() && attachedFiles.length === 0) ||
+                      isGenerating ||
+                      isConversationMode
+                    }
+                    className="p-2 md:p-2.5 bg-blue-600 hover:bg-slate-950 disabled:bg-slate-200 text-white rounded-lg md:rounded-xl shadow-md disabled:shadow-none"
+                  >
+                    {isGenerating && !isConversationMode ? (
+                      <Loader2 className="animate-spin" size={14} />
+                    ) : (
+                      <Send size={14} />
+                    )}
+                  </button>
+                )}
               </form>
             </div>
           </>
