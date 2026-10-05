@@ -872,6 +872,17 @@ export async function responder(
       ultimoAvance = "";
       emitir(t);
     });
+    // Cada bloque completo, apenas cierra: qué pidió la herramienta y, las que
+    // corren en el servidor de Anthropic (SQL del MCP, web, código), cómo
+    // terminaron. Al final de la vuelta llegaban todas juntas y la pantalla
+    // las mostraba "corriendo" aunque ya hubieran terminado.
+    stream.on("contentBlock", (bloque) => {
+      const b = bloque as any;
+      if (b.type === "tool_use" || b.type === "mcp_tool_use" || b.type === "server_tool_use")
+        emitir(paso({ id: b.id, fase: "detalle", detalle: resumenPaso(String(b.name), b.input) }));
+      else if (b.tool_use_id && /_tool_result$/.test(b.type) && b.type !== "tool_result")
+        emitir(paso({ id: b.tool_use_id, fase: "fin", ok: !resultadoConError(b) }));
+    });
     stream.on("streamEvent", (ev: any) => {
       const b = ev?.type === "content_block_start" ? ev.content_block : null;
       // Cada bloque de texto es un párrafo aparte: con el MCP hay varios en
@@ -910,14 +921,6 @@ export async function responder(
     for (const b of msg.content) {
       if (b.type === "bash_code_execution_tool_result" && b.content.type === "bash_code_execution_result")
         for (const o of b.content.content) archivos.add(o.file_id);
-    }
-
-    // Qué pidió cada herramienta y, las del servidor (MCP, web, código), cómo terminó.
-    for (const b of msg.content as any[]) {
-      if (b.type === "tool_use" || b.type === "mcp_tool_use" || b.type === "server_tool_use")
-        emitir(paso({ id: b.id, fase: "detalle", detalle: resumenPaso(String(b.name), b.input) }));
-      else if (b.tool_use_id && /_tool_result$/.test(b.type) && b.type !== "tool_result")
-        emitir(paso({ id: b.tool_use_id, fase: "fin", ok: !resultadoConError(b) }));
     }
 
     // Traza en los logs del servidor (EasyPanel) de qué herramientas usó.
