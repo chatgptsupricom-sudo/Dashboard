@@ -2188,6 +2188,11 @@
     "createdAt": "Created",
     "updatedAt": "Last updated"
   },
+  "cuotaFiltro": {
+    "desde": "From",
+    "hasta": "To",
+    "mes_actual": "Current month"
+  },
   "spiff": {
     "title": "Spiff Management",
     "subtitle": "Create, modify and delete spiff rules",

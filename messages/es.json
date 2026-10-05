@@ -2169,6 +2169,11 @@
       "excel_col_mejor_vendedor": "Mejor Vendedor"
     }
   },
+  "cuotaFiltro": {
+    "desde": "Desde",
+    "hasta": "Hasta",
+    "mes_actual": "Mes actual"
+  },
   "spiff": {
     "title": "Gestión de Spiffs",
     "subtitle": "Crear, modificar y eliminar reglas de spiff",

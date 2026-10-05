@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
+import { cuotasVigentes, leerRangoCuota } from "@/lib/cuota/rango";
 
 export async function GET(req: NextRequest) {
   // Asistente de Ventas y Gerente de Operaciones pueden consultar las
@@ -34,18 +35,18 @@ export async function GET(req: NextRequest) {
       (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
     );
 
-    const sellerIds = sellers.map((s: any) => s.id);
-    const cuotaPlaceholders = sellerIds.map(() => "?").join(",");
-    const [resultCuotas]: any = await db.query(`
-      SELECT c.seller_id, c.cuota FROM cuota c
-      INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota WHERE seller_id IN (${cuotaPlaceholders}) GROUP BY seller_id) latest
-      ON c.seller_id = latest.seller_id AND c.created_at = latest.max_date
-    `, sellerIds);
-    const cuotas = resultCuotas || [];
+    const rango = leerRangoCuota(req.nextUrl.searchParams);
 
-    const nowGv = new Date();
-    const firstDayOfMonth = new Date(nowGv.getFullYear(), nowGv.getMonth(), 1);
-    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, "0")}-${String(firstDayOfMonth.getDate()).padStart(2, "0")}`;
+    const sellerIds = sellers.map((s: any) => s.id);
+    let cuotas = new Map<number, number>();
+    if (sellerIds.length > 0) {
+      const cuotaPlaceholders = sellerIds.map(() => "?").join(",");
+      const [resultCuotas]: any = await db.query(
+        `SELECT seller_id, cuota, created_at FROM cuota WHERE seller_id IN (${cuotaPlaceholders})`,
+        sellerIds,
+      );
+      cuotas = cuotasVigentes(resultCuotas || [], rango.hasta);
+    }
 
     const allInvoices =
       (await callOdooRPC<any[]>(
@@ -55,7 +56,8 @@ export async function GET(req: NextRequest) {
           [
             ["move_type", "in", ["out_invoice", "out_refund"]],
             ["state", "=", "posted"],
-            ["invoice_date", ">=", firstDayOfMonth],
+            ["invoice_date", ">=", rango.desde],
+            ["invoice_date", "<=", rango.hasta],
             userCids ? ["company_id", "=", userCids] : ["company_id", "in", [9, 10, 7]],
           ],
         ],
@@ -95,8 +97,7 @@ export async function GET(req: NextRequest) {
     });
 
     const data = sellers.map((seller: any) => {
-      const meta =
-        cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
+      const meta = cuotas.get(seller.id) || 0;
       const sellerKey = normalize(seller.name);
       const facturado = parseFloat(
         (

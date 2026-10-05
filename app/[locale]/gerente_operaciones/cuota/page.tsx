@@ -11,36 +11,48 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { FiltroFechaCuota } from "@/components/cuota/FiltroFechaCuota";
+import { rangoMesActual } from "@/lib/cuota/rango";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Edit3, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function CuotasPage() {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSeller, setEditingSeller] = useState<any>(null);
 
-  const fetchData = () => {
-    setLoading(true);
-    fetch("/api/gerente_venta/cuota")
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      });
-  };
+  const [rango, setRango] = useState(rangoMesActual);
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let vigente = true;
+    setLoading(true);
+    fetch(`/api/gerente_venta/cuota?desde=${rango.desde}&hasta=${rango.hasta}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!vigente) return;
+        setData(Array.isArray(json) ? json : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (vigente) setLoading(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [rango.desde, rango.hasta, recarga]);
 
   return (
     <div className="p-8 space-y-8 bg-zinc-50/30 min-h-screen">
-      <div>
-        <h1 className="text-2xl font-black text-zinc-900">Metas de Ventas</h1>
-        <p className="text-sm text-zinc-500">
-          Monitoreo y actualización de cuotas mensuales
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-zinc-900">Metas de Ventas</h1>
+          <p className="text-sm text-zinc-500">
+            Monitoreo y actualización de cuotas mensuales
+          </p>
+        </div>
+        <FiltroFechaCuota rango={rango} onChange={setRango} />
       </div>
 
       {loading ? (
@@ -67,7 +79,7 @@ export default function CuotasPage() {
           onClose={() => setEditingSeller(null)}
           onSave={() => {
             setEditingSeller(null);
-            fetchData(); // Refrescar lista
+            setRecarga((n) => n + 1); // Refrescar lista
           }}
         />
       )}
