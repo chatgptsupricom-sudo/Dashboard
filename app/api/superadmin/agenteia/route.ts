@@ -13,6 +13,8 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const LATIDO = "​";
+
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin"]);
   if (auth.error) return auth.error;
@@ -41,6 +43,10 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const emitir = (t: string) => controller.enqueue(encoder.encode(t));
+      // Latido: mientras el modelo piensa o corre una consulta larga no sale
+      // texto, y el proxy (EasyPanel) corta la conexión por inactividad. Un
+      // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
+      const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
         await responder(messages, uid, emitir);
       } catch (e: any) {
@@ -53,6 +59,7 @@ export async function POST(request: NextRequest) {
               : e?.message || "Error inesperado.";
         emitir(`\n\n⚠️ ${msg}`);
       } finally {
+        clearInterval(latido);
         controller.close();
       }
     },

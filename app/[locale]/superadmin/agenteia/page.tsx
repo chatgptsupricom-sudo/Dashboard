@@ -441,7 +441,8 @@ export default function AgenteIAPage() {
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
-        accumulated += decoder.decode(value, { stream: !d });
+        // El servidor manda espacios de ancho cero como latido: no son texto.
+        accumulated += decoder.decode(value, { stream: !d }).replace(/​/g, "");
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
