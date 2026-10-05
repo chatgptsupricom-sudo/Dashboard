@@ -385,9 +385,9 @@ async function ejecutar(
           // Sin la migracion no hay donde guardarlos: se sigue como antes, para
           // no frenar el despacho por una tabla. Si es Odoo, no se sigue.
           if (!faltaMigracion(e)) {
-            console.error(`[egreso ${id}] no se pudieron leer los seriales:`, e?.message || e);
+            console.error(`[egreso ${id}] no se pudieron leer los seriales [${e?.code || "?"}]:`, e?.message || e);
             return NextResponse.json(
-              { error: "No se pudieron leer los seriales de Odoo. Intenta de nuevo." },
+              { error: `No se pudieron leer los seriales: ${String(e?.message || e).slice(0, 300)}. Intenta de nuevo.` },
               { status: 502 },
             );
           }

@@ -50,16 +50,19 @@ export async function POST(
     try {
       resultado = await sincronizarSeriales(id, Number(mov.odoo_picking_id));
     } catch (e: any) {
+      // Con el error real a la vista: antes cualquier falla de la base salia
+      // como "falta correr la migracion" y no habia como saber que pasaba.
+      const detalle = String(e?.message || e).slice(0, 300);
+      console.error(`[egreso ${id}] no se pudieron leer los seriales [${e?.code || "?"}]:`, detalle);
       if (faltaMigracion(e)) {
         return NextResponse.json(
-          { error: "Falta correr sql/egreso_seriales.sql" },
+          { error: `Falta correr sql/egreso_seriales.sql (${detalle})` },
           { status: 500 },
         );
       }
-      console.error("[egreso] no se pudieron leer los seriales de Odoo:", e?.message || e);
       return NextResponse.json(
-        { error: "No se pudieron leer los seriales de Odoo" },
-        { status: 502 },
+        { error: `No se pudieron leer los seriales: ${detalle}` },
+        { status: e?.code ? 500 : 502 },
       );
     }
 
