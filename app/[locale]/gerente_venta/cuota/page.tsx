@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { FiltroFechaCuota } from "@/components/cuota/FiltroFechaCuota";
+import { esRangoMesActual, rangoMesActual } from "@/lib/cuota/rango";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Edit3, TrendingUp } from "lucide-react";
 import { Building2 } from "lucide-react";
@@ -52,7 +54,7 @@ function calcularMetricas(meta: number, facturado: number) {
 }
 
 export default function CuotasPage() {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSeller, setEditingSeller] = useState<any>(null);
   const { user } = useAuthStore();
@@ -60,19 +62,27 @@ export default function CuotasPage() {
   const puedeEditar =
     (user?.role || "").toLowerCase().trim() !== "asistente de ventas";
 
-  const fetchData = () => {
-    setLoading(true);
-    fetch("/api/gerente_venta/cuota")
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      });
-  };
+  const [rango, setRango] = useState(rangoMesActual);
+  const [recarga, setRecarga] = useState(0);
+  const mostrarRitmo = esRangoMesActual(rango);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let vigente = true;
+    setLoading(true);
+    fetch(`/api/gerente_venta/cuota?desde=${rango.desde}&hasta=${rango.hasta}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!vigente) return;
+        setData(Array.isArray(json) ? json : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (vigente) setLoading(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [rango.desde, rango.hasta, recarga]);
 
   const totalMeta = useMemo(
     () => data.reduce((sum: number, s: any) => sum + (s.meta || 0), 0),
@@ -86,6 +96,7 @@ export default function CuotasPage() {
 
   return (
     <div className="p-8 space-y-8 bg-zinc-50/30 min-h-screen">
+      <FiltroFechaCuota rango={rango} onChange={setRango} />
       <div className="flex items-center gap-3">
         <div className="p-2.5 bg-white rounded-xl shadow-sm border border-zinc-100">
           <Building2 size={20} className="text-zinc-600" />
@@ -126,6 +137,7 @@ export default function CuotasPage() {
               <SellerQuotaCard
                 key={seller.id}
                 seller={seller}
+                mostrarRitmo={mostrarRitmo}
                 onEdit={
                   puedeEditar ? () => setEditingSeller(seller) : undefined
                 }
@@ -141,7 +153,7 @@ export default function CuotasPage() {
           onClose={() => setEditingSeller(null)}
           onSave={() => {
             setEditingSeller(null);
-            fetchData(); // Refrescar lista
+            setRecarga((n) => n + 1); // Refrescar lista
           }}
         />
       )}
@@ -151,9 +163,11 @@ export default function CuotasPage() {
 
 function SellerQuotaCard({
   seller,
+  mostrarRitmo,
   onEdit,
 }: {
   seller: any;
+  mostrarRitmo: boolean;
   onEdit?: () => void;
 }) {
   const isTargetMet = seller.porcentaje >= 100;
@@ -209,7 +223,7 @@ function SellerQuotaCard({
               : `Faltan $${seller.falta.toLocaleString()}`}
           </span>
         </div>
-        {!isTargetMet && metricas.diasHabilesRestantes > 0 && (
+        {mostrarRitmo && !isTargetMet && metricas.diasHabilesRestantes > 0 && (
           <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl space-y-1">
             <p className="text-[10px] text-blue-500 font-bold uppercase">
               Ritmo necesario

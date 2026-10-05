@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { FiltroFechaCuota } from "@/components/cuota/FiltroFechaCuota";
+import { esRangoMesActual, rangoMesActual } from "@/lib/cuota/rango";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { AlertCircle, Building2, Edit3, TrendingUp } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -56,26 +58,33 @@ export default function SuperAdminCuotaPage() {
   const [sucursales, setSucursales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSeller, setEditingSeller] = useState<any>(null);
-
-  const fetchData = () => {
-    setLoading(true);
-    fetch("/api/superadmin/cuota")
-      .then((res) => res.json())
-      .then((json) => {
-        setSucursales(json);
-        setLoading(false);
-      });
-  };
+  const [rango, setRango] = useState(rangoMesActual);
+  const [recarga, setRecarga] = useState(0);
+  const mostrarRitmo = esRangoMesActual(rango);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let vigente = true;
+    setLoading(true);
+    fetch(`/api/superadmin/cuota?desde=${rango.desde}&hasta=${rango.hasta}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!vigente) return;
+        setSucursales(Array.isArray(json) ? json : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (vigente) setLoading(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [rango.desde, rango.hasta, recarga]);
 
   const totalVendedores = sucursales.reduce((sum, s) => sum + s.sellers.length, 0);
 
   return (
     <div className="p-8 space-y-8 bg-zinc-50/30 min-h-screen">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-zinc-900">
             {t("title")}
@@ -84,6 +93,7 @@ export default function SuperAdminCuotaPage() {
             {totalVendedores} {t("subtitle")}
           </p>
         </div>
+        <FiltroFechaCuota rango={rango} onChange={setRango} />
       </div>
 
       {loading ? (
@@ -126,6 +136,7 @@ export default function SuperAdminCuotaPage() {
                   <SellerQuotaCard
                     key={seller.id}
                     seller={seller}
+                    mostrarRitmo={mostrarRitmo}
                     onEdit={() => setEditingSeller(seller)}
                   />
                 ))}
@@ -141,7 +152,7 @@ export default function SuperAdminCuotaPage() {
           onClose={() => setEditingSeller(null)}
           onSave={() => {
             setEditingSeller(null);
-            fetchData();
+            setRecarga((n) => n + 1);
           }}
         />
       )}
@@ -151,9 +162,11 @@ export default function SuperAdminCuotaPage() {
 
 function SellerQuotaCard({
   seller,
+  mostrarRitmo,
   onEdit,
 }: {
   seller: any;
+  mostrarRitmo: boolean;
   onEdit: () => void;
 }) {
   const t = useTranslations("superadmin.cuota");
@@ -208,7 +221,7 @@ function SellerQuotaCard({
               : `${t("faltan")} $${seller.falta.toLocaleString()}`}
           </span>
         </div>
-        {!isTargetMet && metricas.diasHabilesRestantes > 0 && (
+        {mostrarRitmo && !isTargetMet && metricas.diasHabilesRestantes > 0 && (
           <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl space-y-1">
             <p className="text-[10px] text-blue-500 font-bold uppercase">
               {t("ritmo_necesario")}

@@ -3,6 +3,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
+import { cuotasVigentes, leerRangoCuota } from "@/lib/cuota/rango";
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -20,21 +21,18 @@ export async function GET(request: NextRequest) {
     );
     const sellers = resultSellers || [];
 
-    const [resultCuotas]: any = await db.query(`
-      SELECT c.seller_id, c.cuota FROM cuota c
-      INNER JOIN (SELECT seller_id, MAX(created_at) as max_date FROM cuota GROUP BY seller_id) latest
-      ON c.seller_id = latest.seller_id AND c.created_at = latest.max_date
-    `);
-    const cuotas = resultCuotas || [];
+    const rango = leerRangoCuota(request.nextUrl.searchParams);
 
-    const nowSa = new Date();
-    const firstDayOfMonth = new Date(nowSa.getFullYear(), nowSa.getMonth(), 1);
-    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, "0")}-${String(firstDayOfMonth.getDate()).padStart(2, "0")}`;
+    const [resultCuotas]: any = await db.query(
+      "SELECT seller_id, cuota, created_at FROM cuota",
+    );
+    const cuotas = cuotasVigentes(resultCuotas || [], rango.hasta);
 
     const sellersDomain: any[] = [
       ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
-      ["invoice_date", ">=", firstDayStr],
+      ["invoice_date", ">=", rango.desde],
+      ["invoice_date", "<=", rango.hasta],
     ];
 
     const allInvoices =
@@ -79,7 +77,7 @@ export async function GET(request: NextRequest) {
         };
       }
 
-      const meta = cuotas.find((c: any) => c.seller_id === seller.id)?.cuota || 0;
+      const meta = cuotas.get(seller.id) || 0;
       const sellerKey = normalize(seller.name);
       const facturado = parseFloat(
         ((odooNameMap[sellerKey] ?? odooUserIdMap[seller.user_id] ?? 0)).toFixed(2)
