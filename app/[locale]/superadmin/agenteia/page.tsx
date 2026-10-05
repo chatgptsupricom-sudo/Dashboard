@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { Card, Title } from "@tremor/react";
+import { Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
@@ -102,43 +102,138 @@ function TablaConExcel({ node, ...props }: any) {
   );
 }
 
-// Tarjeta de un archivo creado por el agente. El HTML se puede ver ahí mismo,
-// en un iframe aislado (sandbox sin allow-same-origin: no toca el panel).
-function ArchivoAgente({ id, nombre }: { id: string; nombre: string }) {
-  const [html, setHtml] = useState<string | null>(null);
-  const esHtml = /\.html?$/i.test(nombre);
-  const ver = async () => {
-    if (html !== null) return setHtml(null);
-    const r = await fetch(urlArchivo(id));
-    setHtml(r.ok ? await r.text() : "<p>No se pudo abrir el archivo.</p>");
-  };
+type ArchivoRef = { id: string; nombre: string };
+
+// Tarjeta de un archivo creado por el agente: un clic lo abre en el panel lateral.
+function ArchivoAgente({ id, nombre, activo, onAbrir }: ArchivoRef & { activo: boolean; onAbrir: () => void }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-      <div className="flex items-center gap-2">
+    <div
+      className={`flex items-center gap-2 rounded-xl border p-2.5 transition-colors ${
+        activo ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"
+      }`}
+    >
+      <button type="button" onClick={onAbrir} className="flex items-center gap-2 flex-1 min-w-0 text-left">
         <FileIcon size={16} className="text-blue-600 shrink-0" />
-        <span className="text-xs font-semibold text-slate-700 truncate flex-1">{nombre}</span>
-        {esHtml && (
-          <button type="button" onClick={ver} className="text-[11px] font-bold text-slate-600 hover:text-blue-700">
-            {html !== null ? "Ocultar" : "Ver"}
-          </button>
-        )}
+        <span className="text-xs font-semibold text-slate-700 truncate">{nombre}</span>
+      </button>
+      <a
+        href={urlArchivo(id)}
+        download={nombre}
+        title="Descargar"
+        aria-label="Descargar"
+        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+      >
+        <Download size={14} />
+      </a>
+    </div>
+  );
+}
+
+// Vista previa en el panel lateral. Lo que escribió el modelo nunca corre en
+// el origen del panel: HTML y Excel van en iframes con sandbox sin
+// allow-same-origin; el PDF va como blob al visor del navegador.
+function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => void }) {
+  const ext = (nombre.split(".").pop() || "").toLowerCase();
+  const [vista, setVista] = useState<
+    | { tipo: "cargando" | "sin_vista" | "error" }
+    | { tipo: "html" | "hojas" | "texto"; texto: string; hojas?: { nombre: string; html: string }[] }
+    | { tipo: "pdf" | "imagen"; url: string }
+  >({ tipo: "cargando" });
+  const [hoja, setHoja] = useState(0);
+
+  useEffect(() => {
+    let url = "";
+    const tipoMime = ext === "pdf" ? "application/pdf" : ext === "svg" ? "image/svg+xml" : `image/${ext === "jpg" ? "jpeg" : ext}`;
+    (async () => {
+      if (["docx", "doc", "pptx", "ppt"].includes(ext)) return setVista({ tipo: "sin_vista" });
+      const r = await fetch(urlArchivo(id));
+      if (!r.ok) return setVista({ tipo: "error" });
+      if (ext === "html" || ext === "htm") return setVista({ tipo: "html", texto: await r.text() });
+      if (["xlsx", "xls", "csv"].includes(ext)) {
+        const XLSX = await import("xlsx");
+        const libro = XLSX.read(await r.arrayBuffer());
+        const hojas = libro.SheetNames.map((n) => ({ nombre: n, html: XLSX.utils.sheet_to_html(libro.Sheets[n]) }));
+        return setVista({ tipo: "hojas", texto: "", hojas });
+      }
+      if (ext === "pdf" || ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+        url = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: tipoMime }));
+        return setVista({ tipo: ext === "pdf" ? "pdf" : "imagen", url });
+      }
+      setVista({ tipo: "texto", texto: await r.text() });
+    })().catch(() => setVista({ tipo: "error" }));
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, ext]);
+
+  const estiloHoja =
+    "<style>body{font:12px system-ui,sans-serif;margin:12px;color:#0f172a}table{border-collapse:collapse}td,th{border:1px solid #e2e8f0;padding:4px 8px;white-space:nowrap}tr:first-child td{background:#f1f5f9;font-weight:600}</style>";
+
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 shrink-0">
+        <FileIcon size={16} className="text-blue-600 shrink-0" />
+        <span className="text-sm font-bold text-slate-800 truncate flex-1">{nombre}</span>
         <a
           href={urlArchivo(id)}
           download={nombre}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
         >
-          <Download size={12} /> Descargar
+          <Download size={13} /> Descargar
         </a>
+        <button
+          type="button"
+          onClick={onCerrar}
+          title="Cerrar"
+          aria-label="Cerrar vista previa"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+        >
+          <X size={16} />
+        </button>
       </div>
-      {html !== null && (
-        <iframe
-          title={nombre}
-          srcDoc={html}
-          sandbox="allow-scripts"
-          className="mt-2 w-full h-96 rounded-lg border border-slate-200 bg-white"
-        />
+      {vista.tipo === "hojas" && vista.hojas && vista.hojas.length > 1 && (
+        <div className="flex gap-1 px-3 pt-2 overflow-x-auto shrink-0">
+          {vista.hojas.map((h, i) => (
+            <button
+              key={h.nombre}
+              type="button"
+              onClick={() => setHoja(i)}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap ${
+                i === hoja ? "bg-emerald-50 text-emerald-700" : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              {h.nombre}
+            </button>
+          ))}
+        </div>
       )}
-    </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        {vista.tipo === "cargando" && (
+          <div className="h-full flex items-center justify-center gap-2 text-slate-400 text-xs font-semibold">
+            <Loader2 size={14} className="animate-spin" /> Abriendo…
+          </div>
+        )}
+        {(vista.tipo === "sin_vista" || vista.tipo === "error") && (
+          <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center text-slate-500 text-sm">
+            <FileIcon size={32} className="text-slate-300" />
+            {vista.tipo === "error"
+              ? "No se pudo abrir el archivo."
+              : "Este tipo de archivo no tiene vista previa aquí. Descárgalo para abrirlo."}
+          </div>
+        )}
+        {vista.tipo === "html" && (
+          <iframe title={nombre} srcDoc={vista.texto} sandbox="allow-scripts" className="w-full h-full bg-white" />
+        )}
+        {vista.tipo === "hojas" && vista.hojas && (
+          <iframe title={nombre} srcDoc={estiloHoja + (vista.hojas[hoja]?.html ?? "")} sandbox="" className="w-full h-full bg-white" />
+        )}
+        {vista.tipo === "pdf" && <iframe title={nombre} src={vista.url} className="w-full h-full" />}
+        {vista.tipo === "imagen" && <img src={vista.url} alt={nombre} className="max-w-full mx-auto p-4" />}
+        {vista.tipo === "texto" && (
+          <pre className="p-4 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">{vista.texto}</pre>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -182,6 +277,7 @@ export default function AgenteIAPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -365,8 +461,15 @@ export default function AgenteIAPage() {
   };
 
   // ── Chat CRUD ──────────────────────────────────────────────────────────────
+  // Al abrir un archivo se pliega la lista de chats para dejarle espacio.
+  const abrirArchivo = (a: ArchivoRef | null) => {
+    setArchivoAbierto(a);
+    if (a) setSidebarOpen(false);
+  };
+
   const createChat = () => {
     setActiveChatId(null);
+    setArchivoAbierto(null);
     setInput("");
     setAttachedFiles([]);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -416,6 +519,7 @@ export default function AgenteIAPage() {
   const selectChat = (id: string) => {
     if (id === activeChatId) return;
     setActiveChatId(id);
+    setArchivoAbierto(null);
     setEditingChatId(null);
     setInput("");
     setAttachedFiles([]);
@@ -689,6 +793,10 @@ export default function AgenteIAPage() {
       // mensaje) se cambia por uno escrito por la IA.
       if (updatedMessages.length === 1) titularChat(chatId, messageText);
 
+      // Como en Claude: el archivo recién creado se abre en el panel lateral.
+      const nuevos = archivosDe(accumulated);
+      if (nuevos.length) abrirArchivo(nuevos[nuevos.length - 1]);
+
       if (isConversationModeRef.current)
         speakText(sinMarcas(accumulated).replace(/[*#|`]/g, ""));
     } catch (err: any) {
@@ -959,7 +1067,7 @@ export default function AgenteIAPage() {
       {/* ── MAIN CHAT AREA ────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col p-2 md:p-4 overflow-hidden min-w-0">
         {/* Header */}
-        <div className="bg-white px-4 py-3 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center shrink-0">
+        <div className="px-1 pb-3 border-b border-slate-200/70 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
             {!sidebarOpen && (
               <button
@@ -1056,8 +1164,8 @@ export default function AgenteIAPage() {
             )}
         </AnimatePresence>
 
-        {/* Chat card */}
-        <Card className="flex-1 mt-3 bg-white rounded-2xl border-0 ring-1 ring-slate-200 shadow-sm overflow-hidden p-0 flex flex-col relative">
+        {/* Chat: sin recuadro, ocupa todo el ancho disponible */}
+        <div className="flex-1 min-h-0 mt-2 overflow-hidden flex flex-col relative">
           {/* Speaking video background */}
           <div
             className={`absolute inset-0 z-0 bg-[#f1f1f1] transition-opacity duration-700 ${isSpeaking ? "opacity-100" : "opacity-0"}`}
@@ -1169,7 +1277,14 @@ export default function AgenteIAPage() {
                                 </div>
                               )}
                               {msg.role === "assistant" &&
-                                archivosDe(msg.content).map((a) => <ArchivoAgente key={a.id} {...a} />)}
+                                archivosDe(msg.content).map((a) => (
+                                  <ArchivoAgente
+                                    key={a.id}
+                                    {...a}
+                                    activo={archivoAbierto?.id === a.id}
+                                    onAbrir={() => abrirArchivo(archivoAbierto?.id === a.id ? null : a)}
+                                  />
+                                ))}
                               {msg.role === "assistant" &&
                                 cambiosDe(msg.content).map(({ token, detalle }) => (
                                   <div key={token} className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
@@ -1305,7 +1420,7 @@ export default function AgenteIAPage() {
             )}
 
             {/* Input area */}
-            <div className="p-3 md:p-4 bg-white border-t border-slate-50 shrink-0 space-y-2">
+            <div className="p-3 md:p-4 shrink-0 space-y-2">
               {attachedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100 max-h-[80px] overflow-y-auto">
                   {attachedFiles.map((file, index) => (
@@ -1420,8 +1535,15 @@ export default function AgenteIAPage() {
               </form>
             </div>
           </>
-        </Card>
+        </div>
       </div>
+
+      {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
+      {archivoAbierto && (
+        <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[45%] md:min-w-[22rem] md:max-w-3xl md:shrink-0 bg-white md:border-l border-slate-200 flex flex-col">
+          <VistaArchivo key={archivoAbierto.id} {...archivoAbierto} onCerrar={() => setArchivoAbierto(null)} />
+        </aside>
+      )}
     </div>
   );
 }
