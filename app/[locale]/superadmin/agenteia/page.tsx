@@ -1,11 +1,13 @@
 "use client";
 
+import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { Card, Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
   Check,
+  Copy,
   FileIcon,
   Headphones,
   Loader2,
@@ -16,6 +18,7 @@ import {
   PanelLeftOpen,
   Paperclip,
   Pencil,
+  RotateCcw,
   Send,
   Trash2,
   User,
@@ -123,6 +126,39 @@ export default function AgenteIAPage() {
   const isSpeakingRef = useRef(false);
   const isGeneratingRef = useRef(false);
   const processMessageRef = useRef<any>(null);
+
+  // ── Modelo elegido ("" = el del servidor); se recuerda en este navegador ────
+  const [modelo, setModelo] = useState("");
+  useEffect(() => {
+    try {
+      setModelo(localStorage.getItem("agenteia-modelo") || "");
+    } catch {}
+  }, []);
+  const elegirModelo = (m: string) => {
+    setModelo(m);
+    try {
+      localStorage.setItem("agenteia-modelo", m);
+    } catch {}
+  };
+
+  // ── Copiar un mensaje / rebobinar la conversación hasta uno enviado ────────
+  const [copiado, setCopiado] = useState<number | null>(null);
+  const copiar = async (index: number, content: string) => {
+    try {
+      await navigator.clipboard.writeText(sinMarcas(content).trim());
+      setCopiado(index);
+      setTimeout(() => setCopiado(null), 1500);
+    } catch {}
+  };
+  // Quita ese mensaje y todo lo posterior, y lo devuelve a la caja de texto
+  // para corregirlo y reenviarlo. No deshace cambios ya confirmados en Odoo.
+  const rebobinar = (index: number, content: string) => {
+    if (isGenerating) return;
+    setMessages((prev) => prev.slice(0, index));
+    setLastFailedMessage(null);
+    setInput(content);
+    textRef.current = content;
+  };
 
   // ── Conexión OAuth con el MCP de Odoo (SQL directo) ────────────────────────
   const [faltaMcp, setFaltaMcp] = useState(false);
@@ -419,7 +455,7 @@ export default function AgenteIAPage() {
       fetch("/api/superadmin/agenteia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined }),
       });
 
     try {
@@ -727,6 +763,21 @@ export default function AgenteIAPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <select
+              value={modelo}
+              onChange={(e) => elegirModelo(e.target.value)}
+              disabled={isGenerating}
+              title={t("modelo")}
+              aria-label={t("modelo")}
+              className="max-w-[9rem] sm:max-w-none px-2 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-[10px] md:text-xs font-bold outline-none hover:bg-slate-200 disabled:opacity-50"
+            >
+              <option value="">{t("modelo_auto")}</option>
+              {MODELOS_AGENTE.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nombre}
+                </option>
+              ))}
+            </select>
             <button
               onClick={toggleConversationMode}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-bold transition-all ${
@@ -936,11 +987,36 @@ export default function AgenteIAPage() {
                             </div>
                           )}
                         </div>
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider text-slate-400 px-2 ${msg.role === "user" ? "text-right" : "text-left"}`}
+                        <div
+                          className={`flex items-center gap-1 px-2 text-slate-400 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                         >
-                          {msg.role === "user" ? t("tu") : t("supri")}
-                        </span>
+                          <span className="text-[9px] font-black uppercase tracking-wider">
+                            {msg.role === "user" ? t("tu") : t("supri")}
+                          </span>
+                          {msg.content !== "" && (
+                            <button
+                              type="button"
+                              onClick={() => copiar(index, msg.content)}
+                              title={t("copiar")}
+                              aria-label={t("copiar")}
+                              className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              {copiado === index ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          )}
+                          {msg.role === "user" && (
+                            <button
+                              type="button"
+                              disabled={isGenerating}
+                              onClick={() => rebobinar(index, msg.content)}
+                              title={t("rebobinar")}
+                              aria-label={t("rebobinar")}
+                              className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-40"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {msg.role === "user" && (
                         <div className="shrink-0 flex items-end">

@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
+import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { jwtSecretBytes } from "@/lib/secretos";
 
@@ -25,13 +26,10 @@ import { jwtSecretBytes } from "@/lib/secretos";
  * JSON-RPC con el usuario de integración del panel.
  */
 
-// Modelo configurable por entorno (AGENTE_IA_MODELO), ej. claude-sonnet-5
-// para abaratar. Haiku 4.5 no tiene thinking adaptativo: corre sin thinking.
-// El respaldo automático ante rechazos (`fallbacks`) solo se pide en los
-// modelos para los que está documentado.
-const MODELO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
-const THINKING_ADAPTATIVO = !MODELO.startsWith("claude-haiku-4");
-const CON_FALLBACK = ["claude-opus-5", "claude-fable-5-1", "claude-fable-5"].includes(MODELO);
+// Modelo por defecto, configurable por entorno (AGENTE_IA_MODELO), ej.
+// claude-sonnet-5 para abaratar. El SuperAdmin puede elegir otro de
+// MODELOS_AGENTE en la pantalla.
+const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
 const VIGENCIA_CAMBIO_MS = 15 * 60_000;
@@ -490,7 +488,13 @@ const anthropic = () =>
  * respuesta. Al final emite una marca `[[confirmar-odoo:<token>]]` por cada
  * cambio preparado, que la pantalla convierte en botón.
  */
-export async function responder(chat: MensajeChat[], uid: string, emitir: (t: string) => void): Promise<void> {
+export async function responder(chat: MensajeChat[], uid: string, emitir: (t: string) => void, modelo?: string): Promise<void> {
+  // Haiku 4.5 no tiene thinking adaptativo: corre sin thinking. El respaldo
+  // automático ante rechazos (`fallbacks`) solo se pide en los modelos para
+  // los que está documentado.
+  const MODELO = MODELOS_AGENTE.some((m) => m.id === modelo) ? modelo! : MODELO_DEFECTO;
+  const THINKING_ADAPTATIVO = !MODELO.startsWith("claude-haiku-4");
+  const CON_FALLBACK = ["claude-opus-5", "claude-fable-5-1", "claude-fable-5"].includes(MODELO);
   const hoy = new Intl.DateTimeFormat("es-VE", { timeZone: "America/Caracas", dateStyle: "full" }).format(new Date());
   const messages = aMensajesClaude(chat);
   if (messages.length === 0) throw new Error("Mensaje vacío.");

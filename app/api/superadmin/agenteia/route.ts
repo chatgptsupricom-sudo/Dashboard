@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Agente IA del SuperAdmin: Claude + MCP de Odoo + MySQL del panel
 // (lib/agenteia/agente.ts). Reemplaza el flujo de n8n.
 //
-//   POST { messages }   -> respuesta en texto plano, en streaming
+//   POST { messages, modelo? } -> respuesta en texto plano, en streaming
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
 //   POST { cancelar }   -> descarta un cambio preparado (solo responde el texto)
 
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir);
+        await responder(messages, uid, emitir, typeof body?.modelo === "string" ? body.modelo : undefined);
       } catch (e: any) {
         console.error("❌ agenteia:", e);
         const msg =
