@@ -222,13 +222,13 @@ async function readEnLotes(
   return map;
 }
 
-/** IDs de producto de la marca dada. `null` si la marca es TODAS (sin filtro). */
+/** IDs de producto de la marca dada (incluye archivados). `null` si la marca es TODAS (sin filtro). */
 async function idsProductoDeMarca(marca: string): Promise<number[] | null> {
   if (!marca || marca.toUpperCase() === MARCA_TODAS) return null;
   const prods =
     (await callOdooRPC<any[]>("product.product", "search_read", [
       [["x_studio_marca", "ilike", marca]],
-    ], { fields: ["id"], limit: 0 })) || [];
+    ], { fields: ["id"], limit: 0, context: { active_test: false } })) || [];
   return prods.map((p: any) => p.id);
 }
 

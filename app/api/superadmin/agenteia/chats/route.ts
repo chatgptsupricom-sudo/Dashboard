@@ -1,4 +1,4 @@
-import { requireRoles } from "@/lib/auth/roles";
+import { requireAgente } from "@/lib/agenteia/acceso";
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -37,7 +37,7 @@ async function ensureTabla() {
 const esId = (v: unknown): v is string => typeof v === "string" && /^[a-z0-9]{6,40}$/i.test(v);
 
 async function sesion(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireAgente(request);
   if (auth.error) return { error: auth.error };
   const uid = String(auth.payload?.uid ?? auth.payload?.email ?? "");
   if (!uid) return { error: NextResponse.json({ error: "Sesión sin usuario." }, { status: 401 }) };

@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { requireRoles } from "@/lib/auth/roles";
+import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
 import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
 import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
 
-// Agente IA del SuperAdmin: Claude + MCP de Odoo + MySQL del panel
-// (lib/agenteia/agente.ts). Reemplaza el flujo de n8n.
+// Agente IA: Claude + MCP de Odoo + MySQL del panel (lib/agenteia/agente.ts).
+// Lo usa el SuperAdmin y los roles que él habilite (lib/agenteia/acceso.ts);
+// confirmar cambios en Odoo es solo del SuperAdmin.
 //
 //   POST { messages, modelo? } -> respuesta en texto plano, en streaming
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
@@ -50,9 +51,10 @@ function explicarError(e: any): string {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireAgente(request);
   if (auth.error) return auth.error;
   const uid = String(auth.payload?.uid ?? auth.payload?.email ?? "");
+  const esSuperadmin = rolSuperadmin(auth.payload?.role);
 
   let body: any;
   try {
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (typeof body?.confirmar === "string") {
+    if (!esSuperadmin) return NextResponse.json({ error: "Solo el SuperAdmin puede confirmar cambios en Odoo." }, { status: 403 });
     return NextResponse.json({ texto: await ejecutarCambio(body.confirmar, uid) });
   }
   if (typeof body?.cancelar === "string") {
@@ -80,7 +83,6 @@ export async function POST(request: NextRequest) {
   // Los modelos reservados (lib/agenteia/modelos.ts) son solo del SuperAdmin:
   // a otro rol se le da el primer modelo que sí puede usar, aunque pida otro
   // o el del servidor sea uno reservado.
-  const esSuperadmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
   const permitidos: string[] = modelosPara(esSuperadmin).map((m) => m.id);
   const reservado = MODELOS_AGENTE.some((m) => m.soloSuperadmin && m.id === MODELO_DEFECTO);
   const modelo = permitidos.includes(body?.modelo)
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, modelo, corte.signal);
+        await responder(messages, uid, emitir, modelo, corte.signal, !esSuperadmin);
       } catch (e: any) {
         if (corte.signal.aborted) {
           console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);

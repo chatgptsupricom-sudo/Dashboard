@@ -151,6 +151,8 @@ export function Sidebar({
   // Acceso a "Reportes Comerciales": se pregunta al servidor (lista de correos
   // en una env NO pública) para no depender del bundle del cliente.
   const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
+  // Acceso al Agente IA: lo decide el SuperAdmin por rol (/api/agenteia/acceso).
+  const [puedeAgenteIA, setPuedeAgenteIA] = useState(false);
 
   // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
   // del menú RMA).
@@ -170,6 +172,10 @@ export function Sidebar({
     fetch("/api/reportes-comerciales/acceso")
       .then((r) => r.json())
       .then((j) => setPuedeReportesComerciales(Boolean(j?.puede)))
+      .catch(() => {});
+    fetch("/api/agenteia/acceso")
+      .then((r) => r.json())
+      .then((j) => setPuedeAgenteIA(Boolean(j?.puede)))
       .catch(() => {});
   }, [user]);
 
@@ -234,6 +240,9 @@ export function Sidebar({
   // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
   if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
     allowedSections.push("reportes_comerciales");
+  }
+  if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
+    allowedSections.push("agenteia");
   }
 
   // Definición del menú base
@@ -484,6 +493,11 @@ export function Sidebar({
       // existe y que el middleware redirige al dashboard.
       if (item.id === "cuentas_por_cobrar" && basePath.endsWith("/gerente_venta")) {
         return { ...item, href: `${basePath}/cobranza` };
+      }
+      // Agente IA: el SuperAdmin lo tiene en /superadmin/agenteia; los roles
+      // que él habilite entran por la ruta común /agente-ia.
+      if (item.id === "agenteia" && !basePath.endsWith("/superadmin")) {
+        return { ...item, href: `/${locale}/agente-ia` };
       }
       if (item.id === "catalogo_disenador" && userRole?.toLowerCase().trim() === "adminleads") {
         return {

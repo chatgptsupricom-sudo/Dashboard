@@ -1,5 +1,6 @@
 import { modelosPara } from "@/lib/agenteia/modelos";
 import { completarConexion, iniciarConexion, tokenMcp, urlMcp } from "@/lib/agenteia/mcpOauth";
+import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
 import { requireRoles } from "@/lib/auth/roles";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
@@ -13,21 +14,23 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
-  if (auth.error) return auth.error;
-
   const p = request.nextUrl.searchParams;
   const origen = getPublicOrigin(request);
 
   if (p.has("estado")) {
+    const sesion = await requireAgente(request);
+    if (sesion.error) return sesion.error;
     const fijo = !!process.env.ODOO_MCP_TOKEN;
-    const esSuperadmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
+    const esSuperadmin = rolSuperadmin(sesion.payload?.role);
     return NextResponse.json({
       configurado: !!urlMcp(),
       conectado: !!urlMcp() && (fijo || !!(await tokenMcp())),
       modelos: modelosPara(esSuperadmin),
     });
   }
+
+  const auth = await requireRoles(request, ["superadmin"]);
+  if (auth.error) return auth.error;
 
   try {
     const code = p.get("code");

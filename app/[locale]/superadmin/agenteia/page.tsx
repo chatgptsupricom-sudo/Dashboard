@@ -34,9 +34,13 @@ import {
   TriangleAlert,
   Trophy,
   Users,
+  ShieldCheck,
   Volume2,
+  Wrench,
   X,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -54,6 +58,8 @@ interface Message {
   content: string;
   // Lo que el agente fue contando mientras consultaba, antes de la respuesta.
   proceso?: string;
+  // Herramientas que usó para responder (panel "Usó N herramientas").
+  pasos?: Paso[];
   files?: AttachedFile[];
 }
 
@@ -113,6 +119,134 @@ function TablaConExcel({ node, ...props }: any) {
 }
 
 type ArchivoRef = { id: string; nombre: string };
+
+// SuperAdmin: qué roles del panel usan el Agente IA (/api/superadmin/agenteia/acceso).
+function DialogoAcceso({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  const [roles, setRoles] = useState<{ rol: string; nombre: string; permitido: boolean }[] | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!abierto) return;
+    setRoles(null);
+    setError("");
+    fetch("/api/superadmin/agenteia/acceso")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => setRoles(j.roles || []))
+      .catch(() => setError("No se pudo cargar la lista de roles."));
+  }, [abierto]);
+  const guardar = async () => {
+    if (!roles) return;
+    setGuardando(true);
+    setError("");
+    try {
+      const r = await fetch("/api/superadmin/agenteia/acceso", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roles: roles.filter((x) => x.permitido).map((x) => x.rol) }),
+      });
+      if (!r.ok) throw new Error();
+      onCerrar();
+    } catch {
+      setError("No se pudo guardar. Reintenta.");
+    } finally {
+      setGuardando(false);
+    }
+  };
+  return (
+    <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Acceso al Agente IA</DialogTitle>
+          <DialogDescription>
+            El SuperAdmin siempre tiene acceso. Los roles que marques verán el agente en su menú y podrán consultar
+            todo lo que el agente lee de Odoo y del panel, pero no pedir cambios en Odoo.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-80 overflow-y-auto agente-scroll -mx-1 px-1">
+          {!roles && !error && (
+            <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+              <Loader2 size={14} className="animate-spin" /> Cargando roles…
+            </div>
+          )}
+          {roles?.length === 0 && <p className="py-6 text-sm text-slate-500">No hay otros roles en el panel.</p>}
+          {roles?.map((r, i) => (
+            <label key={r.rol} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
+              <Checkbox
+                checked={r.permitido}
+                onCheckedChange={(v) => setRoles((prev) => prev!.map((x, j) => (j === i ? { ...x, permitido: v === true } : x)))}
+              />
+              <span className="text-sm text-slate-800">{r.nombre}</span>
+            </label>
+          ))}
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <DialogFooter>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="h-9 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={guardar}
+            disabled={!roles || guardando}
+            className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {guardando && <Loader2 size={14} className="animate-spin" />} Guardar
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const segundosDe = (ms: number) => (ms < 1000 ? `${ms} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : duracion(Math.round(ms / 1000)));
+
+// "Usando herramientas…" mientras trabaja y "Usó N herramientas" después:
+// cada consulta con lo que pidió (SQL, búsqueda, URL…), cuánto tardó y si falló.
+function PasosHerramientas({ pasos, activo, segundos }: { pasos: Paso[]; activo: boolean; segundos: number }) {
+  const fallidos = pasos.filter((p) => p.estado === "error").length;
+  return (
+    <details className="group/pasos rounded-xl border border-slate-200 bg-white text-[13px]" open={activo || undefined}>
+      <summary className="flex items-center gap-2 px-3 h-9 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-slate-600 hover:text-slate-900">
+        {activo ? (
+          <Loader2 size={14} className="animate-spin text-blue-600 shrink-0" />
+        ) : (
+          <Wrench size={14} className="text-slate-400 shrink-0" />
+        )}
+        <span className="font-medium">
+          {activo ? "Usando herramientas" : `Usó ${pasos.length} ${pasos.length === 1 ? "herramienta" : "herramientas"}`}
+        </span>
+        {fallidos > 0 && <span className="text-red-600">· {fallidos} con error</span>}
+        {activo && <span className="text-slate-400 tabular-nums">{duracion(segundos)}</span>}
+        <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open/pasos:rotate-180" />
+      </summary>
+      <ol className="border-t border-slate-100 divide-y divide-slate-100">
+        {pasos.map((p) => (
+          <li key={p.id} className="flex items-start gap-2.5 px-3 py-2">
+            {p.estado === "corriendo" ? (
+              <Loader2 size={13} className="mt-0.5 animate-spin text-blue-600 shrink-0" />
+            ) : p.estado === "ok" ? (
+              <Check size={13} className="mt-0.5 text-emerald-600 shrink-0" />
+            ) : (
+              <X size={13} className="mt-0.5 text-red-600 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-800">{p.nombre}</span>
+                {p.estado === "error" && <span className="text-[12px] font-medium text-red-600">Falló</span>}
+                {p.fin && <span className="ml-auto text-[12px] text-slate-400 tabular-nums shrink-0">{segundosDe(p.fin - p.inicio)}</span>}
+              </div>
+              {p.detalle && <p className="mt-0.5 font-mono text-[11.5px] leading-relaxed text-slate-500 break-all line-clamp-3">{p.detalle}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
 
 // ── Errores en español ──────────────────────────────────────────────────────
 // Lo que ve el usuario cuando algo falla: qué pasó y qué puede hacer. El
@@ -323,6 +457,25 @@ function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => v
   );
 }
 
+// Herramientas que va usando el agente: el backend intercala
+// [[paso:<json base64url>]] con { id, fase: inicio|detalle|fin, nombre, detalle, ok }.
+interface Paso {
+  id: string;
+  nombre: string;
+  detalle?: string;
+  estado: "corriendo" | "ok" | "error";
+  inicio: number;
+  fin?: number;
+}
+const MARCA_PASO = /\[\[paso:([A-Za-z0-9_-]+)\]\]/g;
+function leerPaso(b64: string): any {
+  try {
+    return JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/")))));
+  } catch {
+    return null;
+  }
+}
+
 // Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
 // es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
 const MARCA_AVANCE = /\[\[avance:([^\]\n]*)\]\]/g;
@@ -331,12 +484,18 @@ const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${
 
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
-const STORAGE_KEY = "agenteia-chats-v1";
+// Copia local de las conversaciones, una por usuario del panel: en un
+// navegador compartido, el siguiente que entra no ve ni hereda (al subir los
+// chats "solo locales" a su cuenta) las conversaciones del anterior.
+// "agenteia-chats-v1" es la copia de antes, sin usuario: solo la escribía el
+// SuperAdmin (era el único con agente), así que solo él la hereda.
+const CLAVE_VIEJA = "agenteia-chats-v1";
+let claveLocal: string | null = null;
 
-function loadChats(): Chat[] {
+function loadChats(clave: string): Chat[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(clave);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -344,13 +503,14 @@ function loadChats(): Chat[] {
 }
 
 function persistChats(chats: Chat[]) {
+  if (!claveLocal) return;
   try {
     // Strip base64 files before persisting to avoid bloating localStorage
     const slim = chats.map((c) => ({
       ...c,
       messages: c.messages.map((m) => ({ ...m, files: undefined })),
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+    localStorage.setItem(claveLocal, JSON.stringify(slim));
   } catch {}
 }
 
@@ -365,6 +525,15 @@ export default function AgenteIAPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
+  const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean } | null>(null);
+  const [dialogoAcceso, setDialogoAcceso] = useState(false);
+  useEffect(() => {
+    fetch("/api/agenteia/acceso")
+      .then((r) => r.json())
+      .then((j) => setAcceso({ puede: !!j?.puede, superadmin: !!j?.superadmin }))
+      .catch(() => setAcceso({ puede: false, superadmin: false }));
+  }, []);
 
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -481,8 +650,17 @@ export default function AgenteIAPage() {
   // /api/superadmin/agenteia/chats. Los chats que solo estaban en este
   // navegador (de antes de guardarlos en el servidor) se suben al cargar.
   const pendientes = useRef(new Set<string>());
+  const uidSesion = user?.uid || user?.id;
   useEffect(() => {
-    const stored = loadChats();
+    if (!uidSesion) return;
+    claveLocal = `agenteia-chats-v2:${uidSesion}`;
+    let stored = loadChats(claveLocal);
+    if (stored.length === 0 && user?.role === "superAdmin") {
+      stored = loadChats(CLAVE_VIEJA);
+      try {
+        localStorage.removeItem(CLAVE_VIEJA);
+      } catch {}
+    }
     if (stored.length > 0) {
       setChats(stored);
       setActiveChatId(stored[0].id);
@@ -510,7 +688,7 @@ export default function AgenteIAPage() {
         setActiveChatId((actual) => actual ?? remotos[0]?.id ?? null);
       })
       .catch(() => {});
-  }, []);
+  }, [uidSesion]);
 
   // ── Derived active chat data ───────────────────────────────────────────────
   const activeChat = chats.find((c) => c.id === activeChatId) ?? null;
@@ -846,20 +1024,38 @@ export default function AgenteIAPage() {
       const decoder = new TextDecoder();
       let done = false;
       let crudo = "";
+      // Pasos por id, con la hora (en este navegador) en que empezó y terminó cada uno.
+      const pasos = new Map<string, Paso>();
+      let leidos = 0;
 
       while (!done) {
         const { value, done: d } = await reader.read();
         done = d;
         // El servidor manda espacios de ancho cero como latido: no son texto.
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
+        // Los pasos de herramientas se leen y se sacan del texto.
+        for (const m of [...crudo.matchAll(MARCA_PASO)].slice(leidos)) {
+          const e = leerPaso(m[1]);
+          if (!e?.id) continue;
+          const actual: Paso = pasos.get(e.id) || { id: e.id, nombre: e.nombre || "Herramienta", estado: "corriendo", inicio: Date.now() };
+          if (e.nombre) actual.nombre = e.nombre;
+          if (e.detalle) actual.detalle = e.detalle;
+          if (e.fase === "fin") {
+            actual.estado = e.ok === false ? "error" : "ok";
+            actual.fin = Date.now();
+          }
+          pasos.set(e.id, actual);
+        }
+        leidos = [...crudo.matchAll(MARCA_PASO)].length;
+        const sinPasos = crudo.replace(MARCA_PASO, "");
         // La respuesta es lo que viene después de la última consulta. Lo que
         // el agente escribió antes (entre consulta y consulta) es su proceso:
         // se guarda aparte y se muestra plegado, no como respuesta.
-        const marcas = [...crudo.matchAll(MARCA_AVANCE)];
+        const marcas = [...sinPasos.matchAll(MARCA_AVANCE)];
         const ultima = marcas[marcas.length - 1];
         const corte = ultima ? ultima.index! + ultima[0].length : 0;
-        const proceso = crudo.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
-        accumulated = crudo.slice(corte).trimStart();
+        const proceso = sinPasos.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
+        accumulated = sinPasos.slice(corte).trimStart();
         // Una marca que llegó cortada entre dos trozos no se muestra a medias.
         if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
         setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
@@ -867,7 +1063,12 @@ export default function AgenteIAPage() {
           const next = [...prev];
           const last = next.length - 1;
           if (next[last]?.role === "assistant")
-            next[last] = { ...next[last], content: accumulated, proceso: proceso || undefined };
+            next[last] = {
+              ...next[last],
+              content: accumulated,
+              proceso: proceso || undefined,
+              pasos: pasos.size ? [...pasos.values()].map((p) => ({ ...p })) : undefined,
+            };
           return next;
         }, chatId);
       }
@@ -910,6 +1111,13 @@ export default function AgenteIAPage() {
       abortRef.current = null;
       setIsGenerating(false);
       setAvance("");
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next.length - 1;
+        if (next[last]?.pasos?.some((p) => p.estado === "corriendo"))
+          next[last] = { ...next[last], pasos: next[last].pasos!.map((p) => (p.estado === "corriendo" ? { ...p, estado: "error", fin: p.fin ?? Date.now() } : p)) };
+        return next;
+      }, chatId);
     }
   };
 
@@ -1038,6 +1246,16 @@ export default function AgenteIAPage() {
     antes: t("anteriores"),
   };
   const puedeEnviar = (!!input.trim() || attachedFiles.length > 0) && !isGenerating && !isConversationMode;
+
+  if (acceso && !acceso.puede) {
+    return (
+      <div className="h-[calc(100dvh-8rem)] flex flex-col items-center justify-center text-center gap-3 px-6">
+        <ShieldCheck size={36} className="text-slate-300" />
+        <h2 className="text-lg font-semibold text-slate-900">No tienes acceso al Agente IA</h2>
+        <p className="text-sm text-slate-600 max-w-md">Pídele al SuperAdmin que habilite tu rol desde la pantalla del agente.</p>
+      </div>
+    );
+  }
 
   return (
     // 8rem = barra superior (4rem) + el p-8 del layout: así la página no se desplaza.
@@ -1213,6 +1431,17 @@ export default function AgenteIAPage() {
               </select>
               <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </label>
+            {acceso?.superadmin && (
+              <button
+                type="button"
+                onClick={() => setDialogoAcceso(true)}
+                title="Qué roles usan el agente"
+                className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium text-slate-600 hover:bg-slate-200/60 transition-colors"
+              >
+                <ShieldCheck size={15} />
+                <span className="hidden lg:inline">Acceso</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleConversationMode}
@@ -1344,6 +1573,9 @@ export default function AgenteIAPage() {
                     >
                       <img src="/supri2.png" alt="Supri" className="w-7 h-7 mt-0.5 rounded-lg object-cover shrink-0 ring-1 ring-slate-200" />
                       <div className="flex-1 min-w-0 space-y-3">
+                        {msg.pasos && msg.pasos.length > 0 && (
+                          <PasosHerramientas pasos={msg.pasos} activo={escribiendo} segundos={segundos} />
+                        )}
                         {msg.proceso && (
                           <details className="text-[13px] text-slate-500 group/proceso">
                             <summary className="inline-flex items-center gap-1 cursor-pointer select-none font-medium hover:text-slate-800 list-none [&::-webkit-details-marker]:hidden">
@@ -1391,7 +1623,7 @@ export default function AgenteIAPage() {
                                 )}
                               </pre>
                             )}
-                            <div className="flex gap-2">
+                            <div className={`flex gap-2 ${acceso?.superadmin ? "" : "hidden"}`}>
                               <button
                                 type="button"
                                 disabled={isGenerating}
@@ -1542,6 +1774,8 @@ export default function AgenteIAPage() {
           </div>
         </div>
       </div>
+
+      {acceso?.superadmin && <DialogoAcceso abierto={dialogoAcceso} onCerrar={() => setDialogoAcceso(false)} />}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (

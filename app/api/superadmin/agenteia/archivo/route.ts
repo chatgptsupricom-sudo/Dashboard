@@ -1,5 +1,5 @@
 import { bajarArchivo } from "@/lib/agenteia/agente";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireAgente } from "@/lib/agenteia/acceso";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET ?id=file_... -> un archivo creado por el Agente IA (Excel, Word, PDF,
@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireAgente(request);
   if (auth.error) return auth.error;
 
   const id = request.nextUrl.searchParams.get("id") || "";
