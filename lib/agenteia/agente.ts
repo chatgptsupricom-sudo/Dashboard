@@ -29,7 +29,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 // Modelo por defecto, configurable por entorno (AGENTE_IA_MODELO), ej.
 // claude-sonnet-5 para abaratar. El SuperAdmin puede elegir otro de
 // MODELOS_AGENTE en la pantalla.
-const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
+export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5";
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
 const VIGENCIA_CAMBIO_MS = 15 * 60_000;
@@ -483,6 +483,19 @@ let cliente: Anthropic | null = null;
 const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
 const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
+
+/** Título corto para una conversación, a partir de su primer mensaje. */
+export async function titular(pregunta: string): Promise<string> {
+  const r = await anthropic().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 40,
+    system:
+      "Escribe un título de 3 a 6 palabras, en español, para una conversación que empieza con el mensaje del usuario. Responde solo el título: sin comillas, sin punto final, sin explicación.",
+    messages: [{ role: "user", content: pregunta.slice(0, 2000) }],
+  });
+  const texto = r.content.find((b) => b.type === "text");
+  return (texto?.type === "text" ? texto.text : "").trim().replace(/^["«']+|["»'.]+$/g, "").slice(0, 60);
+}
 
 /**
  * Corre el agente sobre la conversación y va emitiendo el texto de la

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { requireRoles } from "@/lib/auth/roles";
-import { ejecutarCambio, responder, type MensajeChat } from "@/lib/agenteia/agente";
+import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
+import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
 
 // Agente IA del SuperAdmin: Claude + MCP de Odoo + MySQL del panel
@@ -8,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 //
 //   POST { messages, modelo? } -> respuesta en texto plano, en streaming
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
+//   POST { titular }    -> título corto para la conversación (Haiku)
 //   POST { cancelar }   -> descarta un cambio preparado (solo responde el texto)
 
 export const runtime = "nodejs";
@@ -34,6 +36,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ texto: "Cambio cancelado. No se modificó nada en Odoo." });
   }
 
+  if (typeof body?.titular === "string") {
+    try {
+      return NextResponse.json({ titulo: await titular(body.titular) });
+    } catch (e: any) {
+      console.error("❌ agenteia título:", e.message);
+      return NextResponse.json({ titulo: "" });
+    }
+  }
+
+  // Los Opus son solo del SuperAdmin: a cualquier otro rol se le da el primer
+  // modelo que sí puede usar, aunque pida otro o el del servidor sea un Opus.
+  const esSuperadmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
+  const permitidos: string[] = modelosPara(esSuperadmin).map((m) => m.id);
+  const reservado = MODELOS_AGENTE.some((m) => m.soloSuperadmin && m.id === MODELO_DEFECTO);
+  const modelo = permitidos.includes(body?.modelo)
+    ? (body.modelo as string)
+    : !esSuperadmin && reservado
+      ? permitidos[0]
+      : undefined;
+
   const messages: MensajeChat[] = body?.messages;
   if (!Array.isArray(messages) || messages.length === 0) {
     return NextResponse.json({ error: "Formato no válido." }, { status: 400 });
@@ -48,7 +70,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, typeof body?.modelo === "string" ? body.modelo : undefined);
+        await responder(messages, uid, emitir, modelo);
       } catch (e: any) {
         console.error("❌ agenteia:", e);
         const msg =

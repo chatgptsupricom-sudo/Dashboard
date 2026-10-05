@@ -1,3 +1,4 @@
+import { modelosPara } from "@/lib/agenteia/modelos";
 import { completarConexion, iniciarConexion, tokenMcp, urlMcp } from "@/lib/agenteia/mcpOauth";
 import { requireRoles } from "@/lib/auth/roles";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -5,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Conexión OAuth del Agente IA con el MCP de Odoo (lib/agenteia/mcpOauth.ts).
 //
-//   GET ?estado=1      -> { configurado, conectado }
+//   GET ?estado=1      -> { configurado, conectado, modelos } (modelos que este usuario puede elegir)
 //   GET                -> registra el panel y redirige al login/consentimiento de Odoo
 //   GET ?code&state    -> vuelta de Odoo: guarda los tokens y regresa al agente
 
@@ -20,7 +21,12 @@ export async function GET(request: NextRequest) {
 
   if (p.has("estado")) {
     const fijo = !!process.env.ODOO_MCP_TOKEN;
-    return NextResponse.json({ configurado: !!urlMcp(), conectado: !!urlMcp() && (fijo || !!(await tokenMcp())) });
+    const esSuperadmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
+    return NextResponse.json({
+      configurado: !!urlMcp(),
+      conectado: !!urlMcp() && (fijo || !!(await tokenMcp())),
+      modelos: modelosPara(esSuperadmin),
+    });
   }
 
   try {

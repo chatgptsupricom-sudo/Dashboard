@@ -1,6 +1,5 @@
 "use client";
 
-import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { Card, Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -177,13 +176,36 @@ export default function AgenteIAPage() {
   };
 
   // ── Conexión OAuth con el MCP de Odoo (SQL directo) ────────────────────────
+  // La misma consulta trae los modelos que este usuario puede elegir.
   const [faltaMcp, setFaltaMcp] = useState(false);
+  const [modelos, setModelos] = useState<{ id: string; nombre: string }[]>([]);
   useEffect(() => {
     fetch("/api/superadmin/agenteia/oauth?estado=1")
       .then((r) => r.json())
-      .then((e) => setFaltaMcp(!!e?.configurado && !e?.conectado))
+      .then((e) => {
+        setFaltaMcp(!!e?.configurado && !e?.conectado);
+        if (Array.isArray(e?.modelos)) setModelos(e.modelos);
+      })
       .catch(() => {});
   }, []);
+
+  // ── Título de la conversación escrito por la IA (editable después) ────────
+  const titularChat = async (chatId: string, pregunta: string) => {
+    try {
+      const r = await fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titular: pregunta }),
+      });
+      const titulo = String((await r.json())?.titulo || "").trim();
+      if (!titulo) return;
+      setChats((prev) => {
+        const updated = prev.map((c) => (c.id === chatId ? { ...c, title: titulo } : c));
+        persistChats(updated);
+        return updated;
+      });
+    } catch {}
+  };
 
   // ── Load persisted chats on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -513,6 +535,10 @@ export default function AgenteIAPage() {
         }, chatId);
       }
 
+      // Primer intercambio del chat: el título provisional (el inicio del
+      // mensaje) se cambia por uno escrito por la IA.
+      if (updatedMessages.length === 1) titularChat(chatId, messageText);
+
       if (isConversationModeRef.current)
         speakText(sinMarcas(accumulated).replace(/[*#|`]/g, ""));
     } catch (err: any) {
@@ -798,7 +824,7 @@ export default function AgenteIAPage() {
               className="max-w-[9rem] sm:max-w-none px-2 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-[10px] md:text-xs font-bold outline-none hover:bg-slate-200 disabled:opacity-50"
             >
               <option value="">{t("modelo_auto")}</option>
-              {MODELOS_AGENTE.map((m) => (
+              {modelos.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.nombre}
                 </option>
@@ -859,7 +885,7 @@ export default function AgenteIAPage() {
         </AnimatePresence>
 
         {/* Chat card */}
-        <Card className="flex-1 mt-3 bg-white rounded-2xl md:rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden p-0 flex flex-col relative">
+        <Card className="flex-1 mt-3 bg-white rounded-2xl border-0 ring-1 ring-slate-200 shadow-sm overflow-hidden p-0 flex flex-col relative">
           {/* Speaking video background */}
           <div
             className={`absolute inset-0 z-0 bg-[#f1f1f1] transition-opacity duration-700 ${isSpeaking ? "opacity-100" : "opacity-0"}`}
@@ -907,6 +933,21 @@ export default function AgenteIAPage() {
                         {t("escribe_mensaje")}
                       </p>
                     </div>
+                    <div className="w-full grid gap-2 pt-2">
+                      {(["sugerencia_1", "sugerencia_2", "sugerencia_3", "sugerencia_4"] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => {
+                            setInput(t(k));
+                            textRef.current = t(k);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                        >
+                          {t(k)}
+                        </button>
+                      ))}
+                    </div>
                   </motion.div>
                 ) : (
                   messages.map((msg, index) => (
@@ -914,7 +955,7 @@ export default function AgenteIAPage() {
                       key={index}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      className={`flex gap-3 w-full max-w-4xl mx-auto ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                       {msg.role === "assistant" && (
                         <div className="shrink-0 flex items-end">
@@ -1013,9 +1054,6 @@ export default function AgenteIAPage() {
                         <div
                           className={`flex items-center gap-1 px-2 text-slate-400 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                         >
-                          <span className="text-[9px] font-black uppercase tracking-wider">
-                            {msg.role === "user" ? t("tu") : t("supri")}
-                          </span>
                           {msg.content !== "" && (
                             <button
                               type="button"
@@ -1114,7 +1152,7 @@ export default function AgenteIAPage() {
 
               <form
                 onSubmit={handleSend}
-                className={`relative flex items-center bg-slate-50 rounded-xl md:rounded-2xl border px-2 md:px-3 gap-1 ${
+                className={`relative flex items-center w-full max-w-4xl mx-auto bg-slate-50 rounded-xl md:rounded-2xl border px-2 md:px-3 gap-1 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-500/10 transition-shadow ${
                   isConversationMode
                     ? "border-indigo-200 ring-2 ring-indigo-500/10"
                     : "border-slate-200/60"
