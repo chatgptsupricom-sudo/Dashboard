@@ -876,8 +876,12 @@ export default function AgenteIAPage() {
         }, chatId);
         return;
       }
-      const errorMsg =
-        err?.message && err.message !== t("error_respuesta")
+      // Se cortó la conexión (red, despliegue, proxy): se ofrece reintentar.
+      const cortada = err instanceof TypeError;
+      if (cortada) setLastFailedMessage({ text: messageText, type: messageType });
+      const errorMsg = cortada
+        ? `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ Se perdió la conexión con el agente antes de terminar.`
+        : err?.message && err.message !== t("error_respuesta")
           ? `⚠️ ${err.message}`
           : t("error_respuesta");
       setMessages((prev) => {
@@ -1096,7 +1100,7 @@ export default function AgenteIAPage() {
                                 type="button"
                                 onClick={() => selectChat(chat.id)}
                                 aria-current={activo ? "page" : undefined}
-                                className={`flex-1 min-w-0 text-left pl-3 pr-14 py-2 text-[13px] truncate ${
+                                className={`flex-1 min-w-0 text-left pl-3 pr-3 group-hover:pr-14 group-focus-within:pr-14 py-2 text-[13px] truncate ${
                                   activo ? "text-slate-900 font-medium" : "text-slate-600"
                                 }`}
                               >
