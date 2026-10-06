@@ -412,6 +412,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
         throw new Error(json.error || tm("error"));
       }
       aplicar(json);
+      // Lo que paso en Odoo al aprobar (validada, o que hay que validarla a
+      // mano porque salio con novedades).
+      if (json.odoo) setAviso(json.odoo);
       if (accion === "verificar_armado" && json.avanzo === false && json.armado) {
         setError(
           tf("armado_diferencias", {
