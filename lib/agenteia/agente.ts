@@ -13,6 +13,16 @@ import {
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
+import {
+  CAMPO_COSTO,
+  describirAlcance,
+  dominioConAlcance,
+  modeloPermitido,
+  revisarCambio,
+  sinCostos,
+  sqlPanelPermitido,
+  type Alcance,
+} from "@/lib/agenteia/alcance";
 import { ensureBitacora } from "@/lib/agenteia/bitacora";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { jwtSecretBytes } from "@/lib/secretos";
@@ -613,12 +623,36 @@ async function filasSmartbit(
   return { filas, sinMarca: marcas ? { venta: r2(sinVenta), articulos: sinCodigos.size } : null };
 }
 
-async function ventasDetalle(i: any): Promise<string> {
+const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+
+/** Qué filtró el servidor, en palabras, para que el modelo explique bien la cifra. */
+function limitesAplicados(alcance: Alcance, companias: number[]): string {
+  return [
+    `solo ${companias.map((c) => NOMBRE_SEDE[c]).join(", ")}`,
+    alcance.propio && `solo registros del vendedor ${alcance.propio.nombre}`,
+    !alcance.costos && "sin costos ni márgenes",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** Sedes pedidas, recortadas a las del alcance (si ninguna queda, las del alcance). */
+function sedesDe(pedidas: unknown, alcance: Alcance | null): number[] {
+  const p = Array.isArray(pedidas) && pedidas.length ? pedidas.map(Number) : SEDES;
+  if (!alcance) return p;
+  const ok = p.filter((c) => alcance.companias.includes(c));
+  return ok.length ? ok : alcance.companias;
+}
+
+async function ventasDetalle(i: any, alcance: Alcance | null = null): Promise<string> {
   const fecha = /^\d{4}-\d{2}-\d{2}$/;
   if (!fecha.test(i?.desde) || !fecha.test(i?.hasta)) return "Error: desde/hasta deben ser YYYY-MM-DD";
+  if (alcance && !alcance.areas.has("ventas")) return "Error: el rol de este usuario no tiene acceso a ventas.";
   const dims = (Array.isArray(i.agrupar_por) ? i.agrupar_por : []).filter((d: any) => DIMENSIONES.includes(d));
   if (dims.length === 0) return `Error: agrupar_por debe incluir alguno de ${DIMENSIONES.join(", ")}`;
-  const companyIds = Array.isArray(i.companias) && i.companias.length ? i.companias : SEDES;
+  const companyIds = sedesDe(i.companias, alcance);
+  // "Solo lo suyo": las líneas de su nombre de vendedor (Odoo y Smartbit, normalizado).
+  const propio = alcance?.propio ? normalizar(alcance.propio.nombre) : null;
   try {
     // Antes del corte la venta real está en el histórico de Smartbit (MySQL);
     // Odoo solo desde el corte (antes tiene únicamente facturas migradas).
@@ -635,6 +669,7 @@ async function ventasDetalle(i: any): Promise<string> {
     const grupos = new Map<string, Record<string, any>>();
     const excluido = new Map<string, number>();
     for (const f of filas) {
+      if (propio !== null && normalizar(f.vendedor) !== propio) continue;
       if (!contiene(f.vendedor, i.vendedor) || !contiene(f.cliente, i.cliente)) continue;
       if (NO_VENDEDORES.some((n) => normalizar(f.vendedor).includes(normalizar(n)))) {
         excluido.set(f.vendedor, (excluido.get(f.vendedor) || 0) + f.total);
@@ -662,6 +697,7 @@ async function ventasDetalle(i: any): Promise<string> {
             : undefined,
         },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
+        limites_aplicados: alcance ? limitesAplicados(alcance, companyIds) : undefined,
         total_general: r2(lista.reduce((s, g) => s + g.total, 0)),
         excluidos_del_total: [...excluido].map(([vendedor, total]) => ({ vendedor, total: r2(total) })),
         grupos_totales: lista.length,
@@ -674,11 +710,23 @@ async function ventasDetalle(i: any): Promise<string> {
 }
 
 /** Lecturas de Odoo. Los errores vuelven como texto para que Claude corrija y reintente. */
-async function leerOdoo(nombre: string, i: any): Promise<string> {
-  const companias = Array.isArray(i?.companias) && i.companias.length ? i.companias : SEDES;
+async function leerOdoo(nombre: string, i: any, alcance: Alcance | null = null): Promise<string> {
+  const companias = sedesDe(i?.companias, alcance);
   const context = { allowed_company_ids: companias, lang: "es_VE" };
   try {
     let r: unknown;
+    if (alcance && nombre !== "odoo_modelos") {
+      if (!esModelo(i?.model)) return "Error: model inválido";
+      if (nombre === "odoo_campos") {
+        if (!modeloPermitido(alcance, i.model)) return `Error: el rol de este usuario no tiene acceso a ${i.model}.`;
+      } else {
+        const d = dominioConAlcance(alcance, i.model, Array.isArray(i.domain) ? i.domain : []);
+        if (typeof d === "string") return d;
+        if (!alcance.costos && CAMPO_COSTO.test(JSON.stringify([i.fields, i.groupby, i.orderby, i.order])))
+          return "Error: este usuario no tiene acceso a costos ni márgenes.";
+        i = { ...i, domain: d };
+      }
+    }
     if (nombre === "odoo_modelos") {
       const q = String(i?.buscar || "");
       r = await callOdooRPCEstricto("ir.model", "search_read", [["|", ["model", "ilike", q], ["name", "ilike", q]]], {
@@ -722,16 +770,24 @@ async function leerOdoo(nombre: string, i: any): Promise<string> {
         return `Error: herramienta desconocida ${nombre}`;
       }
     }
-    return recortar(JSON.stringify(r));
+    if (!alcance || nombre === "odoo_modelos" || nombre === "odoo_campos") return recortar(JSON.stringify(r));
+    // El servidor recortó la consulta: el modelo debe saberlo para explicar bien la cifra.
+    return recortar(
+      JSON.stringify({ resultado: alcance.costos ? r : sinCostos(r), limites_aplicados: limitesAplicados(alcance, companias) }),
+    );
   } catch (e: any) {
     return `Error Odoo: ${e.message}`;
   }
 }
 
-async function consultarPanel(sql: unknown): Promise<string> {
+async function consultarPanel(sql: unknown, alcance: Alcance | null = null): Promise<string> {
   const s = String(sql || "").trim().replace(/;\s*$/, "");
   if (!/^(select|with|show|describe|desc|explain)\b/i.test(s) || s.includes(";")) {
     return "Error: solo se permite UNA sentencia de lectura (SELECT/WITH/SHOW/DESCRIBE/EXPLAIN).";
+  }
+  if (alcance) {
+    const error = sqlPanelPermitido(alcance, s);
+    if (error) return error;
   }
   // Los tokens OAuth del MCP de Odoo no son para el modelo.
   if (s.toLowerCase().includes(TABLA_OAUTH)) return `Error: la tabla ${TABLA_OAUTH} no está disponible para el agente.`;
@@ -855,8 +911,10 @@ export async function responder(
   emitir: (t: string) => void,
   modelo?: string,
   signal?: AbortSignal,
-  // Roles que no son SuperAdmin: leen igual, pero no preparan cambios en Odoo.
+  // Consultores: leen, pero no preparan cambios en Odoo.
   soloLectura = false,
+  // Qué ve el rol de quien pregunta (lib/agenteia/alcance.ts); null = todo (SuperAdmin).
+  alcance: Alcance | null = null,
 ): Promise<void> {
   // Haiku 4.5 no tiene thinking adaptativo: corre sin thinking. El respaldo
   // automático ante rechazos (`fallbacks`) solo se pide en los modelos para
@@ -896,7 +954,14 @@ export async function responder(
   // lectura (incluido SQL directo) a las propias.
   const mcpUrl = process.env.ODOO_MCP_URL;
   const mcpToken = process.env.ODOO_MCP_TOKEN || (mcpUrl ? await tokenMcp() : null);
-  const conMcp = !!(mcpUrl && mcpToken);
+  // El SQL libre del MCP no se puede limitar por rol: solo para el SuperAdmin.
+  const conMcp = !!(mcpUrl && mcpToken) && !alcance;
+  const herramientasPropias = HERRAMIENTAS.filter(
+    (h) =>
+      !(soloLectura && h.name === "preparar_cambio_odoo") &&
+      !(alcance && h.name === "consultar_panel" && !alcance.panel) &&
+      !(alcance && h.name === "ventas_detalle" && !alcance.areas.has("ventas")),
+  );
   console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 
   const cambios: string[] = [];
@@ -924,6 +989,7 @@ export async function responder(
         ...(conArchivos ? [{ type: "text" as const, text: SISTEMA_ARCHIVOS }] : []),
         ...(conWeb ? [{ type: "text" as const, text: SISTEMA_WEB }] : []),
         ...(soloLectura ? [{ type: "text" as const, text: SISTEMA_SOLO_LECTURA }] : []),
+        ...(alcance ? [{ type: "text" as const, text: describirAlcance(alcance) }] : []),
         { type: "text", text: `Hoy es ${hoy} (hora de Caracas).` },
       ],
       ...(conMcp && { mcp_servers: [{ type: "url" as const, url: mcpUrl!, name: "odoo", authorization_token: mcpToken }] }),
@@ -945,7 +1011,7 @@ export async function responder(
           : []),
         ...(conArchivos ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }] : []),
         ...herramientasWeb,
-        ...(soloLectura ? HERRAMIENTAS.filter((h) => h.name !== "preparar_cambio_odoo") : HERRAMIENTAS),
+        ...herramientasPropias,
       ],
       messages,
     }, { signal });
@@ -988,7 +1054,7 @@ export async function responder(
       if (e instanceof Anthropic.BadRequestError && conWeb && /web_(search|fetch)/i.test(e.message)) {
         console.warn("[agenteia] búsqueda web no disponible, sigo sin ella:", e.message);
         webRechazada = true;
-        return responder(chat, uid, emitir, modelo, signal, soloLectura);
+        return responder(chat, uid, emitir, modelo, signal, soloLectura, alcance);
       }
       // Con eager_input_streaming un input de herramienta puede llegar como
       // JSON roto: se reintenta la vuelta. Los errores de la API (y el corte
@@ -1039,16 +1105,17 @@ export async function responder(
       // modelo como error para que lo explique o reintente; no tumba la consulta.
       try {
         if (b.name === "ventas_detalle") {
-          contenido = await ventasDetalle(b.input);
+          contenido = await ventasDetalle(b.input, alcance);
           esError = contenido.startsWith("Error");
         } else if (b.name.startsWith("odoo_")) {
-          contenido = await leerOdoo(b.name, b.input);
+          contenido = await leerOdoo(b.name, b.input, alcance);
           esError = contenido.startsWith("Error");
-        } else if (b.name === "consultar_panel") {
-          contenido = await consultarPanel((b.input as any)?.sql);
+        } else if (b.name === "consultar_panel" && (!alcance || alcance.panel)) {
+          contenido = await consultarPanel((b.input as any)?.sql, alcance);
           esError = contenido.startsWith("Error");
-        } else if (b.name === "preparar_cambio_odoo") {
-          const c = validarCambio(b.input);
+        } else if (b.name === "preparar_cambio_odoo" && !soloLectura) {
+          let c = validarCambio(b.input);
+          if (typeof c !== "string" && alcance) c = await revisarCambio(alcance, c);
           if (typeof c === "string") {
             contenido = `Error: ${c}`;
             esError = true;

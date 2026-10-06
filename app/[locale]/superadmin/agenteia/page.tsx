@@ -143,10 +143,139 @@ const NIVELES_ACCESO: { valor: Nivel | null; etiqueta: string }[] = [
 
 const OPERACION: Record<string, string> = { create: "Crear", write: "Editar", unlink: "Borrar", execute: "Acción" };
 
+type ConfigRol = { sede: "todas" | "propia"; propio: boolean; areas: string[] };
+type RolAlcance = { rol: string; nombre: string; config: ConfigRol; porDefecto: boolean };
+
+// Qué información ve el agente con cada rol (/api/superadmin/agenteia/roles):
+// sede, "solo lo suyo" y áreas. Se guarda al cambiar.
+function PanelRoles() {
+  const [areas, setAreas] = useState<{ id: string; etiqueta: string; descripcion: string }[]>([]);
+  const [roles, setRoles] = useState<RolAlcance[] | null>(null);
+  const [guardando, setGuardando] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch("/api/superadmin/agenteia/roles")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => {
+        setAreas(j.areas || []);
+        setRoles(j.roles || []);
+      })
+      .catch(() => setError("No se pudo cargar la configuración de roles."));
+  }, []);
+
+  const cambiar = async (r: RolAlcance, config: ConfigRol) => {
+    const antes = r;
+    const poner = (x: RolAlcance) => setRoles((prev) => prev!.map((y) => (y.rol === r.rol ? x : y)));
+    poner({ ...r, config, porDefecto: false });
+    setGuardando(r.rol);
+    setError("");
+    try {
+      const res = await fetch("/api/superadmin/agenteia/roles", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rol: r.rol, config }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      poner(antes);
+      setError(`No se pudo guardar el rol ${r.nombre}. Reintenta.`);
+    } finally {
+      setGuardando(null);
+    }
+  };
+
+  const chip = (activo: boolean) =>
+    `h-7 px-2.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-60 ${
+      activo ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+    }`;
+
+  return (
+    <div className="flex flex-col gap-2 min-h-0">
+      <p className="text-xs text-slate-500">
+        El SuperAdmin lo ve todo. Los demás roles no tienen el SQL directo de Odoo, y solo consultan tablas del panel si
+        ven todas las sedes y no están limitados a lo suyo.
+      </p>
+      <div className="max-h-[55vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+        {!roles && !error && (
+          <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+            <Loader2 size={14} className="animate-spin" /> Cargando roles…
+          </div>
+        )}
+        {roles?.map((r) => {
+          const ocupado = guardando === r.rol;
+          return (
+            <div key={r.rol} className="py-3 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <p className="text-sm font-medium text-slate-900 flex-1 min-w-0 truncate">
+                  {r.nombre}
+                  {r.porDefecto && <span className="ml-2 text-xs font-normal text-slate-400">por defecto</span>}
+                </p>
+                <div className="flex gap-1">
+                  {(
+                    [
+                      ["todas", "Todas las sedes"],
+                      ["propia", "Solo su sede"],
+                    ] as const
+                  ).map(([v, etiqueta]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      disabled={ocupado}
+                      aria-pressed={r.config.sede === v}
+                      onClick={() => r.config.sede !== v && cambiar(r, { ...r.config, sede: v })}
+                      className={chip(r.config.sede === v)}
+                    >
+                      {etiqueta}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={ocupado}
+                    aria-pressed={r.config.propio}
+                    onClick={() => cambiar(r, { ...r.config, propio: !r.config.propio })}
+                    title="Solo sus propias ventas, clientes, cotizaciones y cobranza (vendedores)"
+                    className={chip(r.config.propio)}
+                  >
+                    Solo lo suyo
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {areas.map((a) => {
+                  const activo = r.config.areas.includes(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      disabled={ocupado}
+                      aria-pressed={activo}
+                      title={a.descripcion}
+                      onClick={() =>
+                        cambiar(r, {
+                          ...r.config,
+                          areas: activo ? r.config.areas.filter((x) => x !== a.id) : [...r.config.areas, a.id],
+                        })
+                      }
+                      className={chip(activo)}
+                    >
+                      {a.etiqueta}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
 function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [vista, setVista] = useState<"acceso" | "cambios">("acceso");
+  const [vista, setVista] = useState<"acceso" | "roles" | "cambios">("acceso");
   const [usuarios, setUsuarios] = useState<UsuarioAcceso[] | null>(null);
   const [cambios, setCambios] = useState<CambioOdoo[] | null>(null);
   const [filtro, setFiltro] = useState("");
@@ -215,6 +344,7 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
           {(
             [
               ["acceso", "Acceso"],
+              ["roles", "Qué ve cada rol"],
               ["cambios", "Historial de cambios"],
             ] as const
           ).map(([id, etiqueta]) => (
@@ -301,6 +431,8 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
               ))}
             </div>
           </div>
+        ) : vista === "roles" ? (
+          <PanelRoles />
         ) : (
           <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
             {!cambios && !error && (
