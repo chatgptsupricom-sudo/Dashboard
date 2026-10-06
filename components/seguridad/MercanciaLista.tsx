@@ -328,7 +328,7 @@ function EtapaBadge({ m }: { m: Movimiento }) {
   const resultado = resultadoEgreso(m);
   const conf = !cerrado
     ? { icon: Clock, clase: "bg-violet-50 text-[color:var(--portal-primary,#741DFE)]" }
-    : resultado === "aprobado"
+    : resultado === "aprobado" || resultado === "parcial"
       ? { icon: CheckCircle2, clase: "bg-emerald-50 text-emerald-600" }
       : resultado === "no_aprobado_despachado"
         ? { icon: AlertTriangle, clase: "bg-amber-50 text-amber-600" }

@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { normalizarCodigo } from "@/lib/recepcion/flujo";
-import { evaluarSeriales } from "@/lib/seguridad/egresoFlujo";
+import { esDespachoParcial, evaluarSeriales } from "@/lib/seguridad/egresoFlujo";
 
 /**
  * Seriales esperados de un egreso, sacados del picking de Odoo (issue #299).
@@ -92,11 +92,12 @@ export async function sincronizarSeriales(mercanciaId: number, pickingId: number
   if (!lineas) throw new Error("no se pudieron leer las lineas del picking en Odoo");
 
   const itemsRes = await query(
-    `SELECT id, odoo_product_id, producto, cantidad_cargada, lleva_serial
+    `SELECT id, odoo_product_id, producto, cantidad_cargada, cantidad_armado, lleva_serial
        FROM seguridad_mercancia_items WHERE mercancia_id = ? ORDER BY id`,
     [mercanciaId],
   );
   const items = itemsRes.rows as any[];
+  const [mov] = (await query("SELECT etapa FROM seguridad_mercancia WHERE id = ?", [mercanciaId])).rows as any[];
   const itemPorProducto = new Map<number, any>();
   for (const i of items) if (i.odoo_product_id != null) itemPorProducto.set(Number(i.odoo_product_id), i);
 
@@ -154,5 +155,5 @@ export async function sincronizarSeriales(mercanciaId: number, pickingId: number
   await query("UPDATE seguridad_mercancia SET seriales_leidos_at = NOW() WHERE id = ?", [mercanciaId]);
 
   const seriales = await leerSerialesEgreso(mercanciaId);
-  return { ...evaluarSeriales(items, seriales), ajenos };
+  return { ...evaluarSeriales(items, seriales, esDespachoParcial(mov?.etapa, items)), ajenos };
 }
