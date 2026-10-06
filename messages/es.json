@@ -2902,6 +2902,16 @@
         "sin_facturar": "{n, plural, one {# orden lista en Odoo todavía no está facturada} other {# órdenes listas en Odoo todavía no están facturadas}}: aparecen aquí cuando Caja las facture.",
         "error": "No se pudieron cargar las órdenes de despacho de Odoo.",
         "ver_detalle": "Ver detalle",
+        "buscar": "Buscar por orden, cliente, factura o ruta",
+        "limpiar": "Borrar búsqueda",
+        "filtro_todas": "Todas",
+        "filtro_sucursal": "Retiro en sucursal",
+        "filtro_ruta": "Ruta",
+        "filtro_encomienda": "Encomienda",
+        "filtro_transporte": "Transporte externo",
+        "filtro_sin_metodo": "Sin método",
+        "mostrando": "Mostrando {n} de {total}",
+        "sin_resultados": "Ninguna orden coincide con la búsqueda.",
         "registrar_egreso": "Registrar despacho con esta orden"
       },
       "aviso": {
