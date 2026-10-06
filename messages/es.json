@@ -3009,13 +3009,15 @@
           "operativo": "Patio",
           "reportado": "Por atender",
           "en_taller": "Taller",
-          "listo": "Listo"
+          "listo": "Listo",
+          "en_ruta": "En ruta"
         },
         "situacion": {
           "operativo": "Operativo",
           "reportado": "Por atender",
           "en_taller": "En el taller",
-          "listo": "Listo para entregar"
+          "listo": "Listo para entregar",
+          "en_ruta": "En ruta"
         },
         "filtro": {
           "todos": "Todos",
@@ -3071,7 +3073,49 @@
         "costo": "Costo (USD)",
         "notas": "Notas del trabajo",
         "notas_ph": "Repuestos, garantía, observaciones…",
-        "cerrar": "Recibir y devolver a operación"
+        "cerrar": "Recibir y devolver a operación",
+        "ruta": {
+          "cargando": "Cargando en el portón",
+          "en_ruta": "En ruta"
+        },
+        "km_al_regresar": "Kilometraje al regresar",
+        "marcar_regreso": "Marcar regreso",
+        "servicio_por_medidor": {
+          "km": "Ya toca servicio por kilometraje",
+          "h": "Ya toca servicio por horas de uso"
+        },
+        "plan": {
+          "titulo": "Plan preventivo",
+          "sin_plan": "Sin plan: no se sabe cuándo le toca",
+          "cada_dias": "{n, plural, =1 {cada día} other {cada # días}}",
+          "editar": "Editar",
+          "cerrar": "Cerrar",
+          "dias": "Cada cuántos días",
+          "medidor": {
+            "km": "Cada cuántos km",
+            "h": "Cada cuántas horas"
+          },
+          "ayuda": "Al cerrar un preventivo, el próximo servicio se programa solo con estos intervalos.",
+          "guardar": "Guardar plan"
+        },
+        "ia": {
+          "titulo": "Jefe de taller IA",
+          "subtitulo": "Revisa la flota, las rutas y el historial, y te dice qué mantenimiento conviene abrir",
+          "analizar": "Analizar la flota",
+          "analizar_otra_vez": "Analizar otra vez",
+          "analizando": "Analizando…",
+          "pregunta_ph": "Pregúntale: ¿qué camión ha costado más este año?",
+          "preguntar": "Preguntar",
+          "sin_recomendaciones": "No hay ningún mantenimiento que convenga abrir ahora.",
+          "tareas": "{n, plural, =1 {1 tarea} other {# tareas}}",
+          "crear_orden": "Crear orden",
+          "aviso": "La IA propone; nada se crea hasta que revises y confirmes cada orden.",
+          "diagnostico_ayuda": "Describe la falla arriba y la IA arma la orden: prioridad, causas probables y tareas.",
+          "diagnosticar": "Diagnosticar con IA",
+          "diagnosticando": "Diagnosticando…",
+          "no_operar": "La IA recomienda no usar el equipo hasta repararlo.",
+          "causas": "Causas probables"
+        }
       },
       "catalogo_ui": {
         "agregar": "Agregar",

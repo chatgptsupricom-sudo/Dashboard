@@ -3020,13 +3020,15 @@
           "operativo": "Yard",
           "reportado": "Waiting",
           "en_taller": "Workshop",
-          "listo": "Ready"
+          "listo": "Ready",
+          "en_ruta": "On route"
         },
         "situacion": {
           "operativo": "Running",
           "reportado": "Waiting",
           "en_taller": "In the shop",
-          "listo": "Ready to hand over"
+          "listo": "Ready to hand over",
+          "en_ruta": "On route"
         },
         "filtro": {
           "todos": "All",
@@ -3082,7 +3084,49 @@
         "costo": "Cost (USD)",
         "notas": "Job notes",
         "notas_ph": "Parts, warranty, remarks…",
-        "cerrar": "Receive and return to service"
+        "cerrar": "Receive and return to service",
+        "ruta": {
+          "cargando": "Loading at the gate",
+          "en_ruta": "On route"
+        },
+        "km_al_regresar": "Mileage on return",
+        "marcar_regreso": "Mark as returned",
+        "servicio_por_medidor": {
+          "km": "Service due by mileage",
+          "h": "Service due by hours of use"
+        },
+        "plan": {
+          "titulo": "Preventive plan",
+          "sin_plan": "No plan: nobody knows when it's due",
+          "cada_dias": "{n, plural, =1 {every day} other {every # days}}",
+          "editar": "Edit",
+          "cerrar": "Close",
+          "dias": "Every how many days",
+          "medidor": {
+            "km": "Every how many km",
+            "h": "Every how many hours"
+          },
+          "ayuda": "When a preventive job is closed, the next service is scheduled from these intervals.",
+          "guardar": "Save plan"
+        },
+        "ia": {
+          "titulo": "AI shop foreman",
+          "subtitulo": "Reviews the fleet, the routes and the history, and tells you which maintenance to open",
+          "analizar": "Analyze the fleet",
+          "analizar_otra_vez": "Analyze again",
+          "analizando": "Analyzing…",
+          "pregunta_ph": "Ask: which truck has cost the most this year?",
+          "preguntar": "Ask",
+          "sin_recomendaciones": "There is no maintenance worth opening right now.",
+          "tareas": "{n, plural, =1 {1 task} other {# tasks}}",
+          "crear_orden": "Create order",
+          "aviso": "The AI suggests; nothing is created until you review and confirm each order.",
+          "diagnostico_ayuda": "Describe the failure above and the AI builds the order: priority, likely causes and tasks.",
+          "diagnosticar": "Diagnose with AI",
+          "diagnosticando": "Diagnosing…",
+          "no_operar": "The AI recommends not using the equipment until it is repaired.",
+          "causas": "Likely causes"
+        }
       },
       "catalogo_ui": {
         "agregar": "Add",

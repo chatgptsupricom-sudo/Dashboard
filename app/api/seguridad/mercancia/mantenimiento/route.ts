@@ -1,5 +1,5 @@
 import { requireAlmacen, resolverCidsSesion } from "@/lib/seguridad/auth";
-import { crearEquipo, crearOrden, equipoDeSede, listar } from "@/lib/mantenimiento/datos";
+import { crearEquipo, crearOrden, equipoDeSede, guardarPlan, listar, marcarRegreso } from "@/lib/mantenimiento/datos";
 import {
   PRIORIDADES,
   TAREAS_SUGERIDAS,
@@ -18,8 +18,12 @@ export const dynamic = "force-dynamic";
  *
  * GET: los equipos de la sede (camiones y montacargas) con su orden abierta,
  * y las últimas órdenes cerradas.
- * POST { accion: "equipo" | "reportar", ... }: dar de alta un equipo, o abrir
- * una orden de mantenimiento para uno.
+ * POST { accion, ... }:
+ *  - equipo: dar de alta un equipo.
+ *  - reportar: abrir una orden de mantenimiento para uno.
+ *  - regreso { equipo_id, medidor? }: el camión volvió de la ruta.
+ *  - plan { equipo_id, intervalo_dias, intervalo_medidor, proximo_servicio?,
+ *    medidor? }: el plan preventivo del equipo.
  *
  * Solo Almacén. El SuperAdmin entra a mirar (ve todas las sedes), pero no
  * registra: sin sede no hay a quién asignarle el equipo.
@@ -141,6 +145,34 @@ export async function POST(request: NextRequest) {
         );
       }
       return NextResponse.json({ success: true, ...(await listar(cids)) }, { status: 201 });
+    }
+
+    if (body?.accion === "regreso" || body?.accion === "plan") {
+      const equipoId = Number(body?.equipo_id);
+      const equipo = Number.isInteger(equipoId) && equipoId > 0 ? await equipoDeSede(equipoId, cids) : null;
+      if (!equipo) return NextResponse.json({ error: "No encontramos ese equipo" }, { status: 404 });
+      const m = medidor(body?.medidor);
+      if (m === "invalido") return NextResponse.json({ error: "El kilometraje u horas no es válido" }, { status: 400 });
+
+      if (body.accion === "regreso") {
+        await marcarRegreso(equipoId, m);
+      } else {
+        const dias = medidor(body?.intervalo_dias);
+        const cada = medidor(body?.intervalo_medidor);
+        if (dias === "invalido" || cada === "invalido" || dias === 0 || cada === 0) {
+          return NextResponse.json({ error: "Los intervalos del plan tienen que ser números mayores que cero" }, { status: 400 });
+        }
+        let proximo: string | null | undefined;
+        if (body?.proximo_servicio === null || body?.proximo_servicio === "") proximo = null;
+        else if (body?.proximo_servicio !== undefined) {
+          proximo = String(body.proximo_servicio).slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(proximo) || Number.isNaN(new Date(`${proximo}T00:00:00Z`).getTime())) {
+            return NextResponse.json({ error: "La fecha del próximo servicio no es válida" }, { status: 400 });
+          }
+        }
+        await guardarPlan(equipoId, { intervaloDias: dias, intervaloMedidor: cada, proximo, medidor: m });
+      }
+      return NextResponse.json({ success: true, ...(await listar(cids)) });
     }
 
     return NextResponse.json({ error: "accion invalida" }, { status: 400 });
