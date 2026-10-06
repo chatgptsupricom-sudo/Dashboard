@@ -38,6 +38,7 @@ import {
 } from "@/lib/seguridad/novedades";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { firmasDeActa } from "@/lib/seguridad/firmas";
+import { validarPickingEnOdoo } from "@/lib/seguridad/validarOdoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -552,6 +553,35 @@ async function ejecutar(
       const novedadesCierre = novedadesQueCuentan(novedades, !aprobado && decision === "cancelar");
       const estadoCierre = novedadesCierre.length > 0 ? "descuadre" : "conforme";
 
+      // Aprobado: la orden se valida en Odoo ahora, que es cuando sale, y ahi
+      // se descuenta el inventario. Si Odoo no la deja en "Hecho", no se
+      // aprueba (el panel y el inventario no quedan desfasados) y Seguridad ve
+      // el motivo. Despachado igual (con novedades) NO se valida: validar la
+      // orden completa descontaria tambien lo que no salio; se valida en Odoo
+      // con las cantidades que salieron.
+      let mensajeOdoo: string | null = null;
+      if (aprobado && mov.odoo_picking_id) {
+        try {
+          const r = await validarPickingEnOdoo(Number(mov.odoo_picking_id));
+          mensajeOdoo =
+            r === "validado"
+              ? `Orden ${mov.odoo_picking_name} validada en Odoo: el inventario ya se descontó.`
+              : `La orden ${mov.odoo_picking_name} ya estaba validada en Odoo.`;
+          console.warn(`[egreso ${id}] ${mensajeOdoo} (por ${quien})`);
+        } catch (e: any) {
+          console.error(`[egreso ${id}] no se pudo validar en Odoo:`, e?.message || e);
+          return NextResponse.json(
+            {
+              error: `No se pudo validar la orden en Odoo, así que no se aprobó: ${String(e?.message || e).slice(0, 300)}`,
+              codigo: "odoo_no_valida",
+            },
+            { status: 502 },
+          );
+        }
+      } else if (despachar && mov.odoo_picking_id) {
+        mensajeOdoo = `Salió con novedades: la orden ${mov.odoo_picking_name} NO se validó en Odoo. Valídala allá con las cantidades que salieron.`;
+      }
+
       // La decision queda guardada (sql/egreso_decision_seguridad.sql): es lo
       // que distingue un cancelado de un rechazo, que en el resto se ven
       // iguales (aprobado = 0, despachado = 0).
@@ -610,7 +640,7 @@ async function ejecutar(
             `Motivo: ${motivo}`,
         );
       }
-      return { avanzo: true, extra: { novedades } };
+      return { avanzo: true, extra: { novedades, ...(mensajeOdoo ? { odoo: mensajeOdoo } : {}) } };
     }
 
     case "calificar": {
