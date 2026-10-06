@@ -44,6 +44,7 @@ import {
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { firmasDeActa } from "@/lib/seguridad/firmas";
 import { pickingValidado, validarPickingEnOdoo } from "@/lib/seguridad/validarOdoo";
+import { unidadEnTaller } from "@/lib/mantenimiento/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -378,6 +379,17 @@ async function ejecutar(
         if (unidadCat.rows.length === 0) {
           return NextResponse.json(
             { error: "Esa unidad no esta en el catalogo de unidades" },
+            { status: 400 },
+          );
+        }
+        // Mantenimiento de Unidades: un camion en el taller no sale a ruta.
+        const trabajo = await unidadEnTaller(placa, cids);
+        if (trabajo) {
+          return NextResponse.json(
+            {
+              error: `La unidad ${placa} está en el taller (${trabajo}). Elige otra, o recíbela en Mantenimiento de Unidades.`,
+              codigo: "unidad_en_taller",
+            },
             { status: 400 },
           );
         }

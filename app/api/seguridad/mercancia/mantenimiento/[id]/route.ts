@@ -155,7 +155,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (!ok) return conflicto();
         // La orden ya cerró: si esto falla no se devuelve error, queda en el log.
         try {
-          await actualizarEquipoAlCerrar(orden.equipo_id, medidor ?? orden.medidor, proximo);
+          await actualizarEquipoAlCerrar(orden.equipo_id, {
+            medidor: medidor ?? orden.medidor,
+            proximo,
+            preventivo: orden.tipo === "preventivo",
+          });
         } catch (e: any) {
           console.error(`[mantenimiento ${id}] no se actualizó el equipo al cerrar:`, e?.message || e);
         }

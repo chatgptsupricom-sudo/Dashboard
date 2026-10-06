@@ -8,6 +8,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  *   PATIO (operativos) → POR ATENDER (reportados) → TALLER (sobre el elevador)
  *   → LISTO (esperando la entrega) → de vuelta al PATIO.
  *
+ * Los camiones que el despacho mandó a ruta salen a la calle del frente y
+ * van pasando mientras estén fuera.
+ *
  * Cuando una orden cambia de etapa, el vehículo maneja solo hasta su nuevo
  * puesto. Es three.js a mano, sin dependencias de React: la pantalla lo monta
  * en un <div> y le pasa la flota con `actualizar`.
@@ -15,7 +18,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  * Solo navegador (usa WebGL y `document`): se carga con import() dinámico.
  */
 
-export type SituacionEscena = "operativo" | "reportado" | "en_taller" | "listo";
+export type SituacionEscena = "operativo" | "en_ruta" | "reportado" | "en_taller" | "listo";
 
 export type VehiculoEscena = {
   id: number;
@@ -34,7 +37,7 @@ export type VehiculoEscena = {
 export type OpcionesEscena = {
   onSeleccion: (id: number) => void;
   /** Rótulos pintados en el piso de cada zona. */
-  textos: { patio: string; reportado: string; taller: string; listo: string };
+  textos: { patio: string; reportado: string; taller: string; listo: string; ruta: string };
   /** Sin animaciones de adorno (prefers-reduced-motion). */
   movimientoReducido?: boolean;
 };
@@ -50,6 +53,7 @@ const COLORES_CAMION = [0x2563eb, 0xdc2626, 0x059669, 0x0891b2, 0xea580c, 0x7c3a
 const COLORES_MONTACARGAS = [0xf59e0b, 0xf97316, 0xeab308];
 const ZONA = {
   operativo: 0x94a3b8,
+  en_ruta: 0x0ea5e9,
   reportado: 0xf59e0b,
   en_taller: VIOLETA,
   listo: 0x10b981,
@@ -61,15 +65,22 @@ const PASO_Z = 10;
 const Z_FILA = -4;
 const ZONAS: Record<SituacionEscena, { x0: number; columnas: number }> = {
   operativo: { x0: -29, columnas: 5 },
+  // La calle: una sola fila, al frente.
+  en_ruta: { x0: -30, columnas: 99 },
   reportado: { x0: -3.2, columnas: 2 },
   en_taller: { x0: 9.5, columnas: 3 },
   listo: { x0: 27.5, columnas: 1 },
 };
 const PASO_TALLER = 5.4;
 const ALTURA_ELEVADOR = 1.25;
+// La calle del frente, por donde pasan los que están en ruta.
+const Z_RUTA = 8.4;
+const BORDE_RUTA = 37;
+const VELOCIDAD_RUTA = 6.5;
 
 function puesto(situacion: SituacionEscena, indice: number): { x: number; z: number } {
   const zona = ZONAS[situacion];
+  if (situacion === "en_ruta") return { x: zona.x0 + ((indice * 13) % (BORDE_RUTA * 2 - 8)), z: Z_RUTA };
   const paso = situacion === "en_taller" ? PASO_TALLER : PASO_X;
   return {
     x: zona.x0 + (indice % zona.columnas) * paso,
@@ -128,7 +139,16 @@ function dibujarInsignia(
 ) {
   g.clearRect(0, 0, 128, 128);
   if (situacion === "operativo") return;
-  const color = situacion === "reportado" ? (urgente ? "#dc2626" : "#f59e0b") : situacion === "listo" ? "#10b981" : "#741dfe";
+  const color =
+    situacion === "reportado"
+      ? urgente
+        ? "#dc2626"
+        : "#f59e0b"
+      : situacion === "listo"
+        ? "#10b981"
+        : situacion === "en_ruta"
+          ? "#0ea5e9"
+          : "#741dfe";
   g.beginPath();
   g.arc(64, 64, 50, 0, Math.PI * 2);
   g.fillStyle = "#ffffff";
@@ -156,7 +176,17 @@ function dibujarInsignia(
   g.fillStyle = color;
   g.lineCap = "round";
   g.lineJoin = "round";
-  if (situacion === "reportado") {
+  if (situacion === "en_ruta") {
+    // Flecha: va en camino.
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(36, 64);
+    g.lineTo(90, 64);
+    g.moveTo(70, 44);
+    g.lineTo(92, 64);
+    g.lineTo(70, 84);
+    g.stroke();
+  } else if (situacion === "reportado") {
     g.font = "800 74px system-ui, sans-serif";
     g.textAlign = "center";
     g.textBaseline = "middle";
@@ -422,6 +452,28 @@ export function crearEscena(contenedor: HTMLElement, opciones: OpcionesEscena): 
   zonaPintada("en_taller", opciones.textos.taller);
   zonaPintada("listo", opciones.textos.listo);
 
+  // La calle: asfalto, línea central discontinua y su rótulo.
+  const calle = new THREE.Mesh(new THREE.PlaneGeometry(BORDE_RUTA * 2, 4.8), mat(0x64748b, { roughness: 0.95 }));
+  calle.rotation.x = -Math.PI / 2;
+  calle.position.set(0, 0.02, Z_RUTA);
+  calle.receiveShadow = true;
+  escena.add(calle);
+  for (let x = -BORDE_RUTA + 2; x < BORDE_RUTA; x += 4) {
+    const raya = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.18), new THREE.MeshBasicMaterial({ color: 0xf8fafc }));
+    raya.rotation.x = -Math.PI / 2;
+    raya.position.set(x, 0.03, Z_RUTA);
+    escena.add(raya);
+  }
+  const texturaRuta = texturaZona(opciones.textos.ruta, "#0ea5e9");
+  desechables.push(texturaRuta);
+  const rotuloRuta = new THREE.Mesh(
+    new THREE.PlaneGeometry(9, 9 * (96 / 512)),
+    new THREE.MeshBasicMaterial({ map: texturaRuta, transparent: true, depthWrite: false }),
+  );
+  rotuloRuta.rotation.x = -Math.PI / 2;
+  rotuloRuta.position.set(-BORDE_RUTA + 5.4, 0.04, Z_RUTA + 3.5);
+  escena.add(rotuloRuta);
+
   // Taller: pared del fondo, elevadores y algo de utilería
   const taller = ZONAS.en_taller;
   const centroTaller = taller.x0 + ((taller.columnas - 1) * PASO_TALLER) / 2;
@@ -578,7 +630,7 @@ export function crearEscena(contenedor: HTMLElement, opciones: OpcionesEscena): 
   const actualizar: Escena["actualizar"] = (vehiculos, elegido) => {
     seleccion = elegido;
     const vistos = new Set<number>();
-    const cuenta: Record<SituacionEscena, number> = { operativo: 0, reportado: 0, en_taller: 0, listo: 0 };
+    const cuenta: Record<SituacionEscena, number> = { operativo: 0, en_ruta: 0, reportado: 0, en_taller: 0, listo: 0 };
     for (const e of elevadores) e.ocupado = false;
 
     // Los que ya están en el taller conservan su elevador; los nuevos toman el primero libre.
@@ -619,6 +671,11 @@ export function crearEscena(contenedor: HTMLElement, opciones: OpcionesEscena): 
         indice = cuenta[v.situacion]++;
       }
       const p = puesto(v.situacion, indice);
+      // El que ya va por la calle sigue desde donde está; el que sale a ruta
+      // baja a la calle a la altura de donde estaba.
+      if (v.situacion === "en_ruta" && !nuevo && !primeraVez && !calmo) {
+        p.x = THREE.MathUtils.clamp(a.raiz.position.x, -BORDE_RUTA + 4, BORDE_RUTA - 4);
+      }
       a.destino.set(p.x, 0, p.z);
       a.alturaDestino = v.situacion === "en_taller" ? ALTURA_ELEVADOR : 0;
 
@@ -722,7 +779,15 @@ export function crearEscena(contenedor: HTMLElement, opciones: OpcionesEscena): 
       v3.set(a.destino.x - pos.x, 0, a.destino.z - pos.z);
       const falta = v3.length();
       let rumbo = 0;
-      if (falta > 0.05) {
+      if (a.situacion === "en_ruta" && !calmo && falta <= 0.05) {
+        // Ya está en la calle: va pasando, y al salir por un lado entra por el otro.
+        const avance = VELOCIDAD_RUTA * dt;
+        pos.x += avance;
+        if (pos.x > BORDE_RUTA) pos.x = -BORDE_RUTA;
+        a.destino.x = pos.x;
+        rumbo = Math.PI / 2;
+        for (const r of a.ruedas) r.rotation.x += avance / 0.55;
+      } else if (falta > 0.05) {
         // Primero baja del elevador, después maneja.
         if (pos.y > 0.02) {
           pos.y = Math.max(0, pos.y - dt * 2.4);

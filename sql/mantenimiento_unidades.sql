@@ -7,6 +7,11 @@
 -- phpMyAdmin de EasyPanel.
 --
 -- Verificar después:  SHOW TABLES FROM supricom_panel LIKE 'mantenimiento_%';
+--
+-- Las cinco columnas del final de mantenimiento_equipos (regreso_at … ) se
+-- agregaron después: el panel las añade solo a una tabla que ya exista. Si hay
+-- que hacerlo a mano, primero SHOW COLUMNS FROM supricom_panel.mantenimiento_equipos;
+-- y un ALTER TABLE ... ADD COLUMN por cada una que falte.
 
 CREATE TABLE IF NOT EXISTS supricom_panel.mantenimiento_equipos (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -19,6 +24,11 @@ CREATE TABLE IF NOT EXISTS supricom_panel.mantenimiento_equipos (
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_by VARCHAR(200) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  regreso_at DATETIME NULL,                        -- cuándo se marcó que volvió de la última ruta
+  intervalo_dias INT NULL,                         -- plan preventivo: cada cuántos días
+  intervalo_medidor INT NULL,                      -- plan preventivo: cada cuántos km u horas
+  ultimo_servicio_at DATE NULL,                    -- último preventivo cerrado
+  ultimo_servicio_medidor INT NULL,
   KEY idx_mant_equipos_cids (cids, activo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

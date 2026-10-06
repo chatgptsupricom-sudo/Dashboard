@@ -1,5 +1,15 @@
 import { db } from "@/lib/db";
-import type { Equipo, Estado, Orden, Prioridad, Tarea, TipoEquipo, TipoOrden } from "@/lib/mantenimiento/tipos";
+import {
+  HORAS_EN_RUTA,
+  type Equipo,
+  type Estado,
+  type Orden,
+  type Prioridad,
+  type Ruta,
+  type Tarea,
+  type TipoEquipo,
+  type TipoOrden,
+} from "@/lib/mantenimiento/tipos";
 
 /**
  * Datos del mantenimiento de unidades (lib/mantenimiento/tipos).
@@ -12,6 +22,10 @@ import type { Equipo, Estado, Orden, Prioridad, Tarea, TipoEquipo, TipoOrden } f
  * las placas que ya usa el despacho): al listar, toda placa que todavía no
  * esté aquí se agrega como camión. Los montacargas no tienen placa y se dan de
  * alta en esta sección.
+ *
+ * Qué camión está en ruta sale del despacho de mercancía
+ * (`seguridad_mercancia`): un egreso por ruta con su placa. No se guarda
+ * aquí; lo único propio es `regreso_at`, cuando Almacén marca que volvió.
  */
 
 let tablasListas = false;
@@ -59,6 +73,20 @@ export async function asegurarTablas() {
       KEY idx_mant_ordenes_cids (cids, estado)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Columnas que se agregaron después: una base que ya tenía la tabla las
+  // recibe aquí. MySQL no tiene ADD COLUMN IF NOT EXISTS, así que se mira antes.
+  const [columnas] = await db.execute("SHOW COLUMNS FROM mantenimiento_equipos");
+  const hay = new Set((columnas as any[]).map((c) => String(c.Field)));
+  const nuevas: Array<[string, string]> = [
+    ["regreso_at", "DATETIME NULL"],
+    ["intervalo_dias", "INT NULL"],
+    ["intervalo_medidor", "INT NULL"],
+    ["ultimo_servicio_at", "DATE NULL"],
+    ["ultimo_servicio_medidor", "INT NULL"],
+  ];
+  for (const [nombre, tipo] of nuevas) {
+    if (!hay.has(nombre)) await db.execute(`ALTER TABLE mantenimiento_equipos ADD COLUMN ${nombre} ${tipo}`);
+  }
   tablasListas = true;
 }
 
@@ -149,6 +177,94 @@ async function traerCamionesDelCatalogo(cids: number | null) {
   }
 }
 
+const entero = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+/**
+ * Qué dice el despacho de cada camión: cargando en el portón, o en ruta (un
+ * egreso por ruta aprobado después del último regreso, en las últimas
+ * HORAS_EN_RUTA horas). Y cuántas rutas hizo en 30 días. Si el módulo de
+ * mercancía no está (o le falta una columna), no hay rutas que mostrar.
+ */
+async function rutasPorPlaca(
+  cids: number | null,
+  regresos: Map<string, Date | null>,
+): Promise<{ rutas: Map<string, Ruta>; conteo: Map<string, number> }> {
+  const rutas = new Map<string, Ruta>();
+  const conteo = new Map<string, number>();
+  const sede = deSede(cids);
+  try {
+    const [filas] = await db.execute(
+      `SELECT placa_vehiculo, chofer_nombre, odoo_picking_name, contraparte, etapa, despachado,
+              verificado_at, despacho_asignado_at
+         FROM seguridad_mercancia
+        WHERE tipo = 'egreso' AND tipo_entrega = 'ruta' AND placa_vehiculo IS NOT NULL AND ${sede.sql}
+          AND (etapa = 'por_verificar'
+               OR (despachado = 1 AND verificado_at >= NOW() - INTERVAL ${HORAS_EN_RUTA} HOUR))
+        ORDER BY id ASC`,
+      sede.valores as any[],
+    );
+    for (const f of filas as any[]) {
+      const placa = String(f.placa_vehiculo).toUpperCase();
+      const salio = Number(f.despachado) === 1 && f.etapa !== "por_verificar";
+      if (salio) {
+        const regreso = regresos.get(placa);
+        if (regreso && new Date(f.verificado_at).getTime() <= regreso.getTime()) continue;
+      }
+      const estado: Ruta["estado"] = salio ? "en_ruta" : "cargando";
+      const previa = rutas.get(placa);
+      // En ruta pesa más que cargando: si ya salió con algo, está en la calle.
+      const ruta: Ruta =
+        previa && (previa.estado === "en_ruta" || estado === "cargando")
+          ? previa
+          : { estado, desde: null, chofer: null, ordenes: previa?.estado === estado ? previa.ordenes : [] };
+      if (ruta.estado === estado) {
+        ruta.desde ||= iso(salio ? f.verificado_at : f.despacho_asignado_at);
+        ruta.chofer ||= f.chofer_nombre || null;
+        ruta.ordenes.push({ orden: f.odoo_picking_name || "—", cliente: f.contraparte || null });
+      }
+      rutas.set(placa, ruta);
+    }
+    const [cuenta] = await db.execute(
+      `SELECT placa_vehiculo, COUNT(*) AS n
+         FROM seguridad_mercancia
+        WHERE tipo = 'egreso' AND tipo_entrega = 'ruta' AND placa_vehiculo IS NOT NULL AND ${sede.sql}
+          AND despachado = 1 AND verificado_at >= NOW() - INTERVAL 30 DAY
+        GROUP BY placa_vehiculo`,
+      sede.valores as any[],
+    );
+    for (const f of cuenta as any[]) conteo.set(String(f.placa_vehiculo).toUpperCase(), Number(f.n));
+  } catch (e: any) {
+    if (e?.code !== "ER_NO_SUCH_TABLE") {
+      console.error("[mantenimiento] no se pudieron leer las rutas del despacho:", e?.message || e);
+    }
+  }
+  return { rutas, conteo };
+}
+
+/**
+ * La unidad está en el taller (o lista, sin recibir): el despacho no la puede
+ * mandar a ruta. Devuelve el trabajo que la tiene parada, o null. Sin las
+ * tablas de mantenimiento no hay nada que la frene.
+ */
+export async function unidadEnTaller(placa: string, cids: number | null): Promise<string | null> {
+  try {
+    const [filas] = await db.execute(
+      `SELECT o.titulo
+         FROM mantenimiento_ordenes o
+         JOIN mantenimiento_equipos e ON e.id = o.equipo_id
+        WHERE e.codigo = ? AND e.cids <=> ? AND e.activo = 1 AND o.estado IN ('en_taller', 'listo')
+        LIMIT 1`,
+      [placa, cids],
+    );
+    return (filas as any[])[0]?.titulo ?? null;
+  } catch (e: any) {
+    if (e?.code !== "ER_NO_SUCH_TABLE") {
+      console.error("[mantenimiento] no se pudo revisar si la unidad está en el taller:", e?.message || e);
+    }
+    return null;
+  }
+}
+
 /** Equipos de la sede con su orden abierta, y las últimas órdenes cerradas. */
 export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; historial: Orden[] }> {
   await asegurarTablas();
@@ -156,7 +272,8 @@ export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; 
 
   const sede = deSede(cids);
   const [equipos] = await db.execute(
-    `SELECT id, tipo, codigo, descripcion, medidor, proximo_servicio
+    `SELECT id, tipo, codigo, descripcion, medidor, proximo_servicio, regreso_at,
+            intervalo_dias, intervalo_medidor, ultimo_servicio_at, ultimo_servicio_medidor
        FROM mantenimiento_equipos
       WHERE activo = 1 AND ${sede.sql}
       ORDER BY tipo ASC, codigo ASC`,
@@ -180,16 +297,32 @@ export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; 
   const porEquipo = new Map<number, Orden>();
   for (const f of abiertas as any[]) porEquipo.set(Number(f.equipo_id), aOrden(f));
 
+  const regresos = new Map<string, Date | null>();
+  for (const f of equipos as any[]) {
+    if (f.tipo === "camion") regresos.set(String(f.codigo).toUpperCase(), f.regreso_at ? new Date(f.regreso_at) : null);
+  }
+  const { rutas, conteo } = await rutasPorPlaca(cids, regresos);
+
   return {
-    equipos: (equipos as any[]).map((f) => ({
-      id: Number(f.id),
-      tipo: f.tipo as TipoEquipo,
-      codigo: f.codigo,
-      descripcion: f.descripcion || null,
-      medidor: f.medidor === null || f.medidor === undefined ? null : Number(f.medidor),
-      proximo_servicio: soloFecha(f.proximo_servicio),
-      orden: porEquipo.get(Number(f.id)) || null,
-    })),
+    equipos: (equipos as any[]).map((f) => {
+      const placa = String(f.codigo).toUpperCase();
+      const camion = f.tipo === "camion";
+      return {
+        id: Number(f.id),
+        tipo: f.tipo as TipoEquipo,
+        codigo: f.codigo,
+        descripcion: f.descripcion || null,
+        medidor: entero(f.medidor),
+        proximo_servicio: soloFecha(f.proximo_servicio),
+        intervalo_dias: entero(f.intervalo_dias),
+        intervalo_medidor: entero(f.intervalo_medidor),
+        ultimo_servicio_at: soloFecha(f.ultimo_servicio_at),
+        ultimo_servicio_medidor: entero(f.ultimo_servicio_medidor),
+        orden: porEquipo.get(Number(f.id)) || null,
+        ruta: (camion && rutas.get(placa)) || null,
+        rutas_30d: (camion && conteo.get(placa)) || 0,
+      };
+    }),
     historial: (cerradas as any[]).map(aOrden),
   };
 }
@@ -274,12 +407,49 @@ export async function actualizarOrden(id: number, desde: Estado, set: string, va
   return Number((res as any)?.affectedRows || 0) === 1;
 }
 
-/** Al cerrar: el equipo queda con el medidor del trabajo y la fecha del próximo servicio. */
-export async function actualizarEquipoAlCerrar(equipoId: number, medidor: number | null, proximo: string | null) {
+/**
+ * Al cerrar: el equipo queda con el medidor del trabajo. Si fue un preventivo,
+ * queda anotado como el último servicio y el próximo se programa solo con el
+ * plan del equipo (hoy + intervalo_dias), salvo que se haya indicado una
+ * fecha. Un correctivo no mueve el plan preventivo.
+ */
+export async function actualizarEquipoAlCerrar(
+  equipoId: number,
+  d: { medidor: number | null; proximo: string | null; preventivo: boolean },
+) {
   await db.execute(
     `UPDATE mantenimiento_equipos
-        SET medidor = COALESCE(?, medidor), proximo_servicio = ?
+        SET medidor = COALESCE(?, medidor),
+            proximo_servicio = COALESCE(
+              ?,
+              IF(? = 1 AND intervalo_dias IS NOT NULL, DATE_ADD(CURDATE(), INTERVAL intervalo_dias DAY), NULL),
+              IF(? = 1, NULL, proximo_servicio)
+            ),
+            ultimo_servicio_at = IF(? = 1, CURDATE(), ultimo_servicio_at),
+            ultimo_servicio_medidor = IF(? = 1, COALESCE(?, medidor, ultimo_servicio_medidor), ultimo_servicio_medidor)
       WHERE id = ?`,
-    [medidor, proximo, equipoId],
+    [d.medidor, d.proximo, d.preventivo ? 1 : 0, d.preventivo ? 1 : 0, d.preventivo ? 1 : 0, d.preventivo ? 1 : 0, d.medidor, equipoId],
+  );
+}
+
+/** El camión volvió de la ruta: deja de estar "en ruta", con su kilometraje si se anotó. */
+export async function marcarRegreso(equipoId: number, medidor: number | null) {
+  await db.execute(
+    "UPDATE mantenimiento_equipos SET regreso_at = NOW(), medidor = COALESCE(?, medidor) WHERE id = ?",
+    [medidor, equipoId],
+  );
+}
+
+/** El plan preventivo del equipo, y la fecha del próximo servicio si se indica. */
+export async function guardarPlan(
+  equipoId: number,
+  d: { intervaloDias: number | null; intervaloMedidor: number | null; proximo: string | null | undefined; medidor: number | null },
+) {
+  await db.execute(
+    `UPDATE mantenimiento_equipos
+        SET intervalo_dias = ?, intervalo_medidor = ?, medidor = COALESCE(?, medidor)
+            ${d.proximo !== undefined ? ", proximo_servicio = ?" : ""}
+      WHERE id = ?`,
+    [d.intervaloDias, d.intervaloMedidor, d.medidor, ...(d.proximo !== undefined ? [d.proximo] : []), equipoId],
   );
 }
