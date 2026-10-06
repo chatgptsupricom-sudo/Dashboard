@@ -5,6 +5,13 @@ import {
   esRolPersonal,
   rolPersonalAdministrable,
 } from "@/lib/seguridad/catalogoPersonal";
+import {
+  asegurarColumnaClave,
+  CLAVE_MAX,
+  CLAVE_MIN,
+  esClaveValida,
+  hashClave,
+} from "@/lib/seguridad/clavePersonal";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -57,8 +64,11 @@ export async function GET(request: NextRequest) {
       where.push("activo = 1");
     }
 
+    // Si tiene clave para firmar el acta de mercancía; el hash no sale nunca.
+    await asegurarColumnaClave();
     const res = await query(
-      `SELECT id, nombre, rol, activo FROM seguridad_catalogo_personal
+      `SELECT id, nombre, rol, activo, (clave_hash IS NOT NULL) AS tiene_clave
+         FROM seguridad_catalogo_personal
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY rol ASC, nombre ASC`,
       params,
@@ -103,11 +113,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Seguridad firma el acta del despacho de mercancía con su clave
+    // personal (lib/seguridad/clavePersonal.ts): se registra junto con el
+    // nombre. Solo se guarda el hash.
+    const clave = body?.clave;
+    if (rol === "seguridad" && clave !== undefined && clave !== null && clave !== "" && !esClaveValida(clave)) {
+      return NextResponse.json(
+        { error: `La clave tiene que ser de ${CLAVE_MIN} a ${CLAVE_MAX} números` },
+        { status: 400 },
+      );
+    }
+    await asegurarColumnaClave();
+    const claveHash = rol === "seguridad" && esClaveValida(clave) ? await hashClave(clave) : null;
+
     // Si ya existe (mismo nombre + rol + sucursal) se devuelve el que hay, y de
     // paso se reactiva: "volver a agregar" a alguien que se había dado de baja
     // es la forma natural de traerlo de vuelta.
     const existente = await query(
-      `SELECT id, nombre, rol, activo FROM seguridad_catalogo_personal
+      `SELECT id, nombre, rol, activo, (clave_hash IS NOT NULL) AS tiene_clave FROM seguridad_catalogo_personal
         WHERE nombre = ? AND rol = ? AND ${cids !== null ? "cids = ?" : "cids IS NULL"}`,
       cids !== null ? [nombre, rol, cids] : [nombre, rol],
     );
@@ -120,17 +143,30 @@ export async function POST(request: NextRequest) {
         );
         fila.activo = 1;
       }
+      // Ya existía: la clave solo se pone si no tenía. Cambiar una clave
+      // existente pide la actual (PATCH /[id]).
+      if (claveHash && !Number(fila.tiene_clave)) {
+        await query(`UPDATE seguridad_catalogo_personal SET clave_hash = ? WHERE id = ?`, [claveHash, fila.id]);
+        fila.tiene_clave = 1;
+      }
       return NextResponse.json({ success: true, persona: fila });
     }
 
+    if (rol === "seguridad" && !claveHash) {
+      return NextResponse.json(
+        { error: `Registra también su clave personal (${CLAVE_MIN} a ${CLAVE_MAX} números)` },
+        { status: 400 },
+      );
+    }
+
     const res = await query(
-      `INSERT INTO seguridad_catalogo_personal (nombre, rol, cids) VALUES (?, ?, ?)`,
-      [nombre, rol, cids],
+      `INSERT INTO seguridad_catalogo_personal (nombre, rol, cids, clave_hash) VALUES (?, ?, ?, ?)`,
+      [nombre, rol, cids, claveHash],
     );
     const id = (res.rows as any)?.insertId;
 
     return NextResponse.json(
-      { success: true, persona: { id, nombre, rol, activo: 1 } },
+      { success: true, persona: { id, nombre, rol, activo: 1, tiene_clave: claveHash ? 1 : 0 } },
       { status: 201 },
     );
   } catch (error: any) {

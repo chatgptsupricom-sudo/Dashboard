@@ -984,6 +984,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   nombresSugeridos={{ seguridad: user?.name }}
                   permitirRehacer={rol === "superadmin"}
                   onFirmas={(r) => setFirmoSeguridad(r.includes("seguridad"))}
+                  porClave={["seguridad"]}
                 />
               )}
 
