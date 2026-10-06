@@ -1052,7 +1052,17 @@ export default function AgenteIAPage() {
       .then((r) => r.json())
       .then((e) => {
         setFaltaMcp(!!e?.configurado && !e?.conectado);
-        if (Array.isArray(e?.modelos)) setModelos(e.modelos);
+        if (Array.isArray(e?.modelos)) {
+          setModelos(e.modelos);
+          // Una elección guardada de un modelo que ya no se ofrece se olvida.
+          setModelo((m) => {
+            if (!m || e.modelos.some((x: { id: string }) => x.id === m)) return m;
+            try {
+              localStorage.removeItem("agenteia-modelo");
+            } catch {}
+            return "";
+          });
+        }
       })
       .catch(() => {});
   }, []);
@@ -1843,25 +1853,28 @@ export default function AgenteIAPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <label className="relative">
-              <span className="sr-only">{t("modelo")}</span>
-              <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
-              <select
-                value={modelo}
-                onChange={(e) => elegirModelo(e.target.value)}
-                disabled={isGenerating}
-                title={t("modelo")}
-                className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
-              >
-                <option value="">{t("modelo_auto")}</option>
-                {modelos.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.nombre}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </label>
+            {/* Con un solo modelo no hay nada que elegir. */}
+            {modelos.length > 1 && (
+              <label className="relative">
+                <span className="sr-only">{t("modelo")}</span>
+                <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+                <select
+                  value={modelo}
+                  onChange={(e) => elegirModelo(e.target.value)}
+                  disabled={isGenerating}
+                  title={t("modelo")}
+                  className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
+                >
+                  <option value="">{t("modelo_auto")}</option>
+                  {modelos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nombre}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </label>
+            )}
             {acceso?.superadmin && (
               <button
                 type="button"

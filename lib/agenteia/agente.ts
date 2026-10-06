@@ -48,10 +48,9 @@ import { jwtSecretBytes } from "@/lib/secretos";
  * (lib/agenteia/bitacora.ts) y deja en el chatter del registro quién fue.
  */
 
-// Modelo de "Automático": siempre el mismo, no se elige por la complejidad de
-// la pregunta. Configurable por entorno (AGENTE_IA_MODELO), ej.
-// claude-sonnet-5-5 para abaratar. En la pantalla se puede elegir otro de
-// MODELOS_AGENTE. Opus 5.5 es más nuevo y más barato que Opus 5.
+// Modelo del agente: siempre el mismo, no se elige por la complejidad de la
+// pregunta. Sonnet 5.5 por costo; AGENTE_IA_MODELO lo cambia para todo el
+// panel. Solo se puede elegir otro en la pantalla si está en MODELOS_AGENTE.
 export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-sonnet-5-5";
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
@@ -986,6 +985,9 @@ export async function responder(
       ],
       ...(CON_FALLBACK && { fallbacks: "default" as const }),
       ...(THINKING_ADAPTATIVO && { thinking: { type: "adaptive" as const } }),
+      // Esfuerzo medio, fijo: razona y consulta menos que en "high" (el valor
+      // por defecto de Sonnet) y gasta menos tokens. Haiku 4.5 no acepta el parámetro.
+      ...(THINKING_ADAPTATIVO && { output_config: { effort: "medium" as const } }),
       system: [
         { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
         ...(conMcp ? [{ type: "text" as const, text: SISTEMA_MCP }] : []),
