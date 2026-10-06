@@ -3,79 +3,83 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Qué roles usan el Agente IA. El SuperAdmin siempre; los demás, los que él
- * habilite en la pantalla del agente (botón "Acceso"). Se guarda en
- * agenteia_acceso (un rol por fila, en minúsculas, igual que middleware.ts
- * compara los roles); la tabla se crea sola.
- *
- * Los roles habilitados leen lo mismo que el SuperAdmin (Odoo y la MySQL del
- * panel), pero no pueden preparar ni confirmar cambios en Odoo.
+ * Quién usa el Agente IA, por correo. El SuperAdmin siempre (y es editor); los
+ * demás, los que él habilite en Configuración (la tuerca de la pantalla), con
+ * uno de dos niveles:
+ *   - consultor: lee Odoo y la MySQL del panel, no toca Odoo.
+ *   - editor: además prepara y confirma cambios en Odoo.
+ * Se guarda en agenteia_permisos (un correo por fila, en minúsculas); la tabla
+ * se crea sola. agenteia_acceso (por rol) quedó sin uso.
  */
 
+export type Nivel = "consultor" | "editor";
+export const NIVELES: Nivel[] = ["consultor", "editor"];
+
 export const normRol = (r: unknown) => String(r ?? "").toLowerCase().trim();
+export const normCorreo = (c: unknown) => String(c ?? "").toLowerCase().trim();
 export const esSuperadmin = (r: unknown) => normRol(r) === "superadmin";
 
 let tablaLista = false;
 async function ensureTabla() {
   if (tablaLista) return;
   await db.execute(`
-    CREATE TABLE IF NOT EXISTS agenteia_acceso (
-      rol VARCHAR(80) NOT NULL PRIMARY KEY,
-      updated_by VARCHAR(120) NULL,
+    CREATE TABLE IF NOT EXISTS agenteia_permisos (
+      email VARCHAR(190) NOT NULL PRIMARY KEY,
+      nivel ENUM('consultor','editor') NOT NULL,
+      updated_by VARCHAR(190) NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   tablaLista = true;
 }
 
-// ponytail: caché de 30 s por proceso; un cambio de acceso tarda eso en verse
-// en las APIs (la pantalla de acceso escribe y borra la caché al momento).
-let cache: { roles: string[]; hasta: number } | null = null;
+// ponytail: caché de 30 s por proceso; un cambio de permisos tarda eso en verse
+// en las APIs (guardarPermiso borra la caché al momento).
+let cache: { permisos: Map<string, Nivel>; hasta: number } | null = null;
 
-export async function rolesConAgente(): Promise<string[]> {
-  if (cache && cache.hasta > Date.now()) return cache.roles;
+export async function permisosAgente(): Promise<Map<string, Nivel>> {
+  if (cache && cache.hasta > Date.now()) return cache.permisos;
   await ensureTabla();
-  const [filas] = await db.execute("SELECT rol FROM agenteia_acceso");
-  const roles = (filas as any[]).map((f) => normRol(f.rol));
-  cache = { roles, hasta: Date.now() + 30_000 };
-  return roles;
+  const [filas] = await db.execute("SELECT email, nivel FROM agenteia_permisos");
+  const permisos = new Map((filas as any[]).map((f) => [normCorreo(f.email), f.nivel as Nivel]));
+  cache = { permisos, hasta: Date.now() + 30_000 };
+  return permisos;
 }
 
-export async function guardarRolesConAgente(roles: string[], por: string): Promise<string[]> {
+/** nivel = null quita el acceso. */
+export async function guardarPermiso(email: string, nivel: Nivel | null, por: string) {
   await ensureTabla();
-  const lista = [...new Set(roles.map(normRol).filter((r) => r && r !== "superadmin"))];
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
-    await conn.execute("DELETE FROM agenteia_acceso");
-    for (const rol of lista) await conn.execute("INSERT INTO agenteia_acceso (rol, updated_by) VALUES (?, ?)", [rol, por]);
-    await conn.commit();
-  } catch (e) {
-    await conn.rollback().catch(() => {});
-    throw e;
-  } finally {
-    conn.release();
+  const correo = normCorreo(email);
+  if (nivel) {
+    await db.execute(
+      `INSERT INTO agenteia_permisos (email, nivel, updated_by) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE nivel = VALUES(nivel), updated_by = VALUES(updated_by)`,
+      [correo, nivel, por],
+    );
+  } else {
+    await db.execute("DELETE FROM agenteia_permisos WHERE email = ?", [correo]);
   }
   cache = null;
-  return lista;
 }
 
-export async function puedeUsarAgente(rol: unknown): Promise<boolean> {
-  if (esSuperadmin(rol)) return true;
+/** Nivel de la sesión en el agente: null = sin acceso. El SuperAdmin es editor. */
+export async function nivelAgente(payload: any): Promise<Nivel | null> {
+  if (esSuperadmin(payload?.role)) return "editor";
   try {
-    return (await rolesConAgente()).includes(normRol(rol));
+    return (await permisosAgente()).get(normCorreo(payload?.email)) ?? null;
   } catch (e: any) {
     console.error("[agenteia] no se pudo leer el acceso:", e?.message);
-    return false;
+    return null;
   }
 }
 
-/** Sesión válida y rol habilitado para el agente (el SuperAdmin siempre). */
-export async function requireAgente(request: NextRequest): Promise<{ payload?: any; error?: NextResponse }> {
+/** Sesión válida con acceso al agente (el SuperAdmin siempre). */
+export async function requireAgente(
+  request: NextRequest,
+): Promise<{ payload?: any; nivel?: Nivel; error?: NextResponse }> {
   const s = await requireSession(request);
   if (s.error) return s;
-  if (!(await puedeUsarAgente(s.payload?.role))) {
-    return { error: NextResponse.json({ error: "Tu rol no tiene acceso al Agente IA." }, { status: 403 }) };
-  }
-  return s;
+  const nivel = await nivelAgente(s.payload);
+  if (!nivel) return { error: NextResponse.json({ error: "No tienes acceso al Agente IA." }, { status: 403 }) };
+  return { ...s, nivel };
 }

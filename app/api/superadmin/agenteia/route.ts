@@ -5,8 +5,8 @@ import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
 
 // Agente IA: Claude + MCP de Odoo + MySQL del panel (lib/agenteia/agente.ts).
-// Lo usa el SuperAdmin y los roles que él habilite (lib/agenteia/acceso.ts);
-// confirmar cambios en Odoo es solo del SuperAdmin.
+// Lo usa el SuperAdmin y los correos que él habilite (lib/agenteia/acceso.ts);
+// confirmar cambios en Odoo es del SuperAdmin y de los editores.
 //
 //   POST { messages, modelo? } -> respuesta en texto plano, en streaming
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error;
   const uid = String(auth.payload?.uid ?? auth.payload?.email ?? "");
   const esSuperadmin = rolSuperadmin(auth.payload?.role);
+  const editor = auth.nivel === "editor";
 
   let body: any;
   try {
@@ -64,8 +65,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (typeof body?.confirmar === "string") {
-    if (!esSuperadmin) return NextResponse.json({ error: "Solo el SuperAdmin puede confirmar cambios en Odoo." }, { status: 403 });
-    return NextResponse.json({ texto: await ejecutarCambio(body.confirmar, uid) });
+    if (!editor) return NextResponse.json({ error: "Tu acceso al agente es solo de consulta: no puedes confirmar cambios en Odoo." }, { status: 403 });
+    const autor = { uid, email: String(auth.payload?.email ?? ""), nombre: String(auth.payload?.name ?? "") };
+    return NextResponse.json({ texto: await ejecutarCambio(body.confirmar, autor) });
   }
   if (typeof body?.cancelar === "string") {
     return NextResponse.json({ texto: "Cambio cancelado. No se modificó nada en Odoo." });
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, modelo, corte.signal, !esSuperadmin);
+        await responder(messages, uid, emitir, modelo, corte.signal, !editor);
       } catch (e: any) {
         if (corte.signal.aborted) {
           console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);

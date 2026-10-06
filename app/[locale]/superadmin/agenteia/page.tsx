@@ -26,6 +26,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Settings,
   Sparkles,
   Square,
   SquarePen,
@@ -39,7 +40,6 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
@@ -120,83 +120,223 @@ function TablaConExcel({ node, ...props }: any) {
 
 type ArchivoRef = { id: string; nombre: string };
 
-// SuperAdmin: qué roles del panel usan el Agente IA (/api/superadmin/agenteia/acceso).
-function DialogoAcceso({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [roles, setRoles] = useState<{ rol: string; nombre: string; permitido: boolean }[] | null>(null);
-  const [guardando, setGuardando] = useState(false);
+type Nivel = "consultor" | "editor";
+type UsuarioAcceso = { email: string; nombre: string; rol: string; superadmin: boolean; nivel: Nivel | null };
+type CambioOdoo = {
+  id: number;
+  email: string;
+  nombre: string | null;
+  operacion: string;
+  modelo: string;
+  ids: string | null;
+  resumen: string;
+  estado: "ejecutando" | "ok" | "error";
+  resultado: string | null;
+  created_at: string;
+};
+
+const NIVELES_ACCESO: { valor: Nivel | null; etiqueta: string }[] = [
+  { valor: null, etiqueta: "Sin acceso" },
+  { valor: "consultor", etiqueta: "Consultor" },
+  { valor: "editor", etiqueta: "Editor" },
+];
+
+const OPERACION: Record<string, string> = { create: "Crear", write: "Editar", unlink: "Borrar", execute: "Acción" };
+
+// SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
+// y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
+function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  const [vista, setVista] = useState<"acceso" | "cambios">("acceso");
+  const [usuarios, setUsuarios] = useState<UsuarioAcceso[] | null>(null);
+  const [cambios, setCambios] = useState<CambioOdoo[] | null>(null);
+  const [filtro, setFiltro] = useState("");
+  const [guardando, setGuardando] = useState<string | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!abierto) return;
-    setRoles(null);
     setError("");
+    setUsuarios(null);
     fetch("/api/superadmin/agenteia/acceso")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((j) => setRoles(j.roles || []))
-      .catch(() => setError("No se pudo cargar la lista de roles."));
+      .then((j) => setUsuarios(j.usuarios || []))
+      .catch(() => setError("No se pudo cargar la lista de usuarios."));
   }, [abierto]);
-  const guardar = async () => {
-    if (!roles) return;
-    setGuardando(true);
+  useEffect(() => {
+    if (!abierto || vista !== "cambios") return;
+    setCambios(null);
+    fetch("/api/superadmin/agenteia/cambios")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => setCambios(j.cambios || []))
+      .catch(() => setError("No se pudo cargar el historial de cambios."));
+  }, [abierto, vista]);
+
+  const cambiarNivel = async (u: UsuarioAcceso, nivel: Nivel | null) => {
+    if (u.nivel === nivel) return;
+    const antes = u.nivel;
+    const poner = (n: Nivel | null) =>
+      setUsuarios((prev) => prev!.map((x) => (x.email === u.email ? { ...x, nivel: n } : x)));
+    poner(nivel);
+    setGuardando(u.email);
     setError("");
     try {
       const r = await fetch("/api/superadmin/agenteia/acceso", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roles: roles.filter((x) => x.permitido).map((x) => x.rol) }),
+        body: JSON.stringify({ email: u.email, nivel }),
       });
       if (!r.ok) throw new Error();
-      onCerrar();
     } catch {
-      setError("No se pudo guardar. Reintenta.");
+      poner(antes);
+      setError(`No se pudo guardar el acceso de ${u.nombre || u.email}. Reintenta.`);
     } finally {
-      setGuardando(false);
+      setGuardando(null);
     }
   };
+
+  const q = filtro.trim().toLowerCase();
+  const visibles = (usuarios || []).filter(
+    (u) => !q || u.nombre.toLowerCase().includes(q) || u.email.includes(q) || u.rol.toLowerCase().includes(q),
+  );
+  const conAcceso = (usuarios || []).filter((u) => u.nivel && !u.superadmin).length;
+
   return (
     <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Acceso al Agente IA</DialogTitle>
+          <DialogTitle>Configuración del Agente IA</DialogTitle>
           <DialogDescription>
-            El SuperAdmin siempre tiene acceso. Los roles que marques verán el agente en su menú y podrán consultar
-            todo lo que el agente lee de Odoo y del panel, pero no pedir cambios en Odoo.
+            <b>Consultor</b>: consulta Odoo y el panel. <b>Editor</b>: además crea, edita y confirma cosas en Odoo. El
+            SuperAdmin siempre es editor. Cada cambio en Odoo queda en el historial y en el chatter del registro con el
+            nombre de quien lo confirmó.
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-80 overflow-y-auto agente-scroll -mx-1 px-1">
-          {!roles && !error && (
-            <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
-              <Loader2 size={14} className="animate-spin" /> Cargando roles…
-            </div>
-          )}
-          {roles?.length === 0 && <p className="py-6 text-sm text-slate-500">No hay otros roles en el panel.</p>}
-          {roles?.map((r, i) => (
-            <label key={r.rol} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
-              <Checkbox
-                checked={r.permitido}
-                onCheckedChange={(v) => setRoles((prev) => prev!.map((x, j) => (j === i ? { ...x, permitido: v === true } : x)))}
-              />
-              <span className="text-sm text-slate-800">{r.nombre}</span>
-            </label>
+
+        <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit text-[13px] font-medium" role="tablist">
+          {(
+            [
+              ["acceso", "Acceso"],
+              ["cambios", "Historial de cambios"],
+            ] as const
+          ).map(([id, etiqueta]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={vista === id}
+              onClick={() => setVista(id)}
+              className={`h-7 px-3 rounded-md transition-colors ${
+                vista === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              {etiqueta}
+            </button>
           ))}
         </div>
+
+        {vista === "acceso" ? (
+          <div className="flex flex-col gap-2 min-h-0">
+            <div className="flex items-center gap-3">
+              <label className="relative flex-1">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                  placeholder="Buscar por nombre, correo o rol"
+                  className="w-full h-9 pl-8 pr-3 rounded-lg border border-slate-200 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+                />
+              </label>
+              {usuarios && <span className="text-xs text-slate-500 shrink-0">{conAcceso} con acceso</span>}
+            </div>
+            <div className="max-h-[55vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+              {!usuarios && !error && (
+                <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+                  <Loader2 size={14} className="animate-spin" /> Cargando usuarios…
+                </div>
+              )}
+              {usuarios && visibles.length === 0 && <p className="py-6 text-sm text-slate-500">Ningún usuario coincide.</p>}
+              {visibles.map((u) => (
+                <div key={u.email} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-900 truncate">{u.nombre || u.email}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {u.email}
+                      {u.rol && ` · ${u.rol}`}
+                    </p>
+                  </div>
+                  {u.superadmin ? (
+                    <span className="text-xs font-medium text-slate-500 px-2">SuperAdmin · siempre editor</span>
+                  ) : (
+                    <div
+                      className="flex p-0.5 rounded-lg bg-slate-100 text-xs font-medium"
+                      role="radiogroup"
+                      aria-label={`Acceso de ${u.nombre || u.email}`}
+                    >
+                      {NIVELES_ACCESO.map((n) => {
+                        const activo = u.nivel === n.valor;
+                        return (
+                          <button
+                            key={n.etiqueta}
+                            type="button"
+                            role="radio"
+                            aria-checked={activo}
+                            disabled={guardando === u.email}
+                            onClick={() => cambiarNivel(u, n.valor)}
+                            className={`h-7 px-2.5 rounded-md transition-colors disabled:opacity-60 ${
+                              activo
+                                ? n.valor === "editor"
+                                  ? "bg-blue-600 text-white"
+                                  : n.valor === "consultor"
+                                    ? "bg-white text-slate-900 shadow-sm"
+                                    : "bg-white text-slate-500 shadow-sm"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            {n.etiqueta}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+            {!cambios && !error && (
+              <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+                <Loader2 size={14} className="animate-spin" /> Cargando historial…
+              </div>
+            )}
+            {cambios?.length === 0 && (
+              <p className="py-6 text-sm text-slate-500">Todavía nadie ha hecho cambios en Odoo con el agente.</p>
+            )}
+            {cambios?.map((c) => (
+              <div key={c.id} className="py-2.5 flex gap-3">
+                <span
+                  className={`mt-1.5 size-2 rounded-full shrink-0 ${
+                    c.estado === "ok" ? "bg-emerald-500" : c.estado === "error" ? "bg-red-500" : "bg-amber-400"
+                  }`}
+                  title={c.estado === "ok" ? "Aplicado" : c.estado === "error" ? "Falló" : "Sin terminar"}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-900">{c.resumen}</p>
+                  <p className="text-xs text-slate-500">
+                    {c.nombre || c.email} ·{" "}
+                    {new Date(c.created_at).toLocaleString("es-VE", { dateStyle: "medium", timeStyle: "short" })} ·{" "}
+                    {OPERACION[c.operacion] || c.operacion} en <code className="text-[11px]">{c.modelo}</code>
+                    {c.ids && ` ${c.ids}`}
+                  </p>
+                  {c.estado === "error" && c.resultado && <p className="text-xs text-red-600 mt-0.5">{c.resultado}</p>}
+                  {c.estado === "ok" && c.resultado?.startsWith("nuevo id") && (
+                    <p className="text-xs text-slate-500 mt-0.5">{c.resultado}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <DialogFooter>
-          <button
-            type="button"
-            onClick={onCerrar}
-            className="h-9 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={guardar}
-            disabled={!roles || guardando}
-            className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2"
-          >
-            {guardando && <Loader2 size={14} className="animate-spin" />} Guardar
-          </button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -548,13 +688,13 @@ export default function AgenteIAPage() {
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
   const [busqueda, setBusqueda] = useState("");
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
-  const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean } | null>(null);
-  const [dialogoAcceso, setDialogoAcceso] = useState(false);
+  const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
+  const [configuracion, setConfiguracion] = useState(false);
   useEffect(() => {
     fetch("/api/agenteia/acceso")
       .then((r) => r.json())
-      .then((j) => setAcceso({ puede: !!j?.puede, superadmin: !!j?.superadmin }))
-      .catch(() => setAcceso({ puede: false, superadmin: false }));
+      .then((j) => setAcceso({ puede: !!j?.puede, superadmin: !!j?.superadmin, editor: !!j?.editor }))
+      .catch(() => setAcceso({ puede: false, superadmin: false, editor: false }));
   }, []);
 
   const [input, setInput] = useState("");
@@ -1274,7 +1414,7 @@ export default function AgenteIAPage() {
       <div className="h-[calc(100dvh-8rem)] flex flex-col items-center justify-center text-center gap-3 px-6">
         <ShieldCheck size={36} className="text-slate-300" />
         <h2 className="text-lg font-semibold text-slate-900">No tienes acceso al Agente IA</h2>
-        <p className="text-sm text-slate-600 max-w-md">Pídele al SuperAdmin que habilite tu rol desde la pantalla del agente.</p>
+        <p className="text-sm text-slate-600 max-w-md">Pídele al SuperAdmin que te dé acceso desde la configuración del agente.</p>
       </div>
     );
   }
@@ -1456,12 +1596,12 @@ export default function AgenteIAPage() {
             {acceso?.superadmin && (
               <button
                 type="button"
-                onClick={() => setDialogoAcceso(true)}
-                title="Qué roles usan el agente"
-                className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium text-slate-600 hover:bg-slate-200/60 transition-colors"
+                onClick={() => setConfiguracion(true)}
+                title="Configuración: quién usa el agente e historial de cambios"
+                aria-label="Configuración"
+                className="flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
               >
-                <ShieldCheck size={15} />
-                <span className="hidden lg:inline">Acceso</span>
+                <Settings size={16} />
               </button>
             )}
             <button
@@ -1628,24 +1768,7 @@ export default function AgenteIAPage() {
                               <TriangleAlert size={15} /> Cambio en Odoo pendiente de confirmar
                             </div>
                             <p className="text-sm text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</p>
-                            {detalle && (
-                              <pre className="text-[11px] leading-relaxed bg-white rounded-lg border border-amber-100 p-3 overflow-x-auto text-slate-600 font-mono">
-                                {JSON.stringify(
-                                  {
-                                    operacion: detalle.operacion,
-                                    model: detalle.model,
-                                    ids: detalle.ids,
-                                    method: detalle.method,
-                                    values: detalle.values,
-                                    args: detalle.args,
-                                    kwargs: detalle.kwargs,
-                                  },
-                                  null,
-                                  2,
-                                )}
-                              </pre>
-                            )}
-                            <div className={`flex gap-2 ${acceso?.superadmin ? "" : "hidden"}`}>
+                            <div className={`flex gap-2 ${acceso?.editor ? "" : "hidden"}`}>
                               <button
                                 type="button"
                                 disabled={isGenerating}
@@ -1797,7 +1920,7 @@ export default function AgenteIAPage() {
         </div>
       </div>
 
-      {acceso?.superadmin && <DialogoAcceso abierto={dialogoAcceso} onCerrar={() => setDialogoAcceso(false)} />}
+      {acceso?.superadmin && <DialogoConfiguracion abierto={configuracion} onCerrar={() => setConfiguracion(false)} />}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (
