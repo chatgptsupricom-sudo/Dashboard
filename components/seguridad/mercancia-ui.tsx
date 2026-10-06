@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, LucideIcon } from "lucide-react";
+import { ArrowLeft, LucideIcon, Search, X } from "lucide-react";
 
 /**
  * Piezas visuales compartidas por las pantallas de Mercancia/Almacen.
@@ -20,6 +20,7 @@ export function PageHeader({
   volverA,
   volverLabel,
   accion,
+  ancho = "max-w-5xl mx-auto px-4 sm:px-6",
 }: {
   icon?: LucideIcon;
   titulo: string;
@@ -27,10 +28,12 @@ export function PageHeader({
   volverA?: string;
   volverLabel?: string;
   accion?: React.ReactNode;
+  /** Ancho y márgenes del contenido: los mismos del <main> de la pantalla, para que queden alineados. */
+  ancho?: string;
 }) {
   return (
     <header className="bg-white/90 backdrop-blur border-b border-slate-200/70 sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
+      <div className={`${ancho} h-16 flex items-center gap-3`}>
         {volverA && (
           <Link
             href={volverA}
@@ -217,3 +220,73 @@ export const inputClases =
   "w-full h-11 px-3 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 bg-white transition-colors focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100";
 
 export const labelClases = "block text-[12px] font-medium text-slate-500 mb-1.5";
+
+/** Buscador con lupa y botón de borrar, para filtrar una lista en pantalla. */
+export function Buscador({
+  valor,
+  onChange,
+  placeholder,
+  limpiar,
+  className = "",
+}: {
+  valor: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  /** Texto accesible del botón de borrar. */
+  limpiar: string;
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <input
+        type="text"
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className={`${inputClases} pl-10 pr-10`}
+      />
+      {valor && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label={limpiar}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Sin acentos ni mayúsculas: "panama" encuentra "Panamá". */
+export function normalizar(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** "Juan Pérez" → "JP"; "Luis" → "LU". */
+export function iniciales(nombre: string): string {
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+const TONOS_AVATAR = [
+  "bg-violet-100 text-violet-700",
+  "bg-sky-100 text-sky-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-indigo-100 text-indigo-700",
+];
+
+/** Un color fijo por nombre, para que cada persona se reconozca de un vistazo. */
+export function tonoAvatar(nombre: string): string {
+  let h = 0;
+  for (const c of nombre) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return TONOS_AVATAR[h % TONOS_AVATAR.length];
+}
