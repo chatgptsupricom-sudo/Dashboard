@@ -2972,6 +2972,11 @@
         "gestionar": "Gestionar unidades",
         "contador": "{count, plural, =1 {# unidad} other {# unidades}}"
       },
+      "nota_pedido": {
+        "titulo": "Nota del pedido (Odoo)",
+        "titulo_retira": "Quién retira · nota del pedido (Odoo)",
+        "sin_nota_retira": "Retira el cliente, pero el pedido no tiene nota en Odoo: no dice quién retira. Pídele a Ventas que lo escriba en la nota del pedido."
+      },
       "flujo": {
         "imprimir_recibo": "Imprimir recibo de entrega",
         "trayendo_recibo": "Trayendo el recibo de Odoo…",

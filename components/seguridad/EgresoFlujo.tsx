@@ -31,6 +31,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import NotaPedido from "@/components/seguridad/NotaPedido";
 import Pistola from "@/components/escaneo/Pistola";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
@@ -227,6 +228,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [calificaciones, setCalificaciones] = useState<Calificacion[]>([]);
   const [seriales, setSeriales] = useState<Serial[]>([]);
   const [novedadesGuardadas, setNovedadesGuardadas] = useState<NovedadGuardada[]>([]);
+  // Nota del pedido en Odoo: quién retira, instrucciones del despacho.
+  const [notaPedido, setNotaPedido] = useState<string | null>(null);
   // Producto con serial elegido en la pistola (como en la recepcion).
   const [pistolaItem, setPistolaItem] = useState<number | null>(null);
   const [leyendoSeriales, setLeyendoSeriales] = useState(false);
@@ -311,6 +314,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setCalificaciones(json.calificaciones || []);
     setSeriales(json.seriales || []);
     setNovedadesGuardadas(json.novedades || []);
+    // Solo la trae la carga del egreso; las acciones no la tocan.
+    if ("nota_pedido" in json) setNotaPedido(json.nota_pedido || null);
     const a: Record<number, string> = {};
     const p: Record<number, string> = {};
     const ns: Record<number, boolean> = {};
@@ -835,6 +840,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   className="mt-3"
                 />
               )}
+              {/* Quién retira: lo escribe Ventas en la nota del pedido de Odoo. */}
+              <NotaPedido nota={notaPedido} retira={tipo === "puerta"} className="mt-4" />
               {mov.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
                   {mov.observaciones}

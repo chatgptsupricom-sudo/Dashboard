@@ -6,6 +6,7 @@ import {
 } from "@/lib/seguridad/auth";
 import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { cargarMovimiento as cargar, evaluarDescuadre } from "@/lib/seguridad/mercancia";
+import { notaDelPedidoDePicking } from "@/lib/seguridad/notaPedido";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,13 @@ export async function GET(
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, ...datos });
+    // Egreso: la nota del pedido en Odoo (quién retira, instrucciones).
+    const nota_pedido =
+      datos.movimiento.tipo === "egreso"
+        ? await notaDelPedidoDePicking(Number(datos.movimiento.odoo_picking_id) || null)
+        : null;
+
+    return NextResponse.json({ success: true, ...datos, nota_pedido });
   } catch (error: any) {
     console.error("Error leyendo mercancia:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
