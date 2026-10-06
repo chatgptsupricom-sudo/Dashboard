@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
 import { alcanceDe, sesionDeCorreo } from "@/lib/agenteia/alcance";
 import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
+import { costoUsd, registrarConsumo, usoVacio } from "@/lib/agenteia/consumo";
 import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,7 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
 // Lo usa el SuperAdmin y los correos que él habilite (lib/agenteia/acceso.ts);
 // confirmar cambios en Odoo es del SuperAdmin y de los editores.
 //
-//   POST { messages, modelo?, verComo? } -> respuesta en texto plano, en streaming
+//   POST { messages, modelo?, verComo?, chatId? } -> respuesta en texto plano, en streaming
+//        (chatId = a qué conversación se le anota el costo, lib/agenteia/consumo.ts)
 //        (verComo = correo: el SuperAdmin prueba el alcance de ese usuario)
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
 //   POST { titular }    -> título corto para la conversación (Haiku)
@@ -131,8 +133,20 @@ export async function POST(request: NextRequest) {
       // texto, y el proxy (EasyPanel) corta la conexión por inactividad. Un
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
+      // Lo que cobró Claude por este mensaje, sumando todas sus vueltas. Se
+      // anota aunque falle o el usuario lo detenga: ya se gastó.
+      const uso = usoVacio();
+      let costo = 0;
+      let modeloUsado = "";
       try {
-        await responder(messages, uid, emitir, modelo, corte.signal, soloLectura, alcance);
+        await responder(messages, uid, emitir, modelo, corte.signal, soloLectura, alcance, (m, u) => {
+          modeloUsado = m;
+          costo += costoUsd(m, u);
+          uso.entrada += u.entrada;
+          uso.salida += u.salida;
+          uso.cacheEscritura += u.cacheEscritura;
+          uso.cacheLectura += u.cacheLectura;
+        });
       } catch (e: any) {
         if (corte.signal.aborted) {
           console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);
@@ -145,6 +159,17 @@ export async function POST(request: NextRequest) {
         try {
           controller.close();
         } catch {}
+        if (modeloUsado) {
+          registrarConsumo({
+            uid,
+            email: String(auth.payload?.email ?? ""),
+            nombre: String(auth.payload?.name ?? ""),
+            chatId: typeof body?.chatId === "string" ? body.chatId.slice(0, 40) : null,
+            modelo: modeloUsado,
+            uso,
+            costo,
+          }).catch((e) => console.error("❌ agenteia consumo:", e.message));
+        }
       }
     },
   });

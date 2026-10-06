@@ -12,6 +12,7 @@ import {
 } from "@/lib/smartbit";
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
+import type { Uso } from "@/lib/agenteia/consumo";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import {
   CAMPO_COSTO,
@@ -47,11 +48,10 @@ import { jwtSecretBytes } from "@/lib/secretos";
  * (lib/agenteia/bitacora.ts) y deja en el chatter del registro quién fue.
  */
 
-// Modelo de "Automático": siempre el mismo, no se elige por la complejidad de
-// la pregunta. Configurable por entorno (AGENTE_IA_MODELO), ej.
-// claude-sonnet-5-5 para abaratar. En la pantalla se puede elegir otro de
-// MODELOS_AGENTE. Opus 5.5 es más nuevo y más barato que Opus 5.
-export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5-5";
+// Modelo del agente: siempre el mismo, no se elige por la complejidad de la
+// pregunta. Sonnet 5.5 por costo; AGENTE_IA_MODELO lo cambia para todo el
+// panel. Solo se puede elegir otro en la pantalla si está en MODELOS_AGENTE.
+export const MODELO_DEFECTO = process.env.AGENTE_IA_MODELO?.trim() || "claude-sonnet-5-5";
 const MAX_VUELTAS = 20;
 const MAX_FILAS_MYSQL = 300;
 const VIGENCIA_CAMBIO_MS = 15 * 60_000;
@@ -915,6 +915,8 @@ export async function responder(
   soloLectura = false,
   // Qué ve el rol de quien pregunta (lib/agenteia/alcance.ts); null = todo (SuperAdmin).
   alcance: Alcance | null = null,
+  // Recibe los tokens que cobró cada llamada a Claude (lib/agenteia/consumo.ts).
+  medir?: (modelo: string, uso: Uso) => void,
 ): Promise<void> {
   // Haiku 4.5 no tiene thinking adaptativo: corre sin thinking. El respaldo
   // automático ante rechazos (`fallbacks`) solo se pide en los modelos para
@@ -983,6 +985,9 @@ export async function responder(
       ],
       ...(CON_FALLBACK && { fallbacks: "default" as const }),
       ...(THINKING_ADAPTATIVO && { thinking: { type: "adaptive" as const } }),
+      // Esfuerzo medio, fijo: razona y consulta menos que en "high" (el valor
+      // por defecto de Sonnet) y gasta menos tokens. Haiku 4.5 no acepta el parámetro.
+      ...(THINKING_ADAPTATIVO && { output_config: { effort: "medium" as const } }),
       system: [
         { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
         ...(conMcp ? [{ type: "text" as const, text: SISTEMA_MCP }] : []),
@@ -1054,7 +1059,7 @@ export async function responder(
       if (e instanceof Anthropic.BadRequestError && conWeb && /web_(search|fetch)/i.test(e.message)) {
         console.warn("[agenteia] búsqueda web no disponible, sigo sin ella:", e.message);
         webRechazada = true;
-        return responder(chat, uid, emitir, modelo, signal, soloLectura, alcance);
+        return responder(chat, uid, emitir, modelo, signal, soloLectura, alcance, medir);
       }
       // Con eager_input_streaming un input de herramienta puede llegar como
       // JSON roto: se reintenta la vuelta. Los errores de la API (y el corte
@@ -1063,6 +1068,12 @@ export async function responder(
       continue;
     }
 
+    medir?.(msg.model, {
+      entrada: msg.usage.input_tokens || 0,
+      salida: msg.usage.output_tokens || 0,
+      cacheEscritura: msg.usage.cache_creation_input_tokens || 0,
+      cacheLectura: msg.usage.cache_read_input_tokens || 0,
+    });
     messages.push({ role: "assistant", content: msg.content });
     contenedor = msg.container?.id ?? contenedor;
 

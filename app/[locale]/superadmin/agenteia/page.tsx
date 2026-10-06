@@ -272,10 +272,144 @@ function PanelRoles() {
   );
 }
 
+// Costo estimado del agente, de todos los que lo usan: totales, por usuario,
+// por conversación y por mensaje (/api/superadmin/agenteia/consumo). Solo lo
+// ve el SuperAdmin: la API lo exige y la tuerca no se le muestra a nadie más.
+type Consumo = {
+  hoy: number;
+  mes: number;
+  mensajesHoy: number;
+  mensajesMes: number;
+  usuarios: { email: string; nombre: string | null; mensajes: number; costo: number; hoy: number; ultimo: string }[];
+  conversaciones: { chat_id: string | null; email: string; nombre: string | null; titulo: string | null; mensajes: number; costo: number; ultimo: string }[];
+  mensajes: { id: number; email: string; nombre: string | null; modelo: string; tokens_entrada: number; tokens_salida: number; tokens_cache_escritura: number; tokens_cache_lectura: number; costo: number; created_at: string }[];
+};
+const usd = (n: number) => `$${n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 })}`;
+const miles = (n: number) => Number(n || 0).toLocaleString("es-VE");
+const fechaCorta = (f: string) => new Date(f).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" });
+
+function PanelConsumo() {
+  const [datos, setDatos] = useState<Consumo | null>(null);
+  const [error, setError] = useState("");
+  const [detalle, setDetalle] = useState<"usuarios" | "conversaciones" | "mensajes">("usuarios");
+  useEffect(() => {
+    fetch("/api/superadmin/agenteia/consumo")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setDatos)
+      .catch(() => setError("No se pudo cargar el consumo."));
+  }, []);
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!datos)
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+        <Loader2 size={14} className="animate-spin" /> Cargando consumo…
+      </div>
+    );
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["Hoy", datos.hoy, datos.mensajesHoy],
+            ["Este mes", datos.mes, datos.mensajesMes],
+          ] as const
+        ).map(([titulo, costo, mensajes]) => (
+          <div key={titulo} className="rounded-lg border border-slate-200 px-3 py-2">
+            <p className="text-xs text-slate-500">{titulo}</p>
+            <p className="text-lg font-semibold text-slate-900 tabular-nums">{usd(costo)}</p>
+            <p className="text-xs text-slate-500">
+              {miles(mensajes)} {mensajes === 1 ? "mensaje" : "mensajes"}
+              {mensajes > 0 && ` · ${usd(costo / mensajes)} por mensaje`}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit text-[13px] font-medium" role="tablist">
+        {(
+          [
+            ["usuarios", "Por usuario"],
+            ["conversaciones", "Por conversación"],
+            ["mensajes", "Por mensaje"],
+          ] as const
+        ).map(([id, etiqueta]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={detalle === id}
+            onClick={() => setDetalle(id)}
+            className={`px-3 py-1 rounded-md transition-colors ${detalle === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            {etiqueta}
+          </button>
+        ))}
+      </div>
+      <div className="max-h-[45vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+        {detalle === "usuarios" ? (
+          datos.usuarios.length === 0 ? (
+            <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
+          ) : (
+            datos.usuarios.map((u) => (
+              <div key={u.email} className="py-2 flex items-baseline gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-900 truncate">{u.nombre || u.email}</p>
+                  <p className="text-xs text-slate-500">
+                    {u.nombre ? `${u.email} · ` : ""}
+                    {miles(u.mensajes)} {u.mensajes === 1 ? "mensaje" : "mensajes"} este mes · hoy {usd(u.hoy)} · último{" "}
+                    {fechaCorta(u.ultimo)}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(u.costo)}</span>
+              </div>
+            ))
+          )
+        ) : detalle === "conversaciones" ? (
+          datos.conversaciones.length === 0 ? (
+            <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
+          ) : (
+            datos.conversaciones.map((c, i) => (
+              <div key={`${c.chat_id}-${i}`} className="py-2 flex items-baseline gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-900 truncate">{c.titulo || "Conversación sin título"}</p>
+                  <p className="text-xs text-slate-500">
+                    {c.nombre || c.email} · {miles(c.mensajes)} {c.mensajes === 1 ? "mensaje" : "mensajes"} · {fechaCorta(c.ultimo)}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(c.costo)}</span>
+              </div>
+            ))
+          )
+        ) : datos.mensajes.length === 0 ? (
+          <p className="py-6 text-sm text-slate-500">Todavía no hay mensajes registrados.</p>
+        ) : (
+          datos.mensajes.map((m) => (
+            <div key={m.id} className="py-2 flex items-baseline gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-slate-900 truncate">
+                  {m.nombre || m.email} · {m.modelo.replace(/^claude-/, "").replace(/-\d{8}$/, "")}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {fechaCorta(m.created_at)} · entrada {miles(m.tokens_entrada + m.tokens_cache_escritura)} · de caché{" "}
+                  {miles(m.tokens_cache_lectura)} · salida {miles(m.tokens_salida)} tokens
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(m.costo)}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        Costo estimado con los precios de lista de Claude. No incluye lo que se cobra aparte por búsquedas web y por crear
+        archivos. Se registra desde que se activó esta función.
+      </p>
+    </div>
+  );
+}
+
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
 function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [vista, setVista] = useState<"acceso" | "roles" | "cambios">("acceso");
+  const [vista, setVista] = useState<"acceso" | "roles" | "cambios" | "consumo">("acceso");
   const [usuarios, setUsuarios] = useState<UsuarioAcceso[] | null>(null);
   const [cambios, setCambios] = useState<CambioOdoo[] | null>(null);
   const [filtro, setFiltro] = useState("");
@@ -346,6 +480,7 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
               ["acceso", "Acceso"],
               ["roles", "Qué ve cada rol"],
               ["cambios", "Historial de cambios"],
+              ["consumo", "Consumo"],
             ] as const
           ).map(([id, etiqueta]) => (
             <button
@@ -433,6 +568,8 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
           </div>
         ) : vista === "roles" ? (
           <PanelRoles />
+        ) : vista === "consumo" ? (
+          <PanelConsumo />
         ) : (
           <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
             {!cambios && !error && (
@@ -915,7 +1052,17 @@ export default function AgenteIAPage() {
       .then((r) => r.json())
       .then((e) => {
         setFaltaMcp(!!e?.configurado && !e?.conectado);
-        if (Array.isArray(e?.modelos)) setModelos(e.modelos);
+        if (Array.isArray(e?.modelos)) {
+          setModelos(e.modelos);
+          // Una elección guardada de un modelo que ya no se ofrece se olvida.
+          setModelo((m) => {
+            if (!m || e.modelos.some((x: { id: string }) => x.id === m)) return m;
+            try {
+              localStorage.removeItem("agenteia-modelo");
+            } catch {}
+            return "";
+          });
+        }
       })
       .catch(() => {});
   }, []);
@@ -1304,7 +1451,7 @@ export default function AgenteIAPage() {
       const response = await fetch("/api/superadmin/agenteia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined }),
+        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined, chatId }),
         signal: control.signal,
       });
 
@@ -1706,25 +1853,28 @@ export default function AgenteIAPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <label className="relative">
-              <span className="sr-only">{t("modelo")}</span>
-              <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
-              <select
-                value={modelo}
-                onChange={(e) => elegirModelo(e.target.value)}
-                disabled={isGenerating}
-                title={t("modelo")}
-                className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
-              >
-                <option value="">{t("modelo_auto")}</option>
-                {modelos.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.nombre}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </label>
+            {/* Con un solo modelo no hay nada que elegir. */}
+            {modelos.length > 1 && (
+              <label className="relative">
+                <span className="sr-only">{t("modelo")}</span>
+                <Sparkles size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+                <select
+                  value={modelo}
+                  onChange={(e) => elegirModelo(e.target.value)}
+                  disabled={isGenerating}
+                  title={t("modelo")}
+                  className="appearance-none h-8 pl-7 pr-7 rounded-lg bg-transparent hover:bg-slate-200/60 text-[13px] font-medium text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 cursor-pointer"
+                >
+                  <option value="">{t("modelo_auto")}</option>
+                  {modelos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nombre}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </label>
+            )}
             {acceso?.superadmin && (
               <button
                 type="button"
@@ -1959,6 +2109,20 @@ export default function AgenteIAPage() {
 
           {/* Caja de mensaje */}
           <div className="px-3 md:px-6 pt-2 pb-3 md:pb-4 shrink-0 relative z-10">
+            {/* Opus cuesta al menos el doble por token que Sonnet 5.5 (lib/agenteia/consumo.ts). */}
+            {modelo.includes("opus") && (
+              <div className="w-full max-w-3xl mx-auto mb-2 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="flex-1">{t("aviso_opus")}</p>
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => elegirModelo("claude-sonnet-5-5")}
+                  className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {t("usar_sonnet")}
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSend}
               className={`w-full max-w-3xl mx-auto bg-white rounded-2xl border transition-[border-color,box-shadow] shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)] ${
