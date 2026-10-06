@@ -14,6 +14,7 @@ import {
   novedadesQueCuentan,
   novedadesSegunDecision,
   armadoParcialPosible,
+  cantidadQueSale,
   esDespachoParcial,
   esLoQueNoSale,
   pideComentarioPicking,
@@ -42,7 +43,7 @@ import {
 } from "@/lib/seguridad/novedades";
 import { faltaMigracion, sincronizarSeriales } from "@/lib/seguridad/seriales";
 import { firmasDeActa } from "@/lib/seguridad/firmas";
-import { validarPickingEnOdoo } from "@/lib/seguridad/validarOdoo";
+import { pickingValidado, validarPickingEnOdoo } from "@/lib/seguridad/validarOdoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -420,6 +421,75 @@ async function ejecutar(
         }
       }
 
+      // Al pasar al portón la orden se valida en Odoo: ahí se descuenta el
+      // inventario y Almacén ya puede imprimir el recibo de entrega, que es
+      // con lo que sale la mercancía. Si Odoo no la deja en "Hecho", no pasa
+      // a Seguridad y Almacén ve el motivo.
+      //  - Parcial (armado por debajo de la orden): se valida lo armado y el
+      //    resto queda en Odoo como pedido pendiente.
+      //  - Ya validada (a mano, o porque Seguridad lo devolvió): no se toca.
+      //  - Sin factura o cancelada: no pasa. Con renglones cambiados en Odoo
+      //    pasa sin validar, y lo decide Seguridad como antes.
+      let mensajeOdoo: string | null = null;
+      let validada = false;
+      if (mov.odoo_picking_id) {
+        const pickingId = Number(mov.odoo_picking_id);
+        try {
+          if (await pickingValidado(pickingId)) {
+            validada = true;
+            mensajeOdoo = `La orden ${mov.odoo_picking_name} ya estaba validada en Odoo.`;
+          } else {
+            const cambio = await motivoOrdenCambioEnOdoo(pickingId, items);
+            if (cambio?.bloquea) {
+              return NextResponse.json(
+                { error: `${cambio.motivo}. No se puede enviar a Seguridad.`, codigo: "orden_cambio_odoo" },
+                { status: 400 },
+              );
+            }
+            if (cambio) {
+              mensajeOdoo = `${cambio.motivo}. Pasó a Seguridad SIN validar en Odoo: no hay recibo de entrega hasta que se valide.`;
+            } else {
+              const parcial = esDespachoParcial(mov.etapa, items);
+              let salidas: Parameters<typeof validarPickingEnOdoo>[1];
+              if (parcial) {
+                // Los seriales, recién releídos de Odoo (arriba).
+                const frescos = (await cargarMovimiento(id))?.seriales || datos.seriales;
+                salidas = items
+                  .filter((i) => i.odoo_product_id != null)
+                  .map((i) => {
+                    const porSerial = verificaPorSerial(i, frescos);
+                    return {
+                      productId: Number(i.odoo_product_id),
+                      cantidad: porSerial ? 0 : cantidadQueSale(i, true),
+                      seriales: porSerial
+                        ? frescos.filter((s) => Number(s.item_id) === Number(i.id)).map((s) => s.serial)
+                        : null,
+                    };
+                  });
+              }
+              const r = await validarPickingEnOdoo(pickingId, salidas);
+              validada = true;
+              mensajeOdoo =
+                r.estado === "validado"
+                  ? `Orden ${mov.odoo_picking_name} validada en Odoo: se descontó el inventario y ya puedes imprimir el recibo de entrega.${
+                      r.pendiente ? ` Lo que no sale quedó pendiente en ${r.pendiente}.` : ""
+                    }`
+                  : `La orden ${mov.odoo_picking_name} ya estaba validada en Odoo.`;
+            }
+          }
+          console.warn(`[egreso ${id}] ${mensajeOdoo} (por ${quien})`);
+        } catch (e: any) {
+          console.error(`[egreso ${id}] no se pudo validar en Odoo al pasar al porton:`, e?.message || e);
+          return NextResponse.json(
+            {
+              error: `No se pudo validar la orden en Odoo, así que no pasó a Seguridad: ${String(e?.message || e).slice(0, 300)}`,
+              codigo: "odoo_no_valida",
+            },
+            { status: 502 },
+          );
+        }
+      }
+
       // El responsable del registro pasa a ser quien despacha (es a quien
       // Seguridad califica); el del armado queda aparte y en la lista.
       const equipo = Array.from(
@@ -437,7 +507,8 @@ async function ejecutar(
          despacho_asignado_at = NOW()`,
         [despacho, despacho, JSON.stringify(equipo), chofer, placa],
       );
-      return ok ? { avanzo: true } : conflicto();
+      if (!ok) return conflicto();
+      return { avanzo: true, extra: { odoo_validada: validada, ...(mensajeOdoo ? { odoo: mensajeOdoo } : {}) } };
     }
 
     // ── Seguridad ────────────────────────────────────────────────────────
@@ -544,7 +615,12 @@ async function ejecutar(
       if (sale && mov.odoo_picking_id) {
         let cambio: Awaited<ReturnType<typeof motivoOrdenCambioEnOdoo>>;
         try {
-          cambio = await motivoOrdenCambioEnOdoo(Number(mov.odoo_picking_id), items);
+          // Ya validada con un parcial de armado, sus líneas son lo que sale.
+          cambio = await motivoOrdenCambioEnOdoo(
+            Number(mov.odoo_picking_id),
+            items,
+            items.map((i) => ({ ...i, cantidad_cargada: cantidadQueSale(i, egresoParcial) })),
+          );
         } catch (e: any) {
           console.error(`[egreso ${id}] no se pudo revisar la orden en Odoo:`, e?.message || e);
           return NextResponse.json(
@@ -598,16 +674,30 @@ async function ejecutar(
       const novedadesCierre = novedadesSegunDecision(novedades, aprobado ? null : decision);
       const estadoCierre = novedadesCierre.length > 0 ? "descuadre" : "conforme";
 
-      // Aprobado: la orden se valida en Odoo ahora, que es cuando sale, y ahi
-      // se descuenta el inventario. Si Odoo no la deja en "Hecho", no se
-      // aprueba (el panel y el inventario no quedan desfasados) y Seguridad ve
-      // el motivo. Despachado igual (con novedades) NO se valida: validar la
-      // orden completa descontaria tambien lo que no salio; se valida en Odoo
-      // con las cantidades que salieron.
-      // Solo se descuenta lo que Seguridad conto (salidas): en un parcial, lo
-      // que no sale queda en Odoo como pedido pendiente.
+      // La orden normalmente llega aqui ya validada en Odoo: la valido
+      // Almacen al pasarla al porton (ver `asignar_despacho`), y el inventario
+      // ya se desconto con lo que armo. Lo que el panel no deshace: si
+      // Seguridad saca menos, la cancela o sale con novedades, la diferencia
+      // se corrige en Odoo con una devolucion, y se avisa.
+      // Si no llego validada (la orden habia cambiado en Odoo, o ya estaba en
+      // el porton antes de este cambio), se valida al aprobar, como antes: si
+      // Odoo no la deja en "Hecho", no se aprueba y Seguridad ve el motivo; y
+      // solo se descuenta lo que Seguridad conto (salidas).
       let mensajeOdoo: string | null = null;
-      if ((aprobado || parcial) && mov.odoo_picking_id) {
+      const yaValidada = await pickingValidado(mov.odoo_picking_id);
+      if (yaValidada) {
+        const orden = mov.odoo_picking_name;
+        mensajeOdoo = aprobado
+          ? `La orden ${orden} ya estaba validada en Odoo.`
+          : parcial
+            ? `La orden ${orden} ya estaba validada en Odoo con todo lo que armó Almacén: lo que no salió hay que devolverlo en Odoo (devolución).`
+            : despachar
+              ? `Salió con novedades. La orden ${orden} ya estaba validada en Odoo: si salió distinto a lo armado, corrige la diferencia allá.`
+              : devolver
+                ? `La orden ${orden} sigue validada en Odoo: no se vuelve a descontar cuando Almacén la reenvíe.`
+                : `La orden ${orden} ya está validada en Odoo (inventario descontado) y no salió: hay que hacer la devolución en Odoo.`;
+        console.warn(`[egreso ${id}] ${mensajeOdoo} (por ${quien})`);
+      } else if ((aprobado || parcial) && mov.odoo_picking_id) {
         const salidas = items
           .filter((i) => i.odoo_product_id != null)
           .map((i) => {

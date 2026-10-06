@@ -570,11 +570,16 @@ export function motivoOrdenNoLista(
  * se puede volver a registrar con los renglones nuevos, y sin esa salida la
  * orden quedaría trabada.
  *
+ * `salen`: lo que sale de cada renglón (lo armado, en un despacho parcial).
+ * Una orden ya validada tiene en sus líneas solo lo que salió, así que ahí se
+ * compara contra eso y no contra la orden completa.
+ *
  * Lanza si Odoo no responde: "no se pudo preguntar" no es "está bien".
  */
 export async function motivoOrdenCambioEnOdoo(
   pickingId: number,
-  items: Array<{ odoo_product_id: number | null; producto: string; cantidad_cargada: number | string }>,
+  registrados: Array<{ odoo_product_id: number | null; producto: string; cantidad_cargada: number | string }>,
+  salen?: Array<{ odoo_product_id: number | null; producto: string; cantidad_cargada: number | string }>,
 ): Promise<{ motivo: string; bloquea: boolean } | null> {
   // Por id no hay ambigüedad entre compañías (ver buscarPickingEgreso).
   const picking = await buscarPickingEgresoPorId(pickingId, null);
@@ -587,6 +592,8 @@ export async function motivoOrdenCambioEnOdoo(
     };
   }
 
+  const items =
+    picking.estado === "done" && salen ? salen.filter((i) => Number(i.cantidad_cargada) > 0) : registrados;
   if (items.some((i) => i.odoo_product_id == null)) return null;
   const redondear = (n: number) => Math.round(n * 1000) / 1000;
   const antes = new Map<number, { producto: string; cantidad: number }>();
