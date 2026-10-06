@@ -2913,6 +2913,16 @@
         "sin_facturar": "{n, plural, one {# order ready in Odoo is not invoiced yet} other {# orders ready in Odoo are not invoiced yet}}: they show up here once they are invoiced.",
         "error": "Could not load delivery orders from Odoo.",
         "ver_detalle": "View detail",
+        "buscar": "Search by order, customer, invoice or route",
+        "limpiar": "Clear search",
+        "filtro_todas": "All",
+        "filtro_sucursal": "Branch pickup",
+        "filtro_ruta": "Route",
+        "filtro_encomienda": "Courier",
+        "filtro_transporte": "External transport",
+        "filtro_sin_metodo": "No method",
+        "mostrando": "Showing {n} of {total}",
+        "sin_resultados": "No order matches the search.",
         "registrar_egreso": "Register dispatch with this order"
       },
       "aviso": {
