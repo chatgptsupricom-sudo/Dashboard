@@ -239,6 +239,7 @@
     "almacen_egresos": "Merchandise dispatches",
     "almacen_ordenes": "Pending orders",
     "almacen_unidades": "Manage Vehicles",
+    "almacen_mantenimiento": "Vehicle maintenance",
     "almacen_recepcion": "Reception (packing list)",
     "recepcion_packing": "Packing lists",
     "llegadas": "Packing List",
@@ -2995,6 +2996,93 @@
         "select_placeholder": "-- Select plate --",
         "gestionar": "Manage vehicles",
         "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
+      },
+      "mantenimiento": {
+        "titulo": "Vehicle maintenance",
+        "subtitulo": "Trucks and forklifts: what's running, what's in the shop and what's due",
+        "error": "Could not complete. Try again.",
+        "reintentar": "Retry",
+        "solo_lectura": "You are viewing all branches in read-only mode: maintenance is logged by Warehouse.",
+        "agregar_equipo": "Add equipment",
+        "reportar": "Report maintenance",
+        "agregar": "Add",
+        "buscar": "Search by plate, code or job",
+        "limpiar": "Clear search",
+        "flota": "Fleet",
+        "vacio": "No equipment yet. Trucks are pulled from the Vehicles catalog; forklifts are added here.",
+        "sin_resultados": "No equipment matches the search.",
+        "ayuda_escena": "Tap a vehicle to see its card · drag to rotate",
+        "elige_titulo": "Pick a vehicle",
+        "elige_texto": "Tap it in the yard or in the list to see its maintenance and the next step.",
+        "historial": "Latest closed jobs",
+        "historial_equipo": "Previous jobs",
+        "zona": {
+          "operativo": "Yard",
+          "reportado": "Waiting",
+          "en_taller": "Workshop",
+          "listo": "Ready"
+        },
+        "situacion": {
+          "operativo": "Running",
+          "reportado": "Waiting",
+          "en_taller": "In the shop",
+          "listo": "Ready to hand over"
+        },
+        "filtro": {
+          "todos": "All",
+          "camion": "Trucks",
+          "montacargas": "Forklifts"
+        },
+        "tipo_equipo": {
+          "camion": "Truck",
+          "montacargas": "Forklift"
+        },
+        "tipo_orden": {
+          "preventivo": "Preventive",
+          "correctivo": "Corrective"
+        },
+        "prioridad": {
+          "baja": "Low",
+          "media": "Medium",
+          "alta": "High"
+        },
+        "prioridad_titulo": "Priority",
+        "tipo": "Maintenance type",
+        "equipo": "Equipment",
+        "equipo_ayuda": "Trucks from the Vehicles catalog already show up. Add forklifts here, or a truck that isn't in the catalog.",
+        "codigo_camion": "Plate",
+        "codigo_montacargas": "Internal code",
+        "descripcion": "Description",
+        "descripcion_camion_ph": "e.g. White Ford F-350",
+        "descripcion_montacargas_ph": "e.g. Toyota 2.5 t LPG",
+        "medidor": {
+          "km": "Mileage",
+          "h": "Hours of use"
+        },
+        "proximo_servicio": "Next service",
+        "servicio_en": "{n, plural, =0 {Service due today} =1 {Service due tomorrow} other {Service in # days}}",
+        "servicio_vencido": "{n, plural, =1 {Service overdue by 1 day} other {Service overdue by # days}}",
+        "operativo_texto": "It's running: no open maintenance.",
+        "que_hacer": "What needs to be done",
+        "que_hacer_preventivo_ph": "e.g. 10,000 km service",
+        "que_hacer_correctivo_ph": "e.g. Engine oil leak",
+        "detalle": "Details",
+        "detalle_ph": "Anything that helps the shop",
+        "tareas": "Tasks",
+        "tarea_nueva": "Another task…",
+        "quitar_tarea": "Remove task",
+        "todos_en_mantenimiento": "Every piece of equipment already has open maintenance.",
+        "reportado_por": "Reported by {quien} · {cuando}",
+        "lo_atiende": "handled by {quien}",
+        "responsable": "Shop or mechanic in charge",
+        "responsable_ph": "e.g. Los Hermanos shop",
+        "iniciar": "Send to the shop",
+        "terminar": "Work finished",
+        "faltan_tareas": "{n, plural, =1 {1 task left to tick} other {# tasks left to tick}}",
+        "costo": "Cost (USD)",
+        "notas": "Job notes",
+        "notas_ph": "Parts, warranty, remarks…",
+        "cerrar": "Receive and return to service"
       },
       "catalogo_ui": {
         "agregar": "Add",
