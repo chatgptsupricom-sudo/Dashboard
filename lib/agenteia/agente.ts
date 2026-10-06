@@ -623,6 +623,19 @@ async function filasSmartbit(
   return { filas, sinMarca: marcas ? { venta: r2(sinVenta), articulos: sinCodigos.size } : null };
 }
 
+const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+
+/** Qué filtró el servidor, en palabras, para que el modelo explique bien la cifra. */
+function limitesAplicados(alcance: Alcance, companias: number[]): string {
+  return [
+    `solo ${companias.map((c) => NOMBRE_SEDE[c]).join(", ")}`,
+    alcance.propio && `solo registros del vendedor ${alcance.propio.nombre}`,
+    !alcance.costos && "sin costos ni márgenes",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
 /** Sedes pedidas, recortadas a las del alcance (si ninguna queda, las del alcance). */
 function sedesDe(pedidas: unknown, alcance: Alcance | null): number[] {
   const p = Array.isArray(pedidas) && pedidas.length ? pedidas.map(Number) : SEDES;
@@ -684,6 +697,7 @@ async function ventasDetalle(i: any, alcance: Alcance | null = null): Promise<st
             : undefined,
         },
         filtros: { marca: i.marca || null, vendedor: i.vendedor || null, cliente: i.cliente || null, companias: companyIds },
+        limites_aplicados: alcance ? limitesAplicados(alcance, companyIds) : undefined,
         total_general: r2(lista.reduce((s, g) => s + g.total, 0)),
         excluidos_del_total: [...excluido].map(([vendedor, total]) => ({ vendedor, total: r2(total) })),
         grupos_totales: lista.length,
@@ -756,7 +770,11 @@ async function leerOdoo(nombre: string, i: any, alcance: Alcance | null = null):
         return `Error: herramienta desconocida ${nombre}`;
       }
     }
-    return recortar(JSON.stringify(alcance && !alcance.costos ? sinCostos(r) : r));
+    if (!alcance || nombre === "odoo_modelos" || nombre === "odoo_campos") return recortar(JSON.stringify(r));
+    // El servidor recortó la consulta: el modelo debe saberlo para explicar bien la cifra.
+    return recortar(
+      JSON.stringify({ resultado: alcance.costos ? r : sinCostos(r), limites_aplicados: limitesAplicados(alcance, companias) }),
+    );
   } catch (e: any) {
     return `Error Odoo: ${e.message}`;
   }

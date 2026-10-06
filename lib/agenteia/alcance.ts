@@ -434,5 +434,5 @@ ${
           .join(", ")}.`
       : "No tiene consultas libres a la base del panel."
   }
-Las herramientas ya aplican estos límites y devuelven error fuera de ellos. Si pide algo fuera de su alcance, dile con claridad que su acceso no lo incluye (el SuperAdmin puede ampliarlo) y no intentes conseguirlo por otro camino ni lo estimes. No tiene SQL directo a Odoo.`;
+Las herramientas ya aplican estos límites y devuelven error fuera de ellos. Sus resultados traen \`limites_aplicados\`: la cifra corresponde SOLO a eso (ej. "solo Caracas; solo registros del vendedor X"); dilo así en la respuesta, sin presentarla como el total de la empresa ni dudar de qué incluye. Si pide algo fuera de su alcance, dile con claridad que su acceso no lo incluye (el SuperAdmin puede ampliarlo) y no intentes conseguirlo por otro camino ni lo estimes. No tiene SQL directo a Odoo.`;
 }
