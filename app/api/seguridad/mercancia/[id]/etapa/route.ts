@@ -12,6 +12,10 @@ import {
   evaluarArmado,
   novedadesVerificacion,
   novedadesQueCuentan,
+  novedadesSegunDecision,
+  armadoParcialPosible,
+  esDespachoParcial,
+  esLoQueNoSale,
   pideComentarioPicking,
   rechazoDeSeguridad,
   puedeHacer,
@@ -265,9 +269,27 @@ async function ejecutar(
         })),
       );
 
+      // Despacho parcial (de 100 salen 76): Almacen lo confirma con motivo.
+      // Todo contado, nada por encima de la orden y algo que sale. Lo armado
+      // pasa a ser lo que sale (esDespachoParcial / cantidadQueSale) y el
+      // resto queda pendiente en Odoo al validar en el porton.
+      const parcial = body?.parcial === true && !evaluacion.completo;
+      const motivoParcial = parcial ? texto(body?.motivo, MAX.motivo) : null;
+      if (parcial) {
+        if (!motivoParcial) {
+          return NextResponse.json({ error: "Escribe el motivo del despacho parcial" }, { status: 400 });
+        }
+        if (!armadoParcialPosible(items.map((i) => ({ cantidad_cargada: i.cantidad_cargada, cantidad_armado: i.cantidad_armado })))) {
+          return NextResponse.json(
+            { error: "Para un despacho parcial cuenta todos los renglones, sin pasarte de la orden y con al menos una unidad que sale" },
+            { status: 400 },
+          );
+        }
+      }
+
       // No cuadra: se queda en pre-despacho hasta que se corrija y se vuelva a
       // contar. Es la regla que pediste: no pasa a despacho con diferencias.
-      if (!evaluacion.completo) {
+      if (!evaluacion.completo && !parcial) {
         return { avanzo: false, extra: { armado: evaluacion } };
       }
 
@@ -279,10 +301,12 @@ async function ejecutar(
         id,
         "pre_despacho",
         etapaTrasArmado(tipo),
-        "armado_verificado_por = ?, armado_verificado_at = NOW()",
-        [quien],
+        `armado_verificado_por = ?, armado_verificado_at = NOW()${
+          parcial ? ", observaciones = CONCAT_WS(' · ', NULLIF(observaciones, ''), ?)" : ""
+        }`,
+        parcial ? [quien, `Despacho parcial (${quien}): ${motivoParcial}`.slice(0, 600)] : [quien],
       );
-      return ok ? { avanzo: true, extra: { armado: evaluacion } } : conflicto();
+      return ok ? { avanzo: true, extra: { armado: evaluacion, parcial } } : conflicto();
     }
 
     case "empaquetar": {
@@ -430,9 +454,12 @@ async function ejecutar(
         );
       }
 
+      // En un despacho parcial se compara contra lo que sale (lo armado).
+      const egresoParcial = esDespachoParcial(mov.etapa, items);
       const novedades = novedadesVerificacion(items, {
         seriales: datos.seriales,
         sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
+        parcial: egresoParcial,
       });
 
       const aprobado = body?.aprobado === true;
@@ -478,11 +505,29 @@ async function ejecutar(
       }
       const despachar = decision === "despachar";
       const devolver = decision === "devolver";
+      // Despacho parcial en el porton: sale solo lo contado. Lo que no sale
+      // (faltas, "No salio") queda pendiente; algo de mas o ajeno no es un
+      // parcial (eso es despachar igual o devolver).
+      const parcial = !aprobado && decision === "parcial";
+      if (parcial) {
+        const ajenas = novedades.filter((n) => !esLoQueNoSale(n));
+        if (ajenas.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Hay ${ajenas.length} novedad(es) que no son de lo que queda pendiente (productos de más, seriales que no son de la orden…): no es un despacho parcial. Despáchalo igual, devuélvelo o cancélalo.`,
+              novedades: ajenas,
+            },
+            { status: 400 },
+          );
+        }
+      }
+      // Sale mercancia: aprobado, despachado igual o parcial.
+      const sale = despachar || parcial;
 
       // La firma de Seguridad en el acta es obligatoria para que salga (da fe
       // de lo que salio): sin ella no se aprueba ni se despacha igual. Devolver
       // o cancelar no la piden, ahi no sale nada.
-      if (despachar) {
+      if (sale) {
         const firmas = await firmasDeActa("mercancia", id);
         if (!firmas.some((f) => f.rol === "seguridad")) {
           return NextResponse.json(
@@ -496,7 +541,7 @@ async function ejecutar(
       // facturada, pero de una nota de credito o un picking cancelado despues
       // no se enteraba nadie. Cancelada o sin factura no sale; con renglones
       // cambiados no se aprueba, se despacha igual con motivo o se devuelve.
-      if (despachar && mov.odoo_picking_id) {
+      if (sale && mov.odoo_picking_id) {
         let cambio: Awaited<ReturnType<typeof motivoOrdenCambioEnOdoo>>;
         try {
           cambio = await motivoOrdenCambioEnOdoo(Number(mov.odoo_picking_id), items);
@@ -507,7 +552,7 @@ async function ejecutar(
             { status: 502 },
           );
         }
-        if (cambio && (cambio.bloquea || aprobado)) {
+        if (cambio && (cambio.bloquea || aprobado || parcial)) {
           return NextResponse.json(
             {
               error: cambio.bloquea
@@ -536,7 +581,7 @@ async function ejecutar(
       // `body.decision` y no una variable de #316 a proposito: asi vale antes
       // y despues de que entre, sin importar el orden de los merges.
       const conRonda = await hayColumnasVerificacion();
-      if (!despachar && body?.decision !== "cancelar" && !conRonda) {
+      if (!sale && body?.decision !== "cancelar" && !conRonda) {
         return NextResponse.json(
           {
             error:
@@ -550,7 +595,7 @@ async function ejecutar(
       }
       // Cancelado: lo que falta es lo que nunca iba a salir, no una falla. Se
       // cierra solo con las novedades reales, y el estado sale de esas.
-      const novedadesCierre = novedadesQueCuentan(novedades, !aprobado && decision === "cancelar");
+      const novedadesCierre = novedadesSegunDecision(novedades, aprobado ? null : decision);
       const estadoCierre = novedadesCierre.length > 0 ? "descuadre" : "conforme";
 
       // Aprobado: la orden se valida en Odoo ahora, que es cuando sale, y ahi
@@ -559,13 +604,32 @@ async function ejecutar(
       // el motivo. Despachado igual (con novedades) NO se valida: validar la
       // orden completa descontaria tambien lo que no salio; se valida en Odoo
       // con las cantidades que salieron.
+      // Solo se descuenta lo que Seguridad conto (salidas): en un parcial, lo
+      // que no sale queda en Odoo como pedido pendiente.
       let mensajeOdoo: string | null = null;
-      if (aprobado && mov.odoo_picking_id) {
+      if ((aprobado || parcial) && mov.odoo_picking_id) {
+        const salidas = items
+          .filter((i) => i.odoo_product_id != null)
+          .map((i) => {
+            const noSalio = Number(i.no_salio) === 1;
+            const porSerial = verificaPorSerial(i, datos.seriales);
+            return {
+              productId: Number(i.odoo_product_id),
+              cantidad: noSalio || porSerial ? 0 : Number(i.cantidad_verificada || 0),
+              seriales: porSerial
+                ? noSalio
+                  ? []
+                  : datos.seriales.filter((s) => Number(s.item_id) === Number(i.id) && s.verificado_at).map((s) => s.serial)
+                : null,
+            };
+          });
         try {
-          const r = await validarPickingEnOdoo(Number(mov.odoo_picking_id));
+          const r = await validarPickingEnOdoo(Number(mov.odoo_picking_id), salidas);
           mensajeOdoo =
-            r === "validado"
-              ? `Orden ${mov.odoo_picking_name} validada en Odoo: el inventario ya se descontó.`
+            r.estado === "validado"
+              ? `Orden ${mov.odoo_picking_name} validada en Odoo: se descontó lo que salió.${
+                  r.pendiente ? ` Lo que no salió quedó pendiente en ${r.pendiente}.` : ""
+                }`
               : `La orden ${mov.odoo_picking_name} ya estaba validada en Odoo.`;
           console.warn(`[egreso ${id}] ${mensajeOdoo} (por ${quien})`);
         } catch (e: any) {
@@ -594,7 +658,7 @@ async function ejecutar(
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
            conRonda ? `, verificado_en = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}` : ""
          }${conDecision ? ", decision_seguridad = ?" : ""}`,
-        [estadoCierre, quien, aprobado ? 1 : 0, despachar ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : []), ...(conDecision ? [aprobado ? "aprobar" : decision] : [])],
+        [estadoCierre, quien, aprobado || parcial ? 1 : 0, sale ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : []), ...(conDecision ? [aprobado ? "aprobar" : decision] : [])],
       );
       if (!ok) return conflicto();
 
@@ -635,7 +699,7 @@ async function ejecutar(
         console.warn(
           `[egreso ${id}] NO APROBADO por ${quien} en ${LOCAL_DESPACHO} (ronda ${ronda}, ` +
             `${novedades.length} novedad(es)). ${
-              despachar ? "Se despacha igual" : devolver ? "NO se despacha: vuelve a Almacen" : "NO se despacha: cancelado"
+              despachar ? "Se despacha igual" : parcial ? "Despacho parcial" : devolver ? "NO se despacha: vuelve a Almacen" : "NO se despacha: cancelado"
             }. ` +
             `Motivo: ${motivo}`,
         );
@@ -682,12 +746,13 @@ async function ejecutar(
       // salir limpia, pero el picking igual fallo (Lino, #301).
       const ronda = Number(mov.ronda_verificacion || 1);
       const hayNovedades =
-        novedadesQueCuentan(
+        novedadesSegunDecision(
           novedadesVerificacion(items, {
             seriales: datos.seriales,
             sobrantes: novedadesDeEscaneo(datos.novedades, ronda),
+            parcial: esDespachoParcial(mov.etapa, items),
           }),
-          mov.decision_seguridad === "cancelar",
+          mov.decision_seguridad,
         ).length > 0 ||
         ronda > 1 ||
         datos.novedades.some((n) => n.origen === "cierre") ||
