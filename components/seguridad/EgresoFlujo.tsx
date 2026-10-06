@@ -16,6 +16,7 @@ import {
   PackageCheck,
   Play,
   RefreshCw,
+  ScanBarcode,
   ShieldCheck,
   Truck,
   XCircle,
@@ -598,6 +599,27 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const hayConSerial = items.some((it) => Number(it.lleva_serial) === 1);
   const puedeLeerSeriales =
     enAlmacen(mov.etapa) && (rol === "almacen" || rol === "superadmin");
+  // Almacén pistolea los seriales y el panel los escribe en el picking de
+  // Odoo (lib/seguridad/serializarOdoo.ts): no hay que cargarlos allá.
+  const puedeSerializar = rol === "almacen" && enAlmacen(mov.etapa) && hayConSerial && !!mov.odoo_picking_id;
+  const quitarSerial = async (serial: string) => {
+    if (!window.confirm(tf("serializar_quitar_confirmar", { serial }))) return;
+    setError(null);
+    setAviso(null);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/serializar`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serial }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || tm("error"));
+      aplicar(json);
+      if (json.aviso) setAviso(json.aviso);
+    } catch (e: any) {
+      setError(e?.message || tm("error"));
+    }
+  };
   const serialesPorItem = new Map<number, Serial[]>();
   for (const s of seriales) {
     const lista = serialesPorItem.get(Number(s.item_id)) || [];
@@ -753,10 +775,21 @@ export default function EgresoFlujo({ id }: { id: string }) {
                       </span>
                     </div>
                   )}
+                  {puedeSerializar && (
+                    <SerializarAlmacen
+                      id={id}
+                      tf={tf}
+                      error={tm("error")}
+                      onRespuesta={(json) => {
+                        aplicar(json);
+                        if (json.aviso) setAviso(json.aviso);
+                      }}
+                    />
+                  )}
                   {estadoSeriales.faltantes.length > 0 && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
-                      <span>{tf("seriales_faltan")}</span>
+                      <span>{tf(puedeSerializar ? "seriales_faltan_pistolear" : "seriales_faltan")}</span>
                     </div>
                   )}
                 </div>
@@ -832,6 +865,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         seriales={serialesPorItem.get(it.id)!}
                         tf={tf}
                         marcarVerificados={["por_verificar", "por_calificar", "cerrado"].includes(mov.etapa) || ronda > 1}
+                        onQuitar={puedeSerializar ? (s) => void quitarSerial(s) : undefined}
                       />
                     )}
 
@@ -1442,15 +1476,97 @@ function PanelPaso({ children }: { children: React.ReactNode }) {
 }
 
 /** Chips de seriales de un renglon; con muchos, los primeros y el resto al desplegar. */
+/**
+ * Campo para que Almacén pistolee los seriales: cada lectura se escribe en
+ * una línea vacía del picking de Odoo (POST .../serializar). Funciona como la
+ * pistola: escribe y Enter; el foco vuelve solo para la siguiente.
+ */
+function SerializarAlmacen({
+  id,
+  tf,
+  error,
+  onRespuesta,
+}: {
+  id: string;
+  tf: (k: string, v?: any) => string;
+  error: string;
+  onRespuesta: (json: any) => void;
+}) {
+  const campo = useRef<HTMLInputElement>(null);
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [mensaje, setMensaje] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  const enviar = async () => {
+    const codigo = texto.trim();
+    if (!codigo || enviando) return;
+    setEnviando(true);
+    setMensaje(null);
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/serializar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigo }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || error);
+      onRespuesta(json);
+      setMensaje({ ok: true, texto: tf("serializar_ok", { serial: json.serial, producto: json.producto }) });
+    } catch (e: any) {
+      setMensaje({ ok: false, texto: e?.message || error });
+    } finally {
+      setTexto("");
+      setEnviando(false);
+      setTimeout(() => campo.current?.focus(), 0);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50/50 px-3 h-12">
+        {enviando ? (
+          <Loader2 className="w-4 h-4 animate-spin text-[color:var(--portal-primary,#741DFE)] shrink-0" />
+        ) : (
+          <ScanBarcode className="w-4 h-4 text-[color:var(--portal-primary,#741DFE)] shrink-0" />
+        )}
+        <input
+          ref={campo}
+          // Las casillas de cantidad le devuelven el foco (ver Celda).
+          data-pistola=""
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void enviar();
+            }
+          }}
+          placeholder={tf("serializar_ph")}
+          aria-label={tf("serializar_ph")}
+          autoComplete="off"
+          className="flex-1 min-w-0 bg-transparent text-sm font-mono focus:outline-none"
+        />
+      </div>
+      <p className="text-[11px] text-slate-500">{tf("serializar_ayuda")}</p>
+      {mensaje && (
+        <p className={`text-xs font-medium ${mensaje.ok ? "text-emerald-700" : "text-red-600"}`}>{mensaje.texto}</p>
+      )}
+    </div>
+  );
+}
+
 function ListaSeriales({
   seriales,
   tf,
   marcarVerificados = false,
+  onQuitar,
 }: {
   seriales: Serial[];
   tf: (k: string, v?: any) => string;
   /** En C4 y despues: verde lo pistoleado, rojo lo que falto (#301). */
   marcarVerificados?: boolean;
+  /** Almacén: quitar un serial equivocado (también de Odoo). */
+  onQuitar?: (serial: string) => void;
 }) {
   const [abierto, setAbierto] = useState(false);
   const visibles = abierto ? seriales : seriales.slice(0, SERIALES_VISIBLES);
@@ -1470,6 +1586,17 @@ function ListaSeriales({
           }`}
         >
           {s.serial}
+          {onQuitar && (
+            <button
+              type="button"
+              onClick={() => onQuitar(s.serial)}
+              aria-label={tf("serializar_quitar", { serial: s.serial })}
+              title={tf("serializar_quitar", { serial: s.serial })}
+              className="ml-1 text-slate-400 hover:text-red-600"
+            >
+              ×
+            </button>
+          )}
         </span>
       ))}
       {resto > 0 && (
