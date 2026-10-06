@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
+import { alcanceDe } from "@/lib/agenteia/alcance";
 import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
 import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, modelo, corte.signal, !editor);
+        await responder(messages, uid, emitir, modelo, corte.signal, !editor, await alcanceDe(auth.payload));
       } catch (e: any) {
         if (corte.signal.aborted) {
           console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);
