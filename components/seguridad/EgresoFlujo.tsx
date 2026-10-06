@@ -490,23 +490,58 @@ export default function EgresoFlujo({ id }: { id: string }) {
   };
 
   // Recibo de entrega de Odoo: se abre en otra pestaña, donde el visor del
-  // navegador lo imprime. La pestaña se abre antes de pedirlo (después del
-  // fetch el navegador la bloquea como ventana emergente) y se cierra si falla.
+  // navegador lo imprime. Odoo tarda unos segundos en generarlo, así que se
+  // pide al abrir el egreso (ver abajo): al pulsar el botón ya está y abre al
+  // instante. Si todavía no llegó, la pestaña se abre antes de esperarlo
+  // (después el navegador la bloquea como ventana emergente).
   const [trayendoRecibo, setTrayendoRecibo] = useState(false);
+  const recibo = useRef<{ url: string | null; pedido: Promise<string> | null }>({ url: null, pedido: null });
+  const traerRecibo = useCallback((): Promise<string> => {
+    if (!recibo.current.pedido) {
+      recibo.current.pedido = (async () => {
+        const res = await fetch(`/api/seguridad/mercancia/${id}/recibo`);
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || "");
+        }
+        const url = URL.createObjectURL(await res.blob());
+        recibo.current.url = url;
+        return url;
+      })().catch((e) => {
+        // Que el próximo intento vuelva a pedirlo.
+        recibo.current.pedido = null;
+        throw e;
+      });
+    }
+    return recibo.current.pedido;
+  }, [id]);
+  // Con resultado del portón y la orden validada en Odoo (aprobado o parcial).
+  const conRecibo =
+    !!mov &&
+    Number(mov.aprobado) === 1 &&
+    !!mov.odoo_picking_id &&
+    (mov.etapa === "por_calificar" || mov.etapa === "cerrado");
+  useEffect(() => {
+    if (conRecibo) void traerRecibo().catch(() => {});
+  }, [conRecibo, traerRecibo]);
+  useEffect(() => {
+    const guardado = recibo.current;
+    return () => {
+      if (guardado.url) URL.revokeObjectURL(guardado.url);
+    };
+  }, []);
   const imprimirRecibo = async () => {
     setError(null);
+    if (recibo.current.url) {
+      window.open(recibo.current.url, "_blank");
+      return;
+    }
     setTrayendoRecibo(true);
     const pestana = window.open("", "_blank");
     try {
-      const res = await fetch(`/api/seguridad/mercancia/${id}/recibo`);
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || tm("error"));
-      }
-      const url = URL.createObjectURL(await res.blob());
+      const url = await traerRecibo();
       if (pestana) pestana.location.href = url;
       else window.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e: any) {
       pestana?.close();
       setError(e?.message || tm("error"));
