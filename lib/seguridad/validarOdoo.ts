@@ -2,13 +2,17 @@ import { callOdooRPC, callOdooRPCEstricto } from "@/lib/odoo";
 import { normalizarCodigo } from "@/lib/escaneo/codigos";
 
 /**
- * Valida en Odoo la orden de despacho (stock.picking → "Hecho") cuando
- * Seguridad aprueba en el portón: ahí sale la mercancía, y ahí se descuenta
- * el inventario. Antes la validaba alguien a mano en Odoo, a veces antes de
- * que la mercancía pasara por el portón (CENT1/OUT/08530).
+ * Valida en Odoo la orden de despacho (stock.picking → "Hecho"): ahí se
+ * descuenta el inventario y queda disponible el recibo de entrega.
  *
- * Solo se descuenta lo que Seguridad contó (`salidas`): de un pedido de 100
- * pueden salir 76. Antes de validar, cada línea del picking queda con lo que
+ * La valida Almacén cuando envía el despacho al portón (`asignar_despacho`):
+ * necesita el recibo impreso para que la mercancía salga. Si por algo no se
+ * validó ahí (la orden cambió en Odoo, egresos que ya estaban en el portón),
+ * se valida cuando Seguridad aprueba, como antes.
+ *
+ * Solo se descuenta lo que sale (`salidas`): de un pedido de 100 pueden salir
+ * 76 (lo armado, o lo que contó Seguridad). Sin `salidas` se valida la orden
+ * tal como está. Antes de validar, cada línea del picking queda con lo que
  * de verdad salió (las de serial: 1 si su serial se pistoleó, si no 0; las
  * demás, lo contado repartido entre sus líneas). Odoo valida eso, borra las
  * líneas en 0 y crea con el resto el pedido pendiente (backorder), como hace
@@ -48,6 +52,32 @@ type Linea = {
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
+// Una orden "Hecha" no vuelve atrás: se recuerda. Lo que no está validado se
+// vuelve a preguntar a los pocos segundos (el detalle se recarga seguido).
+const validadas = new Set<number>();
+const noValidadas = new Map<number, number>();
+
+/** La orden ya está validada ("Hecha") en Odoo. false si Odoo no responde. */
+export async function pickingValidado(pickingId: number | null | undefined): Promise<boolean> {
+  const id = Number(pickingId);
+  if (!id) return false;
+  if (validadas.has(id)) return true;
+  if ((noValidadas.get(id) || 0) > Date.now()) return false;
+  try {
+    const [p] = (await callOdooRPC<any[]>("stock.picking", "read", [[id], ["state"]])) || [];
+    if (p?.state === "done") {
+      validadas.add(id);
+      noValidadas.delete(id);
+      return true;
+    }
+    noValidadas.set(id, Date.now() + 10_000);
+    return false;
+  } catch (e: any) {
+    console.error(`[odoo] no se pudo leer el estado de la orden ${id}:`, e?.message || e);
+    return false;
+  }
+}
+
 export async function validarPickingEnOdoo(
   pickingId: number,
   salidas?: SalidaProducto[],
@@ -59,7 +89,10 @@ export async function validarPickingEnOdoo(
   };
 
   const antes = await leerEstado();
-  if (antes.state === "done") return { estado: "ya_estaba", pendiente: null };
+  if (antes.state === "done") {
+    validadas.add(pickingId);
+    return { estado: "ya_estaba", pendiente: null };
+  }
   if (antes.state === "cancel") throw new Error(`La orden ${antes.name} está cancelada en Odoo`);
 
   // Cantidades por línea según lo que salió.
@@ -127,6 +160,8 @@ export async function validarPickingEnOdoo(
     throw e;
   }
 
+  validadas.add(pickingId);
+  noValidadas.delete(pickingId);
   const pendientes =
     (await callOdooRPC<any[]>("stock.picking", "search_read", [[["backorder_id", "=", pickingId]]], {
       fields: ["name"],

@@ -2991,6 +2991,7 @@
       "flujo": {
         "imprimir_recibo": "Print delivery slip",
         "trayendo_recibo": "Fetching the slip from Odoo…",
+        "asignar_valida_odoo": "On send, the order is validated in Odoo: stock is deducted and you can print the delivery slip.",
         "resumen": {
           "unidades": "Units",
           "seriales": "Serials",

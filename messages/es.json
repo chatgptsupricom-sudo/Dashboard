@@ -2980,6 +2980,7 @@
       "flujo": {
         "imprimir_recibo": "Imprimir recibo de entrega",
         "trayendo_recibo": "Trayendo el recibo de Odoo…",
+        "asignar_valida_odoo": "Al enviar, la orden se valida en Odoo: se descuenta el inventario y podrás imprimir el recibo de entrega.",
         "resumen": {
           "unidades": "Unidades",
           "seriales": "Seriales",

@@ -230,6 +230,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [novedadesGuardadas, setNovedadesGuardadas] = useState<NovedadGuardada[]>([]);
   // Nota del pedido en Odoo: quién retira, instrucciones del despacho.
   const [notaPedido, setNotaPedido] = useState<string | null>(null);
+  // La orden ya está validada en Odoo: hay recibo de entrega para imprimir.
+  const [odooValidada, setOdooValidada] = useState(false);
   // Producto con serial elegido en la pistola (como en la recepcion).
   const [pistolaItem, setPistolaItem] = useState<number | null>(null);
   const [leyendoSeriales, setLeyendoSeriales] = useState(false);
@@ -316,6 +318,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setNovedadesGuardadas(json.novedades || []);
     // Solo la trae la carga del egreso; las acciones no la tocan.
     if ("nota_pedido" in json) setNotaPedido(json.nota_pedido || null);
+    // Una orden validada no vuelve atrás: solo se enciende.
+    if (json.odoo_validada === true) setOdooValidada(true);
     const a: Record<number, string> = {};
     const p: Record<number, string> = {};
     const ns: Record<number, boolean> = {};
@@ -515,12 +519,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
     }
     return recibo.current.pedido;
   }, [id]);
-  // Con resultado del portón y la orden validada en Odoo (aprobado o parcial).
-  const conRecibo =
-    !!mov &&
-    Number(mov.aprobado) === 1 &&
-    !!mov.odoo_picking_id &&
-    (mov.etapa === "por_calificar" || mov.etapa === "cerrado");
+  // Con la orden validada en Odoo: desde que Almacén la envía al portón.
+  const conRecibo = !!mov?.odoo_picking_id && odooValidada;
   useEffect(() => {
     if (conRecibo) void traerRecibo().catch(() => {});
   }, [conRecibo, traerRecibo]);
@@ -681,8 +681,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   };
 
   const resultado = resultadoEgreso(mov);
-  // Lo que salió ya está validado en Odoo (aprobado o parcial): hay recibo.
-  const hayRecibo = Number(mov.aprobado) === 1 && resultado !== "devuelto" && !!mov.odoo_picking_id;
+  // La orden ya está validada en Odoo (al enviarla al portón): hay recibo.
+  const hayRecibo = conRecibo;
 
   // Novedades de la ronda en curso, calculadas igual que la API al cerrar.
   const ronda = Number(mov.ronda_verificacion || 1);
@@ -1307,6 +1307,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     >
                       {tf("asignar_despacho")}
                     </BotonPrimario>
+                    {!!mov.odoo_picking_id && !odooValidada && (
+                      <p className="text-[11px] text-slate-500 text-center">{tf("asignar_valida_odoo")}</p>
+                    )}
                   </div>
                 )}
 
