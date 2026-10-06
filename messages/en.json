@@ -2923,6 +2923,17 @@
         "filtro_sin_metodo": "No method",
         "mostrando": "Showing {n} of {total}",
         "sin_resultados": "No order matches the search.",
+        "quitar_filtros": "Clear filters",
+        "actualizar": "Refresh",
+        "orden_antiguas": "Oldest first",
+        "orden_recientes": "Newest first",
+        "dias": "{n, plural, =0 {Today} =1 {1 day} other {# days}}",
+        "dias_titulo": "Days since it was invoiced",
+        "cifra_total": "To dispatch",
+        "cifra_sin_metodo": "No method from salesperson",
+        "cifra_demoradas": "Invoiced over {dias} days ago",
+        "cifra_alerta": "With route alert",
+        "cifra_sin_facturar": "Ready, not invoiced",
         "registrar_egreso": "Register dispatch with this order"
       },
       "aviso": {
@@ -2982,6 +2993,17 @@
         "select_placeholder": "-- Select plate --",
         "gestionar": "Manage vehicles",
         "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
+      },
+      "catalogo_ui": {
+        "agregar": "Add",
+        "buscar": "Search",
+        "limpiar": "Clear search",
+        "sin_resultados": "Nothing matches the search.",
+        "nuevo": "New",
+        "flota": "Registered fleet",
+        "nueva_unidad": "This is how the plate will look",
+        "sin_descripcion": "No description",
+        "placa_repetida": "That plate is already registered."
       },
       "nota_pedido": {
         "titulo": "Order note (Odoo)",

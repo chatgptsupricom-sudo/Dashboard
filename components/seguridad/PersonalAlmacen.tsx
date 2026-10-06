@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Users } from "lucide-react";
+import { CarFront, Users } from "lucide-react";
 import MercanciaCatalogoNombre from "./MercanciaCatalogoNombre";
 import { PageHeader } from "./mercancia-ui";
 
@@ -26,9 +26,11 @@ export default function PersonalAlmacen({ volverA }: { volverA: string }) {
         volverA={volverA}
       />
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+      {/* Un panel al lado del otro en pantallas anchas; apilados en telefono. */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         <MercanciaCatalogoNombre
           embebido
+          icon={Users}
           endpoint="/api/seguridad/mercancia/catalogo/almacenistas"
           listKey="almacenistas"
           namespace="seguridad.mercancia.almacenistas_catalogo"
@@ -41,6 +43,7 @@ export default function PersonalAlmacen({ volverA }: { volverA: string }) {
         />
         <MercanciaCatalogoNombre
           embebido
+          icon={CarFront}
           endpoint="/api/seguridad/mercancia/catalogo/choferes"
           listKey="choferes"
           namespace="seguridad.mercancia.choferes_catalogo"

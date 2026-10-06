@@ -2912,6 +2912,17 @@
         "filtro_sin_metodo": "Sin método",
         "mostrando": "Mostrando {n} de {total}",
         "sin_resultados": "Ninguna orden coincide con la búsqueda.",
+        "quitar_filtros": "Quitar filtros",
+        "actualizar": "Actualizar",
+        "orden_antiguas": "Más antiguas primero",
+        "orden_recientes": "Más recientes primero",
+        "dias": "{n, plural, =0 {Hoy} =1 {1 día} other {# días}}",
+        "dias_titulo": "Días desde que se facturó",
+        "cifra_total": "Por despachar",
+        "cifra_sin_metodo": "Sin método del vendedor",
+        "cifra_demoradas": "Más de {dias} días facturadas",
+        "cifra_alerta": "Con alerta de ruta",
+        "cifra_sin_facturar": "Listas sin facturar",
         "registrar_egreso": "Registrar despacho con esta orden"
       },
       "aviso": {
@@ -2971,6 +2982,17 @@
         "select_placeholder": "-- Seleccionar placa --",
         "gestionar": "Gestionar unidades",
         "contador": "{count, plural, =1 {# unidad} other {# unidades}}"
+      },
+      "catalogo_ui": {
+        "agregar": "Agregar",
+        "buscar": "Buscar",
+        "limpiar": "Borrar búsqueda",
+        "sin_resultados": "Nada coincide con la búsqueda.",
+        "nuevo": "Nuevo",
+        "flota": "Flota registrada",
+        "nueva_unidad": "Así se verá la placa",
+        "sin_descripcion": "Sin descripción",
+        "placa_repetida": "Esa placa ya está registrada."
       },
       "nota_pedido": {
         "titulo": "Nota del pedido (Odoo)",
