@@ -37,7 +37,10 @@ import {
   esTipoEntrega,
   evaluarSeriales,
   novedadesVerificacion,
-  novedadesQueCuentan,
+  novedadesSegunDecision,
+  esDespachoParcial,
+  cantidadQueSale,
+  armadoParcialPosible,
   pideComentarioPicking,
   rechazoDeSeguridad,
   aspectosACalificar,
@@ -244,6 +247,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const editando = (campo: string, itemId: number) => sinGuardar.current.add(`${campo}:${itemId}`);
   const guardado = (campo: string, itemId: number) => sinGuardar.current.delete(`${campo}:${itemId}`);
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
+  // Despacho parcial en el armado: motivo (de 100 salen 76).
+  const [motivoParcial, setMotivoParcial] = useState("");
   // Firma de Seguridad en el acta: obligatoria para aprobar o despachar igual
   // (la API tambien la exige). null = todavia no se sabe.
   const [firmoSeguridad, setFirmoSeguridad] = useState<boolean | null>(null);
@@ -582,9 +587,15 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // Novedades de la ronda en curso, calculadas igual que la API al cerrar.
   const ronda = Number(mov.ronda_verificacion || 1);
+  // Despacho parcial (armado confirmado por debajo de la orden): lo que sale
+  // es lo armado; el resto queda pendiente en Odoo al validar.
+  const egresoParcial = esDespachoParcial(mov.etapa, items);
+  const unidadesOrden = items.reduce((t, it) => t + Number(it.cantidad_cargada), 0);
+  const unidadesSalen = items.reduce((t, it) => t + cantidadQueSale(it, egresoParcial), 0);
   const novedades = novedadesVerificacion(items, {
     seriales,
     sobrantes: novedadesGuardadas.filter((n) => n.ronda === ronda && n.origen === "escaneo"),
+    parcial: egresoParcial,
   });
   // En vivo, mientras se pistolea: solo lo anormal; las faltas, contadas. Al
   // decidir (o fuera del porton), la lista completa.
@@ -598,7 +609,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
   // Seriales: los relee Almacen mientras el egreso es suyo; despues quedan
   // fijos. El estado se calcula igual que en la API (evaluarSeriales).
-  const estadoSeriales = evaluarSeriales(items, seriales);
+  const estadoSeriales = evaluarSeriales(items, seriales, egresoParcial);
   const hayConSerial = items.some((it) => Number(it.lleva_serial) === 1);
   const puedeLeerSeriales =
     enAlmacen(mov.etapa) && (rol === "almacen" || rol === "superadmin");
@@ -646,7 +657,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const novedadesPrevias = novedadesGuardadas.filter((n) => n.origen === "cierre" && n.ronda < ronda);
   // En un cancelado, lo que falta es lo que nunca iba a salir (misma regla
   // que la API).
-  const novedadesCalificar = novedadesQueCuentan(novedades, mov.decision_seguridad === "cancelar");
+  const novedadesCalificar = novedadesSegunDecision(novedades, mov.decision_seguridad);
   const hayNovedades =
     novedadesCalificar.length > 0 ||
     ronda > 1 ||
@@ -689,6 +700,13 @@ export default function EgresoFlujo({ id }: { id: string }) {
             de renglones quedaba en ~270 px y el nombre del producto en "A." */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
           <div className="space-y-4 min-w-0">
+            {/* Despacho parcial: cuanto sale y que el resto queda pendiente. */}
+            {egresoParcial && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                {tf("parcial_aviso", { salen: unidadesSalen, orden: unidadesOrden })}
+              </div>
+            )}
+
             {/* Datos del egreso */}
             <Card>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -807,6 +825,8 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
               {items.map((it) => {
                 const orden = Number(it.cantidad_cargada);
+                // Lo que sale del renglon: en un parcial, lo armado.
+                const sale = cantidadQueSale(it, egresoParcial);
                 const vArm = armado[it.id] ?? "";
                 // Con serial, lo verificado son sus seriales pistoleados.
                 const vPor =
@@ -814,7 +834,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     ? String(verificadosDe(it.id))
                     : porton[it.id] ?? "";
                 const difArm = vArm !== "" && Number(vArm) !== orden;
-                const difPor = !noSalio[it.id] && vPor !== "" && Number(vPor) !== orden;
+                const difPor = !noSalio[it.id] && vPor !== "" && Number(vPor) !== sale;
                 return (
                   <div key={it.id} className="py-2.5 border-b border-slate-50 last:border-0">
                     <div className={`grid ${COLUMNAS} gap-x-2 items-center`}>
@@ -824,15 +844,20 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         {Number(it.lleva_serial) === 1 && (
                           <p
                             className={`text-[11px] font-medium mt-0.5 ${
-                              (serialesPorItem.get(it.id)?.length || 0) === orden
+                              (serialesPorItem.get(it.id)?.length || 0) === sale
                                 ? "text-emerald-600"
                                 : "text-amber-700"
                             }`}
                           >
                             {tf("seriales_conteo", {
                               cargados: serialesPorItem.get(it.id)?.length || 0,
-                              esperados: orden,
+                              esperados: sale,
                             })}
+                          </p>
+                        )}
+                        {egresoParcial && sale !== orden && (
+                          <p className="text-[11px] font-semibold text-sky-700 mt-0.5">
+                            {tf("parcial_sale", { sale, orden })}
                           </p>
                         )}
                       </div>
@@ -1020,6 +1045,43 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     {tf("verificar_armado")}
                   </BotonPrimario>
                 )}
+                {/* Despacho parcial: todo contado, nada de mas y algo por
+                    debajo de la orden. Sale solo lo armado; el resto queda
+                    pendiente en Odoo. */}
+                {mov.etapa === "pre_despacho" &&
+                  armadoParcialPosible(
+                    items.map((it) => ({
+                      cantidad_cargada: it.cantidad_cargada,
+                      cantidad_armado: armado[it.id] === "" || armado[it.id] === undefined ? null : Number(armado[it.id]),
+                    })),
+                  ) && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 space-y-2">
+                      <p className="text-sm font-semibold text-sky-900">{tf("parcial_armado_titulo")}</p>
+                      <p className="text-xs text-sky-800">{tf("parcial_armado_ayuda")}</p>
+                      <textarea
+                        value={motivoParcial}
+                        onChange={(e) => setMotivoParcial(e.target.value.slice(0, 500))}
+                        placeholder={tf("parcial_motivo_ph")}
+                        className={`${inputClases} h-auto min-h-[64px] py-2.5`}
+                      />
+                      <BotonSecundario
+                        onClick={() =>
+                          accionar("verificar_armado", {
+                            items: items.map((it) => ({
+                              id: it.id,
+                              cantidad_armado: armado[it.id] === "" ? null : Number(armado[it.id]),
+                            })),
+                            parcial: true,
+                            motivo: motivoParcial.trim(),
+                          })
+                        }
+                        disabled={enviando || !motivoParcial.trim()}
+                        className="w-full"
+                      >
+                        {tf("parcial_confirmar")}
+                      </BotonSecundario>
+                    </div>
+                  )}
 
                 {mov.etapa === "por_empaquetar" && (
                   <BotonPrimario onClick={() => accionar("empaquetar")} disabled={enviando} icon={PackageCheck} className="w-full h-12">
@@ -1102,7 +1164,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                           icon={ShieldCheck}
                           className="w-full h-12"
                         >
-                          {tf("aprobar")}
+                          {tf(egresoParcial ? "aprobar_parcial" : "aprobar")}
                         </BotonPrimario>
                         {/* Las mismas cuentas que la tarjeta: las novedades aparte de lo
                             que todavia falta por pistolear. */}
@@ -1126,7 +1188,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     ) : (
                       <div className="space-y-3">
                         <p className={labelClases}>{tf("decision")}</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {DECISIONES_UI.map(({ valor, etiqueta, activa }) => (
                             <button
                               key={valor}
@@ -1147,7 +1209,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         {decision === "cancelar" && (
                           <p className="text-xs text-slate-500">{tf("verificacion.cancelar_ayuda")}</p>
                         )}
-                        {decision === "despachar" && !firmoSeguridad && (
+                        {decision === "parcial" && (
+                          <p className="text-xs text-slate-500">{tf("verificacion.parcial_ayuda")}</p>
+                        )}
+                        {(decision === "despachar" || decision === "parcial") && !firmoSeguridad && (
                           <p className="text-xs text-amber-700">{tf("verificacion.falta_firma")}</p>
                         )}
                         <textarea
@@ -1173,7 +1238,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                               decision === null ||
                               !motivoNoAprobado.trim() ||
                               faltaMotivoRenglon ||
-                              (decision === "despachar" && !firmoSeguridad)
+                              ((decision === "despachar" || decision === "parcial") && !firmoSeguridad)
                             }
                             className="flex-1"
                           >
@@ -1471,6 +1536,7 @@ function TarjetaNovedades({
 /** Opciones cuando Seguridad no aprueba (ver DECISIONES en egresoFlujo). */
 const DECISIONES_UI: Array<{ valor: DecisionSeguridad; etiqueta: string; activa: string }> = [
   { valor: "despachar", etiqueta: "despachar_igual", activa: "border-emerald-300 bg-emerald-50 text-emerald-800" },
+  { valor: "parcial", etiqueta: "verificacion.parcial", activa: "border-sky-300 bg-sky-50 text-sky-800" },
   { valor: "devolver", etiqueta: "verificacion.no_despachar", activa: "border-amber-300 bg-amber-50 text-amber-800" },
   { valor: "cancelar", etiqueta: "verificacion.cancelar", activa: "border-red-300 bg-red-50 text-red-800" },
 ];

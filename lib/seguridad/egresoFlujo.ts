@@ -146,6 +146,53 @@ export function evaluarArmado(
   return { completo: sinContar === 0 && diferencias === 0, diferencias, sinContar };
 }
 
+/**
+ * Despacho parcial: de un pedido de 100 salen 76 y el resto queda pendiente
+ * en Odoo (pedido pendiente / backorder) para despues.
+ *
+ * Almacen arma solo lo que sale y lo confirma como parcial al verificar el
+ * armado. No hay columna: un armado normal solo pasa si coincide con la
+ * orden, asi que un egreso con el armado ya verificado y algun renglon por
+ * debajo de la orden es un parcial confirmado.
+ */
+export function armadoVerificado(etapa: string | null | undefined): boolean {
+  return esEtapa(etapa) && !["por_armar", "armando", "pre_despacho"].includes(etapa);
+}
+
+type ItemArmado = { cantidad_cargada: number | string; cantidad_armado?: number | string | null };
+
+export function esDespachoParcial(etapa: string | null | undefined, items: ItemArmado[]): boolean {
+  return (
+    armadoVerificado(etapa) &&
+    items.some(
+      (i) =>
+        i.cantidad_armado !== null &&
+        i.cantidad_armado !== undefined &&
+        Number(i.cantidad_armado) < Number(i.cantidad_cargada),
+    )
+  );
+}
+
+/** Lo que sale de un renglon: lo armado en un parcial, si no lo de la orden. */
+export function cantidadQueSale(i: ItemArmado, parcial: boolean): number {
+  return parcial && i.cantidad_armado !== null && i.cantidad_armado !== undefined
+    ? Number(i.cantidad_armado)
+    : Number(i.cantidad_cargada);
+}
+
+/**
+ * Se puede confirmar el armado como parcial: todo contado, nada por encima de
+ * la orden, algo por debajo y al menos una unidad que sale.
+ */
+export function armadoParcialPosible(
+  items: Array<{ cantidad_cargada: number | string; cantidad_armado: number | string | null }>,
+): boolean {
+  if (items.some((i) => i.cantidad_armado === null || i.cantidad_armado === "")) return false;
+  if (items.some((i) => Number(i.cantidad_armado) > Number(i.cantidad_cargada))) return false;
+  const sale = items.reduce((t, i) => t + Number(i.cantidad_armado), 0);
+  return sale > 0 && items.some((i) => Number(i.cantidad_armado) < Number(i.cantidad_cargada));
+}
+
 /** Etapas en las que el egreso todavia esta en manos de Almacen. */
 export function enAlmacen(etapa: Etapa): boolean {
   return RESPONSABLE[etapa] === "almacen";
@@ -175,9 +222,12 @@ export function evaluarSeriales(
     id: number;
     producto: string;
     cantidad_cargada: number | string;
+    cantidad_armado?: number | string | null;
     lleva_serial?: number | boolean | null;
   }>,
   seriales: Array<{ item_id: number }>,
+  /** Despacho parcial: los seriales son solo los de lo que sale. */
+  parcial = false,
 ): { completo: boolean; sinLeer: boolean; faltantes: FaltanteSeriales[] } {
   const porItem = new Map<number, number>();
   for (const s of seriales) porItem.set(Number(s.item_id), (porItem.get(Number(s.item_id)) || 0) + 1);
@@ -188,7 +238,7 @@ export function evaluarSeriales(
     .map((i) => ({
       item_id: Number(i.id),
       producto: i.producto,
-      esperados: Number(i.cantidad_cargada),
+      esperados: cantidadQueSale(i, parcial),
       cargados: porItem.get(Number(i.id)) || 0,
     }))
     .filter((f) => f.cargados !== f.esperados);
@@ -244,6 +294,7 @@ type ItemNovedad = {
   id: number;
   producto: string;
   cantidad_cargada: number | string;
+  cantidad_armado?: number | string | null;
   cantidad_verificada: number | string | null;
   no_salio?: number | boolean | null;
   observacion?: string | null;
@@ -284,13 +335,14 @@ export function verificaPorSerial(
  */
 export function novedadesVerificacion(
   items: ItemNovedad[],
-  extra: { seriales?: SerialNovedad[]; sobrantes?: Novedad[] } = {},
+  extra: { seriales?: SerialNovedad[]; sobrantes?: Novedad[]; parcial?: boolean } = {},
 ): Novedad[] {
   const seriales = extra.seriales || [];
   const novedades: Novedad[] = [];
   for (const i of items) {
     const item_id = Number(i.id);
-    const esperado = Number(i.cantidad_cargada);
+    // En un despacho parcial se compara contra lo que sale (lo armado).
+    const esperado = cantidadQueSale(i, !!extra.parcial);
     if (Number(i.no_salio) === 1 || i.no_salio === true) {
       novedades.push({
         item_id,
@@ -355,8 +407,11 @@ export const LOCAL_DESPACHO = "C4";
  *    solo los seriales ya pistoleados se conservan.
  *  - cancelar: no sale nunca (el cliente cancelo, por ejemplo). Se cierra
  *    sin despachar, pasando por calificar como cualquier otro.
+ *  - parcial: sale solo lo que Seguridad conto; el resto queda pendiente en
+ *    Odoo (backorder). No es una falla del almacenista: lo que no sale no
+ *    cuenta como falta al calificar.
  */
-export const DECISIONES = ["despachar", "devolver", "cancelar"] as const;
+export const DECISIONES = ["despachar", "devolver", "cancelar", "parcial"] as const;
 export type DecisionSeguridad = (typeof DECISIONES)[number];
 
 export function esDecision(v: unknown): v is DecisionSeguridad {
@@ -370,6 +425,7 @@ export function etapaTrasVerificacion(decision: DecisionSeguridad): Etapa {
 
 export type ResultadoEgreso =
   | "aprobado"
+  | "parcial"
   | "no_aprobado_despachado"
   | "no_despachado"
   | "cancelado"
@@ -388,6 +444,7 @@ export function resultadoEgreso(m: {
 }): ResultadoEgreso | null {
   if (m.aprobado === null || m.aprobado === undefined) return null;
   if (esEtapa(m.etapa) && (enAlmacen(m.etapa) || m.etapa === "por_verificar")) return "devuelto";
+  if (m.decision_seguridad === "parcial") return "parcial";
   if (Number(m.aprobado) === 1) return "aprobado";
   // Cancelado (#316): no salio porque el pedido se cancelo, no por un
   // problema del despacho. Sin la columna (migracion pendiente) no se
@@ -442,6 +499,22 @@ export function esAnormalEnVivo(n: Novedad): boolean {
  */
 export function novedadesQueCuentan(novedades: Novedad[], cancelado: boolean): Novedad[] {
   return cancelado ? novedades.filter(esAnormalEnVivo) : novedades;
+}
+
+/** Lo que no sale en un despacho parcial: no es novedad, es lo que queda pendiente. */
+export function esLoQueNoSale(n: Novedad): boolean {
+  return n.tipo === "falta" || n.tipo === "serial_falta" || n.tipo === "no_salio";
+}
+
+/**
+ * Las novedades que cuentan segun la decision de Seguridad: en un cancelado,
+ * sin las faltas (nada iba a salir); en un parcial, sin lo que no sale. En el
+ * resto, todas.
+ */
+export function novedadesSegunDecision(novedades: Novedad[], decision: string | null | undefined): Novedad[] {
+  if (decision === "cancelar") return novedades.filter(esAnormalEnVivo);
+  if (decision === "parcial") return novedades.filter((n) => !esLoQueNoSale(n));
+  return novedades;
 }
 
 /** Unidades que faltan por pistolear, segun las faltas de la verificacion. */
