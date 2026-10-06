@@ -2984,6 +2984,8 @@
         "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
       },
       "flujo": {
+        "imprimir_recibo": "Print delivery slip",
+        "trayendo_recibo": "Fetching the slip from Odoo…",
         "etapa": {
           "por_armar": "To assemble",
           "armando": "Assembling",

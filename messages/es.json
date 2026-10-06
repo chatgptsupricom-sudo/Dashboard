@@ -2973,6 +2973,8 @@
         "contador": "{count, plural, =1 {# unidad} other {# unidades}}"
       },
       "flujo": {
+        "imprimir_recibo": "Imprimir recibo de entrega",
+        "trayendo_recibo": "Trayendo el recibo de Odoo…",
         "etapa": {
           "por_armar": "Por armar",
           "armando": "Armando",

@@ -15,6 +15,7 @@ import {
   Package,
   PackageCheck,
   Play,
+  Printer,
   RefreshCw,
   ScanBarcode,
   ShieldCheck,
@@ -461,6 +462,32 @@ export default function EgresoFlujo({ id }: { id: string }) {
       setError(e?.message || tm("error"));
     } finally {
       setBajandoSeriales(false);
+    }
+  };
+
+  // Recibo de entrega de Odoo: se abre en otra pestaña, donde el visor del
+  // navegador lo imprime. La pestaña se abre antes de pedirlo (después del
+  // fetch el navegador la bloquea como ventana emergente) y se cierra si falla.
+  const [trayendoRecibo, setTrayendoRecibo] = useState(false);
+  const imprimirRecibo = async () => {
+    setError(null);
+    setTrayendoRecibo(true);
+    const pestana = window.open("", "_blank");
+    try {
+      const res = await fetch(`/api/seguridad/mercancia/${id}/recibo`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || tm("error"));
+      }
+      const url = URL.createObjectURL(await res.blob());
+      if (pestana) pestana.location.href = url;
+      else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      pestana?.close();
+      setError(e?.message || tm("error"));
+    } finally {
+      setTrayendoRecibo(false);
     }
   };
 
@@ -996,6 +1023,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     </div>
                   );
                 })}
+                {/* Lo que salió ya está validado en Odoo (aprobado o parcial). */}
+                {Number(mov.aprobado) === 1 && resultado !== "devuelto" && !!mov.odoo_picking_id && (
+                  <div className="mt-4 flex justify-end">
+                    <BotonSecundario
+                      onClick={() => void imprimirRecibo()}
+                      disabled={trayendoRecibo}
+                      icon={Printer}
+                    >
+                      {trayendoRecibo ? tf("trayendo_recibo") : tf("imprimir_recibo")}
+                    </BotonSecundario>
+                  </div>
+                )}
               </Card>
             )}
 
