@@ -4,6 +4,15 @@ import {
   asegurarEsquemaPersonal,
   rolPersonalAdministrable,
 } from "@/lib/seguridad/catalogoPersonal";
+import {
+  asegurarColumnaClave,
+  CLAVE_MAX,
+  CLAVE_MIN,
+  compararClave,
+  esClaveValida,
+  hashClave,
+} from "@/lib/seguridad/clavePersonal";
+import { limitar } from "@/lib/servicio-tecnico/limites";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +55,52 @@ export async function PATCH(
     } catch {
       return NextResponse.json({ error: "Body invalido" }, { status: 400 });
     }
+    // Asignar o cambiar la clave personal de alguien de Seguridad. Ponerla
+    // por primera vez no pide nada; cambiarla pide la actual, para que nadie
+    // cambie la clave de otro (superadmin si puede, para destrabar un olvido).
+    if (body?.clave !== undefined) {
+      if (!esClaveValida(body.clave)) {
+        return NextResponse.json(
+          { error: `La clave tiene que ser de ${CLAVE_MIN} a ${CLAVE_MAX} números` },
+          { status: 400 },
+        );
+      }
+      await asegurarColumnaClave();
+      const filtro = ["id = ?", "rol = 'seguridad'"];
+      const valoresClave: any[] = [personaId];
+      if (cids !== null) {
+        filtro.push("cids = ?");
+        valoresClave.push(cids);
+      }
+      const persona = await query(
+        `SELECT id, nombre, clave_hash FROM seguridad_catalogo_personal WHERE ${filtro.join(" AND ")}`,
+        valoresClave,
+      );
+      const fila = (persona.rows as any[])[0];
+      if (!fila) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+      if (fila.clave_hash && administrable !== null) {
+        const llave = `clave-cambio:${personaId}`;
+        const limite = { max: 5, ventanaSegundos: 15 * 60 };
+        if (!limitar(llave, limite, false).ok) {
+          return NextResponse.json(
+            { error: "Demasiados intentos. Espera unos minutos." },
+            { status: 429 },
+          );
+        }
+        if (!esClaveValida(body?.clave_actual) || !(await compararClave(body.clave_actual, fila.clave_hash))) {
+          limitar(llave, limite, true);
+          return NextResponse.json({ error: "La clave actual no es correcta" }, { status: 401 });
+        }
+      }
+
+      await query(`UPDATE seguridad_catalogo_personal SET clave_hash = ? WHERE id = ?`, [
+        await hashClave(body.clave),
+        personaId,
+      ]);
+      return NextResponse.json({ success: true, tiene_clave: 1 });
+    }
+
     if (typeof body?.activo !== "boolean") {
       return NextResponse.json(
         { error: "activo es obligatorio (true o false)" },

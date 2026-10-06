@@ -7,6 +7,7 @@ import {
   esTipoValido,
   firmasDeActa,
 } from "@/lib/seguridad/firmas";
+import { verificarClaveSeguridad } from "@/lib/seguridad/clavePersonal";
 import { NextRequest, NextResponse } from "next/server";
 
 const TABLA_POR_TIPO: Record<string, string> = {
@@ -208,17 +209,27 @@ export async function POST(
       );
     }
 
-    const decodificada = decodificarFirmaPng(
-      typeof body?.firma_data_url === "string" ? body.firma_data_url.trim() : "",
-    );
-    if (!decodificada) {
-      return NextResponse.json(
-        { error: "Solo se permite firma en formato PNG" },
-        { status: 400 },
+    // Acta del despacho de mercancía, firma de Seguridad: con la clave
+    // personal, no con un trazo (firmar con el dedo desde la laptop no
+    // funcionaba). Se guarda sin imagen (firma_mime 'clave'); esa acta no
+    // tiene comprobante con imágenes. Las actas de RMA siguen con el trazo.
+    const porClave = p.tipo === "mercancia" && body.rol === "seguridad";
+    let decodificada: { buffer: Buffer; mime: string } | null = null;
+    if (porClave) {
+      decodificada = { buffer: Buffer.alloc(0), mime: "clave" };
+    } else {
+      decodificada = decodificarFirmaPng(
+        typeof body?.firma_data_url === "string" ? body.firma_data_url.trim() : "",
       );
-    }
-    if (decodificada.buffer.length > MAX_FIRMA_BYTES) {
-      return NextResponse.json({ error: "Firma demasiado grande" }, { status: 400 });
+      if (!decodificada) {
+        return NextResponse.json(
+          { error: "Solo se permite firma en formato PNG" },
+          { status: 400 },
+        );
+      }
+      if (decodificada.buffer.length > MAX_FIRMA_BYTES) {
+        return NextResponse.json({ error: "Firma demasiado grande" }, { status: 400 });
+      }
     }
 
     if (!(await nombreDelCatalogo(body.rol, nombre, cids))) {
@@ -242,6 +253,13 @@ export async function POST(
         { error: "Esa firma ya se guardo y no se puede rehacer." },
         { status: 409 },
       );
+    }
+
+    // La clave al final, cuando todo lo demas esta bien: asi solo cuentan
+    // como intento fallido las claves equivocadas.
+    if (porClave) {
+      const v = await verificarClaveSeguridad(nombre, cids, body?.clave);
+      if (!v.ok) return NextResponse.json({ error: v.motivo }, { status: v.status });
     }
 
     // Reemplaza si ese rol ya habia firmado (solo llega aca superadmin): dos

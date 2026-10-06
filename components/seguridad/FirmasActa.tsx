@@ -50,6 +50,7 @@ export default function FirmasActa({
   opcionales = [],
   puedeFirmar,
   onFirmas,
+  porClave = [],
 }: {
   tipo: "ingreso" | "despacho" | "mercancia";
   actaId: number;
@@ -97,6 +98,12 @@ export default function FirmasActa({
    * El egreso lo usa para no dejar despachar sin la firma de Seguridad.
    */
   onFirmas?: (rolesFirmados: Rol[]) => void;
+  /**
+   * Roles que firman con su clave personal en vez de con un trazo (acta del
+   * despacho de mercancía: Seguridad). Se elige el nombre y se escribe la
+   * clave registrada en Personal de Seguridad.
+   */
+  porClave?: Rol[];
 }) {
   const t = useTranslations("seguridad.firmas");
   const onFirmasRef = useRef(onFirmas);
@@ -107,6 +114,7 @@ export default function FirmasActa({
   const [abierta, setAbierta] = useState<Rol | null>(null);
   const [nombre, setNombre] = useState("");
   const [trazo, setTrazo] = useState<string | null>(null);
+  const [clave, setClave] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Personas del catálogo del rol que se está firmando (null = no se pudo
@@ -142,6 +150,7 @@ export default function FirmasActa({
   const abrir = (rol: Rol) => {
     setAbierta(rol);
     setTrazo(null);
+    setClave("");
     setError(null);
     setPersonas(null);
     const cat = CATALOGO[rol];
@@ -167,27 +176,33 @@ export default function FirmasActa({
       });
   };
 
+  const conClave = (rol: Rol | null) => !!rol && porClave.includes(rol);
+  const listoParaGuardar = conClave(abierta) ? /^\d{4,6}$/.test(clave) : !!trazo;
+
   const guardar = async () => {
-    if (!abierta || !trazo || !nombre.trim()) return;
+    if (!abierta || !listoParaGuardar || !nombre.trim()) return;
     setGuardando(true);
     setError(null);
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rol: abierta,
-          firmante_nombre: nombre.trim(),
-          firma_data_url: trazo,
-        }),
+        body: JSON.stringify(
+          conClave(abierta)
+            ? { rol: abierta, firmante_nombre: nombre.trim(), clave }
+            : { rol: abierta, firmante_nombre: nombre.trim(), firma_data_url: trazo },
+        ),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || t("error"));
       setFirmas(json.firmas || []);
       setAbierta(null);
       setTrazo(null);
+      setClave("");
     } catch (e: any) {
       setError(e?.message || t("error"));
+      // Una clave equivocada se vuelve a escribir entera.
+      setClave("");
     } finally {
       setGuardando(false);
     }
@@ -354,7 +369,32 @@ export default function FirmasActa({
               )}
             </div>
 
-            <SignaturePad onChange={setTrazo} label={t("trazo")} />
+            {conClave(abierta) ? (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  {t("clave")}
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={6}
+                  value={clave}
+                  onChange={(e) => setClave(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void guardar();
+                    }
+                  }}
+                  placeholder="••••"
+                  className="w-full h-12 px-3 border border-slate-200 rounded-[10px] text-lg tracking-[0.4em] focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-500">{t("clave_ayuda")}</p>
+              </div>
+            ) : (
+              <SignaturePad onChange={setTrazo} label={t("trazo")} />
+            )}
 
             {error && (
               <p className="text-sm text-red-600">{error}</p>
@@ -363,7 +403,7 @@ export default function FirmasActa({
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => { setAbierta(null); setTrazo(null); }}
+                onClick={() => { setAbierta(null); setTrazo(null); setClave(""); }}
                 className="min-h-[48px] px-4 rounded-[10px] text-sm font-semibold text-slate-700 border border-slate-200"
               >
                 {t("cancelar")}
@@ -371,12 +411,12 @@ export default function FirmasActa({
               <button
                 type="button"
                 onClick={guardar}
-                disabled={guardando || !trazo || !nombre.trim()}
+                disabled={guardando || !listoParaGuardar || !nombre.trim()}
                 className="flex-1 min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold text-white disabled:opacity-50"
                 style={{ backgroundColor: "var(--portal-primary,#741DFE)" }}
               >
                 {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-                {t("guardar")}
+                {t(conClave(abierta) ? "firmar_con_clave" : "guardar")}
               </button>
             </div>
           </div>
