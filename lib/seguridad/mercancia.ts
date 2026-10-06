@@ -2,6 +2,7 @@ import { getConnection, query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { leerCalificacionesEgreso } from "@/lib/seguridad/calificaciones";
 import { leerNovedades } from "@/lib/seguridad/novedades";
+import { notaDelPedido } from "@/lib/seguridad/notaPedido";
 import { leerSerialesEgreso } from "@/lib/seguridad/seriales";
 
 /**
@@ -57,6 +58,8 @@ export type PickingOdoo = {
   odoo_sale_id?: number | null;
   /** Solo egreso: cuándo se validó en Odoo (`date_done`, UTC); null si no está Hecha. */
   fecha_hecho?: string | null;
+  /** Solo egreso: nota del pedido en Odoo (quién retira, instrucciones). */
+  nota_pedido?: string | null;
 };
 
 export type PickingResumen = {
@@ -474,7 +477,11 @@ async function leerPickingEgreso(
   // Sin orden de venta (ej. una devolucion a proveedor) no hay factura de
   // cliente: queda como no facturada.
   const saleId = p.sale_id?.[0] ?? null;
-  const facturas = saleId ? (await facturasDeVentas([saleId])).get(saleId) || [] : [];
+  const [facturasPorVenta, nota_pedido] = await Promise.all([
+    saleId ? facturasDeVentas([saleId]) : null,
+    notaDelPedido(saleId),
+  ]);
+  const facturas = (saleId && facturasPorVenta?.get(saleId)) || [];
 
   return {
     odoo_picking_id: p.id,
@@ -489,6 +496,7 @@ async function leerPickingEgreso(
     facturas,
     odoo_sale_id: saleId,
     fecha_hecho: p.state === "done" ? p.date_done || null : null,
+    nota_pedido,
   };
 }
 

@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, FileText, Loader2, Package, Send } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { PageHeader, Card, SectionTitle, BotonPrimario } from "./mercancia-ui";
+import NotaPedido from "./NotaPedido";
+import { tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 /**
  * Detalle de una orden de despacho (stock.picking), leido directo de Odoo.
@@ -29,6 +31,8 @@ type Picking = {
   origen: string | null;
   lineas: Linea[];
   facturas?: { numero: string; fecha: string | null }[];
+  nota_pedido?: string | null;
+  metodo_retiro?: FilaMetodo | null;
 };
 
 export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
@@ -117,6 +121,11 @@ export default function MercanciaOrdenDetalle({ nombre }: { nombre: string }) {
                   </p>
                 </>
               )}
+              <NotaPedido
+                nota={picking.nota_pedido}
+                retira={!!picking.metodo_retiro && tipoEntregaDeMetodo(picking.metodo_retiro.metodo) === "puerta"}
+                className="mt-3"
+              />
             </Card>
 
             <Card>

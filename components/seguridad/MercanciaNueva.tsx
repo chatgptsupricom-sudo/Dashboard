@@ -10,6 +10,7 @@ import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { describirMetodo, tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
+import NotaPedido from "./NotaPedido";
 
 /**
  * Registro de una carga de mercancia.
@@ -58,6 +59,8 @@ export default function MercanciaNueva({
     odoo_picking_name: string;
     contraparte: string;
     facturas: { numero: string; fecha: string | null }[];
+    /** Nota del pedido en Odoo: quién retira, instrucciones. */
+    nota_pedido?: string | null;
     /** Método de retiro que cargó el vendedor (lib/ventas/metodoRetiro). */
     metodo_retiro: FilaMetodo | null;
   } | null>(null);
@@ -198,6 +201,7 @@ export default function MercanciaNueva({
         odoo_picking_name: p.odoo_picking_name,
         contraparte: p.contraparte,
         facturas: p.facturas || [],
+        nota_pedido: p.nota_pedido || null,
         metodo_retiro: p.metodo_retiro || null,
       });
       // El tipo de entrega sale del método que indicó el vendedor; Almacén no
@@ -482,6 +486,14 @@ export default function MercanciaNueva({
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-400">{tf("metodo_despues_de_orden")}</p>
+                )}
+                {/* Quién retira: lo escribe Ventas en la nota del pedido de Odoo. */}
+                {picking && (
+                  <NotaPedido
+                    nota={picking.nota_pedido}
+                    retira={!!picking.metodo_retiro && tipoEntregaDeMetodo(picking.metodo_retiro.metodo) === "puerta"}
+                    className="mt-2"
+                  />
                 )}
               </div>
             </>

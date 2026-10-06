@@ -2983,6 +2983,11 @@
         "gestionar": "Manage vehicles",
         "contador": "{count, plural, =1 {# vehicle} other {# vehicles}}"
       },
+      "nota_pedido": {
+        "titulo": "Order note (Odoo)",
+        "titulo_retira": "Who picks up · order note (Odoo)",
+        "sin_nota_retira": "The customer picks up, but the order has no note in Odoo: it doesn't say who picks up. Ask Sales to write it in the order note."
+      },
       "flujo": {
         "imprimir_recibo": "Print delivery slip",
         "trayendo_recibo": "Fetching the slip from Odoo…",
