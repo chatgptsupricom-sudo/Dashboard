@@ -2986,6 +2986,15 @@
       "flujo": {
         "imprimir_recibo": "Print delivery slip",
         "trayendo_recibo": "Fetching the slip from Odoo…",
+        "resumen": {
+          "unidades": "Units",
+          "seriales": "Serials",
+          "duracion": "Duration",
+          "transcurrido": "Elapsed",
+          "paso": "Step {n} of {total}",
+          "tramo": "Time since the previous stage",
+          "copiar": "Copy order number"
+        },
         "etapa": {
           "por_armar": "To assemble",
           "armando": "Assembling",

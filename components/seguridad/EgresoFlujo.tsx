@@ -7,11 +7,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Box,
+  Boxes,
+  Check,
   CheckCircle2,
   Circle,
   Clock,
+  Copy,
   Download,
+  ListChecks,
   Loader2,
+  type LucideIcon,
   Package,
   PackageCheck,
   Play,
@@ -19,6 +24,7 @@ import {
   RefreshCw,
   ScanBarcode,
   ShieldCheck,
+  Timer,
   Truck,
   XCircle,
 } from "lucide-react";
@@ -178,6 +184,19 @@ function hora(valor: string | null): string | null {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+/** "29 min", "1 h 05 min", "2 d 3 h". null si las fechas no dan un tramo válido. */
+function duracion(desde: string | null | undefined, hasta: string | number | null | undefined): string | null {
+  if (!desde || !hasta) return null;
+  const ms = (typeof hasta === "number" ? hasta : new Date(hasta).getTime()) - new Date(desde).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "< 1 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ${String(min % 60).padStart(2, "0")} min`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
 }
 
 // Producto + Orden + Armado + Portón. Las columnas de numeros se angostan en
@@ -609,8 +628,21 @@ export default function EgresoFlujo({ id }: { id: string }) {
       [mov.verificado_por, hora(mov.verificado_at)].filter(Boolean).join(" · ") || null,
     cerrado: hora(mov.cerrado_at),
   };
+  // Cuándo se llegó a cada etapa: de ahí sale cuánto tardó cada tramo.
+  const momentoEtapa: Record<Etapa, string | null> = {
+    por_armar: mov.created_at,
+    armando: mov.armado_inicio_at,
+    pre_despacho: mov.armado_fin_at,
+    por_empaquetar: mov.armado_verificado_at,
+    por_asignar_despacho: mov.empaquetado_at || mov.armado_verificado_at,
+    por_verificar: mov.despacho_asignado_at,
+    por_calificar: mov.verificado_at,
+    cerrado: mov.cerrado_at,
+  };
 
   const resultado = resultadoEgreso(mov);
+  // Lo que salió ya está validado en Odoo (aprobado o parcial): hay recibo.
+  const hayRecibo = Number(mov.aprobado) === 1 && resultado !== "devuelto" && !!mov.odoo_picking_id;
 
   // Novedades de la ronda en curso, calculadas igual que la API al cerrar.
   const ronda = Number(mov.ronda_verificacion || 1);
@@ -701,13 +733,52 @@ export default function EgresoFlujo({ id }: { id: string }) {
         volverA={`/${locale}/seguridad/mercancia/egreso`}
       />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-32">
-        {/* Donde esta y a quien le toca: lo primero que se mira. */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 pb-32">
+        {/* Donde esta, a quien le toca y cuanto falta: lo primero que se mira. */}
         <EstadoActual
           etapa={mov.etapa}
           resultado={resultado}
           responsable={responsable}
           meToca={meToca}
+          recorrido={recorrido}
+          actual={actual}
+          orden={mov.odoo_picking_name}
+          inicio={mov.created_at}
+          fin={mov.cerrado_at}
+          cifras={[
+            { icon: ListChecks, etiqueta: tm("items"), valor: String(items.length) },
+            {
+              icon: Boxes,
+              etiqueta: tf("resumen.unidades"),
+              valor: unidadesSalen === unidadesOrden ? String(unidadesOrden) : `${unidadesSalen} / ${unidadesOrden}`,
+            },
+            ...(seriales.length > 0
+              ? [
+                  {
+                    icon: ScanBarcode,
+                    etiqueta: tf("resumen.seriales"),
+                    valor: mov.verificado_at || mov.etapa === "por_verificar"
+                      ? `${seriales.filter((s) => s.verificado_at).length} / ${seriales.length}`
+                      : String(seriales.length),
+                  },
+                ]
+              : []),
+          ]}
+          acciones={
+            <>
+              {hayRecibo && (
+                <BotonPrimario onClick={() => void imprimirRecibo()} disabled={trayendoRecibo} icon={trayendoRecibo ? undefined : Printer}>
+                  {trayendoRecibo && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {trayendoRecibo ? tf("trayendo_recibo") : tf("imprimir_recibo")}
+                </BotonPrimario>
+              )}
+              {seriales.length > 0 && (mov.verificado_at || contandoPorton) && (
+                <BotonSecundario onClick={() => void bajarSeriales()} disabled={bajandoSeriales} icon={Download}>
+                  {tf("verificacion.excel_seriales")}
+                </BotonSecundario>
+              )}
+            </>
+          }
           tf={tf}
         />
 
@@ -725,7 +796,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
         {/* Dos columnas recien desde lg: en md, con el menu lateral abierto, la
             de renglones quedaba en ~270 px y el nombre del producto en "A." */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
           <div className="space-y-4 min-w-0">
             {/* Despacho parcial: cuanto sale y que el resto queda pendiente. */}
             {egresoParcial && (
@@ -736,7 +807,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
             {/* Datos del egreso */}
             <Card>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4 text-sm">
                 <Dato etiqueta={tf("tipo_entrega")} valor={tipo ? tf(`entrega.${tipo}`) : "—"} />
                 <Dato etiqueta={tf("almacenista_armado")} valor={mov.almacenista_armado} />
                 <Dato etiqueta={tf("almacenista_despacho")} valor={mov.almacenista_despacho} />
@@ -863,10 +934,23 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 const difArm = vArm !== "" && Number(vArm) !== orden;
                 const difPor = !noSalio[it.id] && vPor !== "" && Number(vPor) !== sale;
                 return (
-                  <div key={it.id} className="py-2.5 border-b border-slate-50 last:border-0">
+                  <div
+                    key={it.id}
+                    className="-mx-2 px-2 py-3 rounded-xl border-b border-slate-50 last:border-0 transition-colors hover:bg-slate-50/70"
+                  >
                     <div className={`grid ${COLUMNAS} gap-x-2 items-center`}>
                       <div className="min-w-0">
-                        <p className="text-sm text-slate-800 truncate">{it.producto}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5" title={it.producto}>
+                          {/* De un vistazo: salió completo, con diferencia, o falta contarlo. */}
+                          {noSalio[it.id] || difArm || difPor ? (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                          ) : mov.verificado_at && vPor !== "" ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                          ) : (
+                            <Circle className="w-3.5 h-3.5 shrink-0 text-slate-300" />
+                          )}
+                          <span className="truncate">{it.producto}</span>
+                        </p>
                         {it.codigo && <p className="text-[11px] font-mono text-slate-400 truncate">{it.codigo}</p>}
                         {Number(it.lleva_serial) === 1 && (
                           <p
@@ -989,52 +1073,43 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 tf={tf}
               />
             )}
-            {seriales.length > 0 && (mov.verificado_at || contandoPorton) && (
-              <div className="flex justify-end">
-                <BotonSecundario
-                  onClick={() => void bajarSeriales()}
-                  disabled={bajandoSeriales}
-                  icon={Download}
-                >
-                  {tf("verificacion.excel_seriales")}
-                </BotonSecundario>
-              </div>
-            )}
-
             {/* Resultado del porton, cuando ya lo hay */}
             {resultado && (
               <Card>
                 <SectionTitle>{tf("resultado." + resultado)}</SectionTitle>
                 {mov.motivo_no_aprobado && (
-                  <p className="text-sm text-slate-700">
+                  <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
                     <span className="font-medium">{tf("motivo")}:</span> {mov.motivo_no_aprobado}
                   </p>
                 )}
-                {ASPECTOS.map((a) => {
-                  const nota = notaDe(a);
-                  if (!nota) return null;
-                  return (
-                    <div key={a} className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-xs font-medium text-slate-600 w-full sm:w-auto">
-                        {tf(`aspecto.${a}`)} · {nota.almacenista_nombre}
-                      </span>
-                      <StarRatingDisplay value={Number(nota.calificacion)} showValue />
-                      {nota.comentario && <span className="text-xs text-slate-500">{nota.comentario}</span>}
-                    </div>
-                  );
-                })}
-                {/* Lo que salió ya está validado en Odoo (aprobado o parcial). */}
-                {Number(mov.aprobado) === 1 && resultado !== "devuelto" && !!mov.odoo_picking_id && (
-                  <div className="mt-4 flex justify-end">
-                    <BotonSecundario
-                      onClick={() => void imprimirRecibo()}
-                      disabled={trayendoRecibo}
-                      icon={Printer}
-                    >
-                      {trayendoRecibo ? tf("trayendo_recibo") : tf("imprimir_recibo")}
-                    </BotonSecundario>
-                  </div>
-                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 empty:hidden mt-3 first:mt-0">
+                  {ASPECTOS.map((a) => {
+                    const nota = notaDe(a);
+                    if (!nota) return null;
+                    return (
+                      <div
+                        key={a}
+                        className="rounded-xl border border-slate-200/80 p-3.5 transition-colors hover:border-violet-200 hover:bg-violet-50/30"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-9 h-9 rounded-full bg-violet-50 text-[color:var(--portal-primary,#741DFE)] flex items-center justify-center text-xs font-bold uppercase shrink-0">
+                            {nota.almacenista_nombre.trim().slice(0, 2)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-medium text-slate-400">{tf(`aspecto.${a}`)}</p>
+                            <p className="text-sm font-semibold text-slate-900 truncate">{nota.almacenista_nombre}</p>
+                          </div>
+                        </div>
+                        <div className="mt-2.5">
+                          <StarRatingDisplay value={Number(nota.calificacion)} showValue />
+                        </div>
+                        {nota.comentario && (
+                          <p className="mt-2 text-xs text-slate-500 break-words">{nota.comentario}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </Card>
             )}
 
@@ -1392,28 +1467,63 @@ export default function EgresoFlujo({ id }: { id: string }) {
           {/* Recorrido completo, con quien y cuando. */}
           <Card className="lg:sticky lg:top-24">
             <SectionTitle>{tf("recorrido")}</SectionTitle>
-            <ol className="space-y-3">
+            <ol>
               {recorrido.map((e, i) => {
                 const hecha = i < actual || mov.etapa === "cerrado";
                 const esActual = i === actual && mov.etapa !== "cerrado";
-                const Icono = hecha ? CheckCircle2 : esActual ? Clock : Circle;
+                const ultima = i === recorrido.length - 1;
+                // Cuánto pasó desde la etapa anterior hasta llegar a esta.
+                const tramo = i > 0 && (hecha || esActual) ? duracion(momentoEtapa[recorrido[i - 1]], momentoEtapa[e]) : null;
                 return (
-                  <li key={e} className="flex items-start gap-2.5">
-                    <Icono
-                      className={`w-4 h-4 mt-0.5 shrink-0 ${
-                        hecha ? "text-emerald-500" : esActual ? "text-[color:var(--portal-primary,#741DFE)]" : "text-slate-300"
+                  <li key={e} className="relative flex items-start gap-3 pb-4 last:pb-0">
+                    {!ultima && (
+                      <span
+                        aria-hidden
+                        className={`absolute left-[11px] top-6 bottom-0 w-px ${hecha ? "bg-emerald-200" : "bg-slate-200"}`}
+                      />
+                    )}
+                    <span
+                      className={`relative z-[1] w-[23px] h-[23px] rounded-full flex items-center justify-center shrink-0 ${
+                        hecha
+                          ? "bg-emerald-500 text-white"
+                          : esActual
+                            ? "bg-[color:var(--portal-primary,#741DFE)] text-white"
+                            : "bg-white border border-slate-200 text-slate-300"
                       }`}
-                    />
-                    <div className="min-w-0">
-                      <p
-                        className={`text-sm ${
-                          esActual ? "font-semibold text-slate-900" : hecha ? "text-slate-700" : "text-slate-400"
-                        }`}
-                      >
-                        {tf(`etapa.${e}`)}
-                      </p>
+                    >
+                      {esActual && (
+                        <span className="absolute inset-0 rounded-full bg-[color:var(--portal-primary,#741DFE)] opacity-40 animate-ping motion-reduce:hidden" />
+                      )}
+                      {hecha ? (
+                        <Check className="w-3 h-3" strokeWidth={3} />
+                      ) : esActual ? (
+                        <Clock className="relative w-3 h-3" />
+                      ) : (
+                        <span className="text-[10px] font-semibold tabular-nums">{i + 1}</span>
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1 pt-px">
+                      <div className="flex items-center justify-between gap-2">
+                        <p
+                          className={`text-sm truncate ${
+                            esActual ? "font-semibold text-slate-900" : hecha ? "font-medium text-slate-700" : "text-slate-400"
+                          }`}
+                        >
+                          {tf(`etapa.${e}`)}
+                        </p>
+                        {tramo && (
+                          <span
+                            title={tf("resumen.tramo")}
+                            className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-500"
+                          >
+                            {tramo}
+                          </span>
+                        )}
+                      </div>
                       {(hecha || esActual) && detalleEtapa[e] && (
-                        <p className="text-[11px] text-slate-400 truncate">{detalleEtapa[e]}</p>
+                        <p className="text-[11px] text-slate-400 truncate" title={detalleEtapa[e] || undefined}>
+                          {detalleEtapa[e]}
+                        </p>
                       )}
                     </div>
                   </li>
@@ -1427,76 +1537,191 @@ export default function EgresoFlujo({ id }: { id: string }) {
   );
 }
 
+type Cifra = { icon: LucideIcon; etiqueta: string; valor: string };
+
+const TONOS = {
+  bien: { caja: "border-emerald-200/80", fondo: "from-emerald-50/80", icono: "bg-emerald-500 text-white", barra: "bg-emerald-500" },
+  regular: { caja: "border-amber-200/80", fondo: "from-amber-50/80", icono: "bg-amber-500 text-white", barra: "bg-amber-500" },
+  mal: { caja: "border-red-200/80", fondo: "from-red-50/80", icono: "bg-red-500 text-white", barra: "bg-red-500" },
+  neutro: { caja: "border-slate-200/80", fondo: "from-slate-50", icono: "bg-slate-200 text-slate-500", barra: "bg-slate-400" },
+  mio: {
+    caja: "border-violet-200",
+    fondo: "from-violet-50/80",
+    icono: "bg-[color:var(--portal-primary,#741DFE)] text-white",
+    barra: "bg-[color:var(--portal-primary,#741DFE)]",
+  },
+} as const;
+
+/**
+ * Cabecera del egreso: en qué etapa va y a quién le toca, el avance del
+ * recorrido, las cifras del despacho y las acciones (recibo, Excel).
+ */
 function EstadoActual({
   etapa,
   resultado,
   responsable,
   meToca,
+  recorrido,
+  actual,
+  orden,
+  inicio,
+  fin,
+  cifras,
+  acciones,
   tf,
 }: {
   etapa: Etapa;
   resultado: string | null;
   responsable: "almacen" | "seguridad" | null;
   meToca: boolean;
+  recorrido: Etapa[];
+  actual: number;
+  /** Número de la orden de despacho: se copia con un toque. */
+  orden: string | null;
+  inicio: string | null;
+  fin: string | null;
+  cifras: Cifra[];
+  acciones?: React.ReactNode;
   tf: ReturnType<typeof useTranslations>;
 }) {
-  if (etapa === "cerrado") {
-    const malo = resultado === "no_despachado";
-    const regular = resultado === "no_aprobado_despachado";
-    // Cancelado: no salio porque se cancelo el pedido. No es un error del
-    // despacho, asi que ni rojo ni verde.
-    const cancelado = resultado === "cancelado";
-    return (
-      <div
-        className={`rounded-2xl border p-4 flex items-center gap-3 ${
-          malo
-            ? "border-red-200 bg-red-50"
-            : regular
-              ? "border-amber-200 bg-amber-50"
-              : cancelado
-                ? "border-slate-200 bg-slate-50"
-                : "border-emerald-200 bg-emerald-50"
-        }`}
-      >
-        {malo ? (
-          <XCircle className="w-5 h-5 text-red-600 shrink-0" />
-        ) : cancelado ? (
-          <Circle className="w-5 h-5 text-slate-400 shrink-0" />
-        ) : regular ? (
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-        ) : (
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-        )}
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{tf("etapa.cerrado")}</p>
-          {resultado && <p className="text-sm text-slate-700">{tf(`resultado.${resultado}`)}</p>}
-        </div>
-      </div>
-    );
-  }
+  const cerrado = etapa === "cerrado";
+  // Cancelado: no salio porque se cancelo el pedido. No es un error del
+  // despacho, asi que ni rojo ni verde.
+  const tono = cerrado
+    ? resultado === "no_despachado"
+      ? "mal"
+      : resultado === "no_aprobado_despachado"
+        ? "regular"
+        : resultado === "cancelado"
+          ? "neutro"
+          : "bien"
+    : meToca
+      ? "mio"
+      : "neutro";
+  const c = TONOS[tono];
+  const Icono = cerrado
+    ? tono === "mal"
+      ? XCircle
+      : tono === "regular"
+        ? AlertTriangle
+        : tono === "neutro"
+          ? Circle
+          : CheckCircle2
+    : responsable === "seguridad"
+      ? ShieldCheck
+      : Package;
+
+  // Mientras está abierto, el tiempo corre: se refresca cada medio minuto.
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    if (cerrado) return;
+    const t = setInterval(() => setAhora(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [cerrado]);
+  const tiempo = duracion(inicio, fin || ahora);
+
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    if (!orden) return;
+    try {
+      await navigator.clipboard.writeText(orden);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1500);
+    } catch {
+      // Sin permiso de portapapeles (http, navegador viejo): no pasa nada.
+    }
+  };
+
+  const hechas = cerrado ? recorrido.length : Math.max(0, actual);
+  const paso = tf("resumen.paso", { n: Math.min(hechas + (cerrado ? 0 : 1), recorrido.length), total: recorrido.length });
+  const todas: Cifra[] = [
+    ...cifras,
+    ...(tiempo ? [{ icon: Timer, etiqueta: tf(cerrado ? "resumen.duracion" : "resumen.transcurrido"), valor: tiempo }] : []),
+  ];
 
   return (
-    <div
-      className={`rounded-2xl border p-4 flex items-center gap-3 ${
-        meToca ? "border-violet-200 bg-violet-50" : "border-slate-200 bg-white"
-      }`}
+    <section
+      className={`rounded-2xl border bg-white bg-gradient-to-br to-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden ${c.caja} ${c.fondo}`}
     >
-      <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-          meToca ? "bg-white text-[color:var(--portal-primary,#741DFE)]" : "bg-slate-100 text-slate-400"
+      <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <span className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${c.icono}`}>
+            {meToca && !cerrado && (
+              <span className="absolute inset-0 rounded-2xl bg-[color:var(--portal-primary,#741DFE)] opacity-30 animate-ping motion-reduce:hidden" />
+            )}
+            <Icono className="relative w-6 h-6" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900">{tf(`etapa.${etapa}`)}</h2>
+              {orden && (
+                <button
+                  type="button"
+                  onClick={() => void copiar()}
+                  title={tf("resumen.copiar")}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/70 px-1.5 py-0.5 text-[11px] font-mono text-slate-500 transition-colors hover:border-violet-200 hover:text-[color:var(--portal-primary,#741DFE)]"
+                >
+                  {orden}
+                  {copiado ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-slate-600">
+              {cerrado
+                ? resultado
+                  ? tf(`resultado.${resultado}`)
+                  : null
+                : meToca
+                  ? `${tf(`le_toca.${responsable}`)} · ${tf(`paso.${etapa}`)}`
+                  : tf("esperando", { rol: tf(`rol.${responsable}`), paso: tf(`paso.${etapa}`) })}
+            </p>
+          </div>
+        </div>
+        {acciones && (
+          <div className="flex flex-wrap gap-2 sm:justify-end empty:hidden [&>*]:flex-1 sm:[&>*]:flex-none">{acciones}</div>
+        )}
+      </div>
+
+      {/* Avance: un tramo por etapa; el nombre sale al pasar el cursor. */}
+      <div className="px-4 sm:px-5">
+        <div className="flex items-center gap-1 h-2.5" role="img" aria-label={paso}>
+          {recorrido.map((e, i) => {
+            const hecha = i < hechas;
+            const esActual = !cerrado && i === actual;
+            return (
+              <span
+                key={e}
+                title={tf(`etapa.${e}`)}
+                className={`h-1.5 flex-1 rounded-full transition-all duration-300 hover:h-2.5 ${
+                  hecha ? c.barra : esActual ? `${c.barra} opacity-50 animate-pulse` : "bg-slate-200"
+                }`}
+              />
+            );
+          })}
+        </div>
+        <p className="mt-1 text-[11px] font-medium text-slate-400 tabular-nums">{paso}</p>
+      </div>
+
+      <dl
+        className={`mt-3 grid grid-cols-2 gap-px border-t border-slate-200/70 bg-slate-200/70 ${
+          { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3" }[todas.length] || "sm:grid-cols-4"
         }`}
       >
-        {responsable === "seguridad" ? <ShieldCheck className="w-4 h-4" /> : <Package className="w-4 h-4" />}
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-900">{tf(`etapa.${etapa}`)}</p>
-        <p className="text-sm text-slate-600">
-          {meToca
-            ? `${tf(`le_toca.${responsable}`)} · ${tf(`paso.${etapa}`)}`
-            : tf("esperando", { rol: tf(`rol.${responsable}`), paso: tf(`paso.${etapa}`) })}
-        </p>
-      </div>
-    </div>
+        {todas.map((x) => (
+          <div
+            key={x.etiqueta}
+            // En teléfono van de a dos: si sobra una, ocupa la fila entera.
+            className="bg-white/90 px-4 sm:px-5 py-3 flex items-center gap-2.5 min-w-0 last:odd:col-span-2 sm:last:odd:col-span-1"
+          >
+            <x.icon className="w-4 h-4 text-slate-400 shrink-0" />
+            <div className="min-w-0">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 truncate">{x.etiqueta}</dt>
+              <dd className="text-sm font-semibold tabular-nums text-slate-900 truncate">{x.valor}</dd>
+            </div>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -1751,8 +1976,10 @@ function EtiquetaCatalogo({
 function Dato({ etiqueta, valor }: { etiqueta: string; valor: string | null | undefined }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-medium text-slate-400">{etiqueta}</dt>
-      <dd className="text-sm text-slate-800 truncate">{valor || "—"}</dd>
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{etiqueta}</dt>
+      <dd className="mt-0.5 text-sm font-medium text-slate-800 truncate" title={valor || undefined}>
+        {valor || "—"}
+      </dd>
     </div>
   );
 }

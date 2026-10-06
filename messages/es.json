@@ -2975,6 +2975,15 @@
       "flujo": {
         "imprimir_recibo": "Imprimir recibo de entrega",
         "trayendo_recibo": "Trayendo el recibo de Odoo…",
+        "resumen": {
+          "unidades": "Unidades",
+          "seriales": "Seriales",
+          "duracion": "Duración",
+          "transcurrido": "Transcurrido",
+          "paso": "Paso {n} de {total}",
+          "tramo": "Tiempo desde la etapa anterior",
+          "copiar": "Copiar número de orden"
+        },
         "etapa": {
           "por_armar": "Por armar",
           "armando": "Armando",
