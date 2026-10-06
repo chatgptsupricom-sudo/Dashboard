@@ -221,6 +221,7 @@
     "almacen_egresos": "Despachos de mercancía",
     "almacen_ordenes": "Órdenes pendientes",
     "almacen_unidades": "Gestionar Unidades",
+    "almacen_mantenimiento": "Mantenimiento de Unidades",
     "almacen_recepcion": "Recepción (packing list)",
     "recepcion_packing": "Packing lists",
     "llegadas": "Packing List",
@@ -2982,6 +2983,93 @@
         "select_placeholder": "-- Seleccionar placa --",
         "gestionar": "Gestionar unidades",
         "contador": "{count, plural, =1 {# unidad} other {# unidades}}"
+      },
+      "mantenimiento": {
+        "titulo": "Mantenimiento de unidades",
+        "subtitulo": "Camiones y montacargas: qué está operativo, qué está en el taller y qué toca",
+        "error": "No se pudo completar. Intenta de nuevo.",
+        "reintentar": "Reintentar",
+        "solo_lectura": "Estás viendo todas las sedes en modo consulta: el mantenimiento lo registra Almacén.",
+        "agregar_equipo": "Agregar equipo",
+        "reportar": "Reportar mantenimiento",
+        "agregar": "Agregar",
+        "buscar": "Buscar por placa, código o trabajo",
+        "limpiar": "Borrar búsqueda",
+        "flota": "Flota",
+        "vacio": "Todavía no hay equipos. Los camiones se traen solos del catálogo de Unidades; los montacargas se agregan aquí.",
+        "sin_resultados": "Ningún equipo coincide con la búsqueda.",
+        "ayuda_escena": "Toca un vehículo para ver su ficha · arrastra para girar",
+        "elige_titulo": "Elige un vehículo",
+        "elige_texto": "Tócalo en el patio o en la lista para ver su mantenimiento y el paso que toca.",
+        "historial": "Últimos trabajos cerrados",
+        "historial_equipo": "Trabajos anteriores",
+        "zona": {
+          "operativo": "Patio",
+          "reportado": "Por atender",
+          "en_taller": "Taller",
+          "listo": "Listo"
+        },
+        "situacion": {
+          "operativo": "Operativo",
+          "reportado": "Por atender",
+          "en_taller": "En el taller",
+          "listo": "Listo para entregar"
+        },
+        "filtro": {
+          "todos": "Todos",
+          "camion": "Camiones",
+          "montacargas": "Montacargas"
+        },
+        "tipo_equipo": {
+          "camion": "Camión",
+          "montacargas": "Montacargas"
+        },
+        "tipo_orden": {
+          "preventivo": "Preventivo",
+          "correctivo": "Correctivo"
+        },
+        "prioridad": {
+          "baja": "Baja",
+          "media": "Media",
+          "alta": "Alta"
+        },
+        "prioridad_titulo": "Prioridad",
+        "tipo": "Tipo de mantenimiento",
+        "equipo": "Equipo",
+        "equipo_ayuda": "Los camiones del catálogo de Unidades ya aparecen solos. Aquí agregas los montacargas, o un camión que no esté en el catálogo.",
+        "codigo_camion": "Placa",
+        "codigo_montacargas": "Código interno",
+        "descripcion": "Descripción",
+        "descripcion_camion_ph": "Ej: Ford F-350 blanco",
+        "descripcion_montacargas_ph": "Ej: Toyota 2,5 t a gas",
+        "medidor": {
+          "km": "Kilometraje",
+          "h": "Horas de uso"
+        },
+        "proximo_servicio": "Próximo servicio",
+        "servicio_en": "{n, plural, =0 {El servicio toca hoy} =1 {El servicio toca mañana} other {Servicio en # días}}",
+        "servicio_vencido": "{n, plural, =1 {Servicio vencido hace 1 día} other {Servicio vencido hace # días}}",
+        "operativo_texto": "Está operativo: no tiene ningún mantenimiento abierto.",
+        "que_hacer": "Qué hay que hacerle",
+        "que_hacer_preventivo_ph": "Ej: Servicio de los 10.000 km",
+        "que_hacer_correctivo_ph": "Ej: Bota aceite por el motor",
+        "detalle": "Detalle",
+        "detalle_ph": "Lo que ayude al taller",
+        "tareas": "Tareas",
+        "tarea_nueva": "Otra tarea…",
+        "quitar_tarea": "Quitar tarea",
+        "todos_en_mantenimiento": "Todos los equipos ya tienen un mantenimiento abierto.",
+        "reportado_por": "Reportó {quien} · {cuando}",
+        "lo_atiende": "lo atiende {quien}",
+        "responsable": "Taller o mecánico que lo atiende",
+        "responsable_ph": "Ej: Taller Los Hermanos",
+        "iniciar": "Pasar al taller",
+        "terminar": "Trabajo terminado",
+        "faltan_tareas": "{n, plural, =1 {Falta 1 tarea por marcar} other {Faltan # tareas por marcar}}",
+        "costo": "Costo (USD)",
+        "notas": "Notas del trabajo",
+        "notas_ph": "Repuestos, garantía, observaciones…",
+        "cerrar": "Recibir y devolver a operación"
       },
       "catalogo_ui": {
         "agregar": "Agregar",
