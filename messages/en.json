@@ -1481,6 +1481,8 @@
       "sugerencia_4": "Products in stock with no sales in 90 days",
       "modelo": "Model",
       "modelo_auto": "Automatic",
+      "aviso_opus": "Opus costs at least twice as much as Sonnet 5.5. For everyday questions, Sonnet 5.5 answers just as well and spends less.",
+      "usar_sonnet": "Use Sonnet 5.5",
       "copiar": "Copy",
       "rebobinar": "Rewind to here and edit",
       "nuevo_chat": "New chat",

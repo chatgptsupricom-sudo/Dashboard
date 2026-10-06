@@ -1677,6 +1677,8 @@
       "sugerencia_4": "Productos con stock y sin ventas en 90 días",
       "modelo": "Modelo",
       "modelo_auto": "Automático",
+      "aviso_opus": "Opus cuesta al menos el doble que Sonnet 5.5. Para consultas del día a día, Sonnet 5.5 responde igual de bien y gasta menos.",
+      "usar_sonnet": "Usar Sonnet 5.5",
       "copiar": "Copiar",
       "rebobinar": "Rebobinar hasta aquí y editar",
       "nuevo_chat": "Nuevo chat",

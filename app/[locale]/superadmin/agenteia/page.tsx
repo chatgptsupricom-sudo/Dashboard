@@ -2075,6 +2075,20 @@ export default function AgenteIAPage() {
 
           {/* Caja de mensaje */}
           <div className="px-3 md:px-6 pt-2 pb-3 md:pb-4 shrink-0 relative z-10">
+            {/* Opus cuesta al menos el doble por token que Sonnet 5.5 (lib/agenteia/consumo.ts). */}
+            {modelo.includes("opus") && (
+              <div className="w-full max-w-3xl mx-auto mb-2 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="flex-1">{t("aviso_opus")}</p>
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => elegirModelo("claude-sonnet-5-5")}
+                  className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {t("usar_sonnet")}
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSend}
               className={`w-full max-w-3xl mx-auto bg-white rounded-2xl border transition-[border-color,box-shadow] shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)] ${
